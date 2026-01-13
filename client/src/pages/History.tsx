@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
 import { 
   Search, 
@@ -31,7 +34,13 @@ import {
   Lightbulb,
   ArrowUp,
   ArrowDown,
-  Minus
+  Minus,
+  FileText,
+  Columns,
+  Save,
+  Clock,
+  RefreshCw,
+  Settings2
 } from "lucide-react";
 import { toast } from "sonner";
 import { navItems } from "@/lib/navigation";
@@ -58,7 +67,30 @@ export default function History() {
   const [activeTab, setActiveTab] = useState("list");
   const [analysisLimit, setAnalysisLimit] = useState(100);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const limit = 20;
+  const [pageSize, setPageSize] = useState(20);
+  const [showColumnSettings, setShowColumnSettings] = useState(false);
+  const [visibleColumns, setVisibleColumns] = useState({
+    serialNumber: true,
+    machine: true,
+    result: true,
+    time: true,
+    productModel: true,
+    factory: false,
+    workshop: false,
+    line: false,
+    station: false,
+    okCount: false,
+    ngCount: false,
+    ntfCount: false,
+  });
+  const [savedFilters, setSavedFilters] = useState<Array<{
+    name: string;
+    filters: typeof filters;
+  }>>([
+    { name: "NG hôm nay", filters: { ...filters, result: "NG" as const, dateRange: "today" as const } },
+    { name: "Tuần này", filters: { ...filters, dateRange: "week" as const } },
+  ]);
+  const limit = pageSize;
 
   // Calculate date range based on selection
   const dateRangeValues = useMemo(() => {
@@ -510,6 +542,43 @@ export default function History() {
                 <Button variant="outline" onClick={handleClearFilters}>
                   Xóa bộ lọc
                 </Button>
+                {/* Saved Filters */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="gap-2">
+                      <Save className="h-4 w-4" />
+                      Bộ lọc đã lưu
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {savedFilters.map((sf, idx) => (
+                      <DropdownMenuItem 
+                        key={idx}
+                        onClick={() => {
+                          setFilters(sf.filters);
+                          setPage(1);
+                          toast.success(`Đã áp dụng bộ lọc: ${sf.name}`);
+                        }}
+                      >
+                        <Clock className="h-4 w-4 mr-2" />
+                        {sf.name}
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => {
+                        const name = prompt("Nhập tên bộ lọc:");
+                        if (name) {
+                          setSavedFilters(prev => [...prev, { name, filters: { ...filters } }]);
+                          toast.success(`Đã lưu bộ lọc: ${name}`);
+                        }
+                      }}
+                    >
+                      <Save className="h-4 w-4 mr-2" />
+                      Lưu bộ lọc hiện tại
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
           </CardContent>
@@ -547,19 +616,74 @@ export default function History() {
                       {data?.total ? `Tìm thấy ${data.total} kết quả` : "Chưa có dữ liệu"}
                     </CardDescription>
                   </div>
-                  <Button 
-                    variant="outline" 
-                    className="gap-2"
-                    onClick={handleExportExcel}
-                    disabled={isExporting || !data?.data || data.data.length === 0}
-                  >
-                    {isExporting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Download className="h-4 w-4" />
-                    )}
-                    Xuất Excel
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {/* Page Size Selector */}
+                    <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
+                      <SelectTrigger className="w-[100px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">10/trang</SelectItem>
+                        <SelectItem value="20">20/trang</SelectItem>
+                        <SelectItem value="50">50/trang</SelectItem>
+                        <SelectItem value="100">100/trang</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    {/* Column Settings */}
+                    <Popover open={showColumnSettings} onOpenChange={setShowColumnSettings}>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="icon">
+                          <Columns className="h-4 w-4" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-56" align="end">
+                        <div className="space-y-2">
+                          <h4 className="font-medium text-sm">Hiển thị cột</h4>
+                          {Object.entries({
+                            serialNumber: "Serial Number",
+                            machine: "Máy",
+                            result: "Kết quả",
+                            time: "Thời gian",
+                            productModel: "Model",
+                            factory: "Nhà máy",
+                            workshop: "Nhà xưởng",
+                            line: "Dây chuyền",
+                            station: "Công trạm",
+                            okCount: "OK Count",
+                            ngCount: "NG Count",
+                            ntfCount: "NTF Count",
+                          }).map(([key, label]) => (
+                            <div key={key} className="flex items-center gap-2">
+                              <Checkbox
+                                id={key}
+                                checked={visibleColumns[key as keyof typeof visibleColumns]}
+                                onCheckedChange={(checked) => 
+                                  setVisibleColumns(prev => ({ ...prev, [key]: checked }))
+                                }
+                              />
+                              <label htmlFor={key} className="text-sm cursor-pointer">{label}</label>
+                            </div>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+
+                    {/* Export Button */}
+                    <Button 
+                      variant="outline" 
+                      className="gap-2"
+                      onClick={handleExportExcel}
+                      disabled={isExporting || !data?.data || data.data.length === 0}
+                    >
+                      {isExporting ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
+                      Xuất Excel
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>

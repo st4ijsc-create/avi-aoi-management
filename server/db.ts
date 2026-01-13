@@ -804,6 +804,176 @@ export async function getMachineStats(machineId: number, startDate?: Date, endDa
   return { total, ok, ng, ntf, yieldRate: Math.round(yieldRate * 100) / 100 };
 }
 
+// ============ STATS WITH COMPARISON ============
+export async function getStatsWithComparison(filters?: {
+  factoryId?: number;
+  workshopId?: number;
+  machineId?: number;
+  startDate?: Date;
+  endDate?: Date;
+}) {
+  // Get current period stats
+  const currentStats = await getDashboardStats(filters);
+  
+  // Calculate previous period (same duration)
+  if (filters?.startDate && filters?.endDate) {
+    const duration = filters.endDate.getTime() - filters.startDate.getTime();
+    const prevEndDate = new Date(filters.startDate.getTime() - 1);
+    const prevStartDate = new Date(prevEndDate.getTime() - duration);
+    
+    const prevStats = await getDashboardStats({
+      ...filters,
+      startDate: prevStartDate,
+      endDate: prevEndDate,
+    });
+    
+    // Calculate trends
+    const outputTrend = prevStats.total > 0 
+      ? ((currentStats.total - prevStats.total) / prevStats.total) * 100 
+      : 0;
+    const fpyTrend = prevStats.yieldRate > 0 
+      ? currentStats.yieldRate - prevStats.yieldRate 
+      : 0;
+    
+    return {
+      current: currentStats,
+      previous: prevStats,
+      trends: {
+        output: Math.round(outputTrend * 10) / 10,
+        fpy: Math.round(fpyTrend * 10) / 10,
+        ok: prevStats.ok > 0 ? Math.round(((currentStats.ok - prevStats.ok) / prevStats.ok) * 1000) / 10 : 0,
+        ng: prevStats.ng > 0 ? Math.round(((currentStats.ng - prevStats.ng) / prevStats.ng) * 1000) / 10 : 0,
+        ntf: prevStats.ntf > 0 ? Math.round(((currentStats.ntf - prevStats.ntf) / prevStats.ntf) * 1000) / 10 : 0,
+      }
+    };
+  }
+  
+  return {
+    current: currentStats,
+    previous: null,
+    trends: null,
+  };
+}
+
+// ============ SHIFT STATS ============
+export async function getShiftStats(filters?: {
+  factoryId?: number;
+  startDate?: Date;
+  endDate?: Date;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions = [];
+  if (filters?.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  if (filters?.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  // Define shifts: Morning (6-14), Afternoon (14-22), Night (22-6)
+  const result = await db.select({
+    shift: sql<string>`CASE 
+      WHEN HOUR(${productInspections.inspectionTime}) >= 6 AND HOUR(${productInspections.inspectionTime}) < 14 THEN 'morning'
+      WHEN HOUR(${productInspections.inspectionTime}) >= 14 AND HOUR(${productInspections.inspectionTime}) < 22 THEN 'afternoon'
+      ELSE 'night'
+    END`,
+    total: sql<number>`count(*)`,
+    ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+    ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+    ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
+  })
+  .from(productInspections)
+  .where(whereClause)
+  .groupBy(sql`CASE 
+    WHEN HOUR(${productInspections.inspectionTime}) >= 6 AND HOUR(${productInspections.inspectionTime}) < 14 THEN 'morning'
+    WHEN HOUR(${productInspections.inspectionTime}) >= 14 AND HOUR(${productInspections.inspectionTime}) < 22 THEN 'afternoon'
+    ELSE 'night'
+  END`);
+
+  return result.map(r => ({
+    shift: String(r.shift),
+    shiftName: r.shift === 'morning' ? 'Ca sáng (6h-14h)' : r.shift === 'afternoon' ? 'Ca chiều (14h-22h)' : 'Ca đêm (22h-6h)',
+    total: Number(r.total) || 0,
+    ok: Number(r.ok) || 0,
+    ng: Number(r.ng) || 0,
+    ntf: Number(r.ntf) || 0,
+    fpy: Number(r.total) > 0 ? Math.round(((Number(r.ok) + Number(r.ntf)) / Number(r.total)) * 1000) / 10 : 0,
+  }));
+}
+
+// ============ TOP/BOTTOM MACHINES ============
+export async function getTopBottomMachines(filters?: {
+  startDate?: Date;
+  endDate?: Date;
+  limit?: number;
+}) {
+  const db = await getDb();
+  if (!db) return { top: [], bottom: [] };
+
+  const conditions = [];
+  if (filters?.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  if (filters?.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  const limit = filters?.limit || 5;
+
+  const result = await db.select({
+    machineId: productInspections.machineId,
+    total: sql<number>`count(*)`,
+    ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+    ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+    ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
+  })
+  .from(productInspections)
+  .where(whereClause)
+  .groupBy(productInspections.machineId)
+  .having(sql`count(*) > 0`);
+
+  // Get machine details
+  const machineDetails = await db.select().from(machines);
+  const machineMap = new Map(machineDetails.map(m => [m.id, m]));
+
+  const machinesWithStats = result.map(r => {
+    const machine = machineMap.get(r.machineId!);
+    const total = Number(r.total) || 0;
+    const ok = Number(r.ok) || 0;
+    const ntf = Number(r.ntf) || 0;
+    const fpy = total > 0 ? ((ok + ntf) / total) * 100 : 0;
+    return {
+      id: r.machineId,
+      name: machine?.name || 'Unknown',
+      code: machine?.code || '',
+      total,
+      ok: Number(r.ok) || 0,
+      ng: Number(r.ng) || 0,
+      ntf,
+      fpy: Math.round(fpy * 10) / 10,
+    };
+  });
+
+  // Sort by FPY for top/bottom
+  const sorted = [...machinesWithStats].sort((a, b) => b.fpy - a.fpy);
+  
+  return {
+    top: sorted.slice(0, limit),
+    bottom: sorted.slice(-limit).reverse(),
+  };
+}
+
+// ============ ACTIVE ALERTS COUNT ============
+export async function getActiveAlertsCount() {
+  const db = await getDb();
+  if (!db) return 0;
+
+  const result = await db.select({
+    count: sql<number>`count(*)`,
+  })
+  .from(alertHistory)
+  .where(sql`${alertHistory.acknowledgedAt} IS NULL`);
+
+  return Number(result[0]?.count) || 0;
+}
+
 // ============ DAILY STATS ============
 export async function getDailyStats(factoryId?: number, workshopId?: number, days: number = 30) {
   const db = await getDb();

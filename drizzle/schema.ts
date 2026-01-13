@@ -136,15 +136,27 @@ export const productModels = mysqlTable("product_models", {
   code: varchar("code", { length: 100 }).notNull().unique(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
+  // Product hierarchy
+  category: varchar("category", { length: 100 }), // Product family/category
+  productLine: varchar("productLine", { length: 100 }), // Product line
+  variant: varchar("variant", { length: 100 }), // Product variant
+  // Lifecycle status
+  lifecycleStatus: mysqlEnum("lifecycleStatus", ["development", "active", "eol", "archived"]).default("active").notNull(),
+  // Reference image
   referenceImageUrl: text("referenceImageUrl"), // Ảnh mẫu sản phẩm
   referenceImageKey: varchar("referenceImageKey", { length: 255 }),
   imageWidth: int("imageWidth"), // Kích thước ảnh gốc
   imageHeight: int("imageHeight"),
+  // Quality targets
+  targetYieldRate: decimal("targetYieldRate", { precision: 5, scale: 2 }), // Target FPY %
+  minYieldRate: decimal("minYieldRate", { precision: 5, scale: 2 }), // Minimum acceptable FPY %
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => [
   index("idx_product_models_code").on(table.code),
+  index("idx_product_models_category").on(table.category),
+  index("idx_product_models_lifecycle").on(table.lifecycleStatus),
 ]);
 
 export type ProductModel = typeof productModels.$inferSelect;

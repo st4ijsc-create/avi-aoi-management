@@ -309,6 +309,12 @@ const productModelRouter = router({
       code: z.string().min(1).max(100),
       name: z.string().min(1).max(255),
       description: z.string().optional(),
+      category: z.string().optional(),
+      productLine: z.string().optional(),
+      variant: z.string().optional(),
+      lifecycleStatus: z.enum(["development", "active", "eol", "archived"]).optional(),
+      targetYieldRate: z.string().optional(),
+      minYieldRate: z.string().optional(),
       referenceImageUrl: z.string().optional(),
       referenceImageKey: z.string().optional(),
       imageWidth: z.number().optional(),
@@ -363,6 +369,12 @@ const productModelRouter = router({
       code: z.string().min(1).max(100).optional(),
       name: z.string().min(1).max(255).optional(),
       description: z.string().optional(),
+      category: z.string().optional(),
+      productLine: z.string().optional(),
+      variant: z.string().optional(),
+      lifecycleStatus: z.enum(["development", "active", "eol", "archived"]).optional(),
+      targetYieldRate: z.string().optional(),
+      minYieldRate: z.string().optional(),
       referenceImageUrl: z.string().optional(),
       referenceImageKey: z.string().optional(),
       imageWidth: z.number().optional(),
@@ -1040,6 +1052,47 @@ const dashboardRouter = router({
       const stats = await db.getDailyStats(input.factoryId, input.workshopId, input.days);
       statsCache.set(cacheKey, stats, CACHE_TTL.MEDIUM);
       return stats;
+    }),
+
+  // Stats with comparison to previous period
+  getStatsWithComparison: protectedProcedure
+    .input(z.object({
+      factoryId: z.number().optional(),
+      workshopId: z.number().optional(),
+      machineId: z.number().optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }))
+    .query(async ({ input }) => {
+      return db.getStatsWithComparison(input);
+    }),
+
+  // Shift-based statistics
+  getShiftStats: protectedProcedure
+    .input(z.object({
+      factoryId: z.number().optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }))
+    .query(async ({ input }) => {
+      return db.getShiftStats(input);
+    }),
+
+  // Top and bottom performing machines
+  getTopBottomMachines: protectedProcedure
+    .input(z.object({
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      limit: z.number().default(5),
+    }))
+    .query(async ({ input }) => {
+      return db.getTopBottomMachines(input);
+    }),
+
+  // Active alerts count
+  getActiveAlertsCount: protectedProcedure
+    .query(async () => {
+      return db.getActiveAlertsCount();
     }),
 });
 

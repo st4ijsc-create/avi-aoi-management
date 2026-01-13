@@ -40,6 +40,12 @@ interface ProductModel {
   code: string;
   name: string;
   description?: string | null;
+  category?: string | null;
+  productLine?: string | null;
+  variant?: string | null;
+  lifecycleStatus: "development" | "active" | "eol" | "archived";
+  targetYieldRate?: string | null;
+  minYieldRate?: string | null;
   referenceImageUrl?: string | null;
   imageWidth?: number | null;
   imageHeight?: number | null;
@@ -67,12 +73,24 @@ export default function ProductModels() {
   const [newProductCode, setNewProductCode] = useState("");
   const [newProductName, setNewProductName] = useState("");
   const [newProductDescription, setNewProductDescription] = useState("");
+  const [newProductCategory, setNewProductCategory] = useState("");
+  const [newProductLine, setNewProductLine] = useState("");
+  const [newProductVariant, setNewProductVariant] = useState("");
+  const [newProductLifecycle, setNewProductLifecycle] = useState<"development" | "active" | "eol" | "archived">("active");
+  const [newProductTargetYield, setNewProductTargetYield] = useState("");
+  const [newProductMinYield, setNewProductMinYield] = useState("");
   const [uploadedImageUrl, setUploadedImageUrl] = useState("");
 
   // Edit product form states
   const [editProductCode, setEditProductCode] = useState("");
   const [editProductName, setEditProductName] = useState("");
   const [editProductDescription, setEditProductDescription] = useState("");
+  const [editProductCategory, setEditProductCategory] = useState("");
+  const [editProductLine, setEditProductLine] = useState("");
+  const [editProductVariant, setEditProductVariant] = useState("");
+  const [editProductLifecycle, setEditProductLifecycle] = useState<"development" | "active" | "eol" | "archived">("active");
+  const [editProductTargetYield, setEditProductTargetYield] = useState("");
+  const [editProductMinYield, setEditProductMinYield] = useState("");
   const [editProductImageUrl, setEditProductImageUrl] = useState("");
 
   // Point form states
@@ -171,6 +189,12 @@ export default function ProductModels() {
     setNewProductCode("");
     setNewProductName("");
     setNewProductDescription("");
+    setNewProductCategory("");
+    setNewProductLine("");
+    setNewProductVariant("");
+    setNewProductLifecycle("active");
+    setNewProductTargetYield("");
+    setNewProductMinYield("");
     setUploadedImageUrl("");
   };
 
@@ -411,6 +435,12 @@ export default function ProductModels() {
       code: newProductCode,
       name: newProductName,
       description: newProductDescription || undefined,
+      category: newProductCategory || undefined,
+      productLine: newProductLine || undefined,
+      variant: newProductVariant || undefined,
+      lifecycleStatus: newProductLifecycle,
+      targetYieldRate: newProductTargetYield || undefined,
+      minYieldRate: newProductMinYield || undefined,
       referenceImageUrl: uploadedImageUrl || undefined,
     });
   };

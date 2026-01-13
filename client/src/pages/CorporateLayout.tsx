@@ -33,7 +33,7 @@ import type { FactoryData, WorkshopData } from "@/types/factory";
 export default function CorporateLayout() {
   const { user, loading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
-  const [viewMode, setViewMode] = useState<"2D" | "3D">("2D");
+  const [viewMode, setViewMode] = useState<"2D" | "3D" | "MAP">("2D");
   const [selectedFactory, setSelectedFactory] = useState<FactoryData | null>(null);
   const [zoom, setZoom] = useState(1);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -291,11 +291,15 @@ export default function CorporateLayout() {
             <p className="text-muted-foreground">Bản đồ tổng quan các nhà máy và nhà xưởng</p>
           </div>
           <div className="flex items-center gap-2">
-            <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "2D" | "3D")}>
+            <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "2D" | "3D" | "MAP")}>
               <TabsList>
                 <TabsTrigger value="2D" className="gap-1">
                   <Layers className="h-4 w-4" />
                   2D
+                </TabsTrigger>
+                <TabsTrigger value="MAP" className="gap-1">
+                  <Globe className="h-4 w-4" />
+                  Map
                 </TabsTrigger>
                 <TabsTrigger value="3D" className="gap-1">
                   <Box className="h-4 w-4" />
@@ -397,6 +401,100 @@ export default function CorporateLayout() {
                     className="cursor-pointer w-full"
                     style={{ minHeight: 600 }}
                   />
+                ) : viewMode === "MAP" ? (
+                  <div className="relative w-full" style={{ minHeight: 600 }}>
+                    {/* World Map with Factory Markers */}
+                    <div className="absolute inset-0 bg-gradient-to-b from-slate-900 to-slate-800 rounded-lg overflow-hidden">
+                      {/* SVG World Map */}
+                      <svg viewBox="0 0 1000 500" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
+                        {/* Ocean background */}
+                        <rect fill="#0f172a" width="1000" height="500" />
+                        
+                        {/* Simplified continent shapes */}
+                        <g fill="#1e293b" stroke="#334155" strokeWidth="0.5">
+                          {/* North America */}
+                          <path d="M50,80 L200,60 L280,100 L300,180 L250,220 L200,200 L150,220 L100,180 L50,150 Z" />
+                          {/* South America */}
+                          <path d="M180,250 L220,230 L260,280 L280,350 L250,420 L200,450 L160,400 L170,320 Z" />
+                          {/* Europe */}
+                          <path d="M420,80 L500,60 L520,100 L500,140 L450,150 L420,120 Z" />
+                          {/* Africa */}
+                          <path d="M420,180 L500,160 L540,200 L560,280 L520,380 L460,400 L420,350 L400,250 Z" />
+                          {/* Asia */}
+                          <path d="M520,60 L700,40 L850,80 L900,150 L880,220 L800,250 L700,230 L600,200 L550,150 L520,100 Z" />
+                          {/* Southeast Asia */}
+                          <path d="M700,250 L780,230 L820,280 L800,320 L750,340 L700,300 Z" />
+                          {/* Australia */}
+                          <path d="M780,350 L880,330 L920,380 L900,430 L820,450 L780,400 Z" />
+                        </g>
+                        
+                        {/* Grid lines */}
+                        <g stroke="#334155" strokeWidth="0.3" strokeDasharray="5,5">
+                          {[0, 100, 200, 300, 400].map(y => (
+                            <line key={`h-${y}`} x1="0" y1={y + 50} x2="1000" y2={y + 50} />
+                          ))}
+                          {[0, 200, 400, 600, 800].map(x => (
+                            <line key={`v-${x}`} x1={x + 100} y1="0" x2={x + 100} y2="500" />
+                          ))}
+                        </g>
+                        
+                        {/* Factory Markers */}
+                        {factoriesWithStats.map((factory, index) => {
+                          // Position factories on the map based on region
+                          const positions = [
+                            { x: 750, y: 280 }, // Vietnam
+                            { x: 800, y: 150 }, // China
+                            { x: 480, y: 120 }, // Europe
+                            { x: 200, y: 150 }, // USA
+                          ];
+                          const pos = positions[index % positions.length];
+                          const isSelected = selectedFactory?.id === factory.id;
+                          const yieldColor = factory.stats.yieldRate >= 95 ? "#10b981" : factory.stats.yieldRate >= 90 ? "#f59e0b" : "#ef4444";
+                          
+                          return (
+                            <g key={factory.id} onClick={() => setSelectedFactory(factory)} style={{ cursor: "pointer" }}>
+                              {/* Pulse animation for selected */}
+                              {isSelected && (
+                                <circle cx={pos.x} cy={pos.y} r="25" fill={yieldColor} opacity="0.3">
+                                  <animate attributeName="r" values="20;35;20" dur="2s" repeatCount="indefinite" />
+                                  <animate attributeName="opacity" values="0.3;0.1;0.3" dur="2s" repeatCount="indefinite" />
+                                </circle>
+                              )}
+                              {/* Marker circle */}
+                              <circle 
+                                cx={pos.x} cy={pos.y} r={isSelected ? 15 : 12} 
+                                fill={yieldColor} 
+                                stroke="#fff" 
+                                strokeWidth="2"
+                                className="transition-all duration-300"
+                              />
+                              {/* Factory icon */}
+                              <text x={pos.x} y={pos.y + 4} textAnchor="middle" fill="#fff" fontSize="10" fontWeight="bold">
+                                {factory.code.substring(0, 2)}
+                              </text>
+                              {/* Label */}
+                              <rect x={pos.x - 40} y={pos.y + 20} width="80" height="24" rx="4" fill="rgba(0,0,0,0.8)" />
+                              <text x={pos.x} y={pos.y + 36} textAnchor="middle" fill="#fff" fontSize="10">
+                                {factory.name.length > 12 ? factory.name.substring(0, 12) + "..." : factory.name}
+                              </text>
+                            </g>
+                          );
+                        })}
+                        
+                        {/* Legend */}
+                        <g transform="translate(20, 420)">
+                          <rect x="0" y="0" width="150" height="60" rx="4" fill="rgba(0,0,0,0.7)" />
+                          <text x="10" y="18" fill="#fff" fontSize="11" fontWeight="bold">Chú thích</text>
+                          <circle cx="20" cy="35" r="6" fill="#10b981" />
+                          <text x="35" y="38" fill="#94a3b8" fontSize="9">≥ 95% Yield</text>
+                          <circle cx="90" cy="35" r="6" fill="#f59e0b" />
+                          <text x="105" y="38" fill="#94a3b8" fontSize="9">≥ 90%</text>
+                          <circle cx="20" cy="52" r="6" fill="#ef4444" />
+                          <text x="35" y="55" fill="#94a3b8" fontSize="9">&lt; 90%</text>
+                        </g>
+                      </svg>
+                    </div>
+                  </div>
                 ) : (
                   <Suspense fallback={
                     <div className="flex items-center justify-center h-[600px] text-muted-foreground">

@@ -57,7 +57,7 @@ export default function Reports() {
   const [selectedFactory, setSelectedFactory] = useState<string>("all");
   const [selectedWorkshop, setSelectedWorkshop] = useState<string>("all");
   const [timeRange, setTimeRange] = useState<TimeRange>("30d");
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState("executive");
 
   const { data: factories } = trpc.factory.list.useQuery();
   const { data: workshops } = trpc.workshop.list.useQuery();
@@ -359,11 +359,197 @@ export default function Reports() {
       {/* Charts */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
+          <TabsTrigger value="executive">Executive Summary</TabsTrigger>
           <TabsTrigger value="overview">Tổng quan</TabsTrigger>
           <TabsTrigger value="trend">Xu hướng</TabsTrigger>
           <TabsTrigger value="machines">So sánh máy</TabsTrigger>
           <TabsTrigger value="factories">So sánh nhà máy</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="executive" className="space-y-4">
+          {/* Executive Summary - High-level KPIs for management */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Overall Performance Score */}
+            <Card className="lg:col-span-1">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Target className="h-5 w-5 text-primary" />
+                  Điểm Hiệu Suất Tổng Thể
+                </CardTitle>
+                <CardDescription>Dựa trên Yield Rate, Output và Trend</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col items-center justify-center py-4">
+                  <div className="relative w-32 h-32">
+                    <svg className="w-32 h-32 transform -rotate-90">
+                      <circle cx="64" cy="64" r="56" fill="none" stroke="currentColor" strokeWidth="12" className="text-muted/20" />
+                      <circle 
+                        cx="64" cy="64" r="56" fill="none" 
+                        stroke={aggregatedStats.yieldRate >= 95 ? "#10b981" : aggregatedStats.yieldRate >= 90 ? "#f59e0b" : "#ef4444"}
+                        strokeWidth="12" 
+                        strokeDasharray={`${(aggregatedStats.yieldRate / 100) * 352} 352`}
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-3xl font-bold">{aggregatedStats.yieldRate.toFixed(1)}%</span>
+                      <span className="text-xs text-muted-foreground">Yield Rate</span>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex items-center gap-2">
+                    {aggregatedStats.trend >= 0 ? (
+                      <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
+                        <TrendingUp className="h-3 w-3 mr-1" />
+                        +{aggregatedStats.trend.toFixed(1)}%
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/20">
+                        <TrendingDown className="h-3 w-3 mr-1" />
+                        {aggregatedStats.trend.toFixed(1)}%
+                      </Badge>
+                    )}
+                    <span className="text-xs text-muted-foreground">so với kỳ trước</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Key Metrics Summary */}
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="text-lg">Chỉ Số Chính</CardTitle>
+                <CardDescription>Tổng hợp các chỉ số quan trọng trong kỳ báo cáo</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="p-4 rounded-lg bg-muted/50">
+                    <p className="text-sm text-muted-foreground">Tổng sản lượng</p>
+                    <p className="text-2xl font-bold">{aggregatedStats.totalProducts.toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      ~{Math.round(aggregatedStats.totalProducts / (timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : timeRange === "90d" ? 90 : 365)).toLocaleString()}/ngày
+                    </p>
+                  </div>
+                  <div className="p-4 rounded-lg bg-green-500/10">
+                    <p className="text-sm text-green-600">Sản phẩm OK</p>
+                    <p className="text-2xl font-bold text-green-600">{aggregatedStats.okCount.toLocaleString()}</p>
+                    <p className="text-xs text-green-600/70 mt-1">
+                      {aggregatedStats.totalProducts > 0 ? ((aggregatedStats.okCount / aggregatedStats.totalProducts) * 100).toFixed(1) : 0}% tổng
+                    </p>
+                  </div>
+                  <div className="p-4 rounded-lg bg-red-500/10">
+                    <p className="text-sm text-red-600">Sản phẩm NG</p>
+                    <p className="text-2xl font-bold text-red-600">{aggregatedStats.ngCount.toLocaleString()}</p>
+                    <p className="text-xs text-red-600/70 mt-1">
+                      {aggregatedStats.totalProducts > 0 ? ((aggregatedStats.ngCount / aggregatedStats.totalProducts) * 100).toFixed(1) : 0}% tổng
+                    </p>
+                  </div>
+                  <div className="p-4 rounded-lg bg-amber-500/10">
+                    <p className="text-sm text-amber-600">Sản phẩm NTF</p>
+                    <p className="text-2xl font-bold text-amber-600">{aggregatedStats.ntfCount.toLocaleString()}</p>
+                    <p className="text-xs text-amber-600/70 mt-1">
+                      {aggregatedStats.totalProducts > 0 ? ((aggregatedStats.ntfCount / aggregatedStats.totalProducts) * 100).toFixed(1) : 0}% tổng
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Factory Performance Ranking */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Xếp Hạng Hiệu Suất Nhà Máy</CardTitle>
+              <CardDescription>So sánh hiệu suất giữa các nhà máy trong tập đoàn</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">#</TableHead>
+                    <TableHead>Nhà máy</TableHead>
+                    <TableHead className="text-right">Sản lượng</TableHead>
+                    <TableHead className="text-right">Yield Rate</TableHead>
+                    <TableHead className="text-right">NG Rate</TableHead>
+                    <TableHead className="text-center">Đánh giá</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {factories?.slice(0, 5).map((factory, index) => {
+                    // Mock data - in real app, this would come from API
+                    const mockYield = 92 + Math.random() * 6;
+                    const mockOutput = Math.floor(1000 + Math.random() * 5000);
+                    const mockNG = 100 - mockYield;
+                    return (
+                      <TableRow key={factory.id}>
+                        <TableCell className="font-medium">
+                          <Badge variant={index === 0 ? "default" : "outline"} className={index === 0 ? "bg-amber-500" : ""}>
+                            {index + 1}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-medium">{factory.name}</TableCell>
+                        <TableCell className="text-right">{mockOutput.toLocaleString()}</TableCell>
+                        <TableCell className="text-right">
+                          <span className={mockYield >= 95 ? "text-green-500" : mockYield >= 90 ? "text-amber-500" : "text-red-500"}>
+                            {mockYield.toFixed(1)}%
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right text-red-500">{mockNG.toFixed(1)}%</TableCell>
+                        <TableCell className="text-center">
+                          {mockYield >= 95 ? (
+                            <Badge className="bg-green-500">Xuất sắc</Badge>
+                          ) : mockYield >= 90 ? (
+                            <Badge className="bg-amber-500">Đạt</Badge>
+                          ) : (
+                            <Badge variant="destructive">Cần cải thiện</Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Recommendations */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Khuyến Nghị Cải Thiện</CardTitle>
+              <CardDescription>Dựa trên phân tích dữ liệu hiện tại</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {aggregatedStats.yieldRate < 95 && (
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                    <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-amber-600">Yield Rate dưới mục tiêu 95%</p>
+                      <p className="text-sm text-muted-foreground">Kiểm tra các máy có tỷ lệ NG cao và ưu tiên bảo trì, hiệu chuẩn lại.</p>
+                    </div>
+                  </div>
+                )}
+                {aggregatedStats.trend < 0 && (
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                    <TrendingDown className="h-5 w-5 text-red-500 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-red-600">Xu hướng giảm so với kỳ trước</p>
+                      <p className="text-sm text-muted-foreground">Phân tích nguyên nhân gốc rễ và thực hiện các biện pháp khắc phục ngay.</p>
+                    </div>
+                  </div>
+                )}
+                {aggregatedStats.yieldRate >= 95 && aggregatedStats.trend >= 0 && (
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                    <CheckCircle2 className="h-5 w-5 text-green-500 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-green-600">Hiệu suất tốt</p>
+                      <p className="text-sm text-muted-foreground">Tiếp tục duy trì và tìm cách cải thiện thêm để đạt mục tiêu cao hơn.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="overview" className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

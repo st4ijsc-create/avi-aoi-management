@@ -36,6 +36,13 @@
       "when": 1768273608727,
       "tag": "0004_talented_paladin",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1768275850166,
+      "tag": "0005_cuddly_loners",
+      "breakpoints": true
     }
   ]
 }
