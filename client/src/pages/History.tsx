@@ -17,20 +17,28 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
+  AlertCircle,
   History as HistoryIcon,
   Download,
   Loader2,
   BarChart3,
   TrendingUp,
+  TrendingDown,
   PieChart,
   Target,
-  Activity
+  Activity,
+  Brain,
+  Lightbulb,
+  ArrowUp,
+  ArrowDown,
+  Minus
 } from "lucide-react";
 import { toast } from "sonner";
 import { navItems } from "@/lib/navigation";
 import { useState, useMemo } from "react";
 import { Link } from "wouter";
-import { format } from "date-fns";
+import { format, subDays, startOfDay, endOfDay } from "date-fns";
+import { vi } from "date-fns/locale";
 import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 
 export default function History() {
@@ -42,12 +50,44 @@ export default function History() {
     machineCode: "",
     serialNumber: "",
     result: "all" as "all" | "OK" | "NG" | "NTF",
+    dateRange: "all" as "all" | "today" | "week" | "month" | "custom",
+    startDate: "",
+    endDate: "",
   });
   const [page, setPage] = useState(1);
   const [activeTab, setActiveTab] = useState("list");
   const [analysisLimit, setAnalysisLimit] = useState(100);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const limit = 20;
+
+  // Calculate date range based on selection
+  const dateRangeValues = useMemo(() => {
+    const now = new Date();
+    switch (filters.dateRange) {
+      case "today":
+        return {
+          startDate: startOfDay(now),
+          endDate: endOfDay(now),
+        };
+      case "week":
+        return {
+          startDate: startOfDay(subDays(now, 7)),
+          endDate: endOfDay(now),
+        };
+      case "month":
+        return {
+          startDate: startOfDay(subDays(now, 30)),
+          endDate: endOfDay(now),
+        };
+      case "custom":
+        return {
+          startDate: filters.startDate ? new Date(filters.startDate) : undefined,
+          endDate: filters.endDate ? endOfDay(new Date(filters.endDate)) : undefined,
+        };
+      default:
+        return { startDate: undefined, endDate: undefined };
+    }
+  }, [filters.dateRange, filters.startDate, filters.endDate]);
 
   const { data, isLoading, refetch } = trpc.inspection.search.useQuery({
     factoryCode: filters.factoryCode || undefined,
@@ -57,6 +97,8 @@ export default function History() {
     machineCode: filters.machineCode || undefined,
     serialNumber: filters.serialNumber || undefined,
     result: filters.result !== "all" ? filters.result : undefined,
+    startDate: dateRangeValues.startDate,
+    endDate: dateRangeValues.endDate,
     limit,
     offset: (page - 1) * limit,
   });
@@ -70,11 +112,26 @@ export default function History() {
     machineCode: filters.machineCode || undefined,
     serialNumber: filters.serialNumber || undefined,
     result: filters.result !== "all" ? filters.result : undefined,
+    startDate: dateRangeValues.startDate,
+    endDate: dateRangeValues.endDate,
     limit: analysisLimit, // Progressive loading for analysis
     offset: 0,
   });
 
   const { data: machines } = trpc.machine.list.useQuery();
+
+  // Fetch top NG measurement points
+  const { data: topNGPoints } = trpc.inspection.topNGPoints.useQuery({
+    startDate: dateRangeValues.startDate,
+    endDate: dateRangeValues.endDate,
+    limit: 10,
+  });
+
+  // Fetch AI analysis data
+  const { data: aiAnalysis, isLoading: isLoadingAI } = trpc.inspection.aiAnalysis.useQuery({
+    startDate: dateRangeValues.startDate,
+    endDate: dateRangeValues.endDate,
+  });
 
   const totalPages = useMemo(() => {
     if (!data?.total) return 1;
@@ -183,6 +240,9 @@ export default function History() {
       machineCode: "",
       serialNumber: "",
       result: "all",
+      dateRange: "all",
+      startDate: "",
+      endDate: "",
     });
     setPage(1);
   };
@@ -404,6 +464,44 @@ export default function History() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <label className="text-sm text-muted-foreground">Khoảng thời gian</label>
+                <Select 
+                  value={filters.dateRange} 
+                  onValueChange={(value) => setFilters({ ...filters, dateRange: value as typeof filters.dateRange })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tất cả</SelectItem>
+                    <SelectItem value="today">Hôm nay</SelectItem>
+                    <SelectItem value="week">7 ngày qua</SelectItem>
+                    <SelectItem value="month">30 ngày qua</SelectItem>
+                    <SelectItem value="custom">Tùy chọn</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {filters.dateRange === "custom" && (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-sm text-muted-foreground">Từ ngày</label>
+                    <Input
+                      type="date"
+                      value={filters.startDate}
+                      onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm text-muted-foreground">Đến ngày</label>
+                    <Input
+                      type="date"
+                      value={filters.endDate}
+                      onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+                    />
+                  </div>
+                </>
+              )}
               <div className="flex items-end gap-2">
                 <Button onClick={handleSearch} className="gap-2">
                   <Search className="h-4 w-4" />
@@ -419,7 +517,7 @@ export default function History() {
 
         {/* Tabs: List and Analysis */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full max-w-lg grid-cols-3">
+          <TabsList className="grid w-full max-w-2xl grid-cols-4">
             <TabsTrigger value="list" className="gap-2">
               <HistoryIcon className="h-4 w-4" />
               Danh sách
@@ -431,6 +529,10 @@ export default function History() {
             <TabsTrigger value="spc" className="gap-2">
               <TrendingUp className="h-4 w-4" />
               SPC
+            </TabsTrigger>
+            <TabsTrigger value="ai" className="gap-2">
+              <Activity className="h-4 w-4" />
+              AI Analysis
             </TabsTrigger>
           </TabsList>
 
@@ -746,6 +848,58 @@ export default function History() {
                       Tải thêm dữ liệu ({analysisLimit}/{allData?.total || 0})
                     </Button>
                   </div>
+                )}
+
+                {/* Top NG Measurement Points */}
+                {topNGPoints && topNGPoints.length > 0 && (
+                  <Card className="glass-card">
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <AlertCircle className="h-5 w-5 text-destructive" />
+                        Top Điểm Đo Lỗi Nhiều Nhất
+                      </CardTitle>
+                      <CardDescription>
+                        Những điểm đo có tỷ lệ NG cao nhất cần ưu tiên cải thiện
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        {topNGPoints.map((point, index) => (
+                          <div 
+                            key={point.pointDefId} 
+                            className="flex items-center gap-4 p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
+                          >
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                              index === 0 ? 'bg-destructive text-destructive-foreground' :
+                              index === 1 ? 'bg-warning text-warning-foreground' :
+                              index === 2 ? 'bg-primary text-primary-foreground' :
+                              'bg-muted text-muted-foreground'
+                            }`}>
+                              {index + 1}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-sm text-primary">{point.code}</span>
+                                <span className="text-foreground font-medium truncate">{point.name}</span>
+                              </div>
+                              <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+                                <span className="text-destructive font-medium">{point.ngCount} NG</span>
+                                <span>{point.percentage.toFixed(1)}% của tổng NG</span>
+                              </div>
+                            </div>
+                            <div className="w-24">
+                              <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-destructive rounded-full transition-all"
+                                  style={{ width: `${Math.min(point.percentage, 100)}%` }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
                 )}
 
                 {/* Product Model Stats */}
@@ -1160,6 +1314,204 @@ export default function History() {
                     <TrendingUp className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
                     <p className="text-muted-foreground">Không có dữ liệu để phân tích SPC</p>
                     <p className="text-sm text-muted-foreground mt-1">Thử tìm kiếm với bộ lọc khác</p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </TabsContent>
+
+          {/* AI Analysis Tab */}
+          <TabsContent value="ai">
+            <div className="space-y-6">
+              {/* AI Header */}
+              <Card className="glass-card bg-gradient-to-r from-primary/10 to-purple-500/10">
+                <CardHeader>
+                  <CardTitle className="text-xl flex items-center gap-3">
+                    <Brain className="h-6 w-6 text-primary" />
+                    Phân tích AI
+                  </CardTitle>
+                  <CardDescription>
+                    Dự đoán xu hướng và phát hiện bất thường bằng machine learning
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+
+              {isLoadingAI ? (
+                <Card className="glass-card">
+                  <CardContent className="py-12 text-center">
+                    <Loader2 className="h-12 w-12 mx-auto text-primary animate-spin mb-4" />
+                    <p className="text-muted-foreground">Đang phân tích dữ liệu...</p>
+                  </CardContent>
+                </Card>
+              ) : aiAnalysis ? (
+                <>
+                  {/* Summary */}
+                  <Card className="glass-card">
+                    <CardContent className="pt-6">
+                      <p className="text-muted-foreground">{aiAnalysis.summary}</p>
+                    </CardContent>
+                  </Card>
+
+                  {/* Statistics Overview */}
+                  {aiAnalysis.statistics && (
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                      <Card className="glass-card">
+                        <CardContent className="pt-6 text-center">
+                          <p className="text-sm text-muted-foreground">Trung bình</p>
+                          <p className="text-2xl font-bold text-foreground">{aiAnalysis.statistics.mean.toFixed(1)}%</p>
+                        </CardContent>
+                      </Card>
+                      <Card className="glass-card">
+                        <CardContent className="pt-6 text-center">
+                          <p className="text-sm text-muted-foreground">Độ lệch chuẩn</p>
+                          <p className="text-2xl font-bold text-foreground">{aiAnalysis.statistics.stdDev.toFixed(2)}</p>
+                        </CardContent>
+                      </Card>
+                      <Card className="glass-card">
+                        <CardContent className="pt-6 text-center">
+                          <p className="text-sm text-muted-foreground">Thấp nhất</p>
+                          <p className="text-2xl font-bold text-destructive">{aiAnalysis.statistics.min.toFixed(1)}%</p>
+                        </CardContent>
+                      </Card>
+                      <Card className="glass-card">
+                        <CardContent className="pt-6 text-center">
+                          <p className="text-sm text-muted-foreground">Cao nhất</p>
+                          <p className="text-2xl font-bold text-success">{aiAnalysis.statistics.max.toFixed(1)}%</p>
+                        </CardContent>
+                      </Card>
+                      <Card className="glass-card">
+                        <CardContent className="pt-6 text-center">
+                          <p className="text-sm text-muted-foreground">Hiện tại</p>
+                          <p className={`text-2xl font-bold ${
+                            aiAnalysis.statistics.current >= 95 ? 'text-success' :
+                            aiAnalysis.statistics.current >= 90 ? 'text-warning' : 'text-destructive'
+                          }`}>{aiAnalysis.statistics.current.toFixed(1)}%</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  )}
+
+                  {/* Trend Prediction */}
+                  {aiAnalysis.trendPrediction && (
+                    <Card className="glass-card">
+                      <CardHeader>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          {aiAnalysis.trendPrediction.trend === 'increasing' ? (
+                            <ArrowUp className="h-5 w-5 text-success" />
+                          ) : aiAnalysis.trendPrediction.trend === 'decreasing' ? (
+                            <ArrowDown className="h-5 w-5 text-destructive" />
+                          ) : (
+                            <Minus className="h-5 w-5 text-muted-foreground" />
+                          )}
+                          Dự đoán xu hướng
+                          <Badge variant={aiAnalysis.trendPrediction.trend === 'increasing' ? 'default' : 
+                            aiAnalysis.trendPrediction.trend === 'decreasing' ? 'destructive' : 'secondary'}>
+                            {aiAnalysis.trendPrediction.trend === 'increasing' ? 'Tăng' :
+                             aiAnalysis.trendPrediction.trend === 'decreasing' ? 'Giảm' : 'Ổn định'}
+                          </Badge>
+                        </CardTitle>
+                        <CardDescription>
+                          Dự đoán Yield Rate cho 7 ngày tới (Linear Regression, độ tin cậy: {aiAnalysis.trendPrediction.confidence.toFixed(0)}%)
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="h-[250px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={aiAnalysis.trendPrediction.predictions}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                              <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
+                              <YAxis stroke="#9ca3af" fontSize={12} domain={[80, 100]} />
+                              <Tooltip 
+                                contentStyle={{ 
+                                  backgroundColor: '#1f2937', 
+                                  border: '1px solid #374151',
+                                  borderRadius: '8px'
+                                }}
+                                formatter={(value: number) => [`${value.toFixed(1)}%`, 'Dự đoán Yield']}
+                              />
+                              <Bar dataKey="predictedYield" name="Dự đoán" fill="#14b8a6" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Anomalies */}
+                  {aiAnalysis.anomalies && aiAnalysis.anomalies.length > 0 && (
+                    <Card className="glass-card border-warning/50">
+                      <CardHeader>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <AlertTriangle className="h-5 w-5 text-warning" />
+                          Phát hiện bất thường
+                          <Badge variant="outline" className="ml-2">{aiAnalysis.anomalies.length} điểm</Badge>
+                        </CardTitle>
+                        <CardDescription>
+                          Các ngày có Yield Rate bất thường (vượt 2σ)
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          {aiAnalysis.anomalies.map((anomaly, index) => (
+                            <div 
+                              key={index}
+                              className={`p-4 rounded-lg flex items-center justify-between ${
+                                anomaly.severity === 'critical' ? 'bg-destructive/20' : 'bg-warning/20'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                {anomaly.type === 'low' ? (
+                                  <TrendingDown className={`h-5 w-5 ${
+                                    anomaly.severity === 'critical' ? 'text-destructive' : 'text-warning'
+                                  }`} />
+                                ) : (
+                                  <TrendingUp className="h-5 w-5 text-success" />
+                                )}
+                                <div>
+                                  <span className="font-medium text-foreground block">{anomaly.date}</span>
+                                  <span className="text-sm text-muted-foreground block">
+                                    Yield: {anomaly.yieldRate.toFixed(1)}% ({anomaly.deviation > 0 ? '+' : ''}{anomaly.deviation.toFixed(1)}% so với TB)
+                                  </span>
+                                </div>
+                              </div>
+                              <Badge variant={anomaly.severity === 'critical' ? 'destructive' : 'secondary'}>
+                                {anomaly.severity === 'critical' ? 'Nghiêm trọng' : 'Cảnh báo'}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Recommendations */}
+                  {aiAnalysis.recommendations && aiAnalysis.recommendations.length > 0 && (
+                    <Card className="glass-card">
+                      <CardHeader>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <Lightbulb className="h-5 w-5 text-yellow-500" />
+                          Khuyến nghị cải thiện
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          {aiAnalysis.recommendations.map((rec, index) => (
+                            <div key={index} className="p-4 rounded-lg bg-secondary/30 flex items-start gap-3">
+                              <span className="text-lg">{rec.split(' ')[0]}</span>
+                              <p className="text-foreground">{rec.substring(rec.indexOf(' ') + 1)}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </>
+              ) : (
+                <Card className="glass-card">
+                  <CardContent className="py-12 text-center">
+                    <Brain className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+                    <p className="text-muted-foreground">Không có dữ liệu để phân tích AI</p>
+                    <p className="text-sm text-muted-foreground mt-1">Cần tối thiểu 3 ngày dữ liệu để dự đoán xu hướng</p>
                   </CardContent>
                 </Card>
               )}

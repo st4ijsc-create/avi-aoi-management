@@ -15,7 +15,9 @@ import {
   dailyStatistics, InsertDailyStatistics,
   productModels, InsertProductModel,
   workshopPositions, InsertWorkshopPosition,
-  factoryPositions, InsertFactoryPosition
+  factoryPositions, InsertFactoryPosition,
+  alertSettings, InsertAlertSetting,
+  alertHistory, InsertAlertHistory
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -648,15 +650,61 @@ export async function upsertDailyStatistics(data: InsertDailyStatistics) {
   });
 }
 
-export async function getDailyStatistics(machineId: number, startDate: Date, endDate: Date) {
+export async function getDailyStatistics(params: {
+  machineId?: number;
+  startDate?: Date;
+  endDate?: Date;
+} | number, startDateArg?: Date, endDateArg?: Date) {
   const db = await getDb();
   if (!db) return [];
+
+  // Support both old and new API
+  let machineId: number | undefined;
+  let startDate: Date | undefined;
+  let endDate: Date | undefined;
+
+  if (typeof params === 'number') {
+    // Old API: getDailyStatistics(machineId, startDate, endDate)
+    machineId = params;
+    startDate = startDateArg;
+    endDate = endDateArg;
+  } else {
+    // New API: getDailyStatistics({ machineId?, startDate?, endDate? })
+    machineId = params.machineId;
+    startDate = params.startDate;
+    endDate = params.endDate;
+  }
+
+  const conditions = [];
+  if (machineId) conditions.push(eq(dailyStatistics.machineId, machineId));
+  if (startDate) conditions.push(gte(dailyStatistics.date, startDate));
+  if (endDate) conditions.push(lte(dailyStatistics.date, endDate));
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  // If no machineId, aggregate across all machines
+  if (!machineId) {
+    const result = await db.select({
+      date: dailyStatistics.date,
+      okCount: sql<number>`SUM(${dailyStatistics.okCount})`.as('ok_count'),
+      ngCount: sql<number>`SUM(${dailyStatistics.ngCount})`.as('ng_count'),
+      ntfCount: sql<number>`SUM(${dailyStatistics.ntfCount})`.as('ntf_count'),
+    })
+      .from(dailyStatistics)
+      .where(whereClause)
+      .groupBy(dailyStatistics.date)
+      .orderBy(dailyStatistics.date);
+    
+    return result.map(r => ({
+      date: r.date,
+      okCount: Number(r.okCount) || 0,
+      ngCount: Number(r.ngCount) || 0,
+      ntfCount: Number(r.ntfCount) || 0,
+    }));
+  }
+
   return db.select().from(dailyStatistics)
-    .where(and(
-      eq(dailyStatistics.machineId, machineId),
-      gte(dailyStatistics.date, startDate),
-      lte(dailyStatistics.date, endDate)
-    ))
+    .where(whereClause)
     .orderBy(dailyStatistics.date);
 }
 
@@ -898,6 +946,87 @@ export async function searchInspections(params: {
   return { data, total: countResult[0]?.count || 0 };
 }
 
+// ============ TOP NG MEASUREMENT POINTS ============
+export async function getTopNGMeasurementPoints(params: {
+  machineId?: number;
+  startDate?: Date;
+  endDate?: Date;
+  limit?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions = [eq(measurementResults.result, 'NG')];
+  
+  if (params.machineId) {
+    // Get inspections for this machine first
+    const inspectionIds = await db.select({ id: productInspections.id })
+      .from(productInspections)
+      .where(eq(productInspections.machineId, params.machineId));
+    if (inspectionIds.length > 0) {
+      conditions.push(sql`${measurementResults.inspectionId} IN (${inspectionIds.map(i => i.id).join(',')})`);
+    } else {
+      return [];
+    }
+  }
+
+  if (params.startDate || params.endDate) {
+    // Filter by inspection time
+    const inspectionConditions = [];
+    if (params.startDate) inspectionConditions.push(gte(productInspections.inspectionTime, params.startDate));
+    if (params.endDate) inspectionConditions.push(lte(productInspections.inspectionTime, params.endDate));
+    
+    const inspectionIds = await db.select({ id: productInspections.id })
+      .from(productInspections)
+      .where(and(...inspectionConditions));
+    
+    if (inspectionIds.length > 0) {
+      conditions.push(sql`${measurementResults.inspectionId} IN (${inspectionIds.map(i => i.id).join(',')})`);
+    } else {
+      return [];
+    }
+  }
+
+  const result = await db.select({
+    pointDefId: measurementResults.pointDefId,
+    ngCount: sql<number>`count(*)`.as('ng_count'),
+  })
+    .from(measurementResults)
+    .where(and(...conditions))
+    .groupBy(measurementResults.pointDefId)
+    .orderBy(desc(sql`ng_count`))
+    .limit(params.limit || 10);
+
+  // Get point definition details
+  const pointDefIds = result.map(r => r.pointDefId);
+  if (pointDefIds.length === 0) return [];
+
+  const pointDefs = await db.select()
+    .from(measurementPointDefs)
+    .where(sql`${measurementPointDefs.id} IN (${pointDefIds.join(',')})`);
+
+  const pointDefMap = new Map(pointDefs.map(p => [p.id, p]));
+
+  // Get total NG count for percentage calculation
+  const totalNGResult = await db.select({
+    total: sql<number>`count(*)`.as('total'),
+  })
+    .from(measurementResults)
+    .where(and(...conditions));
+  const totalNG = totalNGResult[0]?.total || 0;
+
+  return result.map(r => {
+    const pointDef = pointDefMap.get(r.pointDefId);
+    return {
+      pointDefId: r.pointDefId,
+      code: pointDef?.code || 'Unknown',
+      name: pointDef?.name || 'Unknown',
+      ngCount: Number(r.ngCount),
+      percentage: totalNG > 0 ? (Number(r.ngCount) / totalNG * 100) : 0,
+    };
+  });
+}
+
 // ============ SEED DATA FUNCTIONS ============
 export async function seedSampleData() {
   const db = await getDb();
@@ -1026,6 +1155,79 @@ export async function seedSampleData() {
     productModels: 1,
     measurementPoints: 30
   };
+}
+
+// ============ ALERT SETTINGS FUNCTIONS ============
+export async function getAlertSettings(userId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  if (userId) {
+    return db.select().from(alertSettings)
+      .where(eq(alertSettings.userId, userId))
+      .orderBy(desc(alertSettings.createdAt));
+  }
+  return db.select().from(alertSettings)
+    .orderBy(desc(alertSettings.createdAt));
+}
+
+export async function getAlertSettingById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(alertSettings)
+    .where(eq(alertSettings.id, id))
+    .limit(1);
+  return result[0];
+}
+
+export async function createAlertSetting(data: InsertAlertSetting) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(alertSettings).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function updateAlertSetting(id: number, data: Partial<InsertAlertSetting>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(alertSettings).set(data).where(eq(alertSettings.id, id));
+}
+
+export async function deleteAlertSetting(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(alertSettings).where(eq(alertSettings.id, id));
+}
+
+export async function getAlertHistory(alertSettingId?: number, limit: number = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  if (alertSettingId) {
+    return db.select().from(alertHistory)
+      .where(eq(alertHistory.alertSettingId, alertSettingId))
+      .orderBy(desc(alertHistory.createdAt))
+      .limit(limit);
+  }
+  return db.select().from(alertHistory)
+    .orderBy(desc(alertHistory.createdAt))
+    .limit(limit);
+}
+
+export async function createAlertHistory(data: InsertAlertHistory) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(alertHistory).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function acknowledgeAlert(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(alertHistory).set({
+    acknowledgedAt: new Date(),
+    acknowledgedBy: userId,
+  }).where(eq(alertHistory.id, id));
 }
 
 // Generate sample inspection data for testing

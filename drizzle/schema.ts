@@ -375,3 +375,54 @@ export const factoryPositions = mysqlTable("factory_positions", {
 
 export type FactoryPosition = typeof factoryPositions.$inferSelect;
 export type InsertFactoryPosition = typeof factoryPositions.$inferInsert;
+
+/**
+ * Alert Settings - Cấu hình cảnh báo
+ */
+export const alertSettings = mysqlTable("alert_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // Người tạo cảnh báo
+  name: varchar("name", { length: 255 }).notNull(),
+  alertType: mysqlEnum("alertType", ["yield_rate", "ng_count", "machine_status"]).notNull(),
+  threshold: decimal("threshold", { precision: 10, scale: 2 }).notNull(), // Ngưỡng cảnh báo
+  comparisonOperator: mysqlEnum("comparisonOperator", ["lt", "lte", "gt", "gte", "eq"]).default("lt").notNull(),
+  machineId: int("machineId"), // Null = tất cả máy
+  factoryId: int("factoryId"), // Null = tất cả nhà máy
+  isActive: boolean("isActive").default(true).notNull(),
+  notifyEmail: boolean("notifyEmail").default(true).notNull(),
+  notifySms: boolean("notifySms").default(false).notNull(),
+  notifyInApp: boolean("notifyInApp").default(true).notNull(),
+  cooldownMinutes: int("cooldownMinutes").default(60).notNull(), // Thời gian chờ giữa các cảnh báo
+  lastTriggeredAt: timestamp("lastTriggeredAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_alert_user").on(table.userId),
+  index("idx_alert_active").on(table.isActive),
+  index("idx_alert_type").on(table.alertType),
+]);
+
+export type AlertSetting = typeof alertSettings.$inferSelect;
+export type InsertAlertSetting = typeof alertSettings.$inferInsert;
+
+/**
+ * Alert History - Lịch sử cảnh báo đã gửi
+ */
+export const alertHistory = mysqlTable("alert_history", {
+  id: int("id").autoincrement().primaryKey(),
+  alertSettingId: int("alertSettingId").notNull(),
+  triggeredValue: decimal("triggeredValue", { precision: 10, scale: 2 }).notNull(),
+  message: text("message").notNull(),
+  sentEmail: boolean("sentEmail").default(false).notNull(),
+  sentSms: boolean("sentSms").default(false).notNull(),
+  sentInApp: boolean("sentInApp").default(false).notNull(),
+  acknowledgedAt: timestamp("acknowledgedAt"),
+  acknowledgedBy: int("acknowledgedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_alert_history_setting").on(table.alertSettingId),
+  index("idx_alert_history_created").on(table.createdAt),
+]);
+
+export type AlertHistory = typeof alertHistory.$inferSelect;
+export type InsertAlertHistory = typeof alertHistory.$inferInsert;

@@ -252,3 +252,37 @@
 
 - [x] Fix HTML nesting error: <p> cannot contain nested <div> in History page
 - [x] Fix NaN CSS left value error in InspectionDetail page
+
+
+## Phase 21: Advanced Features
+
+### Date Filter & Status Filter for History
+- [x] Add date range picker (from date - to date) in History filter
+- [x] Add quick date range options (today, 7 days, 30 days, custom)
+- [x] Update API to support date range filtering
+- [x] Integrate date picker with search functionality
+
+### Top NG Measurement Points Analysis
+- [x] Create API to aggregate NG count by measurement point
+- [x] Build Top NG measurement points chart in Analysis tab
+- [x] Show measurement point name, NG count, and percentage
+- [x] Visual progress bar showing percentage of total NG
+### AI Analysis - Trend Prediction & Anomaly Detection
+- [x] Implement trend prediction using linear regression
+- [x] Add anomaly detection based on statistical methods (Z-score)
+- [x] Create AI Analysis tab in History module
+- [x] Display predictions chart for next 7 days
+- [x] Show anomaly alerts with severity levels
+- [x] Generate recommendations based on analysis
+- [x] Statistics overview (mean, stdDev, min, max, current)recommendations
+
+### Email/SMS Alerts
+- [x] Create alert configuration UI (new /alerts page)
+- [x] Set yield rate threshold for alerts
+- [x] Implement alert trigger logic in backend
+- [x] Send notification when yield rate drops below threshold
+- [x] Create alert history log
+- [x] Alert CRUD operations (create, update, delete)
+- [x] Toggle active/inactive alerts
+- [x] Acknowledge alerts in history
+- [x] Test notification functionality

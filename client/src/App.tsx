@@ -14,6 +14,7 @@ import ApiDocs from "./pages/ApiDocs";
 import ProductModels from "./pages/ProductModels";
 import CorporateLayout from "./pages/CorporateLayout";
 import Reports from "./pages/Reports";
+import Alerts from "./pages/Alerts";
 
 function Router() {
   return (
@@ -29,6 +30,7 @@ function Router() {
       <Route path="/products" component={ProductModels} />
       <Route path="/corporate-layout" component={CorporateLayout} />
       <Route path="/reports" component={Reports} />
+      <Route path="/alerts" component={Alerts} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
