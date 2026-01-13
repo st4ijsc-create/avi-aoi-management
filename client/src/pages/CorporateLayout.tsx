@@ -38,6 +38,16 @@ export default function CorporateLayout() {
   const [zoom, setZoom] = useState(1);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Drag & drop state
+  const [isDragging, setIsDragging] = useState(false);
+  const [draggedFactoryId, setDraggedFactoryId] = useState<number | null>(null);
+  const [factoryPositions, setFactoryPositions] = useState<Record<number, { x: number; y: number }>>({
+    1: { x: 0.3, y: 100 },
+    2: { x: 0.5, y: 280 },
+    3: { x: 0.7, y: 450 },
+  });
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
   const { data: factories } = trpc.factory.list.useQuery();
   const { data: workshops } = trpc.workshop.list.useQuery();
@@ -121,15 +131,10 @@ export default function CorporateLayout() {
       ctx.stroke();
     }
 
-    // Draw factories as regions on a map
-    const regions = [
-      { name: "Miền Bắc", x: canvas.width * 0.3, y: 100 * zoom },
-      { name: "Miền Trung", x: canvas.width * 0.5, y: 280 * zoom },
-      { name: "Miền Nam", x: canvas.width * 0.7, y: 450 * zoom },
-    ];
-
+    // Draw factories as regions on a map using dynamic positions
     factoriesWithStats.forEach((factory, index) => {
-      const region = regions[index % regions.length];
+      const pos = factoryPositions[factory.id] || { x: 0.3 + (index * 0.2), y: 100 + (index * 180) };
+      const region = { x: canvas.width * pos.x, y: pos.y * zoom };
       const boxWidth = 280 * zoom;
       const boxHeight = 160 * zoom;
       const x = region.x - boxWidth / 2;
@@ -219,7 +224,9 @@ export default function CorporateLayout() {
 
       // Connection lines between factories
       if (index < factoriesWithStats.length - 1) {
-        const nextRegion = regions[(index + 1) % regions.length];
+        const nextFactory = factoriesWithStats[index + 1];
+        const nextPos = factoryPositions[nextFactory.id] || { x: 0.3 + ((index + 1) * 0.2), y: 100 + ((index + 1) * 180) };
+        const nextRegion = { x: canvas.width * nextPos.x, y: nextPos.y * zoom };
         ctx.strokeStyle = "rgba(6, 182, 212, 0.2)";
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 5]);
@@ -240,35 +247,93 @@ export default function CorporateLayout() {
     ctx.font = `${12 * zoom}px sans-serif`;
     ctx.fillText(`${factoriesWithStats.length} nhà máy | ${workshops?.length || 0} nhà xưởng`, 20, 50);
 
-  }, [viewMode, factoriesWithStats, selectedFactory, zoom, workshops?.length]);
+  }, [viewMode, factoriesWithStats, selectedFactory, zoom, workshops?.length, factoryPositions]);
 
-  // Handle canvas click
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  // Get factory at position
+  const getFactoryAtPosition = (mouseX: number, mouseY: number) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return null;
 
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    // Check if clicked on a factory
-    const regions = [
-      { x: canvas.width * 0.3, y: 100 * zoom },
-      { x: canvas.width * 0.5, y: 280 * zoom },
-      { x: canvas.width * 0.7, y: 450 * zoom },
-    ];
-
-    factoriesWithStats.forEach((factory, index) => {
-      const region = regions[index % regions.length];
+    for (const factory of factoriesWithStats) {
+      const pos = factoryPositions[factory.id] || { x: 0.3, y: 100 };
+      const region = { x: canvas.width * pos.x, y: pos.y * zoom };
       const boxWidth = 280 * zoom;
       const boxHeight = 160 * zoom;
       const boxX = region.x - boxWidth / 2;
       const boxY = region.y;
 
-      if (x >= boxX && x <= boxX + boxWidth && y >= boxY && y <= boxY + boxHeight) {
-        setSelectedFactory(factory);
+      if (mouseX >= boxX && mouseX <= boxX + boxWidth && mouseY >= boxY && mouseY <= boxY + boxHeight) {
+        return { factory, boxX, boxY };
       }
-    });
+    }
+    return null;
+  };
+
+  // Handle mouse down - start drag
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const result = getFactoryAtPosition(mouseX, mouseY);
+    if (result) {
+      setIsDragging(true);
+      setDraggedFactoryId(result.factory.id);
+      setSelectedFactory(result.factory);
+      setDragOffset({
+        x: mouseX - result.boxX - (140 * zoom), // center of box
+        y: mouseY - result.boxY,
+      });
+    }
+  };
+
+  // Handle mouse move - drag
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !isDragging || draggedFactoryId === null) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    // Calculate new position as percentage of canvas width and absolute y
+    const newX = (mouseX - dragOffset.x) / canvas.width;
+    const newY = (mouseY - dragOffset.y) / zoom;
+
+    // Clamp values
+    const clampedX = Math.max(0.15, Math.min(0.85, newX));
+    const clampedY = Math.max(50, Math.min(500, newY));
+
+    setFactoryPositions(prev => ({
+      ...prev,
+      [draggedFactoryId]: { x: clampedX, y: clampedY }
+    }));
+  };
+
+  // Handle mouse up - end drag
+  const handleMouseUp = () => {
+    setIsDragging(false);
+    setDraggedFactoryId(null);
+  };
+
+  // Handle canvas click (for selection when not dragging)
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isDragging) return;
+    
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const result = getFactoryAtPosition(mouseX, mouseY);
+    if (result) {
+      setSelectedFactory(result.factory);
+    }
   };
 
   if (authLoading) {
@@ -398,7 +463,11 @@ export default function CorporateLayout() {
                   <canvas
                     ref={canvasRef}
                     onClick={handleCanvasClick}
-                    className="cursor-pointer w-full"
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseUp}
+                    className={`w-full ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
                     style={{ minHeight: 600 }}
                   />
                 ) : viewMode === "MAP" ? (

@@ -376,7 +376,7 @@ export default function Layout() {
                           return (
                             <div
                               key={machine.id}
-                              className={`absolute rounded-lg border-2 shadow-lg transition-all hover:scale-105 ${getStatusColor(machine.stats.yieldRate)}`}
+                              className="absolute rounded-lg border-2 border-border/50 shadow-lg transition-all hover:scale-105 hover:border-primary/50 bg-card/80 backdrop-blur"
                               style={{
                                 left: machine.positionX,
                                 top: machine.positionY,
@@ -390,59 +390,25 @@ export default function Layout() {
                                   <img
                                     src={imageUrl}
                                     alt={machine.name}
-                                    className="w-full h-full object-cover opacity-80"
+                                    className="w-full h-full object-cover"
                                     draggable={false}
                                   />
-                                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                                 </div>
                               ) : (
-                                <div className="absolute inset-0 bg-card rounded-lg" />
+                                <div className="absolute inset-0 bg-muted/30 rounded-lg flex items-center justify-center">
+                                  <Cpu className="h-8 w-8 text-muted-foreground/50" />
+                                </div>
                               )}
 
-                              {/* Stats Overlay */}
-                              <div className="relative h-full p-2 flex flex-col">
-                                {/* Header */}
-                                <div className="flex items-center justify-between mb-1">
-                                  <div className="flex items-center gap-1">
-                                    <Cpu className="h-3 w-3 text-primary" />
-                                    <span className="text-xs font-semibold text-foreground truncate max-w-[60px]">
-                                      {machine.code}
-                                    </span>
-                                  </div>
-                                  {getStatusIcon(machine.stats.yieldRate)}
+                              {/* Simple Label Overlay */}
+                              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 rounded-b-lg">
+                                <div className="flex items-center gap-1">
+                                  <Cpu className="h-3 w-3 text-primary" />
+                                  <span className="text-xs font-semibold text-white truncate">
+                                    {machine.name}
+                                  </span>
                                 </div>
-
-                                <Badge variant="secondary" className="text-[10px] w-fit mb-1">
-                                  {machine.machineType}
-                                </Badge>
-
-                                {/* Stats Grid */}
-                                <div className="flex-1 grid grid-cols-2 gap-1 text-[10px]">
-                                  <div className="bg-background/60 rounded px-1 py-0.5 text-center">
-                                    <div className="text-muted-foreground">FPY</div>
-                                    <div className="font-bold text-primary">
-                                      {machine.stats.yieldRate.toFixed(1)}%
-                                    </div>
-                                  </div>
-                                  <div className="bg-background/60 rounded px-1 py-0.5 text-center">
-                                    <div className="text-muted-foreground">Output</div>
-                                    <div className="font-bold text-foreground">
-                                      {machine.stats.total}
-                                    </div>
-                                  </div>
-                                  <div className="bg-background/60 rounded px-1 py-0.5 text-center">
-                                    <div className="text-muted-foreground">OK</div>
-                                    <div className="font-bold text-green-500">
-                                      {machine.stats.ok}
-                                    </div>
-                                  </div>
-                                  <div className="bg-background/60 rounded px-1 py-0.5 text-center">
-                                    <div className="text-muted-foreground">NG</div>
-                                    <div className="font-bold text-red-500">
-                                      {machine.stats.ng}
-                                    </div>
-                                  </div>
-                                </div>
+                                <span className="text-[10px] text-white/70">{machine.code}</span>
                               </div>
                             </div>
                           );
@@ -465,25 +431,7 @@ export default function Layout() {
                 </CardContent>
               </Card>
 
-              {/* Legend */}
-              <Card className="glass-card">
-                <CardContent className="py-4">
-                  <div className="flex items-center justify-center gap-8 text-sm">
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 rounded border-2 border-green-500" />
-                      <span className="text-muted-foreground">FPY ≥ 98%</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 rounded border-2 border-yellow-500" />
-                      <span className="text-muted-foreground">FPY 95-98%</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 rounded border-2 border-red-500" />
-                      <span className="text-muted-foreground">FPY &lt; 95%</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              
             </TabsContent>
 
             {/* Edit Mode */}

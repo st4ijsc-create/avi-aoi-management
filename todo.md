@@ -632,3 +632,13 @@
 - [x] Realtime update với WebSocket (sử dụng onlineMachines state)
 - [x] Link đến trang Machine Status Monitor
 - [x] Hiển thị danh sách máy đang online với badges
+
+
+## Phase 40: Dashboard Tabs, Measurement Point UX, Layout & Tập đoàn Improvements
+- [x] Tách Dashboard thành 2 tabs: Tổng quan và Layout dây chuyền
+- [x] Giữ cố định phần lọc và trạng thái kết nối máy
+- [x] Thêm hiệu ứng loading khi lưu điểm đo (isSaving state)
+- [x] Thêm chọn Upload ảnh hoặc Auto-crop (chỉ 1 chức năng)
+- [x] Module Layout: Chỉ hiển thị layout với ảnh 2D/3D, bỏ thông tin trạng thái
+- [x] Module Tập đoàn: Thêm drag & drop để thay đổi vị trí trong sơ đồ
+- [x] Sửa lỗi mất menu trái (thêm navItems cho MachineStatusMonitor, ProductionOrders)

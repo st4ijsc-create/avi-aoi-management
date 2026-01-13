@@ -109,6 +109,8 @@ export default function ProductModels() {
   const [pointReferenceImageUrl, setPointReferenceImageUrl] = useState("");
   const [pointCropWidth, setPointCropWidth] = useState(100);
   const [pointCropHeight, setPointCropHeight] = useState(100);
+  const [isSavingPoint, setIsSavingPoint] = useState(false);
+  const [imageSourceMode, setImageSourceMode] = useState<"upload" | "auto-crop">("auto-crop");
 
   const { data: productModels, refetch: refetchProducts } = trpc.productModel.list.useQuery();
   const { data: points, refetch: refetchPoints } = trpc.measurementPoint.listByProductModel.useQuery(
@@ -552,6 +554,8 @@ export default function ProductModels() {
   const handleSavePoint = async () => {
     if (selectedPointIndex === null || !selectedProduct) return;
 
+    setIsSavingPoint(true);
+    
     const point = measurementPoints[selectedPointIndex];
     const pointData = {
       code: pointCode,
@@ -571,39 +575,57 @@ export default function ProductModels() {
       cropHeight: pointCropHeight,
     };
 
-    if (point.id) {
-      // Update existing point
-      updatePointMutation.mutate({
-        id: point.id,
-        ...pointData,
-      });
+    try {
+      if (point.id) {
+        // Update existing point
+        await updatePointMutation.mutateAsync({
+          id: point.id,
+          ...pointData,
+        });
 
-      // Auto crop and upload reference image if image is loaded
-      if (imageRef.current && pointCropWidth > 0 && pointCropHeight > 0) {
-        const croppedBase64 = cropImageFromCanvas(point.positionX, point.positionY, pointCropWidth, pointCropHeight);
-        if (croppedBase64) {
-          uploadCroppedImageMutation.mutate({
-            pointId: point.id,
-            imageBase64: croppedBase64,
-            mimeType: 'image/png',
-          });
+        // Auto crop and upload reference image if mode is auto-crop and image is loaded
+        if (imageSourceMode === "auto-crop" && imageRef.current && pointCropWidth > 0 && pointCropHeight > 0) {
+          const croppedBase64 = cropImageFromCanvas(point.positionX, point.positionY, pointCropWidth, pointCropHeight);
+          if (croppedBase64) {
+            await uploadCroppedImageMutation.mutateAsync({
+              pointId: point.id,
+              imageBase64: croppedBase64,
+              mimeType: 'image/png',
+            });
+          }
+        }
+      } else {
+        // Create new point
+        const result = await createPointMutation.mutateAsync({
+          productModelId: selectedProduct.id,
+          ...pointData,
+        });
+
+        // Auto crop for new point if mode is auto-crop
+        if (imageSourceMode === "auto-crop" && imageRef.current && pointCropWidth > 0 && pointCropHeight > 0 && result.id) {
+          const croppedBase64 = cropImageFromCanvas(point.positionX, point.positionY, pointCropWidth, pointCropHeight);
+          if (croppedBase64) {
+            await uploadCroppedImageMutation.mutateAsync({
+              pointId: result.id,
+              imageBase64: croppedBase64,
+              mimeType: 'image/png',
+            });
+          }
         }
       }
-    } else {
-      // Create new point
-      createPointMutation.mutate({
-        productModelId: selectedProduct.id,
-        ...pointData,
-      });
-    }
 
-    // Update local state
-    const updatedPoints = [...measurementPoints];
-    updatedPoints[selectedPointIndex] = {
-      ...point,
-      ...pointData,
-    };
-    setMeasurementPoints(updatedPoints);
+      // Update local state
+      const updatedPoints = [...measurementPoints];
+      updatedPoints[selectedPointIndex] = {
+        ...point,
+        ...pointData,
+      };
+      setMeasurementPoints(updatedPoints);
+    } catch (error) {
+      // Error already handled by mutation onError
+    } finally {
+      setIsSavingPoint(false);
+    }
   };
 
   const handleDeletePoint = () => {
@@ -649,6 +671,34 @@ export default function ProductModels() {
     reader.readAsDataURL(file);
   };
 
+  const handlePointImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || selectedPointIndex === null) return;
+
+    const point = measurementPoints[selectedPointIndex];
+    if (!point.id) {
+      toast.error("Vui lòng lưu điểm đo trước khi upload ảnh");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const dataUrl = event.target?.result as string;
+      const base64 = dataUrl.split(',')[1];
+      
+      try {
+        await uploadCroppedImageMutation.mutateAsync({
+          pointId: point.id!,
+          imageBase64: base64,
+          mimeType: file.type as 'image/png' | 'image/jpeg',
+        });
+      } catch (error) {
+        // Error handled by mutation
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleEditImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -657,18 +707,6 @@ export default function ProductModels() {
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
       setEditProductImageUrl(dataUrl);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handlePointImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      setPointReferenceImageUrl(dataUrl);
     };
     reader.readAsDataURL(file);
   };
@@ -1173,18 +1211,69 @@ export default function ProductModels() {
                               />
                             </div>
                           </div>
+                          {/* Image Source Mode Selection */}
+                          <div className="flex gap-2 mt-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={imageSourceMode === "auto-crop" ? "default" : "outline"}
+                              onClick={() => setImageSourceMode("auto-crop")}
+                              className="flex-1 text-xs"
+                              disabled={!isEditMode}
+                            >
+                              Tự động cắt
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={imageSourceMode === "upload" ? "default" : "outline"}
+                              onClick={() => setImageSourceMode("upload")}
+                              className="flex-1 text-xs"
+                              disabled={!isEditMode}
+                            >
+                              Upload ảnh
+                            </Button>
+                          </div>
                           <p className="text-xs text-muted-foreground">
-                            Khi thêm điểm đo, hệ thống sẽ tự động cắt ảnh mẫu từ ảnh sản phẩm với tâm là vị trí điểm đo.
+                            {imageSourceMode === "auto-crop" 
+                              ? "Hệ thống sẽ tự động cắt ảnh mẫu từ ảnh sản phẩm với tâm là vị trí điểm đo."
+                              : "Upload ảnh mẫu riêng cho điểm đo này."}
                           </p>
+                          {imageSourceMode === "upload" && isEditMode && (
+                            <div className="mt-2">
+                              <Label htmlFor="pointImageUpload" className="text-xs text-muted-foreground">Upload ảnh mẫu</Label>
+                              <Input
+                                id="pointImageUpload"
+                                type="file"
+                                accept="image/*"
+                                onChange={handlePointImageUpload}
+                                className="text-xs"
+                              />
+                            </div>
+                          )}
                         </div>
 
                         {isEditMode && (
                           <div className="flex gap-2 pt-2">
-                            <Button size="sm" onClick={handleSavePoint} className="flex-1">
-                              <Save className="h-4 w-4 mr-1" />
-                              Lưu
+                            <Button 
+                              size="sm" 
+                              onClick={handleSavePoint} 
+                              className="flex-1"
+                              disabled={isSavingPoint}
+                            >
+                              {isSavingPoint ? (
+                                <>
+                                  <div className="h-4 w-4 mr-1 animate-spin rounded-full border-2 border-background border-t-transparent" />
+                                  Đang lưu...
+                                </>
+                              ) : (
+                                <>
+                                  <Save className="h-4 w-4 mr-1" />
+                                  Lưu
+                                </>
+                              )}
                             </Button>
-                            <Button size="sm" variant="destructive" onClick={handleDeletePoint}>
+                            <Button size="sm" variant="destructive" onClick={handleDeletePoint} disabled={isSavingPoint}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>

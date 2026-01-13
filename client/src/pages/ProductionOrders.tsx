@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -172,7 +173,7 @@ export default function ProductionOrders() {
   const filteredLines = lines?.filter(l => !workshopId || l.workshopId === workshopId);
 
   return (
-    <DashboardLayout>
+    <DashboardLayout title="Lệnh sản xuất" navItems={navItems} currentPath="/production-orders">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
