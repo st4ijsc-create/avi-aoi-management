@@ -530,3 +530,23 @@
 - [x] Thêm máy vào layout SMT (2 máy)
 - [x] Thêm máy vào layout Testing (4 máy)
 - [x] Tạo công đoạn C, D, E cho các dây chuyền (6 công đoạn mới)
+
+
+## Phase 32: Machine Status, Metrics Customization, Alerts & Shift Config
+- [ ] Thêm trạng thái hoạt động máy (chạy/dừng/lỗi) vào schema
+- [ ] Hiển thị trạng thái máy trên layout với màu sắc (xanh=chạy, vàng=dừng, đỏ=lỗi)
+- [ ] Tùy chỉnh chỉ số hiển thị trên thẻ máy Dashboard (chọn FPY/FY/NTFY/Output)
+- [ ] Lưu cấu hình tùy chỉnh metrics theo user
+- [ ] Cảnh báo ngưỡng FPY/FY/NTFY xuống dưới ngưỡng
+- [ ] Cải tiến UI upload ảnh máy trong Settings
+- [ ] Generate thêm dữ liệu inspection mẫu
+- [ ] Thêm Settings > Shift để cấu hình ca làm việc
+
+
+## Phase 32: Machine Status, Metrics Customization, Alerts & Data (COMPLETED)
+- [x] Thêm trạng thái hoạt động máy (chạy/dừng/lỗi) trên layout với indicator màu
+- [x] Tùy chỉnh chỉ số hiển thị trên thẻ máy Dashboard (FPY/FY/NTFY/Output toggle)
+- [x] Cảnh báo ngưỡng FPY/FY/NTFY trong Settings > Cảnh báo
+- [x] UI upload ảnh máy đã có sẵn trong Settings > Máy
+- [x] Generate dữ liệu inspection mẫu (300 records cho 6 máy)
+- [x] Cấu hình ca làm việc (sáng 6-14h, chiều 14-22h, đêm 22-6h)

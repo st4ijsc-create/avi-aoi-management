@@ -26,7 +26,11 @@ import {
   Clock,
   Upload,
   Image,
-  X
+  X,
+  Bell,
+  AlertTriangle,
+  Target,
+  ThumbsDown
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { useState } from "react";
@@ -39,6 +43,20 @@ type Station = { id: number; lineId: number; code: string; name: string; orderIn
 type Machine = { id: number; stationId: number; code: string; name: string; machineType: string; apiKey: string; model?: string | null; manufacturer?: string | null; image2DUrl?: string | null; image3DUrl?: string | null };
 type ShiftConfig = { id: number; factoryId?: number | null; name: string; code: string; startHour: number; startMinute: number; endHour: number; endMinute: number; isActive: boolean; orderIndex: number };
 type LineStage = { id: number; lineId: number; code: string; name: string; orderIndex: number; description?: string | null; stationId?: number | null };
+type AlertSetting = { 
+  id: number; 
+  userId: number; 
+  name: string; 
+  alertType: 'yield_rate' | 'ng_count' | 'machine_status'; 
+  threshold: string; 
+  comparisonOperator: 'lt' | 'lte' | 'gt' | 'gte' | 'eq';
+  machineId?: number | null; 
+  factoryId?: number | null; 
+  isActive: boolean;
+  notifyEmail: boolean;
+  notifyInApp: boolean;
+  cooldownMinutes: number;
+};
 
 export default function Settings() {
   const { user } = useAuth();
@@ -100,6 +118,22 @@ export default function Settings() {
   const [editStageDialogOpen, setEditStageDialogOpen] = useState(false);
   const [draggedStageId, setDraggedStageId] = useState<number | null>(null);
 
+  // Alert Settings state
+  const [alertForm, setAlertForm] = useState({
+    name: "",
+    alertType: "yield_rate" as 'yield_rate' | 'ng_count' | 'machine_status',
+    threshold: "90",
+    comparisonOperator: "lt" as 'lt' | 'lte' | 'gt' | 'gte' | 'eq',
+    machineId: "",
+    factoryId: "",
+    notifyEmail: true,
+    notifyInApp: true,
+    cooldownMinutes: "60"
+  });
+  const [alertDialogOpen, setAlertDialogOpen] = useState(false);
+  const [editingAlert, setEditingAlert] = useState<AlertSetting | null>(null);
+  const [editAlertDialogOpen, setEditAlertDialogOpen] = useState(false);
+
   // Queries
   const { data: factories, refetch: refetchFactories } = trpc.factory.list.useQuery();
   const { data: workshops, refetch: refetchWorkshops } = trpc.workshop.list.useQuery();
@@ -108,6 +142,46 @@ export default function Settings() {
   const { data: machines, refetch: refetchMachines } = trpc.machine.list.useQuery();
   const { data: shifts, refetch: refetchShifts } = trpc.shiftConfig.list.useQuery();
   const { data: stages, refetch: refetchStages } = trpc.lineStage.list.useQuery();
+  const { data: alerts, refetch: refetchAlerts } = trpc.alert.list.useQuery();
+
+  // Alert Mutations
+  const createAlertMutation = trpc.alert.create.useMutation({
+    onSuccess: () => {
+      toast.success("Tạo cảnh báo thành công");
+      setAlertDialogOpen(false);
+      setAlertForm({
+        name: "",
+        alertType: "yield_rate",
+        threshold: "90",
+        comparisonOperator: "lt",
+        machineId: "",
+        factoryId: "",
+        notifyEmail: true,
+        notifyInApp: true,
+        cooldownMinutes: "60"
+      });
+      refetchAlerts();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const updateAlertMutation = trpc.alert.update.useMutation({
+    onSuccess: () => {
+      toast.success("Cập nhật cảnh báo thành công");
+      setEditAlertDialogOpen(false);
+      setEditingAlert(null);
+      refetchAlerts();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const deleteAlertMutation = trpc.alert.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Xóa cảnh báo thành công");
+      refetchAlerts();
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   // Create Mutations
   const createFactoryMutation = trpc.factory.create.useMutation({
@@ -470,7 +544,7 @@ export default function Settings() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-7">
+          <TabsList className="grid w-full grid-cols-8">
             <TabsTrigger value="factories" className="gap-2">
               <Building2 className="h-4 w-4" />
               Nhà máy
@@ -498,6 +572,10 @@ export default function Settings() {
             <TabsTrigger value="stages" className="gap-2">
               <GitBranch className="h-4 w-4" />
               Công đoạn
+            </TabsTrigger>
+            <TabsTrigger value="alerts" className="gap-2">
+              <Bell className="h-4 w-4" />
+              Cảnh báo
             </TabsTrigger>
           </TabsList>
 
@@ -1548,8 +1626,335 @@ export default function Settings() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* Alerts Tab */}
+          <TabsContent value="alerts">
+            <Card className="glass-card">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Bell className="h-5 w-5 text-primary" />
+                      Cảnh báo ngưỡng chỉ số
+                    </CardTitle>
+                    <CardDescription>
+                      Cấu hình cảnh báo khi FPY, FY hoặc NTFY xuống dưới ngưỡng
+                    </CardDescription>
+                  </div>
+                  <Dialog open={alertDialogOpen} onOpenChange={setAlertDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button className="gap-2">
+                        <Plus className="h-4 w-4" />
+                        Thêm cảnh báo
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-lg">
+                      <DialogHeader>
+                        <DialogTitle>Tạo cảnh báo mới</DialogTitle>
+                        <DialogDescription>
+                          Cấu hình cảnh báo khi chỉ số xuống dưới ngưỡng
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Tên cảnh báo *</label>
+                          <Input
+                            placeholder="VD: Cảnh báo FPY thấp"
+                            value={alertForm.name}
+                            onChange={(e) => setAlertForm({ ...alertForm, name: e.target.value })}
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Loại chỉ số *</label>
+                            <Select
+                              value={alertForm.alertType}
+                              onValueChange={(v) => setAlertForm({ ...alertForm, alertType: v as 'yield_rate' | 'ng_count' | 'machine_status' })}
+                            >
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="yield_rate">FPY/FY/NTFY (%)</SelectItem>
+                                <SelectItem value="ng_count">Số lượng NG</SelectItem>
+                                <SelectItem value="machine_status">Trạng thái máy</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Điều kiện *</label>
+                            <Select
+                              value={alertForm.comparisonOperator}
+                              onValueChange={(v) => setAlertForm({ ...alertForm, comparisonOperator: v as 'lt' | 'lte' | 'gt' | 'gte' | 'eq' })}
+                            >
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="lt">Nhỏ hơn (&lt;)</SelectItem>
+                                <SelectItem value="lte">Nhỏ hơn hoặc bằng (≤)</SelectItem>
+                                <SelectItem value="gt">Lớn hơn (&gt;)</SelectItem>
+                                <SelectItem value="gte">Lớn hơn hoặc bằng (≥)</SelectItem>
+                                <SelectItem value="eq">Bằng (=)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Ngưỡng cảnh báo *</label>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              placeholder="90"
+                              value={alertForm.threshold}
+                              onChange={(e) => setAlertForm({ ...alertForm, threshold: e.target.value })}
+                              className="flex-1"
+                            />
+                            <span className="text-muted-foreground">
+                              {alertForm.alertType === 'yield_rate' ? '%' : alertForm.alertType === 'ng_count' ? 'sản phẩm' : ''}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            VD: FPY &lt; 90% sẽ gửi cảnh báo
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Nhà máy (để trống = tất cả)</label>
+                            <Select
+                              value={alertForm.factoryId}
+                              onValueChange={(v) => setAlertForm({ ...alertForm, factoryId: v })}
+                            >
+                              <SelectTrigger><SelectValue placeholder="Tất cả nhà máy" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="">Tất cả nhà máy</SelectItem>
+                                {factories?.map((f) => (
+                                  <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Máy (để trống = tất cả)</label>
+                            <Select
+                              value={alertForm.machineId}
+                              onValueChange={(v) => setAlertForm({ ...alertForm, machineId: v })}
+                            >
+                              <SelectTrigger><SelectValue placeholder="Tất cả máy" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="">Tất cả máy</SelectItem>
+                                {machines?.map((m) => (
+                                  <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Thời gian chờ giữa các cảnh báo (phút)</label>
+                          <Input
+                            type="number"
+                            min="5"
+                            max="1440"
+                            value={alertForm.cooldownMinutes}
+                            onChange={(e) => setAlertForm({ ...alertForm, cooldownMinutes: e.target.value })}
+                          />
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={alertForm.notifyEmail}
+                              onChange={(e) => setAlertForm({ ...alertForm, notifyEmail: e.target.checked })}
+                              className="rounded"
+                            />
+                            <span className="text-sm">Gửi Email</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={alertForm.notifyInApp}
+                              onChange={(e) => setAlertForm({ ...alertForm, notifyInApp: e.target.checked })}
+                              className="rounded"
+                            />
+                            <span className="text-sm">Thông báo trong app</span>
+                          </label>
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setAlertDialogOpen(false)}>Hủy</Button>
+                        <Button
+                          onClick={() => createAlertMutation.mutate({
+                            name: alertForm.name,
+                            alertType: alertForm.alertType,
+                            threshold: parseFloat(alertForm.threshold),
+                            comparisonOperator: alertForm.comparisonOperator,
+                            machineId: alertForm.machineId ? parseInt(alertForm.machineId) : undefined,
+                            factoryId: alertForm.factoryId ? parseInt(alertForm.factoryId) : undefined,
+                            notifyEmail: alertForm.notifyEmail,
+                            notifyInApp: alertForm.notifyInApp,
+                            cooldownMinutes: parseInt(alertForm.cooldownMinutes)
+                          })}
+                          disabled={createAlertMutation.isPending || !alertForm.name || !alertForm.threshold}
+                        >
+                          {createAlertMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                          Tạo cảnh báo
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {alerts?.map((alert: AlertSetting) => (
+                    <div
+                      key={alert.id}
+                      className={`flex items-center justify-between p-4 rounded-lg border transition-colors ${
+                        alert.isActive ? 'bg-card hover:bg-muted/50' : 'bg-muted/30 opacity-60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                          alert.alertType === 'yield_rate' ? 'bg-emerald-500/20' :
+                          alert.alertType === 'ng_count' ? 'bg-rose-500/20' : 'bg-amber-500/20'
+                        }`}>
+                          {alert.alertType === 'yield_rate' ? (
+                            <Target className="h-5 w-5 text-emerald-500" />
+                          ) : alert.alertType === 'ng_count' ? (
+                            <ThumbsDown className="h-5 w-5 text-rose-500" />
+                          ) : (
+                            <AlertTriangle className="h-5 w-5 text-amber-500" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-medium">{alert.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {alert.alertType === 'yield_rate' ? 'FPY/FY/NTFY' : 
+                             alert.alertType === 'ng_count' ? 'Số lượng NG' : 'Trạng thái máy'}
+                            {' '}
+                            {alert.comparisonOperator === 'lt' ? '<' :
+                             alert.comparisonOperator === 'lte' ? '≤' :
+                             alert.comparisonOperator === 'gt' ? '>' :
+                             alert.comparisonOperator === 'gte' ? '≥' : '='}
+                            {' '}{alert.threshold}
+                            {alert.alertType === 'yield_rate' ? '%' : ''}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant={alert.isActive ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => updateAlertMutation.mutate({ id: alert.id, isActive: !alert.isActive })}
+                        >
+                          {alert.isActive ? 'Đang bật' : 'Đã tắt'}
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => {
+                              setEditingAlert(alert);
+                              setEditAlertDialogOpen(true);
+                            }}>
+                              <Pencil className="h-4 w-4 mr-2" />
+                              Chỉnh sửa
+                            </DropdownMenuItem>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Xóa
+                                </DropdownMenuItem>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Bạn có chắc chắn muốn xóa cảnh báo "{alert.name}"?
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Hủy</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => deleteAlertMutation.mutate({ id: alert.id })}>
+                                    Xóa
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  ))}
+                  {(!alerts || alerts.length === 0) && (
+                    <div className="text-center py-12">
+                      <Bell className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">Chưa có cảnh báo nào</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Tạo cảnh báo để nhận thông báo khi chỉ số xuống dưới ngưỡng
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
       </div>
+
+      {/* Edit Alert Dialog */}
+      <Dialog open={editAlertDialogOpen} onOpenChange={setEditAlertDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Chỉnh sửa cảnh báo</DialogTitle>
+          </DialogHeader>
+          {editingAlert && (
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Tên cảnh báo</label>
+                <Input
+                  value={editingAlert.name}
+                  onChange={(e) => setEditingAlert({ ...editingAlert, name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Ngưỡng cảnh báo</label>
+                <Input
+                  type="number"
+                  value={editingAlert.threshold}
+                  onChange={(e) => setEditingAlert({ ...editingAlert, threshold: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Thời gian chờ (phút)</label>
+                <Input
+                  type="number"
+                  min="5"
+                  max="1440"
+                  value={editingAlert.cooldownMinutes}
+                  onChange={(e) => setEditingAlert({ ...editingAlert, cooldownMinutes: parseInt(e.target.value) })}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditAlertDialogOpen(false)}>Hủy</Button>
+            <Button
+              onClick={() => editingAlert && updateAlertMutation.mutate({
+                id: editingAlert.id,
+                name: editingAlert.name,
+                threshold: parseFloat(editingAlert.threshold),
+                cooldownMinutes: editingAlert.cooldownMinutes
+              })}
+              disabled={updateAlertMutation.isPending}
+            >
+              {updateAlertMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Lưu
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Stage Dialog */}
       <Dialog open={editStageDialogOpen} onOpenChange={setEditStageDialogOpen}>

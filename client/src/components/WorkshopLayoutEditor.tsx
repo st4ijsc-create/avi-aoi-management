@@ -51,6 +51,7 @@ type MachineWithPosition = {
   image2DUrl?: string | null;
   image3DUrl?: string | null;
   stationId?: number | null;
+  operationStatus?: 'running' | 'stopped' | 'error' | 'maintenance' | null;
   position?: MachinePosition;
   stats?: {
     total: number;
@@ -139,6 +140,7 @@ export default function WorkshopLayoutEditor({
         image2DUrl: machine?.image2DUrl,
         image3DUrl: machine?.image3DUrl,
         stationId: machine?.stationId,
+        operationStatus: (machine as any)?.operationStatus || 'stopped',
         position: {
           id: pos.id,
           machineId: pos.machineId,
@@ -433,6 +435,25 @@ export default function WorkshopLayoutEditor({
                     ) : (
                       <div className="absolute inset-0 bg-card rounded-lg" />
                     )}
+
+                    {/* Operation Status Indicator */}
+                    <div className={`absolute top-1 right-1 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium ${
+                      machine.operationStatus === 'running' ? 'bg-green-500/90 text-white' :
+                      machine.operationStatus === 'stopped' ? 'bg-yellow-500/90 text-black' :
+                      machine.operationStatus === 'error' ? 'bg-red-500/90 text-white animate-pulse' :
+                      machine.operationStatus === 'maintenance' ? 'bg-blue-500/90 text-white' :
+                      'bg-gray-500/90 text-white'
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${
+                        machine.operationStatus === 'running' ? 'bg-white animate-pulse' :
+                        machine.operationStatus === 'error' ? 'bg-white' :
+                        'bg-white/70'
+                      }`} />
+                      {machine.operationStatus === 'running' ? 'Chạy' :
+                       machine.operationStatus === 'stopped' ? 'Dừng' :
+                       machine.operationStatus === 'error' ? 'Lỗi' :
+                       machine.operationStatus === 'maintenance' ? 'Bảo trì' : 'N/A'}
+                    </div>
 
                     {/* Stats Overlay */}
                     <div className="relative h-full p-2 flex flex-col">

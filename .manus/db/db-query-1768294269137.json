@@ -1,0 +1,9 @@
+{
+  "query": "UPDATE machines SET operationStatus = 'running' WHERE id IN (1, 2, 4); UPDATE machines SET operationStatus = 'stopped' WHERE id IN (3, 5); UPDATE machines SET operationStatus = 'error' WHERE id = 6;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute UPDATE machines SET operationStatus = 'running' WHERE id IN (1, 2, 4); UPDATE machines SET operationStatus = 'stopped' WHERE id IN (3, 5); UPDATE machines SET operationStatus = 'error' WHERE id = 6;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1948
+}

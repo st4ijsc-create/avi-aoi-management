@@ -122,6 +122,7 @@ export const machines = mysqlTable("machines", {
   image3DKey: varchar("image3DKey", { length: 255 }),
   isActive: boolean("isActive").default(true).notNull(),
   lastHeartbeat: timestamp("lastHeartbeat"),
+  operationStatus: mysqlEnum("operationStatus", ["running", "stopped", "error", "maintenance"]).default("stopped").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => [

@@ -1,0 +1,1 @@
+ALTER TABLE `machines` ADD `operationStatus` enum('running','stopped','error','maintenance') DEFAULT 'stopped' NOT NULL;

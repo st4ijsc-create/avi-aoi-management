@@ -142,6 +142,23 @@ export default function Dashboard() {
   const [autoRefreshInterval, setAutoRefreshInterval] = useState("30");
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(true);
   const [lastRefreshTime, setLastRefreshTime] = useState(new Date());
+  
+  // Metrics customization state
+  const [metricsSettingsOpen, setMetricsSettingsOpen] = useState(false);
+  const [visibleMetrics, setVisibleMetrics] = useState<{
+    fpy: boolean;
+    fy: boolean;
+    ntfy: boolean;
+    output: boolean;
+  }>(() => {
+    const saved = localStorage.getItem('dashboard_visible_metrics');
+    return saved ? JSON.parse(saved) : { fpy: true, fy: true, ntfy: true, output: true };
+  });
+  
+  // Save metrics settings to localStorage
+  useEffect(() => {
+    localStorage.setItem('dashboard_visible_metrics', JSON.stringify(visibleMetrics));
+  }, [visibleMetrics]);
 
   // Calculate date range based on selection
   const dateRange = useMemo(() => {
@@ -913,9 +930,20 @@ export default function Dashboard() {
               <LayoutGrid className="h-5 w-5 text-primary" />
               Layout Dây chuyền sản xuất
             </h2>
-            <Badge variant="outline" className="text-muted-foreground">
-              {machinesByLine.size} dây chuyền • {Array.from(machinesByLine.values()).flat().length} máy
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setMetricsSettingsOpen(true)}
+                className="gap-1"
+              >
+                <Settings2 className="h-4 w-4" />
+                Tùy chỉnh chỉ số
+              </Button>
+              <Badge variant="outline" className="text-muted-foreground">
+                {machinesByLine.size} dây chuyền • {Array.from(machinesByLine.values()).flat().length} máy
+              </Badge>
+            </div>
           </div>
 
           {machinesLoading ? (
@@ -1032,29 +1060,37 @@ export default function Dashboard() {
                               className="relative rounded-xl cursor-pointer transition-all hover:shadow-xl hover:scale-[1.02] overflow-hidden bg-card border border-border/50 group"
                               onClick={() => openMachineDetail(machine)}
                             >
-                              {/* Metrics Bar at Top - Always visible */}
+                              {/* Metrics Bar at Top - Customizable */}
                               <div className="flex items-stretch bg-black/90 text-white">
-                                <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
-                                  <p className="text-[10px] opacity-70 uppercase tracking-wider">FPY</p>
-                                  <p className={`text-base font-bold ${fpyNum >= 90 ? 'text-emerald-400' : fpyNum >= 70 ? 'text-amber-400' : 'text-rose-400'}`}>
-                                    {fpy}%
-                                  </p>
-                                </div>
-                                <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
-                                  <p className="text-[10px] opacity-70 uppercase tracking-wider">FY</p>
-                                  <p className="text-base font-bold text-rose-400">{fy}%</p>
-                                </div>
-                                <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
-                                  <p className="text-[10px] opacity-70 uppercase tracking-wider">NTFY</p>
-                                  <p className="text-base font-bold text-amber-400">{ntfy}%</p>
-                                </div>
-                                <div className="flex-1 text-center py-2 px-1 relative">
-                                  <p className="text-[10px] opacity-70 uppercase tracking-wider">Output</p>
-                                  <p className="text-base font-bold text-cyan-400">{machine.total}</p>
-                                  {/* Status indicator */}
-                                  <div className="absolute top-1 right-1">
-                                    <StatusIcon className={`h-3 w-3 ${status.color}`} />
+                                {visibleMetrics.fpy && (
+                                  <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
+                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">FPY</p>
+                                    <p className={`text-base font-bold ${fpyNum >= 90 ? 'text-emerald-400' : fpyNum >= 70 ? 'text-amber-400' : 'text-rose-400'}`}>
+                                      {fpy}%
+                                    </p>
                                   </div>
+                                )}
+                                {visibleMetrics.fy && (
+                                  <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
+                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">FY</p>
+                                    <p className="text-base font-bold text-rose-400">{fy}%</p>
+                                  </div>
+                                )}
+                                {visibleMetrics.ntfy && (
+                                  <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
+                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">NTFY</p>
+                                    <p className="text-base font-bold text-amber-400">{ntfy}%</p>
+                                  </div>
+                                )}
+                                {visibleMetrics.output && (
+                                  <div className="flex-1 text-center py-2 px-1 relative">
+                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">Output</p>
+                                    <p className="text-base font-bold text-cyan-400">{machine.total}</p>
+                                  </div>
+                                )}
+                                {/* Status indicator */}
+                                <div className="flex items-center px-2">
+                                  <StatusIcon className={`h-4 w-4 ${status.color}`} />
                                 </div>
                               </div>
 
@@ -1226,6 +1262,109 @@ export default function Dashboard() {
               </ScrollArea>
             </TabsContent>
           </Tabs>
+        </DialogContent>
+      </Dialog>
+
+      {/* Metrics Settings Dialog */}
+      <Dialog open={metricsSettingsOpen} onOpenChange={setMetricsSettingsOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings2 className="h-5 w-5 text-primary" />
+              Tùy chỉnh chỉ số hiển thị
+            </DialogTitle>
+            <DialogDescription>
+              Chọn các chỉ số bạn muốn hiển thị trên thẻ máy
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                  <Target className="h-4 w-4 text-emerald-500" />
+                </div>
+                <div>
+                  <p className="font-medium">FPY (First Pass Yield)</p>
+                  <p className="text-xs text-muted-foreground">Tỷ lệ sản phẩm đạt lần đầu</p>
+                </div>
+              </div>
+              <Button
+                variant={visibleMetrics.fpy ? "default" : "outline"}
+                size="sm"
+                onClick={() => setVisibleMetrics(prev => ({ ...prev, fpy: !prev.fpy }))}
+              >
+                {visibleMetrics.fpy ? "Hiển thị" : "Ẩn"}
+              </Button>
+            </div>
+            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-rose-500/20 flex items-center justify-center">
+                  <ThumbsDown className="h-4 w-4 text-rose-500" />
+                </div>
+                <div>
+                  <p className="font-medium">FY (Fail Yield)</p>
+                  <p className="text-xs text-muted-foreground">Tỷ lệ sản phẩm lỗi</p>
+                </div>
+              </div>
+              <Button
+                variant={visibleMetrics.fy ? "default" : "outline"}
+                size="sm"
+                onClick={() => setVisibleMetrics(prev => ({ ...prev, fy: !prev.fy }))}
+              >
+                {visibleMetrics.fy ? "Hiển thị" : "Ẩn"}
+              </Button>
+            </div>
+            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center">
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                </div>
+                <div>
+                  <p className="font-medium">NTFY (No Test Found Yield)</p>
+                  <p className="text-xs text-muted-foreground">Tỷ lệ không tìm thấy kết quả</p>
+                </div>
+              </div>
+              <Button
+                variant={visibleMetrics.ntfy ? "default" : "outline"}
+                size="sm"
+                onClick={() => setVisibleMetrics(prev => ({ ...prev, ntfy: !prev.ntfy }))}
+              >
+                {visibleMetrics.ntfy ? "Hiển thị" : "Ẩn"}
+              </Button>
+            </div>
+            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-cyan-500/20 flex items-center justify-center">
+                  <BarChart3 className="h-4 w-4 text-cyan-500" />
+                </div>
+                <div>
+                  <p className="font-medium">Output</p>
+                  <p className="text-xs text-muted-foreground">Tổng số sản phẩm đã kiểm tra</p>
+                </div>
+              </div>
+              <Button
+                variant={visibleMetrics.output ? "default" : "outline"}
+                size="sm"
+                onClick={() => setVisibleMetrics(prev => ({ ...prev, output: !prev.output }))}
+              >
+                {visibleMetrics.output ? "Hiển thị" : "Ẩn"}
+              </Button>
+            </div>
+          </div>
+          <div className="flex justify-between pt-4 border-t">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setVisibleMetrics({ fpy: true, fy: true, ntfy: true, output: true })}
+            >
+              Đặt lại mặc định
+            </Button>
+            <Button
+              onClick={() => setMetricsSettingsOpen(false)}
+            >
+              Xong
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </DashboardLayout>
