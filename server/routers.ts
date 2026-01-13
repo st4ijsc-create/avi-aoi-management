@@ -214,7 +214,45 @@ const productModelRouter = router({
       imageHeight: z.number().optional(),
     }))
     .mutation(async ({ input }) => {
-      const id = await db.createProductModel(input);
+      let finalImageUrl = input.referenceImageUrl;
+      let finalImageKey = input.referenceImageKey;
+      
+      // Check if referenceImageUrl is a base64 data URL and upload to S3
+      if (input.referenceImageUrl && input.referenceImageUrl.startsWith('data:')) {
+        try {
+          // Parse base64 data URL
+          const matches = input.referenceImageUrl.match(/^data:([^;]+);base64,(.+)$/);
+          if (matches) {
+            const mimeType = matches[1];
+            const base64Data = matches[2];
+            const buffer = Buffer.from(base64Data, 'base64');
+            
+            // Determine file extension
+            const extMap: Record<string, string> = {
+              'image/jpeg': 'jpg',
+              'image/png': 'png',
+              'image/gif': 'gif',
+              'image/webp': 'webp',
+            };
+            const ext = extMap[mimeType] || 'jpg';
+            const fileKey = `product-models/${input.code}-${nanoid(8)}.${ext}`;
+            
+            // Upload to S3
+            const { url, key } = await storagePut(fileKey, buffer, mimeType);
+            finalImageUrl = url;
+            finalImageKey = key;
+          }
+        } catch (error) {
+          console.error('Failed to upload product model image to S3:', error);
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to upload image' });
+        }
+      }
+      
+      const id = await db.createProductModel({
+        ...input,
+        referenceImageUrl: finalImageUrl,
+        referenceImageKey: finalImageKey,
+      });
       return { id };
     }),
 
@@ -232,7 +270,38 @@ const productModelRouter = router({
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
-      await db.updateProductModel(id, data);
+      let finalData = { ...data };
+      
+      // Check if referenceImageUrl is a base64 data URL and upload to S3
+      if (data.referenceImageUrl && data.referenceImageUrl.startsWith('data:')) {
+        try {
+          const matches = data.referenceImageUrl.match(/^data:([^;]+);base64,(.+)$/);
+          if (matches) {
+            const mimeType = matches[1];
+            const base64Data = matches[2];
+            const buffer = Buffer.from(base64Data, 'base64');
+            
+            const extMap: Record<string, string> = {
+              'image/jpeg': 'jpg',
+              'image/png': 'png',
+              'image/gif': 'gif',
+              'image/webp': 'webp',
+            };
+            const ext = extMap[mimeType] || 'jpg';
+            const code = data.code || `product-${id}`;
+            const fileKey = `product-models/${code}-${nanoid(8)}.${ext}`;
+            
+            const { url, key } = await storagePut(fileKey, buffer, mimeType);
+            finalData.referenceImageUrl = url;
+            finalData.referenceImageKey = key;
+          }
+        } catch (error) {
+          console.error('Failed to upload product model image to S3:', error);
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to upload image' });
+        }
+      }
+      
+      await db.updateProductModel(id, finalData);
       return { success: true };
     }),
 });

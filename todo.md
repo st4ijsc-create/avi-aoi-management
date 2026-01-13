@@ -95,3 +95,8 @@
 - [x] Add AI analysis for actual vs reference image
 - [x] Display measurement point overlay on images
 - [x] Show measurement point coordinates and results
+
+
+## Bug Fixes
+
+- [x] Fix Product Model create - upload image to S3 before saving to database instead of saving base64 directly
