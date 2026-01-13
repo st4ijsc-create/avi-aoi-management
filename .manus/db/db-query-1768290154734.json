@@ -1,0 +1,31 @@
+{
+  "query": "SELECT w.id, w.code, w.name, l.id as lineId, l.name as lineName \nFROM workshops w \nLEFT JOIN production_lines l ON l.workshopId = w.id\nWHERE w.name LIKE '%SMT%' OR w.name LIKE '%Testing%';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute SELECT w.id, w.code, w.name, l.id as lineId, l.name as lineName \nFROM workshops w \nLEFT JOIN production_lines l ON l.workshopId = w.id\nWHERE w.name LIKE '%SMT%' OR w.name LIKE '%Testing%';",
+  "rows": [
+    {
+      "id": "6",
+      "code": "WS-HCM-01",
+      "name": "Xưởng SMT",
+      "lineId": "6",
+      "lineName": "SMT Line 2"
+    },
+    {
+      "id": "6",
+      "code": "WS-HCM-01",
+      "name": "Xưởng SMT",
+      "lineId": "5",
+      "lineName": "SMT Line 1"
+    },
+    {
+      "id": "8",
+      "code": "WS-HCM-03",
+      "name": "Xưởng Testing",
+      "lineId": "NULL",
+      "lineName": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tcode\tname\tlineId\tlineName\n6\tWS-HCM-01\tXưởng SMT\t6\tSMT Line 2\n6\tWS-HCM-01\tXưởng SMT\t5\tSMT Line 1\n8\tWS-HCM-03\tXưởng Testing\tNULL\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 1558
+}

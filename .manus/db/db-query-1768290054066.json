@@ -1,0 +1,19 @@
+{
+  "query": "SHOW TABLES LIKE '%machine%';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute SHOW TABLES LIKE '%machine%';",
+  "rows": [
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q (%machine%)": "machine_positions"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q (%machine%)": "machines"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q (%machine%)": "product_machine_mappings"
+    }
+  ],
+  "messages": [],
+  "stdout": "Tables_in_QHAn5mxdYwZFfFZze5gD7q (%machine%)\nmachine_positions\nmachines\nproduct_machine_mappings\n",
+  "stderr": "",
+  "execution_time_ms": 1480
+}

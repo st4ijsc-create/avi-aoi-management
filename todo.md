@@ -498,3 +498,13 @@
 - [x] Upload ảnh máy mẫu 2D cho các máy AVI
 - [x] Upload ảnh máy mẫu 2D cho các máy AOI
 - [x] Kiểm tra hiển thị ảnh trong Layout và Dashboard
+
+
+## Phase 30: Dashboard Line Info, 3D Images, Stages & Multi-Workshop Layouts
+- [x] Thêm mã sản phẩm và lệnh sản xuất vào title dây chuyền trên Dashboard
+- [x] Tìm và upload ảnh 3D cho các máy AVI/AOI
+- [x] Cập nhật database với ảnh 3D cho máy
+- [x] Gán công đoạn cho công trạm trong Settings
+- [x] Tạo layout cho xưởng SMT
+- [x] Tạo layout cho xưởng Testing
+- [x] Kiểm tra hiển thị 3D trong Layout

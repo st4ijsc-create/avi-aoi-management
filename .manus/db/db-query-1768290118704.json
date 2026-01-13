@@ -1,0 +1,40 @@
+{
+  "query": "SELECT s.id, s.name, s.code, l.name as lineName FROM stations s JOIN production_lines l ON s.lineId = l.id LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute SELECT s.id, s.name, s.code, l.name as lineName FROM stations s JOIN production_lines l ON s.lineId = l.id LIMIT 10;",
+  "rows": [
+    {
+      "id": "2",
+      "name": "Trạm kiểm tra 2",
+      "code": "ST-HN-A1-02",
+      "lineName": "Dây chuyền A1"
+    },
+    {
+      "id": "1",
+      "name": "Trạm kiểm tra 1",
+      "code": "ST-HN-A1-01",
+      "lineName": "Dây chuyền A1"
+    },
+    {
+      "id": "4",
+      "name": "AOI Station 2",
+      "code": "ST-HCM-SMT1-02",
+      "lineName": "SMT Line 1"
+    },
+    {
+      "id": "3",
+      "name": "AOI Station 1",
+      "code": "ST-HCM-SMT1-01",
+      "lineName": "SMT Line 1"
+    },
+    {
+      "id": "5",
+      "name": "AVI Station 1",
+      "code": "ST-HCM-ASM1-01",
+      "lineName": "Assembly Line 1"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tcode\tlineName\n2\tTrạm kiểm tra 2\tST-HN-A1-02\tDây chuyền A1\n1\tTrạm kiểm tra 1\tST-HN-A1-01\tDây chuyền A1\n4\tAOI Station 2\tST-HCM-SMT1-02\tSMT Line 1\n3\tAOI Station 1\tST-HCM-SMT1-01\tSMT Line 1\n5\tAVI Station 1\tST-HCM-ASM1-01\tAssembly Line 1\n",
+  "stderr": "",
+  "execution_time_ms": 1520
+}

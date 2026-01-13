@@ -217,6 +217,11 @@ export default function Dashboard() {
   const { data: workshops } = trpc.workshop.list.useQuery();
   const { data: lines } = trpc.line.list.useQuery();
 
+  // Fetch line product assignments and production orders for line info
+  const { data: lineProductAssignments } = trpc.lineProductAssignment.list.useQuery();
+  const { data: productionOrders } = trpc.productionOrder.list.useQuery();
+  const { data: productModels } = trpc.productModel.list.useQuery();
+
   // Fetch recent inspections for selected machine
   const { data: recentInspections } = trpc.inspection.list.useQuery({
     machineId: selectedMachine?.id,
@@ -843,6 +848,12 @@ export default function Dashboard() {
                 const lineNg = machines.reduce((sum, m) => sum + m.ng, 0);
                 const lineNtf = machines.reduce((sum, m) => sum + m.ntf, 0);
                 const lineFpy = lineTotal > 0 ? ((lineOk / lineTotal) * 100).toFixed(1) : "0";
+                
+                // Get line info (product and production order)
+                const lineId = machines[0]?.lineId;
+                const lineAssignment = lineProductAssignments?.find(a => a.lineId === lineId && a.isActive);
+                const productModel = productModels?.find((p: any) => p.id === lineAssignment?.productModelId);
+                const productionOrder = productionOrders?.find(o => o.id === lineAssignment?.productionOrderId);
 
                 return (
                   <Card key={lineName} className="glass-card overflow-hidden">
@@ -854,8 +865,25 @@ export default function Dashboard() {
                             <Zap className="h-5 w-5 text-primary" />
                           </div>
                           <div>
-                            <h3 className="font-semibold text-foreground">{lineName}</h3>
-                            <p className="text-sm text-muted-foreground">{machines.length} máy hoạt động</p>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold text-foreground">{lineName}</h3>
+                              {productModel && (
+                                <Badge variant="secondary" className="text-xs">
+                                  <Box className="h-3 w-3 mr-1" />
+                                  {productModel.code}
+                                </Badge>
+                              )}
+                              {productionOrder && (
+                                <Badge variant="outline" className="text-xs border-primary/50 text-primary">
+                                  <FileText className="h-3 w-3 mr-1" />
+                                  {productionOrder.orderCode}
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {machines.length} máy hoạt động
+                              {productModel && ` • ${productModel.name}`}
+                            </p>
                           </div>
                         </div>
                         

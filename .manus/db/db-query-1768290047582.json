@@ -1,0 +1,79 @@
+{
+  "query": "SHOW TABLES;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute SHOW TABLES;",
+  "rows": [
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "__drizzle_migrations"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "alert_history"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "alert_settings"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "daily_statistics"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "factories"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "factory_layouts"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "factory_positions"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "line_product_assignments"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "line_stages"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "machine_positions"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "machines"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "measurement_point_defs"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "measurement_results"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "product_inspections"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "product_machine_mappings"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "product_models"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "production_lines"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "production_orders"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "shift_configs"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "stations"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "users"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "workshop_positions"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "workshops"
+    }
+  ],
+  "messages": [],
+  "stdout": "Tables_in_QHAn5mxdYwZFfFZze5gD7q\n__drizzle_migrations\nalert_history\nalert_settings\ndaily_statistics\nfactories\nfactory_layouts\nfactory_positions\nline_product_assignments\nline_stages\nmachine_positions\nmachines\nmeasurement_point_defs\nmeasurement_results\nproduct_inspections\nproduct_machine_mappings\nproduct_models\nproduction_lines\nproduction_orders\nshift_configs\nstations\nusers\nworkshop_positions\nworkshops\n",
+  "stderr": "",
+  "execution_time_ms": 1494
+}
