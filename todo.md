@@ -555,3 +555,20 @@
 ## Bug Fixes - Phase 33
 - [x] Fix SQL query error: getHourlyStats GROUP BY với DATE_FORMAT không tương thích TiDB (sử dụng raw SQL với alias)
 - [x] Fix SQL query error: getDailyStats GROUP BY với DATE_FORMAT không tương thích TiDB (sử dụng raw SQL với alias)
+
+
+## Phase 34: Layout Image Fix, Auto Sample Image, Machine Mapping & Seed Data
+- [ ] Sửa hiển thị ảnh 2D/3D trên Layout Dashboard
+- [ ] Tự động lấy ảnh mẫu khi thêm điểm đo với cài đặt vùng cắt (tâm + kích thước)
+- [ ] Machine Mapping qua WebSocket - đăng ký máy tự động từ IP/Port
+- [ ] API kiểm tra sự tồn tại và cho phép đăng ký máy mới
+- [ ] Seed dữ liệu inspection cho 5 ngày
+
+
+## Phase 34: Layout Image Fix, Measurement Point Crop, Machine Mapping & Data
+- [x] Sửa hiển thị ảnh 2D/3D trên Layout Dashboard (cập nhật đường dẫn ảnh)
+- [x] Thêm cài đặt cropWidth/cropHeight cho điểm đo
+- [x] Tự động lấy ảnh mẫu khi thêm điểm đo theo tâm và kích thước cắt
+- [x] Machine Mapping qua WebSocket - đăng ký máy tự động
+- [x] API cho máy gửi thông tin và đăng ký qua IP/port
+- [x] Seed dữ liệu inspection cho 5 ngày (3000 records)

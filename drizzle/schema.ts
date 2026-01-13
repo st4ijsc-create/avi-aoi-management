@@ -191,6 +191,9 @@ export const measurementPointDefs = mysqlTable("measurement_point_defs", {
   // Ảnh mẫu riêng cho điểm đo này (crop từ ảnh sản phẩm)
   referenceImageUrl: text("referenceImageUrl"),
   referenceImageKey: varchar("referenceImageKey", { length: 255 }),
+  // Kích thước vùng cắt ảnh mẫu (tâm là positionX, positionY)
+  cropWidth: int("cropWidth").default(100).notNull(), // Chiều rộng vùng cắt
+  cropHeight: int("cropHeight").default(100).notNull(), // Chiều cao vùng cắt
   orderIndex: int("orderIndex").default(0).notNull(), // Thứ tự điểm đo
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

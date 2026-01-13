@@ -33,6 +33,8 @@ interface MeasurementPoint {
   radius: number;
   orderIndex: number;
   referenceImageUrl?: string;
+  cropWidth: number; // Chiều rộng vùng cắt ảnh mẫu
+  cropHeight: number; // Chiều cao vùng cắt ảnh mẫu
 }
 
 interface ProductModel {
@@ -103,6 +105,8 @@ export default function ProductModels() {
   const [pointUpperLimit, setPointUpperLimit] = useState("");
   const [pointNominalValue, setPointNominalValue] = useState("");
   const [pointReferenceImageUrl, setPointReferenceImageUrl] = useState("");
+  const [pointCropWidth, setPointCropWidth] = useState(100);
+  const [pointCropHeight, setPointCropHeight] = useState(100);
 
   const { data: productModels, refetch: refetchProducts } = trpc.productModel.list.useQuery();
   const { data: points, refetch: refetchPoints } = trpc.measurementPoint.listByProductModel.useQuery(
@@ -208,6 +212,8 @@ export default function ProductModels() {
     setPointUpperLimit("");
     setPointNominalValue("");
     setPointReferenceImageUrl("");
+    setPointCropWidth(100);
+    setPointCropHeight(100);
     setSelectedPointIndex(null);
   };
 
@@ -229,6 +235,8 @@ export default function ProductModels() {
         radius: p.radius,
         orderIndex: p.orderIndex || index,
         referenceImageUrl: p.referenceImageUrl || undefined,
+        cropWidth: (p as any).cropWidth || 100,
+        cropHeight: (p as any).cropHeight || 100,
       })));
     }
   }, [points]);
@@ -341,6 +349,8 @@ export default function ProductModels() {
         positionY: Math.round(y),
         radius: pointRadius,
         orderIndex: measurementPoints.length,
+        cropWidth: 100, // Mặc định 100px
+        cropHeight: 100, // Mặc định 100px
       };
       setMeasurementPoints([...measurementPoints, newPoint]);
       setSelectedPointIndex(measurementPoints.length);
@@ -370,6 +380,8 @@ export default function ProductModels() {
         setPointNominalValue(point.nominalValue || "");
         setPointReferenceImageUrl(point.referenceImageUrl || "");
         setPointRadius(point.radius);
+        setPointCropWidth(point.cropWidth || 100);
+        setPointCropHeight(point.cropHeight || 100);
       } else {
         setSelectedPointIndex(null);
         resetPointForm();
@@ -492,6 +504,8 @@ export default function ProductModels() {
       radius: pointRadius,
       orderIndex: selectedPointIndex,
       referenceImageUrl: pointReferenceImageUrl || undefined,
+      cropWidth: pointCropWidth,
+      cropHeight: pointCropHeight,
     };
 
     if (point.id) {
@@ -883,6 +897,8 @@ export default function ProductModels() {
                             setPointNominalValue(point.nominalValue || "");
                             setPointReferenceImageUrl(point.referenceImageUrl || "");
                             setPointRadius(point.radius);
+                            setPointCropWidth(point.cropWidth || 100);
+                            setPointCropHeight(point.cropHeight || 100);
                           }}
                         >
                           <Target className="h-3 w-3 mr-1" />
@@ -1045,6 +1061,40 @@ export default function ProductModels() {
                         <div className="text-sm text-muted-foreground p-2 bg-muted/30 rounded">
                           <p>Vị trí: ({measurementPoints[selectedPointIndex]?.positionX}, {measurementPoints[selectedPointIndex]?.positionY})</p>
                           <p>Bán kính: {measurementPoints[selectedPointIndex]?.radius}px</p>
+                        </div>
+
+                        {/* Vùng cắt ảnh mẫu */}
+                        <div className="space-y-2 border-t pt-3 mt-3">
+                          <Label className="text-sm font-medium">Vùng cắt ảnh mẫu (tâm là điểm đo)</Label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <Label htmlFor="cropWidth" className="text-xs text-muted-foreground">Rộng (px)</Label>
+                              <Input
+                                id="cropWidth"
+                                type="number"
+                                value={pointCropWidth}
+                                onChange={(e) => setPointCropWidth(parseInt(e.target.value) || 100)}
+                                disabled={!isEditMode}
+                                min={20}
+                                max={500}
+                              />
+                            </div>
+                            <div>
+                              <Label htmlFor="cropHeight" className="text-xs text-muted-foreground">Cao (px)</Label>
+                              <Input
+                                id="cropHeight"
+                                type="number"
+                                value={pointCropHeight}
+                                onChange={(e) => setPointCropHeight(parseInt(e.target.value) || 100)}
+                                disabled={!isEditMode}
+                                min={20}
+                                max={500}
+                              />
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Khi thêm điểm đo, hệ thống sẽ tự động cắt ảnh mẫu từ ảnh sản phẩm với tâm là vị trí điểm đo.
+                          </p>
                         </div>
 
                         {isEditMode && (

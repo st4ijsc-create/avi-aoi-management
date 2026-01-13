@@ -1,0 +1,52 @@
+{
+  "query": "SELECT id, name, code, SUBSTRING(image2DUrl, 1, 100) as img2d, SUBSTRING(image3DUrl, 1, 100) as img3d FROM machines;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute SELECT id, name, code, SUBSTRING(image2DUrl, 1, 100) as img2d, SUBSTRING(image3DUrl, 1, 100) as img3d FROM machines;",
+  "rows": [
+    {
+      "id": "1",
+      "name": "AVI Machine 1",
+      "code": "AVI-HN-001",
+      "img2d": "/machines/aoi-machine-1.jpg",
+      "img3d": "/machines/avi-3d.jpg"
+    },
+    {
+      "id": "2",
+      "name": "AVI Machine 2",
+      "code": "AVI-HN-002",
+      "img2d": "/machines/aoi-machine-2.jpg",
+      "img3d": "/machines/avi-3d.jpg"
+    },
+    {
+      "id": "3",
+      "name": "AOI Machine 1",
+      "code": "AOI-HN-001",
+      "img2d": "/machines/aoi-machine-3.webp",
+      "img3d": "/machines/aoi-3d.webp"
+    },
+    {
+      "id": "4",
+      "name": "AOI SMT 1",
+      "code": "AOI-HCM-001",
+      "img2d": "/machines/avi-machine-1.jpg",
+      "img3d": "/machines/aoi-3d.webp"
+    },
+    {
+      "id": "5",
+      "name": "AOI SMT 2",
+      "code": "AOI-HCM-002",
+      "img2d": "/machines/avi-machine-2.jpg",
+      "img3d": "/machines/aoi-3d-2.webp"
+    },
+    {
+      "id": "6",
+      "name": "AVI Assembly 1",
+      "code": "AVI-HCM-001",
+      "img2d": "/machines/avi-machine-3.jpg",
+      "img3d": "/machines/avi-3d-2.webp"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tcode\timg2d\timg3d\n1\tAVI Machine 1\tAVI-HN-001\t/machines/aoi-machine-1.jpg\t/machines/avi-3d.jpg\n2\tAVI Machine 2\tAVI-HN-002\t/machines/aoi-machine-2.jpg\t/machines/avi-3d.jpg\n3\tAOI Machine 1\tAOI-HN-001\t/machines/aoi-machine-3.webp\t/machines/aoi-3d.webp\n4\tAOI SMT 1\tAOI-HCM-001\t/machines/avi-machine-1.jpg\t/machines/aoi-3d.webp\n5\tAOI SMT 2\tAOI-HCM-002\t/machines/avi-machine-2.jpg\t/machines/aoi-3d-2.webp\n6\tAVI Assembly 1\tAVI-HCM-001\t/machines/avi-machine-3.jpg\t/machines/avi-3d-2.webp\n",
+  "stderr": "",
+  "execution_time_ms": 1563
+}

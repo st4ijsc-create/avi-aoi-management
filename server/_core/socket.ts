@@ -3,6 +3,26 @@ import { Server, Socket } from "socket.io";
 
 let io: Server | null = null;
 
+// Store pending machine registrations
+interface PendingMachineRegistration {
+  socketId: string;
+  ipAddress: string;
+  machineInfo: {
+    code: string;
+    name: string;
+    type: "AVI" | "AOI";
+    serialNumber?: string;
+    manufacturer?: string;
+    model?: string;
+    firmwareVersion?: string;
+  };
+  timestamp: Date;
+  status: "pending" | "approved" | "rejected";
+}
+
+const pendingRegistrations: Map<string, PendingMachineRegistration> = new Map();
+const connectedMachines: Map<number, { socketId: string; ipAddress: string; lastHeartbeat: Date }> = new Map();
+
 export interface InspectionAlert {
   type: "NG_ALERT" | "YIELD_WARNING" | "NEW_INSPECTION";
   machineId: number;
@@ -69,6 +89,158 @@ export function initializeSocket(server: HttpServer): Server {
 
     socket.on("disconnect", () => {
       console.log(`[Socket.io] Client disconnected: ${socket.id}`);
+      
+      // Remove from connected machines if it was a machine
+      const machineEntries = Array.from(connectedMachines.entries());
+      for (const [machineId, info] of machineEntries) {
+        if (info.socketId === socket.id) {
+          connectedMachines.delete(machineId);
+          console.log(`[Socket.io] Machine ${machineId} disconnected`);
+          // Notify admin dashboard
+          io?.to("admin").emit("machine:disconnected", { machineId, timestamp: new Date() });
+          break;
+        }
+      }
+      
+      // Remove pending registration if exists
+      pendingRegistrations.delete(socket.id);
+    });
+
+    // ============ MACHINE MAPPING EVENTS ============
+    
+    // Machine requests registration
+    socket.on("machine:register", async (data: {
+      code: string;
+      name: string;
+      type: "AVI" | "AOI";
+      serialNumber?: string;
+      manufacturer?: string;
+      model?: string;
+      firmwareVersion?: string;
+    }) => {
+      const ipAddress = socket.handshake.address;
+      console.log(`[Socket.io] Machine registration request from ${ipAddress}: ${data.code}`);
+      
+      // Store pending registration
+      const registration: PendingMachineRegistration = {
+        socketId: socket.id,
+        ipAddress,
+        machineInfo: data,
+        timestamp: new Date(),
+        status: "pending",
+      };
+      pendingRegistrations.set(socket.id, registration);
+      
+      // Notify admin dashboard about new registration request
+      io?.to("admin").emit("machine:registration_request", {
+        requestSocketId: socket.id,
+        ...registration,
+      });
+      
+      // Acknowledge receipt to machine
+      socket.emit("machine:register_ack", {
+        status: "pending",
+        message: "Registration request received. Waiting for admin approval.",
+      });
+    });
+
+    // Machine sends heartbeat
+    socket.on("machine:heartbeat", (data: { machineId: number; status: string; metrics?: any }) => {
+      const machineInfo = connectedMachines.get(data.machineId);
+      if (machineInfo && machineInfo.socketId === socket.id) {
+        machineInfo.lastHeartbeat = new Date();
+        connectedMachines.set(data.machineId, machineInfo);
+        
+        // Broadcast machine status update
+        io?.to("global").emit("machine:status_update", {
+          machineId: data.machineId,
+          status: data.status,
+          metrics: data.metrics,
+          lastHeartbeat: machineInfo.lastHeartbeat,
+        });
+      }
+    });
+
+    // Machine confirms mapping
+    socket.on("machine:confirm_mapping", (data: { machineId: number; apiKey: string }) => {
+      const ipAddress = socket.handshake.address;
+      connectedMachines.set(data.machineId, {
+        socketId: socket.id,
+        ipAddress,
+        lastHeartbeat: new Date(),
+      });
+      
+      socket.join(`machine:${data.machineId}`);
+      console.log(`[Socket.io] Machine ${data.machineId} mapped successfully from ${ipAddress}`);
+      
+      // Notify admin dashboard
+      io?.to("admin").emit("machine:connected", {
+        machineId: data.machineId,
+        ipAddress,
+        timestamp: new Date(),
+      });
+    });
+
+    // Admin joins admin room for machine management
+    socket.on("admin:join", () => {
+      socket.join("admin");
+      console.log(`[Socket.io] Admin ${socket.id} joined admin room`);
+      
+      // Send current pending registrations
+      const pending = Array.from(pendingRegistrations.entries()).map(([id, reg]) => ({
+        requestSocketId: id,
+        ipAddress: reg.ipAddress,
+        machineInfo: reg.machineInfo,
+        timestamp: reg.timestamp,
+        status: reg.status,
+      }));
+      socket.emit("admin:pending_registrations", pending);
+      
+      // Send connected machines status
+      const connected = Array.from(connectedMachines.entries()).map(([machineId, info]) => ({
+        machineId,
+        ...info,
+      }));
+      socket.emit("admin:connected_machines", connected);
+    });
+
+    // Admin approves registration
+    socket.on("admin:approve_registration", (data: { socketId: string; machineId: number; apiKey: string }) => {
+      const registration = pendingRegistrations.get(data.socketId);
+      if (registration) {
+        registration.status = "approved";
+        
+        // Notify the machine
+        io?.to(data.socketId).emit("machine:registration_approved", {
+          machineId: data.machineId,
+          apiKey: data.apiKey,
+          message: "Registration approved. You can now send inspection data.",
+        });
+        
+        // Remove from pending
+        pendingRegistrations.delete(data.socketId);
+        
+        console.log(`[Socket.io] Registration approved for ${registration.machineInfo.code} -> Machine ID ${data.machineId}`);
+      }
+    });
+
+    // Admin rejects registration
+    socket.on("admin:reject_registration", (data: { socketId: string; reason: string }) => {
+      const registration = pendingRegistrations.get(data.socketId);
+      if (registration) {
+        registration.status = "rejected";
+        
+        // Notify the machine
+        io?.to(data.socketId).emit("machine:registration_rejected", {
+          reason: data.reason,
+          message: "Registration rejected by admin.",
+        });
+        
+        // Remove from pending
+        pendingRegistrations.delete(data.socketId);
+        
+        console.log(`[Socket.io] Registration rejected for ${registration.machineInfo.code}: ${data.reason}`);
+      }
     });
   });
 
