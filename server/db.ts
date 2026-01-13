@@ -871,24 +871,23 @@ export async function getShiftStats(filters?: {
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
   // Define shifts: Morning (6-14), Afternoon (14-22), Night (22-6)
-  const result = await db.select({
-    shift: sql<string>`CASE 
-      WHEN HOUR(${productInspections.inspectionTime}) >= 6 AND HOUR(${productInspections.inspectionTime}) < 14 THEN 'morning'
-      WHEN HOUR(${productInspections.inspectionTime}) >= 14 AND HOUR(${productInspections.inspectionTime}) < 22 THEN 'afternoon'
-      ELSE 'night'
-    END`,
-    total: sql<number>`count(*)`,
-    ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
-    ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
-    ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
-  })
-  .from(productInspections)
-  .where(whereClause)
-  .groupBy(sql`CASE 
+  // Use alias for TiDB compatibility in GROUP BY
+  const shiftExpr = sql<string>`CASE 
     WHEN HOUR(${productInspections.inspectionTime}) >= 6 AND HOUR(${productInspections.inspectionTime}) < 14 THEN 'morning'
     WHEN HOUR(${productInspections.inspectionTime}) >= 14 AND HOUR(${productInspections.inspectionTime}) < 22 THEN 'afternoon'
     ELSE 'night'
-  END`);
+  END`;
+  
+  const result = await db.select({
+    shift: shiftExpr.as('shift'),
+    total: sql<number>`count(*)`.as('total'),
+    ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`.as('ok'),
+    ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`.as('ng'),
+    ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`.as('ntf'),
+  })
+  .from(productInspections)
+  .where(whereClause)
+  .groupBy(sql`shift`);
 
   return result.map(r => ({
     shift: String(r.shift),
@@ -983,18 +982,20 @@ export async function getDailyStats(factoryId?: number, workshopId?: number, day
   startDate.setDate(startDate.getDate() - days);
   startDate.setHours(0, 0, 0, 0);
 
-  // Get daily aggregated stats
+  // Get daily aggregated stats using DATE_FORMAT for TiDB compatibility
+  const dateFormat = sql<string>`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%m-%d')`;
+  
   const result = await db.select({
-    date: sql<string>`DATE(${productInspections.inspectionTime})`,
-    totalProducts: sql<number>`count(*)`,
-    okCount: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
-    ngCount: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
-    ntfCount: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
+    date: dateFormat.as('date'),
+    totalProducts: sql<number>`count(*)`.as('totalProducts'),
+    okCount: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`.as('okCount'),
+    ngCount: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`.as('ngCount'),
+    ntfCount: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`.as('ntfCount'),
   })
   .from(productInspections)
   .where(gte(productInspections.inspectionTime, startDate))
-  .groupBy(sql`DATE(${productInspections.inspectionTime})`)
-  .orderBy(sql`DATE(${productInspections.inspectionTime}) DESC`);
+  .groupBy(dateFormat)
+  .orderBy(sql`date DESC`);
 
   return result.map(r => ({
     date: String(r.date),

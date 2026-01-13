@@ -342,3 +342,9 @@
 - [x] Add 2D/3D/MAP view modes with zoom controls
 - [ ] Add Capacity utilization visualization
 - [ ] Add Alert summary by region/factory
+
+
+## Bug Fixes - Phase 23
+
+- [x] Fix SQL query error: DATE() function in GROUP BY not compatible with TiDB (use DATE_FORMAT with alias)
+- [x] Fix SQL query error: CASE expression in GROUP BY not compatible with TiDB (use alias)
