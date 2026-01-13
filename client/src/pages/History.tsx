@@ -40,8 +40,10 @@ import {
   Save,
   Clock,
   RefreshCw,
-  Settings2
+  Settings2,
+  QrCode
 } from "lucide-react";
+import BarcodeScanner from "@/components/BarcodeScanner";
 import { toast } from "sonner";
 import { navItems } from "@/lib/navigation";
 import { useState, useMemo } from "react";
@@ -65,6 +67,7 @@ export default function History() {
   });
   const [page, setPage] = useState(1);
   const [activeTab, setActiveTab] = useState("list");
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [analysisLimit, setAnalysisLimit] = useState(100);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [pageSize, setPageSize] = useState(20);
@@ -473,11 +476,22 @@ export default function History() {
               </div>
               <div className="space-y-2">
                 <label className="text-sm text-muted-foreground">Serial Number</label>
-                <Input
-                  placeholder="VD: SN123456789"
-                  value={filters.serialNumber}
-                  onChange={(e) => setFilters({ ...filters, serialNumber: e.target.value })}
-                />
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="VD: SN123456789"
+                    value={filters.serialNumber}
+                    onChange={(e) => setFilters({ ...filters, serialNumber: e.target.value })}
+                    className="flex-1"
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setIsScannerOpen(true)}
+                    title="Quét mã vạch/QR"
+                  >
+                    <QrCode className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
               <div className="space-y-2">
                 <label className="text-sm text-muted-foreground">Kết quả</label>
@@ -1643,6 +1657,17 @@ export default function History() {
           </TabsContent>
         </Tabs>
       </div>
+      
+      {/* Barcode Scanner Dialog */}
+      <BarcodeScanner
+        open={isScannerOpen}
+        onOpenChange={setIsScannerOpen}
+        onScan={(serialNumber) => {
+          setFilters({ ...filters, serialNumber });
+          setPage(1);
+          toast.success(`Đã tìm kiếm: ${serialNumber}`);
+        }}
+      />
     </DashboardLayout>
   );
 }

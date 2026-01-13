@@ -1740,6 +1740,18 @@ export async function deleteLineStage(id: number) {
   return db.delete(lineStages).where(eq(lineStages.id, id));
 }
 
+export async function reorderLineStages(lineId: number, stageIds: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Update orderIndex for each stage based on position in array
+  for (let i = 0; i < stageIds.length; i++) {
+    await db.update(lineStages)
+      .set({ orderIndex: i })
+      .where(and(eq(lineStages.id, stageIds[i]), eq(lineStages.lineId, lineId)));
+  }
+}
+
 // ============ LINE PRODUCT ASSIGNMENT FUNCTIONS ============
 export async function getLineProductAssignments(filters?: {
   lineId?: number;

@@ -425,3 +425,44 @@
 - [x] Schema đã hỗ trợ 1 máy map nhiều sản phẩm (productMachineMappings)
 - [x] UI hiển thị danh sách sản phẩm theo máy (/product-mapping)
 - [x] API submitInspection đã hỗ trợ productionOrderCode, companyCode, workshopCode
+
+
+## Phase 26: UI Công đoạn, Gantt Chart, Barcode Scanner
+
+### 1. UI Công đoạn dây chuyền
+- [ ] Thêm tab Công đoạn trong Settings page
+- [ ] CRUD cho công đoạn (tên, mã, thứ tự, mô tả)
+- [ ] Drag-drop để sắp xếp thứ tự công đoạn
+- [ ] Liên kết công đoạn với dây chuyền
+
+### 2. Gantt Chart cho Lệnh sản xuất
+- [ ] Thêm tab Gantt trong Production Orders page
+- [ ] Hiển thị timeline các lệnh sản xuất theo dây chuyền
+- [ ] Color-coded theo trạng thái (pending, in_progress, completed)
+- [ ] Zoom in/out timeline (ngày/tuần/tháng)
+
+### 3. Barcode/QR Scanner
+- [ ] Tích hợp camera scanner trong History page
+- [ ] Quét mã vạch/QR để tra cứu serial number
+- [ ] Hiển thị kết quả kiểm tra ngay sau khi quét
+- [ ] Hỗ trợ nhập thủ công nếu không quét được
+
+## Phase 27: Gantt Chart & Barcode Scanner
+
+### Gantt Chart cho Lệnh sản xuất
+- [x] Tạo component GanttChart với timeline view
+- [x] Hiển thị lệnh sản xuất theo dây chuyền
+- [x] Color-coded theo trạng thái (pending=yellow, in_progress=blue, completed=green, paused=orange, cancelled=red)
+- [x] Zoom in/out timeline (ngày/tuần/tháng)
+- [x] Filter theo nhà máy và dây chuyền
+- [x] Hiển thị progress bar trên mỗi order
+- [x] Click order để mở edit dialog
+- [x] Thêm tab Gantt Chart trong Production Orders page
+
+### Barcode/QR Scanner cho History
+- [x] Tạo component BarcodeScanner với html5-qrcode library
+- [x] Hỗ trợ camera scanner mode
+- [x] Hỗ trợ nhập thủ công serial number
+- [x] Tích hợp vào History page với nút quét bên cạnh Serial Number input
+- [x] Auto-fill serial number sau khi quét thành công
+- [x] Toast notification khi quét thành công

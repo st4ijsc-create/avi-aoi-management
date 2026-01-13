@@ -10,8 +10,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Edit, Trash2, Search, Package, Factory, Calendar, Target, CheckCircle2 } from "lucide-react";
+import { Plus, Edit, Trash2, Search, Package, Factory, Calendar, Target, CheckCircle2, BarChart3 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import GanttChart from "@/components/GanttChart";
 
 export default function ProductionOrders() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -19,6 +21,7 @@ export default function ProductionOrders() {
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [activeTab, setActiveTab] = useState("list");
   
   // Form state
   const [orderCode, setOrderCode] = useState("");
@@ -328,122 +331,149 @@ export default function ProductionOrders() {
           </Card>
         </div>
 
-        {/* Filters */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex gap-4">
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Tìm theo mã lệnh, mã công ty..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
+        {/* View Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+            <TabsTrigger value="list" className="flex items-center gap-2">
+              <Package className="w-4 h-4" />
+              Danh sách
+            </TabsTrigger>
+            <TabsTrigger value="gantt" className="flex items-center gap-2">
+              <BarChart3 className="w-4 h-4" />
+              Gantt Chart
+            </TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="list" className="space-y-4 mt-4">
+            {/* Filters */}
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Tìm theo mã lệnh, mã công ty..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
+                  </div>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="Trạng thái" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tất cả trạng thái</SelectItem>
+                      <SelectItem value="pending">Chờ xử lý</SelectItem>
+                      <SelectItem value="in_progress">Đang sản xuất</SelectItem>
+                      <SelectItem value="completed">Hoàn thành</SelectItem>
+                      <SelectItem value="paused">Tạm dừng</SelectItem>
+                      <SelectItem value="cancelled">Đã hủy</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-              </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Trạng thái" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tất cả trạng thái</SelectItem>
-                  <SelectItem value="pending">Chờ xử lý</SelectItem>
-                  <SelectItem value="in_progress">Đang sản xuất</SelectItem>
-                  <SelectItem value="completed">Hoàn thành</SelectItem>
-                  <SelectItem value="paused">Tạm dừng</SelectItem>
-                  <SelectItem value="cancelled">Đã hủy</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
 
-        {/* Orders Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Danh sách lệnh sản xuất</CardTitle>
-            <CardDescription>Quản lý và theo dõi tiến độ các lệnh sản xuất</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Mã lệnh</TableHead>
-                  <TableHead>Công ty</TableHead>
-                  <TableHead>Dây chuyền</TableHead>
-                  <TableHead>Sản phẩm</TableHead>
-                  <TableHead>Tiến độ</TableHead>
-                  <TableHead>OK/NG/NTF</TableHead>
-                  <TableHead>Trạng thái</TableHead>
-                  <TableHead className="text-right">Thao tác</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredOrders?.map((order) => (
-                  <TableRow key={order.id}>
-                    <TableCell className="font-medium">{order.orderCode}</TableCell>
-                    <TableCell>{order.companyCode}</TableCell>
-                    <TableCell>
-                      <div className="text-sm">
-                        <div>{getLineName(order.lineId)}</div>
-                        <div className="text-muted-foreground text-xs">{getWorkshopName(order.workshopId)}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell>{getProductName(order.productModelId)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-primary transition-all"
-                            style={{ width: `${getProgress(order)}%` }}
-                          />
-                        </div>
-                        <span className="text-sm">{order.completedQuantity}/{order.targetQuantity}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-sm">
-                        <span className="text-green-500">{order.okQuantity}</span>
-                        {" / "}
-                        <span className="text-red-500">{order.ngQuantity}</span>
-                        {" / "}
-                        <span className="text-yellow-500">{order.ntfQuantity}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>{getStatusBadge(order.status)}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleEdit(order)}>
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            if (confirm("Bạn có chắc muốn xóa lệnh sản xuất này?")) {
-                              deleteMutation.mutate({ id: order.id });
-                            }
-                          }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {(!filteredOrders || filteredOrders.length === 0) && (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                      Chưa có lệnh sản xuất nào
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+            {/* Orders Table */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Danh sách lệnh sản xuất</CardTitle>
+                <CardDescription>Quản lý và theo dõi tiến độ các lệnh sản xuất</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Mã lệnh</TableHead>
+                      <TableHead>Công ty</TableHead>
+                      <TableHead>Dây chuyền</TableHead>
+                      <TableHead>Sản phẩm</TableHead>
+                      <TableHead>Tiến độ</TableHead>
+                      <TableHead>OK/NG/NTF</TableHead>
+                      <TableHead>Trạng thái</TableHead>
+                      <TableHead className="text-right">Thao tác</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredOrders?.map((order) => (
+                      <TableRow key={order.id}>
+                        <TableCell className="font-medium">{order.orderCode}</TableCell>
+                        <TableCell>{order.companyCode}</TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <div>{getLineName(order.lineId)}</div>
+                            <div className="text-muted-foreground text-xs">{getWorkshopName(order.workshopId)}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>{getProductName(order.productModelId)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-primary transition-all"
+                                style={{ width: `${getProgress(order)}%` }}
+                              />
+                            </div>
+                            <span className="text-sm">{order.completedQuantity}/{order.targetQuantity}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <span className="text-green-500">{order.okQuantity}</span>
+                            {" / "}
+                            <span className="text-red-500">{order.ngQuantity}</span>
+                            {" / "}
+                            <span className="text-yellow-500">{order.ntfQuantity}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>{getStatusBadge(order.status)}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button variant="ghost" size="icon" onClick={() => handleEdit(order)}>
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                if (confirm("Bạn có chắc muốn xóa lệnh sản xuất này?")) {
+                                  deleteMutation.mutate({ id: order.id });
+                                }
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {(!filteredOrders || filteredOrders.length === 0) && (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                          Chưa có lệnh sản xuất nào
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+          
+          <TabsContent value="gantt" className="mt-4">
+            <GanttChart
+              orders={orders || []}
+              lines={lines || []}
+              workshops={workshops || []}
+              factories={factories || []}
+              products={products || []}
+              onOrderClick={(order) => handleEdit(order)}
+            />
+          </TabsContent>
+        </Tabs>
 
         {/* Edit Dialog */}
         <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>

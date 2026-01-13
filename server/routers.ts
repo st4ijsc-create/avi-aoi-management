@@ -1735,6 +1735,16 @@ const lineStageRouter = router({
       await db.deleteLineStage(input.id);
       return { success: true };
     }),
+
+  reorder: adminProcedure
+    .input(z.object({
+      lineId: z.number(),
+      stageIds: z.array(z.number()),
+    }))
+    .mutation(async ({ input }) => {
+      await db.reorderLineStages(input.lineId, input.stageIds);
+      return { success: true };
+    }),
 });
 
 // ============ LINE PRODUCT ASSIGNMENT ROUTER ============

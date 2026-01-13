@@ -35,6 +35,7 @@ type Line = { id: number; workshopId: number; code: string; name: string; descri
 type Station = { id: number; lineId: number; code: string; name: string; orderIndex: number; description?: string | null };
 type Machine = { id: number; stationId: number; code: string; name: string; machineType: string; apiKey: string; model?: string | null; manufacturer?: string | null };
 type ShiftConfig = { id: number; factoryId?: number | null; name: string; code: string; startHour: number; startMinute: number; endHour: number; endMinute: number; isActive: boolean; orderIndex: number };
+type LineStage = { id: number; lineId: number; code: string; name: string; orderIndex: number; description?: string | null; stationId?: number | null };
 
 export default function Settings() {
   const { user } = useAuth();
@@ -86,6 +87,15 @@ export default function Settings() {
   const [editingShift, setEditingShift] = useState<ShiftConfig | null>(null);
   const [editShiftDialogOpen, setEditShiftDialogOpen] = useState(false);
 
+  // Stage form
+  const [stageForm, setStageForm] = useState({ 
+    lineId: "", code: "", name: "", description: "", orderIndex: "0", stationId: ""
+  });
+  const [stageDialogOpen, setStageDialogOpen] = useState(false);
+  const [editingStage, setEditingStage] = useState<LineStage | null>(null);
+  const [editStageDialogOpen, setEditStageDialogOpen] = useState(false);
+  const [draggedStageId, setDraggedStageId] = useState<number | null>(null);
+
   // Queries
   const { data: factories, refetch: refetchFactories } = trpc.factory.list.useQuery();
   const { data: workshops, refetch: refetchWorkshops } = trpc.workshop.list.useQuery();
@@ -93,6 +103,7 @@ export default function Settings() {
   const { data: stations, refetch: refetchStations } = trpc.station.list.useQuery();
   const { data: machines, refetch: refetchMachines } = trpc.machine.list.useQuery();
   const { data: shifts, refetch: refetchShifts } = trpc.shiftConfig.list.useQuery();
+  const { data: stages, refetch: refetchStages } = trpc.lineStage.list.useQuery();
 
   // Create Mutations
   const createFactoryMutation = trpc.factory.create.useMutation({
@@ -265,6 +276,43 @@ export default function Settings() {
     onError: (error) => toast.error(error.message),
   });
 
+  // Stage mutations
+  const createStageMutation = trpc.lineStage.create.useMutation({
+    onSuccess: () => {
+      toast.success("Tạo công đoạn thành công");
+      refetchStages();
+      setStageDialogOpen(false);
+      setStageForm({ lineId: "", code: "", name: "", description: "", orderIndex: "0", stationId: "" });
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const updateStageMutation = trpc.lineStage.update.useMutation({
+    onSuccess: () => {
+      toast.success("Cập nhật công đoạn thành công");
+      refetchStages();
+      setEditStageDialogOpen(false);
+      setEditingStage(null);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const deleteStageMutation = trpc.lineStage.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Xóa công đoạn thành công");
+      refetchStages();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const reorderStageMutation = trpc.lineStage.reorder.useMutation({
+    onSuccess: () => {
+      toast.success("Sắp xếp lại thành công");
+      refetchStages();
+    },
+    onError: (error: { message: string }) => toast.error(error.message),
+  });
+
   const seedDataMutation = trpc.seedData.seed.useMutation({
     onSuccess: (data) => {
       toast.success(data.message);
@@ -358,7 +406,7 @@ export default function Settings() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="factories" className="gap-2">
               <Building2 className="h-4 w-4" />
               Nhà máy
@@ -382,6 +430,10 @@ export default function Settings() {
             <TabsTrigger value="shifts" className="gap-2">
               <Clock className="h-4 w-4" />
               Ca làm việc
+            </TabsTrigger>
+            <TabsTrigger value="stages" className="gap-2">
+              <GitBranch className="h-4 w-4" />
+              Công đoạn
             </TabsTrigger>
           </TabsList>
 
@@ -1248,8 +1300,231 @@ export default function Settings() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* Stages Tab */}
+          <TabsContent value="stages">
+            <Card className="glass-card">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Công đoạn sản xuất</CardTitle>
+                    <CardDescription>{stages?.length || 0} công đoạn</CardDescription>
+                  </div>
+                  {isAdmin && (
+                    <Dialog open={stageDialogOpen} onOpenChange={setStageDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button className="gap-2">
+                          <Plus className="h-4 w-4" />
+                          Thêm công đoạn
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Thêm công đoạn mới</DialogTitle>
+                          <DialogDescription>Tạo công đoạn mới cho dây chuyền sản xuất</DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Dây chuyền *</label>
+                            <Select value={stageForm.lineId} onValueChange={(v) => setStageForm({ ...stageForm, lineId: v })}>
+                              <SelectTrigger><SelectValue placeholder="Chọn dây chuyền" /></SelectTrigger>
+                              <SelectContent>
+                                {lines?.map((line) => (
+                                  <SelectItem key={line.id} value={String(line.id)}>{line.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Mã công đoạn *</label>
+                              <Input placeholder="VD: A, B, C..." value={stageForm.code} onChange={(e) => setStageForm({ ...stageForm, code: e.target.value })} />
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Tên công đoạn *</label>
+                              <Input placeholder="VD: Lắp ráp, Kiểm tra..." value={stageForm.name} onChange={(e) => setStageForm({ ...stageForm, name: e.target.value })} />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Thứ tự</label>
+                              <Input type="number" value={stageForm.orderIndex} onChange={(e) => setStageForm({ ...stageForm, orderIndex: e.target.value })} />
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Trạm liên kết</label>
+                              <Select value={stageForm.stationId} onValueChange={(v) => setStageForm({ ...stageForm, stationId: v })}>
+                                <SelectTrigger><SelectValue placeholder="Chọn trạm" /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="">Không liên kết</SelectItem>
+                                  {stations?.filter(s => {
+                                    const line = lines?.find(l => l.id === Number(stageForm.lineId));
+                                    return line && s.lineId === line.id;
+                                  }).map((station) => (
+                                    <SelectItem key={station.id} value={String(station.id)}>{station.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Mô tả</label>
+                            <Input placeholder="Mô tả công đoạn" value={stageForm.description} onChange={(e) => setStageForm({ ...stageForm, description: e.target.value })} />
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button variant="outline" onClick={() => setStageDialogOpen(false)}>Hủy</Button>
+                          <Button onClick={() => createStageMutation.mutate({
+                            lineId: Number(stageForm.lineId),
+                            code: stageForm.code,
+                            name: stageForm.name,
+                            description: stageForm.description || undefined,
+                            orderIndex: Number(stageForm.orderIndex),
+                            stationId: stageForm.stationId ? Number(stageForm.stationId) : undefined,
+                          })} disabled={!stageForm.lineId || !stageForm.code || !stageForm.name || createStageMutation.isPending}>
+                            {createStageMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                            Tạo công đoạn
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {lines?.map((line) => {
+                    const lineStages = stages?.filter(s => s.lineId === line.id).sort((a, b) => a.orderIndex - b.orderIndex) || [];
+                    if (lineStages.length === 0) return null;
+                    return (
+                      <div key={line.id} className="border rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <GitBranch className="h-4 w-4 text-primary" />
+                          <span className="font-medium">{line.name}</span>
+                          <span className="text-sm text-muted-foreground">({lineStages.length} công đoạn)</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {lineStages.map((stage, index) => (
+                            <div
+                              key={stage.id}
+                              draggable
+                              onDragStart={() => setDraggedStageId(stage.id)}
+                              onDragOver={(e) => e.preventDefault()}
+                              onDrop={() => {
+                                if (draggedStageId && draggedStageId !== stage.id) {
+                                  const newOrder = lineStages.map(s => s.id);
+                                  const dragIndex = newOrder.indexOf(draggedStageId);
+                                  const dropIndex = newOrder.indexOf(stage.id);
+                                  newOrder.splice(dragIndex, 1);
+                                  newOrder.splice(dropIndex, 0, draggedStageId);
+                                  reorderStageMutation.mutate({ lineId: line.id, stageIds: newOrder });
+                                }
+                                setDraggedStageId(null);
+                              }}
+                              className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-move transition-all ${
+                                draggedStageId === stage.id ? 'opacity-50 border-primary' : 'hover:border-primary/50'
+                              }`}
+                            >
+                              <span className="w-6 h-6 rounded-full bg-primary/20 text-primary text-xs flex items-center justify-center font-bold">
+                                {stage.code}
+                              </span>
+                              <span className="text-sm">{stage.name}</span>
+                              {index < lineStages.length - 1 && (
+                                <span className="text-muted-foreground">→</span>
+                              )}
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-6 w-6 ml-1">
+                                    <MoreHorizontal className="h-3 w-3" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => {
+                                    setEditingStage(stage);
+                                    setEditStageDialogOpen(true);
+                                  }}>
+                                    <Pencil className="h-4 w-4 mr-2" />
+                                    Chỉnh sửa
+                                  </DropdownMenuItem>
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">
+                                        <Trash2 className="h-4 w-4 mr-2" />
+                                        Xóa
+                                      </DropdownMenuItem>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          Bạn có chắc chắn muốn xóa công đoạn "{stage.name}"?
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>Hủy</AlertDialogCancel>
+                                        <AlertDialogAction onClick={() => deleteStageMutation.mutate({ id: stage.id })}>
+                                          Xóa
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {(!stages || stages.length === 0) && (
+                    <div className="p-8 text-center text-muted-foreground">
+                      Chưa có công đoạn nào. Hãy thêm công đoạn mới.
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
       </div>
+
+      {/* Edit Stage Dialog */}
+      <Dialog open={editStageDialogOpen} onOpenChange={setEditStageDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Chỉnh sửa công đoạn</DialogTitle>
+          </DialogHeader>
+          {editingStage && (
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Mã công đoạn</label>
+                  <Input value={editingStage.code} onChange={(e) => setEditingStage({ ...editingStage, code: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Tên công đoạn</label>
+                  <Input value={editingStage.name} onChange={(e) => setEditingStage({ ...editingStage, name: e.target.value })} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Mô tả</label>
+                <Input value={editingStage.description || ''} onChange={(e) => setEditingStage({ ...editingStage, description: e.target.value })} />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditStageDialogOpen(false)}>Hủy</Button>
+            <Button onClick={() => editingStage && updateStageMutation.mutate({
+              id: editingStage.id,
+              code: editingStage.code,
+              name: editingStage.name,
+              description: editingStage.description || undefined,
+            })} disabled={updateStageMutation.isPending}>
+              {updateStageMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Lưu
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Factory Dialog */}
       <Dialog open={editFactoryDialogOpen} onOpenChange={setEditFactoryDialogOpen}>
