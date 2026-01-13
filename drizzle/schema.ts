@@ -227,7 +227,7 @@ export const measurementResults = mysqlTable("measurement_results", {
   pointDefId: int("pointDefId").notNull(),
   measuredValue: decimal("measuredValue", { precision: 15, scale: 6 }),
   measuredValueText: varchar("measuredValueText", { length: 255 }), // Giá trị dạng text
-  result: mysqlEnum("result", ["OK", "NG"]).notNull(),
+  result: mysqlEnum("result", ["OK", "NG", "NTF"]).notNull(),
   imageUrl: text("imageUrl"), // Ảnh thực tế của điểm đo
   imageKey: varchar("imageKey", { length: 255 }),
   remark: text("remark"),

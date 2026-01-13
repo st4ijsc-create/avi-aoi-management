@@ -22,6 +22,13 @@
       "when": 1768261902974,
       "tag": "0002_harsh_johnny_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1768264597544,
+      "tag": "0003_crazy_mastermind",
+      "breakpoints": true
     }
   ]
 }

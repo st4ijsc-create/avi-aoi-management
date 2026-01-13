@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { 
@@ -19,14 +20,30 @@ import {
   Loader2,
   ZoomIn,
   SplitSquareVertical,
-  Target
+  Target,
+  Edit3,
+  Save
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
-import { useState } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useParams, Link } from "wouter";
 import { format } from "date-fns";
 
-
+interface MeasurementPoint {
+  id: number;
+  pointDefId: number;
+  result: string;
+  measuredValue: string | null;
+  imageUrl: string | null;
+  remark: string | null;
+  aiAnalysisResult: string | null;
+  aiConfidence: string | null;
+  referenceImageUrl?: string | null;
+  pointCode?: string;
+  pointName?: string;
+  x?: number;
+  y?: number;
+}
 
 export default function InspectionDetail() {
   const params = useParams<{ id: string }>();
@@ -36,12 +53,24 @@ export default function InspectionDetail() {
   const [ntfDialogOpen, setNtfDialogOpen] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [compareMode, setCompareMode] = useState(false);
-  const [selectedMeasurement, setSelectedMeasurement] = useState<any>(null);
+  const [selectedMeasurement, setSelectedMeasurement] = useState<MeasurementPoint | null>(null);
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
+  const [correctDialogOpen, setCorrectDialogOpen] = useState(false);
+  const [correctResult, setCorrectResult] = useState<"OK" | "NG" | "NTF">("OK");
+  const [correctReason, setCorrectReason] = useState("");
+  const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
+  
+  const imageContainerRef = useRef<HTMLDivElement>(null);
+  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
 
   const { data, isLoading, refetch } = trpc.inspection.getById.useQuery(
     { id: inspectionId },
     { enabled: inspectionId > 0 }
+  );
+
+  const { data: productModelData } = trpc.productModel.getByCode.useQuery(
+    { code: data?.inspection?.productModel || "" },
+    { enabled: !!data?.inspection?.productModel }
   );
 
   const confirmNTFMutation = trpc.inspection.confirmNTF.useMutation({
@@ -56,8 +85,21 @@ export default function InspectionDetail() {
     },
   });
 
+  const correctResultMutation = trpc.measurementResult.correctResult.useMutation({
+    onSuccess: () => {
+      toast.success("Đã cập nhật kết quả thành công");
+      setCorrectDialogOpen(false);
+      setCorrectReason("");
+      setSelectedMeasurement(null);
+      refetch();
+    },
+    onError: (error) => {
+      toast.error(`Lỗi: ${error.message}`);
+    },
+  });
+
   const analyzeWithAIMutation = trpc.measurementResult.analyzeWithAI.useMutation({
-    onSuccess: (result) => {
+    onSuccess: () => {
       toast.success("Phân tích AI hoàn tất");
       refetch();
     },
@@ -77,9 +119,27 @@ export default function InspectionDetail() {
     confirmNTFMutation.mutate({ id: inspectionId, reason: ntfReason });
   };
 
+  const handleCorrectResult = () => {
+    if (!selectedMeasurement) return;
+    correctResultMutation.mutate({
+      id: selectedMeasurement.id,
+      result: correctResult,
+      reason: correctReason,
+    });
+  };
+
   const handleAnalyzeWithAI = (measurementId: number) => {
     setAnalyzingId(measurementId);
     analyzeWithAIMutation.mutate({ id: measurementId });
+  };
+
+  const getResultColor = (result: string) => {
+    switch (result) {
+      case "OK": return "#22c55e";
+      case "NG": return "#ef4444";
+      case "NTF": return "#f97316";
+      default: return "#6b7280";
+    }
   };
 
   const getResultBadge = (result: string, size: "sm" | "lg" = "sm") => {
@@ -109,6 +169,33 @@ export default function InspectionDetail() {
       default:
         return <Badge variant="secondary">{result}</Badge>;
     }
+  };
+
+  // Merge measurement results with point definitions to get coordinates
+  const measurementsWithCoords = useMemo(() => {
+    if (!data?.measurements || !productModelData?.measurementPoints) {
+      return data?.measurements || [];
+    }
+    
+    return data.measurements.map((m: MeasurementPoint) => {
+      const pointDef = productModelData.measurementPoints.find(
+        (p: { id: number }) => p.id === m.pointDefId
+      );
+      return {
+        ...m,
+        x: pointDef?.positionX,
+        y: pointDef?.positionY,
+        pointCode: pointDef?.code,
+        pointName: pointDef?.name,
+        referenceImageUrl: pointDef?.referenceImageUrl,
+      };
+    });
+  }, [data?.measurements, productModelData?.measurementPoints]);
+
+  // Handle image load to get dimensions
+  const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
   };
 
   if (isLoading) {
@@ -235,12 +322,6 @@ export default function InspectionDetail() {
                   <p className="text-sm text-muted-foreground">Batch Number</p>
                   <p className="font-medium text-foreground">{inspection.batchNumber || "-"}</p>
                 </div>
-                {inspection.cycleTime && (
-                  <div>
-                    <p className="text-sm text-muted-foreground">Cycle Time</p>
-                    <p className="font-medium text-foreground">{inspection.cycleTime}s</p>
-                  </div>
-                )}
               </div>
 
               {inspection.ntfReason && (
@@ -285,7 +366,115 @@ export default function InspectionDetail() {
           </Card>
         </div>
 
-        {/* Measurement Results */}
+        {/* Product Image with Measurement Points Overlay */}
+        {productModelData?.productModel?.referenceImageUrl && (
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Target className="h-5 w-5 text-primary" />
+                Ảnh sản phẩm với điểm đo
+              </CardTitle>
+              <CardDescription>
+                Click vào điểm đo để xem chi tiết và so sánh với ảnh mẫu
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div 
+                ref={imageContainerRef}
+                className="relative inline-block max-w-full overflow-hidden rounded-lg border border-border"
+              >
+                <img
+                  src={productModelData.productModel.referenceImageUrl}
+                  alt="Product reference"
+                  className="max-w-full h-auto"
+                  onLoad={handleImageLoad}
+                />
+                
+                {/* Measurement Points Overlay */}
+                {measurementsWithCoords.map((m: MeasurementPoint, index: number) => {
+                  if (m.x === undefined || m.y === undefined) return null;
+                  
+                  const containerWidth = imageContainerRef.current?.offsetWidth || imageSize.width;
+                  const scale = containerWidth / imageSize.width;
+                  const x = m.x * scale;
+                  const y = m.y * scale;
+                  const radius = 20 * scale;
+                  
+                  return (
+                    <div
+                      key={m.id}
+                      className="absolute cursor-pointer transition-all duration-200"
+                      style={{
+                        left: x - radius,
+                        top: y - radius,
+                        width: radius * 2,
+                        height: radius * 2,
+                      }}
+                      onMouseEnter={() => setHoveredPoint(m.id)}
+                      onMouseLeave={() => setHoveredPoint(null)}
+                      onClick={() => {
+                        setSelectedMeasurement(m);
+                        setCompareMode(true);
+                      }}
+                    >
+                      {/* Circle */}
+                      <div
+                        className="absolute inset-0 rounded-full border-2 flex items-center justify-center transition-all"
+                        style={{
+                          borderColor: getResultColor(m.result),
+                          backgroundColor: `${getResultColor(m.result)}20`,
+                          transform: hoveredPoint === m.id ? 'scale(1.2)' : 'scale(1)',
+                        }}
+                      >
+                        <span 
+                          className="text-xs font-bold"
+                          style={{ color: getResultColor(m.result) }}
+                        >
+                          {index + 1}
+                        </span>
+                      </div>
+                      
+                      {/* Tooltip on hover */}
+                      {hoveredPoint === m.id && (
+                        <div 
+                          className="absolute z-50 left-full ml-2 top-1/2 -translate-y-1/2 bg-popover border border-border rounded-lg p-3 shadow-lg min-w-[200px]"
+                        >
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="font-semibold">{m.pointCode || `Point ${index + 1}`}</span>
+                            {getResultBadge(m.result)}
+                          </div>
+                          <p className="text-sm text-muted-foreground">{m.pointName || "Điểm đo"}</p>
+                          {m.measuredValue && (
+                            <p className="text-sm mt-1">Giá trị: {m.measuredValue}</p>
+                          )}
+                          <p className="text-xs text-primary mt-2">Click để xem chi tiết</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              
+              {/* Legend */}
+              <div className="flex items-center gap-6 mt-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-success/20 border-2 border-success" />
+                  <span className="text-sm text-muted-foreground">OK</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-destructive/20 border-2 border-destructive" />
+                  <span className="text-sm text-muted-foreground">NG</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-warning/20 border-2 border-warning" />
+                  <span className="text-sm text-muted-foreground">NTF</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Measurement Results List */}
         <Card className="glass-card">
           <CardHeader>
             <CardTitle className="text-lg">Kết quả các điểm đo ({measurements.length})</CardTitle>
@@ -294,23 +483,35 @@ export default function InspectionDetail() {
           <CardContent>
             {measurements.length > 0 ? (
               <div className="space-y-4">
-                {measurements.map((measurement, index) => (
+                {measurementsWithCoords.map((measurement: MeasurementPoint, index: number) => (
                   <div 
                     key={measurement.id}
                     className={`p-4 rounded-lg border ${
                       measurement.result === "OK" 
                         ? "border-success/30 bg-success/5" 
+                        : measurement.result === "NTF"
+                        ? "border-warning/30 bg-warning/5"
                         : "border-destructive/30 bg-destructive/5"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-3">
-                          <span className="text-sm font-medium text-muted-foreground">
-                            #{index + 1}
+                          <span 
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold"
+                            style={{ 
+                              backgroundColor: `${getResultColor(measurement.result)}20`,
+                              color: getResultColor(measurement.result),
+                              border: `2px solid ${getResultColor(measurement.result)}`
+                            }}
+                          >
+                            {index + 1}
                           </span>
                           <span className="font-semibold text-foreground">
-                            Point ID: {measurement.pointDefId}
+                            {measurement.pointCode || `Point ${measurement.pointDefId}`}
+                          </span>
+                          <span className="text-muted-foreground">
+                            {measurement.pointName}
                           </span>
                           {getResultBadge(measurement.result)}
                         </div>
@@ -374,18 +575,34 @@ export default function InspectionDetail() {
                           </div>
                         )}
 
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1"
-                          onClick={() => {
-                            setSelectedMeasurement(measurement);
-                            setCompareMode(true);
-                          }}
-                        >
-                          <SplitSquareVertical className="h-3 w-3" />
-                          So sánh
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1"
+                            onClick={() => {
+                              setSelectedMeasurement(measurement);
+                              setCompareMode(true);
+                            }}
+                          >
+                            <SplitSquareVertical className="h-3 w-3" />
+                            So sánh
+                          </Button>
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1"
+                            onClick={() => {
+                              setSelectedMeasurement(measurement);
+                              setCorrectResult(measurement.result as "OK" | "NG" | "NTF");
+                              setCorrectDialogOpen(true);
+                            }}
+                          >
+                            <Edit3 className="h-3 w-3" />
+                            Sửa
+                          </Button>
+                        </div>
 
                         {measurement.imageUrl && !measurement.aiAnalysisResult && (
                           <Button
@@ -430,55 +647,106 @@ export default function InspectionDetail() {
             </DialogTitle>
             <DialogDescription>
               {compareMode && selectedMeasurement && (
-                <span>Point ID: {selectedMeasurement.pointDefId}</span>
+                <div className="flex items-center gap-2">
+                  <span>{selectedMeasurement.pointCode || `Point ${selectedMeasurement.pointDefId}`}</span>
+                  {getResultBadge(selectedMeasurement.result)}
+                </div>
               )}
             </DialogDescription>
           </DialogHeader>
           {compareMode && selectedMeasurement ? (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <Target className="h-4 w-4" />
-                  Ảnh mẫu (Reference)
-                </div>
-                <div className="border rounded-lg p-2 bg-secondary/20">
-                  {selectedMeasurement.referenceImageUrl ? (
-                    <img 
-                      src={selectedMeasurement.referenceImageUrl} 
-                      alt="Reference"
-                      className="w-full max-h-[50vh] object-contain rounded"
-                    />
-                  ) : (
-                    <div className="h-64 flex items-center justify-center text-muted-foreground">
-                      <div className="text-center">
-                        <ImageIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                        <p>Chưa có ảnh mẫu</p>
-                        <p className="text-xs">Vui lòng cấu hình trong module Sản phẩm</p>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <Target className="h-4 w-4" />
+                    Ảnh mẫu (Reference)
+                  </div>
+                  <div className="border rounded-lg p-2 bg-secondary/20">
+                    {selectedMeasurement.referenceImageUrl ? (
+                      <img 
+                        src={selectedMeasurement.referenceImageUrl} 
+                        alt="Reference"
+                        className="w-full max-h-[40vh] object-contain rounded"
+                      />
+                    ) : (
+                      <div className="h-64 flex items-center justify-center text-muted-foreground">
+                        <div className="text-center">
+                          <ImageIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                          <p>Chưa có ảnh mẫu</p>
+                          <p className="text-xs">Vui lòng cấu hình trong module Sản phẩm</p>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <ImageIcon className="h-4 w-4" />
+                    Ảnh thực tế (Actual)
+                  </div>
+                  <div className="border rounded-lg p-2 bg-secondary/20">
+                    {selectedMeasurement.imageUrl ? (
+                      <img 
+                        src={selectedMeasurement.imageUrl} 
+                        alt="Actual"
+                        className="w-full max-h-[40vh] object-contain rounded"
+                      />
+                    ) : (
+                      <div className="h-64 flex items-center justify-center text-muted-foreground">
+                        <div className="text-center">
+                          <ImageIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                          <p>Không có ảnh</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <ImageIcon className="h-4 w-4" />
-                  Ảnh thực tế (Actual)
+              
+              {/* Quick Correct Actions */}
+              <div className="flex items-center justify-between p-4 bg-secondary/30 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium">Kết quả hiện tại: {getResultBadge(selectedMeasurement.result)}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Bạn có thể sửa kết quả nếu máy bắt sai</p>
                 </div>
-                <div className="border rounded-lg p-2 bg-secondary/20">
-                  {selectedMeasurement.imageUrl ? (
-                    <img 
-                      src={selectedMeasurement.imageUrl} 
-                      alt="Actual"
-                      className="w-full max-h-[50vh] object-contain rounded"
-                    />
-                  ) : (
-                    <div className="h-64 flex items-center justify-center text-muted-foreground">
-                      <div className="text-center">
-                        <ImageIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                        <p>Không có ảnh</p>
-                      </div>
-                    </div>
-                  )}
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant={selectedMeasurement.result === "OK" ? "default" : "outline"}
+                    className="gap-1"
+                    onClick={() => {
+                      setCorrectResult("OK");
+                      setCorrectDialogOpen(true);
+                    }}
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    OK
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={selectedMeasurement.result === "NG" ? "destructive" : "outline"}
+                    className="gap-1"
+                    onClick={() => {
+                      setCorrectResult("NG");
+                      setCorrectDialogOpen(true);
+                    }}
+                  >
+                    <XCircle className="h-4 w-4" />
+                    NG
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={selectedMeasurement.result === "NTF" ? "secondary" : "outline"}
+                    className="gap-1 border-warning text-warning"
+                    onClick={() => {
+                      setCorrectResult("NTF");
+                      setCorrectDialogOpen(true);
+                    }}
+                  >
+                    <AlertTriangle className="h-4 w-4" />
+                    NTF
+                  </Button>
                 </div>
               </div>
             </div>
@@ -491,6 +759,74 @@ export default function InspectionDetail() {
               />
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Correct Result Dialog */}
+      <Dialog open={correctDialogOpen} onOpenChange={setCorrectDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit3 className="h-5 w-5" />
+              Sửa kết quả điểm đo
+            </DialogTitle>
+            <DialogDescription>
+              Điều chỉnh kết quả nếu máy kiểm tra bắt sai
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Kết quả mới</label>
+              <Select value={correctResult} onValueChange={(v) => setCorrectResult(v as "OK" | "NG" | "NTF")}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="OK">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-success" />
+                      OK
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="NG">
+                    <div className="flex items-center gap-2">
+                      <XCircle className="h-4 w-4 text-destructive" />
+                      NG
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="NTF">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-warning" />
+                      NTF (Not True Fail)
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Lý do sửa đổi</label>
+              <Textarea
+                placeholder="Nhập lý do sửa đổi kết quả..."
+                value={correctReason}
+                onChange={(e) => setCorrectReason(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCorrectDialogOpen(false)}>
+              Hủy
+            </Button>
+            <Button 
+              onClick={handleCorrectResult}
+              disabled={correctResultMutation.isPending}
+              className="gap-2"
+            >
+              {correctResultMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              <Save className="h-4 w-4" />
+              Lưu thay đổi
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </DashboardLayout>

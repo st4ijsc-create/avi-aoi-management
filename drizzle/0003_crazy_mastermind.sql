@@ -1,0 +1,1 @@
+ALTER TABLE `measurement_results` MODIFY COLUMN `result` enum('OK','NG','NTF') NOT NULL;

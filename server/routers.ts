@@ -203,6 +203,15 @@ const productModelRouter = router({
       return db.getProductModelById(input.id);
     }),
 
+  getByCode: protectedProcedure
+    .input(z.object({ code: z.string() }))
+    .query(async ({ input }) => {
+      const productModel = await db.getProductModelByCode(input.code);
+      if (!productModel) return null;
+      const measurementPoints = await db.getMeasurementPointDefsByProductModel(productModel.id);
+      return { productModel, measurementPoints };
+    }),
+
   create: adminProcedure
     .input(z.object({
       code: z.string().min(1).max(100),
@@ -580,6 +589,49 @@ Respond in JSON format:
         console.error("AI analysis error:", error);
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'AI analysis failed' });
       }
+    }),
+
+  correctResult: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      result: z.enum(["OK", "NG", "NTF"]),
+      reason: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { measurementResults, productInspections } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const dbInstance = await db.getDb();
+      
+      if (!dbInstance) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      }
+
+      // Get the measurement result
+      const result = await db.getMeasurementResultById(input.id);
+      if (!result) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Measurement result not found' });
+      }
+
+      // Update the measurement result
+      await dbInstance.update(measurementResults).set({
+        result: input.result,
+        remark: input.reason ? `[Corrected by ${ctx.user.name}] ${input.reason}` : result.remark,
+      }).where(eq(measurementResults.id, input.id));
+
+      // Recalculate overall inspection result
+      const allResults = await db.getMeasurementResultsByInspection(result.inspectionId);
+      const hasNG = allResults.some(r => r.id === input.id ? input.result === "NG" : r.result === "NG");
+      const hasNTF = allResults.some(r => r.id === input.id ? input.result === "NTF" : r.result === "NTF");
+      
+      let overallResult: "OK" | "NG" | "NTF" = "OK";
+      if (hasNG) overallResult = "NG";
+      else if (hasNTF) overallResult = "NTF";
+
+      await dbInstance.update(productInspections).set({
+        overallResult,
+      }).where(eq(productInspections.id, result.inspectionId));
+
+      return { success: true, newOverallResult: overallResult };
     }),
 });
 

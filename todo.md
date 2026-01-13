@@ -100,3 +100,28 @@
 ## Bug Fixes
 
 - [x] Fix Product Model create - upload image to S3 before saving to database instead of saving base64 directly
+
+
+## Phase 14: CRUD Enhancement & History Module Upgrade
+
+### CRUD Enhancement
+- [ ] Complete CRUD for Factory (create, read, update, delete with UI)
+- [ ] Complete CRUD for Workshop (create, read, update, delete with UI)
+- [ ] Complete CRUD for Production Line (create, read, update, delete with UI)
+- [ ] Complete CRUD for Station (create, read, update, delete with UI)
+- [ ] Complete CRUD for Machine (create, read, update, delete with UI)
+- [ ] Complete CRUD for Product Model (create, read, update, delete with UI)
+- [ ] Complete CRUD for Measurement Point Definition (create, read, update, delete with UI)
+
+### History Module Upgrade
+- [x] Display measurement points on product image with status colors (OK=Green, NG=Red, NTF=Orange)
+- [x] Show measurement point numbers on image overlay
+- [x] Click on measurement point to view detail (actual image vs reference image)
+- [x] Allow user to correct result (change OK/NG/NTF) and save
+- [x] Side-by-side comparison view for actual vs reference image
+- [x] Display measurement values and standards in detail view
+
+### API Testing
+- [ ] Test POST /api/machine/submit-inspection with sample data
+- [ ] Verify data flow from machine to database
+- [ ] Test image upload and storage
