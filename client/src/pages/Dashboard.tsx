@@ -64,6 +64,15 @@ export default function Dashboard() {
     return { startDate, endDate };
   }, [timeRange]);
 
+  // Define type for dashboard stats
+  type DashboardStats = {
+    total: number;
+    ok: number;
+    ng: number;
+    ntf: number;
+    yieldRate: number;
+  };
+
   // Fetch dashboard stats
   const { data: stats, isLoading: statsLoading, refetch: refetchStats } = trpc.dashboard.getStats.useQuery({
     factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
@@ -86,10 +95,11 @@ export default function Dashboard() {
 
   const pieData = useMemo(() => {
     if (!stats) return [];
+    const s = stats as DashboardStats;
     return [
-      { name: "OK", value: stats.ok, color: "oklch(0.72 0.17 145)" },
-      { name: "NG", value: stats.ng, color: "oklch(0.65 0.2 25)" },
-      { name: "NTF", value: stats.ntf, color: "oklch(0.78 0.15 75)" },
+      { name: "OK", value: s.ok, color: "oklch(0.72 0.17 145)" },
+      { name: "NG", value: s.ng, color: "oklch(0.65 0.2 25)" },
+      { name: "NTF", value: s.ntf, color: "oklch(0.78 0.15 75)" },
     ].filter(item => item.value > 0);
   }, [stats]);
 
@@ -154,7 +164,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-foreground">
-                {statsLoading ? "..." : stats?.total.toLocaleString() || 0}
+                {statsLoading ? "..." : (stats as DashboardStats | undefined)?.total?.toLocaleString() || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 Tổng sản phẩm kiểm tra
@@ -171,7 +181,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-success">
-                {statsLoading ? "..." : stats?.ok.toLocaleString() || 0}
+                {statsLoading ? "..." : (stats as DashboardStats | undefined)?.ok?.toLocaleString() || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 Sản phẩm đạt chuẩn
@@ -188,7 +198,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-destructive">
-                {statsLoading ? "..." : stats?.ng.toLocaleString() || 0}
+                {statsLoading ? "..." : (stats as DashboardStats | undefined)?.ng?.toLocaleString() || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 Sản phẩm lỗi
@@ -205,7 +215,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-warning">
-                {statsLoading ? "..." : stats?.ntf.toLocaleString() || 0}
+                {statsLoading ? "..." : (stats as DashboardStats | undefined)?.ntf?.toLocaleString() || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 Not True Fail
@@ -222,7 +232,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-primary">
-                {statsLoading ? "..." : `${stats?.yieldRate.toFixed(2) || 0}%`}
+                {statsLoading ? "..." : `${(stats as DashboardStats | undefined)?.yieldRate?.toFixed(2) || 0}%`}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 Tỷ lệ đạt chuẩn

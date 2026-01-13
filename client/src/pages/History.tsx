@@ -45,6 +45,8 @@ export default function History() {
   });
   const [page, setPage] = useState(1);
   const [activeTab, setActiveTab] = useState("list");
+  const [analysisLimit, setAnalysisLimit] = useState(100);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const limit = 20;
 
   const { data, isLoading, refetch } = trpc.inspection.search.useQuery({
@@ -68,7 +70,7 @@ export default function History() {
     machineCode: filters.machineCode || undefined,
     serialNumber: filters.serialNumber || undefined,
     result: filters.result !== "all" ? filters.result : undefined,
-    limit: 100, // Max limit allowed by API
+    limit: analysisLimit, // Progressive loading for analysis
     offset: 0,
   });
 
@@ -155,6 +157,17 @@ export default function History() {
       })),
     };
   }, [allData?.data, machines]);
+
+  // Load more data for analysis
+  const handleLoadMore = () => {
+    if (analysisLimit < 1000) {
+      setIsLoadingMore(true);
+      setAnalysisLimit(prev => Math.min(prev + 200, 1000));
+      setTimeout(() => setIsLoadingMore(false), 500);
+    }
+  };
+
+  const canLoadMore = allData?.total && allData.total > analysisLimit && analysisLimit < 1000;
 
   const handleSearch = () => {
     setPage(1);
@@ -711,6 +724,25 @@ export default function History() {
                     </div>
                   </CardContent>
                 </Card>
+
+                {/* Load More Button */}
+                {canLoadMore && (
+                  <div className="flex justify-center">
+                    <Button 
+                      variant="outline" 
+                      onClick={handleLoadMore}
+                      disabled={isLoadingMore}
+                      className="gap-2"
+                    >
+                      {isLoadingMore ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
+                      Tải thêm dữ liệu ({analysisLimit}/{allData?.total || 0})
+                    </Button>
+                  </div>
+                )}
 
                 {/* Product Model Stats */}
                 {analysisStats.productStats.length > 0 && (

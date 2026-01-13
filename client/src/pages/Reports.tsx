@@ -67,9 +67,18 @@ export default function Reports() {
     days: timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : timeRange === "90d" ? 90 : 365,
   });
 
+  // Define type for daily stats
+  type DailyStat = {
+    date: string;
+    totalProducts: number;
+    okCount: number;
+    ngCount: number;
+    ntfCount: number;
+  };
+
   // Calculate aggregated statistics
   const aggregatedStats = useMemo(() => {
-    if (!dailyStats || dailyStats.length === 0) {
+    if (!dailyStats || (dailyStats as DailyStat[]).length === 0) {
       return {
         totalProducts: 0,
         okCount: 0,
@@ -81,25 +90,26 @@ export default function Reports() {
       };
     }
 
-    const total = dailyStats.reduce((sum: number, d: { totalProducts: number }) => sum + d.totalProducts, 0);
-    const ok = dailyStats.reduce((sum: number, d: { okCount: number }) => sum + d.okCount, 0);
-    const ng = dailyStats.reduce((sum: number, d: { ngCount: number }) => sum + d.ngCount, 0);
-    const ntf = dailyStats.reduce((sum: number, d: { ntfCount: number }) => sum + d.ntfCount, 0);
+    const stats = dailyStats as DailyStat[];
+    const total = stats.reduce((sum: number, d: DailyStat) => sum + d.totalProducts, 0);
+    const ok = stats.reduce((sum: number, d: DailyStat) => sum + d.okCount, 0);
+    const ng = stats.reduce((sum: number, d: DailyStat) => sum + d.ngCount, 0);
+    const ntf = stats.reduce((sum: number, d: DailyStat) => sum + d.ntfCount, 0);
     const yieldRate = total > 0 ? ((ok + ntf) / total) * 100 : 0;
 
     // Calculate trend (compare last 7 days vs previous 7 days)
-    const recentDays = dailyStats.slice(0, 7);
-    const previousDays = dailyStats.slice(7, 14);
+    const recentDays = stats.slice(0, 7);
+    const previousDays = stats.slice(7, 14);
     
     const recentYield = recentDays.length > 0 
-      ? recentDays.reduce((sum: number, d: { totalProducts: number; okCount: number; ntfCount: number }) => {
+      ? recentDays.reduce((sum: number, d: DailyStat) => {
           const dayTotal = d.totalProducts;
           return sum + (dayTotal > 0 ? ((d.okCount + d.ntfCount) / dayTotal) * 100 : 0);
         }, 0) / recentDays.length
       : 0;
     
     const previousYield = previousDays.length > 0
-      ? previousDays.reduce((sum: number, d: { totalProducts: number; okCount: number; ntfCount: number }) => {
+      ? previousDays.reduce((sum: number, d: DailyStat) => {
           const dayTotal = d.totalProducts;
           return sum + (dayTotal > 0 ? ((d.okCount + d.ntfCount) / dayTotal) * 100 : 0);
         }, 0) / previousDays.length
@@ -122,10 +132,10 @@ export default function Reports() {
   const yieldTrendData = useMemo(() => {
     if (!dailyStats) return [];
     
-    return dailyStats
+    return (dailyStats as DailyStat[])
       .slice()
       .reverse()
-      .map((d) => {
+      .map((d: DailyStat) => {
         const total = d.totalProducts;
         const yieldRate = total > 0 ? ((d.okCount + d.ntfCount) / total) * 100 : 0;
         return {
@@ -181,7 +191,7 @@ export default function Reports() {
   const handleExportReport = () => {
     // Generate CSV report
     const headers = ["Ngày", "Tổng SP", "OK", "NG", "NTF", "Yield Rate (%)"];
-    const rows = yieldTrendData.map((d) => [
+    const rows = yieldTrendData.map((d: { fullDate: string; total: number; ok: number; ng: number; ntf: number; yieldRate: number }) => [
       d.fullDate,
       d.total,
       d.ok,

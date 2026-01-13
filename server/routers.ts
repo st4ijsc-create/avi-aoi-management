@@ -9,6 +9,7 @@ import { nanoid } from "nanoid";
 import * as db from "./db";
 import { storagePut } from "./storage";
 import { invokeLLM } from "./_core/llm";
+import { statsCache, CACHE_KEYS, CACHE_TTL } from "./_core/cache";
 
 // Admin procedure - only admin users can access
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -499,7 +500,7 @@ const inspectionRouter = router({
       result: z.enum(["OK", "NG", "NTF"]).optional(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
-      limit: z.number().min(1).max(100).optional(),
+      limit: z.number().min(1).max(1000).optional(),
       offset: z.number().min(0).optional(),
     }))
     .query(async ({ input }) => {
@@ -517,7 +518,7 @@ const inspectionRouter = router({
       result: z.enum(["OK", "NG", "NTF"]).optional(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
-      limit: z.number().min(1).max(100).optional(),
+      limit: z.number().min(1).max(1000).optional(),
       offset: z.number().min(0).optional(),
     }))
     .query(async ({ input }) => {
@@ -825,6 +826,7 @@ const layoutRouter = router({
 });
 
 // ============ DASHBOARD ROUTER ============
+
 const dashboardRouter = router({
   getStats: protectedProcedure
     .input(z.object({
@@ -835,7 +837,17 @@ const dashboardRouter = router({
       endDate: z.date().optional(),
     }))
     .query(async ({ input }) => {
-      return db.getDashboardStats(input);
+      // Check cache first
+      const cacheKey = statsCache.generateKey(CACHE_KEYS.DASHBOARD_STATS, input);
+      const cached = statsCache.get(cacheKey);
+      if (cached) return cached;
+
+      // Fetch from database
+      const stats = await db.getDashboardStats(input);
+      
+      // Cache for 30 seconds
+      statsCache.set(cacheKey, stats, CACHE_TTL.SHORT);
+      return stats;
     }),
 
   getMachineStats: protectedProcedure
@@ -845,7 +857,14 @@ const dashboardRouter = router({
       endDate: z.date().optional(),
     }))
     .query(async ({ input }) => {
-      return db.getMachineStats(input.machineId, input.startDate, input.endDate);
+      // Check cache first
+      const cacheKey = statsCache.generateKey(CACHE_KEYS.MACHINE_STATS, input);
+      const cached = statsCache.get(cacheKey);
+      if (cached) return cached;
+
+      const stats = await db.getMachineStats(input.machineId, input.startDate, input.endDate);
+      statsCache.set(cacheKey, stats, CACHE_TTL.SHORT);
+      return stats;
     }),
 
   getAllMachinesStats: protectedProcedure
@@ -874,7 +893,14 @@ const dashboardRouter = router({
       days: z.number().default(30),
     }))
     .query(async ({ input }) => {
-      return db.getDailyStats(input.factoryId, input.workshopId, input.days);
+      // Check cache first
+      const cacheKey = statsCache.generateKey(CACHE_KEYS.DAILY_STATS, input);
+      const cached = statsCache.get(cacheKey);
+      if (cached) return cached;
+
+      const stats = await db.getDailyStats(input.factoryId, input.workshopId, input.days);
+      statsCache.set(cacheKey, stats, CACHE_TTL.MEDIUM);
+      return stats;
     }),
 });
 
@@ -962,6 +988,11 @@ const machineApiRouter = router({
           workshop?.name
         );
       }
+
+      // Invalidate cache after new inspection
+      statsCache.invalidate(CACHE_KEYS.DASHBOARD_STATS);
+      statsCache.invalidate(CACHE_KEYS.MACHINE_STATS);
+      statsCache.invalidate(CACHE_KEYS.DAILY_STATS);
 
       // Get updated stats and emit dashboard update
       const machineStats = await db.getMachineStats(machine.id);

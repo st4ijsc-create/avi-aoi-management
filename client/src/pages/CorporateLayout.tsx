@@ -41,6 +41,13 @@ export default function CorporateLayout() {
 
   const { data: factories } = trpc.factory.list.useQuery();
   const { data: workshops } = trpc.workshop.list.useQuery();
+  type DashboardStats = {
+    total: number;
+    ok: number;
+    ng: number;
+    ntf: number;
+    yieldRate: number;
+  };
   const { data: dashboardStats } = trpc.dashboard.getStats.useQuery({});
 
   // Aggregate stats per factory
@@ -347,7 +354,7 @@ export default function CorporateLayout() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-foreground">
-                    {dashboardStats?.yieldRate?.toFixed(1) || "0"}%
+                    {(dashboardStats as DashboardStats | undefined)?.yieldRate?.toFixed(1) || "0"}%
                   </p>
                   <p className="text-sm text-muted-foreground">Yield Rate TB</p>
                 </div>
@@ -362,7 +369,7 @@ export default function CorporateLayout() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-foreground">
-                    {dashboardStats?.total?.toLocaleString() || "0"}
+                    {(dashboardStats as DashboardStats | undefined)?.total?.toLocaleString() || "0"}
                   </p>
                   <p className="text-sm text-muted-foreground">Tổng sản phẩm</p>
                 </div>
