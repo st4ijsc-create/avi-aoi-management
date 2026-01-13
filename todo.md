@@ -642,3 +642,17 @@
 - [x] Module Layout: Chỉ hiển thị layout với ảnh 2D/3D, bỏ thông tin trạng thái
 - [x] Module Tập đoàn: Thêm drag & drop để thay đổi vị trí trong sơ đồ
 - [x] Sửa lỗi mất menu trái (thêm navItems cho MachineStatusMonitor, ProductionOrders)
+
+
+## Phase 41: Factory Position Persist, Fullscreen Layout, Machine Status Filter
+- [ ] Lưu vị trí nhà máy vào database (persist drag & drop positions)
+- [ ] Thêm chế độ xem fullscreen cho Layout
+- [ ] Thêm filter trạng thái máy trong Layout tab (Online/Offline/All)
+
+
+## Phase 41: Factory Position Persist, Fullscreen Layout, Machine Status Filter
+- [x] Lưu vị trí nhà máy vào database (mapPositionX, mapPositionY columns)
+- [x] Tự động load vị trí từ database khi mở CorporateLayout
+- [x] Lưu vị trí khi kết thúc drag & drop
+- [x] Chế độ xem fullscreen cho Layout page
+- [x] Filter trạng thái máy trong Dashboard Layout tab (Online/Offline/All)

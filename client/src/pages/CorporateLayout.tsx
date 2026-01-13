@@ -42,15 +42,35 @@ export default function CorporateLayout() {
   // Drag & drop state
   const [isDragging, setIsDragging] = useState(false);
   const [draggedFactoryId, setDraggedFactoryId] = useState<number | null>(null);
-  const [factoryPositions, setFactoryPositions] = useState<Record<number, { x: number; y: number }>>({
-    1: { x: 0.3, y: 100 },
-    2: { x: 0.5, y: 280 },
-    3: { x: 0.7, y: 450 },
-  });
+  const [factoryPositions, setFactoryPositions] = useState<Record<number, { x: number; y: number }>>({});
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [positionsInitialized, setPositionsInitialized] = useState(false);
 
   const { data: factories } = trpc.factory.list.useQuery();
   const { data: workshops } = trpc.workshop.list.useQuery();
+  const updateMapPositionMutation = trpc.factory.updateMapPosition.useMutation();
+
+  // Initialize positions from database or default
+  useEffect(() => {
+    if (factories && !positionsInitialized) {
+      const positions: Record<number, { x: number; y: number }> = {};
+      factories.forEach((factory, index) => {
+        // Use database position if available, otherwise use default
+        const dbX = factory.mapPositionX ? parseFloat(factory.mapPositionX) : null;
+        const dbY = factory.mapPositionY ? parseFloat(factory.mapPositionY) : null;
+        
+        if (dbX !== null && dbY !== null) {
+          positions[factory.id] = { x: dbX, y: dbY * 600 }; // Denormalize y from 0-1 to pixel
+        } else {
+          // Default positions spread vertically
+          positions[factory.id] = { x: 0.3 + (index * 0.2), y: 100 + (index * 180) };
+        }
+      });
+      setFactoryPositions(positions);
+      setPositionsInitialized(true);
+    }
+  }, [factories, positionsInitialized]);
+
   type DashboardStats = {
     total: number;
     ok: number;
@@ -313,8 +333,19 @@ export default function CorporateLayout() {
     }));
   };
 
-  // Handle mouse up - end drag
+  // Handle mouse up - end drag and save to database
   const handleMouseUp = () => {
+    if (isDragging && draggedFactoryId !== null) {
+      const pos = factoryPositions[draggedFactoryId];
+      if (pos) {
+        // Save position to database (normalize y to 0-1 range)
+        updateMapPositionMutation.mutate({
+          id: draggedFactoryId,
+          mapPositionX: pos.x,
+          mapPositionY: pos.y / 600, // Normalize to 0-1 based on canvas height
+        });
+      }
+    }
     setIsDragging(false);
     setDraggedFactoryId(null);
   };

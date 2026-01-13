@@ -19,6 +19,7 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Minimize2,
   LayoutGrid,
   Edit,
   Eye,
@@ -63,6 +64,7 @@ export default function Layout() {
   const [isPanning, setIsPanning] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
   const [isCreateLayoutOpen, setIsCreateLayoutOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [newLayoutName, setNewLayoutName] = useState("");
   const [newLayoutType, setNewLayoutType] = useState<"2D" | "3D">("2D");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -312,7 +314,7 @@ export default function Layout() {
               </div>
 
               {/* Layout Canvas */}
-              <Card className="glass-card flex-1">
+              <Card className={`glass-card flex-1 ${isFullscreen ? 'fixed inset-4 z-50' : ''}`}>
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
                     <div>
@@ -333,16 +335,24 @@ export default function Layout() {
                       <Button variant="outline" size="icon" onClick={handleZoomIn}>
                         <ZoomIn className="h-4 w-4" />
                       </Button>
-                      <Button variant="outline" size="icon" onClick={handleResetView}>
+                      <Button variant="outline" size="icon" onClick={handleResetView} title="Reset view">
                         <Maximize2 className="h-4 w-4" />
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        onClick={() => setIsFullscreen(!isFullscreen)}
+                        title={isFullscreen ? "Thoát toàn màn hình" : "Toàn màn hình"}
+                      >
+                        {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
                       </Button>
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className={isFullscreen ? "p-0" : ""}>
                   <div 
                     ref={containerRef}
-                    className="relative w-full h-[600px] bg-secondary/30 rounded-lg overflow-hidden cursor-grab active:cursor-grabbing"
+                    className={`relative w-full bg-secondary/30 rounded-lg overflow-hidden cursor-grab active:cursor-grabbing ${isFullscreen ? 'h-[calc(100vh-200px)]' : 'h-[600px]'}`}
                     onMouseDown={handleMouseDown}
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}

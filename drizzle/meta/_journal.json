@@ -85,6 +85,13 @@
       "when": 1768317772547,
       "tag": "0011_mature_starbolt",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1768323330443,
+      "tag": "0012_premium_hemingway",
+      "breakpoints": true
     }
   ]
 }

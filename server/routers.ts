@@ -51,10 +51,29 @@ const factoryRouter = router({
       description: z.string().optional(),
       address: z.string().optional(),
       isActive: z.boolean().optional(),
+      mapPositionX: z.number().min(0).max(1).optional(),
+      mapPositionY: z.number().min(0).max(1).optional(),
     }))
     .mutation(async ({ input }) => {
-      const { id, ...data } = input;
+      const { id, mapPositionX, mapPositionY, ...rest } = input;
+      const data: Record<string, unknown> = { ...rest };
+      if (mapPositionX !== undefined) data.mapPositionX = mapPositionX.toString();
+      if (mapPositionY !== undefined) data.mapPositionY = mapPositionY.toString();
       await db.updateFactory(id, data);
+      return { success: true };
+    }),
+
+  updateMapPosition: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      mapPositionX: z.number().min(0).max(1),
+      mapPositionY: z.number().min(0).max(1),
+    }))
+    .mutation(async ({ input }) => {
+      await db.updateFactory(input.id, {
+        mapPositionX: input.mapPositionX.toString(),
+        mapPositionY: input.mapPositionY.toString(),
+      });
       return { success: true };
     }),
 

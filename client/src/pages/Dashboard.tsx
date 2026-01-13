@@ -146,6 +146,7 @@ export default function Dashboard() {
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(true);
   const [lastRefreshTime, setLastRefreshTime] = useState(new Date());
   const [activeTab, setActiveTab] = useState<"overview" | "layout">("overview");
+  const [machineStatusFilter, setMachineStatusFilter] = useState<"all" | "online" | "offline">("all");
   
   // Machine online status from WebSocket
   const [onlineMachines, setOnlineMachines] = useState<Set<string>>(new Set());
@@ -368,6 +369,13 @@ export default function Dashboard() {
       if (selectedWorkshop !== "all" && machine.workshopId !== parseInt(selectedWorkshop)) return;
       if (selectedLine !== "all" && machine.lineId !== parseInt(selectedLine)) return;
       
+      // Apply machine status filter
+      if (machineStatusFilter !== "all") {
+        const isOnline = onlineMachines.has(machine.code);
+        if (machineStatusFilter === "online" && !isOnline) return;
+        if (machineStatusFilter === "offline" && isOnline) return;
+      }
+      
       const lineKey = machine.lineName || "Chưa phân loại";
       if (!grouped.has(lineKey)) {
         grouped.set(lineKey, []);
@@ -376,7 +384,7 @@ export default function Dashboard() {
     });
     
     return grouped;
-  }, [machinesStats, selectedFactory, selectedWorkshop, selectedLine]);
+  }, [machinesStats, selectedFactory, selectedWorkshop, selectedLine, machineStatusFilter, onlineMachines]);
 
   // Calculate FPY, FY, NTFY for a machine
   const calculateYields = (machine: MachineStats) => {
@@ -1058,6 +1066,27 @@ export default function Dashboard() {
               Layout Dây chuyền sản xuất
             </h2>
             <div className="flex items-center gap-2">
+              {/* Machine Status Filter */}
+              <Select value={machineStatusFilter} onValueChange={(v: "all" | "online" | "offline") => setMachineStatusFilter(v)}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Trạng thái" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tất cả</SelectItem>
+                  <SelectItem value="online">
+                    <span className="flex items-center gap-2">
+                      <Wifi className="h-3 w-3 text-green-500" />
+                      Online
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="offline">
+                    <span className="flex items-center gap-2">
+                      <WifiOff className="h-3 w-3 text-red-500" />
+                      Offline
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
               <Button
                 variant="outline"
                 size="sm"

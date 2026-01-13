@@ -29,6 +29,8 @@ export const factories = mysqlTable("factories", {
   address: text("address"),
   region: varchar("region", { length: 100 }), // Khu vực địa lý
   country: varchar("country", { length: 100 }),
+  mapPositionX: decimal("mapPositionX", { precision: 10, scale: 4 }), // Vị trí X trên bản đồ (0-1)
+  mapPositionY: decimal("mapPositionY", { precision: 10, scale: 4 }), // Vị trí Y trên bản đồ (0-1)
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
