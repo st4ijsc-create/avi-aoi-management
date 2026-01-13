@@ -1,0 +1,75 @@
+{
+  "query": "SELECT * FROM line_stages;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute SELECT * FROM line_stages;",
+  "rows": [
+    {
+      "id": "1",
+      "lineId": "1",
+      "code": "C",
+      "name": "Kiểm tra chất lượng",
+      "description": "Công đoạn kiểm tra chất lượng sản phẩm",
+      "orderIndex": "1",
+      "stationId": "1",
+      "cycleTimeTarget": "NULL",
+      "isActive": "1",
+      "createdAt": "2026-01-13 07:42:08",
+      "updatedAt": "2026-01-13 07:42:08"
+    },
+    {
+      "id": "2",
+      "lineId": "1",
+      "code": "C",
+      "name": "Kiểm tra chất lượng",
+      "description": "Công đoạn kiểm tra chất lượng sản phẩm",
+      "orderIndex": "1",
+      "stationId": "2",
+      "cycleTimeTarget": "NULL",
+      "isActive": "1",
+      "createdAt": "2026-01-13 07:42:08",
+      "updatedAt": "2026-01-13 07:42:08"
+    },
+    {
+      "id": "3",
+      "lineId": "5",
+      "code": "C",
+      "name": "Kiểm tra chất lượng",
+      "description": "Công đoạn kiểm tra chất lượng sản phẩm",
+      "orderIndex": "1",
+      "stationId": "3",
+      "cycleTimeTarget": "NULL",
+      "isActive": "1",
+      "createdAt": "2026-01-13 07:42:08",
+      "updatedAt": "2026-01-13 07:42:08"
+    },
+    {
+      "id": "4",
+      "lineId": "5",
+      "code": "C",
+      "name": "Kiểm tra chất lượng",
+      "description": "Công đoạn kiểm tra chất lượng sản phẩm",
+      "orderIndex": "1",
+      "stationId": "4",
+      "cycleTimeTarget": "NULL",
+      "isActive": "1",
+      "createdAt": "2026-01-13 07:42:08",
+      "updatedAt": "2026-01-13 07:42:08"
+    },
+    {
+      "id": "5",
+      "lineId": "7",
+      "code": "C",
+      "name": "Kiểm tra chất lượng",
+      "description": "Công đoạn kiểm tra chất lượng sản phẩm",
+      "orderIndex": "1",
+      "stationId": "5",
+      "cycleTimeTarget": "NULL",
+      "isActive": "1",
+      "createdAt": "2026-01-13 07:42:08",
+      "updatedAt": "2026-01-13 07:42:08"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tlineId\tcode\tname\tdescription\torderIndex\tstationId\tcycleTimeTarget\tisActive\tcreatedAt\tupdatedAt\n1\t1\tC\tKiểm tra chất lượng\tCông đoạn kiểm tra chất lượng sản phẩm\t1\t1\tNULL\t1\t2026-01-13 07:42:08\t2026-01-13 07:42:08\n2\t1\tC\tKiểm tra chất lượng\tCông đoạn kiểm tra chất lượng sản phẩm\t1\t2\tNULL\t1\t2026-01-13 07:42:08\t2026-01-13 07:42:08\n3\t5\tC\tKiểm tra chất lượng\tCông đoạn kiểm tra chất lượng sản phẩm\t1\t3\tNULL\t1\t2026-01-13 07:42:08\t2026-01-13 07:42:08\n4\t5\tC\tKiểm tra chất lượng\tCông đoạn kiểm tra chất lượng sản phẩm\t1\t4\tNULL\t1\t2026-01-13 07:42:08\t2026-01-13 07:42:08\n5\t7\tC\tKiểm tra chất lượng\tCông đoạn kiểm tra chất lượng sản phẩm\t1\t5\tNULL\t1\t2026-01-13 07:42:08\t2026-01-13 07:42:08\n",
+  "stderr": "",
+  "execution_time_ms": 1561
+}

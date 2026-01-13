@@ -1,0 +1,9 @@
+{
+  "query": "INSERT INTO machine_positions (layoutId, machineId, positionX, positionY, width, height, rotation, createdAt, updatedAt) VALUES (2, 1, 100, 100, 150, 100, 0, NOW(), NOW()), (2, 2, 300, 100, 150, 100, 0, NOW(), NOW()), (3, 3, 100, 100, 150, 100, 0, NOW(), NOW()), (3, 4, 300, 100, 150, 100, 0, NOW(), NOW()), (4, 5, 100, 100, 150, 100, 0, NOW(), NOW()), (4, 6, 300, 100, 150, 100, 0, NOW(), NOW());",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute INSERT INTO machine_positions (layoutId, machineId, positionX, positionY, width, height, rotation, createdAt, updatedAt) VALUES (2, 1, 100, 100, 150, 100, 0, NOW(), NOW()), (2, 2, 300, 100, 150, 100, 0, NOW(), NOW()), (3, 3, 100, 100, 150, 100, 0, NOW(), NOW()), (3, 4, 300, 100, 150, 100, 0, NOW(), NOW()), (4, 5, 100, 100, 150, 100, 0, NOW(), NOW()), (4, 6, 300, 100, 150, 100, 0, NOW(), NOW());",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1563
+}

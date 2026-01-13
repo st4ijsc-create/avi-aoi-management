@@ -1029,6 +1029,61 @@ export async function getDailyStats(factoryId?: number, workshopId?: number, day
   }));
 }
 
+// ============ HOURLY STATS ============
+export async function getHourlyStats(filters?: {
+  factoryId?: number;
+  workshopId?: number;
+  lineId?: number;
+  machineId?: number;
+  hours?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const hoursBack = filters?.hours || 24;
+  const startDate = new Date();
+  startDate.setHours(startDate.getHours() - hoursBack);
+
+  // Get hourly aggregated stats using DATE_FORMAT for TiDB compatibility
+  const hourFormat = sql<string>`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%m-%d %H:00')`;
+  
+  const conditions = [gte(productInspections.inspectionTime, startDate)];
+  
+  // Add machine filter if provided
+  if (filters?.machineId) {
+    conditions.push(eq(productInspections.machineId, filters.machineId));
+  }
+
+  const result = await db.select({
+    hour: hourFormat.as('hour'),
+    totalProducts: sql<number>`count(*)`.as('totalProducts'),
+    okCount: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`.as('okCount'),
+    ngCount: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`.as('ngCount'),
+    ntfCount: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`.as('ntfCount'),
+  })
+  .from(productInspections)
+  .where(and(...conditions))
+  .groupBy(hourFormat)
+  .orderBy(sql`hour ASC`);
+
+  return result.map(r => {
+    const total = Number(r.totalProducts) || 1;
+    const ok = Number(r.okCount) || 0;
+    const ng = Number(r.ngCount) || 0;
+    const ntf = Number(r.ntfCount) || 0;
+    return {
+      hour: String(r.hour),
+      total,
+      ok,
+      ng,
+      ntf,
+      fpy: ((ok / total) * 100).toFixed(1),
+      fy: ((ng / total) * 100).toFixed(1),
+      ntfy: ((ntf / total) * 100).toFixed(1),
+    };
+  });
+}
+
 // ============ SEARCH INSPECTIONS ============
 export async function searchInspections(params: {
   factoryCode?: string;

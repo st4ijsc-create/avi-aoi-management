@@ -212,6 +212,14 @@ export default function Dashboard() {
     days: 7,
   });
 
+  // Fetch hourly stats for timeline chart
+  const { data: hourlyStats } = trpc.dashboard.getHourlyStats.useQuery({
+    factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
+    hours: 24,
+  }, {
+    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
+  });
+
   // Fetch factories, workshops, lines for filters
   const { data: factories } = trpc.factory.list.useQuery();
   const { data: workshops } = trpc.workshop.list.useQuery();
@@ -724,6 +732,101 @@ export default function Dashboard() {
           </Card>
         </div>
 
+        {/* Timeline Chart - Full Width */}
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Activity className="h-4 w-4 text-primary" />
+              Biểu đồ theo thời gian (24 giờ qua)
+            </CardTitle>
+            <CardDescription>FPY, FY, NTFY và Output theo từng giờ</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              {hourlyStats && hourlyStats.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={hourlyStats.map(h => ({
+                      time: h.hour.split(' ')[1] || h.hour,
+                      FPY: parseFloat(h.fpy),
+                      FY: parseFloat(h.fy),
+                      NTFY: parseFloat(h.ntfy),
+                      Total: h.total,
+                    }))}
+                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
+                    <XAxis 
+                      dataKey="time" 
+                      tick={{ fontSize: 10 }}
+                      interval="preserveStartEnd"
+                    />
+                    <YAxis 
+                      yAxisId="left"
+                      tick={{ fontSize: 10 }}
+                      domain={[0, 100]}
+                      label={{ value: '%', angle: -90, position: 'insideLeft', fontSize: 10 }}
+                    />
+                    <YAxis 
+                      yAxisId="right"
+                      orientation="right"
+                      tick={{ fontSize: 10 }}
+                      label={{ value: 'Output', angle: 90, position: 'insideRight', fontSize: 10 }}
+                    />
+                    <RechartsTooltip 
+                      contentStyle={{ 
+                        backgroundColor: 'rgba(0,0,0,0.8)', 
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '12px'
+                      }}
+                    />
+                    <Legend />
+                    <Line 
+                      yAxisId="left"
+                      type="monotone" 
+                      dataKey="FPY" 
+                      stroke="#10b981" 
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 5 }}
+                    />
+                    <Line 
+                      yAxisId="left"
+                      type="monotone" 
+                      dataKey="FY" 
+                      stroke="#ef4444" 
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                    />
+                    <Line 
+                      yAxisId="left"
+                      type="monotone" 
+                      dataKey="NTFY" 
+                      stroke="#f59e0b" 
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                    />
+                    <Line 
+                      yAxisId="right"
+                      type="monotone" 
+                      dataKey="Total" 
+                      stroke="#06b6d4" 
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
+                      dot={{ r: 3 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-muted-foreground">
+                  Chưa có dữ liệu
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Pie Chart */}
@@ -733,7 +836,7 @@ export default function Dashboard() {
               <CardDescription>Tỷ lệ OK/NG/NTF tổng hợp</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-[250px]">
+              <div className="h-[200px]">
                 {pieData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -741,8 +844,8 @@ export default function Dashboard() {
                         data={pieData}
                         cx="50%"
                         cy="50%"
-                        innerRadius={60}
-                        outerRadius={90}
+                        innerRadius={50}
+                        outerRadius={75}
                         paddingAngle={5}
                         dataKey="value"
                         label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
@@ -770,25 +873,25 @@ export default function Dashboard() {
               <CardDescription>10 máy có output cao nhất</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-[250px]">
+              <div className="h-[200px]">
                 {machinesStats && (machinesStats as any[]).length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       data={(machinesStats as any[])
                         .map(m => ({
-                          name: m.machine.name.length > 10 ? m.machine.name.substring(0, 10) + '...' : m.machine.name,
+                          name: m.machine.name.length > 8 ? m.machine.name.substring(0, 8) + '...' : m.machine.name,
                           output: m.stats.total,
                           fpy: m.stats.yieldRate,
                         }))
                         .sort((a, b) => b.output - a.output)
-                        .slice(0, 10)
+                        .slice(0, 8)
                       }
                       layout="vertical"
-                      margin={{ left: 80 }}
+                      margin={{ left: 60 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-                      <XAxis type="number" />
-                      <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} />
+                      <XAxis type="number" tick={{ fontSize: 10 }} />
+                      <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} />
                       <RechartsTooltip />
                       <Bar dataKey="output" fill="oklch(0.7 0.15 200)" radius={[0, 4, 4, 0]} />
                     </BarChart>
@@ -926,94 +1029,61 @@ export default function Dashboard() {
                           return (
                             <div
                               key={machine.id}
-                              className={`relative rounded-xl border-2 cursor-pointer transition-all hover:shadow-lg hover:scale-[1.02] overflow-hidden ${getStatusColor(fpyNum)}`}
+                              className="relative rounded-xl cursor-pointer transition-all hover:shadow-xl hover:scale-[1.02] overflow-hidden bg-card border border-border/50 group"
                               onClick={() => openMachineDetail(machine)}
                             >
-                              {/* Machine Image */}
-                              {machineImage ? (
-                                <div className="relative h-32 w-full">
-                                  <img
-                                    src={machineImage}
-                                    alt={machine.name}
-                                    className="w-full h-full object-cover"
-                                  />
-                                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-                                  
-                                  {/* Stats Overlay on Image */}
-                                  <div className="absolute bottom-0 left-0 right-0 p-3">
-                                    <div className="flex items-center justify-between text-white">
-                                      <div className="flex items-center gap-2">
-                                        <div className="text-center">
-                                          <p className="text-[10px] opacity-80">FPY</p>
-                                          <p className={`text-sm font-bold ${fpyNum >= 95 ? 'text-green-400' : fpyNum >= 85 ? 'text-yellow-400' : 'text-red-400'}`}>
-                                            {fpy}%
-                                          </p>
-                                        </div>
-                                        <div className="w-px h-8 bg-white/30" />
-                                        <div className="text-center">
-                                          <p className="text-[10px] opacity-80">FY</p>
-                                          <p className="text-sm font-bold text-red-400">{fy}%</p>
-                                        </div>
-                                        <div className="w-px h-8 bg-white/30" />
-                                        <div className="text-center">
-                                          <p className="text-[10px] opacity-80">NTFY</p>
-                                          <p className="text-sm font-bold text-yellow-400">{ntfy}%</p>
-                                        </div>
-                                        <div className="w-px h-8 bg-white/30" />
-                                        <div className="text-center">
-                                          <p className="text-[10px] opacity-80">Output</p>
-                                          <p className="text-sm font-bold">{machine.total}</p>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-
+                              {/* Metrics Bar at Top - Always visible */}
+                              <div className="flex items-stretch bg-black/90 text-white">
+                                <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
+                                  <p className="text-[10px] opacity-70 uppercase tracking-wider">FPY</p>
+                                  <p className={`text-base font-bold ${fpyNum >= 90 ? 'text-emerald-400' : fpyNum >= 70 ? 'text-amber-400' : 'text-rose-400'}`}>
+                                    {fpy}%
+                                  </p>
+                                </div>
+                                <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
+                                  <p className="text-[10px] opacity-70 uppercase tracking-wider">FY</p>
+                                  <p className="text-base font-bold text-rose-400">{fy}%</p>
+                                </div>
+                                <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
+                                  <p className="text-[10px] opacity-70 uppercase tracking-wider">NTFY</p>
+                                  <p className="text-base font-bold text-amber-400">{ntfy}%</p>
+                                </div>
+                                <div className="flex-1 text-center py-2 px-1 relative">
+                                  <p className="text-[10px] opacity-70 uppercase tracking-wider">Output</p>
+                                  <p className="text-base font-bold text-cyan-400">{machine.total}</p>
                                   {/* Status indicator */}
-                                  <div className="absolute top-2 right-2">
-                                    <div className={`p-1 rounded-full bg-black/50 backdrop-blur-sm`}>
-                                      <StatusIcon className={`h-4 w-4 ${status.color}`} />
-                                    </div>
+                                  <div className="absolute top-1 right-1">
+                                    <StatusIcon className={`h-3 w-3 ${status.color}`} />
                                   </div>
                                 </div>
-                              ) : (
-                                <div className="p-4">
-                                  {/* Status indicator */}
-                                  <div className="absolute top-3 right-3">
-                                    <StatusIcon className={`h-5 w-5 ${status.color}`} />
-                                  </div>
+                              </div>
 
-                                  {/* Stats grid for machines without image */}
-                                  <div className="grid grid-cols-4 gap-1 text-sm mb-3">
-                                    <div className="text-center p-2 rounded-lg bg-background/50">
-                                      <p className="text-[10px] text-muted-foreground">FPY</p>
-                                      <p className={`font-bold text-sm ${fpyNum >= 95 ? 'text-success' : fpyNum >= 85 ? 'text-warning' : 'text-destructive'}`}>
-                                        {fpy}%
-                                      </p>
-                                    </div>
-                                    <div className="text-center p-2 rounded-lg bg-background/50">
-                                      <p className="text-[10px] text-muted-foreground">FY</p>
-                                      <p className="font-bold text-sm text-destructive">{fy}%</p>
-                                    </div>
-                                    <div className="text-center p-2 rounded-lg bg-background/50">
-                                      <p className="text-[10px] text-muted-foreground">NTFY</p>
-                                      <p className="font-bold text-sm text-warning">{ntfy}%</p>
-                                    </div>
-                                    <div className="text-center p-2 rounded-lg bg-background/50">
-                                      <p className="text-[10px] text-muted-foreground">Output</p>
-                                      <p className="font-bold text-sm text-foreground">{machine.total}</p>
-                                    </div>
+                              {/* Machine Image - Large */}
+                              <div className="relative h-40 w-full bg-gradient-to-br from-slate-800 to-slate-900">
+                                {machineImage ? (
+                                  <>
+                                    <img
+                                      src={machineImage}
+                                      alt={machine.name}
+                                      className="w-full h-full object-contain p-2"
+                                    />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                                  </>
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center">
+                                    <Cpu className="h-16 w-16 text-muted-foreground/30" />
                                   </div>
-                                </div>
-                              )}
+                                )}
+                              </div>
 
                               {/* Machine info */}
-                              <div className="p-3 border-t border-border/50">
+                              <div className="p-3 bg-card border-t border-border/30">
                                 <div className="flex items-center justify-between">
-                                  <div>
-                                    <h4 className="font-semibold text-foreground truncate text-sm">{machine.name}</h4>
+                                  <div className="min-w-0 flex-1">
+                                    <h4 className="font-semibold text-foreground truncate">{machine.name}</h4>
                                     <p className="text-xs text-muted-foreground">{machine.code}</p>
                                   </div>
-                                  <span className="text-xs text-primary flex items-center gap-1">
+                                  <span className="text-xs text-primary flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <Eye className="h-3 w-3" />
                                   </span>
                                 </div>

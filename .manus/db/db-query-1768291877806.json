@@ -1,0 +1,25 @@
+{
+  "query": "SELECT fl.id, fl.name, fl.workshopId FROM factory_layouts fl WHERE fl.name LIKE '%SMT%' OR fl.name LIKE '%Testing%';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute SELECT fl.id, fl.name, fl.workshopId FROM factory_layouts fl WHERE fl.name LIKE '%SMT%' OR fl.name LIKE '%Testing%';",
+  "rows": [
+    {
+      "id": "2",
+      "name": "Layout Xưởng SMT",
+      "workshopId": "6"
+    },
+    {
+      "id": "3",
+      "name": "Layout Xưởng Testing",
+      "workshopId": "8"
+    },
+    {
+      "id": "4",
+      "name": "SMT",
+      "workshopId": "7"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tworkshopId\n2\tLayout Xưởng SMT\t6\n3\tLayout Xưởng Testing\t8\n4\tSMT\t7\n",
+  "stderr": "",
+  "execution_time_ms": 1563
+}

@@ -508,3 +508,25 @@
 - [x] Tạo layout cho xưởng SMT
 - [x] Tạo layout cho xưởng Testing
 - [x] Kiểm tra hiển thị 3D trong Layout
+
+
+## Phase 31: Dashboard UI Overhaul & Data Setup
+- [ ] Cải tiến UI machine card theo mẫu (ảnh máy lớn, metrics overlay phía trên)
+- [ ] Thêm biểu đồ timeline FPY/FY/NTFY/Total theo thời gian thực
+- [ ] Tối ưu hiển thị các biểu đồ trên màn hình
+- [ ] Gán sản phẩm cho dây chuyền
+- [ ] Tạo lệnh sản xuất cho dây chuyền
+- [ ] Thêm máy vào layout SMT
+- [ ] Thêm máy vào layout Testing
+- [ ] Tạo công đoạn C, D, E cho quy trình sản xuất
+
+
+## Phase 31: Dashboard UI Overhaul & Data Setup (Completed)
+- [x] Cải tiến UI machine card theo mẫu ảnh (ảnh máy lớn, metrics overlay)
+- [x] Thêm biểu đồ timeline FPY/FY/NTFY/Total (24 giờ qua)
+- [x] Tối ưu hiển thị các biểu đồ trên màn hình (giảm chiều cao, responsive)
+- [x] Gán sản phẩm cho dây chuyền (4 assignments)
+- [x] Tạo lệnh sản xuất cho các dây chuyền (4 orders: PO-2026-001 đến PO-2026-004)
+- [x] Thêm máy vào layout SMT (2 máy)
+- [x] Thêm máy vào layout Testing (4 máy)
+- [x] Tạo công đoạn C, D, E cho các dây chuyền (6 công đoạn mới)

@@ -1133,6 +1133,19 @@ const dashboardRouter = router({
     .query(async () => {
       return db.getActiveAlertsCount();
     }),
+
+  // Hourly stats for timeline chart
+  getHourlyStats: protectedProcedure
+    .input(z.object({
+      factoryId: z.number().optional(),
+      workshopId: z.number().optional(),
+      lineId: z.number().optional(),
+      machineId: z.number().optional(),
+      hours: z.number().default(24),
+    }))
+    .query(async ({ input }) => {
+      return db.getHourlyStats(input);
+    }),
 });
 
 // ============ SEED DATA ROUTER ============

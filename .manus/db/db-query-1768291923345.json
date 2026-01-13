@@ -1,0 +1,9 @@
+{
+  "query": "INSERT INTO line_stages (lineId, code, name, description, orderIndex, isActive, createdAt, updatedAt) VALUES (1, 'C', 'Kiểm tra chức năng', 'Kiểm tra chức năng sản phẩm', 3, 1, NOW(), NOW()), (1, 'D', 'Đóng gói', 'Đóng gói sản phẩm', 4, 1, NOW(), NOW()), (1, 'E', 'Kiểm tra cuối', 'Kiểm tra chất lượng cuối cùng', 5, 1, NOW(), NOW()), (2, 'C', 'Kiểm tra chức năng', 'Kiểm tra chức năng sản phẩm', 3, 1, NOW(), NOW()), (2, 'D', 'Đóng gói', 'Đóng gói sản phẩm', 4, 1, NOW(), NOW()), (3, 'C', 'Kiểm tra chức năng', 'Kiểm tra chức năng sản phẩm', 3, 1, NOW(), NOW());",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute INSERT INTO line_stages (lineId, code, name, description, orderIndex, isActive, createdAt, updatedAt) VALUES (1, 'C', 'Kiểm tra chức năng', 'Kiểm tra chức năng sản phẩm', 3, 1, NOW(), NOW()), (1, 'D', 'Đóng gói', 'Đóng gói sản phẩm', 4, 1, NOW(), NOW()), (1, 'E', 'Kiểm tra cuối', 'Kiểm tra chất lượng cuối cùng', 5, 1, NOW(), NOW()), (2, 'C', 'Kiểm tra chức năng', 'Kiểm tra chức năng sản phẩm', 3, 1, NOW(), NOW()), (2, 'D', 'Đóng gói', 'Đóng gói sản phẩm', 4, 1, NOW(), NOW()), (3, 'C', 'Kiểm tra chức năng', 'Kiểm tra chức năng sản phẩm', 3, 1, NOW(), NOW());",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1606
+}

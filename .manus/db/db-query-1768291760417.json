@@ -1,0 +1,45 @@
+{
+  "query": "SELECT id, name, code FROM production_lines LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute SELECT id, name, code FROM production_lines LIMIT 10;",
+  "rows": [
+    {
+      "id": "1",
+      "name": "Dây chuyền A1",
+      "code": "LINE-HN-A1"
+    },
+    {
+      "id": "2",
+      "name": "Dây chuyền A2",
+      "code": "LINE-HN-A2"
+    },
+    {
+      "id": "3",
+      "name": "Dây chuyền B1",
+      "code": "LINE-HN-B1"
+    },
+    {
+      "id": "4",
+      "name": "Dây chuyền 1",
+      "code": "LINE-DN-01"
+    },
+    {
+      "id": "5",
+      "name": "SMT Line 1",
+      "code": "LINE-HCM-SMT1"
+    },
+    {
+      "id": "6",
+      "name": "SMT Line 2",
+      "code": "LINE-HCM-SMT2"
+    },
+    {
+      "id": "7",
+      "name": "Assembly Line 1",
+      "code": "LINE-HCM-ASM1"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tcode\n1\tDây chuyền A1\tLINE-HN-A1\n2\tDây chuyền A2\tLINE-HN-A2\n3\tDây chuyền B1\tLINE-HN-B1\n4\tDây chuyền 1\tLINE-DN-01\n5\tSMT Line 1\tLINE-HCM-SMT1\n6\tSMT Line 2\tLINE-HCM-SMT2\n7\tAssembly Line 1\tLINE-HCM-ASM1\n",
+  "stderr": "",
+  "execution_time_ms": 1510
+}
