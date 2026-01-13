@@ -1932,6 +1932,54 @@ const machineStatusRouter = router({
       await db.markOfflineNotificationSent(input.logId);
       return { success: true };
     }),
+
+  // Uptime Timeline
+  getUptimeTimeline: protectedProcedure
+    .input(z.object({
+      machineId: z.number(),
+      hours: z.number().min(1).max(720).default(24),
+    }))
+    .query(async ({ input }) => {
+      return db.getUptimeTimeline(input.machineId, input.hours);
+    }),
+
+  getAllUptimeTimelines: protectedProcedure
+    .input(z.object({
+      hours: z.number().min(1).max(720).default(24),
+    }))
+    .query(async ({ input }) => {
+      return db.getAllMachinesUptimeTimeline(input.hours);
+    }),
+
+  // Alert Configuration
+  getAlertConfig: adminProcedure.query(async () => {
+    return db.getAlertConfiguration();
+  }),
+
+  updateAlertConfig: adminProcedure
+    .input(z.object({
+      thresholdMinutes: z.number().min(1).max(60),
+      isActive: z.boolean(),
+    }))
+    .mutation(async ({ input }) => {
+      await db.updateAlertConfiguration(input);
+      return { success: true };
+    }),
+
+  // Machine Status Report
+  getReport: protectedProcedure
+    .input(z.object({
+      machineId: z.number(),
+      startDate: z.string(),
+      endDate: z.string(),
+    }))
+    .query(async ({ input }) => {
+      return db.getMachineStatusReport(
+        input.machineId,
+        new Date(input.startDate),
+        new Date(input.endDate)
+      );
+    }),
 });
 
 // ============ BULK IMPORT ROUTER ============

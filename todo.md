@@ -616,3 +616,12 @@
 - [x] Database tables: machine_status_logs, machine_heartbeats
 - [x] API endpoints: machineStatus.listWithStatus, machineStatus.getLogs, machineStatus.getHeartbeats, machineStatus.getUptimeStats
 - [x] API endpoints: bulkImport.measurementPoints
+
+
+## Phase 38: Uptime Timeline, Export Report, Alert Configuration
+- [x] Biểu đồ uptime timeline cho từng máy (24h/48h/72h/7 ngày)
+- [x] Export báo cáo trạng thái máy (JSON/CSV với MTBF/MTTR)
+- [x] Cấu hình ngưỡng cảnh báo offline (1-60 phút, bật/tắt)
+- [x] Unit tests cho uptime timeline và alert config (uptimeTimeline.test.ts)
+- [x] UptimeTimeline component với tooltip và legend
+- [x] API endpoints: getUptimeTimeline, getAllUptimeTimelines, getAlertConfig, updateAlertConfig, getReport

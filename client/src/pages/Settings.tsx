@@ -49,7 +49,7 @@ type AlertSetting = {
   id: number; 
   userId: number; 
   name: string; 
-  alertType: 'yield_rate' | 'ng_count' | 'machine_status'; 
+  alertType: 'yield_rate' | 'ng_count' | 'machine_status' | 'machine_offline'; 
   threshold: string; 
   comparisonOperator: 'lt' | 'lte' | 'gt' | 'gte' | 'eq';
   machineId?: number | null; 

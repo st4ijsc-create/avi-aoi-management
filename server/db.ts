@@ -2144,3 +2144,219 @@ export async function bulkCreateMeasurementPoints(points: InsertMeasurementPoint
 
   return { success, failed, errors };
 }
+
+
+// ============ UPTIME TIMELINE ============
+export async function getUptimeTimeline(machineId: number, hours: number = 24) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const startTime = new Date(Date.now() - hours * 60 * 60 * 1000);
+  
+  const logs = await db.select()
+    .from(machineStatusLogs)
+    .where(and(
+      eq(machineStatusLogs.machineId, machineId),
+      gte(machineStatusLogs.timestamp, startTime)
+    ))
+    .orderBy(machineStatusLogs.timestamp);
+
+  // Build timeline segments
+  const segments: Array<{
+    start: Date;
+    end: Date;
+    status: string;
+    duration: number;
+  }> = [];
+
+  if (logs.length === 0) {
+    return segments;
+  }
+
+  for (let i = 0; i < logs.length; i++) {
+    const current = logs[i];
+    const next = logs[i + 1];
+    const endTime = next ? new Date(next.timestamp) : new Date();
+    const duration = (endTime.getTime() - new Date(current.timestamp).getTime()) / 1000;
+
+    segments.push({
+      start: new Date(current.timestamp),
+      end: endTime,
+      status: current.status,
+      duration: Math.round(duration),
+    });
+  }
+
+  return segments;
+}
+
+export async function getAllMachinesUptimeTimeline(hours: number = 24) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const allMachines = await db.select({
+    id: machines.id,
+    code: machines.code,
+    name: machines.name,
+  })
+    .from(machines)
+    .where(eq(machines.isActive, true));
+
+  const timelinePromises = allMachines.map(async (machine) => {
+    const timeline = await getUptimeTimeline(machine.id, hours);
+    const stats = await getMachineUptimeStats(machine.id, hours);
+    return {
+      machineId: machine.id,
+      machineCode: machine.code,
+      machineName: machine.name,
+      timeline,
+      uptimePercent: stats.uptimePercent,
+      totalOnlineTime: stats.totalOnlineTime,
+      totalOfflineTime: stats.totalOfflineTime,
+    };
+  });
+
+  return Promise.all(timelinePromises);
+}
+
+// ============ ALERT CONFIGURATION ============
+export async function getAlertConfiguration() {
+  const db = await getDb();
+  if (!db) return null;
+
+  // Get from alertSettings table with type 'machine_offline'
+  const result = await db.select()
+    .from(alertSettings)
+    .where(eq(alertSettings.alertType, 'machine_offline'))
+    .limit(1);
+
+  if (result.length === 0) {
+    // Return default config
+    return {
+      id: null,
+      thresholdMinutes: 5,
+      isActive: true,
+      notifyEmail: true,
+      notifyInApp: true,
+    };
+  }
+
+  const setting = result[0];
+  return {
+    id: setting.id,
+    thresholdMinutes: setting.threshold ? Number(setting.threshold) : 5,
+    isActive: setting.isActive,
+    notifyEmail: setting.notifyEmail,
+    notifyInApp: setting.notifyInApp,
+  };
+}
+
+export async function updateAlertConfiguration(config: {
+  thresholdMinutes: number;
+  isActive: boolean;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+
+  // Check if exists
+  const existing = await db.select()
+    .from(alertSettings)
+    .where(eq(alertSettings.alertType, 'machine_offline'))
+    .limit(1);
+
+  if (existing.length === 0) {
+    // Create new - need userId, use 0 for system alert
+    const result = await db.insert(alertSettings).values({
+      userId: 0, // System alert
+      name: 'Machine Offline Alert',
+      alertType: 'machine_offline',
+      threshold: config.thresholdMinutes.toString(),
+      isActive: config.isActive,
+    });
+    return result[0].insertId;
+  } else {
+    // Update existing
+    await db.update(alertSettings)
+      .set({
+        threshold: config.thresholdMinutes.toString(),
+        isActive: config.isActive,
+        updatedAt: new Date(),
+      })
+      .where(eq(alertSettings.id, existing[0].id));
+    return existing[0].id;
+  }
+}
+
+// ============ MACHINE STATUS REPORT ============
+export async function getMachineStatusReport(machineId: number, startDate: Date, endDate: Date) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const logs = await db.select()
+    .from(machineStatusLogs)
+    .where(and(
+      eq(machineStatusLogs.machineId, machineId),
+      gte(machineStatusLogs.timestamp, startDate),
+      lte(machineStatusLogs.timestamp, endDate)
+    ))
+    .orderBy(machineStatusLogs.timestamp);
+
+  const machine = await db.select()
+    .from(machines)
+    .where(eq(machines.id, machineId))
+    .limit(1);
+
+  if (!machine[0]) return null;
+
+  // Calculate statistics
+  let totalOnlineTime = 0;
+  let totalOfflineTime = 0;
+  let offlineCount = 0;
+  let longestOffline = 0;
+  let longestOnline = 0;
+
+  for (let i = 0; i < logs.length; i++) {
+    const current = logs[i];
+    const next = logs[i + 1];
+    const endTime = next ? new Date(next.timestamp) : endDate;
+    const duration = (endTime.getTime() - new Date(current.timestamp).getTime()) / 1000;
+
+    if (current.status === 'online') {
+      totalOnlineTime += duration;
+      if (duration > longestOnline) longestOnline = duration;
+    } else {
+      totalOfflineTime += duration;
+      offlineCount++;
+      if (duration > longestOffline) longestOffline = duration;
+    }
+  }
+
+  const totalTime = totalOnlineTime + totalOfflineTime;
+  const uptimePercent = totalTime > 0 ? Math.round((totalOnlineTime / totalTime) * 1000) / 10 : 0;
+  const mtbf = offlineCount > 0 ? Math.round(totalOnlineTime / offlineCount) : totalOnlineTime; // Mean Time Between Failures
+  const mttr = offlineCount > 0 ? Math.round(totalOfflineTime / offlineCount) : 0; // Mean Time To Repair
+
+  return {
+    machine: machine[0],
+    period: {
+      start: startDate,
+      end: endDate,
+      totalHours: Math.round(totalTime / 3600 * 10) / 10,
+    },
+    statistics: {
+      uptimePercent,
+      totalOnlineTime: Math.round(totalOnlineTime),
+      totalOfflineTime: Math.round(totalOfflineTime),
+      offlineCount,
+      longestOffline: Math.round(longestOffline),
+      longestOnline: Math.round(longestOnline),
+      mtbf: Math.round(mtbf),
+      mttr: Math.round(mttr),
+    },
+    logs: logs.map(log => ({
+      timestamp: log.timestamp,
+      status: log.status,
+      ipAddress: log.ipAddress,
+    })),
+  };
+}

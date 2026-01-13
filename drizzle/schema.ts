@@ -404,7 +404,7 @@ export const alertSettings = mysqlTable("alert_settings", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(), // Người tạo cảnh báo
   name: varchar("name", { length: 255 }).notNull(),
-  alertType: mysqlEnum("alertType", ["yield_rate", "ng_count", "machine_status"]).notNull(),
+  alertType: mysqlEnum("alertType", ["yield_rate", "ng_count", "machine_status", "machine_offline"]).notNull(),
   threshold: decimal("threshold", { precision: 10, scale: 2 }).notNull(), // Ngưỡng cảnh báo
   comparisonOperator: mysqlEnum("comparisonOperator", ["lt", "lte", "gt", "gte", "eq"]).default("lt").notNull(),
   machineId: int("machineId"), // Null = tất cả máy

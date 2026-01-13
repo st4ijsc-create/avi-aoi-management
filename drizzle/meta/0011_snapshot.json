@@ -1,8 +1,8 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "f25d9c27-4d1d-426d-a57c-3f51ba0e5b76",
-  "prevId": "0e71cb83-3558-43aa-aa1b-0df8930ba7d5",
+  "id": "c0c42d67-b6d4-4d7e-83e8-4dffc8d010a2",
+  "prevId": "f25d9c27-4d1d-426d-a57c-3f51ba0e5b76",
   "tables": {
     "alert_history": {
       "name": "alert_history",
@@ -136,7 +136,7 @@
         },
         "alertType": {
           "name": "alertType",
-          "type": "enum('yield_rate','ng_count','machine_status')",
+          "type": "enum('yield_rate','ng_count','machine_status','machine_offline')",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false

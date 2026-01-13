@@ -8,10 +8,16 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
 import { 
   Wifi, WifiOff, Activity, Clock, AlertTriangle, RefreshCw,
-  Server, Cpu, HardDrive, Thermometer, TrendingUp, History
+  Server, Cpu, HardDrive, Thermometer, TrendingUp, History,
+  Download, FileText, Settings2, BarChart3, Calendar
 } from "lucide-react";
+import UptimeTimeline from "@/components/UptimeTimeline";
 import { format, formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
 
@@ -328,9 +334,27 @@ export default function MachineStatusMonitor() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterFactory, setFilterFactory] = useState<string>("all");
+  const [activeTab, setActiveTab] = useState<string>("machines");
+  const [timelineHours, setTimelineHours] = useState<number>(24);
+  const [alertConfigOpen, setAlertConfigOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportMachineId, setExportMachineId] = useState<number | null>(null);
+  const [exportDateRange, setExportDateRange] = useState({ start: '', end: '' });
 
   const { data: machines, isLoading, refetch } = trpc.machineStatus.listWithStatus.useQuery();
   const { data: factories } = trpc.factory.list.useQuery();
+  const { data: timelines, isLoading: timelinesLoading } = trpc.machineStatus.getAllUptimeTimelines.useQuery(
+    { hours: timelineHours },
+    { enabled: activeTab === 'timeline' }
+  );
+  const { data: alertConfig, refetch: refetchAlertConfig } = trpc.machineStatus.getAlertConfig.useQuery();
+  const updateAlertConfigMutation = trpc.machineStatus.updateAlertConfig.useMutation({
+    onSuccess: () => refetchAlertConfig()
+  });
+  const { data: exportReport, isLoading: exportLoading } = trpc.machineStatus.getReport.useQuery(
+    { machineId: exportMachineId!, startDate: exportDateRange.start, endDate: exportDateRange.end },
+    { enabled: !!exportMachineId && !!exportDateRange.start && !!exportDateRange.end }
+  );
 
   // Auto-refresh every 30 seconds
   useEffect(() => {
@@ -364,10 +388,20 @@ export default function MachineStatusMonitor() {
             <h1 className="text-2xl font-bold">Machine Status Monitor</h1>
             <p className="text-muted-foreground">Theo dõi trạng thái kết nối của tất cả máy trong hệ thống</p>
           </div>
-          <Button variant="outline" onClick={() => refetch()}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Làm mới
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setAlertConfigOpen(true)}>
+              <Settings2 className="h-4 w-4 mr-2" />
+              Cấu hình cảnh báo
+            </Button>
+            <Button variant="outline" onClick={() => setExportDialogOpen(true)}>
+              <Download className="h-4 w-4 mr-2" />
+              Xuất báo cáo
+            </Button>
+            <Button variant="outline" onClick={() => refetch()}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Làm mới
+            </Button>
+          </div>
         </div>
 
         {/* Summary Cards */}
@@ -420,46 +454,60 @@ export default function MachineStatusMonitor() {
           </Card>
         </div>
 
-        {/* Filters */}
-        <div className="flex items-center gap-4">
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="Trạng thái" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tất cả</SelectItem>
-              <SelectItem value="online">Online</SelectItem>
-              <SelectItem value="offline">Offline</SelectItem>
-            </SelectContent>
-          </Select>
+        {/* Main Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+            <TabsTrigger value="machines" className="gap-2">
+              <Server className="h-4 w-4" />
+              Danh sách máy
+            </TabsTrigger>
+            <TabsTrigger value="timeline" className="gap-2">
+              <BarChart3 className="h-4 w-4" />
+              Uptime Timeline
+            </TabsTrigger>
+          </TabsList>
 
-          <Select value={filterFactory} onValueChange={setFilterFactory}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Nhà máy" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tất cả nhà máy</SelectItem>
-              {factories?.map((f: any) => (
-                <SelectItem key={f.id} value={f.id.toString()}>{f.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <TabsContent value="machines" className="mt-4 space-y-4">
+            {/* Filters */}
+            <div className="flex items-center gap-4">
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="w-40">
+                  <SelectValue placeholder="Trạng thái" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tất cả</SelectItem>
+                  <SelectItem value="online">Online</SelectItem>
+                  <SelectItem value="offline">Offline</SelectItem>
+                </SelectContent>
+              </Select>
 
-          {(filterStatus !== "all" || filterFactory !== "all") && (
-            <Button 
-              variant="ghost" 
-              size="sm"
-              onClick={() => {
-                setFilterStatus("all");
-                setFilterFactory("all");
-              }}
-            >
-              Xóa bộ lọc
-            </Button>
-          )}
-        </div>
+              <Select value={filterFactory} onValueChange={setFilterFactory}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Nhà máy" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tất cả nhà máy</SelectItem>
+                  {factories?.map((f: any) => (
+                    <SelectItem key={f.id} value={f.id.toString()}>{f.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-        {/* Machine Grid */}
+              {(filterStatus !== "all" || filterFactory !== "all") && (
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => {
+                    setFilterStatus("all");
+                    setFilterFactory("all");
+                  }}
+                >
+                  Xóa bộ lọc
+                </Button>
+              )}
+            </div>
+
+            {/* Machine Grid */}
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {[...Array(8)].map((_, i) => (
@@ -486,13 +534,52 @@ export default function MachineStatusMonitor() {
             ))}
           </div>
         ) : (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <AlertTriangle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">Không tìm thấy máy nào phù hợp với bộ lọc</p>
-            </CardContent>
-          </Card>
-        )}
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <AlertTriangle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">Không tìm thấy máy nào phù hợp với bộ lọc</p>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="timeline" className="mt-4">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Uptime Timeline</CardTitle>
+                    <CardDescription>Biểu đồ thời gian online/offline của từng máy</CardDescription>
+                  </div>
+                  <Select value={timelineHours.toString()} onValueChange={(v) => setTimelineHours(Number(v))}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="24">24 giờ qua</SelectItem>
+                      <SelectItem value="48">48 giờ qua</SelectItem>
+                      <SelectItem value="72">72 giờ qua</SelectItem>
+                      <SelectItem value="168">7 ngày qua</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {timelinesLoading ? (
+                  <div className="h-64 flex items-center justify-center">
+                    <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : timelines && timelines.length > 0 ? (
+                  <UptimeTimeline data={timelines} hours={timelineHours} />
+                ) : (
+                  <div className="h-64 flex items-center justify-center text-muted-foreground">
+                    Không có dữ liệu timeline
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
 
         {/* Machine Detail Dialog */}
         <MachineDetailDialog 
@@ -500,6 +587,189 @@ export default function MachineStatusMonitor() {
           open={dialogOpen}
           onOpenChange={setDialogOpen}
         />
+
+        {/* Alert Config Dialog */}
+        <Dialog open={alertConfigOpen} onOpenChange={setAlertConfigOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Cấu hình cảnh báo Offline</DialogTitle>
+              <DialogDescription>
+                Thiết lập ngưỡng thời gian và bật/tắt cảnh báo khi máy offline
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Ngưỡng thời gian offline (phút)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={alertConfig?.thresholdMinutes || 5}
+                  onChange={(e) => {
+                    const value = Number(e.target.value);
+                    if (value >= 1 && value <= 60) {
+                      updateAlertConfigMutation.mutate({
+                        thresholdMinutes: value,
+                        isActive: alertConfig?.isActive ?? true
+                      });
+                    }
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Gửi cảnh báo khi máy offline quá số phút này
+                </p>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Bật cảnh báo</Label>
+                  <p className="text-xs text-muted-foreground">Gửi notification khi máy offline</p>
+                </div>
+                <Switch
+                  checked={alertConfig?.isActive ?? true}
+                  onCheckedChange={(checked) => {
+                    updateAlertConfigMutation.mutate({
+                      thresholdMinutes: alertConfig?.thresholdMinutes || 5,
+                      isActive: checked
+                    });
+                    toast.success(checked ? 'Cảnh báo đã bật' : 'Cảnh báo đã tắt');
+                  }}
+                />
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Export Report Dialog */}
+        <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Xuất báo cáo trạng thái máy</DialogTitle>
+              <DialogDescription>
+                Chọn máy và khoảng thời gian để xuất báo cáo
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Chọn máy</Label>
+                  <Select 
+                    value={exportMachineId?.toString() || ''} 
+                    onValueChange={(v) => setExportMachineId(Number(v))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Chọn máy..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {machines?.map((m: MachineWithStatus) => (
+                        <SelectItem key={m.id} value={m.id.toString()}>
+                          {m.name} ({m.code})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Từ ngày</Label>
+                  <Input
+                    type="date"
+                    value={exportDateRange.start}
+                    onChange={(e) => setExportDateRange(prev => ({ ...prev, start: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Đến ngày</Label>
+                  <Input
+                    type="date"
+                    value={exportDateRange.end}
+                    onChange={(e) => setExportDateRange(prev => ({ ...prev, end: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              {exportLoading && (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              )}
+
+              {exportReport && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg">{exportReport.machine.name}</CardTitle>
+                    <CardDescription>
+                      {format(new Date(exportReport.period.start), 'dd/MM/yyyy')} - {format(new Date(exportReport.period.end), 'dd/MM/yyyy')}
+                      {' '}({exportReport.period.totalHours}h)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-4 gap-4 mb-4">
+                      <div className="text-center p-3 rounded-lg bg-emerald-500/10">
+                        <p className="text-2xl font-bold text-emerald-500">{exportReport.statistics.uptimePercent}%</p>
+                        <p className="text-xs text-muted-foreground">Uptime</p>
+                      </div>
+                      <div className="text-center p-3 rounded-lg bg-muted">
+                        <p className="text-2xl font-bold">{formatDuration(exportReport.statistics.totalOnlineTime)}</p>
+                        <p className="text-xs text-muted-foreground">Online</p>
+                      </div>
+                      <div className="text-center p-3 rounded-lg bg-red-500/10">
+                        <p className="text-2xl font-bold text-red-500">{exportReport.statistics.offlineCount}</p>
+                        <p className="text-xs text-muted-foreground">Lần offline</p>
+                      </div>
+                      <div className="text-center p-3 rounded-lg bg-muted">
+                        <p className="text-2xl font-bold">{formatDuration(exportReport.statistics.mtbf)}</p>
+                        <p className="text-xs text-muted-foreground">MTBF</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        className="flex-1"
+                        onClick={() => {
+                          // Export as JSON
+                          const blob = new Blob([JSON.stringify(exportReport, null, 2)], { type: 'application/json' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `machine-report-${exportReport.machine.code}-${exportDateRange.start}-${exportDateRange.end}.json`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                          toast.success('Xuất báo cáo thành công');
+                        }}
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Tải JSON
+                      </Button>
+                      <Button 
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => {
+                          // Export as CSV
+                          const headers = ['Thời gian', 'Trạng thái', 'IP'];
+                          const rows = exportReport.logs.map((log: any) => [
+                            format(new Date(log.timestamp), 'dd/MM/yyyy HH:mm:ss'),
+                            log.status,
+                            log.ipAddress || ''
+                          ]);
+                          const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+                          const blob = new Blob([csv], { type: 'text/csv' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `machine-report-${exportReport.machine.code}-${exportDateRange.start}-${exportDateRange.end}.csv`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                          toast.success('Xuất báo cáo thành công');
+                        }}
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        Tải CSV
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );
