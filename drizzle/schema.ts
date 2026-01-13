@@ -484,3 +484,90 @@ export const shiftConfigs = mysqlTable("shift_configs", {
 
 export type ShiftConfig = typeof shiftConfigs.$inferSelect;
 export type InsertShiftConfig = typeof shiftConfigs.$inferInsert;
+
+
+/**
+ * Production Order - Lệnh sản xuất
+ */
+export const productionOrders = mysqlTable("production_orders", {
+  id: int("id").autoincrement().primaryKey(),
+  orderCode: varchar("orderCode", { length: 100 }).notNull().unique(), // Mã lệnh sản xuất
+  companyCode: varchar("companyCode", { length: 50 }).notNull(), // Mã công ty
+  factoryId: int("factoryId").notNull(), // Nhà máy
+  workshopId: int("workshopId").notNull(), // Nhà xưởng
+  lineId: int("lineId").notNull(), // Dây chuyền sản xuất
+  productModelId: int("productModelId").notNull(), // Sản phẩm
+  targetQuantity: int("targetQuantity").notNull(), // Số lượng mục tiêu
+  completedQuantity: int("completedQuantity").default(0).notNull(), // Số lượng đã hoàn thành
+  okQuantity: int("okQuantity").default(0).notNull(), // Số lượng OK
+  ngQuantity: int("ngQuantity").default(0).notNull(), // Số lượng NG
+  ntfQuantity: int("ntfQuantity").default(0).notNull(), // Số lượng NTF
+  status: mysqlEnum("status", ["pending", "in_progress", "completed", "cancelled", "paused"]).default("pending").notNull(),
+  priority: int("priority").default(0).notNull(), // Độ ưu tiên
+  plannedStartDate: timestamp("plannedStartDate"),
+  plannedEndDate: timestamp("plannedEndDate"),
+  actualStartDate: timestamp("actualStartDate"),
+  actualEndDate: timestamp("actualEndDate"),
+  notes: text("notes"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_po_order_code").on(table.orderCode),
+  index("idx_po_company").on(table.companyCode),
+  index("idx_po_factory").on(table.factoryId),
+  index("idx_po_workshop").on(table.workshopId),
+  index("idx_po_line").on(table.lineId),
+  index("idx_po_product").on(table.productModelId),
+  index("idx_po_status").on(table.status),
+]);
+
+export type ProductionOrder = typeof productionOrders.$inferSelect;
+export type InsertProductionOrder = typeof productionOrders.$inferInsert;
+
+/**
+ * Line Stage - Công đoạn trên dây chuyền (A, B, C...)
+ */
+export const lineStages = mysqlTable("line_stages", {
+  id: int("id").autoincrement().primaryKey(),
+  lineId: int("lineId").notNull(), // Dây chuyền
+  code: varchar("code", { length: 20 }).notNull(), // A, B, C...
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  orderIndex: int("orderIndex").default(0).notNull(), // Thứ tự công đoạn
+  stationId: int("stationId"), // Liên kết với station (optional)
+  cycleTimeTarget: decimal("cycleTimeTarget", { precision: 10, scale: 2 }), // Thời gian chu kỳ mục tiêu (giây)
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_stage_line").on(table.lineId),
+  index("idx_stage_code").on(table.code),
+  index("idx_stage_station").on(table.stationId),
+]);
+
+export type LineStage = typeof lineStages.$inferSelect;
+export type InsertLineStage = typeof lineStages.$inferInsert;
+
+/**
+ * Line Product Assignment - Gán sản phẩm cho dây chuyền (thay thế machine mapping)
+ */
+export const lineProductAssignments = mysqlTable("line_product_assignments", {
+  id: int("id").autoincrement().primaryKey(),
+  lineId: int("lineId").notNull(), // Dây chuyền
+  productModelId: int("productModelId").notNull(), // Sản phẩm
+  productionOrderId: int("productionOrderId"), // Lệnh sản xuất (optional)
+  isActive: boolean("isActive").default(true).notNull(),
+  startDate: timestamp("startDate"),
+  endDate: timestamp("endDate"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_lpa_line").on(table.lineId),
+  index("idx_lpa_product").on(table.productModelId),
+  index("idx_lpa_order").on(table.productionOrderId),
+]);
+
+export type LineProductAssignment = typeof lineProductAssignments.$inferSelect;
+export type InsertLineProductAssignment = typeof lineProductAssignments.$inferInsert;

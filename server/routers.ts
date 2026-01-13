@@ -1121,6 +1121,14 @@ const machineApiRouter = router({
       overallResult: z.enum(["OK", "NG"]),
       inspectionTime: z.string().optional(),
       cycleTime: z.number().optional(),
+      // New fields for enterprise integration
+      companyCode: z.string().optional(), // Mã công ty
+      factoryCode: z.string().optional(), // Mã nhà máy
+      workshopCode: z.string().optional(), // Mã nhà xưởng
+      lineCode: z.string().optional(), // Mã dây chuyền
+      stageCode: z.string().optional(), // Mã công đoạn
+      productionOrderCode: z.string().optional(), // Mã lệnh sản xuất
+      operatorId: z.string().optional(), // Mã công nhân
       measurements: z.array(z.object({
         pointCode: z.string(),
         measuredValue: z.number().optional(),
@@ -1138,6 +1146,15 @@ const machineApiRouter = router({
       // Update machine heartbeat
       await db.updateMachineHeartbeat(machine.id);
 
+      // Find production order if provided
+      let productionOrderId: number | undefined;
+      if (input.productionOrderCode) {
+        const order = await db.getProductionOrderByCode(input.productionOrderCode);
+        if (order) {
+          productionOrderId = order.id;
+        }
+      }
+
       // Create inspection record
       const inspectionId = await db.createProductInspection({
         machineId: machine.id,
@@ -1148,7 +1165,19 @@ const machineApiRouter = router({
         originalResult: input.overallResult,
         inspectionTime: input.inspectionTime ? new Date(input.inspectionTime) : new Date(),
         cycleTime: input.cycleTime ? String(input.cycleTime) : undefined,
+
       });
+
+      // Update production order quantities if linked
+      if (productionOrderId) {
+        const updateData: any = { completedQuantity: 1 };
+        if (input.overallResult === 'OK') {
+          updateData.okQuantity = 1;
+        } else {
+          updateData.ngQuantity = 1;
+        }
+        await db.updateProductionOrderQuantities(productionOrderId, updateData);
+      }
 
       // Process measurements
       const measurementResults = [];
@@ -1576,6 +1605,190 @@ const alertRouter = router({
     }),
 });
 
+// ============ PRODUCTION ORDER ROUTER ============
+const productionOrderRouter = router({
+  list: protectedProcedure
+    .input(z.object({
+      factoryId: z.number().optional(),
+      workshopId: z.number().optional(),
+      lineId: z.number().optional(),
+      status: z.string().optional(),
+      companyCode: z.string().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getProductionOrders(input);
+    }),
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getProductionOrderById(input.id);
+    }),
+
+  getByCode: protectedProcedure
+    .input(z.object({ orderCode: z.string() }))
+    .query(async ({ input }) => {
+      return db.getProductionOrderByCode(input.orderCode);
+    }),
+
+  create: adminProcedure
+    .input(z.object({
+      orderCode: z.string().min(1).max(100),
+      companyCode: z.string().min(1).max(50),
+      factoryId: z.number(),
+      workshopId: z.number(),
+      lineId: z.number(),
+      productModelId: z.number(),
+      targetQuantity: z.number().min(1),
+      priority: z.number().optional(),
+      plannedStartDate: z.date().optional(),
+      plannedEndDate: z.date().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const id = await db.createProductionOrder({
+        ...input,
+        createdBy: ctx.user.id,
+      });
+      return { id };
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      orderCode: z.string().min(1).max(100).optional(),
+      companyCode: z.string().min(1).max(50).optional(),
+      factoryId: z.number().optional(),
+      workshopId: z.number().optional(),
+      lineId: z.number().optional(),
+      productModelId: z.number().optional(),
+      targetQuantity: z.number().min(1).optional(),
+      status: z.enum(['pending', 'in_progress', 'completed', 'cancelled', 'paused']).optional(),
+      priority: z.number().optional(),
+      plannedStartDate: z.date().optional(),
+      plannedEndDate: z.date().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateProductionOrder(id, data);
+      return { success: true };
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteProductionOrder(input.id);
+      return { success: true };
+    }),
+});
+
+// ============ LINE STAGE ROUTER ============
+const lineStageRouter = router({
+  list: protectedProcedure
+    .input(z.object({ lineId: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      return db.getLineStages(input?.lineId);
+    }),
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getLineStageById(input.id);
+    }),
+
+  create: adminProcedure
+    .input(z.object({
+      lineId: z.number(),
+      code: z.string().min(1).max(20),
+      name: z.string().min(1).max(255),
+      description: z.string().optional(),
+      orderIndex: z.number().optional(),
+      stationId: z.number().optional(),
+      cycleTimeTarget: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const id = await db.createLineStage(input);
+      return { id };
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      code: z.string().min(1).max(20).optional(),
+      name: z.string().min(1).max(255).optional(),
+      description: z.string().optional(),
+      orderIndex: z.number().optional(),
+      stationId: z.number().optional(),
+      cycleTimeTarget: z.string().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateLineStage(id, data);
+      return { success: true };
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteLineStage(input.id);
+      return { success: true };
+    }),
+});
+
+// ============ LINE PRODUCT ASSIGNMENT ROUTER ============
+const lineProductAssignmentRouter = router({
+  list: protectedProcedure
+    .input(z.object({
+      lineId: z.number().optional(),
+      productModelId: z.number().optional(),
+      productionOrderId: z.number().optional(),
+      isActive: z.boolean().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getLineProductAssignments(input);
+    }),
+
+  create: adminProcedure
+    .input(z.object({
+      lineId: z.number(),
+      productModelId: z.number(),
+      productionOrderId: z.number().optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const id = await db.createLineProductAssignment(input);
+      return { id };
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      lineId: z.number().optional(),
+      productModelId: z.number().optional(),
+      productionOrderId: z.number().optional(),
+      isActive: z.boolean().optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateLineProductAssignment(id, data);
+      return { success: true };
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteLineProductAssignment(input.id);
+      return { success: true };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -1605,6 +1818,9 @@ export const appRouter = router({
   user: userRouter,
   productMachineMapping: productMachineMappingRouter,
   shiftConfig: shiftConfigRouter,
+  productionOrder: productionOrderRouter,
+  lineStage: lineStageRouter,
+  lineProductAssignment: lineProductAssignmentRouter,
 });
 
 export type AppRouter = typeof appRouter;

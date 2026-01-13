@@ -397,3 +397,31 @@
 - [x] NTF Confirmation workflow - Xác nhận NTF với lý do (đã có trong InspectionDetail)
 - [ ] Batch Operations - Xử lý hàng loạt
 - [ ] PDF Export cho History và Reports
+
+
+## Phase 25: Layout Nhà xưởng, Lệnh sản xuất & Machine-Product Mapping
+
+### 1. Layout Nhà xưởng
+- [x] Trực quan hóa layout nhà xưởng với vị trí máy (đã có trong Layout page)
+- [x] Thêm liên kết xem layout từ Tập đoàn (CorporateLayout -> Layout)
+- [x] CRUD cho vị trí máy trong layout (Settings page)
+- [ ] Drag & drop để sắp xếp máy trong layout
+- [x] Zoom và pan cho layout lớn (đã có)
+
+### 2. Lệnh sản xuất (Production Order)
+- [x] Tạo bảng productionOrders trong schema
+- [x] CRUD cho lệnh sản xuất (/production-orders page)
+- [x] Liên kết lệnh sản xuất với dây chuyền và sản phẩm
+- [x] Thêm mã công ty, mã nhà xưởng, mã dây chuyền vào API
+- [x] Trạng thái lệnh sản xuất (PENDING, IN_PROGRESS, COMPLETED, CANCELLED)
+
+### 3. Gán sản phẩm theo dây chuyền
+- [x] Cập nhật mapping theo dây chuyền (lineProductAssignments table)
+- [x] Thêm công đoạn (stages) cho dây chuyền (lineStages table)
+- [x] Liên kết công đoạn với station/machine
+- [ ] Hiển thị quy trình sản xuất theo công đoạn (UI cần thêm)
+
+### 4. Machine-Product Mapping (1 máy -> nhiều sản phẩm)
+- [x] Schema đã hỗ trợ 1 máy map nhiều sản phẩm (productMachineMappings)
+- [x] UI hiển thị danh sách sản phẩm theo máy (/product-mapping)
+- [x] API submitInspection đã hỗ trợ productionOrderCode, companyCode, workshopCode

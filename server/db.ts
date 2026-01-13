@@ -19,7 +19,10 @@ import {
   alertSettings, InsertAlertSetting,
   alertHistory, InsertAlertHistory,
   productMachineMappings, InsertProductMachineMapping,
-  shiftConfigs, InsertShiftConfig
+  shiftConfigs, InsertShiftConfig,
+  productionOrders, InsertProductionOrder,
+  lineStages, InsertLineStage,
+  lineProductAssignments, InsertLineProductAssignment
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -1611,4 +1614,229 @@ export async function getDefaultShiftConfigs() {
   return db.select().from(shiftConfigs)
     .where(isNull(shiftConfigs.factoryId))
     .orderBy(shiftConfigs.orderIndex);
+}
+
+
+// ============ PRODUCTION ORDER FUNCTIONS ============
+export async function getProductionOrders(filters?: {
+  factoryId?: number;
+  workshopId?: number;
+  lineId?: number;
+  status?: string;
+  companyCode?: string;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions = [];
+  if (filters?.factoryId) conditions.push(eq(productionOrders.factoryId, filters.factoryId));
+  if (filters?.workshopId) conditions.push(eq(productionOrders.workshopId, filters.workshopId));
+  if (filters?.lineId) conditions.push(eq(productionOrders.lineId, filters.lineId));
+  if (filters?.status) conditions.push(eq(productionOrders.status, filters.status as any));
+  if (filters?.companyCode) conditions.push(eq(productionOrders.companyCode, filters.companyCode));
+  
+  return db.select().from(productionOrders)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(productionOrders.createdAt));
+}
+
+export async function getProductionOrderById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(productionOrders).where(eq(productionOrders.id, id));
+  return result[0] || null;
+}
+
+export async function getProductionOrderByCode(orderCode: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(productionOrders).where(eq(productionOrders.orderCode, orderCode));
+  return result[0] || null;
+}
+
+export async function createProductionOrder(data: InsertProductionOrder) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(productionOrders).values(data);
+  return result;
+}
+
+export async function updateProductionOrder(id: number, data: Partial<InsertProductionOrder>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.update(productionOrders).set(data).where(eq(productionOrders.id, id));
+}
+
+export async function deleteProductionOrder(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.delete(productionOrders).where(eq(productionOrders.id, id));
+}
+
+export async function updateProductionOrderQuantities(id: number, result: 'OK' | 'NG' | 'NTF') {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const order = await getProductionOrderById(id);
+  if (!order) throw new Error("Production order not found");
+  
+  const updates: Partial<InsertProductionOrder> = {
+    completedQuantity: order.completedQuantity + 1,
+  };
+  
+  if (result === 'OK') updates.okQuantity = order.okQuantity + 1;
+  else if (result === 'NG') updates.ngQuantity = order.ngQuantity + 1;
+  else if (result === 'NTF') updates.ntfQuantity = order.ntfQuantity + 1;
+  
+  // Auto update status
+  if (updates.completedQuantity! >= order.targetQuantity) {
+    updates.status = 'completed';
+    updates.actualEndDate = new Date();
+  } else if (order.status === 'pending') {
+    updates.status = 'in_progress';
+    updates.actualStartDate = new Date();
+  }
+  
+  return db.update(productionOrders).set(updates).where(eq(productionOrders.id, id));
+}
+
+// ============ LINE STAGE FUNCTIONS ============
+export async function getLineStages(lineId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  if (lineId) {
+    return db.select().from(lineStages)
+      .where(eq(lineStages.lineId, lineId))
+      .orderBy(lineStages.orderIndex);
+  }
+  
+  return db.select().from(lineStages).orderBy(lineStages.orderIndex);
+}
+
+export async function getLineStageById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(lineStages).where(eq(lineStages.id, id));
+  return result[0] || null;
+}
+
+export async function createLineStage(data: InsertLineStage) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(lineStages).values(data);
+  return result;
+}
+
+export async function updateLineStage(id: number, data: Partial<InsertLineStage>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.update(lineStages).set(data).where(eq(lineStages.id, id));
+}
+
+export async function deleteLineStage(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.delete(lineStages).where(eq(lineStages.id, id));
+}
+
+// ============ LINE PRODUCT ASSIGNMENT FUNCTIONS ============
+export async function getLineProductAssignments(filters?: {
+  lineId?: number;
+  productModelId?: number;
+  productionOrderId?: number;
+  isActive?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions = [];
+  if (filters?.lineId) conditions.push(eq(lineProductAssignments.lineId, filters.lineId));
+  if (filters?.productModelId) conditions.push(eq(lineProductAssignments.productModelId, filters.productModelId));
+  if (filters?.productionOrderId) conditions.push(eq(lineProductAssignments.productionOrderId, filters.productionOrderId));
+  if (filters?.isActive !== undefined) conditions.push(eq(lineProductAssignments.isActive, filters.isActive));
+  
+  return db.select().from(lineProductAssignments)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(lineProductAssignments.createdAt));
+}
+
+export async function createLineProductAssignment(data: InsertLineProductAssignment) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(lineProductAssignments).values(data);
+  return result;
+}
+
+export async function updateLineProductAssignment(id: number, data: Partial<InsertLineProductAssignment>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.update(lineProductAssignments).set(data).where(eq(lineProductAssignments.id, id));
+}
+
+export async function deleteLineProductAssignment(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.delete(lineProductAssignments).where(eq(lineProductAssignments.id, id));
+}
+
+// ============ WORKSHOP LAYOUT FUNCTIONS ============
+export async function getWorkshopLayoutsWithMachines(workshopId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  // Get workshop layout
+  const layouts = await db.select().from(factoryLayouts)
+    .where(and(
+      eq(factoryLayouts.workshopId, workshopId),
+      eq(factoryLayouts.layoutLevel, 'WORKSHOP')
+    ));
+  
+  if (layouts.length === 0) return null;
+  
+  const layout = layouts[0];
+  
+  // Get machine positions for this layout
+  const positions = await db.select({
+    position: machinePositions,
+    machine: machines
+  })
+    .from(machinePositions)
+    .innerJoin(machines, eq(machinePositions.machineId, machines.id))
+    .where(eq(machinePositions.layoutId, layout.id));
+  
+  return {
+    layout,
+    machinePositions: positions
+  };
+}
+
+export async function getFactoryLayoutsWithWorkshops(factoryId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  // Get factory layout
+  const layouts = await db.select().from(factoryLayouts)
+    .where(and(
+      eq(factoryLayouts.factoryId, factoryId),
+      eq(factoryLayouts.layoutLevel, 'FACTORY')
+    ));
+  
+  if (layouts.length === 0) return null;
+  
+  const layout = layouts[0];
+  
+  // Get workshop positions for this layout
+  const positions = await db.select({
+    position: workshopPositions,
+    workshop: workshops
+  })
+    .from(workshopPositions)
+    .innerJoin(workshops, eq(workshopPositions.workshopId, workshops.id))
+    .where(eq(workshopPositions.layoutId, layout.id));
+  
+  return {
+    layout,
+    workshopPositions: positions
+  };
 }

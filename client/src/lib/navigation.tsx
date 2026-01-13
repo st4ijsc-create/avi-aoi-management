@@ -1,4 +1,4 @@
-import { BarChart3, History, LayoutGrid, Settings, FileText, Package, Building2, TrendingUp, Bell, Users, Link } from "lucide-react";
+import { BarChart3, History, LayoutGrid, Settings, FileText, Package, Building2, TrendingUp, Bell, Users, Link, ClipboardList } from "lucide-react";
 
 export const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: <BarChart3 className="h-4 w-4" /> },
@@ -10,6 +10,7 @@ export const navItems = [
   { href: "/alerts", label: "Cảnh báo", icon: <Bell className="h-4 w-4" /> },
   { href: "/users", label: "Người dùng", icon: <Users className="h-4 w-4" /> },
   { href: "/product-mapping", label: "Gán sản phẩm", icon: <Link className="h-4 w-4" /> },
+  { href: "/production-orders", label: "Lệnh sản xuất", icon: <ClipboardList className="h-4 w-4" /> },
   { href: "/settings", label: "Cài đặt", icon: <Settings className="h-4 w-4" /> },
   { href: "/api-docs", label: "API Docs", icon: <FileText className="h-4 w-4" /> },
 ];

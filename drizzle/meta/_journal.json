@@ -50,6 +50,13 @@
       "when": 1768278022109,
       "tag": "0006_burly_leech",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1768280014836,
+      "tag": "0007_lazy_black_queen",
+      "breakpoints": true
     }
   ]
 }

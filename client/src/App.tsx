@@ -17,6 +17,7 @@ import Reports from "./pages/Reports";
 import Alerts from "./pages/Alerts";
 import Users from "./pages/Users";
 import ProductMachineMapping from "./pages/ProductMachineMapping";
+import ProductionOrders from "./pages/ProductionOrders";
 
 function Router() {
   return (
@@ -35,6 +36,7 @@ function Router() {
       <Route path="/alerts" component={Alerts} />
       <Route path="/users" component={Users} />
             <Route path="/product-mapping" component={ProductMachineMapping} />
+          <Route path="/production-orders" component={ProductionOrders} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
