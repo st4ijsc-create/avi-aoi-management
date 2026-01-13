@@ -264,6 +264,29 @@ export default function ProductModels() {
       const y = point.positionY * displayScale;
       const r = point.radius * displayScale;
 
+      // Draw crop area rectangle for selected point
+      if (selectedPointIndex === index && point.cropWidth && point.cropHeight) {
+        const cropW = point.cropWidth * displayScale;
+        const cropH = point.cropHeight * displayScale;
+        ctx.strokeStyle = "#f59e0b";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.strokeRect(x - cropW / 2, y - cropH / 2, cropW, cropH);
+        ctx.setLineDash([]);
+        
+        // Draw corner markers
+        const cornerSize = 8;
+        ctx.fillStyle = "#f59e0b";
+        // Top-left
+        ctx.fillRect(x - cropW / 2 - cornerSize / 2, y - cropH / 2 - cornerSize / 2, cornerSize, cornerSize);
+        // Top-right
+        ctx.fillRect(x + cropW / 2 - cornerSize / 2, y - cropH / 2 - cornerSize / 2, cornerSize, cornerSize);
+        // Bottom-left
+        ctx.fillRect(x - cropW / 2 - cornerSize / 2, y + cropH / 2 - cornerSize / 2, cornerSize, cornerSize);
+        // Bottom-right
+        ctx.fillRect(x + cropW / 2 - cornerSize / 2, y + cropH / 2 - cornerSize / 2, cornerSize, cornerSize);
+      }
+
       // Draw circle
       ctx.beginPath();
       ctx.arc(x, y, r, 0, 2 * Math.PI);

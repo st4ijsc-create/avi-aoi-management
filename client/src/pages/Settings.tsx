@@ -30,9 +30,11 @@ import {
   Bell,
   AlertTriangle,
   Target,
-  ThumbsDown
+  ThumbsDown,
+  Wifi
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
+import MachineMapping from "@/components/MachineMapping";
 import { useState } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -544,7 +546,7 @@ export default function Settings() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-8">
+          <TabsList className="grid w-full grid-cols-9">
             <TabsTrigger value="factories" className="gap-2">
               <Building2 className="h-4 w-4" />
               Nhà máy
@@ -576,6 +578,10 @@ export default function Settings() {
             <TabsTrigger value="alerts" className="gap-2">
               <Bell className="h-4 w-4" />
               Cảnh báo
+            </TabsTrigger>
+            <TabsTrigger value="mapping" className="gap-2">
+              <Wifi className="h-4 w-4" />
+              Mapping
             </TabsTrigger>
           </TabsList>
 
@@ -1897,6 +1903,24 @@ export default function Settings() {
                     </div>
                   )}
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Machine Mapping Tab */}
+          <TabsContent value="mapping">
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Wifi className="h-5 w-5 text-primary" />
+                  Machine Mapping
+                </CardTitle>
+                <CardDescription>
+                  Quản lý đăng ký và kết nối máy qua WebSocket
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <MachineMapping />
               </CardContent>
             </Card>
           </TabsContent>

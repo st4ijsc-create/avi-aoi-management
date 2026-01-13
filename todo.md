@@ -572,3 +572,26 @@
 - [x] Machine Mapping qua WebSocket - đăng ký máy tự động
 - [x] API cho máy gửi thông tin và đăng ký qua IP/port
 - [x] Seed dữ liệu inspection cho 5 ngày (3000 records)
+
+
+## Phase 35: Machine Mapping UI, Canvas Crop & WebSocket Test
+- [ ] Tạo UI quản lý Machine Mapping trong Settings
+- [ ] Hiển thị danh sách máy đang chờ đăng ký
+- [ ] Approve/Reject máy đăng ký
+- [ ] Monitor trạng thái kết nối realtime
+- [ ] Tích hợp canvas crop ảnh mẫu cho điểm đo
+- [ ] Tự động crop theo cropWidth/cropHeight khi click điểm đo
+- [ ] Lưu ảnh crop làm reference image
+- [ ] Viết script Python test WebSocket
+- [ ] Mô phỏng máy AVI/AOI gửi đăng ký
+- [ ] Gửi heartbeat định kỳ
+
+
+## Phase 35: Machine Mapping UI, Canvas Crop & WebSocket Test (Completed)
+- [x] Tạo UI quản lý Machine Mapping trong Settings (tab Mapping)
+- [x] Hiển thị máy chờ đăng ký, approve/reject qua WebSocket
+- [x] Monitor trạng thái kết nối realtime
+- [x] Tích hợp canvas crop ảnh mẫu cho điểm đo
+- [x] Hiển thị vùng crop (rectangle dashed) trên canvas khi chọn điểm
+- [x] Viết script Python test WebSocket (scripts/test_machine_websocket.py)
+- [x] Mô phỏng đăng ký máy và heartbeat qua WebSocket
