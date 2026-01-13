@@ -550,3 +550,8 @@
 - [x] UI upload ảnh máy đã có sẵn trong Settings > Máy
 - [x] Generate dữ liệu inspection mẫu (300 records cho 6 máy)
 - [x] Cấu hình ca làm việc (sáng 6-14h, chiều 14-22h, đêm 22-6h)
+
+
+## Bug Fixes - Phase 33
+- [x] Fix SQL query error: getHourlyStats GROUP BY với DATE_FORMAT không tương thích TiDB (sử dụng raw SQL với alias)
+- [x] Fix SQL query error: getDailyStats GROUP BY với DATE_FORMAT không tương thích TiDB (sử dụng raw SQL với alias)

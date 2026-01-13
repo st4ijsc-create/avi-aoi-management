@@ -763,7 +763,7 @@ export default function Dashboard() {
               {hourlyStats && hourlyStats.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
-                    data={hourlyStats.map(h => ({
+                    data={hourlyStats.map((h: { hour: string; fpy: string; fy: string; ntfy: string; total: number }) => ({
                       time: h.hour.split(' ')[1] || h.hour,
                       FPY: parseFloat(h.fpy),
                       FY: parseFloat(h.fy),

@@ -1004,23 +1004,24 @@ export async function getDailyStats(factoryId?: number, workshopId?: number, day
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
   startDate.setHours(0, 0, 0, 0);
+  const startDateStr = startDate.toISOString().slice(0, 19).replace('T', ' ');
 
-  // Get daily aggregated stats using DATE_FORMAT for TiDB compatibility
-  const dateFormat = sql<string>`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%m-%d')`;
-  
-  const result = await db.select({
-    date: dateFormat.as('date'),
-    totalProducts: sql<number>`count(*)`.as('totalProducts'),
-    okCount: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`.as('okCount'),
-    ngCount: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`.as('ngCount'),
-    ntfCount: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`.as('ntfCount'),
-  })
-  .from(productInspections)
-  .where(gte(productInspections.inspectionTime, startDate))
-  .groupBy(dateFormat)
-  .orderBy(sql`date DESC`);
+  // Use raw SQL for TiDB compatibility - GROUP BY with alias
+  const result = await db.execute(sql.raw(`
+    SELECT 
+      DATE_FORMAT(inspectionTime, '%Y-%m-%d') as date,
+      COUNT(*) as totalProducts,
+      SUM(CASE WHEN overallResult = 'OK' THEN 1 ELSE 0 END) as okCount,
+      SUM(CASE WHEN overallResult = 'NG' THEN 1 ELSE 0 END) as ngCount,
+      SUM(CASE WHEN overallResult = 'NTF' THEN 1 ELSE 0 END) as ntfCount
+    FROM product_inspections
+    WHERE inspectionTime >= '${startDateStr}'
+    GROUP BY date
+    ORDER BY date DESC
+  `));
 
-  return result.map(r => ({
+  const rows = (result as any)[0] || [];
+  return rows.map((r: any) => ({
     date: String(r.date),
     totalProducts: Number(r.totalProducts) || 0,
     okCount: Number(r.okCount) || 0,
@@ -1043,30 +1044,29 @@ export async function getHourlyStats(filters?: {
   const hoursBack = filters?.hours || 24;
   const startDate = new Date();
   startDate.setHours(startDate.getHours() - hoursBack);
+  const startDateStr = startDate.toISOString().slice(0, 19).replace('T', ' ');
 
-  // Get hourly aggregated stats using DATE_FORMAT for TiDB compatibility
-  const hourFormat = sql<string>`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%m-%d %H:00')`;
-  
-  const conditions = [gte(productInspections.inspectionTime, startDate)];
-  
-  // Add machine filter if provided
+  // Use raw SQL for TiDB compatibility - GROUP BY with alias
+  let machineCondition = '';
   if (filters?.machineId) {
-    conditions.push(eq(productInspections.machineId, filters.machineId));
+    machineCondition = ` AND machineId = ${filters.machineId}`;
   }
 
-  const result = await db.select({
-    hour: hourFormat.as('hour'),
-    totalProducts: sql<number>`count(*)`.as('totalProducts'),
-    okCount: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`.as('okCount'),
-    ngCount: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`.as('ngCount'),
-    ntfCount: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`.as('ntfCount'),
-  })
-  .from(productInspections)
-  .where(and(...conditions))
-  .groupBy(hourFormat)
-  .orderBy(sql`hour ASC`);
+  const result = await db.execute(sql.raw(`
+    SELECT 
+      DATE_FORMAT(inspectionTime, '%Y-%m-%d %H:00') as hour,
+      COUNT(*) as totalProducts,
+      SUM(CASE WHEN overallResult = 'OK' THEN 1 ELSE 0 END) as okCount,
+      SUM(CASE WHEN overallResult = 'NG' THEN 1 ELSE 0 END) as ngCount,
+      SUM(CASE WHEN overallResult = 'NTF' THEN 1 ELSE 0 END) as ntfCount
+    FROM product_inspections
+    WHERE inspectionTime >= '${startDateStr}'${machineCondition}
+    GROUP BY hour
+    ORDER BY hour ASC
+  `));
 
-  return result.map(r => {
+  const rows = (result as any)[0] || [];
+  return rows.map((r: any) => {
     const total = Number(r.totalProducts) || 1;
     const ok = Number(r.okCount) || 0;
     const ng = Number(r.ngCount) || 0;
