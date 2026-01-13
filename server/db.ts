@@ -282,6 +282,30 @@ export async function getMachines() {
   return db.select().from(machines).where(eq(machines.isActive, true)).orderBy(machines.name);
 }
 
+// Get machines with full hierarchy info (line, workshop, factory)
+export async function getMachinesWithHierarchy() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const result = await db
+    .select({
+      machine: machines,
+      station: stations,
+      line: productionLines,
+      workshop: workshops,
+      factory: factories,
+    })
+    .from(machines)
+    .leftJoin(stations, eq(machines.stationId, stations.id))
+    .leftJoin(productionLines, eq(stations.lineId, productionLines.id))
+    .leftJoin(workshops, eq(productionLines.workshopId, workshops.id))
+    .leftJoin(factories, eq(workshops.factoryId, factories.id))
+    .where(eq(machines.isActive, true))
+    .orderBy(factories.name, workshops.name, productionLines.name, stations.orderIndex, machines.name);
+  
+  return result;
+}
+
 export async function getMachineByApiKey(apiKey: string) {
   const db = await getDb();
   if (!db) return undefined;
@@ -1001,5 +1025,89 @@ export async function seedSampleData() {
     machines: machineData.length,
     productModels: 1,
     measurementPoints: 30
+  };
+}
+
+// Generate sample inspection data for testing
+export async function seedInspectionData(count: number = 100) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Get all machines
+  const allMachines = await db.select().from(machines).where(eq(machines.isActive, true));
+  if (allMachines.length === 0) {
+    throw new Error("No machines found. Please seed sample data first.");
+  }
+
+  // Get product model with measurement points
+  const productModel = await db.select().from(productModels).limit(1);
+  if (productModel.length === 0) {
+    throw new Error("No product model found. Please seed sample data first.");
+  }
+  const productModelId = productModel[0].id;
+
+  const measurementPoints = await db.select().from(measurementPointDefs)
+    .where(eq(measurementPointDefs.productModelId, productModelId));
+
+  const results: string[] = ['OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'NG', 'NTF']; // 80% OK, 10% NG, 10% NTF
+  const ngReasons = ['Scratch detected', 'Dimension out of spec', 'Position shifted', 'Color mismatch', 'Surface defect'];
+  
+  let createdCount = 0;
+  const now = new Date();
+
+  for (let i = 0; i < count; i++) {
+    // Random machine
+    const machine = allMachines[Math.floor(Math.random() * allMachines.length)];
+    
+    // Random date within last 30 days
+    const inspectionDate = new Date(now.getTime() - Math.random() * 30 * 24 * 60 * 60 * 1000);
+    
+    // Generate serial number
+    const serialNumber = `SN-${inspectionDate.toISOString().slice(0, 10).replace(/-/g, '')}-${String(i + 1).padStart(5, '0')}`;
+    
+    // Determine overall result
+    const overallResult = results[Math.floor(Math.random() * results.length)] as 'OK' | 'NG' | 'NTF';
+    
+    // Create inspection record
+    const inspectionResult = await db.insert(productInspections).values({
+      machineId: machine.id,
+      productModelId: productModelId,
+      serialNumber,
+      productModel: productModel[0].code,
+      batchNumber: `BATCH-${inspectionDate.toISOString().slice(0, 7).replace(/-/g, '')}`,
+      overallResult,
+      originalResult: overallResult === 'NTF' ? 'NG' : overallResult,
+      inspectionTime: inspectionDate,
+      cycleTime: String((Math.random() * 5 + 1).toFixed(2)), // 1-6 seconds
+    });
+    const inspectionId = inspectionResult[0].insertId;
+
+    // Create measurement results for each point
+    for (const point of measurementPoints) {
+      // If overall is NG, make 1-3 points NG
+      let pointResult: 'OK' | 'NG' = 'OK';
+      if (overallResult === 'NG' || overallResult === 'NTF') {
+        // 10-20% chance each point is NG when overall is NG
+        if (Math.random() < 0.15) {
+          pointResult = 'NG';
+        }
+      }
+
+      await db.insert(measurementResults).values({
+        inspectionId,
+        pointDefId: point.id,
+        result: pointResult,
+        measuredValue: pointResult === 'OK' ? (Math.random() * 0.1 + 0.95).toFixed(3) : (Math.random() * 0.2 + 0.7).toFixed(3),
+        remark: pointResult === 'NG' ? ngReasons[Math.floor(Math.random() * ngReasons.length)] : null,
+      });
+    }
+
+    createdCount++;
+  }
+
+  return {
+    message: `Created ${createdCount} inspection records with measurement results`,
+    inspections: createdCount,
+    measurementResultsPerInspection: measurementPoints.length,
   };
 }

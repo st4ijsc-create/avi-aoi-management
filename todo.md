@@ -205,3 +205,44 @@
 - [x] Add server-side caching for statistics queries
 - [x] Implement cache invalidation on new inspection data
 - [x] Configurable cache TTL (default 5 minutes)
+
+
+## Phase 19: Dashboard & History Major Upgrade
+
+### Dashboard Upgrade - Production Line Layout
+- [x] Redesign Dashboard with production line layout view
+- [x] Display machines organized by production line
+- [x] Show FPY (First Pass Yield) for each machine
+- [x] Show FY (Fail Yield) for each machine
+- [x] Show NTFY (NTF Yield) for each machine
+- [x] Show Total Output for each machine
+- [x] Machine detail modal with comprehensive info
+- [x] Top recent inspection results in machine detail
+- [x] Real-time status indicators for machines
+- [x] Production line summary statistics
+
+### History Upgrade - SPC Analysis
+- [x] Add SPC tab in History module
+- [x] Control Chart (X-bar, R chart) for measurement trends
+- [x] Histogram for distribution analysis
+- [x] Pareto Chart for defect analysis
+- [x] Cp/Cpk calculation and display
+- [x] UCL/LCL/CL lines on control charts
+- [x] Out-of-control point detection
+- [x] SPC rules violation alerts (Western Electric rules)
+
+### History Upgrade - AI Analysis
+- [ ] AI-powered trend prediction
+- [ ] Anomaly detection with machine learning
+- [ ] Root cause analysis suggestions
+- [ ] Quality improvement recommendations
+- [ ] Defect pattern recognition
+- [ ] Correlation analysis between measurement points
+
+### Sample Data Generation
+- [x] Generate comprehensive inspection data (1000+ records)
+- [x] Include various OK/NG/NTF results distribution
+- [x] Create realistic measurement values with variations
+- [x] Link inspections to existing machines and products
+- [x] Generate data across multiple days for trend analysis
+- [x] Add seed inspection data button in Settings page

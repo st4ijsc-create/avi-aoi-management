@@ -873,12 +873,16 @@ const dashboardRouter = router({
       endDate: z.date().optional(),
     }))
     .query(async ({ input }) => {
-      const machines = await db.getMachines();
+      const machinesWithHierarchy = await db.getMachinesWithHierarchy();
       const stats = await Promise.all(
-        machines.map(async (machine) => {
-          const machineStats = await db.getMachineStats(machine.id, input.startDate, input.endDate);
+        machinesWithHierarchy.map(async (item) => {
+          const machineStats = await db.getMachineStats(item.machine.id, input.startDate, input.endDate);
           return {
-            machine,
+            machine: item.machine,
+            station: item.station,
+            line: item.line,
+            workshop: item.workshop,
+            factory: item.factory,
             stats: machineStats,
           };
         })
@@ -909,6 +913,12 @@ const seedDataRouter = router({
   seed: adminProcedure.mutation(async () => {
     return db.seedSampleData();
   }),
+  
+  seedInspections: adminProcedure
+    .input(z.object({ count: z.number().min(1).max(500).default(100) }))
+    .mutation(async ({ input }) => {
+      return db.seedInspectionData(input.count);
+    }),
 });
 
 // ============ MACHINE API ROUTER (for external machine integration) ============

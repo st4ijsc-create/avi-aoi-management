@@ -419,7 +419,7 @@ export default function History() {
 
         {/* Tabs: List and Analysis */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsList className="grid w-full max-w-lg grid-cols-3">
             <TabsTrigger value="list" className="gap-2">
               <HistoryIcon className="h-4 w-4" />
               Danh sách
@@ -427,6 +427,10 @@ export default function History() {
             <TabsTrigger value="analysis" className="gap-2">
               <BarChart3 className="h-4 w-4" />
               Phân tích
+            </TabsTrigger>
+            <TabsTrigger value="spc" className="gap-2">
+              <TrendingUp className="h-4 w-4" />
+              SPC
             </TabsTrigger>
           </TabsList>
 
@@ -797,6 +801,369 @@ export default function History() {
                 </CardContent>
               </Card>
             )}
+          </TabsContent>
+
+          {/* SPC Tab */}
+          <TabsContent value="spc">
+            <div className="space-y-6">
+              {/* SPC Header */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-primary" />
+                    Statistical Process Control (SPC)
+                  </CardTitle>
+                  <CardDescription>
+                    Phân tích thống kê quá trình sản xuất - Control Charts, Histogram, Pareto
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+
+              {analysisStats ? (
+                <>
+                  {/* Control Chart */}
+                  <Card className="glass-card">
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Activity className="h-5 w-5 text-primary" />
+                        Control Chart - Yield Rate
+                      </CardTitle>
+                      <CardDescription>
+                        Biểu đồ kiểm soát Yield Rate theo ngày với UCL, CL, LCL
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-[350px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={analysisStats.dateStats.map(d => ({
+                            ...d,
+                            ucl: 99,
+                            cl: 95,
+                            lcl: 90,
+                          }))}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                            <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
+                            <YAxis stroke="#9ca3af" fontSize={12} domain={[80, 100]} />
+                            <Tooltip 
+                              contentStyle={{ 
+                                backgroundColor: '#1f2937', 
+                                border: '1px solid #374151',
+                                borderRadius: '8px'
+                              }}
+                              formatter={(value: number, name: string) => {
+                                if (name === 'yieldRate') return [`${value.toFixed(1)}%`, 'Yield Rate'];
+                                if (name === 'ucl') return ['99%', 'UCL'];
+                                if (name === 'cl') return ['95%', 'CL'];
+                                if (name === 'lcl') return ['90%', 'LCL'];
+                                return [value, name];
+                              }}
+                            />
+                            <Legend />
+                            <Bar dataKey="yieldRate" name="Yield Rate" fill="#10b981" />
+                            <Bar dataKey="ucl" name="UCL (99%)" fill="#ef4444" opacity={0.3} />
+                            <Bar dataKey="cl" name="CL (95%)" fill="#3b82f6" opacity={0.3} />
+                            <Bar dataKey="lcl" name="LCL (90%)" fill="#f59e0b" opacity={0.3} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="mt-4 grid grid-cols-3 gap-4 text-center">
+                        <div className="p-3 rounded-lg bg-destructive/10">
+                          <p className="text-sm text-muted-foreground">UCL (Upper Control Limit)</p>
+                          <p className="text-xl font-bold text-destructive">99%</p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-primary/10">
+                          <p className="text-sm text-muted-foreground">CL (Center Line)</p>
+                          <p className="text-xl font-bold text-primary">95%</p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-warning/10">
+                          <p className="text-sm text-muted-foreground">LCL (Lower Control Limit)</p>
+                          <p className="text-xl font-bold text-warning">90%</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Histogram & Pareto Row */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Histogram */}
+                    <Card className="glass-card">
+                      <CardHeader>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <BarChart3 className="h-5 w-5 text-primary" />
+                          Histogram - Phân bố kết quả
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="h-[300px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={[
+                              { name: 'OK', value: analysisStats.okCount, fill: '#10b981' },
+                              { name: 'NG', value: analysisStats.ngCount, fill: '#ef4444' },
+                              { name: 'NTF', value: analysisStats.ntfCount, fill: '#f59e0b' },
+                            ]}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                              <XAxis dataKey="name" stroke="#9ca3af" fontSize={12} />
+                              <YAxis stroke="#9ca3af" fontSize={12} />
+                              <Tooltip 
+                                contentStyle={{ 
+                                  backgroundColor: '#1f2937', 
+                                  border: '1px solid #374151',
+                                  borderRadius: '8px'
+                                }}
+                              />
+                              <Bar dataKey="value" name="Số lượng">
+                                {[
+                                  { name: 'OK', fill: '#10b981' },
+                                  { name: 'NG', fill: '#ef4444' },
+                                  { name: 'NTF', fill: '#f59e0b' },
+                                ].map((entry, index) => (
+                                  <Cell key={`cell-${index}`} fill={entry.fill} />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Pareto Chart */}
+                    <Card className="glass-card">
+                      <CardHeader>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <Target className="h-5 w-5 text-primary" />
+                          Pareto Chart - Top lỗi
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="h-[300px]">
+                          {(() => {
+                            const paretoData = analysisStats.machineStats
+                              .filter(m => m.ng > 0)
+                              .sort((a, b) => b.ng - a.ng)
+                              .slice(0, 5)
+                              .map((m, i, arr) => {
+                                const totalNg = arr.reduce((sum, x) => sum + x.ng, 0);
+                                const cumulative = arr.slice(0, i + 1).reduce((sum, x) => sum + x.ng, 0);
+                                return {
+                                  name: m.name.length > 15 ? m.name.slice(0, 15) + '...' : m.name,
+                                  ng: m.ng,
+                                  cumulative: totalNg > 0 ? (cumulative / totalNg * 100) : 0,
+                                };
+                              });
+                            return paretoData.length > 0 ? (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={paretoData}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                                  <XAxis dataKey="name" stroke="#9ca3af" fontSize={10} angle={-15} textAnchor="end" height={60} />
+                                  <YAxis yAxisId="left" stroke="#9ca3af" fontSize={12} />
+                                  <YAxis yAxisId="right" orientation="right" stroke="#9ca3af" fontSize={12} domain={[0, 100]} />
+                                  <Tooltip 
+                                    contentStyle={{ 
+                                      backgroundColor: '#1f2937', 
+                                      border: '1px solid #374151',
+                                      borderRadius: '8px'
+                                    }}
+                                  />
+                                  <Legend />
+                                  <Bar yAxisId="left" dataKey="ng" name="Số lỗi NG" fill="#ef4444" />
+                                  <Bar yAxisId="right" dataKey="cumulative" name="Tích lũy %" fill="#3b82f6" />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            ) : (
+                              <div className="h-full flex items-center justify-center text-muted-foreground">
+                                Không có dữ liệu lỗi để hiển thị
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Cp/Cpk Analysis */}
+                  <Card className="glass-card">
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Target className="h-5 w-5 text-primary" />
+                        Process Capability - Cp/Cpk
+                      </CardTitle>
+                      <CardDescription>
+                        Đánh giá năng lực quá trình sản xuất
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {(() => {
+                          // Calculate Cp and Cpk based on yield rate
+                          const yieldRates = analysisStats.dateStats.map(d => d.yieldRate);
+                          const mean = yieldRates.length > 0 ? yieldRates.reduce((a, b) => a + b, 0) / yieldRates.length : 0;
+                          const stdDev = yieldRates.length > 1 
+                            ? Math.sqrt(yieldRates.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / (yieldRates.length - 1))
+                            : 0;
+                          const usl = 100; // Upper Spec Limit
+                          const lsl = 90;  // Lower Spec Limit
+                          const cp = stdDev > 0 ? (usl - lsl) / (6 * stdDev) : 0;
+                          const cpk = stdDev > 0 
+                            ? Math.min((usl - mean) / (3 * stdDev), (mean - lsl) / (3 * stdDev))
+                            : 0;
+                          
+                          return (
+                            <>
+                              <div className="p-4 rounded-lg bg-secondary/30 text-center">
+                                <p className="text-sm text-muted-foreground">Mean (μ)</p>
+                                <p className="text-2xl font-bold text-foreground">{mean.toFixed(2)}%</p>
+                              </div>
+                              <div className="p-4 rounded-lg bg-secondary/30 text-center">
+                                <p className="text-sm text-muted-foreground">Std Dev (σ)</p>
+                                <p className="text-2xl font-bold text-foreground">{stdDev.toFixed(2)}</p>
+                              </div>
+                              <div className={`p-4 rounded-lg text-center ${cp >= 1.33 ? 'bg-success/20' : cp >= 1 ? 'bg-warning/20' : 'bg-destructive/20'}`}>
+                                <p className="text-sm text-muted-foreground">Cp</p>
+                                <p className={`text-2xl font-bold ${cp >= 1.33 ? 'text-success' : cp >= 1 ? 'text-warning' : 'text-destructive'}`}>
+                                  {cp.toFixed(2)}
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {cp >= 1.33 ? 'Excellent' : cp >= 1 ? 'Capable' : 'Not Capable'}
+                                </p>
+                              </div>
+                              <div className={`p-4 rounded-lg text-center ${cpk >= 1.33 ? 'bg-success/20' : cpk >= 1 ? 'bg-warning/20' : 'bg-destructive/20'}`}>
+                                <p className="text-sm text-muted-foreground">Cpk</p>
+                                <p className={`text-2xl font-bold ${cpk >= 1.33 ? 'text-success' : cpk >= 1 ? 'text-warning' : 'text-destructive'}`}>
+                                  {cpk.toFixed(2)}
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {cpk >= 1.33 ? 'Excellent' : cpk >= 1 ? 'Capable' : 'Not Capable'}
+                                </p>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                      <div className="mt-4 p-4 rounded-lg bg-muted/50">
+                        <p className="text-sm text-muted-foreground">
+                          <strong>Giải thích:</strong> Cp đo lường khả năng tiềm năng của quá trình, Cpk đo lường khả năng thực tế có tính đến độ lệch tâm.
+                          Giá trị ≥ 1.33 được coi là xuất sắc, ≥ 1.0 là chấp nhận được, &lt; 1.0 cần cải thiện.
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Western Electric Rules */}
+                  <Card className="glass-card">
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <AlertTriangle className="h-5 w-5 text-warning" />
+                        Western Electric Rules - Cảnh báo
+                      </CardTitle>
+                      <CardDescription>
+                        Phát hiện các điểm ngoài tầm kiểm soát
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {(() => {
+                        const yieldRates = analysisStats.dateStats.map(d => d.yieldRate);
+                        const mean = yieldRates.length > 0 ? yieldRates.reduce((a, b) => a + b, 0) / yieldRates.length : 0;
+                        const stdDev = yieldRates.length > 1 
+                          ? Math.sqrt(yieldRates.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / (yieldRates.length - 1))
+                          : 0;
+                        
+                        const violations: { rule: string; description: string; severity: 'high' | 'medium' | 'low' }[] = [];
+                        
+                        // Rule 1: Point beyond 3σ
+                        const beyond3Sigma = yieldRates.filter(y => Math.abs(y - mean) > 3 * stdDev);
+                        if (beyond3Sigma.length > 0) {
+                          violations.push({
+                            rule: 'Rule 1',
+                            description: `${beyond3Sigma.length} điểm vượt quá 3σ - Cần kiểm tra ngay`,
+                            severity: 'high'
+                          });
+                        }
+                        
+                        // Rule 2: 2 of 3 points beyond 2σ
+                        for (let i = 2; i < yieldRates.length; i++) {
+                          const window = yieldRates.slice(i - 2, i + 1);
+                          const beyond2Sigma = window.filter(y => Math.abs(y - mean) > 2 * stdDev);
+                          if (beyond2Sigma.length >= 2) {
+                            violations.push({
+                              rule: 'Rule 2',
+                              description: '2 trong 3 điểm liên tiếp vượt 2σ',
+                              severity: 'medium'
+                            });
+                            break;
+                          }
+                        }
+                        
+                        // Rule 3: 4 of 5 points beyond 1σ
+                        for (let i = 4; i < yieldRates.length; i++) {
+                          const window = yieldRates.slice(i - 4, i + 1);
+                          const beyond1Sigma = window.filter(y => Math.abs(y - mean) > stdDev);
+                          if (beyond1Sigma.length >= 4) {
+                            violations.push({
+                              rule: 'Rule 3',
+                              description: '4 trong 5 điểm liên tiếp vượt 1σ',
+                              severity: 'low'
+                            });
+                            break;
+                          }
+                        }
+                        
+                        // Rule 4: 8 consecutive points on same side of center
+                        for (let i = 7; i < yieldRates.length; i++) {
+                          const window = yieldRates.slice(i - 7, i + 1);
+                          const allAbove = window.every(y => y > mean);
+                          const allBelow = window.every(y => y < mean);
+                          if (allAbove || allBelow) {
+                            violations.push({
+                              rule: 'Rule 4',
+                              description: '8 điểm liên tiếp cùng phía với đường tâm',
+                              severity: 'medium'
+                            });
+                            break;
+                          }
+                        }
+                        
+                        return violations.length > 0 ? (
+                          <div className="space-y-3">
+                            {violations.map((v, i) => (
+                              <div 
+                                key={i} 
+                                className={`p-4 rounded-lg flex items-start gap-3 ${
+                                  v.severity === 'high' ? 'bg-destructive/20' :
+                                  v.severity === 'medium' ? 'bg-warning/20' : 'bg-primary/20'
+                                }`}
+                              >
+                                <AlertTriangle className={`h-5 w-5 mt-0.5 ${
+                                  v.severity === 'high' ? 'text-destructive' :
+                                  v.severity === 'medium' ? 'text-warning' : 'text-primary'
+                                }`} />
+                                <div>
+                                  <p className="font-medium text-foreground">{v.rule}</p>
+                                  <p className="text-sm text-muted-foreground">{v.description}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="p-6 rounded-lg bg-success/20 text-center">
+                            <CheckCircle2 className="h-8 w-8 text-success mx-auto mb-2" />
+                            <p className="font-medium text-success">Quá trình ổn định</p>
+                            <p className="text-sm text-muted-foreground mt-1">Không phát hiện vi phạm quy tắc Western Electric</p>
+                          </div>
+                        );
+                      })()}
+                    </CardContent>
+                  </Card>
+                </>
+              ) : (
+                <Card className="glass-card">
+                  <CardContent className="py-12 text-center">
+                    <TrendingUp className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+                    <p className="text-muted-foreground">Không có dữ liệu để phân tích SPC</p>
+                    <p className="text-sm text-muted-foreground mt-1">Thử tìm kiếm với bộ lọc khác</p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           </TabsContent>
         </Tabs>
       </div>

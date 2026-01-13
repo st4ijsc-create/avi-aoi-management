@@ -235,6 +235,13 @@ export default function Settings() {
     onError: (error) => toast.error(error.message),
   });
 
+  const seedInspectionsMutation = trpc.seedData.seedInspections.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast.success("Đã copy vào clipboard");
@@ -286,15 +293,26 @@ export default function Settings() {
             <h1 className="text-2xl font-bold text-foreground">Cài đặt hệ thống</h1>
             <p className="text-muted-foreground">Quản lý nhà máy, nhà xưởng, dây chuyền, công trạm và máy</p>
           </div>
-          <Button 
-            variant="outline" 
-            className="gap-2"
-            onClick={() => seedDataMutation.mutate()}
-            disabled={seedDataMutation.isPending}
-          >
-            {seedDataMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Tạo dữ liệu mẫu
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              className="gap-2"
+              onClick={() => seedDataMutation.mutate()}
+              disabled={seedDataMutation.isPending}
+            >
+              {seedDataMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Tạo dữ liệu mẫu
+            </Button>
+            <Button 
+              variant="outline" 
+              className="gap-2"
+              onClick={() => seedInspectionsMutation.mutate({ count: 100 })}
+              disabled={seedInspectionsMutation.isPending}
+            >
+              {seedInspectionsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Tạo 100 inspection
+            </Button>
+          </div>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
