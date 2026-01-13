@@ -189,6 +189,17 @@ export default function ProductModels() {
     },
   });
 
+  const uploadCroppedImageMutation = trpc.measurementPoint.uploadCroppedImage.useMutation({
+    onSuccess: (data) => {
+      toast.success("Đã lưu ảnh mẫu vùng cắt thành công");
+      setPointReferenceImageUrl(data.imageUrl);
+      refetchPoints();
+    },
+    onError: (error) => {
+      toast.error(`Lỗi upload ảnh: ${error.message}`);
+    },
+  });
+
   const resetProductForm = () => {
     setNewProductCode("");
     setNewProductName("");
@@ -509,7 +520,34 @@ export default function ProductModels() {
     setIsEditProductDialogOpen(true);
   };
 
-  const handleSavePoint = () => {
+  // Crop image from canvas and convert to base64
+  const cropImageFromCanvas = (posX: number, posY: number, cropW: number, cropH: number): string | null => {
+    const image = imageRef.current;
+    if (!image) return null;
+
+    // Create temporary canvas for cropping
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = cropW;
+    tempCanvas.height = cropH;
+    const tempCtx = tempCanvas.getContext('2d');
+    if (!tempCtx) return null;
+
+    // Calculate crop area (centered on point position)
+    const cropX = Math.max(0, posX - cropW / 2);
+    const cropY = Math.max(0, posY - cropH / 2);
+
+    // Draw cropped region
+    tempCtx.drawImage(
+      image,
+      cropX, cropY, cropW, cropH,  // Source rectangle
+      0, 0, cropW, cropH            // Destination rectangle
+    );
+
+    // Convert to base64
+    return tempCanvas.toDataURL('image/png').split(',')[1];
+  };
+
+  const handleSavePoint = async () => {
     if (selectedPointIndex === null || !selectedProduct) return;
 
     const point = measurementPoints[selectedPointIndex];
@@ -537,6 +575,18 @@ export default function ProductModels() {
         id: point.id,
         ...pointData,
       });
+
+      // Auto crop and upload reference image if image is loaded
+      if (imageRef.current && pointCropWidth > 0 && pointCropHeight > 0) {
+        const croppedBase64 = cropImageFromCanvas(point.positionX, point.positionY, pointCropWidth, pointCropHeight);
+        if (croppedBase64) {
+          uploadCroppedImageMutation.mutate({
+            pointId: point.id,
+            imageBase64: croppedBase64,
+            mimeType: 'image/png',
+          });
+        }
+      }
     } else {
       // Create new point
       createPointMutation.mutate({

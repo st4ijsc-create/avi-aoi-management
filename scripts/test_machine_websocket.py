@@ -109,6 +109,7 @@ class MachineSimulator:
             print(f"[{self._timestamp()}] → Confirming mapping...")
             self.sio.emit("machine:confirm_mapping", {
                 "machineId": self.machine_id,
+                "machineCode": self.machine_code,
                 "apiKey": self.api_key,
             })
     

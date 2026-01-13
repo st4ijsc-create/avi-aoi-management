@@ -1,0 +1,28 @@
+{
+  "query": "SELECT id, code, name, cropWidth, cropHeight, referenceImageUrl, isActive FROM measurement_point_defs WHERE code = 'MP-001';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute SELECT id, code, name, cropWidth, cropHeight, referenceImageUrl, isActive FROM measurement_point_defs WHERE code = 'MP-001';",
+  "rows": [
+    {
+      "id": "1",
+      "code": "MP-001",
+      "name": "Measurement Point 1",
+      "cropWidth": "100",
+      "cropHeight": "100",
+      "referenceImageUrl": "NULL",
+      "isActive": "0"
+    },
+    {
+      "id": "31",
+      "code": "MP-001",
+      "name": "Điểm đo 1",
+      "cropWidth": "100",
+      "cropHeight": "100",
+      "referenceImageUrl": "NULL",
+      "isActive": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tcode\tname\tcropWidth\tcropHeight\treferenceImageUrl\tisActive\n1\tMP-001\tMeasurement Point 1\t100\t100\tNULL\t0\n31\tMP-001\tĐiểm đo 1\t100\t100\tNULL\t1\n",
+  "stderr": "",
+  "execution_time_ms": 1593
+}

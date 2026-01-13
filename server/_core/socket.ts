@@ -21,7 +21,9 @@ interface PendingMachineRegistration {
 }
 
 const pendingRegistrations: Map<string, PendingMachineRegistration> = new Map();
-const connectedMachines: Map<number, { socketId: string; ipAddress: string; lastHeartbeat: Date }> = new Map();
+const connectedMachines: Map<number, { socketId: string; ipAddress: string; lastHeartbeat: Date; machineCode: string }> = new Map();
+// Map machineId -> machineCode for quick lookup
+const onlineMachineCodesMap: Map<number, string> = new Map();
 
 export interface InspectionAlert {
   type: "NG_ALERT" | "YIELD_WARNING" | "NEW_INSPECTION";
@@ -94,10 +96,14 @@ export function initializeSocket(server: HttpServer): Server {
       const machineEntries = Array.from(connectedMachines.entries());
       for (const [machineId, info] of machineEntries) {
         if (info.socketId === socket.id) {
+          const machineCode = info.machineCode;
           connectedMachines.delete(machineId);
-          console.log(`[Socket.io] Machine ${machineId} disconnected`);
+          onlineMachineCodesMap.delete(machineId);
+          console.log(`[Socket.io] Machine ${machineId} (${machineCode}) disconnected`);
           // Notify admin dashboard
-          io?.to("admin").emit("machine:disconnected", { machineId, timestamp: new Date() });
+          io?.to("admin").emit("machine:disconnected", { machineId, machineCode, timestamp: new Date() });
+          // Broadcast status change to all clients
+          io?.emit("machine:status_change", { machineCode, status: "offline" });
           break;
         }
       }
@@ -162,23 +168,29 @@ export function initializeSocket(server: HttpServer): Server {
     });
 
     // Machine confirms mapping
-    socket.on("machine:confirm_mapping", (data: { machineId: number; apiKey: string }) => {
+    socket.on("machine:confirm_mapping", (data: { machineId: number; machineCode: string; apiKey: string }) => {
       const ipAddress = socket.handshake.address;
       connectedMachines.set(data.machineId, {
         socketId: socket.id,
         ipAddress,
         lastHeartbeat: new Date(),
+        machineCode: data.machineCode,
       });
+      onlineMachineCodesMap.set(data.machineId, data.machineCode);
       
       socket.join(`machine:${data.machineId}`);
-      console.log(`[Socket.io] Machine ${data.machineId} mapped successfully from ${ipAddress}`);
+      console.log(`[Socket.io] Machine ${data.machineId} (${data.machineCode}) mapped successfully from ${ipAddress}`);
       
       // Notify admin dashboard
       io?.to("admin").emit("machine:connected", {
         machineId: data.machineId,
+        machineCode: data.machineCode,
         ipAddress,
         timestamp: new Date(),
       });
+      
+      // Broadcast status change to all clients
+      io?.emit("machine:status_change", { machineCode: data.machineCode, status: "online" });
     });
 
     // Admin joins admin room for machine management
@@ -202,6 +214,14 @@ export function initializeSocket(server: HttpServer): Server {
         ...info,
       }));
       socket.emit("admin:connected_machines", connected);
+    });
+
+    // Dashboard requests online machines list
+    socket.on("admin:get_online_machines", () => {
+      // Get machine codes from connectedMachines
+      const onlineMachineCodes = Array.from(onlineMachineCodesMap.values());
+      socket.emit("machine:online_list", { machines: onlineMachineCodes });
+      console.log(`[Socket.io] Sent online machines list to ${socket.id}: ${onlineMachineCodes.length} machines`);
     });
 
     // Admin approves registration

@@ -595,3 +595,14 @@
 - [x] Hiển thị vùng crop (rectangle dashed) trên canvas khi chọn điểm
 - [x] Viết script Python test WebSocket (scripts/test_machine_websocket.py)
 - [x] Mô phỏng đăng ký máy và heartbeat qua WebSocket
+
+
+## Phase 36: Machine Mapping Test, Auto Crop S3, Realtime Status
+- [x] Test Machine Mapping thực tế với script Python
+- [x] Tự động crop và lưu ảnh mẫu lên S3 khi save điểm đo
+- [x] Dashboard Machine Status realtime với WebSocket heartbeat
+- [x] Hiển thị indicator online/offline cho từng máy (UI đã có, WebSocket qua proxy cần polling)
+
+## Known Issues
+- [ ] WebSocket qua proxy domain không ổn định (cần sử dụng polling transport)
+- [ ] Khi deploy production, WebSocket sẽ hoạt động tốt hơn qua domain chính

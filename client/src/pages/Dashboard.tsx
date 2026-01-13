@@ -38,10 +38,13 @@ import {
   Pause,
   Settings2,
   Award,
-  ThumbsDown
+  ThumbsDown,
+  Wifi,
+  WifiOff
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { io, Socket } from "socket.io-client";
 import { Link } from "wouter";
 import { 
   AreaChart, 
@@ -142,6 +145,50 @@ export default function Dashboard() {
   const [autoRefreshInterval, setAutoRefreshInterval] = useState("30");
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(true);
   const [lastRefreshTime, setLastRefreshTime] = useState(new Date());
+  
+  // Machine online status from WebSocket
+  const [onlineMachines, setOnlineMachines] = useState<Set<string>>(new Set());
+  const socketRef = useRef<Socket | null>(null);
+
+  // WebSocket connection for realtime machine status
+  useEffect(() => {
+    const socket = io(window.location.origin, {
+      path: '/api/socket.io',
+      transports: ['polling'],
+    });
+
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      console.log('[Dashboard] WebSocket connected');
+      // Request current online machines
+      socket.emit('admin:get_online_machines');
+    });
+
+    socket.on('machine:online_list', (data: { machines: string[] }) => {
+      setOnlineMachines(new Set(data.machines));
+    });
+
+    socket.on('machine:status_change', (data: { machineCode: string; status: 'online' | 'offline' }) => {
+      setOnlineMachines(prev => {
+        const newSet = new Set(prev);
+        if (data.status === 'online') {
+          newSet.add(data.machineCode);
+        } else {
+          newSet.delete(data.machineCode);
+        }
+        return newSet;
+      });
+    });
+
+    socket.on('disconnect', () => {
+      console.log('[Dashboard] WebSocket disconnected');
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
   
   // Metrics customization state
   const [metricsSettingsOpen, setMetricsSettingsOpen] = useState(false);
@@ -1119,9 +1166,32 @@ export default function Dashboard() {
                                     <h4 className="font-semibold text-foreground truncate">{machine.name}</h4>
                                     <p className="text-xs text-muted-foreground">{machine.code}</p>
                                   </div>
-                                  <span className="text-xs text-primary flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <Eye className="h-3 w-3" />
-                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    {/* Online/Offline indicator */}
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs ${
+                                            onlineMachines.has(machine.code)
+                                              ? 'bg-emerald-500/20 text-emerald-400'
+                                              : 'bg-muted text-muted-foreground'
+                                          }`}>
+                                            {onlineMachines.has(machine.code) ? (
+                                              <Wifi className="h-3 w-3" />
+                                            ) : (
+                                              <WifiOff className="h-3 w-3" />
+                                            )}
+                                          </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>{onlineMachines.has(machine.code) ? 'Online' : 'Offline'}</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                    <span className="text-xs text-primary flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <Eye className="h-3 w-3" />
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                             </div>

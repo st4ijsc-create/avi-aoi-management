@@ -500,6 +500,8 @@ const measurementPointRouter = router({
       positionX: z.number(),
       positionY: z.number(),
       radius: z.number().optional(),
+      cropWidth: z.number().optional().default(100),
+      cropHeight: z.number().optional().default(100),
       referenceImageUrl: z.string().optional(),
       referenceImageKey: z.string().optional(),
       orderIndex: z.number().optional(),
@@ -523,6 +525,8 @@ const measurementPointRouter = router({
       positionX: z.number().optional(),
       positionY: z.number().optional(),
       radius: z.number().optional(),
+      cropWidth: z.number().optional(),
+      cropHeight: z.number().optional(),
       referenceImageUrl: z.string().optional(),
       referenceImageKey: z.string().optional(),
       orderIndex: z.number().optional(),
@@ -539,6 +543,36 @@ const measurementPointRouter = router({
     .mutation(async ({ input }) => {
       await db.deleteMeasurementPointDef(input.id);
       return { success: true };
+    }),
+
+  // Upload cropped reference image for measurement point
+  uploadCroppedImage: adminProcedure
+    .input(z.object({
+      pointId: z.number(),
+      imageBase64: z.string(),
+      mimeType: z.string().default('image/png'),
+    }))
+    .mutation(async ({ input }) => {
+      // Get point info
+      const point = await db.getMeasurementPointDefById(input.pointId);
+      if (!point) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Measurement point not found' });
+      }
+
+      // Decode base64 and upload to S3
+      const buffer = Buffer.from(input.imageBase64, 'base64');
+      const ext = input.mimeType.split('/')[1] || 'png';
+      const fileKey = `measurement-points/${point.productModelId}/${point.code}-crop-${nanoid(8)}.${ext}`;
+      
+      const { url, key } = await storagePut(fileKey, buffer, input.mimeType);
+
+      // Update measurement point with cropped image URL
+      await db.updateMeasurementPointDef(input.pointId, {
+        referenceImageUrl: url,
+        referenceImageKey: key,
+      });
+
+      return { success: true, imageUrl: url, imageKey: key };
     }),
 });
 
