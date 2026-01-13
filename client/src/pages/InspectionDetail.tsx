@@ -415,6 +415,8 @@ export default function InspectionDetail() {
                       if (m.x === undefined || m.y === undefined) return null;
                       
                       const containerWidth = imageContainerRef.current?.offsetWidth || imageSize.width;
+                      // Prevent NaN when imageSize.width is 0
+                      if (imageSize.width === 0 || containerWidth === 0) return null;
                       const scale = containerWidth / imageSize.width;
                       const x = m.x * scale;
                       const y = m.y * scale;

@@ -1137,8 +1137,8 @@ export default function History() {
                                   v.severity === 'medium' ? 'text-warning' : 'text-primary'
                                 }`} />
                                 <div>
-                                  <p className="font-medium text-foreground">{v.rule}</p>
-                                  <p className="text-sm text-muted-foreground">{v.description}</p>
+                                  <span className="font-medium text-foreground block">{v.rule}</span>
+                                  <span className="text-sm text-muted-foreground block">{v.description}</span>
                                 </div>
                               </div>
                             ))}
@@ -1146,8 +1146,8 @@ export default function History() {
                         ) : (
                           <div className="p-6 rounded-lg bg-success/20 text-center">
                             <CheckCircle2 className="h-8 w-8 text-success mx-auto mb-2" />
-                            <p className="font-medium text-success">Quá trình ổn định</p>
-                            <p className="text-sm text-muted-foreground mt-1">Không phát hiện vi phạm quy tắc Western Electric</p>
+                            <span className="font-medium text-success block">Quá trình ổn định</span>
+                            <span className="text-sm text-muted-foreground mt-1 block">Không phát hiện vi phạm quy tắc Western Electric</span>
                           </div>
                         );
                       })()}

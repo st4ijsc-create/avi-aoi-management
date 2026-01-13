@@ -246,3 +246,9 @@
 - [x] Link inspections to existing machines and products
 - [x] Generate data across multiple days for trend analysis
 - [x] Add seed inspection data button in Settings page
+
+
+## Bug Fixes - Phase 20
+
+- [x] Fix HTML nesting error: <p> cannot contain nested <div> in History page
+- [x] Fix NaN CSS left value error in InspectionDetail page
