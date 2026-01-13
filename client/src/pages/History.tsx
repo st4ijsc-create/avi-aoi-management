@@ -68,7 +68,7 @@ export default function History() {
     machineCode: filters.machineCode || undefined,
     serialNumber: filters.serialNumber || undefined,
     result: filters.result !== "all" ? filters.result : undefined,
-    limit: 1000, // Get more data for analysis
+    limit: 100, // Max limit allowed by API
     offset: 0,
   });
 

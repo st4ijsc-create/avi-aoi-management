@@ -185,3 +185,7 @@
 - [x] Yield rate warning when below threshold
 - [x] Dashboard stats auto-refresh
 - [x] Notification center in header
+
+## Bug Fixes - Phase 17
+
+- [x] Fix API limit validation error in Products page (limit > 100)
