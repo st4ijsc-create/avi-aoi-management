@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { 
@@ -22,7 +23,8 @@ import {
   SplitSquareVertical,
   Target,
   Edit3,
-  Save
+  Save,
+  List
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { useState, useRef, useEffect, useMemo } from "react";
@@ -59,6 +61,7 @@ export default function InspectionDetail() {
   const [correctResult, setCorrectResult] = useState<"OK" | "NG" | "NTF">("OK");
   const [correctReason, setCorrectReason] = useState("");
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
+  const [activePointIndex, setActivePointIndex] = useState<number | null>(null);
   
   const imageContainerRef = useRef<HTMLDivElement>(null);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
@@ -198,6 +201,13 @@ export default function InspectionDetail() {
     setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
   };
 
+  // Handle point click from image or list
+  const handlePointClick = (measurement: MeasurementPoint, index: number) => {
+    setSelectedMeasurement(measurement);
+    setActivePointIndex(index);
+    setCompareMode(true);
+  };
+
   if (isLoading) {
     return (
       <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/history">
@@ -225,6 +235,13 @@ export default function InspectionDetail() {
   }
 
   const { inspection, measurements, machine } = data;
+
+  // Calculate statistics
+  const okCount = measurementsWithCoords.filter((m: MeasurementPoint) => m.result === "OK").length;
+  const ngCount = measurementsWithCoords.filter((m: MeasurementPoint) => m.result === "NG").length;
+  const ntfCount = measurementsWithCoords.filter((m: MeasurementPoint) => m.result === "NTF").length;
+  const total = measurementsWithCoords.length;
+  const yieldRate = total > 0 ? ((okCount + ntfCount) / total * 100).toFixed(1) : "0";
 
   return (
     <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/history">
@@ -287,7 +304,7 @@ export default function InspectionDetail() {
           )}
         </div>
 
-        {/* Inspection Info */}
+        {/* Row 1: Inspection Info + Machine Info */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Card className="glass-card lg:col-span-2">
             <CardHeader>
@@ -366,8 +383,9 @@ export default function InspectionDetail() {
           </Card>
         </div>
 
-        {/* Product Image with Measurement Points Overlay */}
-        {productModelData?.productModel?.referenceImageUrl && (
+        {/* Row 2: Product Image with Points (Left) + Measurement List (Right) */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          {/* Left Column: Product Image with Measurement Points */}
           <Card className="glass-card">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
@@ -379,282 +397,240 @@ export default function InspectionDetail() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div 
-                ref={imageContainerRef}
-                className="relative inline-block max-w-full overflow-hidden rounded-lg border border-border"
-              >
-                <img
-                  src={productModelData.productModel.referenceImageUrl}
-                  alt="Product reference"
-                  className="max-w-full h-auto"
-                  onLoad={handleImageLoad}
-                />
-                
-                {/* Measurement Points Overlay */}
-                {measurementsWithCoords.map((m: MeasurementPoint, index: number) => {
-                  if (m.x === undefined || m.y === undefined) return null;
-                  
-                  const containerWidth = imageContainerRef.current?.offsetWidth || imageSize.width;
-                  const scale = containerWidth / imageSize.width;
-                  const x = m.x * scale;
-                  const y = m.y * scale;
-                  const radius = 20 * scale;
-                  
-                  return (
-                    <div
-                      key={m.id}
-                      className="absolute cursor-pointer transition-all duration-200"
-                      style={{
-                        left: x - radius,
-                        top: y - radius,
-                        width: radius * 2,
-                        height: radius * 2,
-                      }}
-                      onMouseEnter={() => setHoveredPoint(m.id)}
-                      onMouseLeave={() => setHoveredPoint(null)}
-                      onClick={() => {
-                        setSelectedMeasurement(m);
-                        setCompareMode(true);
-                      }}
-                    >
-                      {/* Circle */}
-                      <div
-                        className="absolute inset-0 rounded-full border-2 flex items-center justify-center transition-all"
-                        style={{
-                          borderColor: getResultColor(m.result),
-                          backgroundColor: `${getResultColor(m.result)}20`,
-                          transform: hoveredPoint === m.id ? 'scale(1.2)' : 'scale(1)',
-                        }}
-                      >
-                        <span 
-                          className="text-xs font-bold"
-                          style={{ color: getResultColor(m.result) }}
-                        >
-                          {index + 1}
-                        </span>
-                      </div>
-                      
-                      {/* Tooltip on hover */}
-                      {hoveredPoint === m.id && (
-                        <div 
-                          className="absolute z-50 left-full ml-2 top-1/2 -translate-y-1/2 bg-popover border border-border rounded-lg p-3 shadow-lg min-w-[200px]"
-                        >
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="font-semibold">{m.pointCode || `Point ${index + 1}`}</span>
-                            {getResultBadge(m.result)}
-                          </div>
-                          <p className="text-sm text-muted-foreground">{m.pointName || "Điểm đo"}</p>
-                          {m.measuredValue && (
-                            <p className="text-sm mt-1">Giá trị: {m.measuredValue}</p>
-                          )}
-                          <p className="text-xs text-primary mt-2">Click để xem chi tiết</p>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              
-              {/* Legend */}
-              <div className="flex items-center gap-6 mt-4">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full bg-success/20 border-2 border-success" />
-                  <span className="text-sm text-muted-foreground">OK</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full bg-destructive/20 border-2 border-destructive" />
-                  <span className="text-sm text-muted-foreground">NG</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full bg-warning/20 border-2 border-warning" />
-                  <span className="text-sm text-muted-foreground">NTF</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Measurement Results List */}
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="text-lg">Kết quả các điểm đo ({measurements.length})</CardTitle>
-            <CardDescription>Chi tiết từng điểm đo với ảnh, giá trị và kết quả</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {measurements.length > 0 ? (
-              <div className="space-y-4">
-                {measurementsWithCoords.map((measurement: MeasurementPoint, index: number) => (
+              {productModelData?.productModel?.referenceImageUrl ? (
+                <>
                   <div 
-                    key={measurement.id}
-                    className={`p-4 rounded-lg border ${
-                      measurement.result === "OK" 
-                        ? "border-success/30 bg-success/5" 
-                        : measurement.result === "NTF"
-                        ? "border-warning/30 bg-warning/5"
-                        : "border-destructive/30 bg-destructive/5"
-                    }`}
+                    ref={imageContainerRef}
+                    className="relative inline-block w-full overflow-hidden rounded-lg border border-border bg-secondary/20"
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-3">
-                          <span 
-                            className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold"
-                            style={{ 
-                              backgroundColor: `${getResultColor(measurement.result)}20`,
-                              color: getResultColor(measurement.result),
-                              border: `2px solid ${getResultColor(measurement.result)}`
+                    <img
+                      src={productModelData.productModel.referenceImageUrl}
+                      alt="Product reference"
+                      className="w-full h-auto"
+                      onLoad={handleImageLoad}
+                    />
+                    
+                    {/* Measurement Points Overlay */}
+                    {measurementsWithCoords.map((m: MeasurementPoint, index: number) => {
+                      if (m.x === undefined || m.y === undefined) return null;
+                      
+                      const containerWidth = imageContainerRef.current?.offsetWidth || imageSize.width;
+                      const scale = containerWidth / imageSize.width;
+                      const x = m.x * scale;
+                      const y = m.y * scale;
+                      const radius = 18 * scale;
+                      const isActive = activePointIndex === index;
+                      const isHovered = hoveredPoint === m.id;
+                      
+                      return (
+                        <div
+                          key={m.id}
+                          className="absolute cursor-pointer transition-all duration-200"
+                          style={{
+                            left: x - radius,
+                            top: y - radius,
+                            width: radius * 2,
+                            height: radius * 2,
+                            zIndex: isActive || isHovered ? 20 : 10,
+                          }}
+                          onMouseEnter={() => setHoveredPoint(m.id)}
+                          onMouseLeave={() => setHoveredPoint(null)}
+                          onClick={() => handlePointClick(m, index)}
+                        >
+                          {/* Circle */}
+                          <div
+                            className="absolute inset-0 rounded-full border-2 flex items-center justify-center transition-all shadow-lg"
+                            style={{
+                              borderColor: getResultColor(m.result),
+                              backgroundColor: isActive || isHovered 
+                                ? getResultColor(m.result) 
+                                : `${getResultColor(m.result)}30`,
+                              transform: isActive || isHovered ? 'scale(1.3)' : 'scale(1)',
                             }}
                           >
-                            {index + 1}
-                          </span>
-                          <span className="font-semibold text-foreground">
-                            {measurement.pointCode || `Point ${measurement.pointDefId}`}
-                          </span>
-                          <span className="text-muted-foreground">
-                            {measurement.pointName}
-                          </span>
-                          {getResultBadge(measurement.result)}
+                            <span 
+                              className="text-xs font-bold"
+                              style={{ 
+                                color: isActive || isHovered ? '#fff' : getResultColor(m.result) 
+                              }}
+                            >
+                              {index + 1}
+                            </span>
+                          </div>
+                          
+                          {/* Tooltip on hover */}
+                          {isHovered && (
+                            <div 
+                              className="absolute z-50 left-full ml-2 top-1/2 -translate-y-1/2 bg-popover border border-border rounded-lg p-3 shadow-xl min-w-[200px]"
+                            >
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="font-semibold">{m.pointCode || `Point ${index + 1}`}</span>
+                                {getResultBadge(m.result)}
+                              </div>
+                              <p className="text-sm text-muted-foreground">{m.pointName || "Điểm đo"}</p>
+                              {m.measuredValue && (
+                                <p className="text-sm mt-1">Giá trị: {m.measuredValue}</p>
+                              )}
+                              <p className="text-xs text-primary mt-2">Click để xem chi tiết</p>
+                            </div>
+                          )}
                         </div>
+                      );
+                    })}
+                  </div>
+                  
+                  {/* Legend + Stats */}
+                  <div className="flex items-center justify-between mt-4 flex-wrap gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded-full bg-success/20 border-2 border-success" />
+                        <span className="text-sm text-muted-foreground">OK ({okCount})</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded-full bg-destructive/20 border-2 border-destructive" />
+                        <span className="text-sm text-muted-foreground">NG ({ngCount})</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded-full bg-warning/20 border-2 border-warning" />
+                        <span className="text-sm text-muted-foreground">NTF ({ntfCount})</span>
+                      </div>
+                    </div>
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">Yield Rate: </span>
+                      <span className="font-semibold text-primary">{yieldRate}%</span>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="h-64 flex items-center justify-center text-muted-foreground border border-dashed rounded-lg">
+                  <div className="text-center">
+                    <ImageIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p>Chưa có ảnh mẫu sản phẩm</p>
+                    <p className="text-xs mt-1">Vui lòng cấu hình trong module Sản phẩm</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                          <div>
-                            <p className="text-muted-foreground">Giá trị đo</p>
+          {/* Right Column: Measurement Results List */}
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <List className="h-5 w-5 text-primary" />
+                Danh sách điểm đo ({measurements.length})
+              </CardTitle>
+              <CardDescription>Chi tiết từng điểm đo với giá trị và kết quả</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <ScrollArea className="h-[500px]">
+                <div className="p-6 space-y-3">
+                  {measurementsWithCoords.length > 0 ? (
+                    measurementsWithCoords.map((measurement: MeasurementPoint, index: number) => (
+                      <div 
+                        key={measurement.id}
+                        className={`p-4 rounded-lg border cursor-pointer transition-all ${
+                          activePointIndex === index 
+                            ? "ring-2 ring-primary border-primary" 
+                            : measurement.result === "OK" 
+                              ? "border-success/30 bg-success/5 hover:border-success/50" 
+                              : measurement.result === "NTF"
+                              ? "border-warning/30 bg-warning/5 hover:border-warning/50"
+                              : "border-destructive/30 bg-destructive/5 hover:border-destructive/50"
+                        }`}
+                        onClick={() => handlePointClick(measurement, index)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <span 
+                              className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold"
+                              style={{ 
+                                backgroundColor: `${getResultColor(measurement.result)}20`,
+                                color: getResultColor(measurement.result),
+                                border: `2px solid ${getResultColor(measurement.result)}`
+                              }}
+                            >
+                              {index + 1}
+                            </span>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-foreground">
+                                  {measurement.pointCode || `Point ${measurement.pointDefId}`}
+                                </span>
+                                {getResultBadge(measurement.result)}
+                              </div>
+                              <p className="text-sm text-muted-foreground">
+                                {measurement.pointName || "Điểm đo"}
+                              </p>
+                            </div>
+                          </div>
+                          
+                          <div className="text-right">
+                            <p className="text-sm text-muted-foreground">Giá trị đo</p>
                             <p className="font-medium text-foreground">
                               {measurement.measuredValue || "-"}
                             </p>
                           </div>
-                          {measurement.remark && (
-                            <div className="col-span-2">
-                              <p className="text-muted-foreground flex items-center gap-1">
-                                <MessageSquare className="h-3 w-3" />
-                                Ghi chú
-                              </p>
-                              <p className="font-medium text-foreground">{measurement.remark}</p>
-                            </div>
-                          )}
                         </div>
 
-                        {/* AI Analysis Result */}
-                        {measurement.aiAnalysisResult && (
-                          <div className="mt-4 p-3 rounded-lg bg-primary/10 border border-primary/20">
-                            <p className="text-sm font-medium text-primary flex items-center gap-2 mb-2">
-                              <Brain className="h-4 w-4" />
-                              Kết quả phân tích AI
-                              {measurement.aiConfidence && (
-                                <Badge variant="secondary" className="ml-2">
-                                  Độ tin cậy: {(parseFloat(measurement.aiConfidence) * 100).toFixed(1)}%
-                                </Badge>
-                              )}
+                        {measurement.remark && (
+                          <div className="mt-3 pt-3 border-t border-border/50">
+                            <p className="text-sm text-muted-foreground flex items-center gap-1">
+                              <MessageSquare className="h-3 w-3" />
+                              {measurement.remark}
                             </p>
-                            <pre className="text-xs text-foreground whitespace-pre-wrap">
-                              {measurement.aiAnalysisResult}
-                            </pre>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Image and Actions */}
-                      <div className="flex flex-col items-end gap-2">
-                        {measurement.imageUrl ? (
-                          <div 
-                            className="relative w-24 h-24 rounded-lg overflow-hidden border border-border cursor-pointer group"
-                            onClick={() => setSelectedImage(measurement.imageUrl)}
-                          >
-                            <img 
-                              src={measurement.imageUrl} 
-                              alt={`Measurement ${index + 1}`}
-                              className="w-full h-full object-cover"
-                            />
-                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <ZoomIn className="h-6 w-6 text-white" />
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="w-24 h-24 rounded-lg border border-dashed border-border flex items-center justify-center">
-                            <ImageIcon className="h-8 w-8 text-muted-foreground/50" />
                           </div>
                         )}
 
-                        <div className="flex gap-1">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-1"
-                            onClick={() => {
-                              setSelectedMeasurement(measurement);
-                              setCompareMode(true);
-                            }}
-                          >
-                            <SplitSquareVertical className="h-3 w-3" />
-                            So sánh
-                          </Button>
-
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-1"
-                            onClick={() => {
-                              setSelectedMeasurement(measurement);
-                              setCorrectResult(measurement.result as "OK" | "NG" | "NTF");
-                              setCorrectDialogOpen(true);
-                            }}
-                          >
-                            <Edit3 className="h-3 w-3" />
-                            Sửa
-                          </Button>
-                        </div>
-
-                        {measurement.imageUrl && !measurement.aiAnalysisResult && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-1"
-                            onClick={() => handleAnalyzeWithAI(measurement.id)}
-                            disabled={analyzingId === measurement.id}
-                          >
-                            {analyzingId === measurement.id ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
+                        {measurement.aiAnalysisResult && (
+                          <div className="mt-3 p-2 rounded bg-primary/10 border border-primary/20">
+                            <p className="text-xs font-medium text-primary flex items-center gap-1">
                               <Brain className="h-3 w-3" />
-                            )}
-                            AI Phân tích
-                          </Button>
+                              AI: {measurement.aiAnalysisResult.substring(0, 100)}...
+                            </p>
+                          </div>
                         )}
                       </div>
+                    ))
+                  ) : (
+                    <div className="py-12 text-center">
+                      <p className="text-muted-foreground">Không có dữ liệu điểm đo</p>
                     </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="py-12 text-center">
-                <p className="text-muted-foreground">Không có dữ liệu điểm đo</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  )}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
-      {/* Image Zoom Dialog with Compare Mode */}
-      <Dialog open={!!selectedImage || compareMode} onOpenChange={() => { setSelectedImage(null); setCompareMode(false); setSelectedMeasurement(null); }}>
-        <DialogContent className="max-w-5xl">
+      {/* Image Compare Dialog */}
+      <Dialog open={compareMode} onOpenChange={(open) => { 
+        if (!open) {
+          setCompareMode(false); 
+          setSelectedMeasurement(null);
+          setActivePointIndex(null);
+        }
+      }}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              {compareMode ? (
-                <><SplitSquareVertical className="h-5 w-5" /> So sánh ảnh thực tế với ảnh mẫu</>
-              ) : (
-                <>Xem ảnh điểm đo</>
-              )}
+              <SplitSquareVertical className="h-5 w-5" /> 
+              So sánh ảnh thực tế với ảnh mẫu
             </DialogTitle>
             <DialogDescription>
-              {compareMode && selectedMeasurement && (
+              {selectedMeasurement && (
                 <div className="flex items-center gap-2">
-                  <span>{selectedMeasurement.pointCode || `Point ${selectedMeasurement.pointDefId}`}</span>
+                  <span className="font-medium">{selectedMeasurement.pointCode || `Point ${selectedMeasurement.pointDefId}`}</span>
+                  <span className="text-muted-foreground">-</span>
+                  <span>{selectedMeasurement.pointName}</span>
                   {getResultBadge(selectedMeasurement.result)}
                 </div>
               )}
             </DialogDescription>
           </DialogHeader>
-          {compareMode && selectedMeasurement ? (
+          
+          {selectedMeasurement && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -662,20 +638,18 @@ export default function InspectionDetail() {
                     <Target className="h-4 w-4" />
                     Ảnh mẫu (Reference)
                   </div>
-                  <div className="border rounded-lg p-2 bg-secondary/20">
+                  <div className="border rounded-lg p-2 bg-secondary/20 min-h-[300px] flex items-center justify-center">
                     {selectedMeasurement.referenceImageUrl ? (
                       <img 
                         src={selectedMeasurement.referenceImageUrl} 
                         alt="Reference"
-                        className="w-full max-h-[40vh] object-contain rounded"
+                        className="max-w-full max-h-[50vh] object-contain rounded"
                       />
                     ) : (
-                      <div className="h-64 flex items-center justify-center text-muted-foreground">
-                        <div className="text-center">
-                          <ImageIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                          <p>Chưa có ảnh mẫu</p>
-                          <p className="text-xs">Vui lòng cấu hình trong module Sản phẩm</p>
-                        </div>
+                      <div className="text-center text-muted-foreground">
+                        <ImageIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                        <p>Chưa có ảnh mẫu</p>
+                        <p className="text-xs">Vui lòng cấu hình trong module Sản phẩm</p>
                       </div>
                     )}
                   </div>
@@ -685,30 +659,76 @@ export default function InspectionDetail() {
                     <ImageIcon className="h-4 w-4" />
                     Ảnh thực tế (Actual)
                   </div>
-                  <div className="border rounded-lg p-2 bg-secondary/20">
+                  <div className="border rounded-lg p-2 bg-secondary/20 min-h-[300px] flex items-center justify-center">
                     {selectedMeasurement.imageUrl ? (
                       <img 
                         src={selectedMeasurement.imageUrl} 
                         alt="Actual"
-                        className="w-full max-h-[40vh] object-contain rounded"
+                        className="max-w-full max-h-[50vh] object-contain rounded"
                       />
                     ) : (
-                      <div className="h-64 flex items-center justify-center text-muted-foreground">
-                        <div className="text-center">
-                          <ImageIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                          <p>Không có ảnh</p>
-                        </div>
+                      <div className="text-center text-muted-foreground">
+                        <ImageIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                        <p>Không có ảnh</p>
                       </div>
                     )}
                   </div>
                 </div>
               </div>
-              
-              {/* Quick Correct Actions */}
-              <div className="flex items-center justify-between p-4 bg-secondary/30 rounded-lg">
+
+              {/* Measurement Details */}
+              <div className="grid grid-cols-3 gap-4 p-4 bg-secondary/30 rounded-lg">
                 <div>
-                  <p className="text-sm font-medium">Kết quả hiện tại: {getResultBadge(selectedMeasurement.result)}</p>
-                  <p className="text-xs text-muted-foreground mt-1">Bạn có thể sửa kết quả nếu máy bắt sai</p>
+                  <p className="text-sm text-muted-foreground">Giá trị đo</p>
+                  <p className="font-semibold text-foreground">{selectedMeasurement.measuredValue || "-"}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Kết quả</p>
+                  <div className="mt-1">{getResultBadge(selectedMeasurement.result, "lg")}</div>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Ghi chú</p>
+                  <p className="font-medium text-foreground">{selectedMeasurement.remark || "-"}</p>
+                </div>
+              </div>
+
+              {/* AI Analysis */}
+              {selectedMeasurement.aiAnalysisResult && (
+                <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
+                  <p className="text-sm font-medium text-primary flex items-center gap-2 mb-2">
+                    <Brain className="h-4 w-4" />
+                    Kết quả phân tích AI
+                    {selectedMeasurement.aiConfidence && (
+                      <Badge variant="secondary">
+                        Độ tin cậy: {(parseFloat(selectedMeasurement.aiConfidence) * 100).toFixed(1)}%
+                      </Badge>
+                    )}
+                  </p>
+                  <pre className="text-sm text-foreground whitespace-pre-wrap">
+                    {selectedMeasurement.aiAnalysisResult}
+                  </pre>
+                </div>
+              )}
+              
+              {/* Actions */}
+              <div className="flex items-center justify-between p-4 bg-secondary/30 rounded-lg">
+                <div className="flex gap-2">
+                  {selectedMeasurement.imageUrl && !selectedMeasurement.aiAnalysisResult && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1"
+                      onClick={() => handleAnalyzeWithAI(selectedMeasurement.id)}
+                      disabled={analyzingId === selectedMeasurement.id}
+                    >
+                      {analyzingId === selectedMeasurement.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Brain className="h-4 w-4" />
+                      )}
+                      AI Phân tích
+                    </Button>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -750,7 +770,17 @@ export default function InspectionDetail() {
                 </div>
               </div>
             </div>
-          ) : selectedImage && (
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Image Zoom Dialog */}
+      <Dialog open={!!selectedImage} onOpenChange={() => setSelectedImage(null)}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Xem ảnh điểm đo</DialogTitle>
+          </DialogHeader>
+          {selectedImage && (
             <div className="flex justify-center">
               <img 
                 src={selectedImage} 

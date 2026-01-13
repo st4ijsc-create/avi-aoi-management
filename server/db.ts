@@ -159,6 +159,13 @@ export async function getWorkshops() {
   return db.select().from(workshops).where(eq(workshops.isActive, true)).orderBy(workshops.name);
 }
 
+export async function getWorkshopById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(workshops).where(eq(workshops.id, id)).limit(1);
+  return result[0];
+}
+
 export async function updateWorkshop(id: number, data: Partial<InsertWorkshop>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -193,6 +200,13 @@ export async function getProductionLines() {
   return db.select().from(productionLines).where(eq(productionLines.isActive, true)).orderBy(productionLines.name);
 }
 
+export async function getLineById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(productionLines).where(eq(productionLines.id, id)).limit(1);
+  return result[0];
+}
+
 export async function updateProductionLine(id: number, data: Partial<InsertProductionLine>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -225,6 +239,13 @@ export async function getStations() {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(stations).where(eq(stations.isActive, true)).orderBy(stations.orderIndex);
+}
+
+export async function getStationById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(stations).where(eq(stations.id, id)).limit(1);
+  return result[0];
 }
 
 export async function updateStation(id: number, data: Partial<InsertStation>) {
@@ -327,6 +348,15 @@ export async function updateProductModel(id: number, data: Partial<InsertProduct
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(productModels).set(data).where(eq(productModels.id, id));
+}
+
+export async function deleteProductModel(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // First delete related measurement point definitions
+  await db.delete(measurementPointDefs).where(eq(measurementPointDefs.productModelId, id));
+  // Then delete the product model
+  await db.delete(productModels).where(eq(productModels.id, id));
 }
 
 // ============ PRODUCT INSPECTION FUNCTIONS ============
@@ -700,6 +730,37 @@ export async function getMachineStats(machineId: number, startDate?: Date, endDa
   const yieldRate = total > 0 ? ((ok + ntf) / total) * 100 : 0;
 
   return { total, ok, ng, ntf, yieldRate: Math.round(yieldRate * 100) / 100 };
+}
+
+// ============ DAILY STATS ============
+export async function getDailyStats(factoryId?: number, workshopId?: number, days: number = 30) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+  startDate.setHours(0, 0, 0, 0);
+
+  // Get daily aggregated stats
+  const result = await db.select({
+    date: sql<string>`DATE(${productInspections.inspectionTime})`,
+    totalProducts: sql<number>`count(*)`,
+    okCount: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+    ngCount: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+    ntfCount: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
+  })
+  .from(productInspections)
+  .where(gte(productInspections.inspectionTime, startDate))
+  .groupBy(sql`DATE(${productInspections.inspectionTime})`)
+  .orderBy(sql`DATE(${productInspections.inspectionTime}) DESC`);
+
+  return result.map(r => ({
+    date: String(r.date),
+    totalProducts: Number(r.totalProducts) || 0,
+    okCount: Number(r.okCount) || 0,
+    ngCount: Number(r.ngCount) || 0,
+    ntfCount: Number(r.ntfCount) || 0,
+  }));
 }
 
 // ============ SEARCH INSPECTIONS ============

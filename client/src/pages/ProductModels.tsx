@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -8,13 +8,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
-import { Plus, Package, Target, Upload, Trash2, Edit, Eye, MousePointer, Circle, Save, X } from "lucide-react";
+import { Plus, Package, Target, Upload, Trash2, Edit, Eye, MousePointer, Circle, Save, X, Move, ZoomIn, ZoomOut, MoreVertical, Copy, Image as ImageIcon } from "lucide-react";
 import { navItems } from "@/lib/navigation";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 interface MeasurementPoint {
   id?: number;
@@ -30,6 +32,7 @@ interface MeasurementPoint {
   positionY: number;
   radius: number;
   orderIndex: number;
+  referenceImageUrl?: string;
 }
 
 interface ProductModel {
@@ -46,20 +49,31 @@ export default function ProductModels() {
   const { user, loading: authLoading } = useAuth();
   const [selectedProduct, setSelectedProduct] = useState<ProductModel | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isEditProductDialogOpen, setIsEditProductDialogOpen] = useState(false);
+  const [isDeleteProductDialogOpen, setIsDeleteProductDialogOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [measurementPoints, setMeasurementPoints] = useState<MeasurementPoint[]>([]);
   const [selectedPointIndex, setSelectedPointIndex] = useState<number | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [scale, setScale] = useState(1);
+  const [zoomLevel, setZoomLevel] = useState(100);
+  const [pointRadius, setPointRadius] = useState(20);
 
   // Form states
   const [newProductCode, setNewProductCode] = useState("");
   const [newProductName, setNewProductName] = useState("");
   const [newProductDescription, setNewProductDescription] = useState("");
   const [uploadedImageUrl, setUploadedImageUrl] = useState("");
+
+  // Edit product form states
+  const [editProductCode, setEditProductCode] = useState("");
+  const [editProductName, setEditProductName] = useState("");
+  const [editProductDescription, setEditProductDescription] = useState("");
+  const [editProductImageUrl, setEditProductImageUrl] = useState("");
 
   // Point form states
   const [pointCode, setPointCode] = useState("");
@@ -70,6 +84,7 @@ export default function ProductModels() {
   const [pointLowerLimit, setPointLowerLimit] = useState("");
   const [pointUpperLimit, setPointUpperLimit] = useState("");
   const [pointNominalValue, setPointNominalValue] = useState("");
+  const [pointReferenceImageUrl, setPointReferenceImageUrl] = useState("");
 
   const { data: productModels, refetch: refetchProducts } = trpc.productModel.list.useQuery();
   const { data: points, refetch: refetchPoints } = trpc.measurementPoint.listByProductModel.useQuery(
@@ -85,6 +100,39 @@ export default function ProductModels() {
       resetProductForm();
     },
     onError: (error) => {
+      toast.error(`Lỗi: ${error.message}`);
+    },
+  });
+
+  const updateProductMutation = trpc.productModel.update.useMutation({
+    onSuccess: () => {
+      toast.success("Cập nhật sản phẩm thành công");
+      refetchProducts();
+      setIsEditProductDialogOpen(false);
+      // Update selected product
+      if (selectedProduct) {
+        setSelectedProduct({
+          ...selectedProduct,
+          code: editProductCode,
+          name: editProductName,
+          description: editProductDescription,
+          referenceImageUrl: editProductImageUrl || selectedProduct.referenceImageUrl,
+        });
+      }
+    },
+    onError: (error) => {
+      toast.error(`Lỗi: ${error.message}`);
+    },
+  });
+
+  const deleteProductMutation = trpc.productModel.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Xóa sản phẩm thành công");
+      refetchProducts();
+      setIsDeleteProductDialogOpen(false);
+      setSelectedProduct(null);
+    },
+    onError: (error: { message: string }) => {
       toast.error(`Lỗi: ${error.message}`);
     },
   });
@@ -135,6 +183,7 @@ export default function ProductModels() {
     setPointLowerLimit("");
     setPointUpperLimit("");
     setPointNominalValue("");
+    setPointReferenceImageUrl("");
     setSelectedPointIndex(null);
   };
 
@@ -155,6 +204,7 @@ export default function ProductModels() {
         positionY: p.positionY,
         radius: p.radius,
         orderIndex: p.orderIndex || index,
+        referenceImageUrl: p.referenceImageUrl || undefined,
       })));
     }
   }, [points]);
@@ -168,6 +218,8 @@ export default function ProductModels() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    const displayScale = scale * (zoomLevel / 100);
+
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -176,9 +228,9 @@ export default function ProductModels() {
 
     // Draw measurement points
     measurementPoints.forEach((point, index) => {
-      const x = point.positionX * scale;
-      const y = point.positionY * scale;
-      const r = point.radius * scale;
+      const x = point.positionX * displayScale;
+      const y = point.positionY * displayScale;
+      const r = point.radius * displayScale;
 
       // Draw circle
       ctx.beginPath();
@@ -188,21 +240,34 @@ export default function ProductModels() {
       ctx.stroke();
 
       // Draw fill with transparency
-      ctx.fillStyle = selectedPointIndex === index ? "rgba(16, 185, 129, 0.2)" : "rgba(6, 182, 212, 0.1)";
+      ctx.fillStyle = selectedPointIndex === index ? "rgba(16, 185, 129, 0.3)" : "rgba(6, 182, 212, 0.15)";
       ctx.fill();
 
       // Draw point number
       ctx.fillStyle = "#ffffff";
-      ctx.font = `bold ${Math.max(12, r * 0.8)}px sans-serif`;
+      ctx.font = `bold ${Math.max(12, r * 0.7)}px sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
+      ctx.shadowColor = "rgba(0,0,0,0.5)";
+      ctx.shadowBlur = 3;
       ctx.fillText(String(index + 1), x, y);
+      ctx.shadowBlur = 0;
     });
-  }, [measurementPoints, selectedPointIndex, scale, imageLoaded]);
+  }, [measurementPoints, selectedPointIndex, scale, zoomLevel, imageLoaded]);
 
   useEffect(() => {
     drawCanvas();
   }, [drawCanvas]);
+
+  // Update canvas size when zoom changes
+  useEffect(() => {
+    if (imageRef.current && canvasRef.current && imageLoaded) {
+      const displayScale = scale * (zoomLevel / 100);
+      canvasRef.current.width = imageRef.current.width * displayScale;
+      canvasRef.current.height = imageRef.current.height * displayScale;
+      drawCanvas();
+    }
+  }, [zoomLevel, scale, imageLoaded, drawCanvas]);
 
   // Load image when product is selected
   useEffect(() => {
@@ -238,8 +303,9 @@ export default function ProductModels() {
     if (!canvas || !isEditMode) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / scale;
-    const y = (e.clientY - rect.top) / scale;
+    const displayScale = scale * (zoomLevel / 100);
+    const x = (e.clientX - rect.left) / displayScale;
+    const y = (e.clientY - rect.top) / displayScale;
 
     if (isDrawing) {
       // Add new point
@@ -249,7 +315,7 @@ export default function ProductModels() {
         measurementType: "VISUAL",
         positionX: Math.round(x),
         positionY: Math.round(y),
-        radius: 20,
+        radius: pointRadius,
         orderIndex: measurementPoints.length,
       };
       setMeasurementPoints([...measurementPoints, newPoint]);
@@ -278,11 +344,61 @@ export default function ProductModels() {
         setPointLowerLimit(point.lowerLimit || "");
         setPointUpperLimit(point.upperLimit || "");
         setPointNominalValue(point.nominalValue || "");
+        setPointReferenceImageUrl(point.referenceImageUrl || "");
+        setPointRadius(point.radius);
       } else {
         setSelectedPointIndex(null);
         resetPointForm();
       }
     }
+  };
+
+  // Handle drag to move point
+  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isEditMode || isDrawing) return;
+    
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const displayScale = scale * (zoomLevel / 100);
+    const x = (e.clientX - rect.left) / displayScale;
+    const y = (e.clientY - rect.top) / displayScale;
+
+    const clickedIndex = measurementPoints.findIndex((point) => {
+      const dx = point.positionX - x;
+      const dy = point.positionY - y;
+      return Math.sqrt(dx * dx + dy * dy) <= point.radius;
+    });
+
+    if (clickedIndex >= 0) {
+      setSelectedPointIndex(clickedIndex);
+      setIsDragging(true);
+    }
+  };
+
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDragging || selectedPointIndex === null) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const displayScale = scale * (zoomLevel / 100);
+    const x = (e.clientX - rect.left) / displayScale;
+    const y = (e.clientY - rect.top) / displayScale;
+
+    const updatedPoints = [...measurementPoints];
+    updatedPoints[selectedPointIndex] = {
+      ...updatedPoints[selectedPointIndex],
+      positionX: Math.round(x),
+      positionY: Math.round(y),
+    };
+    setMeasurementPoints(updatedPoints);
+  };
+
+  const handleCanvasMouseUp = () => {
+    setIsDragging(false);
   };
 
   const handleCreateProduct = () => {
@@ -297,6 +413,35 @@ export default function ProductModels() {
       description: newProductDescription || undefined,
       referenceImageUrl: uploadedImageUrl || undefined,
     });
+  };
+
+  const handleUpdateProduct = () => {
+    if (!selectedProduct || !editProductCode || !editProductName) {
+      toast.error("Vui lòng nhập mã và tên sản phẩm");
+      return;
+    }
+
+    updateProductMutation.mutate({
+      id: selectedProduct.id,
+      code: editProductCode,
+      name: editProductName,
+      description: editProductDescription || undefined,
+      referenceImageUrl: editProductImageUrl || undefined,
+    });
+  };
+
+  const handleDeleteProduct = () => {
+    if (!selectedProduct) return;
+    deleteProductMutation.mutate({ id: selectedProduct.id });
+  };
+
+  const openEditProductDialog = () => {
+    if (!selectedProduct) return;
+    setEditProductCode(selectedProduct.code);
+    setEditProductName(selectedProduct.name);
+    setEditProductDescription(selectedProduct.description || "");
+    setEditProductImageUrl("");
+    setIsEditProductDialogOpen(true);
   };
 
   const handleSavePoint = () => {
@@ -314,8 +459,9 @@ export default function ProductModels() {
       nominalValue: pointNominalValue || undefined,
       positionX: point.positionX,
       positionY: point.positionY,
-      radius: point.radius,
+      radius: pointRadius,
       orderIndex: selectedPointIndex,
+      referenceImageUrl: pointReferenceImageUrl || undefined,
     };
 
     if (point.id) {
@@ -355,15 +501,55 @@ export default function ProductModels() {
     resetPointForm();
   };
 
+  const handleDuplicatePoint = () => {
+    if (selectedPointIndex === null) return;
+
+    const point = measurementPoints[selectedPointIndex];
+    const newPoint: MeasurementPoint = {
+      ...point,
+      id: undefined,
+      code: `${point.code}-copy`,
+      name: `${point.name} (copy)`,
+      positionX: point.positionX + 30,
+      positionY: point.positionY + 30,
+      orderIndex: measurementPoints.length,
+    };
+    setMeasurementPoints([...measurementPoints, newPoint]);
+    toast.success("Đã sao chép điểm đo");
+  };
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // For now, create a local URL - in production this would upload to S3
     const reader = new FileReader();
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
       setUploadedImageUrl(dataUrl);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleEditImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      setEditProductImageUrl(dataUrl);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handlePointImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      setPointReferenceImageUrl(dataUrl);
     };
     reader.readAsDataURL(file);
   };
@@ -486,6 +672,34 @@ export default function ProductModels() {
                         <p className="font-medium truncate">{product.name}</p>
                         <p className="text-sm text-muted-foreground">{product.code}</p>
                       </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedProduct(product);
+                            openEditProductDialog();
+                          }}>
+                            <Edit className="h-4 w-4 mr-2" />
+                            Chỉnh sửa
+                          </DropdownMenuItem>
+                          <DropdownMenuItem 
+                            className="text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedProduct(product);
+                              setIsDeleteProductDialogOpen(true);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Xóa
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                 ))}
@@ -554,12 +768,47 @@ export default function ProductModels() {
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
                 {/* Canvas Area */}
                 <div className="xl:col-span-2">
-                  <div className="relative border rounded-lg overflow-hidden bg-muted/30">
+                  {/* Zoom Controls */}
+                  <div className="flex items-center gap-4 mb-3 p-2 bg-muted/30 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <ZoomOut className="h-4 w-4 text-muted-foreground" />
+                      <Slider
+                        value={[zoomLevel]}
+                        onValueChange={([value]) => setZoomLevel(value)}
+                        min={50}
+                        max={200}
+                        step={10}
+                        className="w-32"
+                      />
+                      <ZoomIn className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground w-12">{zoomLevel}%</span>
+                    </div>
+                    {isEditMode && (
+                      <div className="flex items-center gap-2 ml-4">
+                        <span className="text-sm text-muted-foreground">Bán kính:</span>
+                        <Slider
+                          value={[pointRadius]}
+                          onValueChange={([value]) => setPointRadius(value)}
+                          min={10}
+                          max={50}
+                          step={5}
+                          className="w-24"
+                        />
+                        <span className="text-sm text-muted-foreground w-8">{pointRadius}px</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="relative border rounded-lg overflow-auto bg-muted/30 max-h-[500px]">
                     {selectedProduct.referenceImageUrl ? (
                       <canvas
                         ref={canvasRef}
                         onClick={handleCanvasClick}
-                        className={`max-w-full ${isEditMode ? "cursor-crosshair" : "cursor-default"}`}
+                        onMouseDown={handleCanvasMouseDown}
+                        onMouseMove={handleCanvasMouseMove}
+                        onMouseUp={handleCanvasMouseUp}
+                        onMouseLeave={handleCanvasMouseUp}
+                        className={`${isEditMode ? (isDrawing ? "cursor-crosshair" : "cursor-move") : "cursor-default"}`}
                       />
                     ) : (
                       <div className="flex items-center justify-center h-64 text-muted-foreground">
@@ -573,6 +822,12 @@ export default function ProductModels() {
                     {isDrawing && (
                       <div className="absolute top-2 left-2 bg-primary text-primary-foreground px-3 py-1 rounded-full text-sm">
                         Click để đặt điểm đo
+                      </div>
+                    )}
+                    {isDragging && (
+                      <div className="absolute top-2 left-2 bg-warning text-warning-foreground px-3 py-1 rounded-full text-sm">
+                        <Move className="h-4 w-4 inline mr-1" />
+                        Đang di chuyển điểm
                       </div>
                     )}
                   </div>
@@ -596,6 +851,8 @@ export default function ProductModels() {
                             setPointLowerLimit(point.lowerLimit || "");
                             setPointUpperLimit(point.upperLimit || "");
                             setPointNominalValue(point.nominalValue || "");
+                            setPointReferenceImageUrl(point.referenceImageUrl || "");
+                            setPointRadius(point.radius);
                           }}
                         >
                           <Target className="h-3 w-3 mr-1" />
@@ -609,124 +866,170 @@ export default function ProductModels() {
                 {/* Point Details Form */}
                 <div className="xl:col-span-1">
                   {selectedPointIndex !== null ? (
-                    <div className="space-y-4 p-4 border rounded-lg bg-muted/20">
-                      <h4 className="font-medium">Chi tiết điểm đo #{selectedPointIndex + 1}</h4>
-                      
-                      <div className="space-y-2">
-                        <Label htmlFor="pointCode">Mã điểm đo</Label>
-                        <Input
-                          id="pointCode"
-                          value={pointCode}
-                          onChange={(e) => setPointCode(e.target.value)}
-                          disabled={!isEditMode}
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="pointName">Tên điểm đo</Label>
-                        <Input
-                          id="pointName"
-                          value={pointName}
-                          onChange={(e) => setPointName(e.target.value)}
-                          disabled={!isEditMode}
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="pointType">Loại đo</Label>
-                        <Select
-                          value={pointType}
-                          onValueChange={(v) => setPointType(v as MeasurementPoint["measurementType"])}
-                          disabled={!isEditMode}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="VISUAL">Kiểm tra hình ảnh</SelectItem>
-                            <SelectItem value="DIMENSION">Kích thước</SelectItem>
-                            <SelectItem value="POSITION">Vị trí</SelectItem>
-                            <SelectItem value="COLOR">Màu sắc</SelectItem>
-                            <SelectItem value="SURFACE">Bề mặt</SelectItem>
-                            <SelectItem value="ELECTRICAL">Điện</SelectItem>
-                            <SelectItem value="OTHER">Khác</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="pointDescription">Mô tả</Label>
-                        <Textarea
-                          id="pointDescription"
-                          value={pointDescription}
-                          onChange={(e) => setPointDescription(e.target.value)}
-                          disabled={!isEditMode}
-                          rows={2}
-                        />
-                      </div>
-
-                      {(pointType === "DIMENSION" || pointType === "ELECTRICAL") && (
-                        <>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="space-y-2">
-                              <Label htmlFor="pointLowerLimit">Giới hạn dưới</Label>
-                              <Input
-                                id="pointLowerLimit"
-                                value={pointLowerLimit}
-                                onChange={(e) => setPointLowerLimit(e.target.value)}
-                                disabled={!isEditMode}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="pointUpperLimit">Giới hạn trên</Label>
-                              <Input
-                                id="pointUpperLimit"
-                                value={pointUpperLimit}
-                                onChange={(e) => setPointUpperLimit(e.target.value)}
-                                disabled={!isEditMode}
-                              />
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="pointNominalValue">Giá trị danh nghĩa</Label>
-                            <Input
-                              id="pointNominalValue"
-                              value={pointNominalValue}
-                              onChange={(e) => setPointNominalValue(e.target.value)}
-                              disabled={!isEditMode}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="pointUnit">Đơn vị</Label>
-                            <Input
-                              id="pointUnit"
-                              value={pointUnit}
-                              onChange={(e) => setPointUnit(e.target.value)}
-                              disabled={!isEditMode}
-                              placeholder="mm, V, A..."
-                            />
-                          </div>
-                        </>
-                      )}
-
-                      <div className="text-sm text-muted-foreground">
-                        Vị trí: ({measurementPoints[selectedPointIndex]?.positionX}, {measurementPoints[selectedPointIndex]?.positionY})
-                        <br />
-                        Bán kính: {measurementPoints[selectedPointIndex]?.radius}px
-                      </div>
-
-                      {isEditMode && (
-                        <div className="flex gap-2 pt-2">
-                          <Button size="sm" onClick={handleSavePoint} className="flex-1">
-                            <Save className="h-4 w-4 mr-1" />
-                            Lưu
-                          </Button>
-                          <Button size="sm" variant="destructive" onClick={handleDeletePoint}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                    <ScrollArea className="h-[550px]">
+                      <div className="space-y-4 p-4 border rounded-lg bg-muted/20">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-medium">Chi tiết điểm đo #{selectedPointIndex + 1}</h4>
+                          {isEditMode && (
+                            <Button size="sm" variant="ghost" onClick={handleDuplicatePoint}>
+                              <Copy className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
-                      )}
-                    </div>
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="pointCode">Mã điểm đo</Label>
+                          <Input
+                            id="pointCode"
+                            value={pointCode}
+                            onChange={(e) => setPointCode(e.target.value)}
+                            disabled={!isEditMode}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="pointName">Tên điểm đo</Label>
+                          <Input
+                            id="pointName"
+                            value={pointName}
+                            onChange={(e) => setPointName(e.target.value)}
+                            disabled={!isEditMode}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="pointType">Loại đo</Label>
+                          <Select
+                            value={pointType}
+                            onValueChange={(v) => setPointType(v as MeasurementPoint["measurementType"])}
+                            disabled={!isEditMode}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="VISUAL">Kiểm tra hình ảnh</SelectItem>
+                              <SelectItem value="DIMENSION">Kích thước</SelectItem>
+                              <SelectItem value="POSITION">Vị trí</SelectItem>
+                              <SelectItem value="COLOR">Màu sắc</SelectItem>
+                              <SelectItem value="SURFACE">Bề mặt</SelectItem>
+                              <SelectItem value="ELECTRICAL">Điện</SelectItem>
+                              <SelectItem value="OTHER">Khác</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="pointDescription">Mô tả</Label>
+                          <Textarea
+                            id="pointDescription"
+                            value={pointDescription}
+                            onChange={(e) => setPointDescription(e.target.value)}
+                            disabled={!isEditMode}
+                            rows={2}
+                          />
+                        </div>
+
+                        {(pointType === "DIMENSION" || pointType === "ELECTRICAL") && (
+                          <>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-2">
+                                <Label htmlFor="pointLowerLimit">Giới hạn dưới</Label>
+                                <Input
+                                  id="pointLowerLimit"
+                                  value={pointLowerLimit}
+                                  onChange={(e) => setPointLowerLimit(e.target.value)}
+                                  disabled={!isEditMode}
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="pointUpperLimit">Giới hạn trên</Label>
+                                <Input
+                                  id="pointUpperLimit"
+                                  value={pointUpperLimit}
+                                  onChange={(e) => setPointUpperLimit(e.target.value)}
+                                  disabled={!isEditMode}
+                                />
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="pointNominalValue">Giá trị danh nghĩa</Label>
+                              <Input
+                                id="pointNominalValue"
+                                value={pointNominalValue}
+                                onChange={(e) => setPointNominalValue(e.target.value)}
+                                disabled={!isEditMode}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="pointUnit">Đơn vị</Label>
+                              <Input
+                                id="pointUnit"
+                                value={pointUnit}
+                                onChange={(e) => setPointUnit(e.target.value)}
+                                disabled={!isEditMode}
+                                placeholder="mm, V, A..."
+                              />
+                            </div>
+                          </>
+                        )}
+
+                        {/* Reference Image for Point */}
+                        <div className="space-y-2">
+                          <Label>Ảnh mẫu điểm đo</Label>
+                          {isEditMode && (
+                            <Input
+                              type="file"
+                              accept="image/*"
+                              onChange={handlePointImageUpload}
+                              className="text-sm"
+                            />
+                          )}
+                          {pointReferenceImageUrl && (
+                            <div className="relative">
+                              <img
+                                src={pointReferenceImageUrl}
+                                alt="Point reference"
+                                className="w-full rounded border"
+                              />
+                              {isEditMode && (
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  className="absolute top-1 right-1 h-6 w-6 p-0"
+                                  onClick={() => setPointReferenceImageUrl("")}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                          )}
+                          {!pointReferenceImageUrl && !isEditMode && (
+                            <div className="flex items-center justify-center h-20 bg-muted/30 rounded border border-dashed text-muted-foreground text-sm">
+                              <ImageIcon className="h-4 w-4 mr-1" />
+                              Chưa có ảnh mẫu
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="text-sm text-muted-foreground p-2 bg-muted/30 rounded">
+                          <p>Vị trí: ({measurementPoints[selectedPointIndex]?.positionX}, {measurementPoints[selectedPointIndex]?.positionY})</p>
+                          <p>Bán kính: {measurementPoints[selectedPointIndex]?.radius}px</p>
+                        </div>
+
+                        {isEditMode && (
+                          <div className="flex gap-2 pt-2">
+                            <Button size="sm" onClick={handleSavePoint} className="flex-1">
+                              <Save className="h-4 w-4 mr-1" />
+                              Lưu
+                            </Button>
+                            <Button size="sm" variant="destructive" onClick={handleDeletePoint}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </ScrollArea>
                   ) : (
                     <div className="flex items-center justify-center h-64 text-muted-foreground border rounded-lg bg-muted/20">
                       <div className="text-center">
@@ -751,6 +1054,100 @@ export default function ProductModels() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Edit Product Dialog */}
+      <Dialog open={isEditProductDialogOpen} onOpenChange={setIsEditProductDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Chỉnh sửa sản phẩm</DialogTitle>
+            <DialogDescription>
+              Cập nhật thông tin sản phẩm
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="editProductCode">Mã sản phẩm</Label>
+              <Input
+                id="editProductCode"
+                value={editProductCode}
+                onChange={(e) => setEditProductCode(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editProductName">Tên sản phẩm</Label>
+              <Input
+                id="editProductName"
+                value={editProductName}
+                onChange={(e) => setEditProductName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editProductDescription">Mô tả</Label>
+              <Textarea
+                id="editProductDescription"
+                value={editProductDescription}
+                onChange={(e) => setEditProductDescription(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editProductImage">Ảnh tham chiếu mới (tùy chọn)</Label>
+              <Input
+                id="editProductImage"
+                type="file"
+                accept="image/*"
+                onChange={handleEditImageUpload}
+              />
+              {editProductImageUrl && (
+                <img
+                  src={editProductImageUrl}
+                  alt="Preview"
+                  className="mt-2 max-h-32 rounded border"
+                />
+              )}
+              {!editProductImageUrl && selectedProduct?.referenceImageUrl && (
+                <div className="mt-2">
+                  <p className="text-sm text-muted-foreground mb-1">Ảnh hiện tại:</p>
+                  <img
+                    src={selectedProduct.referenceImageUrl}
+                    alt="Current"
+                    className="max-h-32 rounded border"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditProductDialogOpen(false)}>
+              Hủy
+            </Button>
+            <Button onClick={handleUpdateProduct} disabled={updateProductMutation.isPending}>
+              {updateProductMutation.isPending ? "Đang lưu..." : "Lưu thay đổi"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Product Confirmation */}
+      <AlertDialog open={isDeleteProductDialogOpen} onOpenChange={setIsDeleteProductDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xác nhận xóa sản phẩm</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bạn có chắc chắn muốn xóa sản phẩm "{selectedProduct?.name}"? 
+              Tất cả điểm đo liên quan cũng sẽ bị xóa. Hành động này không thể hoàn tác.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteProduct}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteProductMutation.isPending ? "Đang xóa..." : "Xóa sản phẩm"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 }

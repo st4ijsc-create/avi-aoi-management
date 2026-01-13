@@ -13,6 +13,7 @@ import Settings from "./pages/Settings";
 import ApiDocs from "./pages/ApiDocs";
 import ProductModels from "./pages/ProductModels";
 import CorporateLayout from "./pages/CorporateLayout";
+import Reports from "./pages/Reports";
 
 function Router() {
   return (
@@ -27,6 +28,7 @@ function Router() {
       <Route path="/api-docs" component={ApiDocs} />
       <Route path="/products" component={ProductModels} />
       <Route path="/corporate-layout" component={CorporateLayout} />
+      <Route path="/reports" component={Reports} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

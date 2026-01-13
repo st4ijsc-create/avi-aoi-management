@@ -22,6 +22,7 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { Cpu, LogOut, PanelLeft } from "lucide-react";
+import { NotificationCenter } from "./NotificationCenter";
 import { CSSProperties, ReactNode, useEffect, useRef, useState } from "react";
 import { useLocation, Link } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -269,16 +270,15 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset className="bg-background">
-        {isMobile && (
-          <div className="flex border-b border-border h-14 items-center justify-between bg-card/95 px-3 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
-            <div className="flex items-center gap-3">
-              <SidebarTrigger className="h-9 w-9 rounded-lg" />
-              <span className="font-medium text-foreground">
-                {activeItem?.label ?? title}
-              </span>
-            </div>
+        <div className="flex border-b border-border h-14 items-center justify-between bg-card/95 px-3 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
+          <div className="flex items-center gap-3">
+            {isMobile && <SidebarTrigger className="h-9 w-9 rounded-lg" />}
+            <span className="font-medium text-foreground">
+              {activeItem?.label ?? title}
+            </span>
           </div>
-        )}
+          <NotificationCenter />
+        </div>
         <main className="flex-1 p-6 overflow-auto">{children}</main>
       </SidebarInset>
     </>

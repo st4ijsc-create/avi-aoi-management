@@ -148,3 +148,40 @@
 - [x] Generate CSV file with inspection data (SN, machine, results, timestamps)
 - [x] Include all relevant fields in export
 - [x] UTF-8 support for Vietnamese characters
+
+
+## Phase 16: Advanced Features
+
+### Inspection Detail Layout Upgrade
+- [x] Redesign inspection detail page with 2-column layout
+- [x] Left column: Reference image with measurement points overlay showing actual results (OK=Green, NG=Red, NTF=Orange)
+- [x] Right column: List of measurement points with detailed results (current layout)
+- [x] Click on measurement point to highlight and show detail
+
+### History Analysis Tab
+- [x] Add Analysis tab in History module
+- [x] Aggregate statistics for filtered products (Total, OK, NG, NTF, Yield Rate)
+- [x] Charts showing result distribution
+- [x] Trend analysis for selected time range
+- [ ] Top NG measurement points analysis
+
+### Product CRUD Enhancement
+
+- [x] Complete Edit functionality for Product Model
+- [x] Complete Delete functionality for Product Model
+- [x] Advanced measurement point editor with drag-and-drop
+- [ ] Bulk import/export measurement points
+- [x] Clone product model functionality (duplicate point)
+### Reports & Statistics Module
+- [x] Create dedicated Reports page
+- [x] Yield Rate trend chart (daily/weekly/monthly)
+- [x] Machine comparison charts
+- [x] Factory/Workshop performance comparison
+- [x] Export reports to CSV/Excel
+
+### WebSocket Realtime Notifications
+- [x] Setup Socket.io server integration
+- [x] Real-time NG product alerts
+- [x] Yield rate warning when below threshold
+- [x] Dashboard stats auto-refresh
+- [x] Notification center in header

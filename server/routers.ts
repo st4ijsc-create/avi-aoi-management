@@ -1,5 +1,6 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { emitNGAlert, emitYieldWarning, emitDashboardUpdate } from "./_core/socket";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
@@ -401,6 +402,13 @@ const productModelRouter = router({
       }
       
       await db.updateProductModel(id, finalData);
+      return { success: true };
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteProductModel(input.id);
       return { success: true };
     }),
 });
@@ -858,6 +866,16 @@ const dashboardRouter = router({
       );
       return stats;
     }),
+
+  getDailyStats: protectedProcedure
+    .input(z.object({
+      factoryId: z.number().optional(),
+      workshopId: z.number().optional(),
+      days: z.number().default(30),
+    }))
+    .query(async ({ input }) => {
+      return db.getDailyStats(input.factoryId, input.workshopId, input.days);
+    }),
 });
 
 // ============ SEED DATA ROUTER ============
@@ -925,6 +943,44 @@ const machineApiRouter = router({
 
       if (measurementResults.length > 0) {
         await db.createMeasurementResults(measurementResults);
+      }
+
+      // Emit realtime alerts if NG
+      if (input.overallResult === "NG") {
+        // Get factory/workshop info for alert
+        const station = await db.getStationById(machine.stationId);
+        const line = station ? await db.getLineById(station.lineId) : null;
+        const workshop = line ? await db.getWorkshopById(line.workshopId) : null;
+        const factory = workshop ? await db.getFactoryById(workshop.factoryId) : null;
+
+        emitNGAlert(
+          machine.id,
+          machine.name,
+          machine.code,
+          input.serialNumber,
+          factory?.name,
+          workshop?.name
+        );
+      }
+
+      // Get updated stats and emit dashboard update
+      const machineStats = await db.getMachineStats(machine.id);
+      emitDashboardUpdate({
+        type: "STATS_UPDATE",
+        machineId: machine.id,
+        stats: machineStats,
+        timestamp: new Date(),
+      });
+
+      // Check yield rate and emit warning if below threshold
+      if (machineStats.yieldRate < 90) {
+        emitYieldWarning(
+          machine.id,
+          machine.name,
+          machine.code,
+          machineStats.yieldRate,
+          90
+        );
       }
 
       return { success: true, inspectionId };
