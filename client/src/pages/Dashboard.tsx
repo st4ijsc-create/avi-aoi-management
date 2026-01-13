@@ -697,6 +697,87 @@ export default function Dashboard() {
           </Card>
         </div>
 
+        {/* Machine Status Widget */}
+        <Card className="glass-card">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Activity className="h-4 w-4 text-primary" />
+                Trạng thái kết nối máy
+              </CardTitle>
+              <Link href="/machine-status">
+                <Button variant="ghost" size="sm" className="text-xs">
+                  Xem chi tiết
+                  <ChevronRight className="h-3 w-3 ml-1" />
+                </Button>
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
+                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Cpu className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{machinesStats?.length || 0}</p>
+                  <p className="text-xs text-muted-foreground">Tổng số máy</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/10">
+                <div className="h-10 w-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                  <Wifi className="h-5 w-5 text-emerald-500" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-emerald-500">{onlineMachines.size}</p>
+                  <p className="text-xs text-muted-foreground">Online</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-red-500/10">
+                <div className="h-10 w-10 rounded-lg bg-red-500/20 flex items-center justify-center">
+                  <WifiOff className="h-5 w-5 text-red-500" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-red-500">
+                    {Math.max(0, (machinesStats?.length || 0) - onlineMachines.size)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Offline</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
+                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Activity className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">
+                    {machinesStats?.length ? Math.round((onlineMachines.size / machinesStats.length) * 100) : 0}%
+                  </p>
+                  <p className="text-xs text-muted-foreground">Availability</p>
+                </div>
+              </div>
+            </div>
+            {/* Online Machines List */}
+            {onlineMachines.size > 0 && (
+              <div className="mt-4 pt-4 border-t border-border/50">
+                <p className="text-xs text-muted-foreground mb-2">Máy đang online:</p>
+                <div className="flex flex-wrap gap-2">
+                  {Array.from(onlineMachines).slice(0, 10).map((code) => (
+                    <Badge key={code} variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30">
+                      <Wifi className="h-3 w-3 mr-1" />
+                      {code}
+                    </Badge>
+                  ))}
+                  {onlineMachines.size > 10 && (
+                    <Badge variant="outline" className="text-muted-foreground">
+                      +{onlineMachines.size - 10} máy khác
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Shift Stats & Top/Bottom Machines */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Shift Statistics */}

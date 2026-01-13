@@ -625,3 +625,10 @@
 - [x] Unit tests cho uptime timeline và alert config (uptimeTimeline.test.ts)
 - [x] UptimeTimeline component với tooltip và legend
 - [x] API endpoints: getUptimeTimeline, getAllUptimeTimelines, getAlertConfig, updateAlertConfig, getReport
+
+
+## Phase 39: Dashboard Machine Status Widget
+- [x] Thêm widget hiển thị số máy online/offline trên Dashboard chính
+- [x] Realtime update với WebSocket (sử dụng onlineMachines state)
+- [x] Link đến trang Machine Status Monitor
+- [x] Hiển thị danh sách máy đang online với badges
