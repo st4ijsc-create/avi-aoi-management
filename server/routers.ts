@@ -240,6 +240,10 @@ const machineRouter = router({
       model: z.string().optional(),
       manufacturer: z.string().optional(),
       description: z.string().optional(),
+      image2DUrl: z.string().optional(),
+      image2DKey: z.string().optional(),
+      image3DUrl: z.string().optional(),
+      image3DKey: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const apiKey = `mach_${nanoid(32)}`;
@@ -268,11 +272,46 @@ const machineRouter = router({
       model: z.string().optional(),
       manufacturer: z.string().optional(),
       description: z.string().optional(),
+      image2DUrl: z.string().optional(),
+      image2DKey: z.string().optional(),
+      image3DUrl: z.string().optional(),
+      image3DKey: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
       await db.updateMachine(id, data);
       return { success: true };
+    }),
+
+  // Upload machine image
+  uploadImage: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      imageType: z.enum(["2D", "3D"]),
+      imageData: z.string(), // Base64 encoded image
+      fileName: z.string(),
+      contentType: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, imageType, imageData, fileName, contentType } = input;
+      
+      // Convert base64 to buffer
+      const buffer = Buffer.from(imageData, 'base64');
+      
+      // Generate unique file key
+      const fileKey = `machines/${id}/${imageType.toLowerCase()}-${Date.now()}-${fileName}`;
+      
+      // Upload to S3
+      const { url } = await storagePut(fileKey, buffer, contentType);
+      
+      // Update machine record
+      const updateData = imageType === "2D" 
+        ? { image2DUrl: url, image2DKey: fileKey }
+        : { image3DUrl: url, image3DKey: fileKey };
+      
+      await db.updateMachine(id, updateData);
+      
+      return { url, key: fileKey };
     }),
 
   delete: adminProcedure

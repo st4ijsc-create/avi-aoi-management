@@ -115,6 +115,11 @@ export const machines = mysqlTable("machines", {
   manufacturer: varchar("manufacturer", { length: 100 }),
   apiKey: varchar("apiKey", { length: 128 }).notNull().unique(),
   description: text("description"),
+  // Machine images for 2D/3D visualization
+  image2DUrl: text("image2DUrl"), // Ảnh 2D của máy
+  image2DKey: varchar("image2DKey", { length: 255 }),
+  image3DUrl: text("image3DUrl"), // Ảnh 3D của máy
+  image3DKey: varchar("image3DKey", { length: 255 }),
   isActive: boolean("isActive").default(true).notNull(),
   lastHeartbeat: timestamp("lastHeartbeat"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

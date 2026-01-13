@@ -466,3 +466,27 @@
 - [x] Tích hợp vào History page với nút quét bên cạnh Serial Number input
 - [x] Auto-fill serial number sau khi quét thành công
 - [x] Toast notification khi quét thành công
+
+
+## Phase 28: Layout Workshop & Dashboard UI Improvements
+
+### Layout Workshop Enhancement
+- [ ] CRUD cho Layout Workshop (thêm/sửa/xóa dây chuyền, máy, công trạm)
+- [ ] Drag-drop để sắp xếp dây chuyền trong nhà xưởng
+- [ ] Drag-drop để sắp xếp máy móc trong dây chuyền
+- [x] Drag-drop để sắp xếp máy trong layout
+- [ ] Hiển thị công đoạn của công trạm
+- [x] Hiển thị thông số cho layout 2D (FPY, FY, NTFY, Output)
+- [x] Hiển thị thông số cho layout 3D
+
+### Machine Image Support
+- [x] Thêm trường image2D và image3D cho Machine trong schema
+- [x] Upload ảnh 2D khi thêm/sửa máy
+- [x] Upload ảnh 3D khi thêm/sửa máy
+- [x] Hiển thị ảnh máy trong Layout
+
+### Dashboard UI Improvements
+- [ ] Di chuyển Layout dây chuyền sản xuất xuống dưới cùng
+- [x] Hiển thị ảnh 2D/3D của máy trong Dashboard
+- [x] Hiển thị metrics (FPY, FY, NTFY, Output) phía trên ảnh máy
+- [x] Thiết kế UI hiện đại và trực quan hơn

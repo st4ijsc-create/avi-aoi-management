@@ -23,7 +23,10 @@ import {
   Pencil,
   Trash2,
   MoreHorizontal,
-  Clock
+  Clock,
+  Upload,
+  Image,
+  X
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { useState } from "react";
@@ -33,7 +36,7 @@ type Factory = { id: number; code: string; name: string; address?: string | null
 type Workshop = { id: number; factoryId: number; code: string; name: string; description?: string | null };
 type Line = { id: number; workshopId: number; code: string; name: string; description?: string | null };
 type Station = { id: number; lineId: number; code: string; name: string; orderIndex: number; description?: string | null };
-type Machine = { id: number; stationId: number; code: string; name: string; machineType: string; apiKey: string; model?: string | null; manufacturer?: string | null };
+type Machine = { id: number; stationId: number; code: string; name: string; machineType: string; apiKey: string; model?: string | null; manufacturer?: string | null; image2DUrl?: string | null; image3DUrl?: string | null };
 type ShiftConfig = { id: number; factoryId?: number | null; name: string; code: string; startHour: number; startMinute: number; endHour: number; endMinute: number; isActive: boolean; orderIndex: number };
 type LineStage = { id: number; lineId: number; code: string; name: string; orderIndex: number; description?: string | null; stationId?: number | null };
 
@@ -75,6 +78,7 @@ export default function Settings() {
   const [machineDialogOpen, setMachineDialogOpen] = useState(false);
   const [editingMachine, setEditingMachine] = useState<Machine | null>(null);
   const [editMachineDialogOpen, setEditMachineDialogOpen] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState<"2D" | "3D" | null>(null);
 
   // Shift form
   const [shiftForm, setShiftForm] = useState({ 
@@ -216,6 +220,66 @@ export default function Settings() {
     },
     onError: (error) => toast.error(error.message),
   });
+
+  const uploadImageMutation = trpc.machine.uploadImage.useMutation({
+    onSuccess: (data, variables) => {
+      toast.success(`Upload ảnh ${variables.imageType} thành công`);
+      setUploadingImage(null);
+      if (editingMachine) {
+        const updatedMachine = { ...editingMachine };
+        if (variables.imageType === "2D") {
+          updatedMachine.image2DUrl = data.url;
+        } else {
+          updatedMachine.image3DUrl = data.url;
+        }
+        setEditingMachine(updatedMachine);
+      }
+      refetchMachines();
+    },
+    onError: (error) => {
+      toast.error(error.message);
+      setUploadingImage(null);
+    },
+  });
+
+  // Handle image upload
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, imageType: "2D" | "3D") => {
+    const file = e.target.files?.[0];
+    if (!file || !editingMachine) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast.error("Vui lòng chọn file ảnh");
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Kích thước file tối đa 5MB");
+      return;
+    }
+
+    setUploadingImage(imageType);
+
+    try {
+      // Convert to base64
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = (reader.result as string).split(",")[1];
+        uploadImageMutation.mutate({
+          id: editingMachine.id,
+          imageType,
+          imageData: base64,
+          fileName: file.name,
+          contentType: file.type,
+        });
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      toast.error("Lỗi khi upload ảnh");
+      setUploadingImage(null);
+    }
+  };
 
   const updateShiftMutation = trpc.shiftConfig.update.useMutation({
     onSuccess: () => {
@@ -1895,6 +1959,99 @@ export default function Settings() {
                     <Copy className="h-4 w-4" />
                   </Button>
                 </div>
+              </div>
+
+              {/* Image Upload Section */}
+              <div className="border-t pt-4 mt-4">
+                <label className="text-sm font-medium block mb-3">Ảnh máy (cho Layout và Dashboard)</label>
+                <div className="grid grid-cols-2 gap-4">
+                  {/* 2D Image */}
+                  <div className="space-y-2">
+                    <label className="text-xs text-muted-foreground">Ảnh 2D</label>
+                    <div className="relative">
+                      {editingMachine.image2DUrl ? (
+                        <div className="relative group">
+                          <img
+                            src={editingMachine.image2DUrl}
+                            alt="2D"
+                            className="w-full h-24 object-cover rounded-lg border"
+                          />
+                          <Button
+                            variant="destructive"
+                            size="icon"
+                            className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => setEditingMachine({ ...editingMachine, image2DUrl: null })}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <label className="flex flex-col items-center justify-center h-24 border-2 border-dashed rounded-lg cursor-pointer hover:bg-muted/50 transition-colors">
+                          {uploadingImage === "2D" ? (
+                            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                          ) : (
+                            <>
+                              <Upload className="h-6 w-6 text-muted-foreground mb-1" />
+                              <span className="text-xs text-muted-foreground">Upload 2D</span>
+                            </>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => handleImageUpload(e, "2D")}
+                            disabled={uploadingImage !== null}
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 3D Image */}
+                  <div className="space-y-2">
+                    <label className="text-xs text-muted-foreground">Ảnh 3D</label>
+                    <div className="relative">
+                      {editingMachine.image3DUrl ? (
+                        <div className="relative group">
+                          <img
+                            src={editingMachine.image3DUrl}
+                            alt="3D"
+                            className="w-full h-24 object-cover rounded-lg border"
+                          />
+                          <Button
+                            variant="destructive"
+                            size="icon"
+                            className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => setEditingMachine({ ...editingMachine, image3DUrl: null })}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <label className="flex flex-col items-center justify-center h-24 border-2 border-dashed rounded-lg cursor-pointer hover:bg-muted/50 transition-colors">
+                          {uploadingImage === "3D" ? (
+                            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                          ) : (
+                            <>
+                              <Upload className="h-6 w-6 text-muted-foreground mb-1" />
+                              <span className="text-xs text-muted-foreground">Upload 3D</span>
+                            </>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => handleImageUpload(e, "3D")}
+                            disabled={uploadingImage !== null}
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Ảnh sẽ được hiển thị trong Layout và Dashboard. Tối đa 5MB.
+                </p>
               </div>
             </div>
           )}

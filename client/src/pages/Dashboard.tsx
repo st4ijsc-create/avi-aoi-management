@@ -99,6 +99,8 @@ type MachineStats = {
   workshopName?: string;
   factoryId?: number;
   factoryName?: string;
+  image2DUrl?: string | null;
+  image3DUrl?: string | null;
 };
 
 type InspectionResult = {
@@ -812,52 +814,102 @@ export default function Dashboard() {
                           const fpyNum = parseFloat(fpy);
                           const status = getStatusIndicator(fpyNum);
                           const StatusIcon = status.icon;
+                          const machineImage = machine.image2DUrl || machine.image3DUrl;
 
                           return (
                             <div
                               key={machine.id}
-                              className={`relative p-4 rounded-xl border-2 cursor-pointer transition-all hover:shadow-lg hover:scale-[1.02] ${getStatusColor(fpyNum)}`}
+                              className={`relative rounded-xl border-2 cursor-pointer transition-all hover:shadow-lg hover:scale-[1.02] overflow-hidden ${getStatusColor(fpyNum)}`}
                               onClick={() => openMachineDetail(machine)}
                             >
-                              {/* Status indicator */}
-                              <div className="absolute top-3 right-3">
-                                <StatusIcon className={`h-5 w-5 ${status.color}`} />
-                              </div>
+                              {/* Machine Image */}
+                              {machineImage ? (
+                                <div className="relative h-32 w-full">
+                                  <img
+                                    src={machineImage}
+                                    alt={machine.name}
+                                    className="w-full h-full object-cover"
+                                  />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+                                  
+                                  {/* Stats Overlay on Image */}
+                                  <div className="absolute bottom-0 left-0 right-0 p-3">
+                                    <div className="flex items-center justify-between text-white">
+                                      <div className="flex items-center gap-2">
+                                        <div className="text-center">
+                                          <p className="text-[10px] opacity-80">FPY</p>
+                                          <p className={`text-sm font-bold ${fpyNum >= 95 ? 'text-green-400' : fpyNum >= 85 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                            {fpy}%
+                                          </p>
+                                        </div>
+                                        <div className="w-px h-8 bg-white/30" />
+                                        <div className="text-center">
+                                          <p className="text-[10px] opacity-80">FY</p>
+                                          <p className="text-sm font-bold text-red-400">{fy}%</p>
+                                        </div>
+                                        <div className="w-px h-8 bg-white/30" />
+                                        <div className="text-center">
+                                          <p className="text-[10px] opacity-80">NTFY</p>
+                                          <p className="text-sm font-bold text-yellow-400">{ntfy}%</p>
+                                        </div>
+                                        <div className="w-px h-8 bg-white/30" />
+                                        <div className="text-center">
+                                          <p className="text-[10px] opacity-80">Output</p>
+                                          <p className="text-sm font-bold">{machine.total}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Status indicator */}
+                                  <div className="absolute top-2 right-2">
+                                    <div className={`p-1 rounded-full bg-black/50 backdrop-blur-sm`}>
+                                      <StatusIcon className={`h-4 w-4 ${status.color}`} />
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="p-4">
+                                  {/* Status indicator */}
+                                  <div className="absolute top-3 right-3">
+                                    <StatusIcon className={`h-5 w-5 ${status.color}`} />
+                                  </div>
+
+                                  {/* Stats grid for machines without image */}
+                                  <div className="grid grid-cols-4 gap-1 text-sm mb-3">
+                                    <div className="text-center p-2 rounded-lg bg-background/50">
+                                      <p className="text-[10px] text-muted-foreground">FPY</p>
+                                      <p className={`font-bold text-sm ${fpyNum >= 95 ? 'text-success' : fpyNum >= 85 ? 'text-warning' : 'text-destructive'}`}>
+                                        {fpy}%
+                                      </p>
+                                    </div>
+                                    <div className="text-center p-2 rounded-lg bg-background/50">
+                                      <p className="text-[10px] text-muted-foreground">FY</p>
+                                      <p className="font-bold text-sm text-destructive">{fy}%</p>
+                                    </div>
+                                    <div className="text-center p-2 rounded-lg bg-background/50">
+                                      <p className="text-[10px] text-muted-foreground">NTFY</p>
+                                      <p className="font-bold text-sm text-warning">{ntfy}%</p>
+                                    </div>
+                                    <div className="text-center p-2 rounded-lg bg-background/50">
+                                      <p className="text-[10px] text-muted-foreground">Output</p>
+                                      <p className="font-bold text-sm text-foreground">{machine.total}</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
 
                               {/* Machine info */}
-                              <div className="mb-3">
-                                <h4 className="font-semibold text-foreground truncate pr-6">{machine.name}</h4>
-                                <p className="text-xs text-muted-foreground">{machine.code}</p>
-                              </div>
-
-                              {/* Stats grid */}
-                              <div className="grid grid-cols-2 gap-2 text-sm">
-                                <div className="text-center p-2 rounded-lg bg-background/50">
-                                  <p className="text-xs text-muted-foreground">FPY</p>
-                                  <p className={`font-bold ${fpyNum >= 95 ? 'text-success' : fpyNum >= 85 ? 'text-warning' : 'text-destructive'}`}>
-                                    {fpy}%
-                                  </p>
+                              <div className="p-3 border-t border-border/50">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <h4 className="font-semibold text-foreground truncate text-sm">{machine.name}</h4>
+                                    <p className="text-xs text-muted-foreground">{machine.code}</p>
+                                  </div>
+                                  <span className="text-xs text-primary flex items-center gap-1">
+                                    <Eye className="h-3 w-3" />
+                                  </span>
                                 </div>
-                                <div className="text-center p-2 rounded-lg bg-background/50">
-                                  <p className="text-xs text-muted-foreground">Output</p>
-                                  <p className="font-bold text-foreground">{machine.total}</p>
-                                </div>
-                                <div className="text-center p-2 rounded-lg bg-background/50">
-                                  <p className="text-xs text-muted-foreground">FY</p>
-                                  <p className="font-bold text-destructive">{fy}%</p>
-                                </div>
-                                <div className="text-center p-2 rounded-lg bg-background/50">
-                                  <p className="text-xs text-muted-foreground">NTFY</p>
-                                  <p className="font-bold text-warning">{ntfy}%</p>
-                                </div>
-                              </div>
-
-                              {/* View detail link */}
-                              <div className="mt-3 text-center">
-                                <span className="text-xs text-primary flex items-center justify-center gap-1">
-                                  <Eye className="h-3 w-3" />
-                                  Xem chi tiết
-                                </span>
                               </div>
                             </div>
                           );
