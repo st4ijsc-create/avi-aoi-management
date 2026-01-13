@@ -1885,6 +1885,91 @@ const lineProductAssignmentRouter = router({
     }),
 });
 
+// ============ MACHINE STATUS ROUTER ============
+const machineStatusRouter = router({
+  listWithStatus: protectedProcedure.query(async () => {
+    return db.getAllMachinesWithStatus();
+  }),
+
+  getLogs: protectedProcedure
+    .input(z.object({
+      machineId: z.number(),
+      limit: z.number().min(1).max(1000).default(100),
+    }))
+    .query(async ({ input }) => {
+      return db.getMachineStatusLogs(input.machineId, input.limit);
+    }),
+
+  getHeartbeats: protectedProcedure
+    .input(z.object({
+      machineId: z.number(),
+      hours: z.number().min(1).max(168).default(24),
+    }))
+    .query(async ({ input }) => {
+      return db.getHeartbeatHistory(input.machineId, input.hours);
+    }),
+
+  getUptimeStats: protectedProcedure
+    .input(z.object({
+      machineId: z.number(),
+      hours: z.number().min(1).max(720).default(24),
+    }))
+    .query(async ({ input }) => {
+      return db.getMachineUptimeStats(input.machineId, input.hours);
+    }),
+
+  getUnnotifiedOffline: adminProcedure
+    .input(z.object({
+      thresholdMinutes: z.number().min(1).max(60).default(5),
+    }))
+    .query(async ({ input }) => {
+      return db.getUnnotifiedOfflineMachines(input.thresholdMinutes);
+    }),
+
+  markNotificationSent: adminProcedure
+    .input(z.object({ logId: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.markOfflineNotificationSent(input.logId);
+      return { success: true };
+    }),
+});
+
+// ============ BULK IMPORT ROUTER ============
+const bulkImportRouter = router({
+  measurementPoints: adminProcedure
+    .input(z.object({
+      productModelId: z.number(),
+      points: z.array(z.object({
+        code: z.string().min(1).max(50),
+        name: z.string().min(1).max(255),
+        description: z.string().optional(),
+        measurementType: z.enum(['DIMENSION', 'VISUAL', 'ELECTRICAL', 'POSITION', 'COLOR', 'SURFACE', 'OTHER']),
+        unit: z.string().optional(),
+        lowerLimit: z.number().optional(),
+        upperLimit: z.number().optional(),
+        nominalValue: z.number().optional(),
+        positionX: z.number(),
+        positionY: z.number(),
+        radius: z.number().default(20),
+        cropWidth: z.number().default(100),
+        cropHeight: z.number().default(100),
+        orderIndex: z.number().default(0),
+      })),
+    }))
+    .mutation(async ({ input }) => {
+      const pointsWithProductModel = input.points.map((p, index) => ({
+        ...p,
+        productModelId: input.productModelId,
+        orderIndex: p.orderIndex || index + 1,
+        lowerLimit: p.lowerLimit?.toString(),
+        upperLimit: p.upperLimit?.toString(),
+        nominalValue: p.nominalValue?.toString(),
+      }));
+      
+      return db.bulkCreateMeasurementPoints(pointsWithProductModel);
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -1917,6 +2002,8 @@ export const appRouter = router({
   productionOrder: productionOrderRouter,
   lineStage: lineStageRouter,
   lineProductAssignment: lineProductAssignmentRouter,
+  machineStatus: machineStatusRouter,
+  bulkImport: bulkImportRouter,
 });
 
 export type AppRouter = typeof appRouter;

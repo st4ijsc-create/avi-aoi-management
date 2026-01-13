@@ -580,3 +580,46 @@ export const lineProductAssignments = mysqlTable("line_product_assignments", {
 
 export type LineProductAssignment = typeof lineProductAssignments.$inferSelect;
 export type InsertLineProductAssignment = typeof lineProductAssignments.$inferInsert;
+
+
+/**
+ * Machine Status Logs - Lịch sử trạng thái kết nối máy
+ */
+export const machineStatusLogs = mysqlTable("machine_status_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  machineId: int("machineId").notNull(),
+  status: mysqlEnum("status", ["online", "offline"]).notNull(),
+  ipAddress: varchar("ipAddress", { length: 45 }),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  duration: int("duration"),
+  notificationSent: boolean("notificationSent").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_status_logs_machine").on(table.machineId),
+  index("idx_status_logs_timestamp").on(table.timestamp),
+  index("idx_status_logs_status").on(table.status),
+]);
+
+export type MachineStatusLog = typeof machineStatusLogs.$inferSelect;
+export type InsertMachineStatusLog = typeof machineStatusLogs.$inferInsert;
+
+/**
+ * Machine Heartbeat History - Lịch sử heartbeat chi tiết
+ */
+export const machineHeartbeats = mysqlTable("machine_heartbeats", {
+  id: int("id").autoincrement().primaryKey(),
+  machineId: int("machineId").notNull(),
+  ipAddress: varchar("ipAddress", { length: 45 }),
+  status: mysqlEnum("status", ["running", "stopped", "error", "maintenance"]).default("running").notNull(),
+  cpuUsage: decimal("cpuUsage", { precision: 5, scale: 2 }),
+  memoryUsage: decimal("memoryUsage", { precision: 5, scale: 2 }),
+  diskUsage: decimal("diskUsage", { precision: 5, scale: 2 }),
+  temperature: decimal("temperature", { precision: 5, scale: 2 }),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+}, (table) => [
+  index("idx_heartbeats_machine").on(table.machineId),
+  index("idx_heartbeats_timestamp").on(table.timestamp),
+]);
+
+export type MachineHeartbeat = typeof machineHeartbeats.$inferSelect;
+export type InsertMachineHeartbeat = typeof machineHeartbeats.$inferInsert;

@@ -22,7 +22,9 @@ import {
   shiftConfigs, InsertShiftConfig,
   productionOrders, InsertProductionOrder,
   lineStages, InsertLineStage,
-  lineProductAssignments, InsertLineProductAssignment
+  lineProductAssignments, InsertLineProductAssignment,
+  machineStatusLogs, InsertMachineStatusLog,
+  machineHeartbeats, InsertMachineHeartbeat
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -1906,4 +1908,239 @@ export async function getFactoryLayoutsWithWorkshops(factoryId: number) {
     layout,
     workshopPositions: positions
   };
+}
+
+
+// ============ MACHINE STATUS LOGS ============
+export async function createMachineStatusLog(data: InsertMachineStatusLog) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db.insert(machineStatusLogs).values(data);
+  return result[0].insertId;
+}
+
+export async function getMachineStatusLogs(machineId: number, limit: number = 100) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select()
+    .from(machineStatusLogs)
+    .where(eq(machineStatusLogs.machineId, machineId))
+    .orderBy(desc(machineStatusLogs.timestamp))
+    .limit(limit);
+}
+
+export async function getLatestMachineStatus(machineId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db.select()
+    .from(machineStatusLogs)
+    .where(eq(machineStatusLogs.machineId, machineId))
+    .orderBy(desc(machineStatusLogs.timestamp))
+    .limit(1);
+
+  return result[0] || null;
+}
+
+export async function getAllMachinesWithStatus() {
+  const db = await getDb();
+  if (!db) return [];
+
+  const allMachines = await db.select({
+    machine: machines,
+    station: stations,
+    line: productionLines,
+    workshop: workshops,
+    factory: factories
+  })
+    .from(machines)
+    .innerJoin(stations, eq(machines.stationId, stations.id))
+    .innerJoin(productionLines, eq(stations.lineId, productionLines.id))
+    .innerJoin(workshops, eq(productionLines.workshopId, workshops.id))
+    .innerJoin(factories, eq(workshops.factoryId, factories.id))
+    .where(eq(machines.isActive, true));
+
+  const statusPromises = allMachines.map(async (m) => {
+    const latestStatus = await getLatestMachineStatus(m.machine.id);
+    const latestHeartbeat = await getLatestMachineHeartbeat(m.machine.id);
+    const uptimeStats = await getMachineUptimeStats(m.machine.id, 24);
+    
+    return {
+      ...m.machine,
+      station: m.station,
+      line: m.line,
+      workshop: m.workshop,
+      factory: m.factory,
+      latestStatus: latestStatus?.status || 'offline',
+      lastStatusChange: latestStatus?.timestamp || null,
+      latestHeartbeat: latestHeartbeat?.timestamp || m.machine.lastHeartbeat || null,
+      heartbeatStatus: latestHeartbeat?.status || 'stopped',
+      uptimePercent: uptimeStats.uptimePercent,
+      totalOnlineTime: uptimeStats.totalOnlineTime,
+      totalOfflineTime: uptimeStats.totalOfflineTime,
+    };
+  });
+
+  return Promise.all(statusPromises);
+}
+
+export async function getMachineUptimeStats(machineId: number, hours: number = 24) {
+  const db = await getDb();
+  if (!db) return { uptimePercent: 0, totalOnlineTime: 0, totalOfflineTime: 0 };
+
+  const startTime = new Date(Date.now() - hours * 60 * 60 * 1000);
+  
+  const logs = await db.select()
+    .from(machineStatusLogs)
+    .where(and(
+      eq(machineStatusLogs.machineId, machineId),
+      gte(machineStatusLogs.timestamp, startTime)
+    ))
+    .orderBy(machineStatusLogs.timestamp);
+
+  if (logs.length === 0) {
+    return { uptimePercent: 0, totalOnlineTime: 0, totalOfflineTime: 0 };
+  }
+
+  let totalOnlineTime = 0;
+  let totalOfflineTime = 0;
+  
+  for (let i = 0; i < logs.length - 1; i++) {
+    const current = logs[i];
+    const next = logs[i + 1];
+    const duration = (new Date(next.timestamp).getTime() - new Date(current.timestamp).getTime()) / 1000;
+    
+    if (current.status === 'online') {
+      totalOnlineTime += duration;
+    } else {
+      totalOfflineTime += duration;
+    }
+  }
+
+  const lastLog = logs[logs.length - 1];
+  const timeSinceLastLog = (Date.now() - new Date(lastLog.timestamp).getTime()) / 1000;
+  if (lastLog.status === 'online') {
+    totalOnlineTime += timeSinceLastLog;
+  } else {
+    totalOfflineTime += timeSinceLastLog;
+  }
+
+  const totalTime = totalOnlineTime + totalOfflineTime;
+  const uptimePercent = totalTime > 0 ? Math.round((totalOnlineTime / totalTime) * 1000) / 10 : 0;
+
+  return {
+    uptimePercent,
+    totalOnlineTime: Math.round(totalOnlineTime),
+    totalOfflineTime: Math.round(totalOfflineTime),
+  };
+}
+
+export async function markOfflineNotificationSent(logId: number) {
+  const db = await getDb();
+  if (!db) return;
+
+  await db.update(machineStatusLogs)
+    .set({ notificationSent: true })
+    .where(eq(machineStatusLogs.id, logId));
+}
+
+export async function getUnnotifiedOfflineMachines(thresholdMinutes: number = 5) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const thresholdTime = new Date(Date.now() - thresholdMinutes * 60 * 1000);
+  
+  const offlineLogs = await db.select({
+    log: machineStatusLogs,
+    machine: machines
+  })
+    .from(machineStatusLogs)
+    .innerJoin(machines, eq(machineStatusLogs.machineId, machines.id))
+    .where(and(
+      eq(machineStatusLogs.status, 'offline'),
+      eq(machineStatusLogs.notificationSent, false),
+      lte(machineStatusLogs.timestamp, thresholdTime)
+    ));
+
+  const machineLatestOffline = new Map<number, typeof offlineLogs[0]>();
+  for (const log of offlineLogs) {
+    const existing = machineLatestOffline.get(log.machine.id);
+    if (!existing || new Date(log.log.timestamp) > new Date(existing.log.timestamp)) {
+      machineLatestOffline.set(log.machine.id, log);
+    }
+  }
+
+  return Array.from(machineLatestOffline.values());
+}
+
+// ============ MACHINE HEARTBEATS ============
+export async function createMachineHeartbeat(data: InsertMachineHeartbeat) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db.insert(machineHeartbeats).values(data);
+  return result[0].insertId;
+}
+
+export async function getMachineHeartbeats(machineId: number, limit: number = 100) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select()
+    .from(machineHeartbeats)
+    .where(eq(machineHeartbeats.machineId, machineId))
+    .orderBy(desc(machineHeartbeats.timestamp))
+    .limit(limit);
+}
+
+export async function getLatestMachineHeartbeat(machineId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db.select()
+    .from(machineHeartbeats)
+    .where(eq(machineHeartbeats.machineId, machineId))
+    .orderBy(desc(machineHeartbeats.timestamp))
+    .limit(1);
+
+  return result[0] || null;
+}
+
+export async function getHeartbeatHistory(machineId: number, hours: number = 24) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const startTime = new Date(Date.now() - hours * 60 * 60 * 1000);
+  
+  return db.select()
+    .from(machineHeartbeats)
+    .where(and(
+      eq(machineHeartbeats.machineId, machineId),
+      gte(machineHeartbeats.timestamp, startTime)
+    ))
+    .orderBy(machineHeartbeats.timestamp);
+}
+
+// ============ BULK MEASUREMENT POINTS ============
+export async function bulkCreateMeasurementPoints(points: InsertMeasurementPointDef[]) {
+  const db = await getDb();
+  if (!db) return { success: 0, failed: 0, errors: [] as string[] };
+
+  let success = 0;
+  let failed = 0;
+  const errors: string[] = [];
+
+  for (const point of points) {
+    try {
+      await db.insert(measurementPointDefs).values(point);
+      success++;
+    } catch (error: any) {
+      failed++;
+      errors.push(`${point.code}: ${error.message}`);
+    }
+  }
+
+  return { success, failed, errors };
 }

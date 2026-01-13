@@ -606,3 +606,13 @@
 ## Known Issues
 - [ ] WebSocket qua proxy domain không ổn định (cần sử dụng polling transport)
 - [ ] Khi deploy production, WebSocket sẽ hoạt động tốt hơn qua domain chính
+
+
+## Phase 37: Machine Status Monitor, Offline Notification, Bulk Import
+- [x] Trang Machine Status Monitor với lịch sử heartbeat (/machine-status)
+- [x] Notification khi máy offline quá 5 phút (offlineMonitor.ts)
+- [x] Bulk import measurement points từ Excel (BulkImportDialog.tsx)
+- [x] Unit tests cho machine status và bulk import (machineStatus.test.ts)
+- [x] Database tables: machine_status_logs, machine_heartbeats
+- [x] API endpoints: machineStatus.listWithStatus, machineStatus.getLogs, machineStatus.getHeartbeats, machineStatus.getUptimeStats
+- [x] API endpoints: bulkImport.measurementPoints

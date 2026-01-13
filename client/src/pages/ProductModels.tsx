@@ -14,7 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
-import { Plus, Package, Target, Upload, Trash2, Edit, Eye, MousePointer, Circle, Save, X, Move, ZoomIn, ZoomOut, MoreVertical, Copy, Image as ImageIcon } from "lucide-react";
+import { Plus, Package, Target, Upload, Trash2, Edit, Eye, MousePointer, Circle, Save, X, Move, ZoomIn, ZoomOut, MoreVertical, Copy, Image as ImageIcon, FileSpreadsheet } from "lucide-react";
+import { BulkImportDialog } from "@/components/BulkImportDialog";
 import { navItems } from "@/lib/navigation";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -59,6 +60,7 @@ export default function ProductModels() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditProductDialogOpen, setIsEditProductDialogOpen] = useState(false);
   const [isDeleteProductDialogOpen, setIsDeleteProductDialogOpen] = useState(false);
+  const [isBulkImportDialogOpen, setIsBulkImportDialogOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [measurementPoints, setMeasurementPoints] = useState<MeasurementPoint[]>([]);
   const [selectedPointIndex, setSelectedPointIndex] = useState<number | null>(null);
@@ -872,10 +874,16 @@ export default function ProductModels() {
                     </Button>
                   </>
                 ) : (
-                  <Button size="sm" onClick={() => setIsEditMode(true)} className="gap-1">
-                    <Edit className="h-4 w-4" />
-                    Chỉnh sửa
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setIsBulkImportDialogOpen(true)} className="gap-1">
+                      <FileSpreadsheet className="h-4 w-4" />
+                      Import Excel
+                    </Button>
+                    <Button size="sm" onClick={() => setIsEditMode(true)} className="gap-1">
+                      <Edit className="h-4 w-4" />
+                      Chỉnh sửa
+                    </Button>
+                  </div>
                 )}
               </div>
             )}
@@ -1301,6 +1309,19 @@ export default function ProductModels() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Bulk Import Dialog */}
+      {selectedProduct && (
+        <BulkImportDialog
+          open={isBulkImportDialogOpen}
+          onOpenChange={setIsBulkImportDialogOpen}
+          productModelId={selectedProduct.id}
+          productModelName={selectedProduct.name}
+          onSuccess={() => {
+            refetchPoints();
+          }}
+        />
+      )}
     </DashboardLayout>
   );
 }

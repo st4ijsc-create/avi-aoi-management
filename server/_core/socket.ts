@@ -1,5 +1,6 @@
 import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
+import * as db from "../db";
 
 let io: Server | null = null;
 
@@ -100,6 +101,14 @@ export function initializeSocket(server: HttpServer): Server {
           connectedMachines.delete(machineId);
           onlineMachineCodesMap.delete(machineId);
           console.log(`[Socket.io] Machine ${machineId} (${machineCode}) disconnected`);
+          
+          // Log status change to database
+          db.createMachineStatusLog({
+            machineId,
+            status: 'offline',
+            ipAddress: info.ipAddress,
+          }).catch(err => console.error('[Socket.io] Failed to log machine offline status:', err));
+          
           // Notify admin dashboard
           io?.to("admin").emit("machine:disconnected", { machineId, machineCode, timestamp: new Date() });
           // Broadcast status change to all clients
@@ -180,6 +189,13 @@ export function initializeSocket(server: HttpServer): Server {
       
       socket.join(`machine:${data.machineId}`);
       console.log(`[Socket.io] Machine ${data.machineId} (${data.machineCode}) mapped successfully from ${ipAddress}`);
+      
+      // Log status change to database
+      db.createMachineStatusLog({
+        machineId: data.machineId,
+        status: 'online',
+        ipAddress,
+      }).catch(err => console.error('[Socket.io] Failed to log machine online status:', err));
       
       // Notify admin dashboard
       io?.to("admin").emit("machine:connected", {

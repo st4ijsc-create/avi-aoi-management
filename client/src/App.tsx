@@ -18,6 +18,7 @@ import Alerts from "./pages/Alerts";
 import Users from "./pages/Users";
 import ProductMachineMapping from "./pages/ProductMachineMapping";
 import ProductionOrders from "./pages/ProductionOrders";
+import MachineStatusMonitor from "./pages/MachineStatusMonitor";
 
 function Router() {
   return (
@@ -37,6 +38,7 @@ function Router() {
       <Route path="/users" component={Users} />
             <Route path="/product-mapping" component={ProductMachineMapping} />
           <Route path="/production-orders" component={ProductionOrders} />
+      <Route path="/machine-status" component={MachineStatusMonitor} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

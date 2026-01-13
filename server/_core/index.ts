@@ -8,6 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { initializeSocket } from "./socket";
+import { startOfflineMonitor } from "./offlineMonitor";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -46,6 +47,9 @@ async function startServer() {
   );
   // Initialize Socket.io for realtime notifications
   initializeSocket(server);
+  
+  // Start offline machine monitor
+  startOfflineMonitor();
 
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
