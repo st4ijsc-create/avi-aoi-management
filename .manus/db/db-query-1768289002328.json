@@ -1,0 +1,46 @@
+{
+  "query": "SELECT id, name, machineType, image2DUrl FROM machines;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute SELECT id, name, machineType, image2DUrl FROM machines;",
+  "rows": [
+    {
+      "id": "1",
+      "name": "AVI Machine 1",
+      "machineType": "AVI",
+      "image2DUrl": "/machines/avi-machine-1.jpg"
+    },
+    {
+      "id": "2",
+      "name": "AVI Machine 2",
+      "machineType": "AVI",
+      "image2DUrl": "/machines/avi-machine-2.jpg"
+    },
+    {
+      "id": "3",
+      "name": "AOI Machine 1",
+      "machineType": "AOI",
+      "image2DUrl": "/machines/aoi-machine-1.jpg"
+    },
+    {
+      "id": "4",
+      "name": "AOI SMT 1",
+      "machineType": "AOI",
+      "image2DUrl": "/machines/aoi-machine-2.jpg"
+    },
+    {
+      "id": "5",
+      "name": "AOI SMT 2",
+      "machineType": "AOI",
+      "image2DUrl": "/machines/aoi-machine-3.webp"
+    },
+    {
+      "id": "6",
+      "name": "AVI Assembly 1",
+      "machineType": "AVI",
+      "image2DUrl": "/machines/avi-machine-3.jpg"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tmachineType\timage2DUrl\n1\tAVI Machine 1\tAVI\t/machines/avi-machine-1.jpg\n2\tAVI Machine 2\tAVI\t/machines/avi-machine-2.jpg\n3\tAOI Machine 1\tAOI\t/machines/aoi-machine-1.jpg\n4\tAOI SMT 1\tAOI\t/machines/aoi-machine-2.jpg\n5\tAOI SMT 2\tAOI\t/machines/aoi-machine-3.webp\n6\tAVI Assembly 1\tAVI\t/machines/avi-machine-3.jpg\n",
+  "stderr": "",
+  "execution_time_ms": 1559
+}

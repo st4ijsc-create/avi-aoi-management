@@ -50,6 +50,7 @@ type MachineWithPosition = {
   machineType: string;
   image2DUrl?: string | null;
   image3DUrl?: string | null;
+  stationId?: number | null;
   position?: MachinePosition;
   stats?: {
     total: number;
@@ -93,6 +94,7 @@ export default function WorkshopLayoutEditor({
   const { data: machinesStats } = trpc.dashboard.getAllMachinesStats.useQuery({});
   const { data: stations } = trpc.station.list.useQuery();
   const { data: lines } = trpc.line.list.useQuery();
+  const { data: lineStages } = trpc.lineStage.list.useQuery();
 
   // Mutations
   const addPositionMutation = trpc.layout.addMachinePosition.useMutation({
@@ -136,6 +138,7 @@ export default function WorkshopLayoutEditor({
         machineType: machine?.machineType || "UNKNOWN",
         image2DUrl: machine?.image2DUrl,
         image3DUrl: machine?.image3DUrl,
+        stationId: machine?.stationId,
         position: {
           id: pos.id,
           machineId: pos.machineId,
@@ -443,6 +446,41 @@ export default function WorkshopLayoutEditor({
                         </div>
                         {getStatusIcon(machine.stats?.yieldRate || 0)}
                       </div>
+
+                      {/* Station Stages */}
+                      {(() => {
+                        // Find station for this machine
+                        const station = stations?.find(s => s.id === machine.stationId);
+                        // Find stages linked to this station
+                        const stationStages = lineStages?.filter(stage => stage.stationId === machine.stationId) || [];
+                        
+                        if (station && stationStages.length > 0) {
+                          return (
+                            <div className="mb-1">
+                              <div className="text-[9px] text-muted-foreground mb-0.5">
+                                {station.name}
+                              </div>
+                              <div className="flex flex-wrap gap-0.5">
+                                {stationStages.slice(0, 4).map((stage) => (
+                                  <span
+                                    key={stage.id}
+                                    className="px-1 py-0.5 text-[8px] font-medium bg-primary/20 text-primary rounded"
+                                    title={stage.name}
+                                  >
+                                    {stage.code}
+                                  </span>
+                                ))}
+                                {stationStages.length > 4 && (
+                                  <span className="px-1 py-0.5 text-[8px] text-muted-foreground">
+                                    +{stationStages.length - 4}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
 
                       {/* Stats Grid */}
                       <div className="flex-1 grid grid-cols-2 gap-1 text-[10px]">

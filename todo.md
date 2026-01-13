@@ -486,7 +486,15 @@
 - [x] Hiển thị ảnh máy trong Layout
 
 ### Dashboard UI Improvements
-- [ ] Di chuyển Layout dây chuyền sản xuất xuống dưới cùng
+- [x] Di chuyển Layout dây chuyền sản xuất xuống dưới cùng
 - [x] Hiển thị ảnh 2D/3D của máy trong Dashboard
 - [x] Hiển thị metrics (FPY, FY, NTFY, Output) phía trên ảnh máy
 - [x] Thiết kế UI hiện đại và trực quan hơn
+
+
+## Phase 29: Dashboard Layout Position & Stage Display & Sample Images
+- [x] Di chuyển Layout dây chuyền sản xuất xuống cuối Dashboard
+- [x] Thêm hiển thị công đoạn (stages) cho công trạm trong Layout
+- [x] Upload ảnh máy mẫu 2D cho các máy AVI
+- [x] Upload ảnh máy mẫu 2D cho các máy AOI
+- [x] Kiểm tra hiển thị ảnh trong Layout và Dashboard

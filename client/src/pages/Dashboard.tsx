@@ -719,7 +719,86 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* Production Line Layout */}
+        {/* Charts Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Pie Chart */}
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="text-base">Phân bố kết quả</CardTitle>
+              <CardDescription>Tỷ lệ OK/NG/NTF tổng hợp</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[250px]">
+                {pieData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={pieData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={90}
+                        paddingAngle={5}
+                        dataKey="value"
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      >
+                        {pieData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-muted-foreground">
+                    Chưa có dữ liệu
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Bar Chart - Top machines */}
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="text-base">Top máy theo sản lượng</CardTitle>
+              <CardDescription>10 máy có output cao nhất</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[250px]">
+                {machinesStats && (machinesStats as any[]).length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={(machinesStats as any[])
+                        .map(m => ({
+                          name: m.machine.name.length > 10 ? m.machine.name.substring(0, 10) + '...' : m.machine.name,
+                          output: m.stats.total,
+                          fpy: m.stats.yieldRate,
+                        }))
+                        .sort((a, b) => b.output - a.output)
+                        .slice(0, 10)
+                      }
+                      layout="vertical"
+                      margin={{ left: 80 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
+                      <XAxis type="number" />
+                      <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} />
+                      <RechartsTooltip />
+                      <Bar dataKey="output" fill="oklch(0.7 0.15 200)" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-muted-foreground">
+                    Chưa có dữ liệu
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Production Line Layout - Moved to bottom */}
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
@@ -921,85 +1000,6 @@ export default function Dashboard() {
               })}
             </div>
           )}
-        </div>
-
-        {/* Charts Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Pie Chart */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="text-base">Phân bố kết quả</CardTitle>
-              <CardDescription>Tỷ lệ OK/NG/NTF tổng hợp</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[250px]">
-                {pieData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={pieData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={90}
-                        paddingAngle={5}
-                        dataKey="value"
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      >
-                        {pieData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <RechartsTooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="h-full flex items-center justify-center text-muted-foreground">
-                    Chưa có dữ liệu
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Bar Chart - Top machines */}
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="text-base">Top máy theo sản lượng</CardTitle>
-              <CardDescription>10 máy có output cao nhất</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[250px]">
-                {machinesStats && (machinesStats as any[]).length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={(machinesStats as any[])
-                        .map(m => ({
-                          name: m.machine.name.length > 10 ? m.machine.name.substring(0, 10) + '...' : m.machine.name,
-                          output: m.stats.total,
-                          fpy: m.stats.yieldRate,
-                        }))
-                        .sort((a, b) => b.output - a.output)
-                        .slice(0, 10)
-                      }
-                      layout="vertical"
-                      margin={{ left: 80 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-                      <XAxis type="number" />
-                      <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} />
-                      <RechartsTooltip />
-                      <Bar dataKey="output" fill="oklch(0.7 0.15 200)" radius={[0, 4, 4, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="h-full flex items-center justify-center text-muted-foreground">
-                    Chưa có dữ liệu
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </div>
 
