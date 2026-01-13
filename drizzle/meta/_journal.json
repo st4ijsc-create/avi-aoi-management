@@ -15,6 +15,13 @@
       "when": 1768259681772,
       "tag": "0001_skinny_stark_industries",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1768261902974,
+      "tag": "0002_harsh_johnny_storm",
+      "breakpoints": true
     }
   ]
 }

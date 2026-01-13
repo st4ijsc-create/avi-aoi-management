@@ -18,23 +18,15 @@ import {
   MessageSquare,
   Loader2,
   ZoomIn,
-  BarChart3,
-  History,
-  LayoutGrid,
-  Settings,
-  FileText
+  SplitSquareVertical,
+  Target
 } from "lucide-react";
+import { navItems } from "@/lib/navigation";
 import { useState } from "react";
 import { useParams, Link } from "wouter";
 import { format } from "date-fns";
 
-const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: <BarChart3 className="h-4 w-4" /> },
-  { href: "/history", label: "Lịch sử", icon: <History className="h-4 w-4" /> },
-  { href: "/layout", label: "Layout", icon: <LayoutGrid className="h-4 w-4" /> },
-  { href: "/settings", label: "Cài đặt", icon: <Settings className="h-4 w-4" /> },
-  { href: "/api-docs", label: "API Docs", icon: <FileText className="h-4 w-4" /> },
-];
+
 
 export default function InspectionDetail() {
   const params = useParams<{ id: string }>();
@@ -43,6 +35,8 @@ export default function InspectionDetail() {
   const [ntfReason, setNtfReason] = useState("");
   const [ntfDialogOpen, setNtfDialogOpen] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [compareMode, setCompareMode] = useState(false);
+  const [selectedMeasurement, setSelectedMeasurement] = useState<any>(null);
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
 
   const { data, isLoading, refetch } = trpc.inspection.getById.useQuery(
@@ -380,6 +374,19 @@ export default function InspectionDetail() {
                           </div>
                         )}
 
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1"
+                          onClick={() => {
+                            setSelectedMeasurement(measurement);
+                            setCompareMode(true);
+                          }}
+                        >
+                          <SplitSquareVertical className="h-3 w-3" />
+                          So sánh
+                        </Button>
+
                         {measurement.imageUrl && !measurement.aiAnalysisResult && (
                           <Button
                             variant="outline"
@@ -410,13 +417,72 @@ export default function InspectionDetail() {
         </Card>
       </div>
 
-      {/* Image Zoom Dialog */}
-      <Dialog open={!!selectedImage} onOpenChange={() => setSelectedImage(null)}>
-        <DialogContent className="max-w-4xl">
+      {/* Image Zoom Dialog with Compare Mode */}
+      <Dialog open={!!selectedImage || compareMode} onOpenChange={() => { setSelectedImage(null); setCompareMode(false); setSelectedMeasurement(null); }}>
+        <DialogContent className="max-w-5xl">
           <DialogHeader>
-            <DialogTitle>Xem ảnh điểm đo</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              {compareMode ? (
+                <><SplitSquareVertical className="h-5 w-5" /> So sánh ảnh thực tế với ảnh mẫu</>
+              ) : (
+                <>Xem ảnh điểm đo</>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {compareMode && selectedMeasurement && (
+                <span>Point ID: {selectedMeasurement.pointDefId}</span>
+              )}
+            </DialogDescription>
           </DialogHeader>
-          {selectedImage && (
+          {compareMode && selectedMeasurement ? (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <Target className="h-4 w-4" />
+                  Ảnh mẫu (Reference)
+                </div>
+                <div className="border rounded-lg p-2 bg-secondary/20">
+                  {selectedMeasurement.referenceImageUrl ? (
+                    <img 
+                      src={selectedMeasurement.referenceImageUrl} 
+                      alt="Reference"
+                      className="w-full max-h-[50vh] object-contain rounded"
+                    />
+                  ) : (
+                    <div className="h-64 flex items-center justify-center text-muted-foreground">
+                      <div className="text-center">
+                        <ImageIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                        <p>Chưa có ảnh mẫu</p>
+                        <p className="text-xs">Vui lòng cấu hình trong module Sản phẩm</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <ImageIcon className="h-4 w-4" />
+                  Ảnh thực tế (Actual)
+                </div>
+                <div className="border rounded-lg p-2 bg-secondary/20">
+                  {selectedMeasurement.imageUrl ? (
+                    <img 
+                      src={selectedMeasurement.imageUrl} 
+                      alt="Actual"
+                      className="w-full max-h-[50vh] object-contain rounded"
+                    />
+                  ) : (
+                    <div className="h-64 flex items-center justify-center text-muted-foreground">
+                      <div className="text-center">
+                        <ImageIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                        <p>Không có ảnh</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : selectedImage && (
             <div className="flex justify-center">
               <img 
                 src={selectedImage} 

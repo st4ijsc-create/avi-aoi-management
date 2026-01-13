@@ -7,29 +7,20 @@ import { trpc } from "@/lib/trpc";
 import { 
   Cpu,
   Plus,
-  BarChart3,
-  History,
-  LayoutGrid,
-  Settings,
-  FileText,
   CheckCircle2,
   XCircle,
   AlertTriangle,
   Move,
   ZoomIn,
   ZoomOut,
-  Maximize2
+  Maximize2,
+  LayoutGrid
 } from "lucide-react";
+import { navItems } from "@/lib/navigation";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useParams } from "wouter";
 
-const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: <BarChart3 className="h-4 w-4" /> },
-  { href: "/history", label: "Lịch sử", icon: <History className="h-4 w-4" /> },
-  { href: "/layout", label: "Layout", icon: <LayoutGrid className="h-4 w-4" /> },
-  { href: "/settings", label: "Cài đặt", icon: <Settings className="h-4 w-4" /> },
-  { href: "/api-docs", label: "API Docs", icon: <FileText className="h-4 w-4" /> },
-];
+
 
 type MachineWithStats = {
   id: number;

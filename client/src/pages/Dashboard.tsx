@@ -14,12 +14,11 @@ import {
   TrendingUp,
   XCircle,
   Clock,
-  BarChart3,
-  History,
   LayoutGrid,
-  Settings,
-  FileText
+  FileText,
+  History
 } from "lucide-react";
+import { navItems } from "@/lib/navigation";
 import { useState, useMemo } from "react";
 import { Link } from "wouter";
 import { 
@@ -35,13 +34,7 @@ import {
   Cell
 } from "recharts";
 
-const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: <BarChart3 className="h-4 w-4" /> },
-  { href: "/history", label: "Lịch sử", icon: <History className="h-4 w-4" /> },
-  { href: "/layout", label: "Layout", icon: <LayoutGrid className="h-4 w-4" /> },
-  { href: "/settings", label: "Cài đặt", icon: <Settings className="h-4 w-4" /> },
-  { href: "/api-docs", label: "API Docs", icon: <FileText className="h-4 w-4" /> },
-];
+
 
 export default function Dashboard() {
   const { user } = useAuth();

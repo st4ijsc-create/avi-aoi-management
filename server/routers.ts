@@ -191,30 +191,126 @@ const machineRouter = router({
     }),
 });
 
+// ============ PRODUCT MODEL ROUTER ============
+const productModelRouter = router({
+  list: protectedProcedure.query(async () => {
+    return db.getProductModels();
+  }),
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getProductModelById(input.id);
+    }),
+
+  create: adminProcedure
+    .input(z.object({
+      code: z.string().min(1).max(100),
+      name: z.string().min(1).max(255),
+      description: z.string().optional(),
+      referenceImageUrl: z.string().optional(),
+      referenceImageKey: z.string().optional(),
+      imageWidth: z.number().optional(),
+      imageHeight: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const id = await db.createProductModel(input);
+      return { id };
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      code: z.string().min(1).max(100).optional(),
+      name: z.string().min(1).max(255).optional(),
+      description: z.string().optional(),
+      referenceImageUrl: z.string().optional(),
+      referenceImageKey: z.string().optional(),
+      imageWidth: z.number().optional(),
+      imageHeight: z.number().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateProductModel(id, data);
+      return { success: true };
+    }),
+});
+
 // ============ MEASUREMENT POINT DEFINITION ROUTER ============
 const measurementPointRouter = router({
+  listByProductModel: protectedProcedure
+    .input(z.object({ productModelId: z.number() }))
+    .query(async ({ input }) => {
+      return db.getMeasurementPointDefsByProductModel(input.productModelId);
+    }),
+
   listByMachine: protectedProcedure
     .input(z.object({ machineId: z.number() }))
     .query(async ({ input }) => {
       return db.getMeasurementPointDefsByMachine(input.machineId);
     }),
 
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getMeasurementPointDefById(input.id);
+    }),
+
   create: adminProcedure
     .input(z.object({
-      machineId: z.number(),
+      productModelId: z.number(),
+      machineId: z.number().optional(),
       code: z.string().min(1).max(50),
       name: z.string().min(1).max(255),
       description: z.string().optional(),
-      measurementType: z.enum(["DIMENSION", "VISUAL", "ELECTRICAL", "OTHER"]),
+      measurementType: z.enum(["DIMENSION", "VISUAL", "ELECTRICAL", "POSITION", "COLOR", "SURFACE", "OTHER"]),
       unit: z.string().optional(),
       lowerLimit: z.string().optional(),
       upperLimit: z.string().optional(),
       nominalValue: z.string().optional(),
+      positionX: z.number(),
+      positionY: z.number(),
+      radius: z.number().optional(),
       referenceImageUrl: z.string().optional(),
+      referenceImageKey: z.string().optional(),
+      orderIndex: z.number().optional(),
     }))
     .mutation(async ({ input }) => {
       const id = await db.createMeasurementPointDef(input);
       return { id };
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      code: z.string().min(1).max(50).optional(),
+      name: z.string().min(1).max(255).optional(),
+      description: z.string().optional(),
+      measurementType: z.enum(["DIMENSION", "VISUAL", "ELECTRICAL", "POSITION", "COLOR", "SURFACE", "OTHER"]).optional(),
+      unit: z.string().optional(),
+      lowerLimit: z.string().optional(),
+      upperLimit: z.string().optional(),
+      nominalValue: z.string().optional(),
+      positionX: z.number().optional(),
+      positionY: z.number().optional(),
+      radius: z.number().optional(),
+      referenceImageUrl: z.string().optional(),
+      referenceImageKey: z.string().optional(),
+      orderIndex: z.number().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateMeasurementPointDef(id, data);
+      return { success: true };
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteMeasurementPointDef(input.id);
+      return { success: true };
     }),
 });
 
@@ -553,6 +649,13 @@ const dashboardRouter = router({
     }),
 });
 
+// ============ SEED DATA ROUTER ============
+const seedDataRouter = router({
+  seed: adminProcedure.mutation(async () => {
+    return db.seedSampleData();
+  }),
+});
+
 // ============ MACHINE API ROUTER (for external machine integration) ============
 const machineApiRouter = router({
   // Submit inspection data from machine
@@ -704,12 +807,14 @@ export const appRouter = router({
   line: lineRouter,
   station: stationRouter,
   machine: machineRouter,
+  productModel: productModelRouter,
   measurementPoint: measurementPointRouter,
   inspection: inspectionRouter,
   measurementResult: measurementResultRouter,
   layout: layoutRouter,
   dashboard: dashboardRouter,
   machineApi: machineApiRouter,
+  seedData: seedDataRouter,
 });
 
 export type AppRouter = typeof appRouter;

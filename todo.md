@@ -31,15 +31,15 @@
 - [x] Integrate AI image analysis for measurement point evaluation
 - [x] Build image comparison view (actual vs reference image)
 - [x] Implement NTF confirmation workflow (mark NG as Not True Fail)
-- [ ] Create NTF history and statistics
-- [ ] Add AI-assisted defect detection suggestions
+- [x] Create NTF history and statistics
+- [x] Add AI-assisted defect detection suggestions
 
 ## Phase 6: 2D/3D Layout Visualization
 - [x] Create layout designer for factory floor plan
 - [x] Implement 2D layout view with machine positions
-- [ ] Add 3D visualization mode for factory layout
+- [x] Add 3D visualization mode with Three.js
 - [x] Display machine metrics on layout (Total, OK/NG/NTF, Yield)
-- [ ] Enable click-to-view machine details from layout
+- [x] Enable click-to-view machine details from layout
 - [x] Support multiple factory/workshop layouts
 
 ## Phase 7: Polish & Testing
@@ -48,10 +48,50 @@
 - [x] Implement responsive design for different screen sizes
 - [x] Write unit tests for API endpoints
 - [x] Write unit tests for core business logic
-- [ ] Performance optimization for large datasets
+- [x] Performance optimization for large datasets
 
 ## Phase 8: Documentation & Delivery
 - [x] Create API documentation with examples
-- [ ] Write user guide for dashboard and modules
-- [ ] Document layout designer usage
-- [ ] Prepare system architecture documentation
+- [x] Write user guide for dashboard and modules
+- [x] Document layout designer usage
+- [x] Prepare system architecture documentation
+
+## Phase 9: Product & Measurement Point Management
+- [x] Create product model table with reference image
+- [x] Create measurement point definition table with coordinates on reference image
+- [x] Build product management UI with image upload
+- [x] Implement measurement point editor (draw circles on reference image)
+- [x] Support 30-50 measurement points per product
+- [x] Store reference images for each measurement point
+- [x] Link measurement points to inspection results
+
+## Phase 10: Enterprise Scale Optimization
+- [x] Optimize database indexing for multi-factory queries
+- [x] Implement data partitioning strategy for large datasets
+- [x] Add factory/workshop hierarchy caching
+- [x] Create efficient search with composite indexes
+- [x] Implement data archiving for old inspection records
+
+## Phase 11: Enterprise Layout 2D/3D
+- [x] Create corporation-level layout view
+- [x] Implement factory overview with workshop cards
+- [x] Add Three.js 3D visualization for factory layout
+- [x] Create interactive 3D machine positioning
+- [x] Display realtime metrics on 3D layout
+- [x] Support drill-down from corporation to machine level
+
+## Phase 12: Sample Data & API Integration
+- [x] Create sample factories (3 factories)
+- [x] Create sample workshops (2-4 per factory)
+- [x] Create sample production lines and stations
+- [x] Create sample machines with API keys
+- [x] Create sample products with measurement points
+- [x] Generate sample inspection data for testing
+- [x] Document API integration workflow
+
+## Phase 13: Enhanced History Module
+- [x] Update inspection detail to show reference image comparison
+- [x] Implement side-by-side image comparison view
+- [x] Add AI analysis for actual vs reference image
+- [x] Display measurement point overlay on images
+- [x] Show measurement point coordinates and results

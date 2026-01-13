@@ -17,22 +17,13 @@ import {
   Copy,
   RefreshCw,
   Loader2,
-  BarChart3,
-  History,
-  LayoutGrid,
-  Settings as SettingsIcon,
-  FileText,
-  Key
+  Key,
+  Settings as SettingsIcon
 } from "lucide-react";
+import { navItems } from "@/lib/navigation";
 import { useState } from "react";
 
-const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: <BarChart3 className="h-4 w-4" /> },
-  { href: "/history", label: "Lịch sử", icon: <History className="h-4 w-4" /> },
-  { href: "/layout", label: "Layout", icon: <LayoutGrid className="h-4 w-4" /> },
-  { href: "/settings", label: "Cài đặt", icon: <SettingsIcon className="h-4 w-4" /> },
-  { href: "/api-docs", label: "API Docs", icon: <FileText className="h-4 w-4" /> },
-];
+
 
 export default function Settings() {
   const { user } = useAuth();
@@ -121,6 +112,18 @@ export default function Settings() {
     onError: (error) => toast.error(error.message),
   });
 
+  const seedDataMutation = trpc.seedData.seed.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message);
+      refetchFactories();
+      refetchWorkshops();
+      refetchLines();
+      refetchStations();
+      refetchMachines();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast.success("Đã copy vào clipboard");
@@ -141,9 +144,24 @@ export default function Settings() {
   return (
     <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/settings">
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Cài đặt hệ thống</h1>
-          <p className="text-muted-foreground">Quản lý nhà máy, nhà xưởng, dây chuyền, công trạm và máy</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Cài đặt hệ thống</h1>
+            <p className="text-muted-foreground">Quản lý nhà máy, nhà xưởng, dây chuyền, công trạm và máy</p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => seedDataMutation.mutate()}
+            disabled={seedDataMutation.isPending}
+            className="gap-2"
+          >
+            {seedDataMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            Tạo dữ liệu mẫu
+          </Button>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>

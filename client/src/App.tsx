@@ -11,6 +11,8 @@ import InspectionDetail from "./pages/InspectionDetail";
 import Layout from "./pages/Layout";
 import Settings from "./pages/Settings";
 import ApiDocs from "./pages/ApiDocs";
+import ProductModels from "./pages/ProductModels";
+import CorporateLayout from "./pages/CorporateLayout";
 
 function Router() {
   return (
@@ -23,6 +25,8 @@ function Router() {
       <Route path="/layout/:id" component={Layout} />
       <Route path="/settings" component={Settings} />
       <Route path="/api-docs" component={ApiDocs} />
+      <Route path="/products" component={ProductModels} />
+      <Route path="/corporate-layout" component={CorporateLayout} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

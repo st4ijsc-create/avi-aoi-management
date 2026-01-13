@@ -13,26 +13,17 @@ import {
   Eye,
   Calendar,
   Cpu,
-  BarChart3,
-  History as HistoryIcon,
-  LayoutGrid,
-  Settings,
-  FileText,
   CheckCircle2,
   XCircle,
-  AlertTriangle
+  AlertTriangle,
+  History as HistoryIcon
 } from "lucide-react";
+import { navItems } from "@/lib/navigation";
 import { useState, useMemo } from "react";
 import { Link } from "wouter";
 import { format } from "date-fns";
 
-const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: <BarChart3 className="h-4 w-4" /> },
-  { href: "/history", label: "Lịch sử", icon: <HistoryIcon className="h-4 w-4" /> },
-  { href: "/layout", label: "Layout", icon: <LayoutGrid className="h-4 w-4" /> },
-  { href: "/settings", label: "Cài đặt", icon: <Settings className="h-4 w-4" /> },
-  { href: "/api-docs", label: "API Docs", icon: <FileText className="h-4 w-4" /> },
-];
+
 
 export default function History() {
   const [filters, setFilters] = useState({
