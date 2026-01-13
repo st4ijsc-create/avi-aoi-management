@@ -43,6 +43,13 @@
       "when": 1768275850166,
       "tag": "0005_cuddly_loners",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1768278022109,
+      "tag": "0006_burly_leech",
+      "breakpoints": true
     }
   ]
 }

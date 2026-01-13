@@ -1287,6 +1287,156 @@ const machineApiRouter = router({
 });
 
 // ============ ALERT ROUTER ============
+// ============ PRODUCT-MACHINE MAPPING ROUTER ============
+const productMachineMappingRouter = router({
+  list: protectedProcedure
+    .input(z.object({
+      machineId: z.number().optional(),
+      productModelId: z.number().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getProductMachineMappings(input?.machineId, input?.productModelId);
+    }),
+
+  byMachine: protectedProcedure
+    .input(z.object({ machineId: z.number() }))
+    .query(async ({ input }) => {
+      return db.getMappingsByMachine(input.machineId);
+    }),
+
+  byProduct: protectedProcedure
+    .input(z.object({ productModelId: z.number() }))
+    .query(async ({ input }) => {
+      return db.getMappingsByProduct(input.productModelId);
+    }),
+
+  create: protectedProcedure
+    .input(z.object({
+      productModelId: z.number(),
+      machineId: z.number(),
+      priority: z.number().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      return db.createProductMachineMapping(input);
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      priority: z.number().optional(),
+      notes: z.string().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateProductMachineMapping(id, data);
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteProductMachineMapping(input.id);
+      return { success: true };
+    }),
+});
+
+// ============ SHIFT CONFIG ROUTER ============
+const shiftConfigRouter = router({
+  list: protectedProcedure
+    .input(z.object({ factoryId: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      return db.getShiftConfigs(input?.factoryId);
+    }),
+
+  defaults: protectedProcedure
+    .query(async () => {
+      return db.getDefaultShiftConfigs();
+    }),
+
+  create: protectedProcedure
+    .input(z.object({
+      factoryId: z.number().optional(),
+      name: z.string(),
+      code: z.string(),
+      startHour: z.number().min(0).max(23),
+      startMinute: z.number().min(0).max(59).optional(),
+      endHour: z.number().min(0).max(23),
+      endMinute: z.number().min(0).max(59).optional(),
+      orderIndex: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      return db.createShiftConfig(input);
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      code: z.string().optional(),
+      startHour: z.number().min(0).max(23).optional(),
+      startMinute: z.number().min(0).max(59).optional(),
+      endHour: z.number().min(0).max(23).optional(),
+      endMinute: z.number().min(0).max(59).optional(),
+      isActive: z.boolean().optional(),
+      orderIndex: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateShiftConfig(id, data);
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteShiftConfig(input.id);
+      return { success: true };
+    }),
+});
+
+// ============ USER ROUTER ============
+const userRouter = router({
+  list: protectedProcedure.query(async ({ ctx }) => {
+    if (ctx.user.role !== 'admin') {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin only' });
+    }
+    return db.getAllUsers();
+  }),
+
+  updateRole: protectedProcedure
+    .input(z.object({
+      userId: z.number(),
+      role: z.enum(['user', 'admin']),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin only' });
+      }
+      if (input.userId === ctx.user.id) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Cannot change your own role' });
+      }
+      await db.updateUserRole(input.userId, input.role);
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({
+      userId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin only' });
+      }
+      if (input.userId === ctx.user.id) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Cannot delete yourself' });
+      }
+      await db.deleteUser(input.userId);
+      return { success: true };
+    }),
+});
+
 const alertRouter = router({
   list: protectedProcedure
     .query(async ({ ctx }) => {
@@ -1452,6 +1602,9 @@ export const appRouter = router({
   machineApi: machineApiRouter,
   seedData: seedDataRouter,
   alert: alertRouter,
+  user: userRouter,
+  productMachineMapping: productMachineMappingRouter,
+  shiftConfig: shiftConfigRouter,
 });
 
 export type AppRouter = typeof appRouter;

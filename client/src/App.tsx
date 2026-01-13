@@ -15,6 +15,8 @@ import ProductModels from "./pages/ProductModels";
 import CorporateLayout from "./pages/CorporateLayout";
 import Reports from "./pages/Reports";
 import Alerts from "./pages/Alerts";
+import Users from "./pages/Users";
+import ProductMachineMapping from "./pages/ProductMachineMapping";
 
 function Router() {
   return (
@@ -31,6 +33,8 @@ function Router() {
       <Route path="/corporate-layout" component={CorporateLayout} />
       <Route path="/reports" component={Reports} />
       <Route path="/alerts" component={Alerts} />
+      <Route path="/users" component={Users} />
+            <Route path="/product-mapping" component={ProductMachineMapping} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

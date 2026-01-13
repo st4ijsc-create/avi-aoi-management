@@ -438,3 +438,49 @@ export const alertHistory = mysqlTable("alert_history", {
 
 export type AlertHistory = typeof alertHistory.$inferSelect;
 export type InsertAlertHistory = typeof alertHistory.$inferInsert;
+
+
+/**
+ * Product-Machine Mapping - Gán sản phẩm cho máy
+ * Một máy có thể kiểm tra nhiều sản phẩm, một sản phẩm có thể được kiểm tra trên nhiều máy
+ */
+export const productMachineMappings = mysqlTable("product_machine_mappings", {
+  id: int("id").autoincrement().primaryKey(),
+  productModelId: int("productModelId").notNull(),
+  machineId: int("machineId").notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  priority: int("priority").default(0).notNull(), // Ưu tiên sản phẩm trên máy
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_pm_mapping_product").on(table.productModelId),
+  index("idx_pm_mapping_machine").on(table.machineId),
+]);
+
+export type ProductMachineMapping = typeof productMachineMappings.$inferSelect;
+export type InsertProductMachineMapping = typeof productMachineMappings.$inferInsert;
+
+/**
+ * Shift Configuration - Cấu hình ca làm việc
+ */
+export const shiftConfigs = mysqlTable("shift_configs", {
+  id: int("id").autoincrement().primaryKey(),
+  factoryId: int("factoryId"), // Null = áp dụng toàn hệ thống
+  name: varchar("name", { length: 100 }).notNull(),
+  code: varchar("code", { length: 20 }).notNull(),
+  startHour: int("startHour").notNull(), // 0-23
+  startMinute: int("startMinute").default(0).notNull(),
+  endHour: int("endHour").notNull(), // 0-23
+  endMinute: int("endMinute").default(0).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  orderIndex: int("orderIndex").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_shift_factory").on(table.factoryId),
+  index("idx_shift_code").on(table.code),
+]);
+
+export type ShiftConfig = typeof shiftConfigs.$inferSelect;
+export type InsertShiftConfig = typeof shiftConfigs.$inferInsert;

@@ -348,3 +348,52 @@
 
 - [x] Fix SQL query error: DATE() function in GROUP BY not compatible with TiDB (use DATE_FORMAT with alias)
 - [x] Fix SQL query error: CASE expression in GROUP BY not compatible with TiDB (use alias)
+
+
+## Phase 24: System Review & Completion
+
+### 1. Rà soát hệ thống hiện tại
+- [x] Review database schema và relationships (13 tables)
+- [x] Review existing CRUD operations (Factory, Workshop, Line, Station, Machine, ProductModel, MeasurementPoint)
+- [ ] Identify and fix missing features and bugs
+
+### 2. Dữ liệu cơ bản (Master Data) - ĐÃ CÓ
+- [x] Factory CRUD - Quản lý nhà máy (Settings page)
+- [x] Workshop CRUD - Quản lý xưởng sản xuất (Settings page)
+- [x] Production Line CRUD - Quản lý dây chuyền (Settings page)
+- [x] Station CRUD - Quản lý trạm/vị trí (Settings page)
+- [x] Machine CRUD - Quản lý máy AVI/AOI (Settings page)
+- [x] User/Role Management - Phân quyền admin/user (schema có, UI cần bổ sung)
+
+### 3. Products & Measurement Points - ĐÃ CÓ
+- [x] Product Model CRUD - Quản lý model sản phẩm (ProductModels page)
+- [x] Measurement Point Definition CRUD - Định nghĩa điểm đo với canvas editor
+- [x] Product-Machine Mapping - Gán sản phẩm cho máy (/product-mapping page)
+
+### 4. API Integration & Mapping - ĐÃ CÓ
+- [x] External API endpoints for machine data (machineApiRouter.submitInspection)
+- [x] Webhook receivers for inspection results (machineApiRouter)
+- [x] API key management (auto-generated per machine)
+- [x] Data validation and error handling (Zod schemas)
+- [x] API Documentation page improvements (đầy đủ với tabs, examples, error handling)
+
+### 5. Dashboard & History - ĐÃ CÓ
+- [x] Real-time data display (auto-refresh, WebSocket)
+- [x] Historical data query (searchInspections)
+- [x] Export functionality (Excel export)
+- [x] Advanced filtering and search
+- [x] PDF Export for History (cần thêm - placeholder)
+
+### 6. Reports & Analytics - ĐÃ CÓ
+- [x] Daily/Weekly/Monthly report (Reports page)
+- [x] Trend analysis charts (Recharts)
+- [x] Comparative analysis (Executive Summary)
+- [x] Export reports to PDF/Excel (Xuất báo cáo button có sẵn)
+
+### 7. CẦN BỔ SUNG
+- [x] User Management UI - Quản lý người dùng và phân quyền (/users page)
+- [x] Product-Machine Mapping UI - Gán sản phẩm cho máy (/product-mapping page)
+- [x] Shift Configuration - Cấu hình ca làm việc (Settings > Ca làm việc tab)
+- [x] NTF Confirmation workflow - Xác nhận NTF với lý do (đã có trong InspectionDetail)
+- [ ] Batch Operations - Xử lý hàng loạt
+- [ ] PDF Export cho History và Reports

@@ -22,7 +22,8 @@ import {
   Settings as SettingsIcon,
   Pencil,
   Trash2,
-  MoreHorizontal
+  MoreHorizontal,
+  Clock
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { useState } from "react";
@@ -33,6 +34,7 @@ type Workshop = { id: number; factoryId: number; code: string; name: string; des
 type Line = { id: number; workshopId: number; code: string; name: string; description?: string | null };
 type Station = { id: number; lineId: number; code: string; name: string; orderIndex: number; description?: string | null };
 type Machine = { id: number; stationId: number; code: string; name: string; machineType: string; apiKey: string; model?: string | null; manufacturer?: string | null };
+type ShiftConfig = { id: number; factoryId?: number | null; name: string; code: string; startHour: number; startMinute: number; endHour: number; endMinute: number; isActive: boolean; orderIndex: number };
 
 export default function Settings() {
   const { user } = useAuth();
@@ -73,12 +75,24 @@ export default function Settings() {
   const [editingMachine, setEditingMachine] = useState<Machine | null>(null);
   const [editMachineDialogOpen, setEditMachineDialogOpen] = useState(false);
 
+  // Shift form
+  const [shiftForm, setShiftForm] = useState({ 
+    factoryId: "", name: "", code: "", 
+    startHour: "6", startMinute: "0", 
+    endHour: "14", endMinute: "0",
+    orderIndex: "0"
+  });
+  const [shiftDialogOpen, setShiftDialogOpen] = useState(false);
+  const [editingShift, setEditingShift] = useState<ShiftConfig | null>(null);
+  const [editShiftDialogOpen, setEditShiftDialogOpen] = useState(false);
+
   // Queries
   const { data: factories, refetch: refetchFactories } = trpc.factory.list.useQuery();
   const { data: workshops, refetch: refetchWorkshops } = trpc.workshop.list.useQuery();
   const { data: lines, refetch: refetchLines } = trpc.line.list.useQuery();
   const { data: stations, refetch: refetchStations } = trpc.station.list.useQuery();
   const { data: machines, refetch: refetchMachines } = trpc.machine.list.useQuery();
+  const { data: shifts, refetch: refetchShifts } = trpc.shiftConfig.list.useQuery();
 
   // Create Mutations
   const createFactoryMutation = trpc.factory.create.useMutation({
@@ -127,6 +141,16 @@ export default function Settings() {
       setMachineDialogOpen(false);
       setMachineForm({ stationId: "", code: "", name: "", machineType: "AVI", model: "", manufacturer: "", description: "" });
       refetchMachines();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const createShiftMutation = trpc.shiftConfig.create.useMutation({
+    onSuccess: () => {
+      toast.success("Tạo ca làm việc thành công");
+      setShiftDialogOpen(false);
+      setShiftForm({ factoryId: "", name: "", code: "", startHour: "6", startMinute: "0", endHour: "14", endMinute: "0", orderIndex: "0" });
+      refetchShifts();
     },
     onError: (error) => toast.error(error.message),
   });
@@ -182,6 +206,16 @@ export default function Settings() {
     onError: (error) => toast.error(error.message),
   });
 
+  const updateShiftMutation = trpc.shiftConfig.update.useMutation({
+    onSuccess: () => {
+      toast.success("Cập nhật ca làm việc thành công");
+      setEditShiftDialogOpen(false);
+      setEditingShift(null);
+      refetchShifts();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
   // Delete Mutations
   const deleteFactoryMutation = trpc.factory.delete.useMutation({
     onSuccess: () => {
@@ -219,6 +253,14 @@ export default function Settings() {
     onSuccess: () => {
       toast.success("Xóa máy thành công");
       refetchMachines();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const deleteShiftMutation = trpc.shiftConfig.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Xóa ca làm việc thành công");
+      refetchShifts();
     },
     onError: (error) => toast.error(error.message),
   });
@@ -316,7 +358,7 @@ export default function Settings() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="factories" className="gap-2">
               <Building2 className="h-4 w-4" />
               Nhà máy
@@ -336,6 +378,10 @@ export default function Settings() {
             <TabsTrigger value="machines" className="gap-2">
               <Cpu className="h-4 w-4" />
               Máy
+            </TabsTrigger>
+            <TabsTrigger value="shifts" className="gap-2">
+              <Clock className="h-4 w-4" />
+              Ca làm việc
             </TabsTrigger>
           </TabsList>
 
@@ -975,6 +1021,233 @@ export default function Settings() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* Shifts Tab */}
+          <TabsContent value="shifts">
+            <Card className="glass-card">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Cấu hình ca làm việc</CardTitle>
+                    <CardDescription>Quản lý các ca làm việc trong hệ thống</CardDescription>
+                  </div>
+                  <Dialog open={shiftDialogOpen} onOpenChange={setShiftDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button className="gap-2">
+                        <Plus className="h-4 w-4" />
+                        Thêm ca
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Thêm ca làm việc mới</DialogTitle>
+                        <DialogDescription>Nhập thông tin ca làm việc</DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Mã ca *</label>
+                            <Input
+                              placeholder="VD: SHIFT_1"
+                              value={shiftForm.code}
+                              onChange={(e) => setShiftForm({ ...shiftForm, code: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Tên ca *</label>
+                            <Input
+                              placeholder="VD: Ca sáng"
+                              value={shiftForm.name}
+                              onChange={(e) => setShiftForm({ ...shiftForm, name: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Nhà máy (để trống = áp dụng toàn hệ thống)</label>
+                          <Select value={shiftForm.factoryId} onValueChange={(v) => setShiftForm({ ...shiftForm, factoryId: v })}>
+                            <SelectTrigger><SelectValue placeholder="Tất cả nhà máy" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">Tất cả nhà máy</SelectItem>
+                              {factories?.map((f) => (
+                                <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Giờ bắt đầu *</label>
+                            <div className="flex gap-2">
+                              <Input
+                                type="number"
+                                min="0"
+                                max="23"
+                                placeholder="Giờ"
+                                value={shiftForm.startHour}
+                                onChange={(e) => setShiftForm({ ...shiftForm, startHour: e.target.value })}
+                                className="w-20"
+                              />
+                              <span className="self-center">:</span>
+                              <Input
+                                type="number"
+                                min="0"
+                                max="59"
+                                placeholder="Phút"
+                                value={shiftForm.startMinute}
+                                onChange={(e) => setShiftForm({ ...shiftForm, startMinute: e.target.value })}
+                                className="w-20"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Giờ kết thúc *</label>
+                            <div className="flex gap-2">
+                              <Input
+                                type="number"
+                                min="0"
+                                max="23"
+                                placeholder="Giờ"
+                                value={shiftForm.endHour}
+                                onChange={(e) => setShiftForm({ ...shiftForm, endHour: e.target.value })}
+                                className="w-20"
+                              />
+                              <span className="self-center">:</span>
+                              <Input
+                                type="number"
+                                min="0"
+                                max="59"
+                                placeholder="Phút"
+                                value={shiftForm.endMinute}
+                                onChange={(e) => setShiftForm({ ...shiftForm, endMinute: e.target.value })}
+                                className="w-20"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Thứ tự hiển thị</label>
+                          <Input
+                            type="number"
+                            value={shiftForm.orderIndex}
+                            onChange={(e) => setShiftForm({ ...shiftForm, orderIndex: e.target.value })}
+                            className="w-24"
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setShiftDialogOpen(false)}>Hủy</Button>
+                        <Button 
+                          onClick={() => createShiftMutation.mutate({
+                            factoryId: shiftForm.factoryId ? parseInt(shiftForm.factoryId) : undefined,
+                            code: shiftForm.code,
+                            name: shiftForm.name,
+                            startHour: parseInt(shiftForm.startHour),
+                            startMinute: parseInt(shiftForm.startMinute),
+                            endHour: parseInt(shiftForm.endHour),
+                            endMinute: parseInt(shiftForm.endMinute),
+                            orderIndex: parseInt(shiftForm.orderIndex),
+                          })}
+                          disabled={createShiftMutation.isPending || !shiftForm.code || !shiftForm.name}
+                        >
+                          {createShiftMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                          Tạo ca
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-md border">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="p-3 text-left font-medium">Mã</th>
+                        <th className="p-3 text-left font-medium">Tên ca</th>
+                        <th className="p-3 text-left font-medium">Nhà máy</th>
+                        <th className="p-3 text-left font-medium">Thời gian</th>
+                        <th className="p-3 text-left font-medium">Trạng thái</th>
+                        <th className="p-3 text-right font-medium">Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shifts?.map((shift) => (
+                        <tr key={shift.id} className="border-b hover:bg-muted/30">
+                          <td className="p-3 font-mono text-sm">{shift.code}</td>
+                          <td className="p-3 font-medium">{shift.name}</td>
+                          <td className="p-3">
+                            {shift.factoryId 
+                              ? factories?.find(f => f.id === shift.factoryId)?.name || 'N/A'
+                              : <span className="text-muted-foreground">Toàn hệ thống</span>
+                            }
+                          </td>
+                          <td className="p-3">
+                            <span className="font-mono">
+                              {String(shift.startHour).padStart(2, '0')}:{String(shift.startMinute).padStart(2, '0')}
+                              {' - '}
+                              {String(shift.endHour).padStart(2, '0')}:{String(shift.endMinute).padStart(2, '0')}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className={`px-2 py-1 rounded-full text-xs ${shift.isActive ? 'bg-green-500/20 text-green-500' : 'bg-gray-500/20 text-gray-500'}`}>
+                              {shift.isActive ? 'Hoạt động' : 'Tạm dừng'}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => {
+                                  setEditingShift(shift as ShiftConfig);
+                                  setEditShiftDialogOpen(true);
+                                }}>
+                                  <Pencil className="h-4 w-4 mr-2" />
+                                  Chỉnh sửa
+                                </DropdownMenuItem>
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      Xóa
+                                    </DropdownMenuItem>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        Bạn có chắc chắn muốn xóa ca "{shift.name}"?
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Hủy</AlertDialogCancel>
+                                      <AlertDialogAction onClick={() => deleteShiftMutation.mutate({ id: shift.id })}>
+                                        Xóa
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </td>
+                        </tr>
+                      ))}
+                      {(!shifts || shifts.length === 0) && (
+                        <tr>
+                          <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                            Chưa có ca làm việc nào. Hãy thêm ca mới.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
       </div>
 
@@ -1182,6 +1455,110 @@ export default function Settings() {
               disabled={updateStationMutation.isPending}
             >
               {updateStationMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Lưu
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Shift Dialog */}
+      <Dialog open={editShiftDialogOpen} onOpenChange={setEditShiftDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Chỉnh sửa ca làm việc</DialogTitle>
+          </DialogHeader>
+          {editingShift && (
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Mã ca</label>
+                  <Input
+                    value={editingShift.code}
+                    onChange={(e) => setEditingShift({ ...editingShift, code: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Tên ca</label>
+                  <Input
+                    value={editingShift.name}
+                    onChange={(e) => setEditingShift({ ...editingShift, name: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Giờ bắt đầu</label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="number"
+                      min="0"
+                      max="23"
+                      value={editingShift.startHour}
+                      onChange={(e) => setEditingShift({ ...editingShift, startHour: parseInt(e.target.value) || 0 })}
+                      className="w-20"
+                    />
+                    <span className="self-center">:</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="59"
+                      value={editingShift.startMinute}
+                      onChange={(e) => setEditingShift({ ...editingShift, startMinute: parseInt(e.target.value) || 0 })}
+                      className="w-20"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Giờ kết thúc</label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="number"
+                      min="0"
+                      max="23"
+                      value={editingShift.endHour}
+                      onChange={(e) => setEditingShift({ ...editingShift, endHour: parseInt(e.target.value) || 0 })}
+                      className="w-20"
+                    />
+                    <span className="self-center">:</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="59"
+                      value={editingShift.endMinute}
+                      onChange={(e) => setEditingShift({ ...editingShift, endMinute: parseInt(e.target.value) || 0 })}
+                      className="w-20"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="shiftActive"
+                  checked={editingShift.isActive}
+                  onChange={(e) => setEditingShift({ ...editingShift, isActive: e.target.checked })}
+                  className="h-4 w-4"
+                />
+                <label htmlFor="shiftActive" className="text-sm">Hoạt động</label>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditShiftDialogOpen(false)}>Hủy</Button>
+            <Button 
+              onClick={() => editingShift && updateShiftMutation.mutate({ 
+                id: editingShift.id, 
+                name: editingShift.name,
+                code: editingShift.code,
+                startHour: editingShift.startHour,
+                startMinute: editingShift.startMinute,
+                endHour: editingShift.endHour,
+                endMinute: editingShift.endMinute,
+                isActive: editingShift.isActive,
+              })}
+              disabled={updateShiftMutation.isPending}
+            >
+              {updateShiftMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Lưu
             </Button>
           </DialogFooter>

@@ -1,4 +1,4 @@
-import { eq, and, desc, gte, lte, like, sql, or } from "drizzle-orm";
+import { eq, and, desc, gte, lte, like, sql, or, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { 
   InsertUser, users,
@@ -17,7 +17,9 @@ import {
   workshopPositions, InsertWorkshopPosition,
   factoryPositions, InsertFactoryPosition,
   alertSettings, InsertAlertSetting,
-  alertHistory, InsertAlertHistory
+  alertHistory, InsertAlertHistory,
+  productMachineMappings, InsertProductMachineMapping,
+  shiftConfigs, InsertShiftConfig
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -104,6 +106,24 @@ export async function getUserByOpenId(openId: string) {
 
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getAllUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(users).orderBy(desc(users.createdAt));
+}
+
+export async function updateUserRole(userId: number, role: 'user' | 'admin') {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  await db.update(users).set({ role }).where(eq(users.id, userId));
+}
+
+export async function deleteUser(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  await db.delete(users).where(eq(users.id, userId));
 }
 
 // ============ FACTORY FUNCTIONS ============
@@ -1483,4 +1503,112 @@ export async function seedInspectionData(count: number = 100) {
     inspections: createdCount,
     measurementResultsPerInspection: measurementPoints.length,
   };
+}
+
+
+// ============ PRODUCT-MACHINE MAPPING FUNCTIONS ============
+export async function getProductMachineMappings(machineId?: number, productModelId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  let query = db.select().from(productMachineMappings);
+  
+  if (machineId) {
+    query = query.where(eq(productMachineMappings.machineId, machineId)) as typeof query;
+  }
+  if (productModelId) {
+    query = query.where(eq(productMachineMappings.productModelId, productModelId)) as typeof query;
+  }
+  
+  return query.orderBy(desc(productMachineMappings.priority));
+}
+
+export async function createProductMachineMapping(data: InsertProductMachineMapping) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(productMachineMappings).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function updateProductMachineMapping(id: number, data: Partial<InsertProductMachineMapping>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(productMachineMappings).set(data).where(eq(productMachineMappings.id, id));
+}
+
+export async function deleteProductMachineMapping(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(productMachineMappings).where(eq(productMachineMappings.id, id));
+}
+
+export async function getMappingsByMachine(machineId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select({
+    mapping: productMachineMappings,
+    product: productModels,
+  })
+  .from(productMachineMappings)
+  .innerJoin(productModels, eq(productMachineMappings.productModelId, productModels.id))
+  .where(eq(productMachineMappings.machineId, machineId))
+  .orderBy(desc(productMachineMappings.priority));
+}
+
+export async function getMappingsByProduct(productModelId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select({
+    mapping: productMachineMappings,
+    machine: machines,
+  })
+  .from(productMachineMappings)
+  .innerJoin(machines, eq(productMachineMappings.machineId, machines.id))
+  .where(eq(productMachineMappings.productModelId, productModelId))
+  .orderBy(desc(productMachineMappings.priority));
+}
+
+// ============ SHIFT CONFIG FUNCTIONS ============
+export async function getShiftConfigs(factoryId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  if (factoryId) {
+    return db.select().from(shiftConfigs)
+      .where(or(eq(shiftConfigs.factoryId, factoryId), isNull(shiftConfigs.factoryId)))
+      .orderBy(shiftConfigs.orderIndex);
+  }
+  
+  return db.select().from(shiftConfigs).orderBy(shiftConfigs.orderIndex);
+}
+
+export async function createShiftConfig(data: InsertShiftConfig) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(shiftConfigs).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function updateShiftConfig(id: number, data: Partial<InsertShiftConfig>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(shiftConfigs).set(data).where(eq(shiftConfigs.id, id));
+}
+
+export async function deleteShiftConfig(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(shiftConfigs).where(eq(shiftConfigs.id, id));
+}
+
+export async function getDefaultShiftConfigs() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  // Get global shifts (factoryId is null)
+  return db.select().from(shiftConfigs)
+    .where(isNull(shiftConfigs.factoryId))
+    .orderBy(shiftConfigs.orderIndex);
 }
