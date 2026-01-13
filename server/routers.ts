@@ -55,6 +55,13 @@ const factoryRouter = router({
       await db.updateFactory(id, data);
       return { success: true };
     }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteFactory(input.id);
+      return { success: true };
+    }),
 });
 
 // ============ WORKSHOP ROUTER ============
@@ -79,6 +86,26 @@ const workshopRouter = router({
     .mutation(async ({ input }) => {
       const id = await db.createWorkshop(input);
       return { id };
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      factoryId: z.number().optional(),
+      name: z.string().min(1).max(255).optional(),
+      description: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateWorkshop(id, data);
+      return { success: true };
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteWorkshop(input.id);
+      return { success: true };
     }),
 });
 
@@ -105,6 +132,26 @@ const lineRouter = router({
       const id = await db.createProductionLine(input);
       return { id };
     }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      workshopId: z.number().optional(),
+      name: z.string().min(1).max(255).optional(),
+      description: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateProductionLine(id, data);
+      return { success: true };
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteProductionLine(input.id);
+      return { success: true };
+    }),
 });
 
 // ============ STATION ROUTER ============
@@ -130,6 +177,27 @@ const stationRouter = router({
     .mutation(async ({ input }) => {
       const id = await db.createStation(input);
       return { id };
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      lineId: z.number().optional(),
+      name: z.string().min(1).max(255).optional(),
+      description: z.string().optional(),
+      orderIndex: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateStation(id, data);
+      return { success: true };
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteStation(input.id);
+      return { success: true };
     }),
 });
 
@@ -188,6 +256,28 @@ const machineRouter = router({
       const { eq } = await import("drizzle-orm");
       await dbInstance.update(machines).set({ apiKey }).where(eq(machines.id, input.id));
       return { apiKey };
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      stationId: z.number().optional(),
+      name: z.string().min(1).max(255).optional(),
+      model: z.string().optional(),
+      manufacturer: z.string().optional(),
+      description: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateMachine(id, data);
+      return { success: true };
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteMachine(input.id);
+      return { success: true };
     }),
 });
 

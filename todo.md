@@ -96,22 +96,19 @@
 - [x] Display measurement point overlay on images
 - [x] Show measurement point coordinates and results
 
-
 ## Bug Fixes
-
 - [x] Fix Product Model create - upload image to S3 before saving to database instead of saving base64 directly
-
 
 ## Phase 14: CRUD Enhancement & History Module Upgrade
 
 ### CRUD Enhancement
-- [ ] Complete CRUD for Factory (create, read, update, delete with UI)
-- [ ] Complete CRUD for Workshop (create, read, update, delete with UI)
-- [ ] Complete CRUD for Production Line (create, read, update, delete with UI)
-- [ ] Complete CRUD for Station (create, read, update, delete with UI)
-- [ ] Complete CRUD for Machine (create, read, update, delete with UI)
-- [ ] Complete CRUD for Product Model (create, read, update, delete with UI)
-- [ ] Complete CRUD for Measurement Point Definition (create, read, update, delete with UI)
+- [x] Complete CRUD for Factory (create, read, update, delete with UI)
+- [x] Complete CRUD for Workshop (create, read, update, delete with UI)
+- [x] Complete CRUD for Production Line (create, read, update, delete with UI)
+- [x] Complete CRUD for Station (create, read, update, delete with UI)
+- [x] Complete CRUD for Machine (create, read, update, delete with UI)
+- [x] Complete CRUD for Product Model (create, read, update, delete with UI)
+- [x] Complete CRUD for Measurement Point Definition (create, read, update, delete with UI)
 
 ### History Module Upgrade
 - [x] Display measurement points on product image with status colors (OK=Green, NG=Red, NTF=Orange)
@@ -122,6 +119,32 @@
 - [x] Display measurement values and standards in detail view
 
 ### API Testing
-- [ ] Test POST /api/machine/submit-inspection with sample data
-- [ ] Verify data flow from machine to database
-- [ ] Test image upload and storage
+- [x] Test POST /api/machine/submit-inspection with sample data
+- [x] Verify data flow from machine to database
+- [x] Test image upload and storage
+
+## Phase 15: API Testing, CRUD Enhancement & Excel Export
+
+### API Testing
+- [x] Test POST /api/machine/submit-inspection with sample data using curl/Postman
+- [x] Verify inspection data saved correctly in database
+- [x] Test image upload endpoint with sample images
+- [x] Verify API key authentication works correctly
+
+### CRUD Enhancement for Settings
+- [x] Add Edit button for Factory with edit dialog
+- [x] Add Delete button for Factory with confirmation
+- [x] Add Edit button for Workshop with edit dialog
+- [x] Add Delete button for Workshop with confirmation
+- [x] Add Edit button for Production Line with edit dialog
+- [x] Add Delete button for Production Line with confirmation
+- [x] Add Edit button for Station with edit dialog
+- [x] Add Delete button for Station with confirmation
+- [x] Add Edit button for Machine with edit dialog
+- [x] Add Delete button for Machine with confirmation
+
+### Excel Export
+- [x] Add Export Excel button in History page
+- [x] Generate CSV file with inspection data (SN, machine, results, timestamps)
+- [x] Include all relevant fields in export
+- [x] UTF-8 support for Vietnamese characters

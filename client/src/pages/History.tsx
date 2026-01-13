@@ -16,8 +16,11 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
-  History as HistoryIcon
+  History as HistoryIcon,
+  Download,
+  Loader2
 } from "lucide-react";
+import { toast } from "sonner";
 import { navItems } from "@/lib/navigation";
 import { useState, useMemo } from "react";
 import { Link } from "wouter";
@@ -73,6 +76,92 @@ export default function History() {
       result: "all",
     });
     setPage(1);
+  };
+
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportExcel = async () => {
+    if (!data?.data || data.data.length === 0) {
+      toast.error("Không có dữ liệu để xuất");
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      // Create CSV content
+      const headers = [
+        "STT",
+        "Mã SN",
+        "Mã nhà máy",
+        "Mã nhà xưởng",
+        "Dây chuyền",
+        "Công trạm",
+        "Máy",
+        "Loại máy",
+        "Mã sản phẩm",
+        "Kết quả",
+        "Tổng điểm đo",
+        "OK",
+        "NG",
+        "NTF",
+        "Yield Rate (%)",
+        "Thời gian kiểm tra",
+        "Ghi chú"
+      ];
+
+      const rows = data.data.map((inspection: any, index: number) => {
+        const okCount = inspection.okCount || 0;
+        const ngCount = inspection.ngCount || 0;
+        const ntfCount = inspection.ntfCount || 0;
+        const total = okCount + ngCount + ntfCount;
+        const yieldRate = total > 0 ? ((okCount + ntfCount) / total * 100).toFixed(2) : "0.00";
+        
+        return [
+          index + 1,
+          inspection.serialNumber,
+          inspection.factoryCode || "-",
+          inspection.workshopCode || "-",
+          inspection.lineCode || "-",
+          inspection.stationCode || "-",
+          inspection.machineCode || "-",
+          inspection.machineType || "-",
+          inspection.productModelCode || "-",
+          inspection.overallResult,
+          total,
+          okCount,
+          ngCount,
+          ntfCount,
+          yieldRate,
+          format(new Date(inspection.inspectedAt), "dd/MM/yyyy HH:mm:ss"),
+          inspection.remarks || "-"
+        ];
+      });
+
+      // Convert to CSV with BOM for Excel UTF-8 support
+      const BOM = "\uFEFF";
+      const csvContent = BOM + [
+        headers.join(","),
+        ...rows.map((row: any[]) => row.map((cell: any) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      ].join("\n");
+
+      // Create and download file
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `inspection_history_${format(new Date(), "yyyyMMdd_HHmmss")}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.success(`Đã xuất ${data.data.length} bản ghi thành công`);
+    } catch (error) {
+      console.error("Export error:", error);
+      toast.error("Lỗi khi xuất dữ liệu");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const getResultBadge = (result: string) => {
@@ -220,6 +309,19 @@ export default function History() {
                   {data?.total ? `Tìm thấy ${data.total} kết quả` : "Chưa có dữ liệu"}
                 </CardDescription>
               </div>
+              <Button 
+                variant="outline" 
+                className="gap-2"
+                onClick={handleExportExcel}
+                disabled={isExporting || !data?.data || data.data.length === 0}
+              >
+                {isExporting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                Xuất Excel
+              </Button>
             </div>
           </CardHeader>
           <CardContent>

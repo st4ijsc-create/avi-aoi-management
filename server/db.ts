@@ -131,6 +131,12 @@ export async function updateFactory(id: number, data: Partial<InsertFactory>) {
   await db.update(factories).set(data).where(eq(factories.id, id));
 }
 
+export async function deleteFactory(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(factories).set({ isActive: false }).where(eq(factories.id, id));
+}
+
 // ============ WORKSHOP FUNCTIONS ============
 export async function createWorkshop(data: InsertWorkshop) {
   const db = await getDb();
@@ -151,6 +157,18 @@ export async function getWorkshops() {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(workshops).where(eq(workshops.isActive, true)).orderBy(workshops.name);
+}
+
+export async function updateWorkshop(id: number, data: Partial<InsertWorkshop>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(workshops).set(data).where(eq(workshops.id, id));
+}
+
+export async function deleteWorkshop(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(workshops).set({ isActive: false }).where(eq(workshops.id, id));
 }
 
 // ============ PRODUCTION LINE FUNCTIONS ============
@@ -175,6 +193,18 @@ export async function getProductionLines() {
   return db.select().from(productionLines).where(eq(productionLines.isActive, true)).orderBy(productionLines.name);
 }
 
+export async function updateProductionLine(id: number, data: Partial<InsertProductionLine>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(productionLines).set(data).where(eq(productionLines.id, id));
+}
+
+export async function deleteProductionLine(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(productionLines).set({ isActive: false }).where(eq(productionLines.id, id));
+}
+
 // ============ STATION FUNCTIONS ============
 export async function createStation(data: InsertStation) {
   const db = await getDb();
@@ -195,6 +225,18 @@ export async function getStations() {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(stations).where(eq(stations.isActive, true)).orderBy(stations.orderIndex);
+}
+
+export async function updateStation(id: number, data: Partial<InsertStation>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(stations).set(data).where(eq(stations.id, id));
+}
+
+export async function deleteStation(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(stations).set({ isActive: false }).where(eq(stations.id, id));
 }
 
 // ============ MACHINE FUNCTIONS ============
@@ -239,6 +281,18 @@ export async function updateMachineHeartbeat(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(machines).set({ lastHeartbeat: new Date() }).where(eq(machines.id, id));
+}
+
+export async function updateMachine(id: number, data: Partial<InsertMachine>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(machines).set(data).where(eq(machines.id, id));
+}
+
+export async function deleteMachine(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(machines).set({ isActive: false }).where(eq(machines.id, id));
 }
 
 // ============ PRODUCT MODEL FUNCTIONS ============
