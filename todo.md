@@ -854,3 +854,10 @@
 - [x] Tích hợp Error Boundary vào ProductModels page (canvas, forms, lists)
 - [x] Tích hợp Error Boundary vào Settings page (các tabs và forms)
 - [x] Test error boundary hoạt động đúng trên các trang mới (TypeScript check passed, 139 tests passed)
+
+
+## Phase 63: Bug Fixes - ProductModels Page
+
+### Bugs
+- [x] Lỗi query measurement_point_templates - đã tạo bảng trong database
+- [x] Lỗi Select.Item với value rỗng - đã sửa thành value="all" và cập nhật logic filter

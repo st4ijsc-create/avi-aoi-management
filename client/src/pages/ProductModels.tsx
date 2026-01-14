@@ -113,7 +113,7 @@ export default function ProductModels() {
   const [pointCropWidth, setPointCropWidth] = useState(100);
   const [pointCropHeight, setPointCropHeight] = useState(100);
   const [pointSearchQuery, setPointSearchQuery] = useState("");
-  const [pointTypeFilter, setPointTypeFilter] = useState<"" | MeasurementPoint["measurementType"]>("");
+  const [pointTypeFilter, setPointTypeFilter] = useState<"all" | MeasurementPoint["measurementType"]>("all");
   const [pointWorkstationId, setPointWorkstationId] = useState<number | undefined>(undefined);
   const [isSavingPoint, setIsSavingPoint] = useState(false);
   const [imageSourceMode, setImageSourceMode] = useState<"upload" | "auto-crop">("auto-crop");
@@ -289,7 +289,7 @@ export default function ProductModels() {
       const matchesSearch = 
         point.code.toLowerCase().includes(pointSearchQuery.toLowerCase()) ||
         point.name.toLowerCase().includes(pointSearchQuery.toLowerCase());
-      const matchesType = !pointTypeFilter || point.measurementType === pointTypeFilter;
+      const matchesType = pointTypeFilter === "all" || point.measurementType === pointTypeFilter;
       return matchesSearch && matchesType;
     });
   }, [measurementPoints, pointSearchQuery, pointTypeFilter]);
@@ -1216,7 +1216,7 @@ export default function ProductModels() {
                         <SelectValue placeholder="Tat ca" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Tat ca</SelectItem>
+                        <SelectItem value="all">Tat ca</SelectItem>
                         <SelectItem value="DIMENSION">Kich thuoc</SelectItem>
                         <SelectItem value="VISUAL">Hinh anh</SelectItem>
                         <SelectItem value="ELECTRICAL">Dien</SelectItem>
