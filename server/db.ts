@@ -3171,48 +3171,53 @@ export async function getDefectsByWorkstation(filters?: {
   const db = await getDb();
   if (!db) return [];
   
-  // Optimized query: Use INNER JOIN with workstations to avoid NULL handling
-  // Only include measurement points that have a workstation assigned
-  const query = sql`
-    SELECT 
-      w.id as workstationId,
-      w.code as workstationCode,
-      w.name as workstationName,
-      w.processType,
-      mpd.id as measurementPointId,
-      mpd.code as measurementPointCode,
-      mpd.name as measurementPointName,
-      COUNT(mr.id) as totalCount,
-      SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) as okCount,
-      SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) as ngCount,
-      SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END) as ntfCount
-    FROM measurement_results mr
-    INNER JOIN measurement_point_defs mpd ON mr.measurementPointDefId = mpd.id
-    INNER JOIN workstations w ON mpd.workstationId = w.id
-    INNER JOIN product_inspections pi ON mr.inspectionId = pi.id
-    WHERE w.isActive = 1
-    ${filters?.startDate ? sql`AND pi.inspectionTime >= ${filters.startDate}` : sql``}
-    ${filters?.endDate ? sql`AND pi.inspectionTime <= ${filters.endDate}` : sql``}
-    ${filters?.productModelId ? sql`AND mpd.productModelId = ${filters.productModelId}` : sql``}
-    ${filters?.machineId ? sql`AND pi.machineId = ${filters.machineId}` : sql``}
-    GROUP BY w.id, w.code, w.name, w.processType, mpd.id, mpd.code, mpd.name
-    ORDER BY SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) DESC
-  `;
-  
-  const result = await db.execute(query);
-  return (result[0] as unknown) as Array<{
-    workstationId: number | null;
-    workstationCode: string | null;
-    workstationName: string | null;
-    processType: string | null;
-    measurementPointId: number;
-    measurementPointCode: string;
-    measurementPointName: string;
-    totalCount: number;
-    okCount: number;
-    ngCount: number;
-    ntfCount: number;
-  }>;
+  try {
+    // Simplified query: Use LEFT JOIN to handle cases with no measurement results
+    const query = sql`
+      SELECT 
+        w.id as workstationId,
+        w.code as workstationCode,
+        w.name as workstationName,
+        w.processType,
+        mpd.id as measurementPointId,
+        mpd.code as measurementPointCode,
+        mpd.name as measurementPointName,
+        COALESCE(COUNT(mr.id), 0) as totalCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as okCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as ngCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount
+      FROM workstations w
+      LEFT JOIN measurement_point_defs mpd ON mpd.workstationId = w.id
+      LEFT JOIN measurement_results mr ON mr.measurementPointDefId = mpd.id
+      LEFT JOIN product_inspections pi ON mr.inspectionId = pi.id
+      WHERE w.isActive = 1
+      ${filters?.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
+      ${filters?.endDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime <= ${filters.endDate})` : sql``}
+      ${filters?.productModelId ? sql`AND (mpd.productModelId IS NULL OR mpd.productModelId = ${filters.productModelId})` : sql``}
+      ${filters?.machineId ? sql`AND (pi.machineId IS NULL OR pi.machineId = ${filters.machineId})` : sql``}
+      GROUP BY w.id, w.code, w.name, w.processType, mpd.id, mpd.code, mpd.name
+      HAVING mpd.id IS NOT NULL
+      ORDER BY ngCount DESC
+    `;
+    
+    const result = await db.execute(query);
+    return (result[0] as unknown) as Array<{
+      workstationId: number | null;
+      workstationCode: string | null;
+      workstationName: string | null;
+      processType: string | null;
+      measurementPointId: number;
+      measurementPointCode: string;
+      measurementPointName: string;
+      totalCount: number;
+      okCount: number;
+      ngCount: number;
+      ntfCount: number;
+    }>;
+  } catch (error) {
+    console.error('getDefectsByWorkstation error:', error);
+    return [];
+  }
 }
 
 // Get top NG measurement points by workstation
@@ -3224,42 +3229,48 @@ export async function getTopNGMeasurementPointsByWorkstation(filters?: {
   const db = await getDb();
   if (!db) return [];
 
-  const limit = filters?.limit || 10;
-  const query = sql`
-    SELECT 
-      w.id as workstationId,
-      w.code as workstationCode,
-      w.name as workstationName,
-      mpd.id as measurementPointId,
-      mpd.code as measurementPointCode,
-      mpd.name as measurementPointName,
-      COUNT(mr.id) as totalCount,
-      SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) as ngCount,
-      SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END) as ntfCount
-    FROM measurement_results mr
-    JOIN measurement_point_defs mpd ON mr.measurementPointDefId = mpd.id
-    LEFT JOIN workstations w ON mpd.workstationId = w.id
-    JOIN product_inspections pi ON mr.inspectionId = pi.id
-    WHERE mr.result IN ('NG', 'NTF')
-    ${filters?.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
-    ${filters?.endDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime <= ${filters.endDate})` : sql``}
-    GROUP BY w.id, w.code, w.name, mpd.id, mpd.code, mpd.name
-    ORDER BY SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) DESC
-    LIMIT ${limit}
-  `;
+  try {
+    const limitVal = filters?.limit || 10;
+    const query = sql`
+      SELECT 
+        w.id as workstationId,
+        w.code as workstationCode,
+        w.name as workstationName,
+        mpd.id as measurementPointId,
+        mpd.code as measurementPointCode,
+        mpd.name as measurementPointName,
+        COALESCE(COUNT(mr.id), 0) as totalCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as ngCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount
+      FROM measurement_point_defs mpd
+      LEFT JOIN workstations w ON mpd.workstationId = w.id
+      LEFT JOIN measurement_results mr ON mr.measurementPointDefId = mpd.id AND mr.result IN ('NG', 'NTF')
+      LEFT JOIN product_inspections pi ON mr.inspectionId = pi.id
+      WHERE 1=1
+      ${filters?.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
+      ${filters?.endDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime <= ${filters.endDate})` : sql``}
+      GROUP BY w.id, w.code, w.name, mpd.id, mpd.code, mpd.name
+      HAVING ngCount > 0 OR ntfCount > 0
+      ORDER BY ngCount DESC
+      LIMIT ${limitVal}
+    `;
 
-  const result = await db.execute(query);
-  return (result[0] as unknown) as Array<{
-    workstationId: number | null;
-    workstationCode: string | null;
-    workstationName: string | null;
-    measurementPointId: number;
-    measurementPointCode: string;
-    measurementPointName: string;
-    totalCount: number;
-    ngCount: number;
-    ntfCount: number;
-  }>;
+    const result = await db.execute(query);
+    return (result[0] as unknown) as Array<{
+      workstationId: number | null;
+      workstationCode: string | null;
+      workstationName: string | null;
+      measurementPointId: number;
+      measurementPointCode: string;
+      measurementPointName: string;
+      totalCount: number;
+      ngCount: number;
+      ntfCount: number;
+    }>;
+  } catch (error) {
+    console.error('getTopNGMeasurementPointsByWorkstation error:', error);
+    return [];
+  }
 }
 
 // Get workstation summary statistics
@@ -3270,40 +3281,45 @@ export async function getWorkstationSummary(filters?: {
   const db = await getDb();
   if (!db) return [];
   
-  const query = sql`
-    SELECT 
-      w.id as workstationId,
-      w.code as workstationCode,
-      w.name as workstationName,
-      w.processType,
-      COUNT(DISTINCT mpd.id) as measurementPointCount,
-      COUNT(mr.id) as totalInspections,
-      SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) as okCount,
-      SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) as ngCount,
-      SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END) as ntfCount,
-      ROUND(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2) as yieldRate
-    FROM workstations w
-    INNER JOIN measurement_point_defs mpd ON mpd.workstationId = w.id
-    INNER JOIN measurement_results mr ON mr.measurementPointDefId = mpd.id
-    INNER JOIN product_inspections pi ON mr.inspectionId = pi.id
-    WHERE w.isActive = 1
-    ${filters?.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
-    ${filters?.endDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime <= ${filters.endDate})` : sql``}
-    GROUP BY w.id, w.code, w.name, w.processType
-    ORDER BY SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) DESC
-  `;
-  
-  const result = await db.execute(query);
-  return (result[0] as unknown) as Array<{
-    workstationId: number;
-    workstationCode: string;
-    workstationName: string;
-    processType: string;
-    measurementPointCount: number;
-    totalInspections: number;
-    okCount: number;
-    ngCount: number;
-    ntfCount: number;
-    yieldRate: number;
-  }>;
+  try {
+    const query = sql`
+      SELECT 
+        w.id as workstationId,
+        w.code as workstationCode,
+        w.name as workstationName,
+        w.processType,
+        COALESCE(COUNT(DISTINCT mpd.id), 0) as measurementPointCount,
+        COALESCE(COUNT(mr.id), 0) as totalInspections,
+        COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as okCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as ngCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount,
+        COALESCE(ROUND(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as yieldRate
+      FROM workstations w
+      LEFT JOIN measurement_point_defs mpd ON mpd.workstationId = w.id
+      LEFT JOIN measurement_results mr ON mr.measurementPointDefId = mpd.id
+      LEFT JOIN product_inspections pi ON mr.inspectionId = pi.id
+      WHERE w.isActive = 1
+      ${filters?.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
+      ${filters?.endDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime <= ${filters.endDate})` : sql``}
+      GROUP BY w.id, w.code, w.name, w.processType
+      ORDER BY ngCount DESC
+    `;
+    
+    const result = await db.execute(query);
+    return (result[0] as unknown) as Array<{
+      workstationId: number;
+      workstationCode: string;
+      workstationName: string;
+      processType: string;
+      measurementPointCount: number;
+      totalInspections: number;
+      okCount: number;
+      ngCount: number;
+      ntfCount: number;
+      yieldRate: number;
+    }>;
+  } catch (error) {
+    console.error('getWorkstationSummary error:', error);
+    return [];
+  }
 }
