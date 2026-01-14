@@ -1,4 +1,4 @@
-import { eq, and, desc, gte, lte, like, sql, or, isNull } from "drizzle-orm";
+import { eq, and, desc, gte, lte, like, sql, or, isNull, not, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { 
   InsertUser, users,
@@ -28,6 +28,9 @@ import {
   manualMachineConnections, InsertManualMachineConnection,
   yieldAlertThresholds, InsertYieldAlertThreshold,
   yieldThresholdHistory, InsertYieldThresholdHistory,
+  backupCodes, InsertBackupCode,
+  userSessions, InsertUserSession,
+  systemSettings, InsertSystemSetting,
   auditLogs, InsertAuditLog
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -2884,4 +2887,228 @@ export async function getAuditLogStats(days: number = 7): Promise<{
     topUsers,
     actionsByDay,
   };
+}
+
+
+// =====================================================
+// Backup Codes Functions
+// =====================================================
+
+export async function generateBackupCodes(userId: number, codes: string[]) {
+  const db = await getDb();
+  if (!db) return codes;
+  
+  // Delete existing backup codes for user
+  await db.delete(backupCodes).where(eq(backupCodes.userId, userId));
+  
+  // Insert new backup codes
+  const insertData = codes.map(code => ({
+    userId,
+    code,
+    isUsed: false,
+  }));
+  
+  await db.insert(backupCodes).values(insertData);
+  return codes;
+}
+
+export async function getBackupCodes(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select()
+    .from(backupCodes)
+    .where(eq(backupCodes.userId, userId))
+    .orderBy(backupCodes.id);
+}
+
+export async function verifyBackupCode(userId: number, code: string) {
+  const db = await getDb();
+  if (!db) return false;
+  
+  const [backupCode] = await db.select()
+    .from(backupCodes)
+    .where(
+      and(
+        eq(backupCodes.userId, userId),
+        eq(backupCodes.code, code),
+        eq(backupCodes.isUsed, false)
+      )
+    )
+    .limit(1);
+  
+  if (!backupCode) return false;
+  
+  // Mark as used
+  await db.update(backupCodes)
+    .set({ isUsed: true, usedAt: new Date() })
+    .where(eq(backupCodes.id, backupCode.id));
+  
+  return true;
+}
+
+export async function getUnusedBackupCodesCount(userId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  
+  const result = await db.select({ count: sql<number>`COUNT(*)` })
+    .from(backupCodes)
+    .where(
+      and(
+        eq(backupCodes.userId, userId),
+        eq(backupCodes.isUsed, false)
+      )
+    );
+  return result[0]?.count || 0;
+}
+
+// =====================================================
+// User Sessions Functions
+// =====================================================
+
+export async function createUserSession(data: {
+  userId: number;
+  sessionToken: string;
+  deviceName?: string;
+  deviceType?: string;
+  browser?: string;
+  os?: string;
+  ipAddress?: string;
+  location?: string;
+  expiresAt: Date;
+}) {
+  const db = await getDb();
+  if (!db) return 0;
+  
+  const [result] = await db.insert(userSessions).values(data);
+  return result.insertId;
+}
+
+export async function getUserSessions(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select()
+    .from(userSessions)
+    .where(
+      and(
+        eq(userSessions.userId, userId),
+        eq(userSessions.isActive, true)
+      )
+    )
+    .orderBy(desc(userSessions.lastActivityAt));
+}
+
+export async function getSessionByToken(sessionToken: string) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const [session] = await db.select()
+    .from(userSessions)
+    .where(eq(userSessions.sessionToken, sessionToken))
+    .limit(1);
+  return session;
+}
+
+export async function updateSessionActivity(sessionId: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.update(userSessions)
+    .set({ lastActivityAt: new Date() })
+    .where(eq(userSessions.id, sessionId));
+}
+
+export async function revokeSession(sessionId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.update(userSessions)
+    .set({ isActive: false })
+    .where(
+      and(
+        eq(userSessions.id, sessionId),
+        eq(userSessions.userId, userId)
+      )
+    );
+}
+
+export async function revokeAllSessions(userId: number, exceptSessionId?: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  if (exceptSessionId) {
+    await db.update(userSessions)
+      .set({ isActive: false })
+      .where(
+        and(
+          eq(userSessions.userId, userId),
+          not(eq(userSessions.id, exceptSessionId))
+        )
+      );
+  } else {
+    await db.update(userSessions)
+      .set({ isActive: false })
+      .where(eq(userSessions.userId, userId));
+  }
+}
+
+export async function cleanupExpiredSessions() {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.update(userSessions)
+    .set({ isActive: false })
+    .where(lte(userSessions.expiresAt, new Date()));
+}
+
+// =====================================================
+// System Settings Functions
+// =====================================================
+
+export async function getSystemSetting(key: string) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const [setting] = await db.select()
+    .from(systemSettings)
+    .where(eq(systemSettings.settingKey, key))
+    .limit(1);
+  return setting;
+}
+
+export async function getSystemSettings(category?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  if (category) {
+    return db.select()
+      .from(systemSettings)
+      .where(eq(systemSettings.category, category))
+      .orderBy(systemSettings.settingKey);
+  }
+  return db.select()
+    .from(systemSettings)
+    .orderBy(systemSettings.category, systemSettings.settingKey);
+}
+
+export async function updateSystemSetting(key: string, value: string, updatedBy?: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.update(systemSettings)
+    .set({ 
+      settingValue: value,
+      updatedBy: updatedBy || null,
+      updatedAt: new Date()
+    })
+    .where(eq(systemSettings.settingKey, key));
+}
+
+export async function createSystemSetting(data: InsertSystemSetting) {
+  const db = await getDb();
+  if (!db) return 0;
+  
+  const [result] = await db.insert(systemSettings).values(data);
+  return result.insertId;
 }

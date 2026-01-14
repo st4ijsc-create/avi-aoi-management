@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
-import { User, Mail, Phone, Building, Briefcase, Shield, Calendar, Clock, ShieldCheck, ShieldOff, QrCode, Copy, CheckCircle2, AlertTriangle } from "lucide-react";
+import { User, Mail, Phone, Building, Briefcase, Shield, Calendar, Clock, ShieldCheck, ShieldOff, QrCode, Copy, CheckCircle2, AlertTriangle, KeyRound, Download } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 
@@ -30,9 +30,27 @@ export default function Profile() {
   const [disablePassword, setDisablePassword] = useState("");
   const [setupData, setSetupData] = useState<{ secret: string; qrCode: string } | null>(null);
   const [secretCopied, setSecretCopied] = useState(false);
+  
+  // Backup Codes States
+  const [showBackupCodes, setShowBackupCodes] = useState(false);
+  const [backupCodes, setBackupCodes] = useState<string[]>([]);
 
   // Queries
   const { data: twoFAStatus, refetch: refetch2FAStatus } = trpc.user.get2FAStatus.useQuery();
+  const { data: backupCodesStatus, refetch: refetchBackupCodes } = trpc.user.getBackupCodesStatus.useQuery();
+  
+  // Backup Codes Mutation
+  const generateBackupCodesMutation = trpc.user.generateBackupCodes.useMutation({
+    onSuccess: (data) => {
+      setBackupCodes(data.codes);
+      setShowBackupCodes(true);
+      refetchBackupCodes();
+      toast.success("Mã dự phòng đã được tạo!");
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Có lỗi xảy ra");
+    },
+  });
 
   // Mutations
   const updateMutation = trpc.user.updateProfile.useMutation({
@@ -351,6 +369,55 @@ export default function Profile() {
             </Alert>
           </CardContent>
         </Card>
+
+        {/* Backup Codes Card */}
+        {twoFAStatus?.enabled && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <KeyRound className="h-5 w-5" />
+                Mã dự phòng
+              </CardTitle>
+              <CardDescription>
+                Mã dự phòng giúp bạn đăng nhập khi mất thiết bị Authenticator
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
+                    <KeyRound className="h-5 w-5 text-blue-500" />
+                  </div>
+                  <div>
+                    <p className="font-medium">Mã dự phòng còn lại</p>
+                    <p className="text-sm text-muted-foreground">
+                      {backupCodesStatus?.unusedCount || 0} mã chưa sử dụng
+                    </p>
+                  </div>
+                </div>
+                <Badge variant={backupCodesStatus?.unusedCount && backupCodesStatus.unusedCount > 3 ? "default" : "destructive"}>
+                  {backupCodesStatus?.unusedCount || 0}/10
+                </Badge>
+              </div>
+
+              <Button 
+                onClick={() => generateBackupCodesMutation.mutate()}
+                className="w-full"
+                disabled={generateBackupCodesMutation.isPending}
+              >
+                <KeyRound className="h-4 w-4 mr-2" />
+                {generateBackupCodesMutation.isPending ? "Đang tạo..." : "Tạo mã dự phòng mới"}
+              </Button>
+
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  Lưu ý: Tạo mã mới sẽ vô hiệu hóa tất cả mã cũ. Hãy lưu mã ở nơi an toàn.
+                </AlertDescription>
+              </Alert>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* 2FA Setup Dialog */}
@@ -493,6 +560,72 @@ export default function Profile() {
               disabled={otpToken.length !== 6 || disable2FAMutation.isPending}
             >
               {disable2FAMutation.isPending ? "Đang xử lý..." : "Tắt 2FA"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Backup Codes Dialog */}
+      <Dialog open={showBackupCodes} onOpenChange={setShowBackupCodes}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5" />
+              Mã dự phòng của bạn
+            </DialogTitle>
+            <DialogDescription>
+              Lưu các mã này ở nơi an toàn. Mỗi mã chỉ sử dụng được một lần.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-2 p-4 bg-muted rounded-lg font-mono text-sm">
+              {backupCodes.map((code, index) => (
+                <div key={index} className="p-2 bg-background rounded text-center">
+                  {code}
+                </div>
+              ))}
+            </div>
+
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Quan trọng:</strong> Đây là lần duy nhất bạn thấy các mã này. Hãy lưu lại ngay!
+              </AlertDescription>
+            </Alert>
+          </div>
+
+          <DialogFooter className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                const text = backupCodes.join('\n');
+                navigator.clipboard.writeText(text);
+                toast.success("Đã sao chép mã dự phòng!");
+              }}
+            >
+              <Copy className="h-4 w-4 mr-2" />
+              Sao chép
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const text = `Mã dự phòng AVI/AOI Management\n\n${backupCodes.join('\n')}\n\nTạo lúc: ${new Date().toLocaleString('vi-VN')}`;
+                const blob = new Blob([text], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'backup-codes.txt';
+                a.click();
+                URL.revokeObjectURL(url);
+                toast.success("Đã tải xuống mã dự phòng!");
+              }}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Tải xuống
+            </Button>
+            <Button onClick={() => setShowBackupCodes(false)}>
+              Đã lưu
             </Button>
           </DialogFooter>
         </DialogContent>

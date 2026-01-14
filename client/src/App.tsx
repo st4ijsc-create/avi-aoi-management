@@ -23,6 +23,7 @@ import Login from "./pages/Login";
 import Profile from "./pages/Profile";
 import ChangePassword from "./pages/ChangePassword";
 import AuditLogs from "./pages/AuditLogs";
+import SessionManagement from "./pages/SessionManagement";
 
 function Router() {
   return (
@@ -47,6 +48,7 @@ function Router() {
       <Route path="/profile" component={Profile} />
       <Route path="/change-password" component={ChangePassword} />
       <Route path="/audit-logs" component={AuditLogs} />
+      <Route path="/sessions" component={SessionManagement} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

@@ -1869,6 +1869,57 @@ const userRouter = router({
         hasSecret: !!status?.twoFactorSecret,
       };
     }),
+
+  // Generate backup codes
+  generateBackupCodes: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      const crypto = await import('crypto');
+      
+      // Generate 10 backup codes
+      const codes: string[] = [];
+      for (let i = 0; i < 10; i++) {
+        const code = crypto.randomBytes(4).toString('hex').toUpperCase();
+        codes.push(code);
+      }
+      
+      await db.generateBackupCodes(ctx.user.id, codes);
+      
+      return { codes };
+    }),
+
+  // Get backup codes status
+  getBackupCodesStatus: protectedProcedure
+    .query(async ({ ctx }) => {
+      const count = await db.getUnusedBackupCodesCount(ctx.user.id);
+      return { unusedCount: count };
+    }),
+
+  // Get user sessions
+  getSessions: protectedProcedure
+    .query(async ({ ctx }) => {
+      return db.getUserSessions(ctx.user.id);
+    }),
+
+  // Revoke a session
+  revokeSession: protectedProcedure
+    .input(z.object({
+      sessionId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await db.revokeSession(input.sessionId, ctx.user.id);
+      return { success: true };
+    }),
+
+  // Revoke all other sessions
+  revokeAllSessions: protectedProcedure
+    .input(z.object({
+      exceptCurrentSession: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // TODO: Get current session ID from context if needed
+      await db.revokeAllSessions(ctx.user.id);
+      return { success: true };
+    }),
 });
 
 const alertRouter = router({

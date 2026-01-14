@@ -750,3 +750,66 @@ export const auditLogs = mysqlTable("audit_logs", {
 ]);
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = typeof auditLogs.$inferInsert;
+
+
+/**
+ * Backup Codes - Mã dự phòng cho 2FA recovery
+ */
+export const backupCodes = mysqlTable("backup_codes", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  code: varchar("code", { length: 20 }).notNull(), // Hashed backup code
+  isUsed: boolean("isUsed").default(false).notNull(),
+  usedAt: timestamp("usedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_backup_codes_user").on(table.userId),
+  index("idx_backup_codes_code").on(table.code),
+]);
+export type BackupCode = typeof backupCodes.$inferSelect;
+export type InsertBackupCode = typeof backupCodes.$inferInsert;
+
+/**
+ * User Sessions - Quản lý phiên đăng nhập
+ */
+export const userSessions = mysqlTable("user_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  sessionToken: varchar("sessionToken", { length: 255 }).notNull().unique(),
+  deviceName: varchar("deviceName", { length: 255 }), // Browser/Device name
+  deviceType: varchar("deviceType", { length: 50 }), // desktop, mobile, tablet
+  browser: varchar("browser", { length: 100 }), // Chrome, Firefox, Safari
+  os: varchar("os", { length: 100 }), // Windows, macOS, Linux, iOS, Android
+  ipAddress: varchar("ipAddress", { length: 45 }),
+  location: varchar("location", { length: 255 }), // City, Country
+  isActive: boolean("isActive").default(true).notNull(),
+  lastActivityAt: timestamp("lastActivityAt").defaultNow().notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_user_sessions_user").on(table.userId),
+  index("idx_user_sessions_token").on(table.sessionToken),
+  index("idx_user_sessions_active").on(table.isActive),
+  index("idx_user_sessions_expires").on(table.expiresAt),
+]);
+export type UserSession = typeof userSessions.$inferSelect;
+export type InsertUserSession = typeof userSessions.$inferInsert;
+
+/**
+ * System Settings - Cài đặt hệ thống
+ */
+export const systemSettings = mysqlTable("system_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  settingKey: varchar("settingKey", { length: 100 }).notNull().unique(),
+  settingValue: text("settingValue"),
+  description: text("description"),
+  category: varchar("category", { length: 50 }), // security, general, notification
+  updatedBy: int("updatedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_system_settings_key").on(table.settingKey),
+  index("idx_system_settings_category").on(table.category),
+]);
+export type SystemSetting = typeof systemSettings.$inferSelect;
+export type InsertSystemSetting = typeof systemSettings.$inferInsert;

@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Cpu, LogOut, PanelLeft, Key, User } from "lucide-react";
+import { Cpu, LogOut, PanelLeft, Key, User, Monitor } from "lucide-react";
 import { NotificationCenter } from "./NotificationCenter";
 import { CSSProperties, ReactNode, useEffect, useRef, useState } from "react";
 import { useLocation, Link } from "wouter";
@@ -262,6 +262,13 @@ function DashboardLayoutContent({
                 >
                   <Key className="mr-2 h-4 w-4" />
                   <span>Đổi mật khẩu</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => window.location.href = "/sessions"}
+                  className="cursor-pointer"
+                >
+                  <Monitor className="mr-2 h-4 w-4" />
+                  <span>Quản lý phiên</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

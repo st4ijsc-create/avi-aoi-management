@@ -141,6 +141,13 @@
       "when": 1768368460348,
       "tag": "0019_orange_ozymandias",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "5",
+      "when": 1768370216859,
+      "tag": "0020_glorious_stark_industries",
+      "breakpoints": true
     }
   ]
 }

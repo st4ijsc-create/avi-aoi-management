@@ -725,3 +725,14 @@
 - [x] 2FA: Tạo API verify2FA và disable2FA
 - [ ] 2FA: Cập nhật trang Profile với giao diện bật/tắt 2FA
 - [ ] 2FA: Thêm bước xác thực OTP khi đăng nhập nếu đã bật 2FA
+
+
+## Phase 51: 2FA Settings, Backup Codes, Session Management
+
+- [x] Cài đặt bật/tắt yêu cầu 2FA bắt buộc trong Settings
+- [x] Backup Codes: Tạo bảng lưu trữ recovery codes
+- [x] Backup Codes: API generate, verify, regenerate codes
+- [ ] Backup Codes: UI hiển thị và tải xuống backup codes
+- [x] Session Management: Tạo bảng user_sessions
+- [ ] Session Management: API list, revoke sessions
+- [ ] Session Management: UI quản lý phiên đăng nhập
