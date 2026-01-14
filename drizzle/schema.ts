@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, boolean, bigint, index } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, boolean, bigint, index, json } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -841,3 +841,43 @@ export const workstations = mysqlTable("workstations", {
 ]);
 export type Workstation = typeof workstations.$inferSelect;
 export type InsertWorkstation = typeof workstations.$inferInsert;
+
+
+/**
+ * Measurement Point Template - Mẫu điểm đo có thể tái sử dụng
+ */
+export const measurementPointTemplates = mysqlTable("measurement_point_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  code: varchar("code", { length: 50 }).notNull().unique(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  category: varchar("category", { length: 100 }), // VD: "Electronics", "Mechanical", "Optical"
+  points: json("points").$type<Array<{
+    code: string;
+    name: string;
+    description?: string;
+    measurementType: "DIMENSION" | "VISUAL" | "ELECTRICAL" | "POSITION" | "COLOR" | "SURFACE" | "OTHER";
+    unit?: string;
+    lowerLimit?: string;
+    upperLimit?: string;
+    nominalValue?: string;
+    positionX: number;
+    positionY: number;
+    radius: number;
+    cropWidth: number;
+    cropHeight: number;
+    orderIndex: number;
+  }>>().notNull(), // Danh sách điểm đo trong template
+  pointCount: int("pointCount").notNull(), // Số lượng điểm đo
+  isActive: boolean("isActive").default(true).notNull(),
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_templates_code").on(table.code),
+  index("idx_templates_category").on(table.category),
+  index("idx_templates_active").on(table.isActive),
+]);
+
+export type MeasurementPointTemplate = typeof measurementPointTemplates.$inferSelect;
+export type InsertMeasurementPointTemplate = typeof measurementPointTemplates.$inferInsert;

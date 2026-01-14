@@ -2354,6 +2354,105 @@ const machineStatusRouter = router({
     }),
 });
 
+// ============ MEASUREMENT POINT TEMPLATE ROUTER ============
+const templateRouter = router({
+  list: protectedProcedure.query(async () => {
+    const { listTemplates } = await import("./templateDb");
+    return listTemplates();
+  }),
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const { getTemplateById } = await import("./templateDb");
+      return getTemplateById(input.id);
+    }),
+
+  getByCategory: protectedProcedure
+    .input(z.object({ category: z.string() }))
+    .query(async ({ input }) => {
+      const { getTemplatesByCategory } = await import("./templateDb");
+      return getTemplatesByCategory(input.category);
+    }),
+
+  create: adminProcedure
+    .input(z.object({
+      code: z.string().min(1).max(50),
+      name: z.string().min(1).max(255),
+      description: z.string().optional(),
+      category: z.string().optional(),
+      points: z.array(z.object({
+        code: z.string(),
+        name: z.string(),
+        description: z.string().optional(),
+        measurementType: z.enum(['DIMENSION', 'VISUAL', 'ELECTRICAL', 'POSITION', 'COLOR', 'SURFACE', 'OTHER']),
+        unit: z.string().optional(),
+        lowerLimit: z.string().optional(),
+        upperLimit: z.string().optional(),
+        nominalValue: z.string().optional(),
+        positionX: z.number(),
+        positionY: z.number(),
+        radius: z.number(),
+        cropWidth: z.number(),
+        cropHeight: z.number(),
+        orderIndex: z.number(),
+      })),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { createTemplate } = await import("./templateDb");
+      return createTemplate({
+        ...input,
+        createdBy: ctx.user.id,
+      });
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      description: z.string().optional(),
+      category: z.string().optional(),
+      points: z.array(z.object({
+        code: z.string(),
+        name: z.string(),
+        description: z.string().optional(),
+        measurementType: z.enum(['DIMENSION', 'VISUAL', 'ELECTRICAL', 'POSITION', 'COLOR', 'SURFACE', 'OTHER']),
+        unit: z.string().optional(),
+        lowerLimit: z.string().optional(),
+        upperLimit: z.string().optional(),
+        nominalValue: z.string().optional(),
+        positionX: z.number(),
+        positionY: z.number(),
+        radius: z.number(),
+        cropWidth: z.number(),
+        cropHeight: z.number(),
+        orderIndex: z.number(),
+      })).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { updateTemplate } = await import("./templateDb");
+      const { id, ...data } = input;
+      return updateTemplate(id, data);
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const { deleteTemplate } = await import("./templateDb");
+      return deleteTemplate(input.id);
+    }),
+
+  clone: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      newCode: z.string().min(1).max(50),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { cloneTemplate } = await import("./templateDb");
+      return cloneTemplate(input.id, input.newCode, ctx.user.id);
+    }),
+});
+
 // ============ BULK IMPORT ROUTER ============
 const bulkImportRouter = router({
   measurementPoints: adminProcedure
@@ -2794,6 +2893,7 @@ export const appRouter = router({
   yieldThreshold: yieldThresholdRouter,
   audit: auditRouter,
   workstation: workstationRouter,
+  template: templateRouter,
 });
 
 export type AppRouter = typeof appRouter;

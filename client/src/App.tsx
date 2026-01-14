@@ -24,6 +24,7 @@ import Profile from "./pages/Profile";
 import ChangePassword from "./pages/ChangePassword";
 import AuditLogs from "./pages/AuditLogs";
 import SessionManagement from "./pages/SessionManagement";
+import { ProductComparison } from "./pages/ProductComparison";
 
 function Router() {
   return (
@@ -49,6 +50,7 @@ function Router() {
       <Route path="/change-password" component={ChangePassword} />
       <Route path="/audit-logs" component={AuditLogs} />
       <Route path="/sessions" component={SessionManagement} />
+      <Route path="/product-comparison" component={ProductComparison} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

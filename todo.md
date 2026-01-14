@@ -790,3 +790,15 @@
 - [x] Thêm workstationId vào measurement point create/update
 - [x] Thêm các trường category, productLine, variant, lifecycleStatus, targetYieldRate, minYieldRate vào edit product dialog
 - [x] Thêm workstation dropdown vào measurement point form
+
+
+## Phase 58: Bulk Import, Templates & Product Comparison
+- [x] Thêm bulk import measurement points - upload Excel file (BulkImportDialog component)
+- [x] Tạo Excel template cho bulk import (component sẵn có)
+- [x] Validate dữ liệu từ Excel trước khi import (component sẵn có)
+- [x] Thêm measurement point templates - tạo template cho các loại sản phẩm
+- [x] Tạo API để lưu/load measurement point templates (templateRouter)
+- [x] Thêm UI để quản lý templates (templateDb.ts)
+- [x] Thêm product comparison view - so sánh 2 sản phẩm (ProductComparison page)
+- [x] Hiển thị điểm đo khác nhau giữa 2 sản phẩm (comparison logic)
+- [x] Suggest điểm đo cần bổ sung (visual cards)
