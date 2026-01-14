@@ -3276,11 +3276,11 @@ export async function getWorkstationSummary(filters?: {
       w.name as workstationName,
       w.processType,
       COUNT(DISTINCT mpd.id) as measurementPointCount,
-      COUNT(DISTINCT mr.id) as totalInspections,
+      COUNT(mr.id) as totalInspections,
       SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) as okCount,
       SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) as ngCount,
       SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END) as ntfCount,
-      ROUND(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(DISTINCT mr.id), 0), 2) as yieldRate
+      ROUND(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2) as yieldRate
     FROM workstations w
     LEFT JOIN measurement_point_defs mpd ON mpd.workstationId = w.id
     LEFT JOIN measurement_results mr ON mr.measurementPointDefId = mpd.id
