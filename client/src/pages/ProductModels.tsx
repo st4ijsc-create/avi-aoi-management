@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { Plus, Package, Target, Upload, Trash2, Edit, Eye, MousePointer, Circle, Save, X, Move, ZoomIn, ZoomOut, MoreVertical, Copy, Image as ImageIcon, FileSpreadsheet, Download, Layers, CheckSquare, Square } from "lucide-react";
 import { BulkImportDialog } from "@/components/BulkImportDialog";
 import { navItems } from "@/lib/navigation";
+import { EmptyState, NoMeasurementPoints } from "@/components/EmptyState";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 interface MeasurementPoint {
@@ -1298,7 +1299,9 @@ export default function ProductModels() {
                   <div className="mt-4">
                     <h4 className="text-sm font-medium mb-2">Danh sách điểm đo ({measurementPoints.length}/50)</h4>
                     <div className="flex flex-wrap gap-2">
-                      {measurementPoints.map((point, index) => (
+                      {measurementPoints.length === 0 ? (
+                        <NoMeasurementPoints onAdd={() => setIsDrawing(true)} />
+                      ) : measurementPoints.map((point, index) => (
                         <Badge
                           key={index}
                           variant={selectedPointIndex === index ? "default" : "outline"}
@@ -1322,7 +1325,7 @@ export default function ProductModels() {
                           <Target className="h-3 w-3 mr-1" />
                           {index + 1}. {point.code}
                         </Badge>
-                      ))}
+                       ))}
                     </div>
                   </div>
                 </div>

@@ -3323,3 +3323,172 @@ export async function getWorkstationSummary(filters?: {
     return [];
   }
 }
+
+
+// ============ SEED WORKSTATION ANALYTICS DATA ============
+export async function seedWorkstationAnalyticsData(options?: {
+  inspectionCount?: number;
+  daysBack?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const inspectionCount = options?.inspectionCount || 500;
+  const daysBack = options?.daysBack || 7;
+
+  // Step 1: Ensure workstations exist
+  const existingWorkstations = await db.select().from(workstations);
+  if (existingWorkstations.length === 0) {
+    // Create default workstations
+    const defaultWorkstations = [
+      { code: 'WS-SMT', name: 'SMT Assembly', description: 'Surface Mount Technology', processType: 'SMT' as const, orderIndex: 1, isActive: true },
+      { code: 'WS-DIP', name: 'DIP Soldering', description: 'Dual In-line Package Soldering', processType: 'DIP' as const, orderIndex: 2, isActive: true },
+      { code: 'WS-AOI', name: 'AOI Inspection', description: 'Automated Optical Inspection', processType: 'TESTING' as const, orderIndex: 3, isActive: true },
+      { code: 'WS-FCT', name: 'Functional Test', description: 'Functional Circuit Testing', processType: 'TESTING' as const, orderIndex: 4, isActive: true },
+      { code: 'WS-PKG', name: 'Packaging', description: 'Final Packaging', processType: 'PACKAGING' as const, orderIndex: 5, isActive: true },
+    ];
+
+    for (const ws of defaultWorkstations) {
+      await db.insert(workstations).values(ws);
+    }
+    console.log(`Created ${defaultWorkstations.length} default workstations`);
+  }
+
+  // Step 2: Get all workstations
+  const allWorkstations = await db.select().from(workstations).where(eq(workstations.isActive, true));
+  if (allWorkstations.length === 0) {
+    throw new Error("No active workstations found");
+  }
+
+  // Step 3: Get all machines
+  const allMachines = await db.select().from(machines).where(eq(machines.isActive, true));
+  if (allMachines.length === 0) {
+    throw new Error("No machines found. Please seed sample data first.");
+  }
+
+  // Step 4: Get product model with measurement points
+  const productModel = await db.select().from(productModels).limit(1);
+  if (productModel.length === 0) {
+    throw new Error("No product model found. Please seed sample data first.");
+  }
+  const productModelId = productModel[0].id;
+
+  // Step 5: Get measurement points and assign workstations if not assigned
+  let measurementPoints = await db.select().from(measurementPointDefs)
+    .where(eq(measurementPointDefs.productModelId, productModelId));
+
+  if (measurementPoints.length === 0) {
+    throw new Error("No measurement points found. Please create measurement points first.");
+  }
+
+  // Assign workstations to measurement points if not already assigned
+  let assignedCount = 0;
+  for (let i = 0; i < measurementPoints.length; i++) {
+    const point = measurementPoints[i];
+    if (!point.workstationId) {
+      const workstation = allWorkstations[i % allWorkstations.length];
+      await db.update(measurementPointDefs)
+        .set({ workstationId: workstation.id })
+        .where(eq(measurementPointDefs.id, point.id));
+      assignedCount++;
+    }
+  }
+  if (assignedCount > 0) {
+    console.log(`Assigned workstations to ${assignedCount} measurement points`);
+    // Refresh measurement points
+    measurementPoints = await db.select().from(measurementPointDefs)
+      .where(eq(measurementPointDefs.productModelId, productModelId));
+  }
+
+  // Step 6: Generate inspection data
+  const results: string[] = ['OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'NG', 'NG', 'NTF']; // 70% OK, 20% NG, 10% NTF
+  const ngReasons = [
+    'Scratch detected', 
+    'Dimension out of spec', 
+    'Position shifted', 
+    'Color mismatch', 
+    'Surface defect',
+    'Solder bridge',
+    'Missing component',
+    'Wrong polarity',
+    'Cold solder joint',
+    'Tombstone effect'
+  ];
+  
+  let createdInspections = 0;
+  let createdResults = 0;
+  const now = new Date();
+
+  for (let i = 0; i < inspectionCount; i++) {
+    // Random machine
+    const machine = allMachines[Math.floor(Math.random() * allMachines.length)];
+    
+    // Random date within last N days
+    const inspectionDate = new Date(now.getTime() - Math.random() * daysBack * 24 * 60 * 60 * 1000);
+    
+    // Generate serial number
+    const serialNumber = `SN-WS-${inspectionDate.toISOString().slice(0, 10).replace(/-/g, '')}-${String(i + 1).padStart(5, '0')}`;
+    
+    // Determine overall result
+    const overallResult = results[Math.floor(Math.random() * results.length)] as 'OK' | 'NG' | 'NTF';
+    
+    // Create inspection record
+    const inspectionResult = await db.insert(productInspections).values({
+      machineId: machine.id,
+      productModelId: productModelId,
+      serialNumber,
+      productModel: productModel[0].code,
+      batchNumber: `BATCH-WS-${inspectionDate.toISOString().slice(0, 7).replace(/-/g, '')}`,
+      overallResult,
+      originalResult: overallResult === 'NTF' ? 'NG' : overallResult,
+      inspectionTime: inspectionDate,
+      cycleTime: String((Math.random() * 5 + 1).toFixed(2)),
+    });
+    const inspectionId = inspectionResult[0].insertId;
+    createdInspections++;
+
+    // Create measurement results for each point
+    for (const point of measurementPoints) {
+      // If overall is NG/NTF, make some points NG based on workstation
+      let pointResult: 'OK' | 'NG' | 'NTF' = 'OK';
+      
+      if (overallResult === 'NG' || overallResult === 'NTF') {
+        // Higher chance of NG for certain workstations (simulate real-world patterns)
+        const workstation = allWorkstations.find(ws => ws.id === point.workstationId);
+        let ngProbability = 0.15; // default 15%
+        
+        if (workstation) {
+          // SMT and DIP have higher defect rates
+          if (workstation.code === 'WS-SMT') ngProbability = 0.25;
+          else if (workstation.code === 'WS-DIP') ngProbability = 0.20;
+          else if (workstation.code === 'WS-AOI') ngProbability = 0.10;
+        }
+        
+        if (Math.random() < ngProbability) {
+          pointResult = overallResult === 'NTF' ? 'NTF' : 'NG';
+        }
+      }
+
+      await db.insert(measurementResults).values({
+        inspectionId,
+        pointDefId: point.id,
+        result: pointResult,
+        measuredValue: pointResult === 'OK' 
+          ? (Math.random() * 0.1 + 0.95).toFixed(3) 
+          : (Math.random() * 0.2 + 0.7).toFixed(3),
+        remark: pointResult === 'NG' || pointResult === 'NTF' 
+          ? ngReasons[Math.floor(Math.random() * ngReasons.length)] 
+          : null,
+      });
+      createdResults++;
+    }
+  }
+
+  return {
+    message: `Created ${createdInspections} inspection records with ${createdResults} measurement results`,
+    inspections: createdInspections,
+    measurementResults: createdResults,
+    workstationsUsed: allWorkstations.length,
+    measurementPointsPerInspection: measurementPoints.length,
+  };
+}

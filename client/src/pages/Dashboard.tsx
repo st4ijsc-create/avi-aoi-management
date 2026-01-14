@@ -44,6 +44,8 @@ import {
   Factory
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
+import { EmptyState, NoWorkstationData } from "@/components/EmptyState";
+import { ChartErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 import { Link } from "wouter";
@@ -1018,6 +1020,7 @@ export default function Dashboard() {
             <CardDescription>FPY, FY, NTFY và Output theo từng giờ</CardDescription>
           </CardHeader>
           <CardContent>
+            <ChartErrorBoundary>
             <div className="h-[300px]">
               {hourlyStats && hourlyStats.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
@@ -1100,6 +1103,7 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
+            </ChartErrorBoundary>
           </CardContent>
         </Card>
 
@@ -1112,6 +1116,7 @@ export default function Dashboard() {
               <CardDescription>Tỷ lệ OK/NG/NTF tổng hợp</CardDescription>
             </CardHeader>
             <CardContent>
+              <ChartErrorBoundary>
               <div className="h-[200px]">
                 {pieData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
@@ -1139,6 +1144,7 @@ export default function Dashboard() {
                   </div>
                 )}
               </div>
+              </ChartErrorBoundary>
             </CardContent>
           </Card>
 
@@ -1149,6 +1155,7 @@ export default function Dashboard() {
               <CardDescription>10 máy có output cao nhất</CardDescription>
             </CardHeader>
             <CardContent>
+              <ChartErrorBoundary>
               <div className="h-[200px]">
                 {machinesStats && (machinesStats as any[]).length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
@@ -1178,6 +1185,7 @@ export default function Dashboard() {
                   </div>
                 )}
               </div>
+              </ChartErrorBoundary>
             </CardContent>
           </Card>
 
@@ -1224,7 +1232,12 @@ export default function Dashboard() {
                       );
                     })
                 ) : (
-                  <p className="text-sm text-muted-foreground text-center py-4">Chưa có dữ liệu</p>
+                  <EmptyState
+                    variant="no-analytics"
+                    title="Chưa có dữ liệu công trạm"
+                    description="Dữ liệu sẽ hiển thị khi có kết quả kiểm tra từ các điểm đo."
+                    compact
+                  />
                 )}
               </div>
             </CardContent>

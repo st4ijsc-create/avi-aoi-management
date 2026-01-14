@@ -822,3 +822,22 @@
 - [x] Validate giới hạn dưới < giới hạn trên
 - [x] Validate required fields (code, name, type)
 - [x] Hiển thị validation errors inline
+
+
+## Phase 61: Empty State UI, Data Seeding Script & Error Boundary
+
+### Empty State UI
+- [x] Tạo EmptyState component với icon, title, description và optional action button
+- [x] Tích hợp EmptyState vào tab Công trạm trong History khi không có dữ liệu
+- [x] Tích hợp EmptyState vào Dashboard widgets khi không có dữ liệu
+- [x] Tích hợp EmptyState vào ProductModels page khi không có measurement points
+
+### Data Seeding Script
+- [x] Tạo script seed workstations với dữ liệu mẫu
+- [x] Tạo script seed measurement_results với dữ liệu mẫu cho analytics
+- [ ] Thêm nút "Seed Sample Data" trong Settings page
+- [ ] Viết unit tests cho seeding functions### Error Boundary
+- [x] Tạo ErrorBoundary component với fallback UI (các variants: default, compact, inline, fullscreen)
+- [x] Wrap các component analytics (charts, tables) trong ErrorBoundary
+- [ ] Test error boundary bằng cách throw error trong componentog errors để debug
+

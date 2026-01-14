@@ -46,6 +46,8 @@ import {
   Factory
 } from "lucide-react";
 import BarcodeScanner from "@/components/BarcodeScanner";
+import { EmptyState, NoWorkstationData, NoChartData } from "@/components/EmptyState";
+import { ChartErrorBoundary, TableErrorBoundary, AnalyticsErrorBoundary } from "@/components/ErrorBoundary";
 import { toast } from "sonner";
 import { navItems } from "@/lib/navigation";
 import { useState, useMemo } from "react";
@@ -1538,7 +1540,7 @@ export default function History() {
                           );
                         })
                       ) : (
-                        <div className="col-span-full text-center text-muted-foreground">Không có dữ liệu</div>
+                        <div className="col-span-full"><NoWorkstationData /></div>
                       )}
                     </div>
                   </div>
@@ -1551,6 +1553,7 @@ export default function History() {
                   <CardTitle className="text-lg">Lỗi theo Công trạm</CardTitle>
                 </CardHeader>
                 <CardContent>
+                  <ChartErrorBoundary>
                   <div className="h-80 w-full">
                     {workstationData && workstationData.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
@@ -1578,11 +1581,10 @@ export default function History() {
                         </BarChart>
                       </ResponsiveContainer>
                     ) : (
-                      <div className="flex items-center justify-center h-full text-muted-foreground">
-                        Không có dữ liệu
-                      </div>
+                      <NoChartData />
                     )}
                   </div>
+                  </ChartErrorBoundary>
                 </CardContent>
               </Card>
 
@@ -1619,7 +1621,12 @@ export default function History() {
                         </div>
                       ))
                     ) : (
-                      <p className="text-sm text-muted-foreground text-center py-4">Không có dữ liệu</p>
+                      <EmptyState
+                        variant="no-analytics"
+                        title="Chưa có dữ liệu điểm đo"
+                        description="Dữ liệu sẽ hiển thị khi có kết quả kiểm tra từ các điểm đo."
+                        compact
+                      />
                     )}
                   </div>
                 </CardContent>
@@ -1674,7 +1681,14 @@ export default function History() {
                           })
                         ) : (
                           <tr>
-                            <td colSpan={7} className="py-4 text-center text-muted-foreground">Không có dữ liệu</td>
+                            <td colSpan={7}>
+                              <EmptyState
+                                variant="no-data"
+                                title="Chưa có dữ liệu công trạm"
+                                description="Dữ liệu sẽ hiển thị khi có kết quả kiểm tra từ các điểm đo được gán công trạm."
+                                compact
+                              />
+                            </td>
                           </tr>
                         )}
                       </tbody>

@@ -1231,6 +1231,15 @@ const seedDataRouter = router({
     .mutation(async ({ input }) => {
       return db.seedInspectionData(input.count);
     }),
+
+  seedWorkstationAnalytics: adminProcedure
+    .input(z.object({ 
+      inspectionCount: z.number().min(1).max(1000).default(500),
+      daysBack: z.number().min(1).max(30).default(7)
+    }))
+    .mutation(async ({ input }) => {
+      return db.seedWorkstationAnalyticsData(input);
+    }),
 });
 
 // ============ MACHINE API ROUTER (for external machine integration) ============
