@@ -663,3 +663,9 @@
 - [x] Lưu vị trí máy trong Layout page vào database (layoutPositionX, layoutPositionY)
 - [x] Cho phép drag & drop máy trong Layout và persist vị trí
 - [x] Mini-map góc màn hình khi ở chế độ fullscreen (viewport indicator)
+
+
+## Phase 43: Mini-map Navigate, Undo/Redo, Snap-to-grid
+- [x] Click mini-map để di chuyển viewport đến vị trí tương ứng
+- [x] Undo/Redo cho Layout khi sắp xếp lại vị trí máy (nút Undo2/Redo2 trên toolbar)
+- [x] Snap-to-grid tự động căn chỉnh máy vào lưới 50px khi kéo thả (nút Grid3X3 toggle)

@@ -26,7 +26,10 @@ import {
   Trash2,
   Settings2,
   Box,
-  Layers
+  Layers,
+  Undo2,
+  Redo2,
+  Grid3X3
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import React, { useState, useMemo, useRef, useEffect } from "react";
@@ -74,6 +77,49 @@ export default function Layout() {
   const [draggedMachineId, setDraggedMachineId] = useState<number | null>(null);
   const [machinePositions, setMachinePositions] = useState<Record<number, { x: number; y: number }>>({}); 
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  
+  // Undo/Redo state
+  const [positionHistory, setPositionHistory] = useState<Record<number, { x: number; y: number }>[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [snapToGrid, setSnapToGrid] = useState(true);
+  const GRID_SIZE = 50; // Grid size in pixels
+  
+  // Save position to history
+  const saveToHistory = (newPositions: Record<number, { x: number; y: number }>) => {
+    const newHistory = positionHistory.slice(0, historyIndex + 1);
+    newHistory.push({ ...newPositions });
+    setPositionHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+  };
+  
+  // Undo function
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      const newIndex = historyIndex - 1;
+      setHistoryIndex(newIndex);
+      setMachinePositions(positionHistory[newIndex]);
+      toast.info("Hoàn tác thành công");
+    }
+  };
+  
+  // Redo function
+  const handleRedo = () => {
+    if (historyIndex < positionHistory.length - 1) {
+      const newIndex = historyIndex + 1;
+      setHistoryIndex(newIndex);
+      setMachinePositions(positionHistory[newIndex]);
+      toast.info("Làm lại thành công");
+    }
+  };
+  
+  // Snap position to grid
+  const snapPosition = (x: number, y: number) => {
+    if (!snapToGrid) return { x, y };
+    return {
+      x: Math.round(x / GRID_SIZE) * GRID_SIZE,
+      y: Math.round(y / GRID_SIZE) * GRID_SIZE,
+    };
+  };
 
   const { data: workshops } = trpc.workshop.list.useQuery();
   const { data: layouts, refetch: refetchLayouts } = trpc.layout.listByWorkshop.useQuery(
@@ -144,9 +190,12 @@ export default function Layout() {
     const clampedX = Math.max(0, Math.min(rect.width / zoom - 150, newX));
     const clampedY = Math.max(0, Math.min(rect.height / zoom - 100, newY));
     
+    // Apply snap to grid
+    const snappedPos = snapPosition(clampedX, clampedY);
+    
     setMachinePositions(prev => ({
       ...prev,
-      [draggedMachineId]: { x: clampedX, y: clampedY }
+      [draggedMachineId]: snappedPos
     }));
   };
 
@@ -164,6 +213,9 @@ export default function Layout() {
           layoutPositionX: Math.max(0, Math.min(1, normalizedX)),
           layoutPositionY: Math.max(0, Math.min(1, normalizedY)),
         });
+        
+        // Save to history for undo/redo
+        saveToHistory({ ...machinePositions });
       }
     }
     setIsDraggingMachine(false);
@@ -404,6 +456,41 @@ export default function Layout() {
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
+                      {/* Undo/Redo buttons */}
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        onClick={handleUndo}
+                        disabled={historyIndex <= 0}
+                        title="Hoàn tác (Ctrl+Z)"
+                      >
+                        <Undo2 className="h-4 w-4" />
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        onClick={handleRedo}
+                        disabled={historyIndex >= positionHistory.length - 1}
+                        title="Làm lại (Ctrl+Y)"
+                      >
+                        <Redo2 className="h-4 w-4" />
+                      </Button>
+                      
+                      <div className="w-px h-6 bg-border mx-1" />
+                      
+                      {/* Snap to grid toggle */}
+                      <Button 
+                        variant={snapToGrid ? "default" : "outline"} 
+                        size="icon" 
+                        onClick={() => setSnapToGrid(!snapToGrid)}
+                        title={snapToGrid ? "Tắt căn lưới" : "Bật căn lưới"}
+                      >
+                        <Grid3X3 className="h-4 w-4" />
+                      </Button>
+                      
+                      <div className="w-px h-6 bg-border mx-1" />
+                      
+                      {/* Zoom controls */}
                       <Button variant="outline" size="icon" onClick={handleZoomOut}>
                         <ZoomOut className="h-4 w-4" />
                       </Button>
@@ -448,13 +535,16 @@ export default function Layout() {
                   >
                     {/* Grid background */}
                     <div 
-                      className="absolute inset-0"
+                      className="absolute inset-0 transition-opacity duration-200"
                       style={{
-                        backgroundImage: `
-                          linear-gradient(to right, oklch(0.28 0.02 260 / 0.3) 1px, transparent 1px),
-                          linear-gradient(to bottom, oklch(0.28 0.02 260 / 0.3) 1px, transparent 1px)
+                        backgroundImage: snapToGrid ? `
+                          linear-gradient(to right, oklch(0.28 0.02 260 / 0.5) 1px, transparent 1px),
+                          linear-gradient(to bottom, oklch(0.28 0.02 260 / 0.5) 1px, transparent 1px)
+                        ` : `
+                          linear-gradient(to right, oklch(0.28 0.02 260 / 0.2) 1px, transparent 1px),
+                          linear-gradient(to bottom, oklch(0.28 0.02 260 / 0.2) 1px, transparent 1px)
                         `,
-                        backgroundSize: `${50 * zoom}px ${50 * zoom}px`,
+                        backgroundSize: `${GRID_SIZE * zoom}px ${GRID_SIZE * zoom}px`,
                         transform: `translate(${pan.x}px, ${pan.y}px)`,
                       }}
                     />
@@ -538,7 +628,18 @@ export default function Layout() {
                     {isFullscreen && machinesWithStats.length > 0 && (
                       <div className="absolute bottom-4 right-4 w-48 h-32 bg-card/90 backdrop-blur border border-border/50 rounded-lg overflow-hidden shadow-lg">
                         <div className="absolute inset-0 p-2">
-                          <div className="relative w-full h-full bg-secondary/30 rounded">
+                          <div 
+                            className="relative w-full h-full bg-secondary/30 rounded cursor-pointer hover:bg-secondary/40 transition-colors"
+                            onClick={(e) => {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              const clickX = (e.clientX - rect.left) / rect.width;
+                              const clickY = (e.clientY - rect.top) / rect.height;
+                              // Convert mini-map click to viewport pan position
+                              const newPanX = -(clickX * 1200 * zoom - (containerRef.current?.clientWidth || 800) / 2);
+                              const newPanY = -(clickY * 600 * zoom - (containerRef.current?.clientHeight || 600) / 2);
+                              setPan({ x: newPanX, y: newPanY });
+                            }}
+                          >
                             {/* Mini machines */}
                             {machinesWithStats.map((machine) => {
                               const customPos = machinePositions[machine.id];
@@ -550,7 +651,7 @@ export default function Layout() {
                               return (
                                 <div
                                   key={machine.id}
-                                  className="absolute w-2 h-2 bg-primary rounded-sm"
+                                  className="absolute w-2 h-2 bg-primary rounded-sm pointer-events-none"
                                   style={{
                                     left: `${Math.min(95, Math.max(0, miniX))}%`,
                                     top: `${Math.min(90, Math.max(0, miniY))}%`,
@@ -561,7 +662,7 @@ export default function Layout() {
                             })}
                             {/* Viewport indicator */}
                             <div
-                              className="absolute border-2 border-primary/50 rounded bg-primary/10"
+                              className="absolute border-2 border-primary/50 rounded bg-primary/10 pointer-events-none transition-all duration-200"
                               style={{
                                 left: `${Math.max(0, -pan.x / (1200 * zoom) * 100)}%`,
                                 top: `${Math.max(0, -pan.y / (600 * zoom) * 100)}%`,
@@ -572,7 +673,7 @@ export default function Layout() {
                           </div>
                         </div>
                         <div className="absolute top-1 left-2 text-[10px] text-muted-foreground font-medium">
-                          Mini-map
+                          Mini-map (click to navigate)
                         </div>
                       </div>
                     )}
