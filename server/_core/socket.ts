@@ -288,6 +288,122 @@ export function getIO(): Server | null {
   return io;
 }
 
+// Test manual connection to a machine via IP:Port
+export async function testManualConnection(
+  ipAddress: string,
+  port: number,
+  protocol: 'websocket' | 'tcp' | 'http',
+  timeoutMs: number = 5000
+): Promise<{ success: boolean; message: string; latencyMs?: number }> {
+  const startTime = Date.now();
+  
+  try {
+    if (protocol === 'http') {
+      // Test HTTP connection
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      
+      try {
+        const response = await fetch(`http://${ipAddress}:${port}/health`, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        
+        const latencyMs = Date.now() - startTime;
+        if (response.ok) {
+          return { success: true, message: 'Kết nối HTTP thành công', latencyMs };
+        } else {
+          return { success: false, message: `HTTP response: ${response.status} ${response.statusText}` };
+        }
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          return { success: false, message: 'Kết nối HTTP timeout' };
+        }
+        throw fetchError;
+      }
+    } else if (protocol === 'tcp') {
+      // Test TCP connection using net module
+      const net = await import('net');
+      
+      return new Promise((resolve) => {
+        const socket = new net.Socket();
+        let resolved = false;
+        
+        socket.setTimeout(timeoutMs);
+        
+        socket.on('connect', () => {
+          if (!resolved) {
+            resolved = true;
+            const latencyMs = Date.now() - startTime;
+            socket.destroy();
+            resolve({ success: true, message: 'Kết nối TCP thành công', latencyMs });
+          }
+        });
+        
+        socket.on('timeout', () => {
+          if (!resolved) {
+            resolved = true;
+            socket.destroy();
+            resolve({ success: false, message: 'Kết nối TCP timeout' });
+          }
+        });
+        
+        socket.on('error', (err: Error) => {
+          if (!resolved) {
+            resolved = true;
+            socket.destroy();
+            resolve({ success: false, message: `Lỗi TCP: ${err.message}` });
+          }
+        });
+        
+        socket.connect(port, ipAddress);
+      });
+    } else {
+      // Test WebSocket connection
+      const WebSocket = (await import('ws')).default;
+      
+      return new Promise((resolve) => {
+        const wsUrl = `ws://${ipAddress}:${port}`;
+        let resolved = false;
+        
+        const ws = new WebSocket(wsUrl, {
+          handshakeTimeout: timeoutMs,
+        });
+        
+        const timeout = setTimeout(() => {
+          if (!resolved) {
+            resolved = true;
+            ws.terminate();
+            resolve({ success: false, message: 'Kết nối WebSocket timeout' });
+          }
+        }, timeoutMs);
+        
+        ws.on('open', () => {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timeout);
+            const latencyMs = Date.now() - startTime;
+            ws.close();
+            resolve({ success: true, message: 'Kết nối WebSocket thành công', latencyMs });
+          }
+        });
+        
+        ws.on('error', (err: Error) => {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timeout);
+            resolve({ success: false, message: `Lỗi WebSocket: ${err.message}` });
+          }
+        });
+      });
+    }
+  } catch (error: any) {
+    return { success: false, message: `Lỗi kết nối: ${error.message}` };
+  }
+}
+
 // Emit inspection alert to all connected clients
 export function emitInspectionAlert(alert: InspectionAlert): void {
   if (!io) {

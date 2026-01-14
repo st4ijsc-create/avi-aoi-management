@@ -675,3 +675,12 @@
 - [x] Bỏ input upload trong 'Ảnh mẫu điểm đo', giữ chọn Upload/Auto-crop ở dưới (UI đã đúng)
 - [x] Module Báo cáo: Export PDF, Excel, CSV cho tất cả tabs và biểu đồ
 - [x] Mapping Manual trong Settings: CRUD mapping máy qua IP:Port socket
+
+
+## Phase 45: Manual Mapping Integration, API Docs, History Module Enhancement
+- [x] Tích hợp Manual Mapping với socket server thực (test connection thực tế)
+- [x] Cập nhật API Docs với cấu trúc định nghĩa đăng ký kết nối đến máy chủ Mapping
+- [x] Module Lịch Sử: Thêm bộ lọc theo mã sản phẩm
+- [x] Module Lịch Sử: Thêm heatmap chart trong tab SPC
+- [x] Tạo seed data 5 ngày x 100 records cho database (500 records)
+- [x] Thêm tab thống kê FPY/FY/NTFY/UPH với giao diện theo ảnh mẫu

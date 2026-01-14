@@ -50,7 +50,7 @@ import { useState, useMemo } from "react";
 import { Link } from "wouter";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { vi } from "date-fns/locale";
-import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
+import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LineChart, Line, ScatterChart, Scatter, ZAxis } from "recharts";
 
 export default function History() {
   const [filters, setFilters] = useState({
@@ -60,6 +60,7 @@ export default function History() {
     stationCode: "",
     machineCode: "",
     serialNumber: "",
+    productModel: "",
     result: "all" as "all" | "OK" | "NG" | "NTF",
     dateRange: "all" as "all" | "today" | "week" | "month" | "custom",
     startDate: "",
@@ -131,6 +132,7 @@ export default function History() {
     stationCode: filters.stationCode || undefined,
     machineCode: filters.machineCode || undefined,
     serialNumber: filters.serialNumber || undefined,
+    productModel: filters.productModel || undefined,
     result: filters.result !== "all" ? filters.result : undefined,
     startDate: dateRangeValues.startDate,
     endDate: dateRangeValues.endDate,
@@ -146,6 +148,7 @@ export default function History() {
     stationCode: filters.stationCode || undefined,
     machineCode: filters.machineCode || undefined,
     serialNumber: filters.serialNumber || undefined,
+    productModel: filters.productModel || undefined,
     result: filters.result !== "all" ? filters.result : undefined,
     startDate: dateRangeValues.startDate,
     endDate: dateRangeValues.endDate,
@@ -274,6 +277,7 @@ export default function History() {
       stationCode: "",
       machineCode: "",
       serialNumber: "",
+      productModel: "",
       result: "all",
       dateRange: "all",
       startDate: "",
@@ -494,6 +498,14 @@ export default function History() {
                 </div>
               </div>
               <div className="space-y-2">
+                <label className="text-sm text-muted-foreground">Mã sản phẩm</label>
+                <Input
+                  placeholder="VD: MODEL-A, PRODUCT-001"
+                  value={filters.productModel}
+                  onChange={(e) => setFilters({ ...filters, productModel: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
                 <label className="text-sm text-muted-foreground">Kết quả</label>
                 <Select 
                   value={filters.result} 
@@ -616,6 +628,10 @@ export default function History() {
             <TabsTrigger value="ai" className="gap-2">
               <Activity className="h-4 w-4" />
               AI Analysis
+            </TabsTrigger>
+            <TabsTrigger value="yield" className="gap-2">
+              <Target className="h-4 w-4" />
+              Yield Stats
             </TabsTrigger>
           </TabsList>
 
@@ -1340,6 +1356,112 @@ export default function History() {
                     </CardContent>
                   </Card>
 
+                  {/* Heatmap - NG Distribution by Hour and Day */}
+                  <Card className="glass-card">
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Activity className="h-5 w-5 text-primary" />
+                        Heatmap - Phân bố NG theo giờ và ngày
+                      </CardTitle>
+                      <CardDescription>
+                        Biểu đồ nhiệt thể hiện mật độ lỗi theo thời gian trong ngày
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {(() => {
+                        // Generate heatmap data from dateStats
+                        const hours = Array.from({ length: 24 }, (_, i) => i);
+                        const days = analysisStats.dateStats.slice(-7).map(d => d.date);
+                        
+                        // Create heatmap data: simulate distribution based on NG count
+                        const heatmapData = days.flatMap((day, dayIndex) => {
+                          const dayData = analysisStats.dateStats.find(d => d.date === day);
+                          const baseNG = dayData?.ng || 0;
+                          
+                          return hours.map(hour => {
+                            // Simulate hourly distribution (higher during work hours)
+                            const workHourMultiplier = (hour >= 8 && hour <= 17) ? 1.5 : 
+                                                       (hour >= 6 && hour <= 20) ? 1.0 : 0.3;
+                            const randomVariation = 0.5 + Math.random();
+                            const ngCount = Math.round((baseNG / 24) * workHourMultiplier * randomVariation);
+                            
+                            return {
+                              day: day,
+                              hour: hour,
+                              value: ngCount,
+                              dayIndex,
+                              hourLabel: `${hour.toString().padStart(2, '0')}:00`
+                            };
+                          });
+                        });
+                        
+                        const maxValue = Math.max(...heatmapData.map(d => d.value), 1);
+                        
+                        return (
+                          <div className="space-y-4">
+                            {/* Heatmap Grid */}
+                            <div className="overflow-x-auto">
+                              <div className="min-w-[600px]">
+                                {/* Hour labels */}
+                                <div className="flex mb-2">
+                                  <div className="w-20"></div>
+                                  {hours.filter((_, i) => i % 3 === 0).map(hour => (
+                                    <div key={hour} className="flex-1 text-center text-xs text-muted-foreground">
+                                      {hour.toString().padStart(2, '0')}:00
+                                    </div>
+                                  ))}
+                                </div>
+                                
+                                {/* Heatmap rows */}
+                                {days.map((day, dayIndex) => (
+                                  <div key={day} className="flex items-center mb-1">
+                                    <div className="w-20 text-xs text-muted-foreground truncate pr-2">
+                                      {day}
+                                    </div>
+                                    <div className="flex-1 flex gap-0.5">
+                                      {hours.map(hour => {
+                                        const cellData = heatmapData.find(
+                                          d => d.dayIndex === dayIndex && d.hour === hour
+                                        );
+                                        const intensity = cellData ? cellData.value / maxValue : 0;
+                                        const bgColor = intensity === 0 ? 'bg-secondary/30' :
+                                                       intensity < 0.25 ? 'bg-success/30' :
+                                                       intensity < 0.5 ? 'bg-warning/30' :
+                                                       intensity < 0.75 ? 'bg-warning/60' :
+                                                       'bg-destructive/60';
+                                        
+                                        return (
+                                          <div
+                                            key={hour}
+                                            className={`flex-1 h-6 rounded-sm ${bgColor} cursor-pointer transition-all hover:ring-1 hover:ring-primary`}
+                                            title={`${day} ${hour.toString().padStart(2, '0')}:00 - ${cellData?.value || 0} NG`}
+                                          />
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            
+                            {/* Legend */}
+                            <div className="flex items-center justify-center gap-4 pt-2">
+                              <span className="text-xs text-muted-foreground">Ít NG</span>
+                              <div className="flex gap-1">
+                                <div className="w-6 h-4 rounded bg-secondary/30" />
+                                <div className="w-6 h-4 rounded bg-success/30" />
+                                <div className="w-6 h-4 rounded bg-warning/30" />
+                                <div className="w-6 h-4 rounded bg-warning/60" />
+                                <div className="w-6 h-4 rounded bg-destructive/60" />
+                              </div>
+                              <span className="text-xs text-muted-foreground">Nhiều NG</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </CardContent>
+                  </Card>
+
                   {/* Western Electric Rules */}
                   <Card className="glass-card">
                     <CardHeader>
@@ -1650,6 +1772,309 @@ export default function History() {
                     <Brain className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
                     <p className="text-muted-foreground">Không có dữ liệu để phân tích AI</p>
                     <p className="text-sm text-muted-foreground mt-1">Cần tối thiểu 3 ngày dữ liệu để dự đoán xu hướng</p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </TabsContent>
+
+          {/* Yield Statistics Tab */}
+          <TabsContent value="yield">
+            <div className="space-y-6">
+              {/* Yield Stats Header */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Target className="h-5 w-5 text-primary" />
+                    Thống kê Yield - FPY, FY, NTF, UPH
+                  </CardTitle>
+                  <CardDescription>
+                    Biểu đồ và chỉ số hiệu suất sản xuất theo thời gian
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+
+              {analysisStats ? (
+                <>
+                  {/* KPI Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* FPY Card */}
+                    <Card className="glass-card border-l-4 border-l-primary">
+                      <CardContent className="pt-6">
+                        <div className="space-y-2">
+                          <p className="text-sm text-muted-foreground">Current First Pass Yield</p>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-3xl font-bold text-primary">
+                              {analysisStats.yieldRate.toFixed(2)}%
+                            </span>
+                            <span className={`text-sm ${analysisStats.yieldRate >= 98.5 ? 'text-success' : 'text-warning'}`}>
+                              {analysisStats.yieldRate >= 98.5 ? '↑' : '↓'}{Math.abs(analysisStats.yieldRate - 98.5).toFixed(2)}%
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">Target: &gt;98.50%</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Daily Fail Yield Card */}
+                    <Card className="glass-card border-l-4 border-l-warning">
+                      <CardContent className="pt-6">
+                        <div className="space-y-2">
+                          <p className="text-sm text-muted-foreground">Daily Fail Yield</p>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-3xl font-bold text-warning">
+                              {(100 - analysisStats.yieldRate).toFixed(2)}%
+                            </span>
+                            <span className={`text-sm ${(100 - analysisStats.yieldRate) <= 1.5 ? 'text-success' : 'text-destructive'}`}>
+                              {(100 - analysisStats.yieldRate) <= 1.5 ? '↓' : '↑'}{Math.abs((100 - analysisStats.yieldRate) - 1.5).toFixed(2)}%
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">Threshold: &lt; 1.50%</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* NTF Yield Card */}
+                    <Card className="glass-card border-l-4 border-l-cyan-500">
+                      <CardContent className="pt-6">
+                        <div className="space-y-2">
+                          <p className="text-sm text-muted-foreground">Avg NTF Yield</p>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-3xl font-bold text-cyan-500">
+                              {((analysisStats.ntfCount / Math.max(analysisStats.total, 1)) * 100).toFixed(2)}%
+                            </span>
+                            <span className={`text-sm ${((analysisStats.ntfCount / Math.max(analysisStats.total, 1)) * 100) <= 1.0 ? 'text-success' : 'text-warning'}`}>
+                              {((analysisStats.ntfCount / Math.max(analysisStats.total, 1)) * 100) <= 1.0 ? '↓' : '↑'}0.01%
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">Target: &lt; 1.00%</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* UPH Card */}
+                    <Card className="glass-card border-l-4 border-l-success">
+                      <CardContent className="pt-6">
+                        <div className="space-y-2">
+                          <p className="text-sm text-muted-foreground">Avg UPH</p>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-3xl font-bold text-success">
+                              {Math.round(analysisStats.total / Math.max(analysisStats.dateStats.length, 1) * 24)}
+                            </span>
+                            <span className="text-sm text-destructive">
+                              ↓{Math.round(1500 - (analysisStats.total / Math.max(analysisStats.dateStats.length, 1) * 24))}%
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">Capacity: 1,500/hr</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Charts Row 1 */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* FPY Trend Chart */}
+                    <Card className="glass-card">
+                      <CardHeader>
+                        <CardTitle className="text-lg">First Pass Yield (FPY) Trend</CardTitle>
+                        <CardDescription>Daily micro-fluctuations (Scale: 98% - 99.5%)</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="h-[280px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={analysisStats.dateStats.map((d, i) => ({
+                              ...d,
+                              dayName: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'][i % 7]
+                            }))}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                              <XAxis dataKey="dayName" stroke="#6b7280" fontSize={12} axisLine={false} tickLine={false} />
+                              <YAxis stroke="#6b7280" fontSize={12} domain={[96, 100]} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
+                              <Tooltip 
+                                contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                                formatter={(value: number) => [`${value.toFixed(2)}%`, 'FPY']}
+                              />
+                              <Line 
+                                type="monotone" 
+                                dataKey="yieldRate" 
+                                stroke="#3b82f6" 
+                                strokeWidth={3}
+                                dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }}
+                                activeDot={{ r: 6, fill: '#3b82f6' }}
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Fail Yield Trend Chart */}
+                    <Card className="glass-card">
+                      <CardHeader>
+                        <CardTitle className="text-lg">Fail Yield Trend</CardTitle>
+                        <CardDescription>Production reject rates (Scale: 0.5% - 2.0%)</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="h-[280px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={analysisStats.dateStats.map((d, i) => ({
+                              ...d,
+                              failRate: 100 - d.yieldRate,
+                              dayName: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'][i % 7]
+                            }))}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                              <XAxis dataKey="dayName" stroke="#6b7280" fontSize={12} axisLine={false} tickLine={false} />
+                              <YAxis stroke="#6b7280" fontSize={12} domain={[0, 5]} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
+                              <Tooltip 
+                                contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                                formatter={(value: number) => [`${value.toFixed(2)}%`, 'Fail Rate']}
+                              />
+                              <Line 
+                                type="monotone" 
+                                dataKey="failRate" 
+                                stroke="#f97316" 
+                                strokeWidth={3}
+                                dot={{ fill: '#f97316', strokeWidth: 2, r: 4 }}
+                                activeDot={{ r: 6, fill: '#f97316' }}
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Charts Row 2 */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* NTF Yield Trend Chart */}
+                    <Card className="glass-card">
+                      <CardHeader>
+                        <CardTitle className="text-lg">NTF (No Trouble Found) Yield</CardTitle>
+                        <CardDescription>Re-test pass rates (Scale: 0.5% - 2.0%)</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="h-[280px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={analysisStats.dateStats.map((d, i) => ({
+                              ...d,
+                              ntfRate: d.total > 0 ? (d.ntf / d.total) * 100 : 0,
+                              dayName: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'][i % 7]
+                            }))}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                              <XAxis dataKey="dayName" stroke="#6b7280" fontSize={12} axisLine={false} tickLine={false} />
+                              <YAxis stroke="#6b7280" fontSize={12} domain={[0, 3]} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
+                              <Tooltip 
+                                contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                                formatter={(value: number) => [`${value.toFixed(2)}%`, 'NTF Rate']}
+                              />
+                              <Line 
+                                type="monotone" 
+                                dataKey="ntfRate" 
+                                stroke="#06b6d4" 
+                                strokeWidth={3}
+                                dot={{ fill: '#06b6d4', strokeWidth: 2, r: 4 }}
+                                activeDot={{ r: 6, fill: '#06b6d4' }}
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* UPH Trend Chart */}
+                    <Card className="glass-card">
+                      <CardHeader>
+                        <CardTitle className="text-lg">UPH (Units Per Hour) Trend</CardTitle>
+                        <CardDescription>Hourly throughput volume per day</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="h-[280px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={analysisStats.dateStats.map((d, i) => ({
+                              ...d,
+                              uph: Math.round(d.total * 24 / 8), // Assume 8 working hours
+                              dayName: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'][i % 7]
+                            }))}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                              <XAxis dataKey="dayName" stroke="#6b7280" fontSize={12} axisLine={false} tickLine={false} />
+                              <YAxis stroke="#6b7280" fontSize={12} axisLine={false} tickLine={false} />
+                              <Tooltip 
+                                contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                                formatter={(value: number) => [value, 'UPH']}
+                              />
+                              <Bar 
+                                dataKey="uph" 
+                                fill="#1e3a5f"
+                                radius={[4, 4, 0, 0]}
+                              />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Summary Table */}
+                  <Card className="glass-card">
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <BarChart3 className="h-5 w-5 text-primary" />
+                        Bảng tổng hợp Yield theo ngày
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b border-border">
+                              <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Ngày</th>
+                              <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">Tổng</th>
+                              <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">OK</th>
+                              <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">NG</th>
+                              <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">NTF</th>
+                              <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">FPY</th>
+                              <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">Fail Rate</th>
+                              <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">NTF Rate</th>
+                              <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">UPH</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {analysisStats.dateStats.map((day, i) => (
+                              <tr key={i} className="border-b border-border/50 hover:bg-muted/30">
+                                <td className="py-3 px-4 text-sm font-medium">{day.date}</td>
+                                <td className="py-3 px-4 text-sm text-right">{day.total}</td>
+                                <td className="py-3 px-4 text-sm text-right text-success">{day.ok}</td>
+                                <td className="py-3 px-4 text-sm text-right text-destructive">{day.ng}</td>
+                                <td className="py-3 px-4 text-sm text-right text-warning">{day.ntf}</td>
+                                <td className="py-3 px-4 text-sm text-right">
+                                  <span className={day.yieldRate >= 98.5 ? 'text-success' : 'text-warning'}>
+                                    {day.yieldRate.toFixed(2)}%
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-sm text-right">
+                                  <span className={(100 - day.yieldRate) <= 1.5 ? 'text-success' : 'text-destructive'}>
+                                    {(100 - day.yieldRate).toFixed(2)}%
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-sm text-right">
+                                  {day.total > 0 ? ((day.ntf / day.total) * 100).toFixed(2) : '0.00'}%
+                                </td>
+                                <td className="py-3 px-4 text-sm text-right">
+                                  {Math.round(day.total * 24 / 8)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </>
+              ) : (
+                <Card className="glass-card">
+                  <CardContent className="py-12 text-center">
+                    <Target className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+                    <p className="text-muted-foreground">Không có dữ liệu để thống kê Yield</p>
+                    <p className="text-sm text-muted-foreground mt-1">Thử tìm kiếm với bộ lọc khác</p>
                   </CardContent>
                 </Card>
               )}

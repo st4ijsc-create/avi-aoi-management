@@ -10,7 +10,8 @@ import {
   Send,
   Upload,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Wifi
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 
@@ -142,14 +143,18 @@ export default function ApiDocs() {
 
         {/* API Endpoints */}
         <Tabs defaultValue="submit">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="submit" className="gap-2">
               <Send className="h-4 w-4" />
-              Gửi kết quả kiểm tra
+              Gửi kết quả
             </TabsTrigger>
             <TabsTrigger value="upload" className="gap-2">
               <Upload className="h-4 w-4" />
               Upload ảnh
+            </TabsTrigger>
+            <TabsTrigger value="websocket" className="gap-2">
+              <Wifi className="h-4 w-4" />
+              WebSocket
             </TabsTrigger>
             <TabsTrigger value="errors" className="gap-2">
               <AlertCircle className="h-4 w-4" />
@@ -370,7 +375,180 @@ export default function ApiDocs() {
             </Card>
           </TabsContent>
 
-          {/* Error Handling */}
+           {/* WebSocket Mapping */}
+          <TabsContent value="websocket">
+            <Card className="glass-card">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <Badge className="bg-primary text-primary-foreground">WebSocket</Badge>
+                  <code className="text-foreground">ws://{'{host}'}/api/socket.io</code>
+                </div>
+                <CardDescription>
+                  Kết nối WebSocket để đăng ký máy và gửi dữ liệu realtime
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div>
+                  <h4 className="font-medium text-foreground mb-3">1. Kết nối WebSocket</h4>
+                  <CodeBlock code={`// Sử dụng Socket.IO client
+import { io } from "socket.io-client";
+
+const socket = io("${baseUrl}", {
+  path: "/api/socket.io",
+  transports: ["websocket", "polling"],
+});
+
+socket.on("connect", () => {
+  console.log("Connected to server");
+});`} language="javascript" />
+                </div>
+
+                <div>
+                  <h4 className="font-medium text-foreground mb-3">2. Đăng ký máy (Tự động)</h4>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Máy gửi yêu cầu đăng ký, Admin phê duyệt trên giao diện Settings {'>'} Machine Mapping
+                  </p>
+                  <CodeBlock code={`// Gửi yêu cầu đăng ký
+socket.emit("machine:register", {
+  code: "AVI001",           // Mã máy (bắt buộc)
+  name: "Máy AVI 001",      // Tên máy (bắt buộc)
+  type: "AVI",              // Loại: "AVI" | "AOI" (bắt buộc)
+  serialNumber: "SN123",    // Số serial (tùy chọn)
+  manufacturer: "ABC Corp", // Nhà sản xuất (tùy chọn)
+  model: "Model X",         // Model (tùy chọn)
+  firmwareVersion: "1.0.0"  // Phiên bản firmware (tùy chọn)
+});
+
+// Nhận xác nhận yêu cầu đã được nhận
+socket.on("machine:register_ack", (data) => {
+  console.log("Registration status:", data.status);
+  // status: "pending" - Đang chờ Admin phê duyệt
+});
+
+// Nhận thông báo được phê duyệt
+socket.on("machine:registration_approved", (data) => {
+  console.log("Approved! Machine ID:", data.machineId);
+  console.log("API Key:", data.apiKey);
+  // Lưu machineId và apiKey để sử dụng
+});
+
+// Nhận thông báo bị từ chối
+socket.on("machine:registration_rejected", (data) => {
+  console.log("Rejected:", data.reason);
+});`} language="javascript" />
+                </div>
+
+                <div>
+                  <h4 className="font-medium text-foreground mb-3">3. Xác nhận kết nối sau khi được phê duyệt</h4>
+                  <CodeBlock code={`// Sau khi được phê duyệt, xác nhận kết nối
+socket.emit("machine:confirm_mapping", {
+  machineId: 123,           // ID máy từ server
+  machineCode: "AVI001",    // Mã máy
+  apiKey: "your-api-key"    // API Key từ server
+});
+
+// Gửi heartbeat định kỳ (đề xuất mỗi 30 giây)
+setInterval(() => {
+  socket.emit("machine:heartbeat", {
+    machineId: 123,
+    status: "running",
+    metrics: {
+      cpuUsage: 45.2,
+      memoryUsage: 60.5,
+      temperature: 42.0
+    }
+  });
+}, 30000);`} language="javascript" />
+                </div>
+
+                <div>
+                  <h4 className="font-medium text-foreground mb-3">4. Kết nối thủ công (Manual Mapping)</h4>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Admin cấu hình kết nối đến máy qua IP:Port trong Settings {'>'} Machine Mapping {'>'} Kết nối thủ công
+                  </p>
+                  <div className="bg-secondary/50 rounded-lg p-4">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="text-left py-2 text-muted-foreground">Trường</th>
+                          <th className="text-left py-2 text-muted-foreground">Kiểu</th>
+                          <th className="text-left py-2 text-muted-foreground">Mô tả</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-foreground">
+                        <tr className="border-b border-border/50">
+                          <td className="py-2"><code>machineId</code></td>
+                          <td className="py-2">number</td>
+                          <td className="py-2 text-muted-foreground">ID máy trong hệ thống</td>
+                        </tr>
+                        <tr className="border-b border-border/50">
+                          <td className="py-2"><code>ipAddress</code></td>
+                          <td className="py-2">string</td>
+                          <td className="py-2 text-muted-foreground">Địa chỉ IP của máy (IPv4/IPv6)</td>
+                        </tr>
+                        <tr className="border-b border-border/50">
+                          <td className="py-2"><code>port</code></td>
+                          <td className="py-2">number</td>
+                          <td className="py-2 text-muted-foreground">Cổng kết nối (mặc định: 8080)</td>
+                        </tr>
+                        <tr className="border-b border-border/50">
+                          <td className="py-2"><code>protocol</code></td>
+                          <td className="py-2">enum</td>
+                          <td className="py-2 text-muted-foreground">"websocket" | "tcp" | "http"</td>
+                        </tr>
+                        <tr className="border-b border-border/50">
+                          <td className="py-2"><code>isEnabled</code></td>
+                          <td className="py-2">boolean</td>
+                          <td className="py-2 text-muted-foreground">Bật/tắt kết nối</td>
+                        </tr>
+                        <tr className="border-b border-border/50">
+                          <td className="py-2"><code>maxRetries</code></td>
+                          <td className="py-2">number</td>
+                          <td className="py-2 text-muted-foreground">Số lần thử lại tối đa</td>
+                        </tr>
+                        <tr>
+                          <td className="py-2"><code>retryIntervalSeconds</code></td>
+                          <td className="py-2">number</td>
+                          <td className="py-2 text-muted-foreground">Khoảng cách giữa các lần thử (giây)</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-medium text-foreground mb-3">5. Yêu cầu máy hỗ trợ (Manual Mapping)</h4>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Để hệ thống kết nối được, máy cần:
+                  </p>
+                  <CodeBlock code={`// 1. Với protocol "http":
+// Máy cần có endpoint GET /health trả về status 200
+GET http://{ip}:{port}/health
+Response: 200 OK
+
+// 2. Với protocol "websocket":
+// Máy cần chấp nhận kết nối WebSocket
+ws://{ip}:{port}
+
+// 3. Với protocol "tcp":
+// Máy cần lắng nghe trên port TCP
+tcp://{ip}:{port}`} language="text" />
+                </div>
+
+                <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
+                  <h4 className="font-medium text-primary mb-2">Lưu ý</h4>
+                  <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
+                    <li>Mỗi máy chỉ có thể có một cấu hình kết nối thủ công</li>
+                    <li>Hệ thống sẽ tự động thử lại kết nối khi mất kết nối</li>
+                    <li>Timeout mặc định cho test kết nối: 5 giây</li>
+                    <li>Nên sử dụng WebSocket để có hiệu suất tốt nhất</li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Errors */}
           <TabsContent value="errors">
             <Card className="glass-card">
               <CardHeader>

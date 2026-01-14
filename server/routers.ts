@@ -635,6 +635,7 @@ const inspectionRouter = router({
       stationCode: z.string().optional(),
       machineCode: z.string().optional(),
       serialNumber: z.string().optional(),
+      productModel: z.string().optional(),
       result: z.enum(["OK", "NG", "NTF"]).optional(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
@@ -2143,23 +2144,26 @@ const manualMappingRouter = router({
       // Update status to pending
       await db.updateManualConnectionStatus(input.id, 'pending');
       
-      // In a real implementation, this would attempt to connect to the machine
-      // For now, we'll simulate a test
+      // Test actual connection using socket module
       try {
-        // Simulate connection test
-        const testResult = await new Promise<boolean>((resolve) => {
-          setTimeout(() => {
-            // Simulate 70% success rate for demo
-            resolve(Math.random() > 0.3);
-          }, 1000);
-        });
+        const { testManualConnection } = await import('./_core/socket');
+        const result = await testManualConnection(
+          connection.ipAddress,
+          connection.port,
+          connection.protocol,
+          5000 // 5 second timeout
+        );
         
-        if (testResult) {
+        if (result.success) {
           await db.updateManualConnectionStatus(input.id, 'connected');
-          return { success: true, message: 'Kết nối thành công' };
+          return { 
+            success: true, 
+            message: result.message,
+            latencyMs: result.latencyMs 
+          };
         } else {
-          await db.updateManualConnectionStatus(input.id, 'error', 'Không thể kết nối đến máy');
-          return { success: false, message: 'Không thể kết nối đến máy' };
+          await db.updateManualConnectionStatus(input.id, 'error', result.message);
+          return { success: false, message: result.message };
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Lỗi không xác định';

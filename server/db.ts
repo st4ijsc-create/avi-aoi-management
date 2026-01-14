@@ -1095,6 +1095,7 @@ export async function searchInspections(params: {
   stationCode?: string;
   machineCode?: string;
   serialNumber?: string;
+  productModel?: string;
   result?: "OK" | "NG" | "NTF";
   startDate?: Date;
   endDate?: Date;
@@ -1180,6 +1181,7 @@ export async function searchInspections(params: {
   }
 
   if (params.serialNumber) conditions.push(like(productInspections.serialNumber, `%${params.serialNumber}%`));
+  if (params.productModel) conditions.push(like(productInspections.productModel, `%${params.productModel}%`));
   if (params.result) conditions.push(eq(productInspections.overallResult, params.result));
   if (params.startDate) conditions.push(gte(productInspections.inspectionTime, params.startDate));
   if (params.endDate) conditions.push(lte(productInspections.inspectionTime, params.endDate));
