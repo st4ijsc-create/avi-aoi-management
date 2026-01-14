@@ -41,6 +41,8 @@ import ManualMachineMapping from "@/components/ManualMachineMapping";
 import YieldThresholdSettings from "@/components/YieldThresholdSettings";
 import { useState } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
+import { ValidationMessage } from "@/components/ValidationMessage";
 
 type Factory = { id: number; code: string; name: string; address?: string | null; description?: string | null };
 type Workshop = { id: number; factoryId: number; code: string; name: string; description?: string | null };
@@ -139,6 +141,44 @@ export default function Settings() {
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
   const [editingAlert, setEditingAlert] = useState<AlertSetting | null>(null);
   const [editAlertDialogOpen, setEditAlertDialogOpen] = useState(false);
+
+  // Shift form validation
+  const shiftValidation = useFormValidation<{
+    code: string;
+    name: string;
+    startHour: string;
+    endHour: string;
+  }>({
+    code: { required: true, minLength: 1, maxLength: 20, pattern: ValidationPatterns.code },
+    name: { required: true, minLength: 2, maxLength: 100 },
+    startHour: { required: true, min: 0, max: 23 },
+    endHour: { required: true, min: 0, max: 23 },
+  });
+
+  // Stage form validation
+  const stageValidation = useFormValidation<{
+    lineId: string;
+    code: string;
+    name: string;
+  }>({
+    lineId: { required: true },
+    code: { required: true, minLength: 1, maxLength: 20, pattern: ValidationPatterns.code },
+    name: { required: true, minLength: 2, maxLength: 100 },
+  });
+
+  // Alert form validation
+  const alertValidation = useFormValidation<{
+    name: string;
+    threshold: string;
+  }>({
+    name: { required: true, minLength: 2, maxLength: 100 },
+    threshold: { required: true, custom: (val) => {
+      if (!val || isNaN(Number(val))) return "Phải là số";
+      const num = Number(val);
+      if (num < 0 || num > 100) return "Giá trị từ 0-100";
+      return null;
+    }},
+  });
 
   // Queries
   const { data: factories, refetch: refetchFactories } = trpc.factory.list.useQuery();
@@ -1259,20 +1299,26 @@ export default function Settings() {
                       <div className="space-y-4 py-4">
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <label className="text-sm font-medium">Mã ca *</label>
+                            <label className="text-sm font-medium">Mã ca <span className="text-destructive">*</span></label>
                             <Input
                               placeholder="VD: SHIFT_1"
                               value={shiftForm.code}
                               onChange={(e) => setShiftForm({ ...shiftForm, code: e.target.value })}
+                              onBlur={() => shiftValidation.handleBlur("code", shiftForm.code)}
+                              className={shiftValidation.hasError("code") ? "border-destructive" : ""}
                             />
+                            <ValidationMessage error={shiftValidation.getFieldError("code")} />
                           </div>
                           <div className="space-y-2">
-                            <label className="text-sm font-medium">Tên ca *</label>
+                            <label className="text-sm font-medium">Tên ca <span className="text-destructive">*</span></label>
                             <Input
                               placeholder="VD: Ca sáng"
                               value={shiftForm.name}
                               onChange={(e) => setShiftForm({ ...shiftForm, name: e.target.value })}
+                              onBlur={() => shiftValidation.handleBlur("name", shiftForm.name)}
+                              className={shiftValidation.hasError("name") ? "border-destructive" : ""}
                             />
+                            <ValidationMessage error={shiftValidation.getFieldError("name")} />
                           </div>
                         </div>
                         <div className="space-y-2">
@@ -1486,24 +1532,42 @@ export default function Settings() {
                         </DialogHeader>
                         <div className="space-y-4 py-4">
                           <div className="space-y-2">
-                            <label className="text-sm font-medium">Dây chuyền *</label>
-                            <Select value={stageForm.lineId} onValueChange={(v) => setStageForm({ ...stageForm, lineId: v })}>
-                              <SelectTrigger><SelectValue placeholder="Chọn dây chuyền" /></SelectTrigger>
+                            <label className="text-sm font-medium">Dây chuyền <span className="text-destructive">*</span></label>
+                            <Select value={stageForm.lineId} onValueChange={(v) => {
+                              setStageForm({ ...stageForm, lineId: v });
+                              stageValidation.validateSingleField("lineId", v);
+                            }}>
+                              <SelectTrigger className={stageValidation.hasError("lineId") ? "border-destructive" : ""}><SelectValue placeholder="Chọn dây chuyền" /></SelectTrigger>
                               <SelectContent>
                                 {lines?.map((line) => (
                                   <SelectItem key={line.id} value={String(line.id)}>{line.name}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
+                            <ValidationMessage error={stageValidation.getFieldError("lineId")} />
                           </div>
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
-                              <label className="text-sm font-medium">Mã công đoạn *</label>
-                              <Input placeholder="VD: A, B, C..." value={stageForm.code} onChange={(e) => setStageForm({ ...stageForm, code: e.target.value })} />
+                              <label className="text-sm font-medium">Mã công đoạn <span className="text-destructive">*</span></label>
+                              <Input 
+                                placeholder="VD: A, B, C..." 
+                                value={stageForm.code} 
+                                onChange={(e) => setStageForm({ ...stageForm, code: e.target.value })}
+                                onBlur={() => stageValidation.handleBlur("code", stageForm.code)}
+                                className={stageValidation.hasError("code") ? "border-destructive" : ""}
+                              />
+                              <ValidationMessage error={stageValidation.getFieldError("code")} />
                             </div>
                             <div className="space-y-2">
-                              <label className="text-sm font-medium">Tên công đoạn *</label>
-                              <Input placeholder="VD: Lắp ráp, Kiểm tra..." value={stageForm.name} onChange={(e) => setStageForm({ ...stageForm, name: e.target.value })} />
+                              <label className="text-sm font-medium">Tên công đoạn <span className="text-destructive">*</span></label>
+                              <Input 
+                                placeholder="VD: Lắp ráp, Kiểm tra..." 
+                                value={stageForm.name} 
+                                onChange={(e) => setStageForm({ ...stageForm, name: e.target.value })}
+                                onBlur={() => stageValidation.handleBlur("name", stageForm.name)}
+                                className={stageValidation.hasError("name") ? "border-destructive" : ""}
+                              />
+                              <ValidationMessage error={stageValidation.getFieldError("name")} />
                             </div>
                           </div>
                           <div className="grid grid-cols-2 gap-4">
@@ -1676,12 +1740,15 @@ export default function Settings() {
                       </DialogHeader>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Tên cảnh báo *</label>
+                          <label className="text-sm font-medium">Tên cảnh báo <span className="text-destructive">*</span></label>
                           <Input
                             placeholder="VD: Cảnh báo FPY thấp"
                             value={alertForm.name}
                             onChange={(e) => setAlertForm({ ...alertForm, name: e.target.value })}
+                            onBlur={() => alertValidation.handleBlur("name", alertForm.name)}
+                            className={alertValidation.hasError("name") ? "border-destructive" : ""}
                           />
+                          <ValidationMessage error={alertValidation.getFieldError("name")} />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
@@ -1716,19 +1783,21 @@ export default function Settings() {
                           </div>
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Ngưỡng cảnh báo *</label>
+                          <label className="text-sm font-medium">Ngưỡng cảnh báo <span className="text-destructive">*</span></label>
                           <div className="flex items-center gap-2">
                             <Input
                               type="number"
                               placeholder="90"
                               value={alertForm.threshold}
                               onChange={(e) => setAlertForm({ ...alertForm, threshold: e.target.value })}
-                              className="flex-1"
+                              onBlur={() => alertValidation.handleBlur("threshold", alertForm.threshold)}
+                              className={`flex-1 ${alertValidation.hasError("threshold") ? "border-destructive" : ""}`}
                             />
                             <span className="text-muted-foreground">
                               {alertForm.alertType === 'yield_rate' ? '%' : alertForm.alertType === 'ng_count' ? 'sản phẩm' : ''}
                             </span>
                           </div>
+                          <ValidationMessage error={alertValidation.getFieldError("threshold")} />
                           <p className="text-xs text-muted-foreground">
                             VD: FPY &lt; 90% sẽ gửi cảnh báo
                           </p>

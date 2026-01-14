@@ -22,6 +22,7 @@ import { ErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
 import { ValidationMessage } from "@/components/ValidationMessage";
+import { DeleteConfirmDialog } from "@/components/ConfirmDialog";
 
 interface MeasurementPoint {
   id?: number;
@@ -65,6 +66,7 @@ export default function ProductModels() {
   const [isEditProductDialogOpen, setIsEditProductDialogOpen] = useState(false);
   const [isDeleteProductDialogOpen, setIsDeleteProductDialogOpen] = useState(false);
   const [isBulkImportDialogOpen, setIsBulkImportDialogOpen] = useState(false);
+  const [isDeletePointDialogOpen, setIsDeletePointDialogOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [measurementPoints, setMeasurementPoints] = useState<MeasurementPoint[]>([]);
   const [selectedPointIndex, setSelectedPointIndex] = useState<number | null>(null);
@@ -741,6 +743,11 @@ export default function ProductModels() {
     }
   };
 
+  const confirmDeletePoint = () => {
+    if (selectedPointIndex === null) return;
+    setIsDeletePointDialogOpen(true);
+  };
+
   const handleDeletePoint = () => {
     if (selectedPointIndex === null) return;
 
@@ -752,6 +759,7 @@ export default function ProductModels() {
     const updatedPoints = measurementPoints.filter((_, i) => i !== selectedPointIndex);
     setMeasurementPoints(updatedPoints);
     setSelectedPointIndex(null);
+    setIsDeletePointDialogOpen(false);
     resetPointForm();
   };
 
@@ -1645,7 +1653,7 @@ export default function ProductModels() {
                                 </>
                               )}
                             </Button>
-                            <Button size="sm" variant="destructive" onClick={handleDeletePoint} disabled={isSavingPoint}>
+                            <Button size="sm" variant="destructive" onClick={confirmDeletePoint} disabled={isSavingPoint}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -1826,26 +1834,24 @@ export default function ProductModels() {
       </Dialog>
 
       {/* Delete Product Confirmation */}
-      <AlertDialog open={isDeleteProductDialogOpen} onOpenChange={setIsDeleteProductDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Xác nhận xóa sản phẩm</AlertDialogTitle>
-            <AlertDialogDescription>
-              Bạn có chắc chắn muốn xóa sản phẩm "{selectedProduct?.name}"? 
-              Tất cả điểm đo liên quan cũng sẽ bị xóa. Hành động này không thể hoàn tác.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Hủy</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleDeleteProduct}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleteProductMutation.isPending ? "Đang xóa..." : "Xóa sản phẩm"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteConfirmDialog
+        open={isDeleteProductDialogOpen}
+        onOpenChange={setIsDeleteProductDialogOpen}
+        itemType="sản phẩm"
+        itemName={selectedProduct?.name}
+        onConfirm={handleDeleteProduct}
+        isLoading={deleteProductMutation.isPending}
+      />
+
+      {/* Delete Point Confirmation */}
+      <DeleteConfirmDialog
+        open={isDeletePointDialogOpen}
+        onOpenChange={setIsDeletePointDialogOpen}
+        itemType="điểm đo"
+        itemName={selectedPointIndex !== null ? measurementPoints[selectedPointIndex]?.name : undefined}
+        onConfirm={handleDeletePoint}
+        isLoading={deletePointMutation.isPending}
+      />
 
       {/* Bulk Import Dialog */}
       {selectedProduct && (

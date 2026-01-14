@@ -876,3 +876,17 @@
 - [x] Thêm validation cho form tạo sản phẩm (ProductModels) - code, name
 - [x] Thêm validation cho form tạo điểm đo (ProductModels) - code, name, lowerLimit, upperLimit
 - [ ] Thêm validation cho các form trong Settings page (tùy chọn - có thể thêm sau)
+
+
+## Phase 65: Settings Validation & Confirm Dialog
+
+### Settings Form Validation
+- [x] Thêm validation cho form tạo ca làm việc (code, name)
+- [x] Thêm validation cho form tạo công đoạn (lineId, code, name)
+- [x] Thêm validation cho form tạo cảnh báo (name, threshold)
+
+### Confirm Dialog
+- [x] Tạo ConfirmDialog component tái sử dụng được (với DeleteConfirmDialog và useConfirmDialog hook)
+- [x] Tích hợp confirm dialog vào xóa sản phẩm trong ProductModels
+- [x] Tích hợp confirm dialog vào xóa điểm đo trong ProductModels
+- [ ] Tích hợp confirm dialog vào các hành động xóa khác trong Settings
