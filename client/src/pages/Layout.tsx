@@ -29,7 +29,8 @@ import {
   Layers,
   Undo2,
   Redo2,
-  Grid3X3
+  Grid3X3,
+  Download
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import React, { useState, useMemo, useRef, useEffect } from "react";
@@ -284,6 +285,94 @@ export default function Layout() {
     setZoom(z => Math.max(0.5, Math.min(3, z + delta)));
   };
 
+  // Export layout as image
+  const handleExportImage = async () => {
+    if (!containerRef.current) {
+      toast.error("Không thể xuất hình ảnh");
+      return;
+    }
+
+    try {
+      // Use html2canvas if available, otherwise use native canvas
+      const container = containerRef.current;
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) {
+        toast.error("Trình duyệt không hỗ trợ xuất hình ảnh");
+        return;
+      }
+
+      // Set canvas size
+      canvas.width = container.offsetWidth * 2; // 2x for better quality
+      canvas.height = container.offsetHeight * 2;
+      ctx.scale(2, 2);
+
+      // Draw background
+      ctx.fillStyle = '#1a1a2e';
+      ctx.fillRect(0, 0, container.offsetWidth, container.offsetHeight);
+
+      // Draw grid
+      ctx.strokeStyle = 'rgba(100, 100, 150, 0.3)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < container.offsetWidth; x += GRID_SIZE) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, container.offsetHeight);
+        ctx.stroke();
+      }
+      for (let y = 0; y < container.offsetHeight; y += GRID_SIZE) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(container.offsetWidth, y);
+        ctx.stroke();
+      }
+
+      // Draw machines
+      machinesWithStats.forEach((machine) => {
+        const customPos = machinePositions[machine.id];
+        const posX = customPos ? customPos.x : machine.positionX;
+        const posY = customPos ? customPos.y : machine.positionY;
+
+        // Machine box
+        ctx.fillStyle = 'rgba(30, 30, 60, 0.9)';
+        ctx.strokeStyle = machine.stats.yieldRate >= 98 ? '#22c55e' : 
+                          machine.stats.yieldRate >= 95 ? '#eab308' : '#ef4444';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(posX, posY, machine.width, machine.height, 8);
+        ctx.fill();
+        ctx.stroke();
+
+        // Machine name
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillText(machine.name, posX + 8, posY + machine.height - 20);
+        
+        // Machine code
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.font = '10px sans-serif';
+        ctx.fillText(machine.code, posX + 8, posY + machine.height - 8);
+      });
+
+      // Add watermark
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.font = '12px sans-serif';
+      ctx.fillText(`AVI/AOI Layout - ${new Date().toLocaleDateString('vi-VN')}`, 10, container.offsetHeight - 10);
+
+      // Download
+      const link = document.createElement('a');
+      link.download = `layout-${layoutData?.layout?.name || 'export'}-${Date.now()}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+
+      toast.success("Đã xuất hình ảnh layout");
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error("Lỗi khi xuất hình ảnh");
+    }
+  };
+
   const getStatusColor = (yieldRate: number) => {
     if (yieldRate >= 98) return "border-green-500 shadow-green-500/20";
     if (yieldRate >= 95) return "border-yellow-500 shadow-yellow-500/20";
@@ -510,6 +599,18 @@ export default function Layout() {
                         title={isFullscreen ? "Thoát toàn màn hình" : "Toàn màn hình"}
                       >
                         {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                      </Button>
+                      
+                      <div className="w-px h-6 bg-border mx-1" />
+                      
+                      {/* Export button */}
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        onClick={handleExportImage}
+                        title="Xuất hình ảnh"
+                      >
+                        <Download className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>

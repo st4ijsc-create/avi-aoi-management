@@ -47,6 +47,7 @@ import { navItems } from "@/lib/navigation";
 import { EmptyState, NoWorkstationData } from "@/components/EmptyState";
 import { ChartErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
 import { StatsCardSkeleton, ChartSkeleton, PieChartSkeleton, ListSkeleton, MachineGridSkeleton } from "@/components/AnalyticsSkeleton";
+import { WorkstationNGHeatmap, MeasurementPointNGList } from "@/components/NGVisualReflect";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 import { Link } from "wouter";
@@ -149,7 +150,7 @@ export default function Dashboard() {
   const [autoRefreshInterval, setAutoRefreshInterval] = useState("30");
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(true);
   const [lastRefreshTime, setLastRefreshTime] = useState(new Date());
-  const [activeTab, setActiveTab] = useState<"overview" | "layout">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "layout" | "ng-visual">("overview");
   const [machineStatusFilter, setMachineStatusFilter] = useState<"all" | "online" | "offline">("all");
   
   // Machine online status from WebSocket
@@ -315,6 +316,13 @@ export default function Dashboard() {
   const { data: workstationSummary } = trpc.workstation.summary.useQuery({
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
+  });
+
+  // Fetch top NG measurement points
+  const { data: topNGPoints } = trpc.workstation.topNGMeasurementPoints.useQuery({
+    startDate: dateRange.startDate,
+    endDate: dateRange.endDate,
+    limit: 15,
   });
 
   // Update last refresh time
@@ -798,11 +806,15 @@ export default function Dashboard() {
         </Card>
 
         {/* Tabs for Overview and Layout */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "overview" | "layout")} className="w-full">
-          <TabsList className="grid w-full max-w-md grid-cols-2">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "overview" | "layout" | "ng-visual")} className="w-full">
+          <TabsList className="grid w-full max-w-lg grid-cols-3">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
               Tổng quan
+            </TabsTrigger>
+            <TabsTrigger value="ng-visual" className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4" />
+              NG Visual
             </TabsTrigger>
             <TabsTrigger value="layout" className="flex items-center gap-2">
               <LayoutGrid className="h-4 w-4" />
@@ -1251,6 +1263,103 @@ export default function Dashboard() {
               </div>
             </CardContent>
           </Card>
+            </div>
+          </TabsContent>
+
+          {/* NG Visual Tab */}
+          <TabsContent value="ng-visual" className="space-y-6 mt-6">
+            <div className="space-y-6">
+              {/* Legend */}
+              <div className="flex flex-wrap items-center gap-4 text-sm bg-card p-4 rounded-lg border">
+                <span className="text-muted-foreground font-medium">Mức độ NG:</span>
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 rounded bg-green-500" />
+                  <span>≤2% (Tốt)</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 rounded bg-yellow-500" />
+                  <span>2-5% (Chấp nhận)</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 rounded bg-orange-500" />
+                  <span>5-10% (Cảnh báo)</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 rounded bg-red-500" />
+                  <span>&gt;10% (Nghiêm trọng)</span>
+                </div>
+              </div>
+
+              {/* Workstation NG Heatmap */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Factory className="h-5 w-5 text-primary" />
+                    Tỉ lệ NG theo Công trạm
+                  </CardTitle>
+                  <CardDescription>
+                    Hiển thị tỉ lệ lỗi của từng công trạm, màu sắc thể hiện mức độ nghiêm trọng
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {workstationSummary && (workstationSummary as any[]).length > 0 ? (
+                    <WorkstationNGHeatmap
+                      data={(workstationSummary as any[]).map((ws: any) => ({
+                        id: ws.workstationId,
+                        code: ws.workstationCode || '',
+                        name: ws.workstationName || 'Unknown',
+                        total: ws.totalCount || 0,
+                        ng: ws.ngCount || 0,
+                        ngRate: ws.totalCount > 0 ? ((ws.ngCount || 0) / ws.totalCount * 100) : 0,
+                      }))}
+                    />
+                  ) : (
+                    <EmptyState
+                      variant="no-analytics"
+                      title="Chưa có dữ liệu công trạm"
+                      description="Dữ liệu sẽ hiển thị khi có kết quả kiểm tra từ các điểm đo."
+                      compact
+                    />
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Top NG Measurement Points */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Target className="h-5 w-5 text-orange-500" />
+                    Top Điểm đo có tỉ lệ NG cao
+                  </CardTitle>
+                  <CardDescription>
+                    Các điểm đo có tỉ lệ lỗi cao nhất, cần ưu tiên kiểm tra và cải thiện
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {topNGPoints && (topNGPoints as any[]).length > 0 ? (
+                    <MeasurementPointNGList
+                      data={(topNGPoints as any[]).map((mp: any) => ({
+                        id: mp.measurementPointId,
+                        code: mp.measurementPointCode || '',
+                        name: mp.measurementPointName || 'Unknown',
+                        workstationId: mp.workstationId,
+                        workstationName: mp.workstationName,
+                        total: mp.totalCount || 0,
+                        ng: mp.ngCount || 0,
+                        ngRate: mp.totalCount > 0 ? ((mp.ngCount || 0) / mp.totalCount * 100) : 0,
+                      }))}
+                      maxItems={15}
+                    />
+                  ) : (
+                    <EmptyState
+                      variant="no-analytics"
+                      title="Chưa có dữ liệu điểm đo"
+                      description="Dữ liệu sẽ hiển thị khi có kết quả kiểm tra."
+                      compact
+                    />
+                  )}
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
 

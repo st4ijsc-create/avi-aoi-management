@@ -20,20 +20,21 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Cpu, LogOut, PanelLeft, Key, User, Monitor } from "lucide-react";
+import { Cpu, LogOut, PanelLeft, Key, User, Monitor, ChevronRight } from "lucide-react";
 import { NotificationCenter } from "./NotificationCenter";
 import { CSSProperties, ReactNode, useEffect, useRef, useState } from "react";
 import { useLocation, Link } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
-
-type NavItem = {
-  href: string;
-  label: string;
-  icon: ReactNode;
-};
+import { navGroups, NavGroup, NavItem, hasAccessToGroup } from "@/lib/navigation";
+import { cn } from "@/lib/utils";
 
 type DashboardLayoutProps = {
   children: ReactNode;
@@ -43,6 +44,7 @@ type DashboardLayoutProps = {
 };
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
+const SIDEBAR_GROUPS_KEY = "sidebar-groups-state";
 const DEFAULT_WIDTH = 260;
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 400;
@@ -137,8 +139,35 @@ function DashboardLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const activeItem = navItems.find(item => item.href === (currentPath || location));
   const isMobile = useIsMobile();
+
+  // State for collapsible groups
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    const saved = localStorage.getItem(SIDEBAR_GROUPS_KEY);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // Fall through to default
+      }
+    }
+    // Default: open groups that contain the current path or have defaultOpen
+    const defaults: Record<string, boolean> = {};
+    navGroups.forEach(group => {
+      const hasActiveItem = group.items.some(item => item.href === (currentPath || location));
+      defaults[group.id] = hasActiveItem || group.defaultOpen || false;
+    });
+    return defaults;
+  });
+
+  // Save group state to localStorage
+  useEffect(() => {
+    localStorage.setItem(SIDEBAR_GROUPS_KEY, JSON.stringify(openGroups));
+  }, [openGroups]);
+
+  // Find active item for header display
+  const allItems = navGroups.flatMap(g => g.items);
+  const activeItem = allItems.find(item => item.href === (currentPath || location));
 
   useEffect(() => {
     if (isCollapsed) {
@@ -176,6 +205,18 @@ function DashboardLayoutContent({
     };
   }, [isResizing, setSidebarWidth]);
 
+  const toggleGroup = (groupId: string) => {
+    setOpenGroups(prev => ({
+      ...prev,
+      [groupId]: !prev[groupId],
+    }));
+  };
+
+  // Filter groups based on user role
+  const visibleGroups = navGroups.filter(group => 
+    hasAccessToGroup(group.id, user?.role)
+  );
+
   return (
     <>
       <div className="relative" ref={sidebarRef}>
@@ -206,27 +247,43 @@ function DashboardLayoutContent({
             </div>
           </SidebarHeader>
 
-          <SidebarContent className="gap-0 py-2">
-            <SidebarMenu className="px-2">
-              {navItems.map(item => {
-                const isActive = (currentPath || location) === item.href;
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      onClick={() => setLocation(item.href)}
-                      tooltip={item.label}
-                      className={`h-10 transition-all font-normal ${isActive ? 'bg-sidebar-accent' : ''}`}
-                    >
-                      <span className={isActive ? "text-primary" : "text-sidebar-foreground"}>
-                        {item.icon}
-                      </span>
-                      <span className="text-sidebar-foreground">{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
+          <SidebarContent className="gap-0 py-2 overflow-y-auto">
+            {isCollapsed ? (
+              // Collapsed mode: show flat list with icons only
+              <SidebarMenu className="px-2">
+                {allItems.map(item => {
+                  const isActive = (currentPath || location) === item.href;
+                  return (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        onClick={() => setLocation(item.href)}
+                        tooltip={item.label}
+                        className={`h-10 transition-all font-normal ${isActive ? 'bg-sidebar-accent' : ''}`}
+                      >
+                        <span className={isActive ? "text-primary" : "text-sidebar-foreground"}>
+                          {item.icon}
+                        </span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            ) : (
+              // Expanded mode: show grouped navigation
+              <div className="space-y-1">
+                {visibleGroups.map(group => (
+                  <NavGroupComponent
+                    key={group.id}
+                    group={group}
+                    isOpen={openGroups[group.id] ?? false}
+                    onToggle={() => toggleGroup(group.id)}
+                    currentPath={currentPath || location}
+                    onNavigate={setLocation}
+                  />
+                ))}
+              </div>
+            )}
           </SidebarContent>
 
           <SidebarFooter className="p-3 border-t border-sidebar-border">
@@ -305,5 +362,79 @@ function DashboardLayoutContent({
         <main className="flex-1 p-6 overflow-auto">{children}</main>
       </SidebarInset>
     </>
+  );
+}
+
+// Component for rendering a navigation group
+interface NavGroupComponentProps {
+  group: NavGroup;
+  isOpen: boolean;
+  onToggle: () => void;
+  currentPath: string;
+  onNavigate: (path: string) => void;
+}
+
+function NavGroupComponent({
+  group,
+  isOpen,
+  onToggle,
+  currentPath,
+  onNavigate,
+}: NavGroupComponentProps) {
+  const hasActiveItem = group.items.some(item => item.href === currentPath);
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={onToggle} className="px-2">
+      <CollapsibleTrigger asChild>
+        <button
+          className={cn(
+            "flex items-center gap-2 w-full px-3 py-2 text-sm font-medium rounded-lg transition-colors",
+            "hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            hasActiveItem ? "text-primary" : "text-sidebar-foreground"
+          )}
+        >
+          {group.icon && (
+            <span className={hasActiveItem ? "text-primary" : "text-muted-foreground"}>
+              {group.icon}
+            </span>
+          )}
+          <span className="flex-1 text-left">{group.label}</span>
+          <ChevronRight
+            className={cn(
+              "h-4 w-4 text-muted-foreground transition-transform duration-200",
+              isOpen && "rotate-90"
+            )}
+          />
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-1 space-y-0.5 pl-4">
+        {group.items.map(item => {
+          const isActive = currentPath === item.href;
+          return (
+            <button
+              key={item.href}
+              onClick={() => onNavigate(item.href)}
+              className={cn(
+                "flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg transition-colors",
+                "hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                isActive 
+                  ? "bg-sidebar-accent text-primary font-medium" 
+                  : "text-sidebar-foreground"
+              )}
+            >
+              <span className={isActive ? "text-primary" : "text-muted-foreground"}>
+                {item.icon}
+              </span>
+              <span>{item.label}</span>
+              {item.badge && (
+                <span className="ml-auto px-1.5 py-0.5 text-xs font-medium bg-primary/10 text-primary rounded">
+                  {item.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

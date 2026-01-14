@@ -910,3 +910,27 @@
 - [ ] Tích hợp undo vào xóa sản phẩm (tùy chọn - có thể thêm sau)
 - [ ] Tích hợp undo vào xóa điểm đo (tùy chọn - có thể thêm sau)
 - [ ] Tích hợp undo vào các hành động xóa trong Settings (tùy chọn - có thể thêm sau)
+
+
+## Phase 67: Menu Optimization, Layout Completion & NG Visual Reflect
+
+### Menu Optimization
+- [x] Phân tích cấu trúc menu hiện tại và xác định các category (Tổng quan, Sản xuất, Quản lý, Hệ thống)
+- [x] Nhóm các chức năng theo category với NavGroup interface
+- [x] Thêm collapsible groups cho menu trái với Collapsible component
+- [x] Tối ưu hiển thị menu với icons và labels rõ ràng
+- [x] Thêm visual indicator cho menu item đang active và group chứa item active
+
+### Layout Page Completion
+- [x] Kiểm tra các chức năng hiện có trong /layout - đã có đầy đủ chức năng
+- [x] Factory layout visualization - đã có với 2D/3D view
+- [x] Drag-and-drop cho workstation positioning - đã có trong WorkshopLayoutEditor
+- [x] Zoom và pan controls - đã có với handleZoomIn/Out, handleMouseDown/Move/Up
+- [x] Thêm export layout as image - đã thêm handleExportImage function và Download button
+
+### NG Visual Reflect
+- [x] Tạo component hiển thị tỉ lệ NG theo vị trí công trạm (WorkstationNGHeatmap)
+- [x] Tạo component hiển thị tỉ lệ NG theo điểm đo (MeasurementPointNGList)
+- [x] Thêm color coding (≤2% tốt, 2-5% chấp nhận, 5-10% cảnh báo, >10% nghiêm trọng)
+- [x] Tích hợp vào Dashboard với tab "NG Visual" riêng
+- [x] Thêm tooltip hiển thị chi tiết khi hover (tổng kiểm tra, số lỗi, tỉ lệ NG)
