@@ -3232,7 +3232,7 @@ export async function getTopNGMeasurementPointsByWorkstation(filters?: {
       mpd.id as measurementPointId,
       mpd.code as measurementPointCode,
       mpd.name as measurementPointName,
-      COUNT(*) as totalCount,
+      COUNT(mr.id) as totalCount,
       SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) as ngCount,
       SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END) as ntfCount
     FROM measurement_results mr
@@ -3240,8 +3240,8 @@ export async function getTopNGMeasurementPointsByWorkstation(filters?: {
     LEFT JOIN workstations w ON mpd.workstationId = w.id
     JOIN product_inspections pi ON mr.inspectionId = pi.id
     WHERE mr.result IN ('NG', 'NTF')
-    ${filters?.startDate ? sql`AND pi.inspectionTime >= ${filters.startDate}` : sql``}
-    ${filters?.endDate ? sql`AND pi.inspectionTime <= ${filters.endDate}` : sql``}
+    ${filters?.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
+    ${filters?.endDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime <= ${filters.endDate})` : sql``}
     GROUP BY w.id, w.code, w.name, mpd.id, mpd.code, mpd.name
     ORDER BY ngCount DESC
     LIMIT ${limit}
