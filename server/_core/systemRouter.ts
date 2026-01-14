@@ -1,6 +1,13 @@
 import { z } from "zod";
 import { notifyOwner } from "./notification";
 import { adminProcedure, publicProcedure, router } from "./trpc";
+import {
+  getSlowQueries,
+  getQueryStats,
+  getRecentQueries,
+  analyzeQueryPatterns,
+  clearMetricsHistory,
+} from "../queryMonitor";
 
 export const systemRouter = router({
   health: publicProcedure
@@ -26,4 +33,48 @@ export const systemRouter = router({
         success: delivered,
       } as const;
     }),
+
+  // Query Monitoring APIs
+  queryMonitoring: router({
+    getSlowQueries: adminProcedure
+      .input(
+        z.object({
+          limit: z.number().min(1).max(100).default(50),
+        })
+      )
+      .query(({ input }) => {
+        return getSlowQueries(input.limit);
+      }),
+
+    getStats: adminProcedure
+      .query(() => {
+        return getQueryStats();
+      }),
+
+    getRecentQueries: adminProcedure
+      .input(
+        z.object({
+          limit: z.number().min(1).max(100).default(50),
+        })
+      )
+      .query(({ input }) => {
+        return getRecentQueries(input.limit);
+      }),
+
+    analyzePatterns: adminProcedure
+      .input(
+        z.object({
+          limit: z.number().min(1).max(50).default(20),
+        })
+      )
+      .query(({ input }) => {
+        return analyzeQueryPatterns(input.limit);
+      }),
+
+    clearHistory: adminProcedure
+      .mutation(() => {
+        clearMetricsHistory();
+        return { success: true };
+      }),
+  }),
 });
