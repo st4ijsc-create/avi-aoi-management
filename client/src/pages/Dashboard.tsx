@@ -40,7 +40,8 @@ import {
   Award,
   ThumbsDown,
   Wifi,
-  WifiOff
+  WifiOff,
+  Factory
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
@@ -305,6 +306,12 @@ export default function Dashboard() {
     limit: 20,
   }, {
     enabled: !!selectedMachine,
+  });
+
+  // Fetch workstation summary for top defects
+  const { data: workstationSummary } = trpc.workstation.summary.useQuery({
+    startDate: dateRange.startDate,
+    endDate: dateRange.endDate,
   });
 
   // Update last refresh time
@@ -1169,6 +1176,55 @@ export default function Dashboard() {
                   <div className="h-full flex items-center justify-center text-muted-foreground">
                     Chưa có dữ liệu
                   </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Top 5 Workstations with Defects */}
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Factory className="h-4 w-4 text-orange-500" />
+                Top 5 Công trạm có lỗi cao nhất
+              </CardTitle>
+              <CardDescription>Công trạm cần ưu tiên cải thiện</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {workstationSummary && (workstationSummary as any[]).length > 0 ? (
+                  (workstationSummary as any[])
+                    .sort((a: any, b: any) => (b.ngCount || 0) - (a.ngCount || 0))
+                    .slice(0, 5)
+                    .map((ws: any, index: number) => {
+                      const totalDefects = (ws.ngCount || 0) + (ws.ntfCount || 0);
+                      const yieldRate = ws.totalCount > 0 ? ((ws.okCount + ws.ntfCount) / ws.totalCount * 100) : 0;
+                      return (
+                        <div key={ws.workstationId} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                          <div className="flex items-center gap-3 flex-1">
+                            <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center text-sm font-semibold text-orange-600">
+                              {index + 1}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm truncate">{ws.workstationName || 'Unknown'}</p>
+                              <p className="text-xs text-muted-foreground">{ws.workstationCode}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <div className="text-right">
+                              <div className="text-sm font-semibold text-red-600">{totalDefects}</div>
+                              <div className="text-xs text-muted-foreground">Lỗi</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-semibold text-blue-600">{yieldRate.toFixed(1)}%</div>
+                              <div className="text-xs text-muted-foreground">Yield</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-4">Chưa có dữ liệu</p>
                 )}
               </div>
             </CardContent>

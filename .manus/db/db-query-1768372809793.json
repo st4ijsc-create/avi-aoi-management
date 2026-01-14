@@ -1,0 +1,9 @@
+{
+  "query": "UPDATE measurement_point_defs mpd \nSET `workstation_id` = (\n  SELECT id FROM workstations \n  WHERE code = CASE MOD(mpd.id, 10)\n    WHEN 0 THEN 'QC-01'\n    WHEN 1 THEN 'SMT-01'\n    WHEN 2 THEN 'SMT-02'\n    WHEN 3 THEN 'DIP-01'\n    WHEN 4 THEN 'ASM-01'\n    WHEN 5 THEN 'SOL-01'\n    WHEN 6 THEN 'TEST-01'\n    WHEN 7 THEN 'BURN-01'\n    WHEN 8 THEN 'INS-01'\n    ELSE 'PKG-01'\n  END\n  LIMIT 1\n)",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute UPDATE measurement_point_defs mpd \nSET `workstation_id` = (\n  SELECT id FROM workstations \n  WHERE code = CASE MOD(mpd.id, 10)\n    WHEN 0 THEN 'QC-01'\n    WHEN 1 THEN 'SMT-01'\n    WHEN 2 THEN 'SMT-02'\n    WHEN 3 THEN 'DIP-01'\n    WHEN 4 THEN 'ASM-01'\n    WHEN 5 THEN 'SOL-01'\n    WHEN 6 THEN 'TEST-01'\n    WHEN 7 THEN 'BURN-01'\n    WHEN 8 THEN 'INS-01'\n    ELSE 'PKG-01'\n  END\n  LIMIT 1\n)",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1735
+}

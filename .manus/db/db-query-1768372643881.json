@@ -1,0 +1,9 @@
+{
+  "query": "INSERT INTO workstations (name, code, description) VALUES \n('SMT Line 1', 'SMT-01', 'Surface Mount Technology Line 1'),\n('SMT Line 2', 'SMT-02', 'Surface Mount Technology Line 2'),\n('DIP Assembly', 'DIP-01', 'Dual In-line Package Assembly'),\n('Manual Assembly', 'ASM-01', 'Manual Assembly Workstation'),\n('Wave Soldering', 'SOL-01', 'Wave Soldering Machine'),\n('Functional Test', 'TEST-01', 'Functional Testing Station'),\n('Burn-in Test', 'BURN-01', 'Burn-in Testing Equipment'),\n('Final Inspection', 'INS-01', 'Final Inspection Station'),\n('Packaging', 'PKG-01', 'Product Packaging Station'),\n('QC Verification', 'QC-01', 'Quality Control Verification')",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute INSERT INTO workstations (name, code, description) VALUES \n('SMT Line 1', 'SMT-01', 'Surface Mount Technology Line 1'),\n('SMT Line 2', 'SMT-02', 'Surface Mount Technology Line 2'),\n('DIP Assembly', 'DIP-01', 'Dual In-line Package Assembly'),\n('Manual Assembly', 'ASM-01', 'Manual Assembly Workstation'),\n('Wave Soldering', 'SOL-01', 'Wave Soldering Machine'),\n('Functional Test', 'TEST-01', 'Functional Testing Station'),\n('Burn-in Test', 'BURN-01', 'Burn-in Testing Equipment'),\n('Final Inspection', 'INS-01', 'Final Inspection Station'),\n('Packaging', 'PKG-01', 'Product Packaging Station'),\n('QC Verification', 'QC-01', 'Quality Control Verification')",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1550
+}

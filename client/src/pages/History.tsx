@@ -173,6 +173,12 @@ export default function History() {
     endDate: dateRangeValues.endDate,
   });
 
+  // Fetch workstation data
+  const { data: workstationData } = trpc.workstation.defectsByWorkstation.useQuery({
+    startDate: dateRangeValues.startDate,
+    endDate: dateRangeValues.endDate,
+  });
+
   const totalPages = useMemo(() => {
     if (!data?.total) return 1;
     return Math.ceil(data.total / limit);
@@ -1253,18 +1259,55 @@ export default function History() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    <p className="text-sm text-muted-foreground">Chọn khoảng thời gian để xem thống kê chi tiết</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-sm font-medium">Từ ngày</label>
-                        <Input type="date" className="mt-1" />
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium">Đến ngày</label>
-                        <Input type="date" className="mt-1" />
-                      </div>
+                    <p className="text-sm text-muted-foreground">Danh sách các công trạm sản xuất và thống kê lỗi</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {workstationData && workstationData.length > 0 ? (
+                        workstationData.reduce((acc: any[], ws: any) => {
+                          const existing = acc.find(w => w.workstationId === ws.workstationId);
+                          if (existing) {
+                            existing.okCount += ws.okCount;
+                            existing.ngCount += ws.ngCount;
+                            existing.ntfCount += ws.ntfCount;
+                            existing.totalCount += ws.totalCount;
+                          } else {
+                            acc.push({ ...ws });
+                          }
+                          return acc;
+                        }, []).map((ws: any) => {
+                          const yieldRate = ws.totalCount > 0 ? ((ws.okCount + ws.ntfCount) / ws.totalCount * 100) : 0;
+                          return (
+                            <Card key={ws.workstationId} className="border-l-4 border-l-blue-500">
+                              <CardContent className="pt-4">
+                                <div className="space-y-2">
+                                  <div className="font-semibold text-sm">{ws.workstationName || 'Unknown'}</div>
+                                  <div className="text-xs text-muted-foreground">Mã: {ws.workstationCode}</div>
+                                  <div className="grid grid-cols-2 gap-2 text-xs mt-3">
+                                    <div>
+                                      <div className="text-muted-foreground">OK</div>
+                                      <div className="font-semibold text-green-600">{ws.okCount || 0}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-muted-foreground">NG</div>
+                                      <div className="font-semibold text-red-600">{ws.ngCount || 0}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-muted-foreground">NTF</div>
+                                      <div className="font-semibold text-yellow-600">{ws.ntfCount || 0}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-muted-foreground">Yield</div>
+                                      <div className="font-semibold text-blue-600">{yieldRate.toFixed(2)}%</div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })
+                      ) : (
+                        <div className="col-span-full text-center text-muted-foreground">Không có dữ liệu</div>
+                      )}
                     </div>
-                    <Button className="w-full">Thống kê</Button>
                   </div>
                 </CardContent>
               </Card>
@@ -1275,8 +1318,37 @@ export default function History() {
                   <CardTitle className="text-lg">Lỗi theo Công trạm</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-80 w-full flex items-center justify-center bg-muted/30 rounded-lg">
-                    <p className="text-muted-foreground">Biểu đồ lỗi theo công trạm</p>
+                  <div className="h-80 w-full">
+                    {workstationData && workstationData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={workstationData.reduce((acc: any[], ws: any) => {
+                          const existing = acc.find(w => w.code === ws.workstationCode);
+                          if (existing) {
+                            existing.NG += ws.ngCount;
+                            existing.NTF += ws.ntfCount;
+                          } else {
+                            acc.push({
+                              code: ws.workstationCode,
+                              NG: ws.ngCount || 0,
+                              NTF: ws.ntfCount || 0
+                            });
+                          }
+                          return acc;
+                        }, [])}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="code" />
+                          <YAxis />
+                          <Tooltip />
+                          <Legend />
+                          <Bar dataKey="NG" fill="#ef4444" />
+                          <Bar dataKey="NTF" fill="#eab308" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-muted-foreground">
+                        Không có dữ liệu
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -1292,7 +1364,7 @@ export default function History() {
                       <thead className="border-b">
                         <tr>
                           <th className="text-left py-2 px-2">Công trạm</th>
-                          <th className="text-left py-2 px-2">Loại quy trình</th>
+                          <th className="text-left py-2 px-2">Mã</th>
                           <th className="text-center py-2 px-2">Số điểm đo</th>
                           <th className="text-center py-2 px-2">OK</th>
                           <th className="text-center py-2 px-2">NG</th>
@@ -1301,24 +1373,38 @@ export default function History() {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr className="border-b hover:bg-muted/50">
-                          <td className="py-2 px-2">SMT Line 1</td>
-                          <td className="py-2 px-2">SMT</td>
-                          <td className="text-center py-2 px-2">12</td>
-                          <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-green-500/10">450</Badge></td>
-                          <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-red-500/10">8</Badge></td>
-                          <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-yellow-500/10">2</Badge></td>
-                          <td className="text-center py-2 px-2"><Badge className="bg-green-600">97.8%</Badge></td>
-                        </tr>
-                        <tr className="border-b hover:bg-muted/50">
-                          <td className="py-2 px-2">Assembly Line 1</td>
-                          <td className="py-2 px-2">ASSEMBLY</td>
-                          <td className="text-center py-2 px-2">8</td>
-                          <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-green-500/10">445</Badge></td>
-                          <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-red-500/10">12</Badge></td>
-                          <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-yellow-500/10">3</Badge></td>
-                          <td className="text-center py-2 px-2"><Badge className="bg-green-600">97.0%</Badge></td>
-                        </tr>
+                        {workstationData && workstationData.length > 0 ? (
+                          workstationData.reduce((acc: any[], ws: any) => {
+                            const existing = acc.find(w => w.workstationId === ws.workstationId);
+                            if (existing) {
+                              existing.okCount += ws.okCount;
+                              existing.ngCount += ws.ngCount;
+                              existing.ntfCount += ws.ntfCount;
+                              existing.totalCount += ws.totalCount;
+                              existing.pointCount += 1;
+                            } else {
+                              acc.push({ ...ws, pointCount: 1 });
+                            }
+                            return acc;
+                          }, []).map((ws: any) => {
+                            const yieldRate = ws.totalCount > 0 ? ((ws.okCount + ws.ntfCount) / ws.totalCount * 100) : 0;
+                            return (
+                              <tr key={ws.workstationId} className="border-b hover:bg-muted/50">
+                                <td className="py-2 px-2">{ws.workstationName || 'Unknown'}</td>
+                                <td className="py-2 px-2 text-xs text-muted-foreground">{ws.workstationCode}</td>
+                                <td className="text-center py-2 px-2">{ws.pointCount || 0}</td>
+                                <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-green-500/10">{ws.okCount || 0}</Badge></td>
+                                <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-red-500/10">{ws.ngCount || 0}</Badge></td>
+                                <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-yellow-500/10">{ws.ntfCount || 0}</Badge></td>
+                                <td className="text-center py-2 px-2"><Badge className="bg-green-600">{yieldRate.toFixed(1)}%</Badge></td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={7} className="py-4 text-center text-muted-foreground">Không có dữ liệu</td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>

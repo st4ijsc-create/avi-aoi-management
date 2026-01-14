@@ -746,3 +746,12 @@
 - [ ] Thêm tab "Phân tích công trạm" trong Module Lịch sử
 - [ ] Hiển thị thống kê lỗi theo điểm đo và công trạm thực hiện
 - [ ] Biểu đồ phân bố lỗi theo công trạm để đưa ra phương hướng cải thiện
+
+
+## Phase 53: Workstation Data & Analytics
+- [x] Tạo seed data cho bảng workstations (SMT, DIP, Assembly, Testing, Packaging)
+- [x] Cập nhật measurementPointDefs với workstationId từ seed data
+- [x] Kết nối tab "Công trạm" với API getDefectsByWorkstation
+- [x] Hiển thị biểu đồ lỗi theo công trạm trên tab Công trạm
+- [x] Thêm widget top 5 công trạm có lỗi cao nhất trên Dashboard
+- [x] Hiển thị yield rate theo công trạm
