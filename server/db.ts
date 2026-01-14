@@ -3214,6 +3214,53 @@ export async function getDefectsByWorkstation(filters?: {
   }>;
 }
 
+// Get top NG measurement points by workstation
+export async function getTopNGMeasurementPointsByWorkstation(filters?: {
+  startDate?: Date;
+  endDate?: Date;
+  limit?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const limit = filters?.limit || 10;
+  const query = sql`
+    SELECT 
+      w.id as workstationId,
+      w.code as workstationCode,
+      w.name as workstationName,
+      mpd.id as measurementPointId,
+      mpd.code as measurementPointCode,
+      mpd.name as measurementPointName,
+      COUNT(*) as totalCount,
+      SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) as ngCount,
+      SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END) as ntfCount
+    FROM measurement_results mr
+    JOIN measurement_point_defs mpd ON mr.measurementPointDefId = mpd.id
+    LEFT JOIN workstations w ON mpd.workstationId = w.id
+    JOIN product_inspections pi ON mr.inspectionId = pi.id
+    WHERE mr.result IN ('NG', 'NTF')
+    ${filters?.startDate ? sql`AND pi.inspectionTime >= ${filters.startDate}` : sql``}
+    ${filters?.endDate ? sql`AND pi.inspectionTime <= ${filters.endDate}` : sql``}
+    GROUP BY w.id, w.code, w.name, mpd.id, mpd.code, mpd.name
+    ORDER BY ngCount DESC
+    LIMIT ${limit}
+  `;
+
+  const result = await db.execute(query);
+  return (result[0] as unknown) as Array<{
+    workstationId: number | null;
+    workstationCode: string | null;
+    workstationName: string | null;
+    measurementPointId: number;
+    measurementPointCode: string;
+    measurementPointName: string;
+    totalCount: number;
+    ngCount: number;
+    ntfCount: number;
+  }>;
+}
+
 // Get workstation summary statistics
 export async function getWorkstationSummary(filters?: { 
   startDate?: Date; 

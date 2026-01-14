@@ -50,7 +50,7 @@ import { toast } from "sonner";
 import { navItems } from "@/lib/navigation";
 import { useState, useMemo } from "react";
 import { Link } from "wouter";
-import { format, subDays, startOfDay, endOfDay } from "date-fns";
+import { format as formatDate, subDays, startOfDay, endOfDay } from "date-fns";
 import { vi } from "date-fns/locale";
 import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LineChart, Line, ScatterChart, Scatter, ZAxis } from "recharts";
 
@@ -70,6 +70,9 @@ export default function History() {
   });
   const [page, setPage] = useState(1);
   const [activeTab, setActiveTab] = useState("list");
+  const [workstationDateRange, setWorkstationDateRange] = useState("all" as "all" | "today" | "week" | "month" | "custom");
+  const [workstationStartDate, setWorkstationStartDate] = useState("");
+  const [workstationEndDate, setWorkstationEndDate] = useState("");
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [analysisLimit, setAnalysisLimit] = useState(100);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -97,6 +100,35 @@ export default function History() {
     { name: "Tuần này", filters: { ...filters, dateRange: "week" as const } },
   ]);
   const limit = pageSize;
+
+  // Calculate date range for workstation filter
+  const workstationDateRangeValues = useMemo(() => {
+    const now = new Date();
+    switch (workstationDateRange) {
+      case "today":
+        return {
+          startDate: startOfDay(now),
+          endDate: endOfDay(now),
+        };
+      case "week":
+        return {
+          startDate: startOfDay(subDays(now, 7)),
+          endDate: endOfDay(now),
+        };
+      case "month":
+        return {
+          startDate: startOfDay(subDays(now, 30)),
+          endDate: endOfDay(now),
+        };
+      case "custom":
+        return {
+          startDate: workstationStartDate ? new Date(workstationStartDate) : undefined,
+          endDate: workstationEndDate ? endOfDay(new Date(workstationEndDate)) : undefined,
+        };
+      default:
+        return { startDate: undefined, endDate: undefined };
+    }
+  }, [workstationDateRange, workstationStartDate, workstationEndDate]);
 
   // Calculate date range based on selection
   const dateRangeValues = useMemo(() => {
@@ -175,8 +207,21 @@ export default function History() {
 
   // Fetch workstation data
   const { data: workstationData } = trpc.workstation.defectsByWorkstation.useQuery({
-    startDate: dateRangeValues.startDate,
-    endDate: dateRangeValues.endDate,
+    startDate: workstationDateRangeValues.startDate,
+    endDate: workstationDateRangeValues.endDate,
+  });
+
+  // Fetch top NG measurement points by workstation
+  const { data: topNGByWorkstation } = trpc.workstation.topNGMeasurementPoints.useQuery({
+    startDate: workstationDateRangeValues.startDate,
+    endDate: workstationDateRangeValues.endDate,
+    limit: 10,
+  });
+
+  // Fetch workstation summary with date filter
+  const { data: workstationSummaryFiltered } = trpc.workstation.summary.useQuery({
+    startDate: workstationDateRangeValues.startDate,
+    endDate: workstationDateRangeValues.endDate,
   });
 
   const totalPages = useMemo(() => {
@@ -214,7 +259,7 @@ export default function History() {
     // Group by date
     const dateStats: Record<string, { ok: number; ng: number; ntf: number; total: number }> = {};
     inspections.forEach((i: any) => {
-      const date = format(new Date(i.inspectionTime), "dd/MM");
+      const date = formatDate(new Date(i.inspectionTime), "dd/MM");
       if (!dateStats[date]) {
         dateStats[date] = { ok: 0, ng: 0, ntf: 0, total: 0 };
       }
@@ -347,7 +392,7 @@ export default function History() {
           ngCount,
           ntfCount,
           yieldRate,
-          format(new Date(inspection.inspectedAt), "dd/MM/yyyy HH:mm:ss"),
+          formatDate(new Date(inspection.inspectedAt), "dd/MM/yyyy HH:mm:ss"),
           inspection.remarks || "-"
         ];
       });
@@ -362,7 +407,7 @@ export default function History() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `inspection_history_${format(new Date(), "yyyyMMdd_HHmmss")}.csv`;
+      link.download = `inspection_history_${formatDate(new Date(), "yyyyMMdd_HHmmss")}.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -458,7 +503,7 @@ export default function History() {
         doc.text('BÁO CÁO YIELD - FPY/FY/NTF/UPH', 14, 20);
         
         doc.setFontSize(10);
-        doc.text(`Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`, 14, 30);
+        doc.text(`Ngày xuất: ${formatDate(new Date(), 'dd/MM/yyyy')}`, 14, 30);
         
         // Summary KPIs
         doc.setFontSize(12);
@@ -487,6 +532,107 @@ export default function History() {
       toast.error("Lỗi khi xuất báo cáo Yield");
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  // Export workstation report
+  const [isExportingWorkstation, setIsExportingWorkstation] = useState(false);
+
+  const handleExportWorkstationReport = async (format: 'pdf' | 'excel' | 'csv') => {
+    try {
+      setIsExportingWorkstation(true);
+      const filename = `workstation-report-${formatDate(new Date(), 'yyyy-MM-dd')}`;
+
+      // Prepare data
+      const summaryData = workstationData?.reduce((acc: any[], ws: any) => {
+        const existing = acc.find(w => w.workstationId === ws.workstationId);
+        if (existing) {
+          existing.okCount += ws.okCount;
+          existing.ngCount += ws.ngCount;
+          existing.ntfCount += ws.ntfCount;
+          existing.totalCount += ws.totalCount;
+        } else {
+          acc.push({ ...ws });
+        }
+        return acc;
+      }, []) || [];
+
+      const rows = summaryData.map((ws: any) => {
+        const yieldRate = ws.totalCount > 0 ? ((ws.okCount + ws.ntfCount) / ws.totalCount * 100) : 0;
+        return [
+          ws.workstationName || 'Unknown',
+          ws.workstationCode,
+          ws.totalCount,
+          ws.okCount,
+          ws.ngCount,
+          ws.ntfCount,
+          yieldRate.toFixed(2) + '%',
+        ];
+      });
+
+      const headers = ['Công trạm', 'Mã', 'Tổng', 'OK', 'NG', 'NTF', 'Yield'];
+
+      if (format === 'csv') {
+        const csvContent = [
+          headers.join(','),
+          ...rows.map(row => row.map((cell: any) => `"${cell}"`).join(',')),
+        ].join('\n');
+        
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${filename}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+        toast.success('Đã xuất báo cáo công trạm thành công (CSV)');
+      } else if (format === 'excel') {
+        const XLSX = await import('xlsx');
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Công trạm');
+        XLSX.writeFile(wb, `${filename}.xlsx`);
+        toast.success('Đã xuất báo cáo công trạm thành công (Excel)');
+      } else if (format === 'pdf') {
+        const { jsPDF } = await import('jspdf');
+        const autoTable = (await import('jspdf-autotable')).default;
+        
+        const doc = new jsPDF();
+        
+        // Title
+        doc.setFontSize(18);
+        doc.text('BÁO CÁO PHÂN TÍCH CÔNG TRẠM', 14, 20);
+        
+        doc.setFontSize(10);
+        doc.text(`Ngày xuất: ${formatDate(new Date(), 'dd/MM/yyyy')}`, 14, 30);
+        
+        // Summary
+        doc.setFontSize(12);
+        doc.text('Tóm tắt:', 14, 45);
+        doc.setFontSize(10);
+        const totalDefects = summaryData.reduce((sum: number, ws: any) => sum + (ws.ngCount || 0), 0);
+        const avgYield = summaryData.length > 0 ? summaryData.reduce((sum: number, ws: any) => sum + ((ws.okCount + ws.ntfCount) / Math.max(ws.totalCount, 1) * 100), 0) / summaryData.length : 0;
+        doc.text(`- Tổng công trạm: ${summaryData.length}`, 20, 52);
+        doc.text(`- Tổng lỗi NG: ${totalDefects}`, 20, 59);
+        doc.text(`- Yield trung bình: ${avgYield.toFixed(2)}%`, 20, 66);
+        
+        // Table
+        autoTable(doc, {
+          head: [headers],
+          body: rows,
+          startY: 80,
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: [20, 184, 166] },
+        });
+        
+        doc.save(`${filename}.pdf`);
+        toast.success('Đã xuất báo cáo công trạm thành công (PDF)');
+      }
+    } catch (error) {
+      console.error('Export workstation report error:', error);
+      toast.error('Lỗi khi xuất báo cáo công trạm');
+    } finally {
+      setIsExportingWorkstation(false);
     }
   };
 
@@ -871,7 +1017,7 @@ export default function History() {
                               </span>
                               <span className="flex items-center gap-1">
                                 <Calendar className="h-3 w-3" />
-                                {format(new Date(inspection.inspectionTime), "dd/MM/yyyy HH:mm:ss")}
+                                {formatDate(new Date(inspection.inspectionTime), "dd/MM/yyyy HH:mm:ss")}
                               </span>
                               {inspection.productModel && (
                                 <span>Model: {inspection.productModel}</span>
@@ -1252,6 +1398,93 @@ export default function History() {
                 </CardHeader>
               </Card>
 
+              {/* Workstation Filter & Export */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">Bộ lọc theo thời gian</CardTitle>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" disabled={isExportingWorkstation}>
+                          <Download className="h-4 w-4 mr-2" />
+                          Xuất báo cáo
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleExportWorkstationReport('pdf')}>
+                          <FileText className="h-4 w-4 mr-2" />
+                          PDF
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleExportWorkstationReport('excel')}>
+                          <FileSpreadsheet className="h-4 w-4 mr-2" />
+                          Excel
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleExportWorkstationReport('csv')}>
+                          <FileText className="h-4 w-4 mr-2" />
+                          CSV
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                      <Button
+                        variant={workstationDateRange === "all" ? "default" : "outline"}
+                        onClick={() => setWorkstationDateRange("all")}
+                        className="w-full"
+                      >
+                        Tất cả
+                      </Button>
+                      <Button
+                        variant={workstationDateRange === "today" ? "default" : "outline"}
+                        onClick={() => setWorkstationDateRange("today")}
+                        className="w-full"
+                      >
+                        Hôm nay
+                      </Button>
+                      <Button
+                        variant={workstationDateRange === "week" ? "default" : "outline"}
+                        onClick={() => setWorkstationDateRange("week")}
+                        className="w-full"
+                      >
+                        Tuần này
+                      </Button>
+                      <Button
+                        variant={workstationDateRange === "month" ? "default" : "outline"}
+                        onClick={() => setWorkstationDateRange("month")}
+                        className="w-full"
+                      >
+                        Tháng này
+                      </Button>
+                    </div>
+                    {workstationDateRange === "custom" && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-sm font-medium">Từ ngày</label>
+                          <Input
+                            type="date"
+                            value={workstationStartDate}
+                            onChange={(e) => setWorkstationStartDate(e.target.value)}
+                            className="mt-1"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium">Đến ngày</label>
+                          <Input
+                            type="date"
+                            value={workstationEndDate}
+                            onChange={(e) => setWorkstationEndDate(e.target.value)}
+                            className="mt-1"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
               {/* Workstation Summary */}
               <Card className="glass-card">
                 <CardHeader>
@@ -1348,6 +1581,45 @@ export default function History() {
                       <div className="flex items-center justify-center h-full text-muted-foreground">
                         Không có dữ liệu
                       </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Top NG Measurement Points */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="text-lg">Top 10 Điểm đo có lỗi cao nhất</CardTitle>
+                  <CardDescription>Các điểm đo cần ưu tiên cải thiện</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {topNGByWorkstation && (topNGByWorkstation as any[]).length > 0 ? (
+                      (topNGByWorkstation as any[]).map((point: any, index: number) => (
+                        <div key={`${point.workstationId}-${point.measurementPointId}`} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                          <div className="flex items-center gap-3 flex-1">
+                            <div className="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center text-sm font-semibold text-red-600">
+                              {index + 1}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm">{point.workstationName || 'Unknown'} - {point.measurementPointName}</p>
+                              <p className="text-xs text-muted-foreground">{point.workstationCode} / {point.measurementPointCode}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <div className="text-right">
+                              <div className="text-sm font-semibold text-red-600">{point.ngCount || 0}</div>
+                              <div className="text-xs text-muted-foreground">NG</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-semibold text-yellow-600">{point.ntfCount || 0}</div>
+                              <div className="text-xs text-muted-foreground">NTF</div>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground text-center py-4">Không có dữ liệu</p>
                     )}
                   </div>
                 </CardContent>
