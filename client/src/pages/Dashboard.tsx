@@ -673,63 +673,52 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Yield Alert Widget - Realtime alerts */}
+        {/* Yield Alert Widget - Compact Realtime alerts */}
         {yieldAlerts.length > 0 && (
-          <Card className="glass-card border-l-4 border-l-warning">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-warning" />
-                  Cảnh báo Yield ({yieldAlerts.length})
-                </CardTitle>
+          <Card className="glass-card">
+            <CardContent className="p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div className={`h-6 w-6 rounded-md flex items-center justify-center ${
+                    yieldAlerts.some(a => a.level === 'critical') ? 'bg-destructive/20' : 'bg-warning/20'
+                  }`}>
+                    <AlertTriangle className={`h-3.5 w-3.5 ${
+                      yieldAlerts.some(a => a.level === 'critical') ? 'text-destructive' : 'text-warning'
+                    }`} />
+                  </div>
+                  <span className="text-sm font-medium">Cảnh báo Yield</span>
+                  <Badge variant="secondary" className="text-xs h-5">{yieldAlerts.length}</Badge>
+                </div>
                 <Link href="/settings">
-                  <Button variant="ghost" size="sm" className="text-xs">
-                    Cấu hình ngưỡng
-                    <ChevronRight className="h-3 w-3 ml-1" />
+                  <Button variant="ghost" size="sm" className="h-6 text-xs px-2">
+                    Cấu hình
                   </Button>
                 </Link>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
+              <div className="flex flex-wrap gap-2">
                 {yieldAlerts.map((alert, index) => (
-                  <div 
-                    key={index}
-                    className={`flex items-center justify-between p-3 rounded-lg ${
-                      alert.level === 'critical' 
-                        ? 'bg-destructive/10 border border-destructive/30' 
-                        : 'bg-warning/10 border border-warning/30'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${
-                        alert.level === 'critical' ? 'bg-destructive/20' : 'bg-warning/20'
-                      }`}>
-                        {alert.level === 'critical' 
-                          ? <XCircle className="h-4 w-4 text-destructive" />
-                          : <AlertTriangle className="h-4 w-4 text-warning" />
-                        }
-                      </div>
-                      <div>
-                        <p className={`text-sm font-medium ${
-                          alert.level === 'critical' ? 'text-destructive' : 'text-warning'
+                  <TooltipProvider key={index}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs cursor-pointer ${
+                          alert.level === 'critical' 
+                            ? 'bg-destructive/10 border border-destructive/30 text-destructive' 
+                            : 'bg-warning/10 border border-warning/30 text-warning'
                         }`}>
-                          {alert.type}: {alert.currentValue.toFixed(2)}%
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {alert.message}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <Badge variant={alert.level === 'critical' ? 'destructive' : 'outline'} className="text-xs">
-                        {alert.level === 'critical' ? 'Nguy hiểm' : 'Cảnh báo'}
-                      </Badge>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Mục tiêu: {alert.target}%
-                      </p>
-                    </div>
-                  </div>
+                          {alert.level === 'critical' 
+                            ? <XCircle className="h-3 w-3" />
+                            : <AlertTriangle className="h-3 w-3" />
+                          }
+                          <span className="font-medium">{alert.type}</span>
+                          <span>{alert.currentValue.toFixed(1)}%</span>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-xs">
+                        <p className="font-medium">{alert.message}</p>
+                        <p className="text-xs text-muted-foreground mt-1">Mục tiêu: {alert.target}% | Ngưỡng: {alert.threshold}%</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 ))}
               </div>
             </CardContent>

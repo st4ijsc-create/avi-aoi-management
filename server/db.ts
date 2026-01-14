@@ -31,7 +31,8 @@ import {
   backupCodes, InsertBackupCode,
   userSessions, InsertUserSession,
   systemSettings, InsertSystemSetting,
-  auditLogs, InsertAuditLog
+  auditLogs, InsertAuditLog,
+  workstations, InsertWorkstation
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -3111,4 +3112,150 @@ export async function createSystemSetting(data: InsertSystemSetting) {
   
   const [result] = await db.insert(systemSettings).values(data);
   return result.insertId;
+}
+
+
+// ==============================
+// Workstations Functions
+// ==============================
+
+export async function getWorkstations(filters?: { lineId?: number; workshopId?: number; factoryId?: number; isActive?: boolean }) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions = [eq(workstations.isActive, filters?.isActive ?? true)];
+  if (filters?.lineId) conditions.push(eq(workstations.lineId, filters.lineId));
+  if (filters?.workshopId) conditions.push(eq(workstations.workshopId, filters.workshopId));
+  if (filters?.factoryId) conditions.push(eq(workstations.factoryId, filters.factoryId));
+  
+  return db.select().from(workstations).where(and(...conditions)).orderBy(workstations.orderIndex);
+}
+
+export async function getWorkstationById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select().from(workstations).where(eq(workstations.id, id)).limit(1);
+  return result[0] || null;
+}
+
+export async function createWorkstation(data: Omit<InsertWorkstation, 'id' | 'createdAt' | 'updatedAt'>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(workstations).values(data);
+  return result[0].insertId;
+}
+
+export async function updateWorkstation(id: number, data: Partial<Omit<InsertWorkstation, 'id' | 'createdAt' | 'updatedAt'>>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(workstations).set(data).where(eq(workstations.id, id));
+}
+
+export async function deleteWorkstation(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.delete(workstations).where(eq(workstations.id, id));
+}
+
+// Get defect statistics by workstation
+export async function getDefectsByWorkstation(filters?: { 
+  startDate?: Date; 
+  endDate?: Date; 
+  productModelId?: number;
+  machineId?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  // Get measurement results with workstation info
+  const query = sql`
+    SELECT 
+      w.id as workstationId,
+      w.code as workstationCode,
+      w.name as workstationName,
+      w.processType,
+      mpd.id as measurementPointId,
+      mpd.code as measurementPointCode,
+      mpd.name as measurementPointName,
+      COUNT(*) as totalCount,
+      SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) as okCount,
+      SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) as ngCount,
+      SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END) as ntfCount
+    FROM measurement_results mr
+    JOIN measurement_point_defs mpd ON mr.measurementPointDefId = mpd.id
+    LEFT JOIN workstations w ON mpd.workstationId = w.id
+    JOIN product_inspections pi ON mr.inspectionId = pi.id
+    WHERE 1=1
+    ${filters?.startDate ? sql`AND pi.inspectionTime >= ${filters.startDate}` : sql``}
+    ${filters?.endDate ? sql`AND pi.inspectionTime <= ${filters.endDate}` : sql``}
+    ${filters?.productModelId ? sql`AND mpd.productModelId = ${filters.productModelId}` : sql``}
+    ${filters?.machineId ? sql`AND pi.machineId = ${filters.machineId}` : sql``}
+    GROUP BY w.id, w.code, w.name, w.processType, mpd.id, mpd.code, mpd.name
+    ORDER BY ngCount DESC
+  `;
+  
+  const result = await db.execute(query);
+  return (result[0] as unknown) as Array<{
+    workstationId: number | null;
+    workstationCode: string | null;
+    workstationName: string | null;
+    processType: string | null;
+    measurementPointId: number;
+    measurementPointCode: string;
+    measurementPointName: string;
+    totalCount: number;
+    okCount: number;
+    ngCount: number;
+    ntfCount: number;
+  }>;
+}
+
+// Get workstation summary statistics
+export async function getWorkstationSummary(filters?: { 
+  startDate?: Date; 
+  endDate?: Date; 
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const query = sql`
+    SELECT 
+      w.id as workstationId,
+      w.code as workstationCode,
+      w.name as workstationName,
+      w.processType,
+      COUNT(DISTINCT mpd.id) as measurementPointCount,
+      COUNT(*) as totalInspections,
+      SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) as okCount,
+      SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) as ngCount,
+      SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END) as ntfCount,
+      ROUND(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) as yieldRate
+    FROM workstations w
+    LEFT JOIN measurement_point_defs mpd ON mpd.workstationId = w.id
+    LEFT JOIN measurement_results mr ON mr.measurementPointDefId = mpd.id
+    LEFT JOIN product_inspections pi ON mr.inspectionId = pi.id
+    WHERE w.isActive = 1
+    ${filters?.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
+    ${filters?.endDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime <= ${filters.endDate})` : sql``}
+    GROUP BY w.id, w.code, w.name, w.processType
+    ORDER BY ngCount DESC
+  `;
+  
+  const result = await db.execute(query);
+  return (result[0] as unknown) as Array<{
+    workstationId: number;
+    workstationCode: string;
+    workstationName: string;
+    processType: string;
+    measurementPointCount: number;
+    totalInspections: number;
+    okCount: number;
+    ngCount: number;
+    ntfCount: number;
+    yieldRate: number;
+  }>;
 }

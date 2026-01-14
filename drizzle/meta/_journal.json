@@ -148,6 +148,13 @@
       "when": 1768370216859,
       "tag": "0020_glorious_stark_industries",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "5",
+      "when": 1768372198053,
+      "tag": "0021_kind_bruce_banner",
+      "breakpoints": true
     }
   ]
 }

@@ -736,3 +736,13 @@
 - [x] Session Management: Tạo bảng user_sessions
 - [ ] Session Management: API list, revoke sessions
 - [ ] Session Management: UI quản lý phiên đăng nhập
+
+
+## Phase 52: Yield Widget Optimization & Workstation Analysis
+- [x] Tối ưu Yield Alert Widget trên Dashboard thành dạng compact
+- [ ] Thêm trường "Công trạm thực hiện" vào bảng measurement_point_defs
+- [ ] Cập nhật UI tạo/sửa điểm đo với dropdown chọn công trạm
+- [ ] Tạo bảng workstations để quản lý danh sách công trạm
+- [ ] Thêm tab "Phân tích công trạm" trong Module Lịch sử
+- [ ] Hiển thị thống kê lỗi theo điểm đo và công trạm thực hiện
+- [ ] Biểu đồ phân bố lỗi theo công trạm để đưa ra phương hướng cải thiện

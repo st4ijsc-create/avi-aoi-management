@@ -212,6 +212,7 @@ export const measurementPointDefs = mysqlTable("measurement_point_defs", {
   cropWidth: int("cropWidth").default(100).notNull(), // Chiều rộng vùng cắt
   cropHeight: int("cropHeight").default(100).notNull(), // Chiều cao vùng cắt
   orderIndex: int("orderIndex").default(0).notNull(), // Thứ tự điểm đo
+  workstationId: int("workstationId"), // Công trạm thực hiện sản xuất điểm đo này
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -813,3 +814,30 @@ export const systemSettings = mysqlTable("system_settings", {
 ]);
 export type SystemSetting = typeof systemSettings.$inferSelect;
 export type InsertSystemSetting = typeof systemSettings.$inferInsert;
+
+
+/**
+ * Workstations - Công trạm sản xuất
+ * Mỗi điểm kiểm tra của máy AVI/AOI được thực hiện bởi một công trạm trước đó
+ */
+export const workstations = mysqlTable("workstations", {
+  id: int("id").autoincrement().primaryKey(),
+  code: varchar("code", { length: 50 }).notNull().unique(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  lineId: int("lineId"), // Thuộc dây chuyền nào
+  workshopId: int("workshopId"), // Thuộc xưởng nào
+  factoryId: int("factoryId"), // Thuộc nhà máy nào
+  processType: mysqlEnum("processType", ["SMT", "DIP", "ASSEMBLY", "TESTING", "PACKAGING", "OTHER"]).default("OTHER"),
+  orderIndex: int("orderIndex").default(0).notNull(), // Thứ tự trong dây chuyền
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_workstations_code").on(table.code),
+  index("idx_workstations_line").on(table.lineId),
+  index("idx_workstations_workshop").on(table.workshopId),
+  index("idx_workstations_factory").on(table.factoryId),
+]);
+export type Workstation = typeof workstations.$inferSelect;
+export type InsertWorkstation = typeof workstations.$inferInsert;

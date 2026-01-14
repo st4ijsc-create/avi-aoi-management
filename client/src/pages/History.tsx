@@ -42,7 +42,8 @@ import {
   RefreshCw,
   Settings2,
   QrCode,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Factory
 } from "lucide-react";
 import BarcodeScanner from "@/components/BarcodeScanner";
 import { toast } from "sonner";
@@ -726,7 +727,7 @@ export default function History() {
 
         {/* Tabs: List and Analysis */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full max-w-3xl grid-cols-5">
+          <TabsList className="grid w-full max-w-4xl grid-cols-6">
             <TabsTrigger value="list" className="gap-2">
               <HistoryIcon className="h-4 w-4" />
               Danh sách
@@ -738,6 +739,10 @@ export default function History() {
             <TabsTrigger value="analysis" className="gap-2">
               <BarChart3 className="h-4 w-4" />
               Phân tích
+            </TabsTrigger>
+            <TabsTrigger value="workstation" className="gap-2">
+              <Factory className="h-4 w-4" />
+              Công trạm
             </TabsTrigger>
             <TabsTrigger value="spc" className="gap-2">
               <TrendingUp className="h-4 w-4" />
@@ -1223,6 +1228,103 @@ export default function History() {
                 </CardContent>
               </Card>
             )}
+          </TabsContent>
+
+          {/* Workstation Analysis Tab */}
+          <TabsContent value="workstation">
+            <div className="space-y-6">
+              {/* Workstation Header */}
+              <Card className="glass-card bg-gradient-to-r from-blue-500/10 to-cyan-500/10">
+                <CardHeader>
+                  <CardTitle className="text-xl flex items-center gap-3">
+                    <Factory className="h-6 w-6 text-blue-500" />
+                    Phân tích theo Công trạm
+                  </CardTitle>
+                  <CardDescription>
+                    Thống kê lỗi theo công trạm sản xuất và điểm đo để xác định nguyên nhân lỗi
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+
+              {/* Workstation Summary */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="text-lg">Tóm tắt theo Công trạm</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <p className="text-sm text-muted-foreground">Chọn khoảng thời gian để xem thống kê chi tiết</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium">Từ ngày</label>
+                        <Input type="date" className="mt-1" />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">Đến ngày</label>
+                        <Input type="date" className="mt-1" />
+                      </div>
+                    </div>
+                    <Button className="w-full">Thống kê</Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Defects by Workstation Chart */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="text-lg">Lỗi theo Công trạm</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-80 w-full flex items-center justify-center bg-muted/30 rounded-lg">
+                    <p className="text-muted-foreground">Biểu đồ lỗi theo công trạm</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Measurement Points by Workstation */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="text-lg">Điểm đo theo Công trạm</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="border-b">
+                        <tr>
+                          <th className="text-left py-2 px-2">Công trạm</th>
+                          <th className="text-left py-2 px-2">Loại quy trình</th>
+                          <th className="text-center py-2 px-2">Số điểm đo</th>
+                          <th className="text-center py-2 px-2">OK</th>
+                          <th className="text-center py-2 px-2">NG</th>
+                          <th className="text-center py-2 px-2">NTF</th>
+                          <th className="text-center py-2 px-2">Yield</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-b hover:bg-muted/50">
+                          <td className="py-2 px-2">SMT Line 1</td>
+                          <td className="py-2 px-2">SMT</td>
+                          <td className="text-center py-2 px-2">12</td>
+                          <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-green-500/10">450</Badge></td>
+                          <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-red-500/10">8</Badge></td>
+                          <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-yellow-500/10">2</Badge></td>
+                          <td className="text-center py-2 px-2"><Badge className="bg-green-600">97.8%</Badge></td>
+                        </tr>
+                        <tr className="border-b hover:bg-muted/50">
+                          <td className="py-2 px-2">Assembly Line 1</td>
+                          <td className="py-2 px-2">ASSEMBLY</td>
+                          <td className="text-center py-2 px-2">8</td>
+                          <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-green-500/10">445</Badge></td>
+                          <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-red-500/10">12</Badge></td>
+                          <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-yellow-500/10">3</Badge></td>
+                          <td className="text-center py-2 px-2"><Badge className="bg-green-600">97.0%</Badge></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           {/* SPC Tab */}

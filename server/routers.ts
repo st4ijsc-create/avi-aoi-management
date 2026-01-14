@@ -2662,6 +2662,88 @@ const auditRouter = router({
     }),
 });
 
+// Workstation Router
+const workstationRouter = router({
+  list: protectedProcedure
+    .input(z.object({
+      lineId: z.number().optional(),
+      workshopId: z.number().optional(),
+      factoryId: z.number().optional(),
+      isActive: z.boolean().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getWorkstations(input);
+    }),
+
+  getById: protectedProcedure
+    .input(z.number())
+    .query(async ({ input }) => {
+      return db.getWorkstationById(input);
+    }),
+
+  create: adminProcedure
+    .input(z.object({
+      code: z.string().min(1).max(50),
+      name: z.string().min(1).max(255),
+      description: z.string().optional(),
+      lineId: z.number().optional(),
+      workshopId: z.number().optional(),
+      factoryId: z.number().optional(),
+      processType: z.enum(['SMT', 'DIP', 'ASSEMBLY', 'TESTING', 'PACKAGING', 'OTHER']).optional(),
+      orderIndex: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const id = await db.createWorkstation(input);
+      return { id };
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      code: z.string().min(1).max(50).optional(),
+      name: z.string().min(1).max(255).optional(),
+      description: z.string().optional(),
+      lineId: z.number().nullable().optional(),
+      workshopId: z.number().nullable().optional(),
+      factoryId: z.number().nullable().optional(),
+      processType: z.enum(['SMT', 'DIP', 'ASSEMBLY', 'TESTING', 'PACKAGING', 'OTHER']).optional(),
+      orderIndex: z.number().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateWorkstation(id, data);
+      return { success: true };
+    }),
+
+  delete: adminProcedure
+    .input(z.number())
+    .mutation(async ({ input }) => {
+      await db.deleteWorkstation(input);
+      return { success: true };
+    }),
+
+  defectsByWorkstation: protectedProcedure
+    .input(z.object({
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      productModelId: z.number().optional(),
+      machineId: z.number().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getDefectsByWorkstation(input);
+    }),
+
+  summary: protectedProcedure
+    .input(z.object({
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getWorkstationSummary(input);
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -2699,6 +2781,7 @@ export const appRouter = router({
   manualMapping: manualMappingRouter,
   yieldThreshold: yieldThresholdRouter,
   audit: auditRouter,
+  workstation: workstationRouter,
 });
 
 export type AppRouter = typeof appRouter;
