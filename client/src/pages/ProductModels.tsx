@@ -96,6 +96,7 @@ export default function ProductModels() {
   const [editProductTargetYield, setEditProductTargetYield] = useState("");
   const [editProductMinYield, setEditProductMinYield] = useState("");
   const [editProductImageUrl, setEditProductImageUrl] = useState("");
+  const [editProductIsActive, setEditProductIsActive] = useState(true);
 
   // Point form states
   const [pointCode, setPointCode] = useState("");
@@ -109,8 +110,11 @@ export default function ProductModels() {
   const [pointReferenceImageUrl, setPointReferenceImageUrl] = useState("");
   const [pointCropWidth, setPointCropWidth] = useState(100);
   const [pointCropHeight, setPointCropHeight] = useState(100);
+  const [pointWorkstationId, setPointWorkstationId] = useState<number | undefined>(undefined);
   const [isSavingPoint, setIsSavingPoint] = useState(false);
   const [imageSourceMode, setImageSourceMode] = useState<"upload" | "auto-crop">("auto-crop");
+
+  const { data: workstations } = trpc.workstation.list.useQuery();
 
   const { data: productModels, refetch: refetchProducts } = trpc.productModel.list.useQuery();
   const { data: points, refetch: refetchPoints } = trpc.measurementPoint.listByProductModel.useQuery(
@@ -229,6 +233,7 @@ export default function ProductModels() {
     setPointReferenceImageUrl("");
     setPointCropWidth(100);
     setPointCropHeight(100);
+    setPointWorkstationId(undefined);
     setSelectedPointIndex(null);
   };
 
@@ -506,7 +511,14 @@ export default function ProductModels() {
       code: editProductCode,
       name: editProductName,
       description: editProductDescription || undefined,
+      category: editProductCategory || undefined,
+      productLine: editProductLine || undefined,
+      variant: editProductVariant || undefined,
+      lifecycleStatus: editProductLifecycle,
+      targetYieldRate: editProductTargetYield || undefined,
+      minYieldRate: editProductMinYield || undefined,
       referenceImageUrl: editProductImageUrl || undefined,
+      isActive: editProductIsActive,
     });
   };
 
@@ -520,6 +532,12 @@ export default function ProductModels() {
     setEditProductCode(selectedProduct.code);
     setEditProductName(selectedProduct.name);
     setEditProductDescription(selectedProduct.description || "");
+    setEditProductCategory(selectedProduct.category || "");
+    setEditProductLine(selectedProduct.productLine || "");
+    setEditProductVariant(selectedProduct.variant || "");
+    setEditProductLifecycle(selectedProduct.lifecycleStatus);
+    setEditProductTargetYield(selectedProduct.targetYieldRate || "");
+    setEditProductMinYield(selectedProduct.minYieldRate || "");
     setEditProductImageUrl("");
     setIsEditProductDialogOpen(true);
   };
@@ -573,6 +591,7 @@ export default function ProductModels() {
       referenceImageUrl: pointReferenceImageUrl || undefined,
       cropWidth: pointCropWidth,
       cropHeight: pointCropHeight,
+      workstationId: pointWorkstationId,
     };
 
     try {
@@ -1169,6 +1188,23 @@ export default function ProductModels() {
                           )}
                         </div>
 
+                        <div className="space-y-2">
+                          <Label htmlFor="pointWorkstation">Công trạm (tùy chọn)</Label>
+                          <Select value={pointWorkstationId?.toString() || ""} onValueChange={(value) => setPointWorkstationId(value ? parseInt(value) : undefined)}>
+                            <SelectTrigger id="pointWorkstation" disabled={!isEditMode}>
+                              <SelectValue placeholder="Chọn công trạm" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">Không chọn</SelectItem>
+                              {workstations?.map((ws) => (
+                                <SelectItem key={ws.id} value={ws.id.toString()}>
+                                  {ws.code} - {ws.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
                         <div className="text-sm text-muted-foreground p-2 bg-muted/30 rounded">
                           <p>Vị trí: ({measurementPoints[selectedPointIndex]?.positionX}, {measurementPoints[selectedPointIndex]?.positionY})</p>
                           <p>Bán kính: {measurementPoints[selectedPointIndex]?.radius}px</p>
@@ -1330,6 +1366,79 @@ export default function ProductModels() {
                 value={editProductDescription}
                 onChange={(e) => setEditProductDescription(e.target.value)}
               />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2">
+                <Label htmlFor="editProductCategory">Danh mục</Label>
+                <Input
+                  id="editProductCategory"
+                  value={editProductCategory}
+                  onChange={(e) => setEditProductCategory(e.target.value)}
+                  placeholder="VD: Điện tử"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editProductLine">Dòng sản phẩm</Label>
+                <Input
+                  id="editProductLine"
+                  value={editProductLine}
+                  onChange={(e) => setEditProductLine(e.target.value)}
+                  placeholder="VD: Premium"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2">
+                <Label htmlFor="editProductVariant">Biến thể</Label>
+                <Input
+                  id="editProductVariant"
+                  value={editProductVariant}
+                  onChange={(e) => setEditProductVariant(e.target.value)}
+                  placeholder="VD: Color"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editProductLifecycle">Trạng thái</Label>
+                <Select value={editProductLifecycle} onValueChange={(value: any) => setEditProductLifecycle(value)}>
+                  <SelectTrigger id="editProductLifecycle">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="development">Phát triển</SelectItem>
+                    <SelectItem value="active">Hoạt động</SelectItem>
+                    <SelectItem value="eol">Kết thúc vòng đời</SelectItem>
+                    <SelectItem value="archived">Lưu trữ</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2">
+                <Label htmlFor="editProductTargetYield">Mục tiêu Yield (%)</Label>
+                <Input
+                  id="editProductTargetYield"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={editProductTargetYield}
+                  onChange={(e) => setEditProductTargetYield(e.target.value)}
+                  placeholder="95.5"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editProductMinYield">Yield tối thiểu (%)</Label>
+                <Input
+                  id="editProductMinYield"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={editProductMinYield}
+                  onChange={(e) => setEditProductMinYield(e.target.value)}
+                  placeholder="85.0"
+                />
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="editProductImage">Ảnh tham chiếu mới (tùy chọn)</Label>
