@@ -310,7 +310,39 @@ export default function CorporateLayout() {
     }
   };
 
-  // Handle mouse move - drag
+  // Animation frame for smooth dragging
+  const animationFrameRef = useRef<number | null>(null);
+  const targetPositionRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Smooth animation function
+  const animateToPosition = () => {
+    if (!targetPositionRef.current || draggedFactoryId === null) return;
+    
+    const currentPos = factoryPositions[draggedFactoryId];
+    if (!currentPos) return;
+    
+    const target = targetPositionRef.current;
+    const dx = target.x - currentPos.x;
+    const dy = target.y - currentPos.y;
+    
+    // Smooth interpolation (easing)
+    const ease = 0.3;
+    const newX = currentPos.x + dx * ease;
+    const newY = currentPos.y + dy * ease;
+    
+    // Update position
+    setFactoryPositions(prev => ({
+      ...prev,
+      [draggedFactoryId]: { x: newX, y: newY }
+    }));
+    
+    // Continue animation if not close enough
+    if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.5) {
+      animationFrameRef.current = requestAnimationFrame(animateToPosition);
+    }
+  };
+
+  // Handle mouse move - drag with smooth animation
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas || !isDragging || draggedFactoryId === null) return;
@@ -333,8 +365,15 @@ export default function CorporateLayout() {
     }));
   };
 
-  // Handle mouse up - end drag and save to database
+  // Handle mouse up - end drag and save to database with animation
   const handleMouseUp = () => {
+    // Cancel any ongoing animation
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    targetPositionRef.current = null;
+    
     if (isDragging && draggedFactoryId !== null) {
       const pos = factoryPositions[draggedFactoryId];
       if (pos) {
@@ -349,6 +388,15 @@ export default function CorporateLayout() {
     setIsDragging(false);
     setDraggedFactoryId(null);
   };
+
+  // Cleanup animation frame on unmount
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, []);
 
   // Handle canvas click (for selection when not dragging)
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {

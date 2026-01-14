@@ -122,6 +122,9 @@ export const machines = mysqlTable("machines", {
   image2DKey: varchar("image2DKey", { length: 255 }),
   image3DUrl: text("image3DUrl"), // Ảnh 3D của máy
   image3DKey: varchar("image3DKey", { length: 255 }),
+  // Layout position for drag & drop
+  layoutPositionX: decimal("layoutPositionX", { precision: 10, scale: 4 }), // Vị trí X trong Layout (0-1)
+  layoutPositionY: decimal("layoutPositionY", { precision: 10, scale: 4 }), // Vị trí Y trong Layout (0-1)
   isActive: boolean("isActive").default(true).notNull(),
   lastHeartbeat: timestamp("lastHeartbeat"),
   operationStatus: mysqlEnum("operationStatus", ["running", "stopped", "error", "maintenance"]).default("stopped").notNull(),

@@ -339,6 +339,22 @@ const machineRouter = router({
       await db.deleteMachine(input.id);
       return { success: true };
     }),
+
+  // Update machine layout position
+  updateLayoutPosition: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      layoutPositionX: z.number().min(0).max(1),
+      layoutPositionY: z.number().min(0).max(1),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, layoutPositionX, layoutPositionY } = input;
+      await db.updateMachine(id, {
+        layoutPositionX: layoutPositionX.toString(),
+        layoutPositionY: layoutPositionY.toString(),
+      });
+      return { success: true };
+    }),
 });
 
 // ============ PRODUCT MODEL ROUTER ============

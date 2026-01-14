@@ -656,3 +656,10 @@
 - [x] Lưu vị trí khi kết thúc drag & drop
 - [x] Chế độ xem fullscreen cho Layout page
 - [x] Filter trạng thái máy trong Dashboard Layout tab (Online/Offline/All)
+
+
+## Phase 42: Drag Animation, Machine Position Persist, Mini-map
+- [x] Animation smooth khi drag & drop nhà máy trên bản đồ (easing, cleanup)
+- [x] Lưu vị trí máy trong Layout page vào database (layoutPositionX, layoutPositionY)
+- [x] Cho phép drag & drop máy trong Layout và persist vị trí
+- [x] Mini-map góc màn hình khi ở chế độ fullscreen (viewport indicator)

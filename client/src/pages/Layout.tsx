@@ -29,7 +29,7 @@ import {
   Layers
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
-import { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { useParams } from "wouter";
 import WorkshopLayoutEditor from "@/components/WorkshopLayoutEditor";
 
@@ -68,6 +68,12 @@ export default function Layout() {
   const [newLayoutName, setNewLayoutName] = useState("");
   const [newLayoutType, setNewLayoutType] = useState<"2D" | "3D">("2D");
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Drag & drop state for machines
+  const [isDraggingMachine, setIsDraggingMachine] = useState(false);
+  const [draggedMachineId, setDraggedMachineId] = useState<number | null>(null);
+  const [machinePositions, setMachinePositions] = useState<Record<number, { x: number; y: number }>>({}); 
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
   const { data: workshops } = trpc.workshop.list.useQuery();
   const { data: layouts, refetch: refetchLayouts } = trpc.layout.listByWorkshop.useQuery(
@@ -91,6 +97,78 @@ export default function Layout() {
     },
     onError: (err) => toast.error(err.message),
   });
+
+  // Mutation to save machine layout position
+  const updateMachinePositionMutation = trpc.machine.updateLayoutPosition.useMutation({
+    onSuccess: () => {
+      toast.success("Đã lưu vị trí máy");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  // Initialize machine positions from database
+  useEffect(() => {
+    if (machines && machines.length > 0) {
+      const positions: Record<number, { x: number; y: number }> = {};
+      machines.forEach((m) => {
+        if (m.layoutPositionX !== null && m.layoutPositionY !== null) {
+          positions[m.id] = {
+            x: parseFloat(m.layoutPositionX as string),
+            y: parseFloat(m.layoutPositionY as string),
+          };
+        }
+      });
+      setMachinePositions(positions);
+    }
+  }, [machines]);
+
+  // Machine drag handlers
+  const handleMachineDragStart = (e: React.MouseEvent, machineId: number, machineX: number, machineY: number) => {
+    e.stopPropagation();
+    setIsDraggingMachine(true);
+    setDraggedMachineId(machineId);
+    setDragOffset({
+      x: e.clientX - machineX,
+      y: e.clientY - machineY,
+    });
+  };
+
+  const handleMachineDrag = (e: React.MouseEvent) => {
+    if (!isDraggingMachine || draggedMachineId === null || !containerRef.current) return;
+    
+    const rect = containerRef.current.getBoundingClientRect();
+    const newX = (e.clientX - dragOffset.x - rect.left - pan.x) / zoom;
+    const newY = (e.clientY - dragOffset.y - rect.top - pan.y) / zoom;
+    
+    // Clamp to container bounds
+    const clampedX = Math.max(0, Math.min(rect.width / zoom - 150, newX));
+    const clampedY = Math.max(0, Math.min(rect.height / zoom - 100, newY));
+    
+    setMachinePositions(prev => ({
+      ...prev,
+      [draggedMachineId]: { x: clampedX, y: clampedY }
+    }));
+  };
+
+  const handleMachineDragEnd = () => {
+    if (isDraggingMachine && draggedMachineId !== null && containerRef.current) {
+      const pos = machinePositions[draggedMachineId];
+      if (pos) {
+        const rect = containerRef.current.getBoundingClientRect();
+        // Normalize to 0-1 range
+        const normalizedX = pos.x / (rect.width / zoom);
+        const normalizedY = pos.y / (rect.height / zoom);
+        
+        updateMachinePositionMutation.mutate({
+          id: draggedMachineId,
+          layoutPositionX: Math.max(0, Math.min(1, normalizedX)),
+          layoutPositionY: Math.max(0, Math.min(1, normalizedY)),
+        });
+      }
+    }
+    setIsDraggingMachine(false);
+    setDraggedMachineId(null);
+  };
 
   // Combine machine positions with stats
   const machinesWithStats = useMemo<MachineWithStats[]>(() => {
@@ -352,11 +430,20 @@ export default function Layout() {
                 <CardContent className={isFullscreen ? "p-0" : ""}>
                   <div 
                     ref={containerRef}
-                    className={`relative w-full bg-secondary/30 rounded-lg overflow-hidden cursor-grab active:cursor-grabbing ${isFullscreen ? 'h-[calc(100vh-200px)]' : 'h-[600px]'}`}
+                    className={`relative w-full bg-secondary/30 rounded-lg overflow-hidden ${isDraggingMachine ? 'cursor-grabbing' : 'cursor-grab'} ${isFullscreen ? 'h-[calc(100vh-200px)]' : 'h-[600px]'}`}
                     onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={handleMouseUp}
-                    onMouseLeave={handleMouseUp}
+                    onMouseMove={(e) => {
+                      handleMouseMove(e);
+                      handleMachineDrag(e);
+                    }}
+                    onMouseUp={() => {
+                      handleMouseUp();
+                      handleMachineDragEnd();
+                    }}
+                    onMouseLeave={() => {
+                      handleMouseUp();
+                      handleMachineDragEnd();
+                    }}
                     onWheel={handleWheel}
                   >
                     {/* Grid background */}
@@ -382,17 +469,26 @@ export default function Layout() {
                       {machinesWithStats.length > 0 ? (
                         machinesWithStats.map((machine) => {
                           const imageUrl = layoutType === "2D" ? machine.image2DUrl : machine.image3DUrl;
+                          const customPos = machinePositions[machine.id];
+                          const posX = customPos ? customPos.x : machine.positionX;
+                          const posY = customPos ? customPos.y : machine.positionY;
+                          const isDragged = draggedMachineId === machine.id;
                           
                           return (
                             <div
                               key={machine.id}
-                              className="absolute rounded-lg border-2 border-border/50 shadow-lg transition-all hover:scale-105 hover:border-primary/50 bg-card/80 backdrop-blur"
+                              className={`absolute rounded-lg border-2 shadow-lg bg-card/80 backdrop-blur cursor-move select-none ${
+                                isDragged 
+                                  ? 'border-primary shadow-primary/30 scale-105 z-50' 
+                                  : 'border-border/50 hover:scale-105 hover:border-primary/50'
+                              } transition-all duration-100`}
                               style={{
-                                left: machine.positionX,
-                                top: machine.positionY,
+                                left: posX,
+                                top: posY,
                                 width: machine.width,
                                 height: machine.height,
                               }}
+                              onMouseDown={(e) => handleMachineDragStart(e, machine.id, posX, posY)}
                             >
                               {/* Machine Image or Placeholder */}
                               {imageUrl ? (
@@ -435,8 +531,51 @@ export default function Layout() {
                     {/* Controls hint */}
                     <div className="absolute bottom-4 left-4 text-xs text-muted-foreground bg-card/80 backdrop-blur px-3 py-2 rounded-lg">
                       <Move className="h-3 w-3 inline mr-1" />
-                      Kéo để di chuyển • Cuộn để zoom
+                      Kéo để di chuyển • Cuộn để zoom • Kéo máy để thay đổi vị trí
                     </div>
+
+                    {/* Mini-map for fullscreen mode */}
+                    {isFullscreen && machinesWithStats.length > 0 && (
+                      <div className="absolute bottom-4 right-4 w-48 h-32 bg-card/90 backdrop-blur border border-border/50 rounded-lg overflow-hidden shadow-lg">
+                        <div className="absolute inset-0 p-2">
+                          <div className="relative w-full h-full bg-secondary/30 rounded">
+                            {/* Mini machines */}
+                            {machinesWithStats.map((machine) => {
+                              const customPos = machinePositions[machine.id];
+                              const posX = customPos ? customPos.x : machine.positionX;
+                              const posY = customPos ? customPos.y : machine.positionY;
+                              // Scale positions to mini-map (assuming layout is 1200x600)
+                              const miniX = (posX / 1200) * 100;
+                              const miniY = (posY / 600) * 100;
+                              return (
+                                <div
+                                  key={machine.id}
+                                  className="absolute w-2 h-2 bg-primary rounded-sm"
+                                  style={{
+                                    left: `${Math.min(95, Math.max(0, miniX))}%`,
+                                    top: `${Math.min(90, Math.max(0, miniY))}%`,
+                                  }}
+                                  title={machine.name}
+                                />
+                              );
+                            })}
+                            {/* Viewport indicator */}
+                            <div
+                              className="absolute border-2 border-primary/50 rounded bg-primary/10"
+                              style={{
+                                left: `${Math.max(0, -pan.x / (1200 * zoom) * 100)}%`,
+                                top: `${Math.max(0, -pan.y / (600 * zoom) * 100)}%`,
+                                width: `${Math.min(100, 100 / zoom)}%`,
+                                height: `${Math.min(100, 100 / zoom)}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <div className="absolute top-1 left-2 text-[10px] text-muted-foreground font-medium">
+                          Mini-map
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
