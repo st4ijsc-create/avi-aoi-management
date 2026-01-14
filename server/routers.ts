@@ -1556,6 +1556,121 @@ const userRouter = router({
     return db.getAllUsers();
   }),
 
+  getById: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const user = await db.getUserById(input.id);
+      if (!user) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Không tìm thấy người dùng' });
+      }
+      // Don't return passwordHash
+      const { passwordHash, ...safeUser } = user;
+      return safeUser;
+    }),
+
+  search: adminProcedure
+    .input(z.object({ query: z.string() }))
+    .query(async ({ input }) => {
+      const users = await db.searchUsers(input.query);
+      return users.map(u => {
+        const { passwordHash, ...safeUser } = u;
+        return safeUser;
+      });
+    }),
+
+  create: adminProcedure
+    .input(z.object({
+      username: z.string().min(3).max(100),
+      password: z.string().min(6).max(100),
+      name: z.string().min(1).max(255),
+      email: z.string().email().optional(),
+      phone: z.string().max(20).optional(),
+      department: z.string().max(100).optional(),
+      position: z.string().max(100).optional(),
+      role: z.enum(['user', 'admin']).default('user'),
+    }))
+    .mutation(async ({ input }) => {
+      // Check if username already exists
+      const existing = await db.getUserByUsername(input.username);
+      if (existing) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Tên đăng nhập đã tồn tại' });
+      }
+      
+      // Hash password
+      const bcrypt = await import('bcryptjs');
+      const passwordHash = await bcrypt.hash(input.password, 10);
+      
+      const { password, ...userData } = input;
+      const result = await db.createLocalUser({
+        ...userData,
+        passwordHash,
+      });
+      
+      return { success: true, id: result.id };
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(255).optional(),
+      email: z.string().email().optional().nullable(),
+      phone: z.string().max(20).optional().nullable(),
+      department: z.string().max(100).optional().nullable(),
+      position: z.string().max(100).optional().nullable(),
+      role: z.enum(['user', 'admin']).optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...inputData } = input;
+      
+      // Prevent admin from deactivating themselves
+      if (id === ctx.user.id && inputData.isActive === false) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Không thể vô hiệu hóa tài khoản của chính mình' });
+      }
+      
+      // Prevent admin from changing their own role
+      if (id === ctx.user.id && inputData.role && inputData.role !== ctx.user.role) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Không thể thay đổi vai trò của chính mình' });
+      }
+      
+      // Convert null to undefined for db.updateUser
+      const data: Parameters<typeof db.updateUser>[1] = {
+        name: inputData.name,
+        email: inputData.email ?? undefined,
+        phone: inputData.phone ?? undefined,
+        department: inputData.department ?? undefined,
+        position: inputData.position ?? undefined,
+        role: inputData.role,
+        isActive: inputData.isActive,
+      };
+      
+      await db.updateUser(id, data);
+      return { success: true };
+    }),
+
+  updatePassword: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      newPassword: z.string().min(6).max(100),
+    }))
+    .mutation(async ({ input }) => {
+      const user = await db.getUserById(input.id);
+      if (!user) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Không tìm thấy người dùng' });
+      }
+      
+      // Only local users can have password changed
+      if (user.loginMethod !== 'local') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Chỉ có thể đổi mật khẩu cho tài khoản nội bộ' });
+      }
+      
+      const bcrypt = await import('bcryptjs');
+      const passwordHash = await bcrypt.hash(input.newPassword, 10);
+      await db.updateUserPassword(input.id, passwordHash);
+      
+      return { success: true };
+    }),
+
   updateRole: protectedProcedure
     .input(z.object({
       userId: z.number(),

@@ -699,3 +699,11 @@
 - [x] Tạo seed data measurement_results tương ứng với product_inspections (16,501 records)
 - [x] Realtime Alert Dashboard - Hiển thị cảnh báo Yield realtime trên Dashboard
 - [x] Historical Threshold Tracking - Lưu lịch sử thay đổi ngưỡng và so sánh hiệu quả
+
+
+## Phase 48: Manual Mapping CRUD, Local Auth, User Management
+
+- [x] Manual Mapping: Thêm chức năng Edit kết nối thủ công (đã có sẵn)
+- [x] Manual Mapping: Thêm chức năng Delete kết nối thủ công (đã có sẵn)
+- [x] Đăng nhập Username/Password: Thêm local authentication
+- [x] CRUD trang Người dùng: Tạo/Xem/Sửa/Xóa người dùng

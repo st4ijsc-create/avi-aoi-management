@@ -4,11 +4,13 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { 
@@ -18,21 +20,33 @@ import {
   Search,
   Pencil,
   Trash2,
-  MoreHorizontal,
+  Plus,
+  Key,
   Mail,
+  Phone,
+  Building2,
+  Briefcase,
   Calendar,
-  Clock
+  Clock,
+  Loader2,
+  UserCheck,
+  UserX,
+  RefreshCw
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 type UserType = {
   id: number;
   openId: string;
+  username: string | null;
   name: string | null;
   email: string | null;
+  phone: string | null;
+  department: string | null;
+  position: string | null;
   loginMethod: string | null;
   role: "user" | "admin";
+  isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
   lastSignedIn: Date;
@@ -44,52 +58,227 @@ export default function Users() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
-  const [editingUser, setEditingUser] = useState<UserType | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  
+  // Create dialog
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    username: "",
+    password: "",
+    confirmPassword: "",
+    name: "",
+    email: "",
+    phone: "",
+    department: "",
+    position: "",
+    role: "user" as "user" | "admin",
+  });
+  
+  // Edit dialog
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserType | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    department: "",
+    position: "",
+    role: "user" as "user" | "admin",
+    isActive: true,
+  });
+  
+  // Password dialog
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    newPassword: "",
+    confirmPassword: "",
+  });
+  
+  // Delete dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserType | null>(null);
-  const [newRole, setNewRole] = useState<"user" | "admin">("user");
+  
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { data: users, refetch: refetchUsers } = trpc.user.list.useQuery();
+  const { data: users, refetch: refetchUsers, isLoading } = trpc.user.list.useQuery();
 
-  const updateRoleMutation = trpc.user.updateRole.useMutation({
+  const createMutation = trpc.user.create.useMutation({
     onSuccess: () => {
-      toast.success("Cập nhật quyền thành công");
+      toast.success("Tạo người dùng thành công");
+      setCreateDialogOpen(false);
+      resetCreateForm();
+      refetchUsers();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Lỗi khi tạo người dùng");
+    },
+  });
+
+  const updateMutation = trpc.user.update.useMutation({
+    onSuccess: () => {
+      toast.success("Cập nhật người dùng thành công");
       setEditDialogOpen(false);
       setEditingUser(null);
       refetchUsers();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => {
+      toast.error(error.message || "Lỗi khi cập nhật người dùng");
+    },
   });
 
-  const deleteUserMutation = trpc.user.delete.useMutation({
+  const updatePasswordMutation = trpc.user.updatePassword.useMutation({
+    onSuccess: () => {
+      toast.success("Đổi mật khẩu thành công");
+      setPasswordDialogOpen(false);
+      setPasswordForm({ newPassword: "", confirmPassword: "" });
+    },
+    onError: (error) => {
+      toast.error(error.message || "Lỗi khi đổi mật khẩu");
+    },
+  });
+
+  const deleteMutation = trpc.user.delete.useMutation({
     onSuccess: () => {
       toast.success("Xóa người dùng thành công");
       setDeleteDialogOpen(false);
       setUserToDelete(null);
       refetchUsers();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => {
+      toast.error(error.message || "Lỗi khi xóa người dùng");
+    },
   });
 
-  const filteredUsers = users?.filter((u: UserType) => {
-    const matchesSearch = !searchTerm || 
-      u.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.email?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesRole = roleFilter === "all" || u.role === roleFilter;
-    return matchesSearch && matchesRole;
-  });
+  const resetCreateForm = () => {
+    setCreateForm({
+      username: "",
+      password: "",
+      confirmPassword: "",
+      name: "",
+      email: "",
+      phone: "",
+      department: "",
+      position: "",
+      role: "user",
+    });
+  };
 
-  const handleEditRole = (user: UserType) => {
+  const handleCreate = async () => {
+    if (!createForm.username || !createForm.password || !createForm.name) {
+      toast.error("Vui lòng điền đầy đủ thông tin bắt buộc");
+      return;
+    }
+    if (createForm.password !== createForm.confirmPassword) {
+      toast.error("Mật khẩu xác nhận không khớp");
+      return;
+    }
+    if (createForm.password.length < 6) {
+      toast.error("Mật khẩu phải có ít nhất 6 ký tự");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await createMutation.mutateAsync({
+        username: createForm.username,
+        password: createForm.password,
+        name: createForm.name,
+        email: createForm.email || undefined,
+        phone: createForm.phone || undefined,
+        department: createForm.department || undefined,
+        position: createForm.position || undefined,
+        role: createForm.role,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEdit = (user: UserType) => {
     setEditingUser(user);
-    setNewRole(user.role);
+    setEditForm({
+      name: user.name || "",
+      email: user.email || "",
+      phone: user.phone || "",
+      department: user.department || "",
+      position: user.position || "",
+      role: user.role,
+      isActive: user.isActive,
+    });
     setEditDialogOpen(true);
   };
 
-  const handleDeleteUser = (user: UserType) => {
+  const handleUpdate = async () => {
+    if (!editingUser) return;
+
+    setIsSubmitting(true);
+    try {
+      await updateMutation.mutateAsync({
+        id: editingUser.id,
+        name: editForm.name || undefined,
+        email: editForm.email || null,
+        phone: editForm.phone || null,
+        department: editForm.department || null,
+        position: editForm.position || null,
+        role: editForm.role,
+        isActive: editForm.isActive,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleChangePassword = (user: UserType) => {
+    setEditingUser(user);
+    setPasswordForm({ newPassword: "", confirmPassword: "" });
+    setPasswordDialogOpen(true);
+  };
+
+  const handleUpdatePassword = async () => {
+    if (!editingUser) return;
+    
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      toast.error("Mật khẩu xác nhận không khớp");
+      return;
+    }
+    if (passwordForm.newPassword.length < 6) {
+      toast.error("Mật khẩu phải có ít nhất 6 ký tự");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await updatePasswordMutation.mutateAsync({
+        id: editingUser.id,
+        newPassword: passwordForm.newPassword,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = (user: UserType) => {
     setUserToDelete(user);
     setDeleteDialogOpen(true);
   };
+
+  const confirmDelete = async () => {
+    if (!userToDelete) return;
+    await deleteMutation.mutateAsync({ userId: userToDelete.id });
+  };
+
+  // Filter users
+  const filteredUsers = users?.filter((user: UserType) => {
+    const matchesSearch = 
+      (user.name?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (user.username?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (user.email?.toLowerCase() || "").includes(searchTerm.toLowerCase());
+    const matchesRole = roleFilter === "all" || user.role === roleFilter;
+    const matchesStatus = statusFilter === "all" || 
+      (statusFilter === "active" && user.isActive) ||
+      (statusFilter === "inactive" && !user.isActive);
+    return matchesSearch && matchesRole && matchesStatus;
+  }) || [];
 
   const formatDate = (date: Date) => {
     return new Date(date).toLocaleDateString("vi-VN", {
@@ -103,15 +292,16 @@ export default function Users() {
 
   if (!isAdmin) {
     return (
-      <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/users">
+      <DashboardLayout title="Người dùng" navItems={navItems}>
         <div className="flex items-center justify-center h-[60vh]">
-          <Card className="w-96">
-            <CardHeader>
-              <CardTitle className="text-destructive">Không có quyền truy cập</CardTitle>
-              <CardDescription>
-                Bạn cần quyền Admin để truy cập trang này.
-              </CardDescription>
-            </CardHeader>
+          <Card className="w-full max-w-md">
+            <CardContent className="pt-6 text-center">
+              <Shield className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Không có quyền truy cập</h3>
+              <p className="text-muted-foreground">
+                Chỉ Admin mới có thể quản lý người dùng
+              </p>
+            </CardContent>
           </Card>
         </div>
       </DashboardLayout>
@@ -119,262 +309,510 @@ export default function Users() {
   }
 
   return (
-    <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/users">
+    <DashboardLayout title="Quản lý người dùng" navItems={navItems}>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <UsersIcon className="h-6 w-6 text-primary" />
-              Quản lý người dùng
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Quản lý tài khoản và phân quyền người dùng trong hệ thống
-            </p>
-          </div>
-        </div>
-
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid gap-4 md:grid-cols-4">
           <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-primary/10 rounded-lg">
-                  <UsersIcon className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{users?.length || 0}</p>
-                  <p className="text-sm text-muted-foreground">Tổng người dùng</p>
-                </div>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Tổng người dùng</CardTitle>
+              <UsersIcon className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{users?.length || 0}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Admin</CardTitle>
+              <Shield className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {users?.filter((u: UserType) => u.role === "admin").length || 0}
               </div>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-red-500/10 rounded-lg">
-                  <Shield className="h-6 w-6 text-red-500" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{users?.filter((u: UserType) => u.role === "admin").length || 0}</p>
-                  <p className="text-sm text-muted-foreground">Admin</p>
-                </div>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Đang hoạt động</CardTitle>
+              <UserCheck className="h-4 w-4 text-green-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">
+                {users?.filter((u: UserType) => u.isActive).length || 0}
               </div>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-blue-500/10 rounded-lg">
-                  <User className="h-6 w-6 text-blue-500" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{users?.filter((u: UserType) => u.role === "user").length || 0}</p>
-                  <p className="text-sm text-muted-foreground">User</p>
-                </div>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Vô hiệu hóa</CardTitle>
+              <UserX className="h-4 w-4 text-red-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-600">
+                {users?.filter((u: UserType) => !u.isActive).length || 0}
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Filters */}
+        {/* Main Card */}
         <Card>
           <CardHeader>
-            <CardTitle>Danh sách người dùng</CardTitle>
-            <CardDescription>
-              Tìm kiếm và quản lý tài khoản người dùng
-            </CardDescription>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <CardTitle>Danh sách người dùng</CardTitle>
+                <CardDescription>Quản lý tài khoản người dùng hệ thống</CardDescription>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => refetchUsers()}>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Làm mới
+                </Button>
+                <Button onClick={() => setCreateDialogOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Thêm người dùng
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="flex gap-4 mb-6">
+            {/* Filters */}
+            <div className="flex flex-col md:flex-row gap-4 mb-6">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Tìm theo tên hoặc email..."
+                  placeholder="Tìm kiếm theo tên, username, email..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
                 />
               </div>
               <Select value={roleFilter} onValueChange={setRoleFilter}>
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Lọc theo quyền" />
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="Vai trò" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả</SelectItem>
+                  <SelectItem value="all">Tất cả vai trò</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
                   <SelectItem value="user">User</SelectItem>
                 </SelectContent>
               </Select>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="Trạng thái" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tất cả</SelectItem>
+                  <SelectItem value="active">Hoạt động</SelectItem>
+                  <SelectItem value="inactive">Vô hiệu</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
-            {/* Users Table */}
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Người dùng</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Quyền</TableHead>
-                    <TableHead>Đăng nhập lần cuối</TableHead>
-                    <TableHead>Ngày tạo</TableHead>
-                    <TableHead className="w-[70px]"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredUsers?.map((user: UserType) => (
-                    <TableRow key={user.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                            <span className="text-sm font-medium text-primary">
-                              {user.name?.charAt(0).toUpperCase() || "U"}
-                            </span>
-                          </div>
-                          <div>
-                            <p className="font-medium">{user.name || "Chưa đặt tên"}</p>
-                            <p className="text-xs text-muted-foreground">{user.loginMethod || "email"}</p>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Mail className="h-4 w-4 text-muted-foreground" />
-                          <span>{user.email || "N/A"}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={user.role === "admin" ? "destructive" : "secondary"}>
-                          {user.role === "admin" ? (
-                            <><Shield className="h-3 w-3 mr-1" /> Admin</>
-                          ) : (
-                            <><User className="h-3 w-3 mr-1" /> User</>
-                          )}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Clock className="h-4 w-4" />
-                          {formatDate(user.lastSignedIn)}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Calendar className="h-4 w-4" />
-                          {formatDate(user.createdAt)}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {user.id !== currentUser?.id && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleEditRole(user)}>
-                                <Pencil className="h-4 w-4 mr-2" />
-                                Đổi quyền
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                onClick={() => handleDeleteUser(user)}
-                                className="text-destructive"
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Xóa
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {(!filteredUsers || filteredUsers.length === 0) && (
+            {/* Table */}
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : filteredUsers.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <UsersIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Không tìm thấy người dùng nào</p>
+              </div>
+            ) : (
+              <div className="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                        Không tìm thấy người dùng nào
-                      </TableCell>
+                      <TableHead>Người dùng</TableHead>
+                      <TableHead>Username</TableHead>
+                      <TableHead>Phòng ban</TableHead>
+                      <TableHead>Vai trò</TableHead>
+                      <TableHead>Trạng thái</TableHead>
+                      <TableHead>Đăng nhập gần nhất</TableHead>
+                      <TableHead className="text-right">Thao tác</TableHead>
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredUsers.map((user: UserType) => (
+                      <TableRow key={user.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center text-white font-semibold">
+                              {user.name?.charAt(0).toUpperCase() || "U"}
+                            </div>
+                            <div>
+                              <div className="font-medium">{user.name || "Chưa đặt tên"}</div>
+                              <div className="text-sm text-muted-foreground flex items-center gap-1">
+                                <Mail className="h-3 w-3" />
+                                {user.email || "Chưa có email"}
+                              </div>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <code className="text-sm bg-muted px-2 py-1 rounded">
+                            {user.username || "-"}
+                          </code>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            {user.department && (
+                              <div className="flex items-center gap-1">
+                                <Building2 className="h-3 w-3 text-muted-foreground" />
+                                {user.department}
+                              </div>
+                            )}
+                            {user.position && (
+                              <div className="flex items-center gap-1 text-muted-foreground">
+                                <Briefcase className="h-3 w-3" />
+                                {user.position}
+                              </div>
+                            )}
+                            {!user.department && !user.position && "-"}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={user.role === "admin" ? "default" : "secondary"}>
+                            {user.role === "admin" ? (
+                              <><Shield className="h-3 w-3 mr-1" /> Admin</>
+                            ) : (
+                              <><User className="h-3 w-3 mr-1" /> User</>
+                            )}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={user.isActive ? "outline" : "destructive"}>
+                            {user.isActive ? "Hoạt động" : "Vô hiệu"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm text-muted-foreground flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {formatDate(user.lastSignedIn)}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEdit(user)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            {user.loginMethod === "local" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleChangePassword(user)}
+                              >
+                                <Key className="h-4 w-4" />
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-500 hover:text-red-600"
+                              onClick={() => handleDelete(user)}
+                              disabled={user.id === currentUser?.id}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
+      </div>
 
-        {/* Edit Role Dialog */}
-        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Thay đổi quyền người dùng</DialogTitle>
-              <DialogDescription>
-                Thay đổi quyền cho {editingUser?.name || editingUser?.email}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
+      {/* Create Dialog */}
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Thêm người dùng mới</DialogTitle>
+            <DialogDescription>
+              Tạo tài khoản nội bộ với username và mật khẩu
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Quyền mới</label>
-                <Select value={newRole} onValueChange={(v) => setNewRole(v as "user" | "admin")}>
+                <Label htmlFor="username">Tên đăng nhập *</Label>
+                <Input
+                  id="username"
+                  placeholder="username"
+                  value={createForm.username}
+                  onChange={(e) => setCreateForm({ ...createForm, username: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="name">Họ tên *</Label>
+                <Input
+                  id="name"
+                  placeholder="Nguyễn Văn A"
+                  value={createForm.name}
+                  onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="password">Mật khẩu *</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Ít nhất 6 ký tự"
+                  value={createForm.password}
+                  onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">Xác nhận mật khẩu *</Label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  placeholder="Nhập lại mật khẩu"
+                  value={createForm.confirmPassword}
+                  onChange={(e) => setCreateForm({ ...createForm, confirmPassword: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="email@example.com"
+                  value={createForm.email}
+                  onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="phone">Số điện thoại</Label>
+                <Input
+                  id="phone"
+                  placeholder="0123456789"
+                  value={createForm.phone}
+                  onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="department">Phòng ban</Label>
+                <Input
+                  id="department"
+                  placeholder="Phòng Sản xuất"
+                  value={createForm.department}
+                  onChange={(e) => setCreateForm({ ...createForm, department: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="position">Chức vụ</Label>
+                <Input
+                  id="position"
+                  placeholder="Nhân viên QC"
+                  value={createForm.position}
+                  onChange={(e) => setCreateForm({ ...createForm, position: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="role">Vai trò</Label>
+              <Select
+                value={createForm.role}
+                onValueChange={(v) => setCreateForm({ ...createForm, role: v as "user" | "admin" })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">User - Người dùng thường</SelectItem>
+                  <SelectItem value="admin">Admin - Quản trị viên</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
+              Hủy
+            </Button>
+            <Button onClick={handleCreate} disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Tạo người dùng
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Chỉnh sửa người dùng</DialogTitle>
+            <DialogDescription>
+              Cập nhật thông tin cho {editingUser?.name || editingUser?.username}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="editName">Họ tên</Label>
+                <Input
+                  id="editName"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editEmail">Email</Label>
+                <Input
+                  id="editEmail"
+                  type="email"
+                  value={editForm.email}
+                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="editPhone">Số điện thoại</Label>
+                <Input
+                  id="editPhone"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editDepartment">Phòng ban</Label>
+                <Input
+                  id="editDepartment"
+                  value={editForm.department}
+                  onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="editPosition">Chức vụ</Label>
+                <Input
+                  id="editPosition"
+                  value={editForm.position}
+                  onChange={(e) => setEditForm({ ...editForm, position: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editRole">Vai trò</Label>
+                <Select
+                  value={editForm.role}
+                  onValueChange={(v) => setEditForm({ ...editForm, role: v as "user" | "admin" })}
+                  disabled={editingUser?.id === currentUser?.id}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="user">
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4" />
-                        User - Quyền xem và sử dụng cơ bản
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="admin">
-                      <div className="flex items-center gap-2">
-                        <Shield className="h-4 w-4" />
-                        Admin - Toàn quyền quản trị
-                      </div>
-                    </SelectItem>
+                    <SelectItem value="user">User</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
-                Hủy
-              </Button>
-              <Button 
-                onClick={() => editingUser && updateRoleMutation.mutate({ 
-                  userId: editingUser.id, 
-                  role: newRole 
-                })}
-                disabled={updateRoleMutation.isPending}
-              >
-                {updateRoleMutation.isPending ? "Đang lưu..." : "Lưu thay đổi"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="editIsActive">Trạng thái hoạt động</Label>
+              <Switch
+                id="editIsActive"
+                checked={editForm.isActive}
+                onCheckedChange={(checked) => setEditForm({ ...editForm, isActive: checked })}
+                disabled={editingUser?.id === currentUser?.id}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+              Hủy
+            </Button>
+            <Button onClick={handleUpdate} disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Cập nhật
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-        {/* Delete Confirmation Dialog */}
-        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Xác nhận xóa người dùng</AlertDialogTitle>
-              <AlertDialogDescription>
-                Bạn có chắc chắn muốn xóa người dùng "{userToDelete?.name || userToDelete?.email}"? 
-                Hành động này không thể hoàn tác.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Hủy</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => userToDelete && deleteUserMutation.mutate({ userId: userToDelete.id })}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                {deleteUserMutation.isPending ? "Đang xóa..." : "Xóa"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
+      {/* Change Password Dialog */}
+      <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Đổi mật khẩu</DialogTitle>
+            <DialogDescription>
+              Đặt mật khẩu mới cho {editingUser?.name || editingUser?.username}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="newPassword">Mật khẩu mới</Label>
+              <Input
+                id="newPassword"
+                type="password"
+                placeholder="Ít nhất 6 ký tự"
+                value={passwordForm.newPassword}
+                onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirmNewPassword">Xác nhận mật khẩu</Label>
+              <Input
+                id="confirmNewPassword"
+                type="password"
+                placeholder="Nhập lại mật khẩu mới"
+                value={passwordForm.confirmPassword}
+                onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPasswordDialogOpen(false)}>
+              Hủy
+            </Button>
+            <Button onClick={handleUpdatePassword} disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Đổi mật khẩu
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xác nhận xóa người dùng</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bạn có chắc muốn xóa người dùng "{userToDelete?.name || userToDelete?.username}"?
+              Hành động này không thể hoàn tác.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-500 hover:bg-red-600"
+              onClick={confirmDelete}
+            >
+              Xóa
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 }

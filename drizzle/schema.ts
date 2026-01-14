@@ -6,14 +6,24 @@ import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, boolean,
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
   openId: varchar("openId", { length: 64 }).notNull().unique(),
+  username: varchar("username", { length: 100 }).unique(), // For local auth
+  passwordHash: varchar("passwordHash", { length: 255 }), // For local auth (bcrypt hash)
   name: text("name"),
   email: varchar("email", { length: 320 }),
+  phone: varchar("phone", { length: 20 }), // Số điện thoại
+  department: varchar("department", { length: 100 }), // Phòng ban
+  position: varchar("position", { length: 100 }), // Chức vụ
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  isActive: boolean("isActive").default(true).notNull(), // Trạng thái tài khoản
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
-});
+}, (table) => [
+  index("idx_users_username").on(table.username),
+  index("idx_users_email").on(table.email),
+  index("idx_users_active").on(table.isActive),
+]);
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;

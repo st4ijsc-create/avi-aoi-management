@@ -19,11 +19,13 @@ import Users from "./pages/Users";
 import ProductMachineMapping from "./pages/ProductMachineMapping";
 import ProductionOrders from "./pages/ProductionOrders";
 import MachineStatusMonitor from "./pages/MachineStatusMonitor";
+import Login from "./pages/Login";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
+      <Route path="/login" component={Login} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/history" component={History} />
       <Route path="/inspection/:id" component={InspectionDetail} />

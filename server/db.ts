@@ -134,6 +134,92 @@ export async function deleteUser(userId: number) {
   await db.delete(users).where(eq(users.id, userId));
 }
 
+export async function getUserById(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserByUsername(username: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function createLocalUser(data: {
+  username: string;
+  passwordHash: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  department?: string;
+  position?: string;
+  role?: 'user' | 'admin';
+}) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  
+  // Generate a unique openId for local users
+  const openId = `local_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+  
+  const result = await db.insert(users).values({
+    openId,
+    username: data.username,
+    passwordHash: data.passwordHash,
+    name: data.name,
+    email: data.email || null,
+    phone: data.phone || null,
+    department: data.department || null,
+    position: data.position || null,
+    loginMethod: 'local',
+    role: data.role || 'user',
+    isActive: true,
+  });
+  return { id: Number(result[0].insertId), openId };
+}
+
+export async function updateUser(userId: number, data: {
+  name?: string;
+  email?: string;
+  phone?: string;
+  department?: string;
+  position?: string;
+  role?: 'user' | 'admin';
+  isActive?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  await db.update(users).set(data).where(eq(users.id, userId));
+}
+
+export async function updateUserPassword(userId: number, passwordHash: string) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+}
+
+export async function getActiveUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(users).where(eq(users.isActive, true)).orderBy(desc(users.createdAt));
+}
+
+export async function searchUsers(query: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(users)
+    .where(
+      or(
+        like(users.name, `%${query}%`),
+        like(users.username, `%${query}%`),
+        like(users.email, `%${query}%`)
+      )
+    )
+    .orderBy(desc(users.createdAt));
+}
+
 // ============ FACTORY FUNCTIONS ============
 export async function createFactory(data: InsertFactory) {
   const db = await getDb();
