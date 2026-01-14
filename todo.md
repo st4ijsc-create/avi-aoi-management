@@ -806,3 +806,19 @@
 - [x] Thêm measurement point search/filter - tìm kiếm theo code, name, type
 - [x] Thêm quick actions toolbar - duplicate, export, delete measurement points
 - [ ] Kiểm tra, chạy tests và lưu checkpoint
+
+
+## Phase 60: Measurement Point Templates UI, Batch Operations & Validation
+- [x] Thêm measurement point templates UI - save/load/apply templates
+- [x] Tạo dialog quản lý templates (list, create, edit, delete)
+- [x] Thêm nút "Lưu thành template" trong ProductModels page
+- [x] Thêm nút "Áp dụng template" để load template vào sản phẩm
+- [x] Thêm batch measurement point operations - bulk select, delete, update, export
+- [x] Thêm checkbox multi-select cho measurement points
+- [x] Thêm bulk delete với confirmation dialog
+- [x] Thêm bulk export selected points to CSV/Excel
+- [x] Thêm measurement point validation rules
+- [x] Validate duplicate code trong cùng sản phẩm
+- [x] Validate giới hạn dưới < giới hạn trên
+- [x] Validate required fields (code, name, type)
+- [x] Hiển thị validation errors inline

@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
-import { Plus, Package, Target, Upload, Trash2, Edit, Eye, MousePointer, Circle, Save, X, Move, ZoomIn, ZoomOut, MoreVertical, Copy, Image as ImageIcon, FileSpreadsheet } from "lucide-react";
+import { Plus, Package, Target, Upload, Trash2, Edit, Eye, MousePointer, Circle, Save, X, Move, ZoomIn, ZoomOut, MoreVertical, Copy, Image as ImageIcon, FileSpreadsheet, Download, Layers, CheckSquare, Square } from "lucide-react";
 import { BulkImportDialog } from "@/components/BulkImportDialog";
 import { navItems } from "@/lib/navigation";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -115,8 +115,23 @@ export default function ProductModels() {
   const [pointWorkstationId, setPointWorkstationId] = useState<number | undefined>(undefined);
   const [isSavingPoint, setIsSavingPoint] = useState(false);
   const [imageSourceMode, setImageSourceMode] = useState<"upload" | "auto-crop">("auto-crop");
+  
+  // Template states
+  const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  const [templateDescription, setTemplateDescription] = useState("");
+  const [templateCategory, setTemplateCategory] = useState("");
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  
+  // Batch selection states
+  const [selectedPointIds, setSelectedPointIds] = useState<Set<number>>(new Set());
+  const [isBatchMode, setIsBatchMode] = useState(false);
+  
+  // Validation errors
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   const { data: workstations } = trpc.workstation.list.useQuery();
+  const { data: templates, refetch: refetchTemplates } = trpc.template.list.useQuery();
 
   const { data: productModels, refetch: refetchProducts } = trpc.productModel.list.useQuery();
   const { data: points, refetch: refetchPoints } = trpc.measurementPoint.listByProductModel.useQuery(
@@ -165,6 +180,33 @@ export default function ProductModels() {
       setSelectedProduct(null);
     },
     onError: (error: { message: string }) => {
+      toast.error(`Lỗi: ${error.message}`);
+    },
+  });
+
+  // Template mutations
+  const createTemplateMutation = trpc.template.create.useMutation({
+    onSuccess: () => {
+      toast.success("Lưu template thành công");
+      refetchTemplates();
+      setIsTemplateDialogOpen(false);
+      setTemplateName("");
+      setTemplateDescription("");
+      setTemplateCategory("");
+      setIsSavingTemplate(false);
+    },
+    onError: (error) => {
+      toast.error(`Lỗi: ${error.message}`);
+      setIsSavingTemplate(false);
+    },
+  });
+
+  const deleteTemplateMutation = trpc.template.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Xóa template thành công");
+      refetchTemplates();
+    },
+    onError: (error) => {
       toast.error(`Lỗi: ${error.message}`);
     },
   });
@@ -691,6 +733,143 @@ export default function ProductModels() {
     toast.success("Đã sao chép điểm đo");
   };
 
+  // Template handlers
+  const handleSaveAsTemplate = async () => {
+    if (!templateName.trim()) {
+      toast.error("Vui lòng nhập tên template");
+      return;
+    }
+    if (measurementPoints.length === 0) {
+      toast.error("Không có điểm đo nào để lưu");
+      return;
+    }
+
+    setIsSavingTemplate(true);
+    const pointsData = measurementPoints.map(p => ({
+      code: p.code,
+      name: p.name,
+      description: p.description,
+      measurementType: p.measurementType,
+      unit: p.unit,
+      lowerLimit: p.lowerLimit,
+      upperLimit: p.upperLimit,
+      nominalValue: p.nominalValue,
+      positionX: p.positionX,
+      positionY: p.positionY,
+      radius: p.radius,
+      orderIndex: p.orderIndex,
+      cropWidth: p.cropWidth,
+      cropHeight: p.cropHeight,
+    }));
+
+    createTemplateMutation.mutate({
+      code: `TPL-${Date.now()}`,
+      name: templateName,
+      description: templateDescription,
+      category: templateCategory || "general",
+      points: pointsData,
+    });
+  };
+
+  const handleApplyTemplate = (template: { id: number; name: string; points?: unknown }) => {
+    try {
+      const pointsData = (Array.isArray(template.points) 
+        ? template.points 
+        : []) as MeasurementPoint[];
+      const newPoints = pointsData.map((p, idx) => ({
+        ...p,
+        id: undefined,
+        orderIndex: measurementPoints.length + idx,
+      }));
+      setMeasurementPoints([...measurementPoints, ...newPoints]);
+      toast.success(`Đã áp dụng template "${template.name}" với ${newPoints.length} điểm đo`);
+    } catch {
+      toast.error("Lỗi khi áp dụng template");
+    }
+  };
+
+  // Batch selection handlers
+  const togglePointSelection = (pointId: number) => {
+    const newSelected = new Set(selectedPointIds);
+    if (newSelected.has(pointId)) {
+      newSelected.delete(pointId);
+    } else {
+      newSelected.add(pointId);
+    }
+    setSelectedPointIds(newSelected);
+  };
+
+  const selectAllPoints = () => {
+    const allIds = new Set(measurementPoints.filter(p => p.id).map(p => p.id!));
+    setSelectedPointIds(allIds);
+  };
+
+  const deselectAllPoints = () => {
+    setSelectedPointIds(new Set());
+  };
+
+  const handleBatchDelete = () => {
+    if (selectedPointIds.size === 0) {
+      toast.error("Vui lòng chọn ít nhất một điểm đo");
+      return;
+    }
+    const newPoints = measurementPoints.filter(p => !p.id || !selectedPointIds.has(p.id));
+    setMeasurementPoints(newPoints);
+    setSelectedPointIds(new Set());
+    toast.success(`Đã xóa ${selectedPointIds.size} điểm đo`);
+  };
+
+  const handleBatchExport = () => {
+    if (selectedPointIds.size === 0) {
+      toast.error("Vui lòng chọn ít nhất một điểm đo");
+      return;
+    }
+    const selectedPoints = measurementPoints.filter(p => p.id && selectedPointIds.has(p.id));
+    const csv = [
+      "Mã,Tên,Loại,Đơn vị,Giới hạn dưới,Giới hạn trên,Giá trị danh định",
+      ...selectedPoints.map(p => `${p.code},${p.name},${p.measurementType},${p.unit || ''},${p.lowerLimit || ''},${p.upperLimit || ''},${p.nominalValue || ''}`)
+    ].join("\n");
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `measurement_points_${Date.now()}.csv`;
+    a.click();
+    toast.success(`Đã xuất ${selectedPoints.length} điểm đo`);
+  };
+
+  // Validation function
+  const validatePoint = (point: MeasurementPoint): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    
+    // Required fields
+    if (!point.code.trim()) {
+      errors.code = "Mã điểm đo là bắt buộc";
+    }
+    if (!point.name.trim()) {
+      errors.name = "Tên điểm đo là bắt buộc";
+    }
+    
+    // Duplicate code check
+    const duplicateCode = measurementPoints.find(
+      (p, idx) => p.code === point.code && idx !== selectedPointIndex
+    );
+    if (duplicateCode) {
+      errors.code = "Mã điểm đo đã tồn tại";
+    }
+    
+    // Limit validation
+    if (point.lowerLimit && point.upperLimit) {
+      const lower = parseFloat(point.lowerLimit);
+      const upper = parseFloat(point.upperLimit);
+      if (!isNaN(lower) && !isNaN(upper) && lower >= upper) {
+        errors.limits = "Giới hạn dưới phải nhỏ hơn giới hạn trên";
+      }
+    }
+    
+    return errors;
+  };
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -943,14 +1122,30 @@ export default function ProductModels() {
                     </Button>
                   </>
                 ) : (
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     <Button size="sm" variant="outline" onClick={() => setIsBulkImportDialogOpen(true)} className="gap-1">
                       <FileSpreadsheet className="h-4 w-4" />
-                      Import Excel
+                      Import
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setIsTemplateDialogOpen(true)} className="gap-1">
+                      <Layers className="h-4 w-4" />
+                      Templates
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant={isBatchMode ? "default" : "outline"} 
+                      onClick={() => {
+                        setIsBatchMode(!isBatchMode);
+                        if (isBatchMode) setSelectedPointIds(new Set());
+                      }} 
+                      className="gap-1"
+                    >
+                      {isBatchMode ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                      {isBatchMode ? "Thoát" : "Chọn"}
                     </Button>
                     <Button size="sm" onClick={() => setIsEditMode(true)} className="gap-1">
                       <Edit className="h-4 w-4" />
-                      Chỉnh sửa
+                      Sửa
                     </Button>
                   </div>
                 )}
@@ -960,6 +1155,45 @@ export default function ProductModels() {
           <CardContent>
             {selectedProduct ? (
               <div className="space-y-4">
+                {/* Batch Actions Bar */}
+                {isBatchMode && (
+                  <div className="flex items-center gap-2 p-2 bg-accent/50 rounded-lg">
+                    <span className="text-sm font-medium">
+                      Đã chọn: {selectedPointIds.size} điểm đo
+                    </span>
+                    <div className="flex gap-2 ml-auto">
+                      <Button size="sm" variant="outline" onClick={selectAllPoints} className="gap-1">
+                        <CheckSquare className="h-3 w-3" />
+                        Chọn tất cả
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={deselectAllPoints} className="gap-1">
+                        <Square className="h-3 w-3" />
+                        Bỏ chọn
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={handleBatchExport}
+                        disabled={selectedPointIds.size === 0}
+                        className="gap-1"
+                      >
+                        <Download className="h-3 w-3" />
+                        Xuất CSV
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="destructive" 
+                        onClick={handleBatchDelete}
+                        disabled={selectedPointIds.size === 0}
+                        className="gap-1"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Xóa
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Search and Filter */}
                 <div className="flex gap-2 items-end">
                   <div className="flex-1">
@@ -1564,6 +1798,122 @@ export default function ProductModels() {
           }}
         />
       )}
+
+      {/* Template Dialog */}
+      <Dialog open={isTemplateDialogOpen} onOpenChange={setIsTemplateDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Layers className="h-5 w-5" />
+              Quản lý Templates
+            </DialogTitle>
+            <DialogDescription>
+              Lưu hoặc áp dụng template điểm đo cho sản phẩm
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            {/* Save as Template Section */}
+            <div className="space-y-4 border-b pb-4">
+              <h4 className="font-medium">Lưu thành Template mới</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Tên template *</Label>
+                  <Input
+                    value={templateName}
+                    onChange={(e) => setTemplateName(e.target.value)}
+                    placeholder="VD: Template điện tử cơ bản"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Danh mục</Label>
+                  <Select value={templateCategory} onValueChange={setTemplateCategory}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Chọn danh mục" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="electronics">Điện tử</SelectItem>
+                      <SelectItem value="mechanical">Cơ khí</SelectItem>
+                      <SelectItem value="assembly">Lắp ráp</SelectItem>
+                      <SelectItem value="general">Chung</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Mô tả</Label>
+                <Textarea
+                  value={templateDescription}
+                  onChange={(e) => setTemplateDescription(e.target.value)}
+                  placeholder="Mô tả template..."
+                  rows={2}
+                />
+              </div>
+              <Button
+                onClick={handleSaveAsTemplate}
+                disabled={isSavingTemplate || measurementPoints.length === 0}
+                className="gap-2"
+              >
+                <Save className="h-4 w-4" />
+                Lưu {measurementPoints.length} điểm đo thành template
+              </Button>
+            </div>
+
+            {/* Apply Template Section */}
+            <div className="space-y-4">
+              <h4 className="font-medium">Áp dụng Template có sẵn</h4>
+              <ScrollArea className="h-[200px] border rounded-md p-2">
+                {templates && templates.length > 0 ? (
+                  <div className="space-y-2">
+                    {templates.map((template) => (
+                      <div
+                        key={template.id}
+                        className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent/50"
+                      >
+                        <div>
+                          <div className="font-medium">{template.name}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {template.category} • {template.description || 'Không có mô tả'}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleApplyTemplate(template)}
+                            className="gap-1"
+                          >
+                            <Download className="h-3 w-3" />
+                            Áp dụng
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => deleteTemplateMutation.mutate({ id: template.id })}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-muted-foreground">
+                    Chưa có template nào
+                  </div>
+                )}
+              </ScrollArea>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsTemplateDialogOpen(false)}>
+              Đóng
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
