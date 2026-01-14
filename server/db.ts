@@ -3171,7 +3171,8 @@ export async function getDefectsByWorkstation(filters?: {
   const db = await getDb();
   if (!db) return [];
   
-  // Get measurement results with workstation info
+  // Optimized query: Use INNER JOIN with workstations to avoid NULL handling
+  // Only include measurement points that have a workstation assigned
   const query = sql`
     SELECT 
       w.id as workstationId,
@@ -3181,15 +3182,15 @@ export async function getDefectsByWorkstation(filters?: {
       mpd.id as measurementPointId,
       mpd.code as measurementPointCode,
       mpd.name as measurementPointName,
-      COUNT(*) as totalCount,
+      COUNT(mr.id) as totalCount,
       SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) as okCount,
       SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) as ngCount,
       SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END) as ntfCount
     FROM measurement_results mr
-    JOIN measurement_point_defs mpd ON mr.measurementPointDefId = mpd.id
-    LEFT JOIN workstations w ON mpd.workstationId = w.id
-    JOIN product_inspections pi ON mr.inspectionId = pi.id
-    WHERE 1=1
+    INNER JOIN measurement_point_defs mpd ON mr.measurementPointDefId = mpd.id
+    INNER JOIN workstations w ON mpd.workstationId = w.id
+    INNER JOIN product_inspections pi ON mr.inspectionId = pi.id
+    WHERE w.isActive = 1
     ${filters?.startDate ? sql`AND pi.inspectionTime >= ${filters.startDate}` : sql``}
     ${filters?.endDate ? sql`AND pi.inspectionTime <= ${filters.endDate}` : sql``}
     ${filters?.productModelId ? sql`AND mpd.productModelId = ${filters.productModelId}` : sql``}

@@ -524,6 +524,7 @@ const measurementPointRouter = router({
     .input(z.object({
       productModelId: z.number(),
       machineId: z.number().optional(),
+      workstationId: z.number().optional(),
       code: z.string().min(1).max(50),
       name: z.string().min(1).max(255),
       description: z.string().optional(),
@@ -565,6 +566,7 @@ const measurementPointRouter = router({
       referenceImageUrl: z.string().optional(),
       referenceImageKey: z.string().optional(),
       orderIndex: z.number().optional(),
+      workstationId: z.number().optional(),
       isActive: z.boolean().optional(),
     }))
     .mutation(async ({ input }) => {
