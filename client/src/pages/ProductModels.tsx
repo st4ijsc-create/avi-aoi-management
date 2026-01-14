@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -110,6 +110,8 @@ export default function ProductModels() {
   const [pointReferenceImageUrl, setPointReferenceImageUrl] = useState("");
   const [pointCropWidth, setPointCropWidth] = useState(100);
   const [pointCropHeight, setPointCropHeight] = useState(100);
+  const [pointSearchQuery, setPointSearchQuery] = useState("");
+  const [pointTypeFilter, setPointTypeFilter] = useState<"" | MeasurementPoint["measurementType"]>("");
   const [pointWorkstationId, setPointWorkstationId] = useState<number | undefined>(undefined);
   const [isSavingPoint, setIsSavingPoint] = useState(false);
   const [imageSourceMode, setImageSourceMode] = useState<"upload" | "auto-crop">("auto-crop");
@@ -236,6 +238,17 @@ export default function ProductModels() {
     setPointWorkstationId(undefined);
     setSelectedPointIndex(null);
   };
+
+  // Filter measurement points based on search and type filter
+  const filteredMeasurementPoints = useMemo(() => {
+    return measurementPoints.filter((point) => {
+      const matchesSearch = 
+        point.code.toLowerCase().includes(pointSearchQuery.toLowerCase()) ||
+        point.name.toLowerCase().includes(pointSearchQuery.toLowerCase());
+      const matchesType = !pointTypeFilter || point.measurementType === pointTypeFilter;
+      return matchesSearch && matchesType;
+    });
+  }, [measurementPoints, pointSearchQuery, pointTypeFilter]);
 
   // Load measurement points when product is selected
   useEffect(() => {
@@ -732,16 +745,15 @@ export default function ProductModels() {
 
   if (authLoading) {
     return (
-      <DashboardLayout title="Quản lý sản phẩm" navItems={navItems} currentPath="/products">
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        </div>
-      </DashboardLayout>
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
     );
   }
 
   return (
-    <DashboardLayout title="Quản lý sản phẩm" navItems={navItems} currentPath="/products">
+    <>
+      <DashboardLayout title="Quản lý sản phẩm" navItems={navItems} currentPath="/products">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Product List */}
         <Card className="lg:col-span-1">
@@ -947,9 +959,43 @@ export default function ProductModels() {
           </CardHeader>
           <CardContent>
             {selectedProduct ? (
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                {/* Canvas Area */}
-                <div className="xl:col-span-2">
+              <div className="space-y-4">
+                {/* Search and Filter */}
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <Label htmlFor="pointSearch" className="text-xs">Tim kiem</Label>
+                    <Input
+                      id="pointSearch"
+                      placeholder="Tim theo ma hoac ten..."
+                      value={pointSearchQuery}
+                      onChange={(e) => setPointSearchQuery(e.target.value)}
+                      className="h-8"
+                    />
+                  </div>
+                  <div className="w-40">
+                    <Label htmlFor="typeFilter" className="text-xs">Loai</Label>
+                    <Select value={pointTypeFilter} onValueChange={(val) => setPointTypeFilter(val as any)}>
+                      <SelectTrigger id="typeFilter" className="h-8">
+                        <SelectValue placeholder="Tat ca" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">Tat ca</SelectItem>
+                        <SelectItem value="DIMENSION">Kich thuoc</SelectItem>
+                        <SelectItem value="VISUAL">Hinh anh</SelectItem>
+                        <SelectItem value="ELECTRICAL">Dien</SelectItem>
+                        <SelectItem value="POSITION">Vi tri</SelectItem>
+                        <SelectItem value="COLOR">Mau sac</SelectItem>
+                        <SelectItem value="SURFACE">Be mat</SelectItem>
+                        <SelectItem value="OTHER">Khac</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <span className="text-xs text-muted-foreground">({filteredMeasurementPoints.length})</span>
+                </div>
+
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                  {/* Canvas Area */}
+                  <div className="xl:col-span-2">
                   {/* Zoom Controls */}
                   <div className="flex items-center gap-4 mb-3 p-2 bg-muted/30 rounded-lg">
                     <div className="flex items-center gap-2">
@@ -1197,7 +1243,12 @@ export default function ProductModels() {
                             <SelectContent>
                               {workstations?.map((ws) => (
                                 <SelectItem key={ws.id} value={ws.id.toString()}>
-                                  {ws.code} - {ws.name}
+                                  <div className="flex items-center gap-2">
+                                    <span>{ws.code} - {ws.name}</span>
+                                    <Badge variant={ws.isActive ? "default" : "secondary"} className="ml-2">
+                                      {ws.isActive ? "Active" : "Inactive"}
+                                    </Badge>
+                                  </div>
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -1319,22 +1370,24 @@ export default function ProductModels() {
                     </div>
                   )}
                 </div>
+                </div>
               </div>
             ) : (
               <div className="flex items-center justify-center h-64 text-muted-foreground">
                 <div className="text-center">
                   <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                  <p>Chọn một sản phẩm để quản lý điểm đo</p>
+                  <p>Chon mot san pham de quan ly diem do</p>
                 </div>
               </div>
             )}
           </CardContent>
         </Card>
       </div>
+      </DashboardLayout>
 
       {/* Edit Product Dialog */}
       <Dialog open={isEditProductDialogOpen} onOpenChange={setIsEditProductDialogOpen}>
-        <DialogContent className="max-w-md">
+          <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Chỉnh sửa sản phẩm</DialogTitle>
             <DialogDescription>
@@ -1511,6 +1564,6 @@ export default function ProductModels() {
           }}
         />
       )}
-    </DashboardLayout>
+    </>
   );
 }

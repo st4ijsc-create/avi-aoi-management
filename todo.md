@@ -801,4 +801,8 @@
 - [x] Thêm UI để quản lý templates (templateDb.ts)
 - [x] Thêm product comparison view - so sánh 2 sản phẩm (ProductComparison page)
 - [x] Hiển thị điểm đo khác nhau giữa 2 sản phẩm (comparison logic)
-- [x] Suggest điểm đo cần bổ sung (visual cards)
+- [x] Suggest điểm đo cần bổ sung (visual car## Phase 59: Workstation Status Indicator & Measurement Point Management
+- [x] Thêm workstation status indicator - hiển thị active/inactive badge
+- [x] Thêm measurement point search/filter - tìm kiếm theo code, name, type
+- [x] Thêm quick actions toolbar - duplicate, export, delete measurement points
+- [ ] Kiểm tra, chạy tests và lưu checkpoint
