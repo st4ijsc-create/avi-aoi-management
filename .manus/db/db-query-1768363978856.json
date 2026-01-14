@@ -1,0 +1,15 @@
+{
+  "query": "SELECT COUNT(*) as count, MIN(date) as min_date, MAX(date) as max_date FROM daily_statistics;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute SELECT COUNT(*) as count, MIN(date) as min_date, MAX(date) as max_date FROM daily_statistics;",
+  "rows": [
+    {
+      "count": "0",
+      "min_date": "NULL",
+      "max_date": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "count\tmin_date\tmax_date\n0\tNULL\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 1527
+}

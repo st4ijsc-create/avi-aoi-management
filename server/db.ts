@@ -25,7 +25,8 @@ import {
   lineProductAssignments, InsertLineProductAssignment,
   machineStatusLogs, InsertMachineStatusLog,
   machineHeartbeats, InsertMachineHeartbeat,
-  manualMachineConnections, InsertManualMachineConnection
+  manualMachineConnections, InsertManualMachineConnection,
+  yieldAlertThresholds, InsertYieldAlertThreshold
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2446,4 +2447,52 @@ export async function getEnabledManualConnections() {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(manualMachineConnections).where(eq(manualMachineConnections.isEnabled, true));
+}
+
+
+// ============ Yield Alert Thresholds ============
+
+export async function getYieldAlertThresholds() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(yieldAlertThresholds).orderBy(yieldAlertThresholds.metricType);
+}
+
+export async function getYieldAlertThresholdById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const results = await db.select().from(yieldAlertThresholds).where(eq(yieldAlertThresholds.id, id));
+  return results[0] || null;
+}
+
+export async function getYieldAlertThresholdByType(metricType: 'FPY' | 'FY' | 'NTF' | 'UPH') {
+  const db = await getDb();
+  if (!db) return null;
+  const results = await db.select().from(yieldAlertThresholds).where(eq(yieldAlertThresholds.metricType, metricType));
+  return results[0] || null;
+}
+
+export async function createYieldAlertThreshold(data: InsertYieldAlertThreshold) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(yieldAlertThresholds).values(data);
+  return result[0].insertId;
+}
+
+export async function updateYieldAlertThreshold(id: number, data: Partial<InsertYieldAlertThreshold>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(yieldAlertThresholds).set(data).where(eq(yieldAlertThresholds.id, id));
+}
+
+export async function deleteYieldAlertThreshold(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(yieldAlertThresholds).where(eq(yieldAlertThresholds.id, id));
+}
+
+export async function getEnabledYieldAlertThresholds() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(yieldAlertThresholds).where(eq(yieldAlertThresholds.isEnabled, true));
 }

@@ -2173,6 +2173,58 @@ const manualMappingRouter = router({
     }),
 });
 
+// Yield Alert Threshold Router
+const yieldThresholdRouter = router({
+  list: protectedProcedure.query(async () => {
+    return db.getYieldAlertThresholds();
+  }),
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getYieldAlertThresholdById(input.id);
+    }),
+
+  getByType: protectedProcedure
+    .input(z.object({ metricType: z.enum(['FPY', 'FY', 'NTF', 'UPH']) }))
+    .query(async ({ input }) => {
+      return db.getYieldAlertThresholdByType(input.metricType);
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      warningThreshold: z.number().optional(),
+      criticalThreshold: z.number().optional(),
+      targetValue: z.number().optional(),
+      comparisonOperator: z.enum(['gt', 'lt', 'gte', 'lte']).optional(),
+      isEnabled: z.boolean().optional(),
+      notifyOnWarning: z.boolean().optional(),
+      notifyOnCritical: z.boolean().optional(),
+      description: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      // Convert numbers to strings for decimal fields
+      const updateData: any = {};
+      if (data.warningThreshold !== undefined) updateData.warningThreshold = String(data.warningThreshold);
+      if (data.criticalThreshold !== undefined) updateData.criticalThreshold = String(data.criticalThreshold);
+      if (data.targetValue !== undefined) updateData.targetValue = String(data.targetValue);
+      if (data.comparisonOperator !== undefined) updateData.comparisonOperator = data.comparisonOperator;
+      if (data.isEnabled !== undefined) updateData.isEnabled = data.isEnabled;
+      if (data.notifyOnWarning !== undefined) updateData.notifyOnWarning = data.notifyOnWarning;
+      if (data.notifyOnCritical !== undefined) updateData.notifyOnCritical = data.notifyOnCritical;
+      if (data.description !== undefined) updateData.description = data.description;
+      
+      await db.updateYieldAlertThreshold(id, updateData);
+      return { success: true };
+    }),
+
+  getEnabled: protectedProcedure.query(async () => {
+    return db.getEnabledYieldAlertThresholds();
+  }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -2208,6 +2260,7 @@ export const appRouter = router({
   machineStatus: machineStatusRouter,
   bulkImport: bulkImportRouter,
   manualMapping: manualMappingRouter,
+  yieldThreshold: yieldThresholdRouter,
 });
 
 export type AppRouter = typeof appRouter;

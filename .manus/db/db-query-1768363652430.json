@@ -1,0 +1,9 @@
+{
+  "query": "INSERT INTO yield_alert_thresholds (metricType, warningThreshold, criticalThreshold, targetValue, comparisonOperator, description) VALUES\n('FPY', 97.0000, 95.0000, 98.5000, 'gte', 'First Pass Yield - Tỷ lệ đạt lần đầu'),\n('FY', 2.0000, 3.0000, 1.5000, 'lte', 'Fail Yield - Tỷ lệ lỗi'),\n('NTF', 1.5000, 2.0000, 1.0000, 'lte', 'No Trouble Found - Tỷ lệ không tìm thấy lỗi'),\n('UPH', 1200, 1000, 1500, 'gte', 'Units Per Hour - Số lượng sản phẩm mỗi giờ');",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute INSERT INTO yield_alert_thresholds (metricType, warningThreshold, criticalThreshold, targetValue, comparisonOperator, description) VALUES\n('FPY', 97.0000, 95.0000, 98.5000, 'gte', 'First Pass Yield - Tỷ lệ đạt lần đầu'),\n('FY', 2.0000, 3.0000, 1.5000, 'lte', 'Fail Yield - Tỷ lệ lỗi'),\n('NTF', 1.5000, 2.0000, 1.0000, 'lte', 'No Trouble Found - Tỷ lệ không tìm thấy lỗi'),\n('UPH', 1200, 1000, 1500, 'gte', 'Units Per Hour - Số lượng sản phẩm mỗi giờ');",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1549
+}

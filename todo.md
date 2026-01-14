@@ -684,3 +684,11 @@
 - [x] Module Lịch Sử: Thêm heatmap chart trong tab SPC
 - [x] Tạo seed data 5 ngày x 100 records cho database (500 records)
 - [x] Thêm tab thống kê FPY/FY/NTFY/UPH với giao diện theo ảnh mẫu
+
+
+## Phase 46: UI Improvements và Alert Configuration
+
+- [x] Chỉnh vị trí tab Yield Stats giữa "Danh sách" và "Phân tích"
+- [x] Export Yield Report - Thêm xuất PDF/Excel trong tab Yield Stats
+- [x] Alert Threshold Configuration - Cấu hình ngưỡng cảnh báo FPY/FY/NTF trong Settings
+- [x] Sửa lỗi AI Analysis trong Module Lịch Sử (populate daily_statistics)

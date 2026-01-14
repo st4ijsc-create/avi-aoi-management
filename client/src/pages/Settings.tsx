@@ -36,6 +36,7 @@ import {
 import { navItems } from "@/lib/navigation";
 import MachineMapping from "@/components/MachineMapping";
 import ManualMachineMapping from "@/components/ManualMachineMapping";
+import YieldThresholdSettings from "@/components/YieldThresholdSettings";
 import { useState } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -583,6 +584,10 @@ export default function Settings() {
             <TabsTrigger value="mapping" className="gap-2">
               <Wifi className="h-4 w-4" />
               Mapping
+            </TabsTrigger>
+            <TabsTrigger value="yield-thresholds" className="gap-2">
+              <Target className="h-4 w-4" />
+              Yield
             </TabsTrigger>
           </TabsList>
 
@@ -1943,6 +1948,11 @@ export default function Settings() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          {/* Yield Thresholds Tab */}
+          <TabsContent value="yield-thresholds">
+            <YieldThresholdSettings />
           </TabsContent>
         </Tabs>
       </div>

@@ -658,3 +658,28 @@ export const manualMachineConnections = mysqlTable("manual_machine_connections",
 
 export type ManualMachineConnection = typeof manualMachineConnections.$inferSelect;
 export type InsertManualMachineConnection = typeof manualMachineConnections.$inferInsert;
+
+
+/**
+ * Yield Alert Thresholds - Ngưỡng cảnh báo Yield
+ */
+export const yieldAlertThresholds = mysqlTable("yield_alert_thresholds", {
+  id: int("id").autoincrement().primaryKey(),
+  metricType: mysqlEnum("metricType", ["FPY", "FY", "NTF", "UPH"]).notNull(),
+  warningThreshold: decimal("warningThreshold", { precision: 10, scale: 4 }).notNull(), // Ngưỡng cảnh báo
+  criticalThreshold: decimal("criticalThreshold", { precision: 10, scale: 4 }).notNull(), // Ngưỡng nghiêm trọng
+  targetValue: decimal("targetValue", { precision: 10, scale: 4 }), // Giá trị mục tiêu
+  comparisonOperator: mysqlEnum("comparisonOperator", ["gt", "lt", "gte", "lte"]).default("gte").notNull(), // Toán tử so sánh
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  notifyOnWarning: boolean("notifyOnWarning").default(true).notNull(),
+  notifyOnCritical: boolean("notifyOnCritical").default(true).notNull(),
+  description: text("description"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_yield_thresholds_type").on(table.metricType),
+  index("idx_yield_thresholds_enabled").on(table.isEnabled),
+]);
+
+export type YieldAlertThreshold = typeof yieldAlertThresholds.$inferSelect;
+export type InsertYieldAlertThreshold = typeof yieldAlertThresholds.$inferInsert;

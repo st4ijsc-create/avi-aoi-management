@@ -1,0 +1,55 @@
+{
+  "query": "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'product_inspections';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'product_inspections';",
+  "rows": [
+    {
+      "COLUMN_NAME": "id"
+    },
+    {
+      "COLUMN_NAME": "machineId"
+    },
+    {
+      "COLUMN_NAME": "serialNumber"
+    },
+    {
+      "COLUMN_NAME": "productModel"
+    },
+    {
+      "COLUMN_NAME": "batchNumber"
+    },
+    {
+      "COLUMN_NAME": "overallResult"
+    },
+    {
+      "COLUMN_NAME": "originalResult"
+    },
+    {
+      "COLUMN_NAME": "ntfConfirmedBy"
+    },
+    {
+      "COLUMN_NAME": "ntfConfirmedAt"
+    },
+    {
+      "COLUMN_NAME": "ntfReason"
+    },
+    {
+      "COLUMN_NAME": "inspectionTime"
+    },
+    {
+      "COLUMN_NAME": "cycleTime"
+    },
+    {
+      "COLUMN_NAME": "createdAt"
+    },
+    {
+      "COLUMN_NAME": "updatedAt"
+    },
+    {
+      "COLUMN_NAME": "productModelId"
+    }
+  ],
+  "messages": [],
+  "stdout": "COLUMN_NAME\nid\nmachineId\nserialNumber\nproductModel\nbatchNumber\noverallResult\noriginalResult\nntfConfirmedBy\nntfConfirmedAt\nntfReason\ninspectionTime\ncycleTime\ncreatedAt\nupdatedAt\nproductModelId\n",
+  "stderr": "",
+  "execution_time_ms": 1542
+}

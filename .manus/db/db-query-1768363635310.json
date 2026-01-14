@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS `yield_alert_thresholds` (\n  `id` int AUTO_INCREMENT PRIMARY KEY,\n  `metricType` enum('FPY','FY','NTF','UPH') NOT NULL,\n  `warningThreshold` decimal(10,4) NOT NULL,\n  `criticalThreshold` decimal(10,4) NOT NULL,\n  `targetValue` decimal(10,4),\n  `comparisonOperator` enum('gt','lt','gte','lte') DEFAULT 'gte' NOT NULL,\n  `isEnabled` boolean DEFAULT true NOT NULL,\n  `notifyOnWarning` boolean DEFAULT true NOT NULL,\n  `notifyOnCritical` boolean DEFAULT true NOT NULL,\n  `description` text,\n  `createdAt` timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL,\n  `updatedAt` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute CREATE TABLE IF NOT EXISTS `yield_alert_thresholds` (\n  `id` int AUTO_INCREMENT PRIMARY KEY,\n  `metricType` enum('FPY','FY','NTF','UPH') NOT NULL,\n  `warningThreshold` decimal(10,4) NOT NULL,\n  `criticalThreshold` decimal(10,4) NOT NULL,\n  `targetValue` decimal(10,4),\n  `comparisonOperator` enum('gt','lt','gte','lte') DEFAULT 'gte' NOT NULL,\n  `isEnabled` boolean DEFAULT true NOT NULL,\n  `notifyOnWarning` boolean DEFAULT true NOT NULL,\n  `notifyOnCritical` boolean DEFAULT true NOT NULL,\n  `description` text,\n  `createdAt` timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL,\n  `updatedAt` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 2119
+}

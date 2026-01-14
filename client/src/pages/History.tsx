@@ -41,7 +41,8 @@ import {
   Clock,
   RefreshCw,
   Settings2,
-  QrCode
+  QrCode,
+  FileSpreadsheet
 } from "lucide-react";
 import BarcodeScanner from "@/components/BarcodeScanner";
 import { toast } from "sonner";
@@ -369,6 +370,119 @@ export default function History() {
     }
   };
 
+  // Export Yield Report function
+  const exportYieldReport = async (format: 'pdf' | 'excel' | 'csv') => {
+    if (!analysisStats) {
+      toast.error("Không có dữ liệu Yield để xuất");
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const dateStr = new Date().toISOString().split('T')[0];
+      const filename = `yield_report_${dateStr}`;
+
+      // Prepare data
+      const headers = [
+        "Ngày",
+        "Tổng sản phẩm",
+        "OK",
+        "NG", 
+        "NTF",
+        "FPY (%)",
+        "Fail Rate (%)",
+        "NTF Rate (%)",
+        "UPH"
+      ];
+
+      const rows = analysisStats.dateStats.map((day: any) => [
+        day.date,
+        day.total,
+        day.ok,
+        day.ng,
+        day.ntf,
+        day.yieldRate.toFixed(2),
+        (100 - day.yieldRate).toFixed(2),
+        day.total > 0 ? ((day.ntf / day.total) * 100).toFixed(2) : '0.00',
+        Math.round(day.total * 24 / 8)
+      ]);
+
+      // Summary row
+      const summaryRow = [
+        "Tổng cộng",
+        analysisStats.total,
+        analysisStats.okCount,
+        analysisStats.ngCount,
+        analysisStats.ntfCount,
+        analysisStats.yieldRate.toFixed(2),
+        (100 - analysisStats.yieldRate).toFixed(2),
+        ((analysisStats.ntfCount / Math.max(analysisStats.total, 1)) * 100).toFixed(2),
+        Math.round(analysisStats.total / Math.max(analysisStats.dateStats.length, 1) * 24)
+      ];
+
+      if (format === 'csv' || format === 'excel') {
+        const BOM = "\uFEFF";
+        const csvContent = BOM + [
+          headers.join(","),
+          ...rows.map((row: any[]) => row.map((cell: any) => `"${String(cell).replace(/"/g, '""')}"`).join(",")),
+          summaryRow.map((cell: any) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
+        ].join("\n");
+
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${filename}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        toast.success(`Đã xuất báo cáo Yield thành công (${format.toUpperCase()})`);
+      } else if (format === 'pdf') {
+        // Create PDF using jsPDF
+        const { jsPDF } = await import('jspdf');
+        const autoTable = (await import('jspdf-autotable')).default;
+        
+        const doc = new jsPDF();
+        
+        // Title
+        doc.setFontSize(18);
+        doc.text('BÁO CÁO YIELD - FPY/FY/NTF/UPH', 14, 20);
+        
+        doc.setFontSize(10);
+        doc.text(`Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`, 14, 30);
+        
+        // Summary KPIs
+        doc.setFontSize(12);
+        doc.text('Tổng quan:', 14, 45);
+        doc.setFontSize(10);
+        doc.text(`- First Pass Yield (FPY): ${analysisStats.yieldRate.toFixed(2)}%`, 20, 52);
+        doc.text(`- Fail Yield: ${(100 - analysisStats.yieldRate).toFixed(2)}%`, 20, 59);
+        doc.text(`- NTF Rate: ${((analysisStats.ntfCount / Math.max(analysisStats.total, 1)) * 100).toFixed(2)}%`, 20, 66);
+        doc.text(`- Avg UPH: ${Math.round(analysisStats.total / Math.max(analysisStats.dateStats.length, 1) * 24)}`, 20, 73);
+        
+        // Table
+        autoTable(doc, {
+          head: [headers],
+          body: [...rows, summaryRow],
+          startY: 85,
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: [20, 184, 166] },
+          footStyles: { fillColor: [229, 231, 235], fontStyle: 'bold' },
+        });
+        
+        doc.save(`${filename}.pdf`);
+        toast.success('Đã xuất báo cáo Yield thành công (PDF)');
+      }
+    } catch (error) {
+      console.error("Export Yield error:", error);
+      toast.error("Lỗi khi xuất báo cáo Yield");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const getResultBadge = (result: string) => {
     switch (result) {
       case "OK":
@@ -612,10 +726,14 @@ export default function History() {
 
         {/* Tabs: List and Analysis */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full max-w-2xl grid-cols-4">
+          <TabsList className="grid w-full max-w-3xl grid-cols-5">
             <TabsTrigger value="list" className="gap-2">
               <HistoryIcon className="h-4 w-4" />
               Danh sách
+            </TabsTrigger>
+            <TabsTrigger value="yield" className="gap-2">
+              <Target className="h-4 w-4" />
+              Yield Stats
             </TabsTrigger>
             <TabsTrigger value="analysis" className="gap-2">
               <BarChart3 className="h-4 w-4" />
@@ -628,10 +746,6 @@ export default function History() {
             <TabsTrigger value="ai" className="gap-2">
               <Activity className="h-4 w-4" />
               AI Analysis
-            </TabsTrigger>
-            <TabsTrigger value="yield" className="gap-2">
-              <Target className="h-4 w-4" />
-              Yield Stats
             </TabsTrigger>
           </TabsList>
 
@@ -1784,13 +1898,42 @@ export default function History() {
               {/* Yield Stats Header */}
               <Card className="glass-card">
                 <CardHeader>
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <Target className="h-5 w-5 text-primary" />
-                    Thống kê Yield - FPY, FY, NTF, UPH
-                  </CardTitle>
-                  <CardDescription>
-                    Biểu đồ và chỉ số hiệu suất sản xuất theo thời gian
-                  </CardDescription>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Target className="h-5 w-5 text-primary" />
+                        Thống kê Yield - FPY, FY, NTF, UPH
+                      </CardTitle>
+                      <CardDescription>
+                        Biểu đồ và chỉ số hiệu suất sản xuất theo thời gian
+                      </CardDescription>
+                    </div>
+                    {analysisStats && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" className="gap-2">
+                            <Download className="h-4 w-4" />
+                            Xuất báo cáo
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => exportYieldReport('pdf')}>
+                            <FileText className="h-4 w-4 mr-2" />
+                            Xuất PDF
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => exportYieldReport('excel')}>
+                            <FileSpreadsheet className="h-4 w-4 mr-2" />
+                            Xuất Excel
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => exportYieldReport('csv')}>
+                            <Download className="h-4 w-4 mr-2" />
+                            Xuất CSV
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
                 </CardHeader>
               </Card>
 
