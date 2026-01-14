@@ -48,6 +48,7 @@ import {
 import BarcodeScanner from "@/components/BarcodeScanner";
 import { EmptyState, NoWorkstationData, NoChartData } from "@/components/EmptyState";
 import { ChartErrorBoundary, TableErrorBoundary, AnalyticsErrorBoundary } from "@/components/ErrorBoundary";
+import { StatsCardSkeleton, ChartSkeleton, TableSkeleton, WorkstationSummarySkeleton } from "@/components/AnalyticsSkeleton";
 import { toast } from "sonner";
 import { navItems } from "@/lib/navigation";
 import { useState, useMemo } from "react";
@@ -992,8 +993,15 @@ export default function History() {
               <CardContent>
                 {isLoading ? (
                   <div className="space-y-3">
-                    {[1, 2, 3, 4, 5].map((i) => (
-                      <div key={i} className="h-20 bg-muted/50 animate-pulse rounded-lg" />
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <div key={i} className="flex items-center gap-4 p-4 rounded-lg bg-muted/30 animate-pulse">
+                        <div className="h-12 w-12 rounded-lg bg-muted" />
+                        <div className="flex-1 space-y-2">
+                          <div className="h-4 w-32 bg-muted rounded" />
+                          <div className="h-3 w-48 bg-muted rounded" />
+                        </div>
+                        <div className="h-6 w-16 bg-muted rounded-full" />
+                      </div>
                     ))}
                   </div>
                 ) : data?.data && data.data.length > 0 ? (
@@ -2185,12 +2193,26 @@ export default function History() {
               </Card>
 
               {isLoadingAI ? (
-                <Card className="glass-card">
-                  <CardContent className="py-12 text-center">
-                    <Loader2 className="h-12 w-12 mx-auto text-primary animate-spin mb-4" />
-                    <p className="text-muted-foreground">Đang phân tích dữ liệu...</p>
-                  </CardContent>
-                </Card>
+                <div className="space-y-6">
+                  {/* Summary skeleton */}
+                  <Card className="glass-card">
+                    <CardContent className="pt-6 space-y-3">
+                      <div className="h-4 w-full bg-muted rounded animate-pulse" />
+                      <div className="h-4 w-3/4 bg-muted rounded animate-pulse" />
+                    </CardContent>
+                  </Card>
+                  {/* Stats skeleton */}
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <StatsCardSkeleton key={i} />
+                    ))}
+                  </div>
+                  {/* Charts skeleton */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <ChartSkeleton height="h-[200px]" />
+                    <ChartSkeleton height="h-[200px]" />
+                  </div>
+                </div>
               ) : aiAnalysis ? (
                 <>
                   {/* Summary */}

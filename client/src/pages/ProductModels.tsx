@@ -18,6 +18,7 @@ import { Plus, Package, Target, Upload, Trash2, Edit, Eye, MousePointer, Circle,
 import { BulkImportDialog } from "@/components/BulkImportDialog";
 import { navItems } from "@/lib/navigation";
 import { EmptyState, NoMeasurementPoints } from "@/components/EmptyState";
+import { ErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 interface MeasurementPoint {
@@ -934,6 +935,7 @@ export default function ProductModels() {
   return (
     <>
       <DashboardLayout title="Quản lý sản phẩm" navItems={navItems} currentPath="/products">
+      <ErrorBoundary>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Product List */}
         <Card className="lg:col-span-1">
@@ -1620,6 +1622,7 @@ export default function ProductModels() {
           </CardContent>
         </Card>
       </div>
+      </ErrorBoundary>
       </DashboardLayout>
 
       {/* Edit Product Dialog */}

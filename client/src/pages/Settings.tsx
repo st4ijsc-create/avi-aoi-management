@@ -35,6 +35,7 @@ import {
   Activity
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
+import { ErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
 import MachineMapping from "@/components/MachineMapping";
 import ManualMachineMapping from "@/components/ManualMachineMapping";
 import YieldThresholdSettings from "@/components/YieldThresholdSettings";
@@ -548,6 +549,7 @@ export default function Settings() {
           </div>
         </div>
 
+        <ErrorBoundary>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-10">
             <TabsTrigger value="factories" className="gap-2">
@@ -1960,6 +1962,7 @@ export default function Settings() {
             <YieldThresholdSettings />
           </TabsContent>
         </Tabs>
+        </ErrorBoundary>
       </div>
 
       {/* Edit Alert Dialog */}

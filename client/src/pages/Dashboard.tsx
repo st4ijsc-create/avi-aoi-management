@@ -46,6 +46,7 @@ import {
 import { navItems } from "@/lib/navigation";
 import { EmptyState, NoWorkstationData } from "@/components/EmptyState";
 import { ChartErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
+import { StatsCardSkeleton, ChartSkeleton, PieChartSkeleton, ListSkeleton, MachineGridSkeleton } from "@/components/AnalyticsSkeleton";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 import { Link } from "wouter";
@@ -812,6 +813,13 @@ export default function Dashboard() {
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-6 mt-6">
             {/* Summary Stats Cards with Trends */}
+            {statsLoading ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <StatsCardSkeleton key={i} />
+                ))}
+              </div>
+            ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           <Card className="glass-card">
             <CardContent className="pt-4">
@@ -910,6 +918,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
             </div>
+            )}
 
             {/* Shift Stats & Top/Bottom Machines */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1291,22 +1300,7 @@ export default function Dashboard() {
           </div>
 
           {machinesLoading ? (
-            <div className="grid grid-cols-1 gap-6">
-              {[1, 2].map((i) => (
-                <Card key={i} className="glass-card animate-pulse">
-                  <CardHeader>
-                    <div className="h-6 bg-muted rounded w-1/4"></div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      {[1, 2, 3, 4].map((j) => (
-                        <div key={j} className="h-32 bg-muted rounded"></div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            <MachineGridSkeleton count={8} />
           ) : machinesByLine.size === 0 ? (
             <Card className="glass-card">
               <CardContent className="py-12 text-center">
