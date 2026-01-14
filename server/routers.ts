@@ -1746,6 +1746,129 @@ const userRouter = router({
       
       return { success: true };
     }),
+
+  // 2FA Setup - Generate secret and QR code
+  setup2FA: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      const { OTP } = await import('otplib');
+      const QRCode = await import('qrcode');
+      
+      // Create OTP instance
+      const otp = new OTP({ strategy: 'totp' });
+      
+      // Generate secret
+      const secret = otp.generateSecret();
+      
+      // Save secret to database (not enabled yet)
+      await db.setup2FA(ctx.user.id, secret);
+      
+      // Generate QR code URL
+      const user = await db.getUserById(ctx.user.id);
+      const appName = 'AVI-AOI-Management';
+      const accountName = user?.username || user?.email || `user_${ctx.user.id}`;
+      const otpauth = otp.generateURI({
+        issuer: appName,
+        label: accountName,
+        secret: secret,
+      });
+      
+      // Generate QR code as data URL
+      const qrCodeDataUrl = await QRCode.toDataURL(otpauth);
+      
+      return {
+        secret,
+        qrCode: qrCodeDataUrl,
+        otpauth,
+      };
+    }),
+
+  // 2FA Verify and Enable
+  verify2FA: protectedProcedure
+    .input(z.object({
+      token: z.string().length(6),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { OTP } = await import('otplib');
+      
+      // Get user's 2FA secret
+      const status = await db.get2FAStatus(ctx.user.id);
+      if (!status?.twoFactorSecret) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Chưa thiết lập 2FA. Vui lòng thiết lập trước.' });
+      }
+      
+      // Verify token
+      const otp = new OTP({ strategy: 'totp' });
+      const result = await otp.verify({
+        token: input.token,
+        secret: status.twoFactorSecret,
+      });
+      
+      if (!result.valid) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Mã xác thực không hợp lệ' });
+      }
+      
+      // Enable 2FA
+      await db.enable2FA(ctx.user.id);
+      
+      return { success: true };
+    }),
+
+  // 2FA Disable
+  disable2FA: protectedProcedure
+    .input(z.object({
+      token: z.string().length(6),
+      password: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { OTP } = await import('otplib');
+      const bcrypt = await import('bcryptjs');
+      
+      // Get user
+      const user = await db.getUserById(ctx.user.id);
+      if (!user) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Không tìm thấy người dùng' });
+      }
+      
+      // Verify password for local users
+      if (user.loginMethod === 'local' && user.passwordHash) {
+        const isValidPassword = await bcrypt.compare(input.password, user.passwordHash);
+        if (!isValidPassword) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Mật khẩu không đúng' });
+        }
+      }
+      
+      // Get 2FA status
+      const status = await db.get2FAStatus(ctx.user.id);
+      if (!status?.twoFactorEnabled || !status.twoFactorSecret) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: '2FA chưa được bật' });
+      }
+      
+      // Verify token
+      const otp = new OTP({ strategy: 'totp' });
+      const result = await otp.verify({
+        token: input.token,
+        secret: status.twoFactorSecret,
+      });
+      
+      if (!result.valid) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Mã xác thực không hợp lệ' });
+      }
+      
+      // Disable 2FA
+      await db.disable2FA(ctx.user.id);
+      
+      return { success: true };
+    }),
+
+  // Get 2FA status
+  get2FAStatus: protectedProcedure
+    .query(async ({ ctx }) => {
+      const status = await db.get2FAStatus(ctx.user.id);
+      return {
+        enabled: status?.twoFactorEnabled || false,
+        hasSecret: !!status?.twoFactorSecret,
+      };
+    }),
 });
 
 const alertRouter = router({

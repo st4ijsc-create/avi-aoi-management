@@ -4,9 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
-import { User, Mail, Phone, Building, Briefcase, Shield, Calendar, Clock } from "lucide-react";
-import { useState } from "react";
+import { User, Mail, Phone, Building, Briefcase, Shield, Calendar, Clock, ShieldCheck, ShieldOff, QrCode, Copy, CheckCircle2, AlertTriangle } from "lucide-react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 
 export default function Profile() {
@@ -20,6 +23,18 @@ export default function Profile() {
     position: (user as any)?.position || "",
   });
 
+  // 2FA States
+  const [show2FASetup, setShow2FASetup] = useState(false);
+  const [show2FADisable, setShow2FADisable] = useState(false);
+  const [otpToken, setOtpToken] = useState("");
+  const [disablePassword, setDisablePassword] = useState("");
+  const [setupData, setSetupData] = useState<{ secret: string; qrCode: string } | null>(null);
+  const [secretCopied, setSecretCopied] = useState(false);
+
+  // Queries
+  const { data: twoFAStatus, refetch: refetch2FAStatus } = trpc.user.get2FAStatus.useQuery();
+
+  // Mutations
   const updateMutation = trpc.user.updateProfile.useMutation({
     onSuccess: () => {
       toast.success("Cập nhật thông tin thành công!");
@@ -31,8 +46,73 @@ export default function Profile() {
     },
   });
 
+  const setup2FAMutation = trpc.user.setup2FA.useMutation({
+    onSuccess: (data) => {
+      setSetupData(data);
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Có lỗi xảy ra khi thiết lập 2FA");
+    },
+  });
+
+  const verify2FAMutation = trpc.user.verify2FA.useMutation({
+    onSuccess: () => {
+      toast.success("Đã bật xác thực 2 bước thành công!");
+      setShow2FASetup(false);
+      setSetupData(null);
+      setOtpToken("");
+      refetch2FAStatus();
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Mã xác thực không hợp lệ");
+    },
+  });
+
+  const disable2FAMutation = trpc.user.disable2FA.useMutation({
+    onSuccess: () => {
+      toast.success("Đã tắt xác thực 2 bước!");
+      setShow2FADisable(false);
+      setOtpToken("");
+      setDisablePassword("");
+      refetch2FAStatus();
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Có lỗi xảy ra");
+    },
+  });
+
   const handleSave = () => {
     updateMutation.mutate(formData);
+  };
+
+  const handleSetup2FA = () => {
+    setShow2FASetup(true);
+    setup2FAMutation.mutate();
+  };
+
+  const handleVerify2FA = () => {
+    if (otpToken.length !== 6) {
+      toast.error("Vui lòng nhập mã 6 chữ số");
+      return;
+    }
+    verify2FAMutation.mutate({ token: otpToken });
+  };
+
+  const handleDisable2FA = () => {
+    if (otpToken.length !== 6) {
+      toast.error("Vui lòng nhập mã 6 chữ số");
+      return;
+    }
+    disable2FAMutation.mutate({ token: otpToken, password: disablePassword || "oauth" });
+  };
+
+  const copySecret = () => {
+    if (setupData?.secret) {
+      navigator.clipboard.writeText(setupData.secret);
+      setSecretCopied(true);
+      setTimeout(() => setSecretCopied(false), 2000);
+      toast.success("Đã sao chép mã bí mật!");
+    }
   };
 
   return (
@@ -40,7 +120,8 @@ export default function Profile() {
       title="Thông tin cá nhân"
       currentPath="/profile"
     >
-      <div className="container py-6 max-w-2xl">
+      <div className="container py-6 max-w-2xl space-y-6">
+        {/* Profile Card */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -202,7 +283,220 @@ export default function Profile() {
             </div>
           </CardContent>
         </Card>
+
+        {/* 2FA Security Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5" />
+              Xác thực 2 bước (2FA)
+            </CardTitle>
+            <CardDescription>
+              Bảo vệ tài khoản của bạn bằng xác thực 2 bước với ứng dụng Authenticator
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
+              <div className="flex items-center gap-3">
+                {twoFAStatus?.enabled ? (
+                  <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center">
+                    <ShieldCheck className="h-5 w-5 text-green-500" />
+                  </div>
+                ) : (
+                  <div className="h-10 w-10 rounded-full bg-orange-500/10 flex items-center justify-center">
+                    <ShieldOff className="h-5 w-5 text-orange-500" />
+                  </div>
+                )}
+                <div>
+                  <p className="font-medium">
+                    {twoFAStatus?.enabled ? "Đã bật xác thực 2 bước" : "Chưa bật xác thực 2 bước"}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {twoFAStatus?.enabled 
+                      ? "Tài khoản của bạn được bảo vệ bởi xác thực 2 bước"
+                      : "Bật xác thực 2 bước để tăng cường bảo mật"}
+                  </p>
+                </div>
+              </div>
+              <Badge variant={twoFAStatus?.enabled ? "default" : "secondary"}>
+                {twoFAStatus?.enabled ? "Đã bật" : "Chưa bật"}
+              </Badge>
+            </div>
+
+            {twoFAStatus?.enabled ? (
+              <Button 
+                variant="destructive" 
+                onClick={() => setShow2FADisable(true)}
+                className="w-full"
+              >
+                <ShieldOff className="h-4 w-4 mr-2" />
+                Tắt xác thực 2 bước
+              </Button>
+            ) : (
+              <Button 
+                onClick={handleSetup2FA}
+                className="w-full"
+                disabled={setup2FAMutation.isPending}
+              >
+                <ShieldCheck className="h-4 w-4 mr-2" />
+                {setup2FAMutation.isPending ? "Đang thiết lập..." : "Bật xác thực 2 bước"}
+              </Button>
+            )}
+
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Xác thực 2 bước yêu cầu bạn nhập mã từ ứng dụng Authenticator (Google Authenticator, Microsoft Authenticator, Authy...) mỗi khi đăng nhập.
+              </AlertDescription>
+            </Alert>
+          </CardContent>
+        </Card>
       </div>
+
+      {/* 2FA Setup Dialog */}
+      <Dialog open={show2FASetup} onOpenChange={(open) => {
+        setShow2FASetup(open);
+        if (!open) {
+          setSetupData(null);
+          setOtpToken("");
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="h-5 w-5" />
+              Thiết lập xác thực 2 bước
+            </DialogTitle>
+            <DialogDescription>
+              Quét mã QR bằng ứng dụng Authenticator để thiết lập
+            </DialogDescription>
+          </DialogHeader>
+
+          {setupData ? (
+            <div className="space-y-4">
+              {/* QR Code */}
+              <div className="flex justify-center p-4 bg-white rounded-lg">
+                <img src={setupData.qrCode} alt="QR Code" className="w-48 h-48" />
+              </div>
+
+              {/* Manual Entry */}
+              <div className="space-y-2">
+                <Label className="text-sm text-muted-foreground">
+                  Hoặc nhập mã bí mật thủ công:
+                </Label>
+                <div className="flex gap-2">
+                  <Input 
+                    value={setupData.secret} 
+                    readOnly 
+                    className="font-mono text-sm"
+                  />
+                  <Button variant="outline" size="icon" onClick={copySecret}>
+                    {secretCopied ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Verify Token */}
+              <div className="space-y-2">
+                <Label>Nhập mã xác thực từ ứng dụng:</Label>
+                <Input
+                  placeholder="000000"
+                  value={otpToken}
+                  onChange={(e) => setOtpToken(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  className="text-center text-2xl tracking-widest font-mono"
+                  maxLength={6}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShow2FASetup(false)}>
+              Hủy
+            </Button>
+            <Button 
+              onClick={handleVerify2FA}
+              disabled={!setupData || otpToken.length !== 6 || verify2FAMutation.isPending}
+            >
+              {verify2FAMutation.isPending ? "Đang xác thực..." : "Xác nhận & Bật 2FA"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 2FA Disable Dialog */}
+      <Dialog open={show2FADisable} onOpenChange={(open) => {
+        setShow2FADisable(open);
+        if (!open) {
+          setOtpToken("");
+          setDisablePassword("");
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <ShieldOff className="h-5 w-5" />
+              Tắt xác thực 2 bước
+            </DialogTitle>
+            <DialogDescription>
+              Để tắt xác thực 2 bước, vui lòng xác nhận danh tính của bạn
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Tắt xác thực 2 bước sẽ làm giảm bảo mật cho tài khoản của bạn. Chỉ thực hiện nếu thực sự cần thiết.
+              </AlertDescription>
+            </Alert>
+
+            {(user as any)?.loginMethod === "local" && (
+              <div className="space-y-2">
+                <Label>Mật khẩu hiện tại:</Label>
+                <Input
+                  type="password"
+                  placeholder="Nhập mật khẩu"
+                  value={disablePassword}
+                  onChange={(e) => setDisablePassword(e.target.value)}
+                />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Mã xác thực từ ứng dụng:</Label>
+              <Input
+                placeholder="000000"
+                value={otpToken}
+                onChange={(e) => setOtpToken(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                className="text-center text-2xl tracking-widest font-mono"
+                maxLength={6}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShow2FADisable(false)}>
+              Hủy
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={handleDisable2FA}
+              disabled={otpToken.length !== 6 || disable2FAMutation.isPending}
+            >
+              {disable2FAMutation.isPending ? "Đang xử lý..." : "Tắt 2FA"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

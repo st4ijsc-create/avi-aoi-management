@@ -716,3 +716,12 @@
 - [ ] Ghi log đăng nhập thành công/thất bại
 - [ ] Ghi log các thao tác CRUD quan trọng (user, machine, product)
 - [ ] Tạo UI xem audit log trong Settings (chỉ admin)
+
+
+## Phase 50: Two-Factor Authentication (2FA)
+- [x] 2FA: Cài đặt thư viện otplib và qrcode
+- [x] 2FA: Thêm cột twoFactorSecret và twoFactorEnabled vào bảng users
+- [x] 2FA: Tạo API setup2FA (generate secret và QR code)
+- [x] 2FA: Tạo API verify2FA và disable2FA
+- [ ] 2FA: Cập nhật trang Profile với giao diện bật/tắt 2FA
+- [ ] 2FA: Thêm bước xác thực OTP khi đăng nhập nếu đã bật 2FA

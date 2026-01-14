@@ -47,6 +47,18 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
       
+      // Check if 2FA is enabled
+      const twoFAStatus = await db.get2FAStatus(user.id);
+      if (twoFAStatus?.twoFactorEnabled) {
+        // Return requires2FA flag instead of logging in
+        res.json({ 
+          requires2FA: true,
+          userId: user.id,
+          message: "Vui lòng nhập mã xác thực 2 bước"
+        });
+        return;
+      }
+      
       // Update last signed in
       await db.upsertUser({
         openId: user.openId,
@@ -74,6 +86,73 @@ export function registerOAuthRoutes(app: Express) {
     } catch (error) {
       console.error("[Auth] Local login failed", error);
       res.status(500).json({ error: "Đăng nhập thất bại" });
+    }
+  });
+
+  // 2FA verification route for login
+  app.post("/api/auth/verify-2fa", async (req: Request, res: Response) => {
+    try {
+      const { userId, token } = req.body;
+      
+      if (!userId || !token) {
+        res.status(400).json({ error: "User ID và mã xác thực là bắt buộc" });
+        return;
+      }
+      
+      // Get user
+      const user = await db.getUserById(userId);
+      if (!user) {
+        res.status(404).json({ error: "Không tìm thấy người dùng" });
+        return;
+      }
+      
+      // Get 2FA status
+      const twoFAStatus = await db.get2FAStatus(userId);
+      if (!twoFAStatus?.twoFactorEnabled || !twoFAStatus.twoFactorSecret) {
+        res.status(400).json({ error: "2FA chưa được bật cho tài khoản này" });
+        return;
+      }
+      
+      // Verify OTP token
+      const { OTP } = await import('otplib');
+      const otp = new OTP({ strategy: 'totp' });
+      const result = await otp.verify({
+        token: token,
+        secret: twoFAStatus.twoFactorSecret,
+      });
+      
+      if (!result.valid) {
+        res.status(401).json({ error: "Mã xác thực không hợp lệ" });
+        return;
+      }
+      
+      // Update last signed in
+      await db.upsertUser({
+        openId: user.openId,
+        lastSignedIn: new Date(),
+      });
+      
+      // Create session token
+      const sessionToken = await sdk.createSessionToken(user.openId, {
+        name: user.name || "",
+        expiresInMs: ONE_YEAR_MS,
+      });
+      
+      const cookieOptions = getSessionCookieOptions(req);
+      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+      
+      res.json({ 
+        success: true, 
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+        }
+      });
+    } catch (error) {
+      console.error("[Auth] 2FA verification failed", error);
+      res.status(500).json({ error: "Xác thực 2FA thất bại" });
     }
   });
 

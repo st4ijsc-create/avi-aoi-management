@@ -221,6 +221,41 @@ export async function searchUsers(query: string) {
     .orderBy(desc(users.createdAt));
 }
 
+// ============ 2FA FUNCTIONS ============
+export async function setup2FA(userId: number, secret: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users)
+    .set({ twoFactorSecret: secret })
+    .where(eq(users.id, userId));
+}
+
+export async function enable2FA(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users)
+    .set({ twoFactorEnabled: true })
+    .where(eq(users.id, userId));
+}
+
+export async function disable2FA(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users)
+    .set({ twoFactorSecret: null, twoFactorEnabled: false })
+    .where(eq(users.id, userId));
+}
+
+export async function get2FAStatus(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select({
+    twoFactorEnabled: users.twoFactorEnabled,
+    twoFactorSecret: users.twoFactorSecret,
+  }).from(users).where(eq(users.id, userId));
+  return result[0] || null;
+}
+
 // ============ FACTORY FUNCTIONS ============
 export async function createFactory(data: InsertFactory) {
   const db = await getDb();
