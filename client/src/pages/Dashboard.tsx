@@ -286,6 +286,9 @@ export default function Dashboard() {
     refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
   });
 
+  // Fetch yield alert thresholds for realtime alerts
+  const { data: yieldThresholds } = trpc.yieldThreshold.list.useQuery();
+
   // Fetch factories, workshops, lines for filters
   const { data: factories } = trpc.factory.list.useQuery();
   const { data: workshops } = trpc.workshop.list.useQuery();
@@ -394,6 +397,70 @@ export default function Dashboard() {
     const ntfy = ((machine.ntf / total) * 100).toFixed(1);
     return { fpy, fy, ntfy };
   };
+
+  // Calculate yield alerts based on thresholds
+  const yieldAlerts = useMemo(() => {
+    const currentStats = (statsWithComparison as StatsWithComparison | undefined)?.current;
+    if (!currentStats || !yieldThresholds) return [];
+    
+    const alerts: Array<{
+      type: 'FPY' | 'FY' | 'NTF' | 'UPH';
+      level: 'warning' | 'critical';
+      currentValue: number;
+      threshold: number;
+      target: number;
+      message: string;
+    }> = [];
+
+    const total = currentStats.total || 1;
+    const fpy = (currentStats.ok / total) * 100;
+    const fy = (currentStats.ng / total) * 100;
+    const ntf = (currentStats.ntf / total) * 100;
+
+    yieldThresholds.forEach(threshold => {
+      if (!threshold.isEnabled) return;
+      
+      let currentValue = 0;
+      switch (threshold.metricType) {
+        case 'FPY': currentValue = fpy; break;
+        case 'FY': currentValue = fy; break;
+        case 'NTF': currentValue = ntf; break;
+        case 'UPH': currentValue = currentStats.total; break;
+      }
+
+      const warningVal = parseFloat(threshold.warningThreshold);
+      const criticalVal = parseFloat(threshold.criticalThreshold);
+      const targetVal = threshold.targetValue ? parseFloat(threshold.targetValue) : 0;
+      const isHigherBetter = threshold.comparisonOperator === 'gte';
+
+      // Check critical first
+      if (isHigherBetter ? currentValue < criticalVal : currentValue > criticalVal) {
+        if (threshold.notifyOnCritical) {
+          alerts.push({
+            type: threshold.metricType as 'FPY' | 'FY' | 'NTF' | 'UPH',
+            level: 'critical',
+            currentValue,
+            threshold: criticalVal,
+            target: targetVal,
+            message: `${threshold.metricType} ${isHigherBetter ? 'dưới' : 'vượt'} ngưỡng nguy hiểm: ${currentValue.toFixed(2)}% (ngưỡng: ${criticalVal}%)`
+          });
+        }
+      } else if (isHigherBetter ? currentValue < warningVal : currentValue > warningVal) {
+        if (threshold.notifyOnWarning) {
+          alerts.push({
+            type: threshold.metricType as 'FPY' | 'FY' | 'NTF' | 'UPH',
+            level: 'warning',
+            currentValue,
+            threshold: warningVal,
+            target: targetVal,
+            message: `${threshold.metricType} ${isHigherBetter ? 'dưới' : 'vượt'} ngưỡng cảnh báo: ${currentValue.toFixed(2)}% (ngưỡng: ${warningVal}%)`
+          });
+        }
+      }
+    });
+
+    return alerts;
+  }, [statsWithComparison, yieldThresholds]);
 
   // Get status color based on FPY
   const getStatusColor = (fpy: number) => {
@@ -605,6 +672,69 @@ export default function Dashboard() {
             </Button>
           </div>
         </div>
+
+        {/* Yield Alert Widget - Realtime alerts */}
+        {yieldAlerts.length > 0 && (
+          <Card className="glass-card border-l-4 border-l-warning">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-warning" />
+                  Cảnh báo Yield ({yieldAlerts.length})
+                </CardTitle>
+                <Link href="/settings">
+                  <Button variant="ghost" size="sm" className="text-xs">
+                    Cấu hình ngưỡng
+                    <ChevronRight className="h-3 w-3 ml-1" />
+                  </Button>
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {yieldAlerts.map((alert, index) => (
+                  <div 
+                    key={index}
+                    className={`flex items-center justify-between p-3 rounded-lg ${
+                      alert.level === 'critical' 
+                        ? 'bg-destructive/10 border border-destructive/30' 
+                        : 'bg-warning/10 border border-warning/30'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${
+                        alert.level === 'critical' ? 'bg-destructive/20' : 'bg-warning/20'
+                      }`}>
+                        {alert.level === 'critical' 
+                          ? <XCircle className="h-4 w-4 text-destructive" />
+                          : <AlertTriangle className="h-4 w-4 text-warning" />
+                        }
+                      </div>
+                      <div>
+                        <p className={`text-sm font-medium ${
+                          alert.level === 'critical' ? 'text-destructive' : 'text-warning'
+                        }`}>
+                          {alert.type}: {alert.currentValue.toFixed(2)}%
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {alert.message}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <Badge variant={alert.level === 'critical' ? 'destructive' : 'outline'} className="text-xs">
+                        {alert.level === 'critical' ? 'Nguy hiểm' : 'Cảnh báo'}
+                      </Badge>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Mục tiêu: {alert.target}%
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Machine Status Widget - Fixed at top */}
         <Card className="glass-card">

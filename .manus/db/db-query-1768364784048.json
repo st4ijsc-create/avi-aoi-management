@@ -1,0 +1,15 @@
+{
+  "query": "SELECT \n  (SELECT COUNT(*) FROM product_inspections) as inspections,\n  (SELECT COUNT(*) FROM measurement_point_defs) as point_defs,\n  (SELECT COUNT(*) FROM measurement_results) as results;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute SELECT \n  (SELECT COUNT(*) FROM product_inspections) as inspections,\n  (SELECT COUNT(*) FROM measurement_point_defs) as point_defs,\n  (SELECT COUNT(*) FROM measurement_results) as results;",
+  "rows": [
+    {
+      "inspections": "1903",
+      "point_defs": "41",
+      "results": "11501"
+    }
+  ],
+  "messages": [],
+  "stdout": "inspections\tpoint_defs\tresults\n1903\t41\t11501\n",
+  "stderr": "",
+  "execution_time_ms": 1546
+}

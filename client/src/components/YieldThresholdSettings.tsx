@@ -8,6 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { useState } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { 
   Target, 
   AlertTriangle, 
@@ -18,7 +22,11 @@ import {
   TrendingUp,
   TrendingDown,
   Activity,
-  Gauge
+  Gauge,
+  History,
+  Clock,
+  User,
+  ArrowRight
 } from "lucide-react";
 
 const METRIC_INFO = {
@@ -54,15 +62,22 @@ const METRIC_INFO = {
 
 export default function YieldThresholdSettings() {
   const { data: thresholds, isLoading, refetch } = trpc.yieldThreshold.list.useQuery();
-  const updateMutation = trpc.yieldThreshold.update.useMutation({
+  const { data: history, refetch: refetchHistory } = trpc.yieldThreshold.getHistory.useQuery({ limit: 50 });
+  
+  const updateMutation = trpc.yieldThreshold.updateWithHistory.useMutation({
     onSuccess: () => {
       toast.success("Đã cập nhật ngưỡng cảnh báo");
       refetch();
+      refetchHistory();
     },
     onError: (error) => {
       toast.error(`Lỗi: ${error.message}`);
     }
   });
+
+  const [activeTab, setActiveTab] = useState("settings");
+  const [changeReasonDialog, setChangeReasonDialog] = useState(false);
+  const [changeReason, setChangeReason] = useState("");
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<{
@@ -90,6 +105,11 @@ export default function YieldThresholdSettings() {
 
   const handleSave = async () => {
     if (!editingId || !editForm) return;
+    setChangeReasonDialog(true);
+  };
+
+  const handleConfirmSave = async () => {
+    if (!editingId || !editForm) return;
 
     updateMutation.mutate({
       id: editingId,
@@ -100,10 +120,13 @@ export default function YieldThresholdSettings() {
       isEnabled: editForm.isEnabled,
       notifyOnWarning: editForm.notifyOnWarning,
       notifyOnCritical: editForm.notifyOnCritical,
+      changeReason: changeReason || undefined,
     });
 
     setEditingId(null);
     setEditForm(null);
+    setChangeReasonDialog(false);
+    setChangeReason("");
   };
 
   const handleCancel = () => {
@@ -132,6 +155,20 @@ export default function YieldThresholdSettings() {
           </CardDescription>
         </CardHeader>
       </Card>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="settings" className="flex items-center gap-2">
+            <Target className="h-4 w-4" />
+            Cấu hình ngưỡng
+          </TabsTrigger>
+          <TabsTrigger value="history" className="flex items-center gap-2">
+            <History className="h-4 w-4" />
+            Lịch sử thay đổi
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="settings" className="mt-6">
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {thresholds?.map((threshold) => {
@@ -350,6 +387,116 @@ export default function YieldThresholdSettings() {
           </div>
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="history" className="mt-6">
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <History className="h-5 w-5 text-primary" />
+                Lịch sử thay đổi ngưỡng
+              </CardTitle>
+              <CardDescription>
+                Theo dõi các thay đổi ngưỡng cảnh báo theo thời gian
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!history || history.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>Chưa có lịch sử thay đổi</p>
+                </div>
+              ) : (
+                <ScrollArea className="h-[500px]">
+                  <div className="space-y-4">
+                    {history.map((item, index) => {
+                      const metricInfo = METRIC_INFO[item.metricType as keyof typeof METRIC_INFO];
+                      const Icon = metricInfo?.icon || Activity;
+                      return (
+                        <div key={index} className="flex items-start gap-4 p-4 rounded-lg bg-muted/30 border border-border/50">
+                          <div className={`p-2 rounded-lg bg-muted ${metricInfo?.color || 'text-primary'}`}>
+                            <Icon className="h-4 w-4" />
+                          </div>
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <Badge variant="outline">{item.metricType}</Badge>
+                              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {new Date(item.createdAt).toLocaleString('vi-VN')}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4 text-sm">
+                              <div>
+                                <p className="text-xs text-muted-foreground mb-1">Ngưỡng cảnh báo</p>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-warning">{item.previousWarning}%</span>
+                                  <ArrowRight className="h-3 w-3" />
+                                  <span className="text-warning font-medium">{item.newWarning}%</span>
+                                </div>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground mb-1">Ngưỡng nghiêm trọng</p>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-destructive">{item.previousCritical}%</span>
+                                  <ArrowRight className="h-3 w-3" />
+                                  <span className="text-destructive font-medium">{item.newCritical}%</span>
+                                </div>
+                              </div>
+                            </div>
+                            {item.changeReason && (
+                              <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+                                <strong>Lý do:</strong> {item.changeReason}
+                              </div>
+                            )}
+                            {item.changedByName && (
+                              <div className="text-xs text-muted-foreground flex items-center gap-1">
+                                <User className="h-3 w-3" />
+                                Thay đổi bởi: {item.changedByName}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Change Reason Dialog */}
+      <Dialog open={changeReasonDialog} onOpenChange={setChangeReasonDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Lý do thay đổi ngưỡng</DialogTitle>
+            <DialogDescription>
+              Nhập lý do thay đổi ngưỡng cảnh báo (để theo dõi lịch sử)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Textarea
+              placeholder="Ví dụ: Điều chỉnh theo yêu cầu của QC, Cải thiện chất lượng sản xuất..."
+              value={changeReason}
+              onChange={(e) => setChangeReason(e.target.value)}
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setChangeReasonDialog(false)}>
+              Hủy
+            </Button>
+            <Button onClick={handleConfirmSave} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Đang lưu...</>
+              ) : (
+                <><Save className="h-4 w-4 mr-2" /> Lưu thay đổi</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

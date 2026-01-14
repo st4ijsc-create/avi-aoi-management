@@ -26,7 +26,8 @@ import {
   machineStatusLogs, InsertMachineStatusLog,
   machineHeartbeats, InsertMachineHeartbeat,
   manualMachineConnections, InsertManualMachineConnection,
-  yieldAlertThresholds, InsertYieldAlertThreshold
+  yieldAlertThresholds, InsertYieldAlertThreshold,
+  yieldThresholdHistory, InsertYieldThresholdHistory
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2495,4 +2496,59 @@ export async function getEnabledYieldAlertThresholds() {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(yieldAlertThresholds).where(eq(yieldAlertThresholds.isEnabled, true));
+}
+
+
+// ==================== Yield Threshold History ====================
+
+export async function createYieldThresholdHistory(data: InsertYieldThresholdHistory) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(yieldThresholdHistory).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function getYieldThresholdHistoryByThreshold(thresholdId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select()
+    .from(yieldThresholdHistory)
+    .where(eq(yieldThresholdHistory.thresholdId, thresholdId))
+    .orderBy(desc(yieldThresholdHistory.createdAt));
+}
+
+export async function getYieldThresholdHistoryByType(metricType: 'FPY' | 'FY' | 'NTF' | 'UPH') {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select()
+    .from(yieldThresholdHistory)
+    .where(eq(yieldThresholdHistory.metricType, metricType))
+    .orderBy(desc(yieldThresholdHistory.createdAt));
+}
+
+export async function getAllYieldThresholdHistory(limit: number = 100) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select()
+    .from(yieldThresholdHistory)
+    .orderBy(desc(yieldThresholdHistory.createdAt))
+    .limit(limit);
+}
+
+export async function getYieldThresholdHistoryWithComparison(metricType: 'FPY' | 'FY' | 'NTF' | 'UPH', days: number = 30) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+  
+  return db.select()
+    .from(yieldThresholdHistory)
+    .where(
+      and(
+        eq(yieldThresholdHistory.metricType, metricType),
+        gte(yieldThresholdHistory.createdAt, startDate)
+      )
+    )
+    .orderBy(desc(yieldThresholdHistory.createdAt));
 }

@@ -683,3 +683,32 @@ export const yieldAlertThresholds = mysqlTable("yield_alert_thresholds", {
 
 export type YieldAlertThreshold = typeof yieldAlertThresholds.$inferSelect;
 export type InsertYieldAlertThreshold = typeof yieldAlertThresholds.$inferInsert;
+
+
+/**
+ * Yield Threshold History - Lịch sử thay đổi ngưỡng cảnh báo
+ */
+export const yieldThresholdHistory = mysqlTable("yield_threshold_history", {
+  id: int("id").autoincrement().primaryKey(),
+  thresholdId: int("thresholdId").notNull(), // Reference to yieldAlertThresholds
+  metricType: mysqlEnum("metricType", ["FPY", "FY", "NTF", "UPH"]).notNull(),
+  previousWarning: decimal("previousWarning", { precision: 10, scale: 4 }),
+  newWarning: decimal("newWarning", { precision: 10, scale: 4 }).notNull(),
+  previousCritical: decimal("previousCritical", { precision: 10, scale: 4 }),
+  newCritical: decimal("newCritical", { precision: 10, scale: 4 }).notNull(),
+  previousTarget: decimal("previousTarget", { precision: 10, scale: 4 }),
+  newTarget: decimal("newTarget", { precision: 10, scale: 4 }),
+  changeReason: text("changeReason"),
+  changedBy: int("changedBy"), // User ID who made the change
+  changedByName: varchar("changedByName", { length: 255 }),
+  // Performance metrics at time of change
+  actualValueAtChange: decimal("actualValueAtChange", { precision: 10, scale: 4 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_threshold_history_threshold").on(table.thresholdId),
+  index("idx_threshold_history_type").on(table.metricType),
+  index("idx_threshold_history_date").on(table.createdAt),
+]);
+
+export type YieldThresholdHistory = typeof yieldThresholdHistory.$inferSelect;
+export type InsertYieldThresholdHistory = typeof yieldThresholdHistory.$inferInsert;

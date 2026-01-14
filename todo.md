@@ -692,3 +692,10 @@
 - [x] Export Yield Report - Thêm xuất PDF/Excel trong tab Yield Stats
 - [x] Alert Threshold Configuration - Cấu hình ngưỡng cảnh báo FPY/FY/NTF trong Settings
 - [x] Sửa lỗi AI Analysis trong Module Lịch Sử (populate daily_statistics)
+
+
+## Phase 47: Seed Data, Realtime Alert, Historical Tracking
+
+- [x] Tạo seed data measurement_results tương ứng với product_inspections (16,501 records)
+- [x] Realtime Alert Dashboard - Hiển thị cảnh báo Yield realtime trên Dashboard
+- [x] Historical Threshold Tracking - Lưu lịch sử thay đổi ngưỡng và so sánh hiệu quả

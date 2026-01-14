@@ -2223,6 +2223,83 @@ const yieldThresholdRouter = router({
   getEnabled: protectedProcedure.query(async () => {
     return db.getEnabledYieldAlertThresholds();
   }),
+
+  // History procedures
+  getHistory: protectedProcedure
+    .input(z.object({ limit: z.number().optional() }))
+    .query(async ({ input }) => {
+      return db.getAllYieldThresholdHistory(input.limit || 100);
+    }),
+
+  getHistoryByType: protectedProcedure
+    .input(z.object({ 
+      metricType: z.enum(['FPY', 'FY', 'NTF', 'UPH']),
+      days: z.number().optional()
+    }))
+    .query(async ({ input }) => {
+      return db.getYieldThresholdHistoryWithComparison(input.metricType, input.days || 30);
+    }),
+
+  getHistoryByThreshold: protectedProcedure
+    .input(z.object({ thresholdId: z.number() }))
+    .query(async ({ input }) => {
+      return db.getYieldThresholdHistoryByThreshold(input.thresholdId);
+    }),
+
+  // Update with history tracking
+  updateWithHistory: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      warningThreshold: z.number().optional(),
+      criticalThreshold: z.number().optional(),
+      targetValue: z.number().optional(),
+      comparisonOperator: z.enum(['gt', 'lt', 'gte', 'lte']).optional(),
+      isEnabled: z.boolean().optional(),
+      notifyOnWarning: z.boolean().optional(),
+      notifyOnCritical: z.boolean().optional(),
+      description: z.string().optional(),
+      changeReason: z.string().optional(),
+      actualValueAtChange: z.number().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { id, changeReason, actualValueAtChange, ...data } = input;
+      
+      // Get current threshold for history
+      const current = await db.getYieldAlertThresholdById(id);
+      if (!current) throw new Error('Threshold not found');
+
+      // Create history record if thresholds changed
+      if (data.warningThreshold !== undefined || data.criticalThreshold !== undefined || data.targetValue !== undefined) {
+        await db.createYieldThresholdHistory({
+          thresholdId: id,
+          metricType: current.metricType,
+          previousWarning: current.warningThreshold,
+          newWarning: data.warningThreshold !== undefined ? String(data.warningThreshold) : current.warningThreshold,
+          previousCritical: current.criticalThreshold,
+          newCritical: data.criticalThreshold !== undefined ? String(data.criticalThreshold) : current.criticalThreshold,
+          previousTarget: current.targetValue,
+          newTarget: data.targetValue !== undefined ? String(data.targetValue) : current.targetValue,
+          changeReason: changeReason || null,
+          changedBy: ctx.user?.id || null,
+          changedByName: ctx.user?.name || null,
+          actualValueAtChange: actualValueAtChange !== undefined ? String(actualValueAtChange) : null,
+        });
+      }
+
+      // Convert numbers to strings for decimal fields
+      const updateData: any = {};
+      if (data.warningThreshold !== undefined) updateData.warningThreshold = String(data.warningThreshold);
+      if (data.criticalThreshold !== undefined) updateData.criticalThreshold = String(data.criticalThreshold);
+      if (data.targetValue !== undefined) updateData.targetValue = String(data.targetValue);
+      if (data.comparisonOperator !== undefined) updateData.comparisonOperator = data.comparisonOperator;
+      if (data.isEnabled !== undefined) updateData.isEnabled = data.isEnabled;
+      if (data.notifyOnWarning !== undefined) updateData.notifyOnWarning = data.notifyOnWarning;
+      if (data.notifyOnCritical !== undefined) updateData.notifyOnCritical = data.notifyOnCritical;
+      if (data.description !== undefined) updateData.description = data.description;
+      
+      await db.updateYieldAlertThreshold(id, updateData);
+      return { success: true };
+    }),
 });
 
 export const appRouter = router({
