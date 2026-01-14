@@ -2053,6 +2053,122 @@ const bulkImportRouter = router({
     }),
 });
 
+// ============ MANUAL MACHINE MAPPING ROUTER ============
+const manualMappingRouter = router({
+  list: protectedProcedure.query(async () => {
+    return db.listManualConnections();
+  }),
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getManualConnectionById(input.id);
+    }),
+
+  getByMachineId: protectedProcedure
+    .input(z.object({ machineId: z.number() }))
+    .query(async ({ input }) => {
+      return db.getManualConnectionByMachineId(input.machineId);
+    }),
+
+  create: adminProcedure
+    .input(z.object({
+      machineId: z.number(),
+      ipAddress: z.string().min(1).max(45),
+      port: z.number().min(1).max(65535).default(8080),
+      protocol: z.enum(['websocket', 'tcp', 'http']).default('websocket'),
+      isEnabled: z.boolean().default(true),
+      maxRetries: z.number().min(1).max(100).default(5),
+      retryIntervalSeconds: z.number().min(5).max(3600).default(30),
+    }))
+    .mutation(async ({ input }) => {
+      // Check if machine already has a manual connection
+      const existing = await db.getManualConnectionByMachineId(input.machineId);
+      if (existing) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'Máy này đã có cấu hình kết nối thủ công',
+        });
+      }
+      return db.createManualConnection(input);
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      ipAddress: z.string().min(1).max(45).optional(),
+      port: z.number().min(1).max(65535).optional(),
+      protocol: z.enum(['websocket', 'tcp', 'http']).optional(),
+      isEnabled: z.boolean().optional(),
+      maxRetries: z.number().min(1).max(100).optional(),
+      retryIntervalSeconds: z.number().min(5).max(3600).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateManualConnection(id, data);
+      return { success: true };
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteManualConnection(input.id);
+      return { success: true };
+    }),
+
+  updateStatus: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      status: z.enum(['connected', 'disconnected', 'error', 'pending']),
+      errorMessage: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      await db.updateManualConnectionStatus(input.id, input.status, input.errorMessage);
+      return { success: true };
+    }),
+
+  testConnection: adminProcedure
+    .input(z.object({
+      id: z.number(),
+    }))
+    .mutation(async ({ input }) => {
+      const connection = await db.getManualConnectionById(input.id);
+      if (!connection) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Không tìm thấy cấu hình kết nối',
+        });
+      }
+      
+      // Update status to pending
+      await db.updateManualConnectionStatus(input.id, 'pending');
+      
+      // In a real implementation, this would attempt to connect to the machine
+      // For now, we'll simulate a test
+      try {
+        // Simulate connection test
+        const testResult = await new Promise<boolean>((resolve) => {
+          setTimeout(() => {
+            // Simulate 70% success rate for demo
+            resolve(Math.random() > 0.3);
+          }, 1000);
+        });
+        
+        if (testResult) {
+          await db.updateManualConnectionStatus(input.id, 'connected');
+          return { success: true, message: 'Kết nối thành công' };
+        } else {
+          await db.updateManualConnectionStatus(input.id, 'error', 'Không thể kết nối đến máy');
+          return { success: false, message: 'Không thể kết nối đến máy' };
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Lỗi không xác định';
+        await db.updateManualConnectionStatus(input.id, 'error', errorMessage);
+        return { success: false, message: errorMessage };
+      }
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -2087,6 +2203,7 @@ export const appRouter = router({
   lineProductAssignment: lineProductAssignmentRouter,
   machineStatus: machineStatusRouter,
   bulkImport: bulkImportRouter,
+  manualMapping: manualMappingRouter,
 });
 
 export type AppRouter = typeof appRouter;

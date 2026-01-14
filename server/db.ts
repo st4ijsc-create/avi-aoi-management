@@ -24,7 +24,8 @@ import {
   lineStages, InsertLineStage,
   lineProductAssignments, InsertLineProductAssignment,
   machineStatusLogs, InsertMachineStatusLog,
-  machineHeartbeats, InsertMachineHeartbeat
+  machineHeartbeats, InsertMachineHeartbeat,
+  manualMachineConnections, InsertManualMachineConnection
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2359,4 +2360,88 @@ export async function getMachineStatusReport(machineId: number, startDate: Date,
       ipAddress: log.ipAddress,
     })),
   };
+}
+
+
+// ============ MANUAL MACHINE CONNECTIONS FUNCTIONS ============
+
+export async function listManualConnections() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(manualMachineConnections).orderBy(desc(manualMachineConnections.createdAt));
+}
+
+export async function getManualConnectionById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const results = await db.select().from(manualMachineConnections).where(eq(manualMachineConnections.id, id));
+  return results[0] || null;
+}
+
+export async function getManualConnectionByMachineId(machineId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const results = await db.select().from(manualMachineConnections).where(eq(manualMachineConnections.machineId, machineId));
+  return results[0] || null;
+}
+
+export async function createManualConnection(data: InsertManualMachineConnection) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(manualMachineConnections).values(data);
+  return { id: Number(result[0].insertId) };
+}
+
+export async function updateManualConnection(id: number, data: Partial<InsertManualMachineConnection>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(manualMachineConnections).set(data).where(eq(manualMachineConnections.id, id));
+}
+
+export async function deleteManualConnection(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(manualMachineConnections).where(eq(manualMachineConnections.id, id));
+}
+
+export async function updateManualConnectionStatus(
+  id: number, 
+  status: 'connected' | 'disconnected' | 'error' | 'pending',
+  errorMessage?: string
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const updateData: any = {
+    connectionStatus: status,
+    lastConnectionAttempt: new Date(),
+  };
+  
+  if (status === 'connected') {
+    updateData.lastSuccessfulConnection = new Date();
+    updateData.retryCount = 0;
+    updateData.errorMessage = null;
+  } else if (status === 'error' && errorMessage) {
+    updateData.errorMessage = errorMessage;
+  }
+  
+  await db.update(manualMachineConnections).set(updateData).where(eq(manualMachineConnections.id, id));
+}
+
+export async function incrementManualConnectionRetry(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(manualMachineConnections)
+    .set({ 
+      retryCount: sql`${manualMachineConnections.retryCount} + 1`,
+      lastConnectionAttempt: new Date()
+    })
+    .where(eq(manualMachineConnections.id, id));
+}
+
+export async function getEnabledManualConnections() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(manualMachineConnections).where(eq(manualMachineConnections.isEnabled, true));
 }

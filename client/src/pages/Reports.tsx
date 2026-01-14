@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -21,7 +21,11 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
-  Percent
+  Percent,
+  FileText,
+  FileSpreadsheet,
+  File,
+  ChevronDown
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import {
@@ -41,6 +45,14 @@ import {
   ComposedChart,
   Area,
 } from "recharts";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const COLORS = {
   ok: "#10b981",
@@ -58,6 +70,8 @@ export default function Reports() {
   const [selectedWorkshop, setSelectedWorkshop] = useState<string>("all");
   const [timeRange, setTimeRange] = useState<TimeRange>("30d");
   const [activeTab, setActiveTab] = useState("executive");
+  const [isExporting, setIsExporting] = useState(false);
+  const reportRef = useRef<HTMLDivElement>(null);
 
   const { data: factories } = trpc.factory.list.useQuery();
   const { data: workshops } = trpc.workshop.list.useQuery();
@@ -188,29 +202,228 @@ export default function Reports() {
     }));
   }, [factories, machines]);
 
-  const handleExportReport = () => {
-    // Generate CSV report
-    const headers = ["Ngày", "Tổng SP", "OK", "NG", "NTF", "Yield Rate (%)"];
-    const rows = yieldTrendData.map((d: { fullDate: string; total: number; ok: number; ng: number; ntf: number; yieldRate: number }) => [
-      d.fullDate,
-      d.total,
-      d.ok,
-      d.ng,
-      d.ntf,
-      d.yieldRate,
-    ]);
+  // Export to CSV
+  const handleExportCSV = () => {
+    setIsExporting(true);
+    try {
+      const headers = ["Ngày", "Tổng SP", "OK", "NG", "NTF", "Yield Rate (%)"];
+      const rows = yieldTrendData.map((d) => [
+        d.fullDate,
+        d.total,
+        d.ok,
+        d.ng,
+        d.ntf,
+        d.yieldRate,
+      ]);
 
-    const csvContent = [
-      headers.join(","),
-      ...rows.map((r: (string | number)[]) => r.join(",")),
-    ].join("\n");
+      const csvContent = [
+        headers.join(","),
+        ...rows.map((r) => r.join(",")),
+      ].join("\n");
 
-    const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `bao-cao-yield-${new Date().toISOString().split("T")[0]}.csv`;
-    link.click();
-    toast.success("Đã xuất báo cáo thành công");
+      const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `bao-cao-yield-${new Date().toISOString().split("T")[0]}.csv`;
+      link.click();
+      toast.success("Đã xuất báo cáo CSV thành công");
+    } catch (error) {
+      toast.error("Lỗi khi xuất báo cáo CSV");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Export to Excel
+  const handleExportExcel = async () => {
+    setIsExporting(true);
+    try {
+      const XLSX = await import("xlsx");
+      
+      // Create workbook
+      const wb = XLSX.utils.book_new();
+      
+      // Sheet 1: Daily Stats
+      const dailyData = yieldTrendData.map((d) => ({
+        "Ngày": d.fullDate,
+        "Tổng SP": d.total,
+        "OK": d.ok,
+        "NG": d.ng,
+        "NTF": d.ntf,
+        "Yield Rate (%)": d.yieldRate,
+      }));
+      const ws1 = XLSX.utils.json_to_sheet(dailyData);
+      XLSX.utils.book_append_sheet(wb, ws1, "Thống kê theo ngày");
+      
+      // Sheet 2: Summary
+      const summaryData = [
+        { "Chỉ số": "Tổng sản phẩm", "Giá trị": aggregatedStats.totalProducts },
+        { "Chỉ số": "Sản phẩm OK", "Giá trị": aggregatedStats.okCount },
+        { "Chỉ số": "Sản phẩm NG", "Giá trị": aggregatedStats.ngCount },
+        { "Chỉ số": "Sản phẩm NTF", "Giá trị": aggregatedStats.ntfCount },
+        { "Chỉ số": "Yield Rate (%)", "Giá trị": aggregatedStats.yieldRate.toFixed(2) },
+        { "Chỉ số": "Xu hướng (%)", "Giá trị": aggregatedStats.trend.toFixed(2) },
+      ];
+      const ws2 = XLSX.utils.json_to_sheet(summaryData);
+      XLSX.utils.book_append_sheet(wb, ws2, "Tổng hợp");
+      
+      // Sheet 3: Machine Stats
+      if (machineComparisonData.length > 0) {
+        const machineData = machineComparisonData.map((m) => ({
+          "Tên máy": m.name,
+          "Mã máy": m.code,
+          "Tổng SP": m.total,
+          "Yield Rate (%)": m.yieldRate.toFixed(2),
+          "NG Rate (%)": m.ngRate.toFixed(2),
+        }));
+        const ws3 = XLSX.utils.json_to_sheet(machineData);
+        XLSX.utils.book_append_sheet(wb, ws3, "Thống kê theo máy");
+      }
+      
+      // Sheet 4: Factory Stats
+      if (factoryComparisonData.length > 0) {
+        const factoryData = factoryComparisonData.map((f) => ({
+          "Tên nhà máy": f.name,
+          "Mã nhà máy": f.code,
+          "Tổng SP": f.total,
+          "Yield Rate (%)": f.yieldRate.toFixed(2),
+          "Số máy": f.machines,
+        }));
+        const ws4 = XLSX.utils.json_to_sheet(factoryData);
+        XLSX.utils.book_append_sheet(wb, ws4, "Thống kê theo nhà máy");
+      }
+      
+      // Save file
+      XLSX.writeFile(wb, `bao-cao-yield-${new Date().toISOString().split("T")[0]}.xlsx`);
+      toast.success("Đã xuất báo cáo Excel thành công");
+    } catch (error) {
+      console.error("Excel export error:", error);
+      toast.error("Lỗi khi xuất báo cáo Excel");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Export to PDF
+  const handleExportPDF = async () => {
+    setIsExporting(true);
+    try {
+      const { jsPDF } = await import("jspdf");
+      const autoTable = (await import("jspdf-autotable")).default;
+      
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      
+      // Title
+      doc.setFontSize(18);
+      doc.text("BÁO CÁO YIELD RATE", pageWidth / 2, 20, { align: "center" });
+      
+      doc.setFontSize(10);
+      doc.text(`Thời gian: ${timeRange === "7d" ? "7 ngày" : timeRange === "30d" ? "30 ngày" : timeRange === "90d" ? "90 ngày" : "1 năm"} qua`, pageWidth / 2, 28, { align: "center" });
+      doc.text(`Ngày xuất: ${new Date().toLocaleDateString("vi-VN")}`, pageWidth / 2, 34, { align: "center" });
+      
+      // Summary section
+      doc.setFontSize(14);
+      doc.text("TỔNG HỢP", 14, 48);
+      
+      const summaryData = [
+        ["Tổng sản phẩm", aggregatedStats.totalProducts.toLocaleString()],
+        ["Sản phẩm OK", aggregatedStats.okCount.toLocaleString()],
+        ["Sản phẩm NG", aggregatedStats.ngCount.toLocaleString()],
+        ["Sản phẩm NTF", aggregatedStats.ntfCount.toLocaleString()],
+        ["Yield Rate", `${aggregatedStats.yieldRate.toFixed(2)}%`],
+        ["Xu hướng", `${aggregatedStats.trend >= 0 ? "+" : ""}${aggregatedStats.trend.toFixed(2)}%`],
+      ];
+      
+      autoTable(doc, {
+        startY: 52,
+        head: [["Chỉ số", "Giá trị"]],
+        body: summaryData,
+        theme: "grid",
+        headStyles: { fillColor: [6, 182, 212] },
+        styles: { fontSize: 10 },
+      });
+      
+      // Daily stats table
+      doc.setFontSize(14);
+      const dailyStartY = (doc as any).lastAutoTable.finalY + 15;
+      doc.text("THỐNG KÊ THEO NGÀY", 14, dailyStartY);
+      
+      const dailyData = yieldTrendData.slice(-14).map((d) => [
+        d.fullDate,
+        d.total.toLocaleString(),
+        d.ok.toLocaleString(),
+        d.ng.toLocaleString(),
+        d.ntf.toLocaleString(),
+        `${d.yieldRate}%`,
+      ]);
+      
+      autoTable(doc, {
+        startY: dailyStartY + 4,
+        head: [["Ngày", "Tổng SP", "OK", "NG", "NTF", "Yield Rate"]],
+        body: dailyData,
+        theme: "grid",
+        headStyles: { fillColor: [6, 182, 212] },
+        styles: { fontSize: 9 },
+      });
+      
+      // Machine stats on new page
+      if (machineComparisonData.length > 0) {
+        doc.addPage();
+        doc.setFontSize(14);
+        doc.text("THỐNG KÊ THEO MÁY", 14, 20);
+        
+        const machineData = machineComparisonData.map((m) => [
+          m.name,
+          m.code,
+          m.total.toLocaleString(),
+          `${m.yieldRate.toFixed(2)}%`,
+          `${m.ngRate.toFixed(2)}%`,
+        ]);
+        
+        autoTable(doc, {
+          startY: 24,
+          head: [["Tên máy", "Mã máy", "Tổng SP", "Yield Rate", "NG Rate"]],
+          body: machineData,
+          theme: "grid",
+          headStyles: { fillColor: [6, 182, 212] },
+          styles: { fontSize: 9 },
+        });
+      }
+      
+      // Factory stats
+      if (factoryComparisonData.length > 0) {
+        const factoryStartY = (doc as any).lastAutoTable.finalY + 15;
+        doc.setFontSize(14);
+        doc.text("THỐNG KÊ THEO NHÀ MÁY", 14, factoryStartY);
+        
+        const factoryData = factoryComparisonData.map((f) => [
+          f.name,
+          f.code,
+          f.total.toLocaleString(),
+          `${f.yieldRate.toFixed(2)}%`,
+          f.machines.toString(),
+        ]);
+        
+        autoTable(doc, {
+          startY: factoryStartY + 4,
+          head: [["Tên nhà máy", "Mã", "Tổng SP", "Yield Rate", "Số máy"]],
+          body: factoryData,
+          theme: "grid",
+          headStyles: { fillColor: [6, 182, 212] },
+          styles: { fontSize: 9 },
+        });
+      }
+      
+      // Save
+      doc.save(`bao-cao-yield-${new Date().toISOString().split("T")[0]}.pdf`);
+      toast.success("Đã xuất báo cáo PDF thành công");
+    } catch (error) {
+      console.error("PDF export error:", error);
+      toast.error("Lỗi khi xuất báo cáo PDF");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   if (authLoading) {
@@ -265,14 +478,40 @@ export default function Reports() {
           <RefreshCw className="h-4 w-4 mr-2" />
           Làm mới
         </Button>
-        <Button size="sm" onClick={handleExportReport}>
-          <Download className="h-4 w-4 mr-2" />
-          Xuất báo cáo
-        </Button>
+        
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" disabled={isExporting}>
+              {isExporting ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+              ) : (
+                <Download className="h-4 w-4 mr-2" />
+              )}
+              Xuất báo cáo
+              <ChevronDown className="h-4 w-4 ml-2" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel>Chọn định dạng</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleExportPDF} className="cursor-pointer">
+              <FileText className="h-4 w-4 mr-2 text-red-500" />
+              Xuất PDF
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleExportExcel} className="cursor-pointer">
+              <FileSpreadsheet className="h-4 w-4 mr-2 text-green-500" />
+              Xuất Excel
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleExportCSV} className="cursor-pointer">
+              <File className="h-4 w-4 mr-2 text-blue-500" />
+              Xuất CSV
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+      <div ref={reportRef} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
@@ -319,7 +558,7 @@ export default function Reports() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">NTF</p>
+                <p className="text-sm text-muted-foreground">Sản phẩm NTF</p>
                 <p className="text-2xl font-bold text-amber-500">{aggregatedStats.ntfCount.toLocaleString()}</p>
               </div>
               <div className="p-3 rounded-full bg-amber-500/10">
@@ -338,166 +577,129 @@ export default function Reports() {
                   <p className="text-2xl font-bold">{aggregatedStats.yieldRate.toFixed(2)}%</p>
                   {aggregatedStats.trend !== 0 && (
                     <Badge variant={aggregatedStats.trend > 0 ? "default" : "destructive"} className="text-xs">
-                      {aggregatedStats.trend > 0 ? (
-                        <TrendingUp className="h-3 w-3 mr-1" />
-                      ) : (
-                        <TrendingDown className="h-3 w-3 mr-1" />
-                      )}
-                      {Math.abs(aggregatedStats.trend).toFixed(1)}%
+                      {aggregatedStats.trend > 0 ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
+                      {aggregatedStats.trend > 0 ? "+" : ""}{aggregatedStats.trend.toFixed(1)}%
                     </Badge>
                   )}
                 </div>
               </div>
-              <div className="p-3 rounded-full bg-cyan-500/10">
-                <Percent className="h-6 w-6 text-cyan-500" />
+              <div className="p-3 rounded-full bg-primary/10">
+                <Percent className="h-6 w-6 text-primary" />
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Charts */}
+      {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="executive">Executive Summary</TabsTrigger>
-          <TabsTrigger value="overview">Tổng quan</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="executive">Tổng quan</TabsTrigger>
+          <TabsTrigger value="overview">Biểu đồ</TabsTrigger>
           <TabsTrigger value="trend">Xu hướng</TabsTrigger>
-          <TabsTrigger value="machines">So sánh máy</TabsTrigger>
-          <TabsTrigger value="factories">So sánh nhà máy</TabsTrigger>
+          <TabsTrigger value="machines">Theo máy</TabsTrigger>
+          <TabsTrigger value="factories">Theo nhà máy</TabsTrigger>
         </TabsList>
 
         <TabsContent value="executive" className="space-y-4">
-          {/* Executive Summary - High-level KPIs for management */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Overall Performance Score */}
-            <Card className="lg:col-span-1">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Target className="h-5 w-5 text-primary" />
-                  Điểm Hiệu Suất Tổng Thể
-                </CardTitle>
-                <CardDescription>Dựa trên Yield Rate, Output và Trend</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col items-center justify-center py-4">
-                  <div className="relative w-32 h-32">
-                    <svg className="w-32 h-32 transform -rotate-90">
-                      <circle cx="64" cy="64" r="56" fill="none" stroke="currentColor" strokeWidth="12" className="text-muted/20" />
-                      <circle 
-                        cx="64" cy="64" r="56" fill="none" 
-                        stroke={aggregatedStats.yieldRate >= 95 ? "#10b981" : aggregatedStats.yieldRate >= 90 ? "#f59e0b" : "#ef4444"}
-                        strokeWidth="12" 
-                        strokeDasharray={`${(aggregatedStats.yieldRate / 100) * 352} 352`}
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-3xl font-bold">{aggregatedStats.yieldRate.toFixed(1)}%</span>
-                      <span className="text-xs text-muted-foreground">Yield Rate</span>
-                    </div>
-                  </div>
-                  <div className="mt-4 flex items-center gap-2">
-                    {aggregatedStats.trend >= 0 ? (
-                      <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
-                        <TrendingUp className="h-3 w-3 mr-1" />
-                        +{aggregatedStats.trend.toFixed(1)}%
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/20">
-                        <TrendingDown className="h-3 w-3 mr-1" />
-                        {aggregatedStats.trend.toFixed(1)}%
-                      </Badge>
-                    )}
-                    <span className="text-xs text-muted-foreground">so với kỳ trước</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Key Metrics Summary */}
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle className="text-lg">Chỉ Số Chính</CardTitle>
-                <CardDescription>Tổng hợp các chỉ số quan trọng trong kỳ báo cáo</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="p-4 rounded-lg bg-muted/50">
-                    <p className="text-sm text-muted-foreground">Tổng sản lượng</p>
-                    <p className="text-2xl font-bold">{aggregatedStats.totalProducts.toLocaleString()}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      ~{Math.round(aggregatedStats.totalProducts / (timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : timeRange === "90d" ? 90 : 365)).toLocaleString()}/ngày
-                    </p>
-                  </div>
-                  <div className="p-4 rounded-lg bg-green-500/10">
-                    <p className="text-sm text-green-600">Sản phẩm OK</p>
-                    <p className="text-2xl font-bold text-green-600">{aggregatedStats.okCount.toLocaleString()}</p>
-                    <p className="text-xs text-green-600/70 mt-1">
-                      {aggregatedStats.totalProducts > 0 ? ((aggregatedStats.okCount / aggregatedStats.totalProducts) * 100).toFixed(1) : 0}% tổng
-                    </p>
-                  </div>
-                  <div className="p-4 rounded-lg bg-red-500/10">
-                    <p className="text-sm text-red-600">Sản phẩm NG</p>
-                    <p className="text-2xl font-bold text-red-600">{aggregatedStats.ngCount.toLocaleString()}</p>
-                    <p className="text-xs text-red-600/70 mt-1">
-                      {aggregatedStats.totalProducts > 0 ? ((aggregatedStats.ngCount / aggregatedStats.totalProducts) * 100).toFixed(1) : 0}% tổng
-                    </p>
-                  </div>
-                  <div className="p-4 rounded-lg bg-amber-500/10">
-                    <p className="text-sm text-amber-600">Sản phẩm NTF</p>
-                    <p className="text-2xl font-bold text-amber-600">{aggregatedStats.ntfCount.toLocaleString()}</p>
-                    <p className="text-xs text-amber-600/70 mt-1">
-                      {aggregatedStats.totalProducts > 0 ? ((aggregatedStats.ntfCount / aggregatedStats.totalProducts) * 100).toFixed(1) : 0}% tổng
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Factory Performance Ranking */}
+          {/* Executive Summary */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Xếp Hạng Hiệu Suất Nhà Máy</CardTitle>
-              <CardDescription>So sánh hiệu suất giữa các nhà máy trong tập đoàn</CardDescription>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+                Tóm Tắt Điều Hành
+              </CardTitle>
+              <CardDescription>Tổng quan hiệu suất sản xuất trong kỳ báo cáo</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-2">
+                  <h4 className="font-medium text-muted-foreground">Hiệu suất tổng thể</h4>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(aggregatedStats.yieldRate, 100)}%` }}
+                      />
+                    </div>
+                    <span className="font-bold">{aggregatedStats.yieldRate.toFixed(1)}%</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {aggregatedStats.yieldRate >= 95 ? "Đạt mục tiêu" : aggregatedStats.yieldRate >= 90 ? "Gần đạt mục tiêu" : "Cần cải thiện"}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="font-medium text-muted-foreground">So với kỳ trước</h4>
+                  <div className="flex items-center gap-2">
+                    {aggregatedStats.trend >= 0 ? (
+                      <TrendingUp className="h-6 w-6 text-green-500" />
+                    ) : (
+                      <TrendingDown className="h-6 w-6 text-red-500" />
+                    )}
+                    <span className={`text-2xl font-bold ${aggregatedStats.trend >= 0 ? "text-green-500" : "text-red-500"}`}>
+                      {aggregatedStats.trend >= 0 ? "+" : ""}{aggregatedStats.trend.toFixed(2)}%
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {aggregatedStats.trend >= 0 ? "Xu hướng tăng" : "Xu hướng giảm"}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="font-medium text-muted-foreground">Phân bố kết quả</h4>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-green-500">OK</span>
+                      <span>{aggregatedStats.totalProducts > 0 ? ((aggregatedStats.okCount / aggregatedStats.totalProducts) * 100).toFixed(1) : 0}%</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-red-500">NG</span>
+                      <span>{aggregatedStats.totalProducts > 0 ? ((aggregatedStats.ngCount / aggregatedStats.totalProducts) * 100).toFixed(1) : 0}%</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-amber-500">NTF</span>
+                      <span>{aggregatedStats.totalProducts > 0 ? ((aggregatedStats.ntfCount / aggregatedStats.totalProducts) * 100).toFixed(1) : 0}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Top/Bottom Performers */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Hiệu Suất Máy</CardTitle>
+              <CardDescription>Top máy có hiệu suất cao nhất và thấp nhất</CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-12">#</TableHead>
-                    <TableHead>Nhà máy</TableHead>
-                    <TableHead className="text-right">Sản lượng</TableHead>
+                    <TableHead>Máy</TableHead>
+                    <TableHead>Mã máy</TableHead>
+                    <TableHead className="text-right">Tổng SP</TableHead>
                     <TableHead className="text-right">Yield Rate</TableHead>
-                    <TableHead className="text-right">NG Rate</TableHead>
-                    <TableHead className="text-center">Đánh giá</TableHead>
+                    <TableHead>Đánh giá</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {factories?.slice(0, 5).map((factory, index) => {
-                    // Mock data - in real app, this would come from API
-                    const mockYield = 92 + Math.random() * 6;
-                    const mockOutput = Math.floor(1000 + Math.random() * 5000);
-                    const mockNG = 100 - mockYield;
+                  {machineComparisonData.slice(0, 5).map((machine: { name: string; code: string; total: number; yieldRate: number }, index: number) => {
                     return (
-                      <TableRow key={factory.id}>
-                        <TableCell className="font-medium">
-                          <Badge variant={index === 0 ? "default" : "outline"} className={index === 0 ? "bg-amber-500" : ""}>
-                            {index + 1}
+                      <TableRow key={index}>
+                        <TableCell className="font-medium">{machine.name}</TableCell>
+                        <TableCell className="text-muted-foreground">{machine.code}</TableCell>
+                        <TableCell className="text-right">{machine.total.toLocaleString()}</TableCell>
+                        <TableCell className="text-right">
+                          <Badge variant={machine.yieldRate >= 95 ? "default" : machine.yieldRate >= 90 ? "secondary" : "destructive"}>
+                            {machine.yieldRate.toFixed(2)}%
                           </Badge>
                         </TableCell>
-                        <TableCell className="font-medium">{factory.name}</TableCell>
-                        <TableCell className="text-right">{mockOutput.toLocaleString()}</TableCell>
-                        <TableCell className="text-right">
-                          <span className={mockYield >= 95 ? "text-green-500" : mockYield >= 90 ? "text-amber-500" : "text-red-500"}>
-                            {mockYield.toFixed(1)}%
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right text-red-500">{mockNG.toFixed(1)}%</TableCell>
-                        <TableCell className="text-center">
-                          {mockYield >= 95 ? (
+                        <TableCell>
+                          {machine.yieldRate >= 95 ? (
                             <Badge className="bg-green-500">Xuất sắc</Badge>
-                          ) : mockYield >= 90 ? (
+                          ) : machine.yieldRate >= 90 ? (
                             <Badge className="bg-amber-500">Đạt</Badge>
                           ) : (
                             <Badge variant="destructive">Cần cải thiện</Badge>

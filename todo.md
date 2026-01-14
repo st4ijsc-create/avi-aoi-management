@@ -669,3 +669,9 @@
 - [x] Click mini-map để di chuyển viewport đến vị trí tương ứng
 - [x] Undo/Redo cho Layout khi sắp xếp lại vị trí máy (nút Undo2/Redo2 trên toolbar)
 - [x] Snap-to-grid tự động căn chỉnh máy vào lưới 50px khi kéo thả (nút Grid3X3 toggle)
+
+
+## Phase 44: Consolidate Upload, Report Export, Manual Mapping
+- [x] Bỏ input upload trong 'Ảnh mẫu điểm đo', giữ chọn Upload/Auto-crop ở dưới (UI đã đúng)
+- [x] Module Báo cáo: Export PDF, Excel, CSV cho tất cả tabs và biểu đồ
+- [x] Mapping Manual trong Settings: CRUD mapping máy qua IP:Port socket

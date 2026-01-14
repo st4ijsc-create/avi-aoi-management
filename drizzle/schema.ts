@@ -628,3 +628,33 @@ export const machineHeartbeats = mysqlTable("machine_heartbeats", {
 
 export type MachineHeartbeat = typeof machineHeartbeats.$inferSelect;
 export type InsertMachineHeartbeat = typeof machineHeartbeats.$inferInsert;
+
+
+/**
+ * Manual Machine Connections - Cấu hình kết nối máy thủ công qua IP:Port
+ * Cho phép admin cấu hình kết nối socket đến máy mà không cần máy tự đăng ký
+ */
+export const manualMachineConnections = mysqlTable("manual_machine_connections", {
+  id: int("id").autoincrement().primaryKey(),
+  machineId: int("machineId").notNull(),
+  ipAddress: varchar("ipAddress", { length: 45 }).notNull(), // IPv4 hoặc IPv6
+  port: int("port").notNull().default(8080),
+  protocol: mysqlEnum("protocol", ["websocket", "tcp", "http"]).default("websocket").notNull(),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  lastConnectionAttempt: timestamp("lastConnectionAttempt"),
+  lastSuccessfulConnection: timestamp("lastSuccessfulConnection"),
+  connectionStatus: mysqlEnum("connectionStatus", ["connected", "disconnected", "error", "pending"]).default("pending").notNull(),
+  errorMessage: text("errorMessage"),
+  retryCount: int("retryCount").default(0).notNull(),
+  maxRetries: int("maxRetries").default(5).notNull(),
+  retryIntervalSeconds: int("retryIntervalSeconds").default(30).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_manual_conn_machine").on(table.machineId),
+  index("idx_manual_conn_ip").on(table.ipAddress),
+  index("idx_manual_conn_status").on(table.connectionStatus),
+]);
+
+export type ManualMachineConnection = typeof manualMachineConnections.$inferSelect;
+export type InsertManualMachineConnection = typeof manualMachineConnections.$inferInsert;

@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import MachineMapping from "@/components/MachineMapping";
+import ManualMachineMapping from "@/components/ManualMachineMapping";
 import { useState } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -1909,20 +1910,39 @@ export default function Settings() {
 
           {/* Machine Mapping Tab */}
           <TabsContent value="mapping">
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Wifi className="h-5 w-5 text-primary" />
-                  Machine Mapping
-                </CardTitle>
-                <CardDescription>
-                  Quản lý đăng ký và kết nối máy qua WebSocket
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <MachineMapping />
-              </CardContent>
-            </Card>
+            <div className="space-y-6">
+              {/* Auto Mapping via WebSocket */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Wifi className="h-5 w-5 text-primary" />
+                    Đăng ký tự động (WebSocket)
+                  </CardTitle>
+                  <CardDescription>
+                    Quản lý đăng ký và kết nối máy qua WebSocket - máy tự động gửi yêu cầu đăng ký
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <MachineMapping />
+                </CardContent>
+              </Card>
+
+              {/* Manual Mapping via IP:Port */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Wifi className="h-5 w-5 text-cyan-500" />
+                    Kết nối thủ công (IP:Port)
+                  </CardTitle>
+                  <CardDescription>
+                    Cấu hình kết nối socket đến máy qua địa chỉ IP và Port - admin chủ động cấu hình
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ManualMachineMapping />
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </div>

@@ -1142,14 +1142,6 @@ export default function ProductModels() {
                         {/* Reference Image for Point */}
                         <div className="space-y-2">
                           <Label>Ảnh mẫu điểm đo</Label>
-                          {isEditMode && (
-                            <Input
-                              type="file"
-                              accept="image/*"
-                              onChange={handlePointImageUpload}
-                              className="text-sm"
-                            />
-                          )}
                           {pointReferenceImageUrl && (
                             <div className="relative">
                               <img
