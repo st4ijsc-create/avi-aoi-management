@@ -722,3 +722,29 @@ export const yieldThresholdHistory = mysqlTable("yield_threshold_history", {
 
 export type YieldThresholdHistory = typeof yieldThresholdHistory.$inferSelect;
 export type InsertYieldThresholdHistory = typeof yieldThresholdHistory.$inferInsert;
+
+
+/**
+ * Audit Logs - Lịch sử hoạt động hệ thống
+ */
+export const auditLogs = mysqlTable("audit_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId"), // Null for system actions or failed logins
+  userName: varchar("userName", { length: 255 }), // Store name at time of action
+  action: varchar("action", { length: 100 }).notNull(), // login, logout, create, update, delete, etc.
+  entityType: varchar("entityType", { length: 100 }), // user, machine, product, inspection, etc.
+  entityId: int("entityId"), // ID of affected entity
+  entityName: varchar("entityName", { length: 255 }), // Name of affected entity for display
+  details: text("details"), // JSON string with additional details
+  ipAddress: varchar("ipAddress", { length: 45 }), // IPv4 or IPv6
+  userAgent: varchar("userAgent", { length: 500 }),
+  status: mysqlEnum("status", ["success", "failure"]).default("success").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_audit_logs_user").on(table.userId),
+  index("idx_audit_logs_action").on(table.action),
+  index("idx_audit_logs_entity").on(table.entityType, table.entityId),
+  index("idx_audit_logs_created").on(table.createdAt),
+]);
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAuditLog = typeof auditLogs.$inferInsert;

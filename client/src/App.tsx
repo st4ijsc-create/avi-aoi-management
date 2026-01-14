@@ -20,6 +20,9 @@ import ProductMachineMapping from "./pages/ProductMachineMapping";
 import ProductionOrders from "./pages/ProductionOrders";
 import MachineStatusMonitor from "./pages/MachineStatusMonitor";
 import Login from "./pages/Login";
+import Profile from "./pages/Profile";
+import ChangePassword from "./pages/ChangePassword";
+import AuditLogs from "./pages/AuditLogs";
 
 function Router() {
   return (
@@ -41,6 +44,9 @@ function Router() {
             <Route path="/product-mapping" component={ProductMachineMapping} />
           <Route path="/production-orders" component={ProductionOrders} />
       <Route path="/machine-status" component={MachineStatusMonitor} />
+      <Route path="/profile" component={Profile} />
+      <Route path="/change-password" component={ChangePassword} />
+      <Route path="/audit-logs" component={AuditLogs} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

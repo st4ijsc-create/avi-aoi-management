@@ -127,6 +127,13 @@
       "when": 1768366695759,
       "tag": "0017_clear_thunderbird",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1768367682206,
+      "tag": "0018_strange_whizzer",
+      "breakpoints": true
     }
   ]
 }

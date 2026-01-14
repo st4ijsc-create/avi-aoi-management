@@ -27,7 +27,8 @@ import {
   machineHeartbeats, InsertMachineHeartbeat,
   manualMachineConnections, InsertManualMachineConnection,
   yieldAlertThresholds, InsertYieldAlertThreshold,
-  yieldThresholdHistory, InsertYieldThresholdHistory
+  yieldThresholdHistory, InsertYieldThresholdHistory,
+  auditLogs, InsertAuditLog
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2637,4 +2638,215 @@ export async function getYieldThresholdHistoryWithComparison(metricType: 'FPY' |
       )
     )
     .orderBy(desc(yieldThresholdHistory.createdAt));
+}
+
+
+// ============ AUDIT LOG FUNCTIONS ============
+
+export type AuditAction = 
+  | 'login' | 'login_failed' | 'logout'
+  | 'create' | 'update' | 'delete'
+  | 'password_change' | 'role_change'
+  | 'export' | 'import';
+
+export type AuditEntityType = 
+  | 'user' | 'machine' | 'product' | 'inspection'
+  | 'factory' | 'workshop' | 'line' | 'station'
+  | 'alert' | 'threshold' | 'mapping' | 'order';
+
+export async function createAuditLog(data: {
+  userId?: number | null;
+  userName?: string | null;
+  action: string;
+  entityType?: string | null;
+  entityId?: number | null;
+  entityName?: string | null;
+  details?: Record<string, any> | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  status?: 'success' | 'failure';
+}): Promise<{ id: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not connected");
+  
+  const result = await db.insert(auditLogs).values({
+    userId: data.userId ?? null,
+    userName: data.userName ?? null,
+    action: data.action,
+    entityType: data.entityType ?? null,
+    entityId: data.entityId ?? null,
+    entityName: data.entityName ?? null,
+    details: data.details ? JSON.stringify(data.details) : null,
+    ipAddress: data.ipAddress ?? null,
+    userAgent: data.userAgent ?? null,
+    status: data.status ?? 'success',
+  });
+  
+  return { id: Number(result[0].insertId) };
+}
+
+export async function getAuditLogs(params: {
+  userId?: number;
+  action?: string;
+  entityType?: string;
+  entityId?: number;
+  status?: 'success' | 'failure';
+  startDate?: Date;
+  endDate?: Date;
+  limit?: number;
+  offset?: number;
+}): Promise<{
+  logs: Array<{
+    id: number;
+    userId: number | null;
+    userName: string | null;
+    action: string;
+    entityType: string | null;
+    entityId: number | null;
+    entityName: string | null;
+    details: string | null;
+    ipAddress: string | null;
+    userAgent: string | null;
+    status: 'success' | 'failure';
+    createdAt: Date;
+  }>;
+  total: number;
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not connected");
+  
+  const conditions: string[] = [];
+  const values: any[] = [];
+  
+  if (params.userId) {
+    conditions.push("userId = ?");
+    values.push(params.userId);
+  }
+  if (params.action) {
+    conditions.push("action = ?");
+    values.push(params.action);
+  }
+  if (params.entityType) {
+    conditions.push("entityType = ?");
+    values.push(params.entityType);
+  }
+  if (params.entityId) {
+    conditions.push("entityId = ?");
+    values.push(params.entityId);
+  }
+  if (params.status) {
+    conditions.push("status = ?");
+    values.push(params.status);
+  }
+  if (params.startDate) {
+    conditions.push("createdAt >= ?");
+    values.push(params.startDate);
+  }
+  if (params.endDate) {
+    conditions.push("createdAt <= ?");
+    values.push(params.endDate);
+  }
+  
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const limit = params.limit || 50;
+  const offset = params.offset || 0;
+  
+  // Build query with parameters
+  let countQuery = `SELECT COUNT(*) as total FROM audit_logs ${whereClause}`;
+  let selectQuery = `SELECT * FROM audit_logs ${whereClause} ORDER BY createdAt DESC LIMIT ${limit} OFFSET ${offset}`;
+  
+  // Get total count
+  const countResult = await db.execute(sql`${sql.raw(countQuery)}`);
+  const total = (countResult as any)[0]?.[0]?.total || 0;
+  
+  // Get logs
+  const logsResult = await db.execute(sql`${sql.raw(selectQuery)}`);
+  
+  return {
+    logs: ((logsResult as any)[0] || []).map((row: any) => ({
+      id: row.id,
+      userId: row.userId,
+      userName: row.userName,
+      action: row.action,
+      entityType: row.entityType,
+      entityId: row.entityId,
+      entityName: row.entityName,
+      details: row.details,
+      ipAddress: row.ipAddress,
+      userAgent: row.userAgent,
+      status: row.status,
+      createdAt: new Date(row.createdAt),
+    })),
+    total,
+  };
+}
+
+export async function getAuditLogStats(days: number = 7): Promise<{
+  totalActions: number;
+  loginCount: number;
+  failedLogins: number;
+  createCount: number;
+  updateCount: number;
+  deleteCount: number;
+  topUsers: Array<{ userName: string; count: number }>;
+  actionsByDay: Array<{ date: string; count: number }>;
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not connected");
+  
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+  
+  const startDateStr = startDate.toISOString().slice(0, 19).replace('T', ' ');
+  
+  // Total actions
+  const totalResult = await db.execute(sql`SELECT COUNT(*) as total FROM audit_logs WHERE createdAt >= ${startDateStr}`);
+  const totalActions = (totalResult as any)[0]?.[0]?.total || 0;
+  
+  // Login counts
+  const loginResult = await db.execute(sql`SELECT 
+    SUM(CASE WHEN action = 'login' AND status = 'success' THEN 1 ELSE 0 END) as loginCount,
+    SUM(CASE WHEN action = 'login_failed' OR (action = 'login' AND status = 'failure') THEN 1 ELSE 0 END) as failedLogins
+  FROM audit_logs WHERE createdAt >= ${startDateStr}`);
+  const loginCount = (loginResult as any)[0]?.[0]?.loginCount || 0;
+  const failedLogins = (loginResult as any)[0]?.[0]?.failedLogins || 0;
+  
+  // CRUD counts
+  const crudResult = await db.execute(sql`SELECT 
+    SUM(CASE WHEN action = 'create' THEN 1 ELSE 0 END) as createCount,
+    SUM(CASE WHEN action = 'update' THEN 1 ELSE 0 END) as updateCount,
+    SUM(CASE WHEN action = 'delete' THEN 1 ELSE 0 END) as deleteCount
+  FROM audit_logs WHERE createdAt >= ${startDateStr}`);
+  const createCount = (crudResult as any)[0]?.[0]?.createCount || 0;
+  const updateCount = (crudResult as any)[0]?.[0]?.updateCount || 0;
+  const deleteCount = (crudResult as any)[0]?.[0]?.deleteCount || 0;
+  
+  // Top users
+  const topUsersResult = await db.execute(sql`SELECT userName, COUNT(*) as count FROM audit_logs 
+    WHERE createdAt >= ${startDateStr} AND userName IS NOT NULL
+    GROUP BY userName ORDER BY count DESC LIMIT 10`);
+  const topUsers = ((topUsersResult as any)[0] || []).map((row: any) => ({
+    userName: row.userName,
+    count: row.count,
+  }));
+  
+  // Actions by day
+  const byDayResult = await db.execute(sql`SELECT DATE(createdAt) as date, COUNT(*) as count FROM audit_logs 
+    WHERE createdAt >= ${startDateStr}
+    GROUP BY DATE(createdAt) ORDER BY date DESC`);
+  const actionsByDay = ((byDayResult as any)[0] || []).map((row: any) => ({
+    date: row.date,
+    count: row.count,
+  }));
+  
+  return {
+    totalActions,
+    loginCount,
+    failedLogins,
+    createCount,
+    updateCount,
+    deleteCount,
+    topUsers,
+    actionsByDay,
+  };
 }

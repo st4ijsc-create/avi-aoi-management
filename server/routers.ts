@@ -1701,6 +1701,51 @@ const userRouter = router({
       await db.deleteUser(input.userId);
       return { success: true };
     }),
+
+  // User self-service: update own profile
+  updateProfile: protectedProcedure
+    .input(z.object({
+      name: z.string().min(1).max(255).optional(),
+      email: z.string().email().optional(),
+      phone: z.string().max(20).optional(),
+      department: z.string().max(100).optional(),
+      position: z.string().max(100).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await db.updateUser(ctx.user.id, input);
+      return { success: true };
+    }),
+
+  // User self-service: change own password
+  changePassword: protectedProcedure
+    .input(z.object({
+      currentPassword: z.string().min(1),
+      newPassword: z.string().min(6).max(100),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const user = await db.getUserById(ctx.user.id);
+      if (!user) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Không tìm thấy người dùng' });
+      }
+      
+      // Only local users can change password
+      if (user.loginMethod !== 'local' || !user.passwordHash) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Chỉ tài khoản nội bộ mới có thể đổi mật khẩu' });
+      }
+      
+      // Verify current password
+      const bcrypt = await import('bcryptjs');
+      const isValid = await bcrypt.compare(input.currentPassword, user.passwordHash);
+      if (!isValid) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Mật khẩu hiện tại không đúng' });
+      }
+      
+      // Hash and save new password
+      const newPasswordHash = await bcrypt.hash(input.newPassword, 10);
+      await db.updateUserPassword(ctx.user.id, newPasswordHash);
+      
+      return { success: true };
+    }),
 });
 
 const alertRouter = router({
@@ -2417,6 +2462,32 @@ const yieldThresholdRouter = router({
     }),
 });
 
+const auditRouter = router({
+  list: adminProcedure
+    .input(z.object({
+      userId: z.number().optional(),
+      action: z.string().optional(),
+      entityType: z.string().optional(),
+      entityId: z.number().optional(),
+      status: z.enum(['success', 'failure']).optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      limit: z.number().min(1).max(100).default(50),
+      offset: z.number().min(0).default(0),
+    }))
+    .query(async ({ input }) => {
+      return db.getAuditLogs(input);
+    }),
+
+  stats: adminProcedure
+    .input(z.object({
+      days: z.number().min(1).max(90).default(7),
+    }))
+    .query(async ({ input }) => {
+      return db.getAuditLogStats(input.days);
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -2453,6 +2524,7 @@ export const appRouter = router({
   bulkImport: bulkImportRouter,
   manualMapping: manualMappingRouter,
   yieldThreshold: yieldThresholdRouter,
+  audit: auditRouter,
 });
 
 export type AppRouter = typeof appRouter;

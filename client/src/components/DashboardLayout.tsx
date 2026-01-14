@@ -4,6 +4,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -21,7 +22,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Cpu, LogOut, PanelLeft } from "lucide-react";
+import { Cpu, LogOut, PanelLeft, Key, User } from "lucide-react";
 import { NotificationCenter } from "./NotificationCenter";
 import { CSSProperties, ReactNode, useEffect, useRef, useState } from "react";
 import { useLocation, Link } from "wouter";
@@ -83,7 +84,7 @@ export default function DashboardLayout({
           </div>
           <Button
             onClick={() => {
-              window.location.href = getLoginUrl();
+              window.location.href = "/login";
             }}
             size="lg"
             className="w-full shadow-lg hover:shadow-xl transition-all"
@@ -248,6 +249,21 @@ function DashboardLayoutContent({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem
+                  onClick={() => window.location.href = "/profile"}
+                  className="cursor-pointer"
+                >
+                  <User className="mr-2 h-4 w-4" />
+                  <span>Thông tin cá nhân</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => window.location.href = "/change-password"}
+                  className="cursor-pointer"
+                >
+                  <Key className="mr-2 h-4 w-4" />
+                  <span>Đổi mật khẩu</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={logout}
                   className="cursor-pointer text-destructive focus:text-destructive"

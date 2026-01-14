@@ -707,3 +707,12 @@
 - [x] Manual Mapping: Thêm chức năng Delete kết nối thủ công (đã có sẵn)
 - [x] Đăng nhập Username/Password: Thêm local authentication
 - [x] CRUD trang Người dùng: Tạo/Xem/Sửa/Xóa người dùng
+
+
+## Phase 49: Admin Default, Change Password, Audit Log
+- [x] Tạo tài khoản admin mặc định (username: admin, password: admin123)
+- [x] Thêm chức năng đổi mật khẩu cá nhân trong profile/settings
+- [ ] Tạo bảng audit_logs để lưu lịch sử hoạt động
+- [ ] Ghi log đăng nhập thành công/thất bại
+- [ ] Ghi log các thao tác CRUD quan trọng (user, machine, product)
+- [ ] Tạo UI xem audit log trong Settings (chỉ admin)

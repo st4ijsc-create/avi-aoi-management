@@ -31,7 +31,8 @@ import {
   AlertTriangle,
   Target,
   ThumbsDown,
-  Wifi
+  Wifi,
+  Activity
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import MachineMapping from "@/components/MachineMapping";
@@ -548,7 +549,7 @@ export default function Settings() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-9">
+          <TabsList className="grid w-full grid-cols-10">
             <TabsTrigger value="factories" className="gap-2">
               <Building2 className="h-4 w-4" />
               Nhà máy
@@ -588,6 +589,10 @@ export default function Settings() {
             <TabsTrigger value="yield-thresholds" className="gap-2">
               <Target className="h-4 w-4" />
               Yield
+            </TabsTrigger>
+            <TabsTrigger value="audit" className="gap-2" onClick={() => window.location.href = '/audit-logs'}>
+              <Activity className="h-4 w-4" />
+              Audit Log
             </TabsTrigger>
           </TabsList>
 
