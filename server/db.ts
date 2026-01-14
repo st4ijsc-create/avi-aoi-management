@@ -3283,9 +3283,9 @@ export async function getWorkstationSummary(filters?: {
       SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END) as ntfCount,
       ROUND(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2) as yieldRate
     FROM workstations w
-    LEFT JOIN measurement_point_defs mpd ON mpd.workstationId = w.id
-    LEFT JOIN measurement_results mr ON mr.measurementPointDefId = mpd.id
-    LEFT JOIN product_inspections pi ON mr.inspectionId = pi.id
+    INNER JOIN measurement_point_defs mpd ON mpd.workstationId = w.id
+    INNER JOIN measurement_results mr ON mr.measurementPointDefId = mpd.id
+    INNER JOIN product_inspections pi ON mr.inspectionId = pi.id
     WHERE w.isActive = 1
     ${filters?.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
     ${filters?.endDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime <= ${filters.endDate})` : sql``}

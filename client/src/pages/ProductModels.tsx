@@ -1195,7 +1195,6 @@ export default function ProductModels() {
                               <SelectValue placeholder="Chọn công trạm" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">Không chọn</SelectItem>
                               {workstations?.map((ws) => (
                                 <SelectItem key={ws.id} value={ws.id.toString()}>
                                   {ws.code} - {ws.name}
