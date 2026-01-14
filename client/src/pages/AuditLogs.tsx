@@ -52,9 +52,9 @@ const CHART_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#0
 export default function AuditLogs() {
   const { user } = useAuth();
   const [filters, setFilters] = useState({
-    action: "",
-    entityType: "",
-    status: "",
+    action: "all",
+    entityType: "all",
+    status: "all",
     search: "",
   });
   const [page, setPage] = useState(0);
@@ -76,9 +76,9 @@ export default function AuditLogs() {
   }
 
   const { data: logsData, isLoading } = trpc.audit.list.useQuery({
-    action: filters.action || undefined,
-    entityType: filters.entityType || undefined,
-    status: filters.status as "success" | "failure" | undefined,
+    action: filters.action === "all" ? undefined : filters.action || undefined,
+    entityType: filters.entityType === "all" ? undefined : filters.entityType || undefined,
+    status: filters.status === "all" ? undefined : filters.status as "success" | "failure" | undefined,
     limit: pageSize,
     offset: page * pageSize,
   });
@@ -151,7 +151,7 @@ export default function AuditLogs() {
                         <SelectValue placeholder="Tất cả" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Tất cả</SelectItem>
+                        <SelectItem value="all">Tất cả</SelectItem>
                         {Object.entries(ACTION_LABELS).map(([key, { label }]) => (
                           <SelectItem key={key} value={key}>{label}</SelectItem>
                         ))}
@@ -169,7 +169,7 @@ export default function AuditLogs() {
                         <SelectValue placeholder="Tất cả" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Tất cả</SelectItem>
+                        <SelectItem value="all">Tất cả</SelectItem>
                         {Object.entries(ENTITY_LABELS).map(([key, label]) => (
                           <SelectItem key={key} value={key}>{label}</SelectItem>
                         ))}
@@ -187,7 +187,7 @@ export default function AuditLogs() {
                         <SelectValue placeholder="Tất cả" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Tất cả</SelectItem>
+                        <SelectItem value="all">Tất cả</SelectItem>
                         <SelectItem value="success">Thành công</SelectItem>
                         <SelectItem value="failure">Thất bại</SelectItem>
                       </SelectContent>

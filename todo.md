@@ -861,3 +861,18 @@
 ### Bugs
 - [x] Lỗi query measurement_point_templates - đã tạo bảng trong database
 - [x] Lỗi Select.Item với value rỗng - đã sửa thành value="all" và cập nhật logic filter
+
+
+## Phase 64: SelectItem Value Fix & Form Validation
+
+### SelectItem Value Fix
+- [x] Tìm tất cả SelectItem với value="" trong toàn bộ project (7 matches trong 2 files)
+- [x] Sửa thành value có giá trị hợp lệ ("all", "none")
+- [x] Cập nhật logic filter/state tương ứng trong AuditLogs.tsx và Settings.tsx
+
+### Form Validation
+- [x] Tạo useFormValidation hook với các validation rules (required, minLength, maxLength, pattern, custom)
+- [x] Tạo ValidationMessage component để hiển thị lỗi
+- [x] Thêm validation cho form tạo sản phẩm (ProductModels) - code, name
+- [x] Thêm validation cho form tạo điểm đo (ProductModels) - code, name, lowerLimit, upperLimit
+- [ ] Thêm validation cho các form trong Settings page (tùy chọn - có thể thêm sau)

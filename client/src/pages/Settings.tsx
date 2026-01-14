@@ -106,7 +106,7 @@ export default function Settings() {
 
   // Shift form
   const [shiftForm, setShiftForm] = useState({ 
-    factoryId: "", name: "", code: "", 
+    factoryId: "all", name: "", code: "", 
     startHour: "6", startMinute: "0", 
     endHour: "14", endMinute: "0",
     orderIndex: "0"
@@ -117,7 +117,7 @@ export default function Settings() {
 
   // Stage form
   const [stageForm, setStageForm] = useState({ 
-    lineId: "", code: "", name: "", description: "", orderIndex: "0", stationId: ""
+    lineId: "", code: "", name: "", description: "", orderIndex: "0", stationId: "none"
   });
   const [stageDialogOpen, setStageDialogOpen] = useState(false);
   const [editingStage, setEditingStage] = useState<LineStage | null>(null);
@@ -130,8 +130,8 @@ export default function Settings() {
     alertType: "yield_rate" as 'yield_rate' | 'ng_count' | 'machine_status',
     threshold: "90",
     comparisonOperator: "lt" as 'lt' | 'lte' | 'gt' | 'gte' | 'eq',
-    machineId: "",
-    factoryId: "",
+    machineId: "all",
+    factoryId: "all",
     notifyEmail: true,
     notifyInApp: true,
     cooldownMinutes: "60"
@@ -1280,7 +1280,7 @@ export default function Settings() {
                           <Select value={shiftForm.factoryId} onValueChange={(v) => setShiftForm({ ...shiftForm, factoryId: v })}>
                             <SelectTrigger><SelectValue placeholder="Tất cả nhà máy" /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">Tất cả nhà máy</SelectItem>
+                              <SelectItem value="all">Tất cả nhà máy</SelectItem>
                               {factories?.map((f) => (
                                 <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
                               ))}
@@ -1351,7 +1351,7 @@ export default function Settings() {
                         <Button variant="outline" onClick={() => setShiftDialogOpen(false)}>Hủy</Button>
                         <Button 
                           onClick={() => createShiftMutation.mutate({
-                            factoryId: shiftForm.factoryId ? parseInt(shiftForm.factoryId) : undefined,
+                            factoryId: shiftForm.factoryId && shiftForm.factoryId !== "all" ? parseInt(shiftForm.factoryId) : undefined,
                             code: shiftForm.code,
                             name: shiftForm.name,
                             startHour: parseInt(shiftForm.startHour),
@@ -1516,7 +1516,7 @@ export default function Settings() {
                               <Select value={stageForm.stationId} onValueChange={(v) => setStageForm({ ...stageForm, stationId: v })}>
                                 <SelectTrigger><SelectValue placeholder="Chọn trạm" /></SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="">Không liên kết</SelectItem>
+                                  <SelectItem value="none">Không liên kết</SelectItem>
                                   {stations?.filter(s => {
                                     const line = lines?.find(l => l.id === Number(stageForm.lineId));
                                     return line && s.lineId === line.id;
@@ -1540,7 +1540,7 @@ export default function Settings() {
                             name: stageForm.name,
                             description: stageForm.description || undefined,
                             orderIndex: Number(stageForm.orderIndex),
-                            stationId: stageForm.stationId ? Number(stageForm.stationId) : undefined,
+                            stationId: stageForm.stationId && stageForm.stationId !== "none" ? Number(stageForm.stationId) : undefined,
                           })} disabled={!stageForm.lineId || !stageForm.code || !stageForm.name || createStageMutation.isPending}>
                             {createStageMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                             Tạo công đoạn
@@ -1742,7 +1742,7 @@ export default function Settings() {
                             >
                               <SelectTrigger><SelectValue placeholder="Tất cả nhà máy" /></SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="">Tất cả nhà máy</SelectItem>
+                                <SelectItem value="all">Tất cả nhà máy</SelectItem>
                                 {factories?.map((f) => (
                                   <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
                                 ))}
@@ -1757,7 +1757,7 @@ export default function Settings() {
                             >
                               <SelectTrigger><SelectValue placeholder="Tất cả máy" /></SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="">Tất cả máy</SelectItem>
+                                <SelectItem value="all">Tất cả máy</SelectItem>
                                 {machines?.map((m) => (
                                   <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
                                 ))}
@@ -1804,8 +1804,8 @@ export default function Settings() {
                             alertType: alertForm.alertType,
                             threshold: parseFloat(alertForm.threshold),
                             comparisonOperator: alertForm.comparisonOperator,
-                            machineId: alertForm.machineId ? parseInt(alertForm.machineId) : undefined,
-                            factoryId: alertForm.factoryId ? parseInt(alertForm.factoryId) : undefined,
+                            machineId: alertForm.machineId && alertForm.machineId !== "all" ? parseInt(alertForm.machineId) : undefined,
+                            factoryId: alertForm.factoryId && alertForm.factoryId !== "all" ? parseInt(alertForm.factoryId) : undefined,
                             notifyEmail: alertForm.notifyEmail,
                             notifyInApp: alertForm.notifyInApp,
                             cooldownMinutes: parseInt(alertForm.cooldownMinutes)

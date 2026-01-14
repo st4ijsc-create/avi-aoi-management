@@ -20,6 +20,8 @@ import { navItems } from "@/lib/navigation";
 import { EmptyState, NoMeasurementPoints } from "@/components/EmptyState";
 import { ErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
+import { ValidationMessage } from "@/components/ValidationMessage";
 
 interface MeasurementPoint {
   id?: number;
@@ -118,6 +120,35 @@ export default function ProductModels() {
   const [isSavingPoint, setIsSavingPoint] = useState(false);
   const [imageSourceMode, setImageSourceMode] = useState<"upload" | "auto-crop">("auto-crop");
   
+  // Product form validation
+  const productValidation = useFormValidation<{
+    code: string;
+    name: string;
+    description: string;
+  }>({
+    code: { required: true, minLength: 2, maxLength: 50, pattern: ValidationPatterns.code },
+    name: { required: true, minLength: 2, maxLength: 255 },
+  });
+
+  // Point form validation
+  const pointValidation = useFormValidation<{
+    code: string;
+    name: string;
+    lowerLimit: string;
+    upperLimit: string;
+  }>({
+    code: { required: true, minLength: 2, maxLength: 50, pattern: ValidationPatterns.code },
+    name: { required: true, minLength: 2, maxLength: 255 },
+    lowerLimit: { custom: (val) => {
+      if (val && isNaN(Number(val))) return "Phải là số";
+      return null;
+    }},
+    upperLimit: { custom: (val) => {
+      if (val && isNaN(Number(val))) return "Phải là số";
+      return null;
+    }},
+  });
+
   // Template states
   const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false);
   const [templateName, setTemplateName] = useState("");
@@ -538,8 +569,14 @@ export default function ProductModels() {
   };
 
   const handleCreateProduct = () => {
-    if (!newProductCode || !newProductName) {
-      toast.error("Vui lòng nhập mã và tên sản phẩm");
+    const isValid = productValidation.validate({
+      code: newProductCode,
+      name: newProductName,
+      description: newProductDescription,
+    });
+    
+    if (!isValid) {
+      toast.error("Vui lòng kiểm tra lại thông tin nhập");
       return;
     }
 
@@ -960,22 +997,28 @@ export default function ProductModels() {
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
-                    <Label htmlFor="productCode">Mã sản phẩm</Label>
+                    <Label htmlFor="productCode">Mã sản phẩm <span className="text-destructive">*</span></Label>
                     <Input
                       id="productCode"
                       value={newProductCode}
                       onChange={(e) => setNewProductCode(e.target.value)}
+                      onBlur={() => productValidation.handleBlur("code", newProductCode)}
                       placeholder="VD: PCB-001"
+                      className={productValidation.hasError("code") ? "border-destructive" : ""}
                     />
+                    <ValidationMessage error={productValidation.getFieldError("code")} />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="productName">Tên sản phẩm</Label>
+                    <Label htmlFor="productName">Tên sản phẩm <span className="text-destructive">*</span></Label>
                     <Input
                       id="productName"
                       value={newProductName}
                       onChange={(e) => setNewProductName(e.target.value)}
+                      onBlur={() => productValidation.handleBlur("name", newProductName)}
                       placeholder="VD: Main Board v1.0"
+                      className={productValidation.hasError("name") ? "border-destructive" : ""}
                     />
+                    <ValidationMessage error={productValidation.getFieldError("name")} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="productDescription">Mô tả</Label>
@@ -1347,23 +1390,29 @@ export default function ProductModels() {
                         </div>
                         
                         <div className="space-y-2">
-                          <Label htmlFor="pointCode">Mã điểm đo</Label>
+                          <Label htmlFor="pointCode">Mã điểm đo <span className="text-destructive">*</span></Label>
                           <Input
                             id="pointCode"
                             value={pointCode}
                             onChange={(e) => setPointCode(e.target.value)}
+                            onBlur={() => pointValidation.handleBlur("code", pointCode)}
                             disabled={!isEditMode}
+                            className={pointValidation.hasError("code") ? "border-destructive" : ""}
                           />
+                          <ValidationMessage error={pointValidation.getFieldError("code")} />
                         </div>
 
                         <div className="space-y-2">
-                          <Label htmlFor="pointName">Tên điểm đo</Label>
+                          <Label htmlFor="pointName">Tên điểm đo <span className="text-destructive">*</span></Label>
                           <Input
                             id="pointName"
                             value={pointName}
                             onChange={(e) => setPointName(e.target.value)}
+                            onBlur={() => pointValidation.handleBlur("name", pointName)}
                             disabled={!isEditMode}
+                            className={pointValidation.hasError("name") ? "border-destructive" : ""}
                           />
+                          <ValidationMessage error={pointValidation.getFieldError("name")} />
                         </div>
 
                         <div className="space-y-2">
@@ -1408,8 +1457,11 @@ export default function ProductModels() {
                                   id="pointLowerLimit"
                                   value={pointLowerLimit}
                                   onChange={(e) => setPointLowerLimit(e.target.value)}
+                                  onBlur={() => pointValidation.handleBlur("lowerLimit", pointLowerLimit)}
                                   disabled={!isEditMode}
+                                  className={pointValidation.hasError("lowerLimit") ? "border-destructive" : ""}
                                 />
+                                <ValidationMessage error={pointValidation.getFieldError("lowerLimit")} />
                               </div>
                               <div className="space-y-2">
                                 <Label htmlFor="pointUpperLimit">Giới hạn trên</Label>
@@ -1417,8 +1469,11 @@ export default function ProductModels() {
                                   id="pointUpperLimit"
                                   value={pointUpperLimit}
                                   onChange={(e) => setPointUpperLimit(e.target.value)}
+                                  onBlur={() => pointValidation.handleBlur("upperLimit", pointUpperLimit)}
                                   disabled={!isEditMode}
+                                  className={pointValidation.hasError("upperLimit") ? "border-destructive" : ""}
                                 />
+                                <ValidationMessage error={pointValidation.getFieldError("upperLimit")} />
                               </div>
                             </div>
                             <div className="space-y-2">
