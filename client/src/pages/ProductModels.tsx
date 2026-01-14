@@ -21,6 +21,7 @@ import { EmptyState, NoMeasurementPoints } from "@/components/EmptyState";
 import { ErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
+import { useFormShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { ValidationMessage } from "@/components/ValidationMessage";
 import { DeleteConfirmDialog } from "@/components/ConfirmDialog";
 
@@ -164,6 +165,25 @@ export default function ProductModels() {
   
   // Validation errors
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+
+  // Keyboard shortcuts cho dialog tạo sản phẩm
+  useFormShortcuts(
+    () => {
+      if (isCreateDialogOpen && !createProductMutation.isPending) {
+        // Trigger save
+        const form = document.getElementById('create-product-form');
+        if (form) {
+          form.dispatchEvent(new Event('submit', { bubbles: true }));
+        }
+      }
+    },
+    () => {
+      if (isCreateDialogOpen) {
+        setIsCreateDialogOpen(false);
+      }
+    },
+    { enabled: isCreateDialogOpen }
+  );
 
   const { data: workstations } = trpc.workstation.list.useQuery();
   const { data: templates, refetch: refetchTemplates } = trpc.template.list.useQuery();

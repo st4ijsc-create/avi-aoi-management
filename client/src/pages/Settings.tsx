@@ -42,7 +42,9 @@ import YieldThresholdSettings from "@/components/YieldThresholdSettings";
 import { useState } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
+import { useFormShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { ValidationMessage } from "@/components/ValidationMessage";
+import { DeleteConfirmDialog } from "@/components/ConfirmDialog";
 
 type Factory = { id: number; code: string; name: string; address?: string | null; description?: string | null };
 type Workshop = { id: number; factoryId: number; code: string; name: string; description?: string | null };
@@ -141,6 +143,16 @@ export default function Settings() {
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
   const [editingAlert, setEditingAlert] = useState<AlertSetting | null>(null);
   const [editAlertDialogOpen, setEditAlertDialogOpen] = useState(false);
+
+  // Delete confirm dialog states
+  const [deleteShiftDialogOpen, setDeleteShiftDialogOpen] = useState(false);
+  const [shiftToDelete, setShiftToDelete] = useState<ShiftConfig | null>(null);
+  const [deleteStageDialogOpen, setDeleteStageDialogOpen] = useState(false);
+  const [stageToDelete, setStageToDelete] = useState<LineStage | null>(null);
+  const [deleteAlertDialogOpen, setDeleteAlertDialogOpen] = useState(false);
+  const [alertToDelete, setAlertToDelete] = useState<AlertSetting | null>(null);
+  const [deleteMachineDialogOpen, setDeleteMachineDialogOpen] = useState(false);
+  const [machineToDelete, setMachineToDelete] = useState<Machine | null>(null);
 
   // Shift form validation
   const shiftValidation = useFormValidation<{
@@ -1239,30 +1251,17 @@ export default function Settings() {
                           <Button variant="ghost" size="icon" onClick={() => handleEditMachine(machine)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Bạn có chắc muốn xóa máy "{machine.name}"?
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Hủy</AlertDialogCancel>
-                                <AlertDialogAction 
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  onClick={() => deleteMachineMutation.mutate({ id: machine.id })}
-                                >
-                                  Xóa
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => {
+                              setMachineToDelete(machine);
+                              setDeleteMachineDialogOpen(true);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
                     );
@@ -1467,28 +1466,16 @@ export default function Settings() {
                                   <Pencil className="h-4 w-4 mr-2" />
                                   Chỉnh sửa
                                 </DropdownMenuItem>
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">
-                                      <Trash2 className="h-4 w-4 mr-2" />
-                                      Xóa
-                                    </DropdownMenuItem>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
-                                      <AlertDialogDescription>
-                                        Bạn có chắc chắn muốn xóa ca "{shift.name}"?
-                                      </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel>Hủy</AlertDialogCancel>
-                                      <AlertDialogAction onClick={() => deleteShiftMutation.mutate({ id: shift.id })}>
-                                        Xóa
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
+                                <DropdownMenuItem 
+                                  className="text-destructive"
+                                  onClick={() => {
+                                    setShiftToDelete(shift);
+                                    setDeleteShiftDialogOpen(true);
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Xóa
+                                </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </td>
@@ -1670,28 +1657,16 @@ export default function Settings() {
                                     <Pencil className="h-4 w-4 mr-2" />
                                     Chỉnh sửa
                                   </DropdownMenuItem>
-                                  <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                      <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">
-                                        <Trash2 className="h-4 w-4 mr-2" />
-                                        Xóa
-                                      </DropdownMenuItem>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                      <AlertDialogHeader>
-                                        <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                          Bạn có chắc chắn muốn xóa công đoạn "{stage.name}"?
-                                        </AlertDialogDescription>
-                                      </AlertDialogHeader>
-                                      <AlertDialogFooter>
-                                        <AlertDialogCancel>Hủy</AlertDialogCancel>
-                                        <AlertDialogAction onClick={() => deleteStageMutation.mutate({ id: stage.id })}>
-                                          Xóa
-                                        </AlertDialogAction>
-                                      </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                  </AlertDialog>
+                                  <DropdownMenuItem 
+                                    className="text-destructive"
+                                    onClick={() => {
+                                      setStageToDelete(stage);
+                                      setDeleteStageDialogOpen(true);
+                                    }}
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Xóa
+                                  </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </div>
@@ -1948,28 +1923,16 @@ export default function Settings() {
                               <Pencil className="h-4 w-4 mr-2" />
                               Chỉnh sửa
                             </DropdownMenuItem>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">
-                                  <Trash2 className="h-4 w-4 mr-2" />
-                                  Xóa
-                                </DropdownMenuItem>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    Bạn có chắc chắn muốn xóa cảnh báo "{alert.name}"?
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Hủy</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => deleteAlertMutation.mutate({ id: alert.id })}>
-                                    Xóa
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
+                            <DropdownMenuItem 
+                              className="text-destructive"
+                              onClick={() => {
+                                setAlertToDelete(alert);
+                                setDeleteAlertDialogOpen(true);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Xóa
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
@@ -2609,6 +2572,67 @@ export default function Settings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirm Dialogs */}
+      <DeleteConfirmDialog
+        open={deleteShiftDialogOpen}
+        onOpenChange={setDeleteShiftDialogOpen}
+        itemType="ca làm việc"
+        itemName={shiftToDelete?.name}
+        onConfirm={() => {
+          if (shiftToDelete) {
+            deleteShiftMutation.mutate({ id: shiftToDelete.id });
+            setDeleteShiftDialogOpen(false);
+            setShiftToDelete(null);
+          }
+        }}
+        isLoading={deleteShiftMutation.isPending}
+      />
+
+      <DeleteConfirmDialog
+        open={deleteStageDialogOpen}
+        onOpenChange={setDeleteStageDialogOpen}
+        itemType="công đoạn"
+        itemName={stageToDelete?.name}
+        onConfirm={() => {
+          if (stageToDelete) {
+            deleteStageMutation.mutate({ id: stageToDelete.id });
+            setDeleteStageDialogOpen(false);
+            setStageToDelete(null);
+          }
+        }}
+        isLoading={deleteStageMutation.isPending}
+      />
+
+      <DeleteConfirmDialog
+        open={deleteAlertDialogOpen}
+        onOpenChange={setDeleteAlertDialogOpen}
+        itemType="cảnh báo"
+        itemName={alertToDelete?.name}
+        onConfirm={() => {
+          if (alertToDelete) {
+            deleteAlertMutation.mutate({ id: alertToDelete.id });
+            setDeleteAlertDialogOpen(false);
+            setAlertToDelete(null);
+          }
+        }}
+        isLoading={deleteAlertMutation.isPending}
+      />
+
+      <DeleteConfirmDialog
+        open={deleteMachineDialogOpen}
+        onOpenChange={setDeleteMachineDialogOpen}
+        itemType="máy"
+        itemName={machineToDelete?.name}
+        onConfirm={() => {
+          if (machineToDelete) {
+            deleteMachineMutation.mutate({ id: machineToDelete.id });
+            setDeleteMachineDialogOpen(false);
+            setMachineToDelete(null);
+          }
+        }}
+        isLoading={deleteMachineMutation.isPending}
+      />
     </DashboardLayout>
   );
 }

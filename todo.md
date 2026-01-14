@@ -890,3 +890,23 @@
 - [x] Tích hợp confirm dialog vào xóa sản phẩm trong ProductModels
 - [x] Tích hợp confirm dialog vào xóa điểm đo trong ProductModels
 - [ ] Tích hợp confirm dialog vào các hành động xóa khác trong Settings
+
+
+## Phase 66: Settings Confirm Dialog, Keyboard Shortcuts & Undo
+
+### Confirm Dialog trong Settings
+- [x] Thêm confirm dialog vào xóa ca làm việc
+- [x] Thêm confirm dialog vào xóa công đoạn
+- [x] Thêm confirm dialog vào xóa cảnh báo
+- [x] Thêm confirm dialog vào xóa máy
+
+### Keyboard Shortcuts
+- [x] Tạo useKeyboardShortcuts hook với useFormShortcuts và useDialogShortcuts
+- [x] Tích hợp Ctrl+S để lưu form trong ProductModels
+- [x] Tích hợp Esc để hủy/đóng dialog
+
+### Undo Functionality
+- [x] Tạo useUndoDelete hook với toast notification (useUndoDelete và useSimpleUndoDelete)
+- [ ] Tích hợp undo vào xóa sản phẩm (tùy chọn - có thể thêm sau)
+- [ ] Tích hợp undo vào xóa điểm đo (tùy chọn - có thể thêm sau)
+- [ ] Tích hợp undo vào các hành động xóa trong Settings (tùy chọn - có thể thêm sau)
