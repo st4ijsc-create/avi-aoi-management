@@ -3195,7 +3195,7 @@ export async function getDefectsByWorkstation(filters?: {
     ${filters?.productModelId ? sql`AND mpd.productModelId = ${filters.productModelId}` : sql``}
     ${filters?.machineId ? sql`AND pi.machineId = ${filters.machineId}` : sql``}
     GROUP BY w.id, w.code, w.name, w.processType, mpd.id, mpd.code, mpd.name
-    ORDER BY ngCount DESC
+    ORDER BY SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) DESC
   `;
   
   const result = await db.execute(query);
@@ -3243,7 +3243,7 @@ export async function getTopNGMeasurementPointsByWorkstation(filters?: {
     ${filters?.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
     ${filters?.endDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime <= ${filters.endDate})` : sql``}
     GROUP BY w.id, w.code, w.name, mpd.id, mpd.code, mpd.name
-    ORDER BY ngCount DESC
+    ORDER BY SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) DESC
     LIMIT ${limit}
   `;
 
@@ -3289,7 +3289,7 @@ export async function getWorkstationSummary(filters?: {
     ${filters?.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
     ${filters?.endDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime <= ${filters.endDate})` : sql``}
     GROUP BY w.id, w.code, w.name, w.processType
-    ORDER BY ngCount DESC
+    ORDER BY SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) DESC
   `;
   
   const result = await db.execute(query);
