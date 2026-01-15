@@ -881,3 +881,64 @@ export const measurementPointTemplates = mysqlTable("measurement_point_templates
 
 export type MeasurementPointTemplate = typeof measurementPointTemplates.$inferSelect;
 export type InsertMeasurementPointTemplate = typeof measurementPointTemplates.$inferInsert;
+
+
+/**
+ * Scheduled Reports - Báo cáo tự động theo lịch
+ */
+export const scheduledReports = mysqlTable("scheduled_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  reportType: mysqlEnum("reportType", ["NG_VISUAL", "DAILY_SUMMARY", "WEEKLY_SUMMARY", "MONTHLY_SUMMARY", "CUSTOM"]).default("NG_VISUAL").notNull(),
+  schedule: mysqlEnum("schedule", ["DAILY", "WEEKLY", "MONTHLY"]).default("DAILY").notNull(),
+  scheduleTime: varchar("scheduleTime", { length: 10 }).default("08:00").notNull(), // HH:mm format
+  scheduleDayOfWeek: int("scheduleDayOfWeek"), // 0-6 for weekly (0=Sunday)
+  scheduleDayOfMonth: int("scheduleDayOfMonth"), // 1-31 for monthly
+  recipients: json("recipients").$type<string[]>().notNull(), // Array of email addresses
+  factoryId: int("factoryId"), // Optional filter by factory
+  workshopId: int("workshopId"), // Optional filter by workshop
+  lineId: int("lineId"), // Optional filter by line
+  includeWorkstationHeatmap: boolean("includeWorkstationHeatmap").default(true).notNull(),
+  includeTopNGPoints: boolean("includeTopNGPoints").default(true).notNull(),
+  includeTrendChart: boolean("includeTrendChart").default(true).notNull(),
+  includeComparison: boolean("includeComparison").default(true).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  lastSentAt: timestamp("lastSentAt"),
+  nextScheduledAt: timestamp("nextScheduledAt"),
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_scheduled_reports_type").on(table.reportType),
+  index("idx_scheduled_reports_schedule").on(table.schedule),
+  index("idx_scheduled_reports_active").on(table.isActive),
+  index("idx_scheduled_reports_next").on(table.nextScheduledAt),
+  index("idx_scheduled_reports_factory").on(table.factoryId),
+]);
+
+export type ScheduledReport = typeof scheduledReports.$inferSelect;
+export type InsertScheduledReport = typeof scheduledReports.$inferInsert;
+
+/**
+ * Scheduled Report Logs - Lịch sử gửi báo cáo
+ */
+export const scheduledReportLogs = mysqlTable("scheduled_report_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  reportId: int("reportId").notNull(),
+  status: mysqlEnum("status", ["SUCCESS", "FAILED", "PENDING"]).default("PENDING").notNull(),
+  recipientCount: int("recipientCount").default(0).notNull(),
+  successCount: int("successCount").default(0).notNull(),
+  failedCount: int("failedCount").default(0).notNull(),
+  errorMessage: text("errorMessage"),
+  reportData: json("reportData"), // Snapshot of report data at time of sending
+  sentAt: timestamp("sentAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_report_logs_report").on(table.reportId),
+  index("idx_report_logs_status").on(table.status),
+  index("idx_report_logs_sent").on(table.sentAt),
+]);
+
+export type ScheduledReportLog = typeof scheduledReportLogs.$inferSelect;
+export type InsertScheduledReportLog = typeof scheduledReportLogs.$inferInsert;

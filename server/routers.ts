@@ -2872,6 +2872,117 @@ const workstationRouter = router({
     .query(async ({ input }) => {
       return db.getMeasurementPointsByWorkstation(input);
     }),
+
+  // NG Trend by day
+  ngTrend: protectedProcedure
+    .input(z.object({
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      workstationId: z.number().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getNGTrendByDay(input);
+    }),
+
+  // NG Comparison between two periods
+  ngComparison: protectedProcedure
+    .input(z.object({
+      currentStartDate: z.date(),
+      currentEndDate: z.date(),
+      previousStartDate: z.date(),
+      previousEndDate: z.date(),
+    }))
+    .query(async ({ input }) => {
+      return db.getNGComparison(input);
+    }),
+});
+
+// ============ SCHEDULED REPORT ROUTER ============
+const scheduledReportRouter = router({
+  list: protectedProcedure
+    .input(z.object({
+      isActive: z.boolean().optional(),
+      reportType: z.string().optional(),
+      schedule: z.string().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getScheduledReports(input);
+    }),
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getScheduledReportById(input.id);
+    }),
+
+  create: adminProcedure
+    .input(z.object({
+      name: z.string().min(1).max(255),
+      description: z.string().optional(),
+      reportType: z.enum(["NG_VISUAL", "DAILY_SUMMARY", "WEEKLY_SUMMARY", "MONTHLY_SUMMARY", "CUSTOM"]).default("NG_VISUAL"),
+      schedule: z.enum(["DAILY", "WEEKLY", "MONTHLY"]).default("DAILY"),
+      scheduleTime: z.string().default("08:00"),
+      scheduleDayOfWeek: z.number().min(0).max(6).optional(),
+      scheduleDayOfMonth: z.number().min(1).max(31).optional(),
+      recipients: z.array(z.string().email()),
+      factoryId: z.number().optional(),
+      workshopId: z.number().optional(),
+      lineId: z.number().optional(),
+      includeWorkstationHeatmap: z.boolean().default(true),
+      includeTopNGPoints: z.boolean().default(true),
+      includeTrendChart: z.boolean().default(true),
+      includeComparison: z.boolean().default(true),
+      isActive: z.boolean().default(true),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const id = await db.createScheduledReport({
+        ...input,
+        createdBy: ctx.user.id,
+      });
+      return { id };
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(255).optional(),
+      description: z.string().optional(),
+      reportType: z.enum(["NG_VISUAL", "DAILY_SUMMARY", "WEEKLY_SUMMARY", "MONTHLY_SUMMARY", "CUSTOM"]).optional(),
+      schedule: z.enum(["DAILY", "WEEKLY", "MONTHLY"]).optional(),
+      scheduleTime: z.string().optional(),
+      scheduleDayOfWeek: z.number().min(0).max(6).optional(),
+      scheduleDayOfMonth: z.number().min(1).max(31).optional(),
+      recipients: z.array(z.string().email()).optional(),
+      factoryId: z.number().optional(),
+      workshopId: z.number().optional(),
+      lineId: z.number().optional(),
+      includeWorkstationHeatmap: z.boolean().optional(),
+      includeTopNGPoints: z.boolean().optional(),
+      includeTrendChart: z.boolean().optional(),
+      includeComparison: z.boolean().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateScheduledReport(id, data);
+      return { success: true };
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteScheduledReport(input.id);
+      return { success: true };
+    }),
+
+  getLogs: protectedProcedure
+    .input(z.object({
+      reportId: z.number(),
+      limit: z.number().default(50),
+    }))
+    .query(async ({ input }) => {
+      return db.getScheduledReportLogs(input.reportId, input.limit);
+    }),
 });
 
 export const appRouter = router({
@@ -2913,6 +3024,7 @@ export const appRouter = router({
   audit: auditRouter,
   workstation: workstationRouter,
   template: templateRouter,
+  scheduledReport: scheduledReportRouter,
 });
 
 export type AppRouter = typeof appRouter;

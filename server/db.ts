@@ -32,7 +32,9 @@ import {
   userSessions, InsertUserSession,
   systemSettings, InsertSystemSetting,
   auditLogs, InsertAuditLog,
-  workstations, InsertWorkstation
+  workstations, InsertWorkstation,
+  scheduledReports, InsertScheduledReport,
+  scheduledReportLogs, InsertScheduledReportLog
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -3550,4 +3552,251 @@ export async function seedWorkstationAnalyticsData(options?: {
     workstationsUsed: allWorkstations.length,
     measurementPointsPerInspection: measurementPoints.length,
   };
+}
+
+
+// ============ NG TREND AND COMPARISON FUNCTIONS ============
+
+// Get NG trend data by day
+export async function getNGTrendByDay(filters?: {
+  startDate?: Date;
+  endDate?: Date;
+  workstationId?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  try {
+    const query = sql`
+      SELECT 
+        DATE(pi.inspectionTime) as date,
+        COALESCE(COUNT(mr.id), 0) as totalCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as okCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as ngCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount,
+        COALESCE(ROUND(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as ngRate
+      FROM measurement_results mr
+      INNER JOIN product_inspections pi ON mr.inspectionId = pi.id
+      LEFT JOIN measurement_point_defs mpd ON mr.measurementPointDefId = mpd.id
+      WHERE pi.inspectionTime IS NOT NULL
+      ${filters?.startDate ? sql`AND pi.inspectionTime >= ${filters.startDate}` : sql``}
+      ${filters?.endDate ? sql`AND pi.inspectionTime <= ${filters.endDate}` : sql``}
+      ${filters?.workstationId ? sql`AND mpd.workstationId = ${filters.workstationId}` : sql``}
+      GROUP BY DATE(pi.inspectionTime)
+      ORDER BY date ASC
+    `;
+
+    const result = await db.execute(query);
+    return (result[0] as unknown) as Array<{
+      date: string;
+      totalCount: number;
+      okCount: number;
+      ngCount: number;
+      ntfCount: number;
+      ngRate: number;
+    }>;
+  } catch (error) {
+    console.error('getNGTrendByDay error:', error);
+    return [];
+  }
+}
+
+// Get NG comparison between two periods
+export async function getNGComparison(filters: {
+  currentStartDate: Date;
+  currentEndDate: Date;
+  previousStartDate: Date;
+  previousEndDate: Date;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+
+  try {
+    // Get current period stats
+    const currentQuery = sql`
+      SELECT 
+        COALESCE(COUNT(mr.id), 0) as totalCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as okCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as ngCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount,
+        COALESCE(ROUND(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as ngRate
+      FROM measurement_results mr
+      INNER JOIN product_inspections pi ON mr.inspectionId = pi.id
+      WHERE pi.inspectionTime >= ${filters.currentStartDate}
+        AND pi.inspectionTime <= ${filters.currentEndDate}
+    `;
+
+    // Get previous period stats
+    const previousQuery = sql`
+      SELECT 
+        COALESCE(COUNT(mr.id), 0) as totalCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as okCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as ngCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount,
+        COALESCE(ROUND(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as ngRate
+      FROM measurement_results mr
+      INNER JOIN product_inspections pi ON mr.inspectionId = pi.id
+      WHERE pi.inspectionTime >= ${filters.previousStartDate}
+        AND pi.inspectionTime <= ${filters.previousEndDate}
+    `;
+
+    const [currentResult, previousResult] = await Promise.all([
+      db.execute(currentQuery),
+      db.execute(previousQuery),
+    ]);
+
+    const current = (currentResult[0] as any)[0] || { totalCount: 0, okCount: 0, ngCount: 0, ntfCount: 0, ngRate: 0 };
+    const previous = (previousResult[0] as any)[0] || { totalCount: 0, okCount: 0, ngCount: 0, ntfCount: 0, ngRate: 0 };
+
+    // Calculate changes
+    const ngRateChange = Number(current.ngRate) - Number(previous.ngRate);
+    const totalCountChange = Number(current.totalCount) - Number(previous.totalCount);
+    const ngCountChange = Number(current.ngCount) - Number(previous.ngCount);
+
+    return {
+      current: {
+        totalCount: Number(current.totalCount),
+        okCount: Number(current.okCount),
+        ngCount: Number(current.ngCount),
+        ntfCount: Number(current.ntfCount),
+        ngRate: Number(current.ngRate),
+      },
+      previous: {
+        totalCount: Number(previous.totalCount),
+        okCount: Number(previous.okCount),
+        ngCount: Number(previous.ngCount),
+        ntfCount: Number(previous.ntfCount),
+        ngRate: Number(previous.ngRate),
+      },
+      changes: {
+        ngRateChange,
+        ngRateChangePercent: previous.ngRate > 0 ? (ngRateChange / Number(previous.ngRate)) * 100 : 0,
+        totalCountChange,
+        totalCountChangePercent: previous.totalCount > 0 ? (totalCountChange / Number(previous.totalCount)) * 100 : 0,
+        ngCountChange,
+        ngCountChangePercent: previous.ngCount > 0 ? (ngCountChange / Number(previous.ngCount)) * 100 : 0,
+        isImproved: ngRateChange < 0, // NG rate decreased = improved
+      },
+    };
+  } catch (error) {
+    console.error('getNGComparison error:', error);
+    return null;
+  }
+}
+
+
+// ==================== Scheduled Reports ====================
+
+export async function getScheduledReports(filters?: {
+  isActive?: boolean;
+  reportType?: string;
+  schedule?: string;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  let query = db.select().from(scheduledReports);
+  
+  const conditions = [];
+  if (filters?.isActive !== undefined) {
+    conditions.push(eq(scheduledReports.isActive, filters.isActive));
+  }
+  if (filters?.reportType) {
+    conditions.push(eq(scheduledReports.reportType, filters.reportType as any));
+  }
+  if (filters?.schedule) {
+    conditions.push(eq(scheduledReports.schedule, filters.schedule as any));
+  }
+  
+  if (conditions.length > 0) {
+    query = query.where(and(...conditions)) as any;
+  }
+  
+  return query.orderBy(desc(scheduledReports.createdAt));
+}
+
+export async function getScheduledReportById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const results = await db.select().from(scheduledReports)
+    .where(eq(scheduledReports.id, id))
+    .limit(1);
+  
+  return results[0] || null;
+}
+
+export async function createScheduledReport(data: InsertScheduledReport) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(scheduledReports).values(data);
+  return result[0].insertId;
+}
+
+export async function updateScheduledReport(id: number, data: Partial<InsertScheduledReport>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(scheduledReports)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(scheduledReports.id, id));
+}
+
+export async function deleteScheduledReport(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Delete logs first
+  await db.delete(scheduledReportLogs).where(eq(scheduledReportLogs.reportId, id));
+  // Delete report
+  await db.delete(scheduledReports).where(eq(scheduledReports.id, id));
+}
+
+export async function getScheduledReportLogs(reportId: number, limit: number = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select().from(scheduledReportLogs)
+    .where(eq(scheduledReportLogs.reportId, reportId))
+    .orderBy(desc(scheduledReportLogs.sentAt))
+    .limit(limit);
+}
+
+export async function createScheduledReportLog(data: InsertScheduledReportLog) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(scheduledReportLogs).values(data);
+  return result[0].insertId;
+}
+
+export async function getReportsDueForSending() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const now = new Date();
+  
+  return db.select().from(scheduledReports)
+    .where(and(
+      eq(scheduledReports.isActive, true),
+      or(
+        isNull(scheduledReports.nextScheduledAt),
+        lte(scheduledReports.nextScheduledAt, now)
+      )
+    ))
+    .orderBy(scheduledReports.nextScheduledAt);
+}
+
+export async function updateReportNextSchedule(id: number, nextScheduledAt: Date) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(scheduledReports)
+    .set({ 
+      nextScheduledAt,
+      lastSentAt: new Date(),
+      updatedAt: new Date()
+    })
+    .where(eq(scheduledReports.id, id));
 }

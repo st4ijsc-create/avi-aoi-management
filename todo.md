@@ -972,3 +972,24 @@
 - [x] Tạo báo cáo HTML với WorkstationNGHeatmap và MeasurementPointNGList (có thể in thành PDF)
 - [x] Thêm header với thông tin thời gian và tên nhà máy
 - [x] Thêm footer với ngày xuất báo cáo
+
+
+## Phase 69: NG Visual Advanced Analytics
+
+### Biểu đồ Trend NG theo thời gian
+- [x] Tạo API endpoint getNGTrendByDay để lấy dữ liệu NG trend theo ngày
+- [x] Tạo LineChart component hiển thị trend NG theo thời gian với Recharts
+- [x] Tích hợp vào tab NG Visual - hiển thị cùng heatmap
+- [ ] Thêm filter theo workstation hoặc điểm đo cụ thể (tùy chọn)
+
+### So sánh tỉ lệ NG giữa các khoảng thời gian
+- [x] Tạo API endpoint getNGComparison để so sánh NG giữa 2 khoảng thời gian
+- [x] Hiển thị 3 comparison cards (kỳ hiện tại, kỳ trước, so sánh)
+- [x] Thêm visual indicator (TrendingUp/TrendingDown, màu xanh/đỏ)
+- [x] So sánh hôm nay vs hôm qua, tuần này vs tuần trước, tháng này vs tháng trước
+
+### Email Scheduling cho báo cáo NG Visual
+- [x] Tạo schema cho scheduled_reports và scheduled_report_logs trong database
+- [x] Tạo API endpoint để quản lý scheduled reports (list, getById, create, update, delete, getLogs)
+- [ ] Tạo UI trong Settings để cấu hình email scheduling
+- [ ] Tích hợp với notification system để gửi email tự động (cần cron job hoặc scheduler)

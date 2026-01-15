@@ -267,6 +267,55 @@ export default function Dashboard() {
     return { startDate, endDate };
   }, [ngTimeFilter]);
 
+  // Calculate comparison dates for NG Visual (current period vs previous period)
+  const ngComparisonDates = useMemo(() => {
+    const now = new Date();
+    let currentStartDate = new Date();
+    let previousStartDate = new Date();
+    let previousEndDate = new Date();
+    
+    switch (ngTimeFilter) {
+      case "day":
+        // Today vs Yesterday
+        currentStartDate.setHours(0, 0, 0, 0);
+        previousStartDate = new Date(now);
+        previousStartDate.setDate(now.getDate() - 1);
+        previousStartDate.setHours(0, 0, 0, 0);
+        previousEndDate = new Date(previousStartDate);
+        previousEndDate.setHours(23, 59, 59, 999);
+        break;
+      case "week":
+        // This week vs Last week
+        currentStartDate.setDate(now.getDate() - 7);
+        previousStartDate = new Date(now);
+        previousStartDate.setDate(now.getDate() - 14);
+        previousEndDate = new Date(now);
+        previousEndDate.setDate(now.getDate() - 7);
+        break;
+      case "month":
+        // This month vs Last month
+        currentStartDate.setMonth(now.getMonth() - 1);
+        previousStartDate = new Date(now);
+        previousStartDate.setMonth(now.getMonth() - 2);
+        previousEndDate = new Date(now);
+        previousEndDate.setMonth(now.getMonth() - 1);
+        break;
+      default:
+        currentStartDate.setDate(now.getDate() - 7);
+        previousStartDate = new Date(now);
+        previousStartDate.setDate(now.getDate() - 14);
+        previousEndDate = new Date(now);
+        previousEndDate.setDate(now.getDate() - 7);
+    }
+    
+    return {
+      currentStartDate,
+      currentEndDate: now,
+      previousStartDate,
+      previousEndDate,
+    };
+  }, [ngTimeFilter]);
+
   // Fetch stats with comparison
   const { data: statsWithComparison, isLoading: statsLoading, refetch: refetchStats } = trpc.dashboard.getStatsWithComparison.useQuery({
     factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
@@ -376,6 +425,15 @@ export default function Dashboard() {
   }, {
     enabled: !!selectedWorkstationForDrilldown,
   });
+
+  // Fetch NG trend data for chart
+  const { data: ngTrendData, isLoading: ngTrendLoading } = trpc.workstation.ngTrend.useQuery({
+    startDate: ngDateRange.startDate,
+    endDate: ngDateRange.endDate,
+  });
+
+  // Fetch NG comparison data
+  const { data: ngComparisonData, isLoading: ngComparisonLoading } = trpc.workstation.ngComparison.useQuery(ngComparisonDates);
 
   // Update last refresh time
   useEffect(() => {
@@ -1509,6 +1567,176 @@ export default function Dashboard() {
                   </Button>
                 </div>
               </div>
+
+              {/* NG Comparison Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Current Period Stats */}
+                <Card className="glass-card">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                      {ngTimeFilter === "day" ? "Hôm nay" : ngTimeFilter === "week" ? "7 ngày qua" : "30 ngày qua"}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {ngComparisonLoading ? (
+                      <div className="h-16 flex items-center justify-center">
+                        <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : ngComparisonData ? (
+                      <div className="space-y-2">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-2xl font-bold">{ngComparisonData.current.ngRate.toFixed(2)}%</span>
+                          <span className="text-sm text-muted-foreground">Tỉ lệ NG</span>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm">
+                          <span className="text-muted-foreground">Tổng: {ngComparisonData.current.totalCount.toLocaleString()}</span>
+                          <span className="text-red-500">NG: {ngComparisonData.current.ngCount.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-muted-foreground text-sm">Không có dữ liệu</div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Previous Period Stats */}
+                <Card className="glass-card">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                      {ngTimeFilter === "day" ? "Hôm qua" : ngTimeFilter === "week" ? "7 ngày trước" : "30 ngày trước"}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {ngComparisonLoading ? (
+                      <div className="h-16 flex items-center justify-center">
+                        <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : ngComparisonData ? (
+                      <div className="space-y-2">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-2xl font-bold">{ngComparisonData.previous.ngRate.toFixed(2)}%</span>
+                          <span className="text-sm text-muted-foreground">Tỉ lệ NG</span>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm">
+                          <span className="text-muted-foreground">Tổng: {ngComparisonData.previous.totalCount.toLocaleString()}</span>
+                          <span className="text-red-500">NG: {ngComparisonData.previous.ngCount.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-muted-foreground text-sm">Không có dữ liệu</div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Change Indicator */}
+                <Card className={`glass-card ${ngComparisonData?.changes.isImproved ? 'border-green-500/50' : 'border-red-500/50'}`}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">So sánh</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {ngComparisonLoading ? (
+                      <div className="h-16 flex items-center justify-center">
+                        <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : ngComparisonData ? (
+                      <div className="space-y-2">
+                        <div className="flex items-baseline gap-2">
+                          {ngComparisonData.changes.isImproved ? (
+                            <TrendingDown className="h-6 w-6 text-green-500" />
+                          ) : (
+                            <TrendingUp className="h-6 w-6 text-red-500" />
+                          )}
+                          <span className={`text-2xl font-bold ${ngComparisonData.changes.isImproved ? 'text-green-500' : 'text-red-500'}`}>
+                            {ngComparisonData.changes.ngRateChange > 0 ? '+' : ''}{ngComparisonData.changes.ngRateChange.toFixed(2)}%
+                          </span>
+                        </div>
+                        <div className="text-sm">
+                          {ngComparisonData.changes.isImproved ? (
+                            <span className="text-green-500">Cải thiện so với kỳ trước</span>
+                          ) : ngComparisonData.changes.ngRateChange === 0 ? (
+                            <span className="text-muted-foreground">Không thay đổi</span>
+                          ) : (
+                            <span className="text-red-500">Tăng so với kỳ trước</span>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-muted-foreground text-sm">Không có dữ liệu</div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* NG Trend Chart */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-primary" />
+                    Xu hướng tỉ lệ NG theo ngày
+                  </CardTitle>
+                  <CardDescription>
+                    Biểu đồ thể hiện xu hướng tỉ lệ NG theo thời gian
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {ngTrendLoading ? (
+                    <div className="flex items-center justify-center h-64">
+                      <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : ngTrendData && ngTrendData.length > 0 ? (
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={ngTrendData.map((item: any) => ({
+                          date: new Date(item.date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
+                          ngRate: Number(item.ngRate),
+                          totalCount: Number(item.totalCount),
+                          ngCount: Number(item.ngCount),
+                        }))}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                          <XAxis 
+                            dataKey="date" 
+                            tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                            axisLine={{ stroke: 'hsl(var(--border))' }}
+                          />
+                          <YAxis 
+                            tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                            axisLine={{ stroke: 'hsl(var(--border))' }}
+                            tickFormatter={(value) => `${value}%`}
+                          />
+                          <RechartsTooltip
+                            contentStyle={{
+                              backgroundColor: 'hsl(var(--card))',
+                              border: '1px solid hsl(var(--border))',
+                              borderRadius: '8px',
+                            }}
+                            formatter={(value: number, name: string) => {
+                              if (name === 'ngRate') return [`${value.toFixed(2)}%`, 'Tỉ lệ NG'];
+                              if (name === 'totalCount') return [value.toLocaleString(), 'Tổng kiểm tra'];
+                              if (name === 'ngCount') return [value.toLocaleString(), 'Số lỗi NG'];
+                              return [value, name];
+                            }}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="ngRate" 
+                            stroke="hsl(var(--destructive))" 
+                            strokeWidth={2}
+                            dot={{ fill: 'hsl(var(--destructive))', strokeWidth: 2, r: 4 }}
+                            activeDot={{ r: 6 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <EmptyState
+                      variant="no-analytics"
+                      title="Chưa có dữ liệu xu hướng"
+                      description="Dữ liệu sẽ hiển thị khi có kết quả kiểm tra theo ngày."
+                      compact
+                    />
+                  )}
+                </CardContent>
+              </Card>
 
               {/* Workstation NG Heatmap */}
               <Card className="glass-card">
