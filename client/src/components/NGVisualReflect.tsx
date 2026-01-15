@@ -75,11 +75,13 @@ function getTrendIcon(trend?: "up" | "down" | "stable") {
 export function WorkstationNGHeatmap({ 
   data, 
   className,
-  compact = false 
+  compact = false,
+  onWorkstationClick
 }: { 
   data: WorkstationNGData[];
   className?: string;
   compact?: boolean;
+  onWorkstationClick?: (workstation: WorkstationNGData) => void;
 }) {
   const sortedData = useMemo(() => {
     return [...data].sort((a, b) => b.ngRate - a.ngRate);
@@ -107,8 +109,10 @@ export function WorkstationNGHeatmap({
                     "relative rounded-lg border-2 p-3 cursor-pointer transition-all hover:scale-105",
                     getNGColorClass(ws.ngRate),
                     getNGBgClass(ws.ngRate),
-                    compact && "p-2"
+                    compact && "p-2",
+                    onWorkstationClick && "hover:ring-2 hover:ring-primary"
                   )}
+                  onClick={() => onWorkstationClick?.(ws)}
                 >
                   {/* NG Rate indicator bar */}
                   <div className="absolute top-0 left-0 right-0 h-1 rounded-t-lg overflow-hidden">

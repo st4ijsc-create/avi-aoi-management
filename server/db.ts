@@ -3325,6 +3325,65 @@ export async function getWorkstationSummary(filters?: {
 }
 
 
+// Get measurement points by workstation with NG statistics
+export async function getMeasurementPointsByWorkstation(filters: {
+  workstationId: number;
+  startDate?: Date;
+  endDate?: Date;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  try {
+    const query = sql`
+      SELECT 
+        mpd.id as measurementPointId,
+        mpd.code as measurementPointCode,
+        mpd.name as measurementPointName,
+        mpd.pointType,
+        mpd.lowerLimit,
+        mpd.upperLimit,
+        mpd.unit,
+        COALESCE(COUNT(mr.id), 0) as totalCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as okCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as ngCount,
+        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount,
+        COALESCE(AVG(mr.measuredValue), 0) as avgValue,
+        COALESCE(MIN(mr.measuredValue), 0) as minValue,
+        COALESCE(MAX(mr.measuredValue), 0) as maxValue
+      FROM measurement_point_defs mpd
+      LEFT JOIN measurement_results mr ON mr.measurementPointDefId = mpd.id
+      LEFT JOIN product_inspections pi ON mr.inspectionId = pi.id
+      WHERE mpd.workstationId = ${filters.workstationId}
+      ${filters.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
+      ${filters.endDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime <= ${filters.endDate})` : sql``}
+      GROUP BY mpd.id, mpd.code, mpd.name, mpd.pointType, mpd.lowerLimit, mpd.upperLimit, mpd.unit
+      ORDER BY ngCount DESC, mpd.code ASC
+    `;
+
+    const result = await db.execute(query);
+    return (result[0] as unknown) as Array<{
+      measurementPointId: number;
+      measurementPointCode: string;
+      measurementPointName: string;
+      pointType: string;
+      lowerLimit: number | null;
+      upperLimit: number | null;
+      unit: string | null;
+      totalCount: number;
+      okCount: number;
+      ngCount: number;
+      ntfCount: number;
+      avgValue: number;
+      minValue: number;
+      maxValue: number;
+    }>;
+  } catch (error) {
+    console.error('getMeasurementPointsByWorkstation error:', error);
+    return [];
+  }
+}
+
 // ============ SEED WORKSTATION ANALYTICS DATA ============
 export async function seedWorkstationAnalyticsData(options?: {
   inspectionCount?: number;

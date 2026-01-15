@@ -2862,6 +2862,16 @@ const workstationRouter = router({
     .query(async ({ input }) => {
       return db.getTopNGMeasurementPointsByWorkstation(input);
     }),
+
+  measurementPointsByWorkstation: protectedProcedure
+    .input(z.object({
+      workstationId: z.number(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }))
+    .query(async ({ input }) => {
+      return db.getMeasurementPointsByWorkstation(input);
+    }),
 });
 
 export const appRouter = router({

@@ -934,3 +934,41 @@
 - [x] Thêm color coding (≤2% tốt, 2-5% chấp nhận, 5-10% cảnh báo, >10% nghiêm trọng)
 - [x] Tích hợp vào Dashboard với tab "NG Visual" riêng
 - [x] Thêm tooltip hiển thị chi tiết khi hover (tổng kiểm tra, số lỗi, tỉ lệ NG)
+
+
+## Phase 68: NG Visual Enhancements
+
+### Time Filter for NG Visual
+- [x] Thêm filter theo thời gian (ngày/tuần/tháng) cho tab NG Visual với Select dropdown
+- [x] Sử dụng ngDateRange riêng biệt cho NG Visual tab
+- [ ] Hiển thị xu hướng lỗi theo thời gian với biểu đồ trend (tùy chọn)
+
+### Drill-down từ WorkstationNGHeatmap
+- [x] Click vào workstation trong heatmap để xem chi tiết các điểm đo
+- [x] Hiển thị dialog với danh sách điểm đo của công trạm được chọn
+- [x] Hiển thị thống kê chi tiết (tổng, OK, NG, NTF, tỉ lệ NG, giới hạn, avg) cho từng điểm đo
+
+### Export PDF cho NG Visual
+- [x] Tạo nút Export PDF trong tab NG Visual
+- [x] Tạo báo cáo HTML với WorkstationNGHeatmap và MeasurementPointNGList (có thể in thành PDF)
+- [x] Thêm header với thông tin thời gian và tên nhà máy
+- [x] Thêm footer với ngày xuất báo cáo
+
+
+## Phase 68: NG Visual Enhancements
+
+### Time Filter for NG Visual
+- [x] Thêm filter theo thời gian (ngày/tuần/tháng) cho tab NG Visual với Select dropdown
+- [x] Sử dụng ngDateRange riêng biệt cho NG Visual tab
+- [ ] Hiển thị xu hướng lỗi theo thời gian với biểu đồ trend (tùy chọn)
+
+### Drill-down từ WorkstationNGHeatmap
+- [x] Click vào workstation trong heatmap để xem chi tiết các điểm đo
+- [x] Hiển thị dialog với danh sách điểm đo của công trạm được chọn
+- [x] Hiển thị thống kê chi tiết (tổng, OK, NG, NTF, tỉ lệ NG, giới hạn, avg) cho từng điểm đo
+
+### Export PDF cho NG Visual
+- [x] Tạo nút Export PDF trong tab NG Visual
+- [x] Tạo báo cáo HTML với WorkstationNGHeatmap và MeasurementPointNGList (có thể in thành PDF)
+- [x] Thêm header với thông tin thời gian và tên nhà máy
+- [x] Thêm footer với ngày xuất báo cáo

@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { trpc } from "@/lib/trpc";
 import { 
@@ -41,7 +42,9 @@ import {
   ThumbsDown,
   Wifi,
   WifiOff,
-  Factory
+  Factory,
+  FileDown,
+  Calendar
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { EmptyState, NoWorkstationData } from "@/components/EmptyState";
@@ -152,6 +155,10 @@ export default function Dashboard() {
   const [lastRefreshTime, setLastRefreshTime] = useState(new Date());
   const [activeTab, setActiveTab] = useState<"overview" | "layout" | "ng-visual">("overview");
   const [machineStatusFilter, setMachineStatusFilter] = useState<"all" | "online" | "offline">("all");
+  const [ngTimeFilter, setNgTimeFilter] = useState<"day" | "week" | "month">("week");
+  const [selectedWorkstationForDrilldown, setSelectedWorkstationForDrilldown] = useState<{ id: number; code: string; name: string } | null>(null);
+  const [drilldownDialogOpen, setDrilldownDialogOpen] = useState(false);
+  const [exportingPDF, setExportingPDF] = useState(false);
   
   // Machine online status from WebSocket
   const [onlineMachines, setOnlineMachines] = useState<Set<string>>(new Set());
@@ -237,6 +244,29 @@ export default function Dashboard() {
     return { startDate, endDate };
   }, [timeRange]);
 
+  // Calculate date range for NG Visual based on ngTimeFilter
+  const ngDateRange = useMemo(() => {
+    const now = new Date();
+    const endDate = now;
+    let startDate = new Date();
+    
+    switch (ngTimeFilter) {
+      case "day":
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case "week":
+        startDate.setDate(now.getDate() - 7);
+        break;
+      case "month":
+        startDate.setMonth(now.getMonth() - 1);
+        break;
+      default:
+        startDate.setDate(now.getDate() - 7);
+    }
+    
+    return { startDate, endDate };
+  }, [ngTimeFilter]);
+
   // Fetch stats with comparison
   const { data: statsWithComparison, isLoading: statsLoading, refetch: refetchStats } = trpc.dashboard.getStatsWithComparison.useQuery({
     factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
@@ -312,17 +342,39 @@ export default function Dashboard() {
     enabled: !!selectedMachine,
   });
 
-  // Fetch workstation summary for top defects
+  // Fetch workstation summary for top defects (overview tab)
   const { data: workstationSummary } = trpc.workstation.summary.useQuery({
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
   });
 
-  // Fetch top NG measurement points
+  // Fetch top NG measurement points (overview tab)
   const { data: topNGPoints } = trpc.workstation.topNGMeasurementPoints.useQuery({
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
     limit: 15,
+  });
+
+  // Fetch workstation summary for NG Visual tab (with separate time filter)
+  const { data: ngWorkstationSummary, isLoading: ngWorkstationLoading } = trpc.workstation.summary.useQuery({
+    startDate: ngDateRange.startDate,
+    endDate: ngDateRange.endDate,
+  });
+
+  // Fetch top NG measurement points for NG Visual tab
+  const { data: ngTopNGPoints, isLoading: ngTopNGLoading } = trpc.workstation.topNGMeasurementPoints.useQuery({
+    startDate: ngDateRange.startDate,
+    endDate: ngDateRange.endDate,
+    limit: 20,
+  });
+
+  // Fetch measurement points for selected workstation drilldown
+  const { data: drilldownMeasurementPoints, isLoading: drilldownLoading } = trpc.workstation.measurementPointsByWorkstation.useQuery({
+    workstationId: selectedWorkstationForDrilldown?.id || 0,
+    startDate: ngDateRange.startDate,
+    endDate: ngDateRange.endDate,
+  }, {
+    enabled: !!selectedWorkstationForDrilldown,
   });
 
   // Update last refresh time
@@ -338,6 +390,145 @@ export default function Dashboard() {
     refetchMachines();
     setLastRefreshTime(new Date());
   }, [refetchStats, refetchMachines]);
+
+  // Export NG Visual as PDF
+  const handleExportPDF = useCallback(async () => {
+    setExportingPDF(true);
+    try {
+      // Prepare data for PDF
+      const workstationData = ngWorkstationSummary ? (ngWorkstationSummary as any[]).map((ws: any) => ({
+        code: ws.workstationCode || '',
+        name: ws.workstationName || 'Unknown',
+        total: ws.totalInspections || 0,
+        ng: ws.ngCount || 0,
+        ngRate: ws.totalInspections > 0 ? ((ws.ngCount || 0) / ws.totalInspections * 100).toFixed(1) : '0.0',
+      })) : [];
+
+      const measurementPointData = ngTopNGPoints ? (ngTopNGPoints as any[]).map((mp: any) => ({
+        code: mp.measurementPointCode || '',
+        name: mp.measurementPointName || 'Unknown',
+        workstation: mp.workstationName || 'N/A',
+        total: mp.totalCount || 0,
+        ng: mp.ngCount || 0,
+        ngRate: mp.totalCount > 0 ? ((mp.ngCount || 0) / mp.totalCount * 100).toFixed(1) : '0.0',
+      })) : [];
+
+      const timeRangeLabel = ngTimeFilter === "day" ? "Hôm nay" : ngTimeFilter === "week" ? "7 ngày qua" : "30 ngày qua";
+      const exportDate = new Date().toLocaleString('vi-VN');
+
+      // Create HTML content for PDF
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Báo cáo NG Visual - ${timeRangeLabel}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
+            h1 { color: #1e40af; border-bottom: 2px solid #1e40af; padding-bottom: 10px; }
+            h2 { color: #374151; margin-top: 30px; }
+            .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+            .meta { color: #6b7280; font-size: 14px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+            th, td { border: 1px solid #e5e7eb; padding: 10px; text-align: left; }
+            th { background-color: #f3f4f6; font-weight: 600; }
+            .ng-good { color: #16a34a; }
+            .ng-warning { color: #ca8a04; }
+            .ng-danger { color: #dc2626; }
+            .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 12px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Báo cáo NG Visual</h1>
+            <div class="meta">
+              <p>Khoảng thời gian: <strong>${timeRangeLabel}</strong></p>
+              <p>Ngày xuất: ${exportDate}</p>
+            </div>
+          </div>
+
+          <h2>Tỉ lệ NG theo Công trạm</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Mã</th>
+                <th>Tên công trạm</th>
+                <th>Tổng kiểm tra</th>
+                <th>Số NG</th>
+                <th>Tỉ lệ NG (%)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${workstationData.map((ws: any) => {
+                const ngClass = parseFloat(ws.ngRate) <= 2 ? 'ng-good' : parseFloat(ws.ngRate) <= 5 ? 'ng-warning' : 'ng-danger';
+                return `<tr>
+                  <td>${ws.code}</td>
+                  <td>${ws.name}</td>
+                  <td>${ws.total}</td>
+                  <td>${ws.ng}</td>
+                  <td class="${ngClass}"><strong>${ws.ngRate}%</strong></td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+
+          <h2>Top Điểm đo có tỉ lệ NG cao</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Mã</th>
+                <th>Tên điểm đo</th>
+                <th>Công trạm</th>
+                <th>Tổng kiểm tra</th>
+                <th>Số NG</th>
+                <th>Tỉ lệ NG (%)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${measurementPointData.map((mp: any) => {
+                const ngClass = parseFloat(mp.ngRate) <= 2 ? 'ng-good' : parseFloat(mp.ngRate) <= 5 ? 'ng-warning' : 'ng-danger';
+                return `<tr>
+                  <td>${mp.code}</td>
+                  <td>${mp.name}</td>
+                  <td>${mp.workstation}</td>
+                  <td>${mp.total}</td>
+                  <td>${mp.ng}</td>
+                  <td class="${ngClass}"><strong>${mp.ngRate}%</strong></td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+
+          <div class="footer">
+            <p>Báo cáo được tạo tự động bởi hệ thống AVI/AOI Management</p>
+          </div>
+        </body>
+        </html>
+      `;
+
+      // Create blob and download
+      const blob = new Blob([htmlContent], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `ng-visual-report-${ngTimeFilter}-${new Date().toISOString().split('T')[0]}.html`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.success("Xuất báo cáo thành công!", {
+        description: "File HTML đã được tải xuống. Bạn có thể mở và in thành PDF.",
+      });
+    } catch (error) {
+      console.error('Export PDF error:', error);
+      toast.error("Lỗi xuất báo cáo", {
+        description: "Không thể tạo file báo cáo. Vui lòng thử lại.",
+      });
+    } finally {
+      setExportingPDF(false);
+    }
+  }, [ngWorkstationSummary, ngTopNGPoints, ngTimeFilter]);
 
   // Filter workshops by selected factory
   const filteredWorkshops = useMemo(() => {
@@ -1269,24 +1460,53 @@ export default function Dashboard() {
           {/* NG Visual Tab */}
           <TabsContent value="ng-visual" className="space-y-6 mt-6">
             <div className="space-y-6">
-              {/* Legend */}
-              <div className="flex flex-wrap items-center gap-4 text-sm bg-card p-4 rounded-lg border">
-                <span className="text-muted-foreground font-medium">Mức độ NG:</span>
-                <div className="flex items-center gap-1">
-                  <div className="w-3 h-3 rounded bg-green-500" />
-                  <span>≤2% (Tốt)</span>
+              {/* Time Filter and Legend */}
+              <div className="flex flex-wrap items-center justify-between gap-4 bg-card p-4 rounded-lg border">
+                <div className="flex flex-wrap items-center gap-4 text-sm">
+                  <span className="text-muted-foreground font-medium">Mức độ NG:</span>
+                  <div className="flex items-center gap-1">
+                    <div className="w-3 h-3 rounded bg-green-500" />
+                    <span>≤2% (Tốt)</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-3 h-3 rounded bg-yellow-500" />
+                    <span>2-5% (Chấp nhận)</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-3 h-3 rounded bg-orange-500" />
+                    <span>5-10% (Cảnh báo)</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-3 h-3 rounded bg-red-500" />
+                    <span>&gt;10% (Nghiêm trọng)</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <div className="w-3 h-3 rounded bg-yellow-500" />
-                  <span>2-5% (Chấp nhận)</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <div className="w-3 h-3 rounded bg-orange-500" />
-                  <span>5-10% (Cảnh báo)</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <div className="w-3 h-3 rounded bg-red-500" />
-                  <span>&gt;10% (Nghiêm trọng)</span>
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <Select value={ngTimeFilter} onValueChange={(v) => setNgTimeFilter(v as "day" | "week" | "month")}>
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="day">Hôm nay</SelectItem>
+                      <SelectItem value="week">7 ngày qua</SelectItem>
+                      <SelectItem value="month">30 ngày qua</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportPDF}
+                    disabled={exportingPDF || (!ngWorkstationSummary && !ngTopNGPoints)}
+                    className="flex items-center gap-1"
+                  >
+                    {exportingPDF ? (
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <FileDown className="h-4 w-4" />
+                    )}
+                    {exportingPDF ? "Đang xuất..." : "Xuất báo cáo"}
+                  </Button>
                 </div>
               </div>
 
@@ -1302,16 +1522,24 @@ export default function Dashboard() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {workstationSummary && (workstationSummary as any[]).length > 0 ? (
+                  {ngWorkstationLoading ? (
+                    <div className="flex items-center justify-center h-32">
+                      <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : ngWorkstationSummary && (ngWorkstationSummary as any[]).length > 0 ? (
                     <WorkstationNGHeatmap
-                      data={(workstationSummary as any[]).map((ws: any) => ({
+                      data={(ngWorkstationSummary as any[]).map((ws: any) => ({
                         id: ws.workstationId,
                         code: ws.workstationCode || '',
                         name: ws.workstationName || 'Unknown',
-                        total: ws.totalCount || 0,
+                        total: ws.totalInspections || 0,
                         ng: ws.ngCount || 0,
-                        ngRate: ws.totalCount > 0 ? ((ws.ngCount || 0) / ws.totalCount * 100) : 0,
+                        ngRate: ws.totalInspections > 0 ? ((ws.ngCount || 0) / ws.totalInspections * 100) : 0,
                       }))}
+                      onWorkstationClick={(ws) => {
+                        setSelectedWorkstationForDrilldown({ id: ws.id, code: ws.code, name: ws.name });
+                        setDrilldownDialogOpen(true);
+                      }}
                     />
                   ) : (
                     <EmptyState
@@ -1336,9 +1564,13 @@ export default function Dashboard() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {topNGPoints && (topNGPoints as any[]).length > 0 ? (
+                  {ngTopNGLoading ? (
+                    <div className="flex items-center justify-center h-32">
+                      <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : ngTopNGPoints && (ngTopNGPoints as any[]).length > 0 ? (
                     <MeasurementPointNGList
-                      data={(topNGPoints as any[]).map((mp: any) => ({
+                      data={(ngTopNGPoints as any[]).map((mp: any) => ({
                         id: mp.measurementPointId,
                         code: mp.measurementPointCode || '',
                         name: mp.measurementPointName || 'Unknown',
@@ -1348,7 +1580,7 @@ export default function Dashboard() {
                         ng: mp.ngCount || 0,
                         ngRate: mp.totalCount > 0 ? ((mp.ngCount || 0) / mp.totalCount * 100) : 0,
                       }))}
-                      maxItems={15}
+                      maxItems={20}
                     />
                   ) : (
                     <EmptyState
@@ -1837,6 +2069,90 @@ export default function Dashboard() {
               Xong
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Workstation Drilldown Dialog */}
+      <Dialog open={drilldownDialogOpen} onOpenChange={setDrilldownDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Factory className="h-5 w-5 text-primary" />
+              Chi tiết công trạm: {selectedWorkstationForDrilldown?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Mã: {selectedWorkstationForDrilldown?.code} • Dữ liệu từ {ngTimeFilter === "day" ? "hôm nay" : ngTimeFilter === "week" ? "7 ngày qua" : "30 ngày qua"}
+            </DialogDescription>
+          </DialogHeader>
+
+          <ScrollArea className="max-h-[60vh]">
+            {drilldownLoading ? (
+              <div className="flex items-center justify-center h-32">
+                <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : drilldownMeasurementPoints && drilldownMeasurementPoints.length > 0 ? (
+              <div className="space-y-3 pr-4">
+                {drilldownMeasurementPoints.map((mp: any) => {
+                  const ngRate = mp.totalCount > 0 ? (mp.ngCount / mp.totalCount * 100) : 0;
+                  const getNGColorClass = (rate: number) => {
+                    if (rate <= 2) return "text-green-500 bg-green-500/10 border-green-500/30";
+                    if (rate <= 5) return "text-yellow-500 bg-yellow-500/10 border-yellow-500/30";
+                    if (rate <= 10) return "text-orange-500 bg-orange-500/10 border-orange-500/30";
+                    return "text-red-500 bg-red-500/10 border-red-500/30";
+                  };
+                  return (
+                    <div key={mp.measurementPointId} className={`p-4 rounded-lg border ${getNGColorClass(ngRate)}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <p className="font-semibold">{mp.measurementPointCode}</p>
+                          <p className="text-sm text-muted-foreground">{mp.measurementPointName}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-2xl font-bold">{ngRate.toFixed(1)}%</p>
+                          <p className="text-xs text-muted-foreground">NG Rate</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2 text-sm">
+                        <div className="text-center p-2 bg-background/50 rounded">
+                          <p className="font-semibold">{mp.totalCount}</p>
+                          <p className="text-xs text-muted-foreground">Tổng</p>
+                        </div>
+                        <div className="text-center p-2 bg-background/50 rounded">
+                          <p className="font-semibold text-green-500">{mp.okCount}</p>
+                          <p className="text-xs text-muted-foreground">OK</p>
+                        </div>
+                        <div className="text-center p-2 bg-background/50 rounded">
+                          <p className="font-semibold text-red-500">{mp.ngCount}</p>
+                          <p className="text-xs text-muted-foreground">NG</p>
+                        </div>
+                        <div className="text-center p-2 bg-background/50 rounded">
+                          <p className="font-semibold text-yellow-500">{mp.ntfCount}</p>
+                          <p className="text-xs text-muted-foreground">NTF</p>
+                        </div>
+                      </div>
+                      {(mp.lowerLimit !== null || mp.upperLimit !== null) && (
+                        <div className="mt-2 pt-2 border-t border-border/30 text-xs text-muted-foreground">
+                          <span>Giới hạn: </span>
+                          {mp.lowerLimit !== null && <span>Min: {mp.lowerLimit}</span>}
+                          {mp.lowerLimit !== null && mp.upperLimit !== null && <span> - </span>}
+                          {mp.upperLimit !== null && <span>Max: {mp.upperLimit}</span>}
+                          {mp.unit && <span> ({mp.unit})</span>}
+                          {mp.avgValue !== 0 && <span className="ml-4">Avg: {mp.avgValue.toFixed(2)}</span>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <EmptyState
+                variant="no-analytics"
+                title="Chưa có điểm đo"
+                description="Công trạm này chưa có điểm đo nào được gán hoặc chưa có dữ liệu kiểm tra."
+                compact
+              />
+            )}
+          </ScrollArea>
         </DialogContent>
       </Dialog>
     </DashboardLayout>
