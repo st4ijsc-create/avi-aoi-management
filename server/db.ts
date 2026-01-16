@@ -213,6 +213,48 @@ export async function getActiveUsers() {
   return db.select().from(users).where(eq(users.isActive, true)).orderBy(desc(users.createdAt));
 }
 
+export async function getUsersByRole(role: 'user' | 'admin') {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(users).where(eq(users.role, role)).orderBy(desc(users.createdAt));
+}
+
+export async function createUser(data: {
+  email: string;
+  name: string;
+  password: string;
+  role?: 'user' | 'admin';
+  username?: string;
+  phone?: string;
+  department?: string;
+  position?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+  
+  // Hash password using bcrypt
+  const bcrypt = await import('bcryptjs');
+  const passwordHash = await bcrypt.hash(data.password, 10);
+  
+  // Generate a unique openId for local users
+  const openId = `local_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+  
+  const result = await db.insert(users).values({
+    openId,
+    username: data.username || data.email.split('@')[0],
+    passwordHash,
+    name: data.name,
+    email: data.email,
+    phone: data.phone || null,
+    department: data.department || null,
+    position: data.position || null,
+    loginMethod: 'local',
+    role: data.role || 'user',
+    isActive: true,
+  });
+  return Number(result[0].insertId);
+}
+
 export async function searchUsers(query: string) {
   const db = await getDb();
   if (!db) return [];
@@ -3190,7 +3232,7 @@ export async function getDefectsByWorkstation(filters?: {
         COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount
       FROM workstations w
       LEFT JOIN measurement_point_defs mpd ON mpd.workstationId = w.id
-      LEFT JOIN measurement_results mr ON mr.measurementPointDefId = mpd.id
+      LEFT JOIN measurement_results mr ON mr.pointDefId = mpd.id
       LEFT JOIN product_inspections pi ON mr.inspectionId = pi.id
       WHERE w.isActive = 1
       ${filters?.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
@@ -3246,7 +3288,7 @@ export async function getTopNGMeasurementPointsByWorkstation(filters?: {
         COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount
       FROM measurement_point_defs mpd
       LEFT JOIN workstations w ON mpd.workstationId = w.id
-      LEFT JOIN measurement_results mr ON mr.measurementPointDefId = mpd.id AND mr.result IN ('NG', 'NTF')
+      LEFT JOIN measurement_results mr ON mr.pointDefId = mpd.id AND mr.result IN ('NG', 'NTF')
       LEFT JOIN product_inspections pi ON mr.inspectionId = pi.id
       WHERE 1=1
       ${filters?.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
@@ -3298,7 +3340,7 @@ export async function getWorkstationSummary(filters?: {
         COALESCE(ROUND(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as yieldRate
       FROM workstations w
       LEFT JOIN measurement_point_defs mpd ON mpd.workstationId = w.id
-      LEFT JOIN measurement_results mr ON mr.measurementPointDefId = mpd.id
+      LEFT JOIN measurement_results mr ON mr.pointDefId = mpd.id
       LEFT JOIN product_inspections pi ON mr.inspectionId = pi.id
       WHERE w.isActive = 1
       ${filters?.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
@@ -3354,7 +3396,7 @@ export async function getMeasurementPointsByWorkstation(filters: {
         COALESCE(MIN(mr.measuredValue), 0) as minValue,
         COALESCE(MAX(mr.measuredValue), 0) as maxValue
       FROM measurement_point_defs mpd
-      LEFT JOIN measurement_results mr ON mr.measurementPointDefId = mpd.id
+      LEFT JOIN measurement_results mr ON mr.pointDefId = mpd.id
       LEFT JOIN product_inspections pi ON mr.inspectionId = pi.id
       WHERE mpd.workstationId = ${filters.workstationId}
       ${filters.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
@@ -3577,7 +3619,7 @@ export async function getNGTrendByDay(filters?: {
         COALESCE(ROUND(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as ngRate
       FROM measurement_results mr
       INNER JOIN product_inspections pi ON mr.inspectionId = pi.id
-      LEFT JOIN measurement_point_defs mpd ON mr.measurementPointDefId = mpd.id
+      LEFT JOIN measurement_point_defs mpd ON mr.pointDefId = mpd.id
       WHERE pi.inspectionTime IS NOT NULL
       ${filters?.startDate ? sql`AND pi.inspectionTime >= ${filters.startDate}` : sql``}
       ${filters?.endDate ? sql`AND pi.inspectionTime <= ${filters.endDate}` : sql``}

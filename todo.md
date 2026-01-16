@@ -993,3 +993,35 @@
 - [x] Tạo API endpoint để quản lý scheduled reports (list, getById, create, update, delete, getLogs)
 - [ ] Tạo UI trong Settings để cấu hình email scheduling
 - [ ] Tích hợp với notification system để gửi email tự động (cần cron job hoặc scheduler)
+
+
+## Phase 70: Admin Setup, Email Scheduling UI, Cron Job, Trend Filter
+
+### Admin Setup cho lần deploy đầu tiên
+- [x] Tạo trang /setup để cài đặt user admin đầu tiên
+- [x] Kiểm tra xem đã có admin trong database chưa, nếu chưa redirect đến /setup
+- [x] Form nhập thông tin admin (email, name, password)
+- [x] Tự động tạo user admin và redirect đến login
+- [x] Bảo vệ route /setup - chỉ accessible khi chưa có admin
+- [x] Tạo API endpoint auth.setupAdmin với validation
+- [x] Tạo database helper getUsersByRole và createUser
+- [x] Viết unit tests cho setupAdmin endpoint (6 tests passed)
+### Email Scheduling UI trong Settings
+- [ ] Tạo tab "Scheduled Reports" trong Settings page
+- [ ] Hiển thị danh sách scheduled reports với bảng (name, report type, schedule, recipients, status)
+- [ ] Form tạo scheduled report mới (name, report type, schedule, recipients)
+- [ ] Form sửa scheduled report
+- [ ] Nút xóa scheduled report với confirm dialog
+- [ ] Hiển thị logs của scheduled reports
+
+### Cron Job/Scheduler để gửi email tự động
+- [ ] Tạo background job/scheduler để check scheduled reports
+- [ ] Implement logic gửi email báo cáo NG Visual
+- [ ] Lưu log mỗi lần gửi email (success/failure)
+- [ ] Xử lý lỗi và retry logic khi gửi email thất bại
+
+### Filter trong biểu đồ Trend
+- [ ] Thêm dropdown filter workstation trong NG Trend Chart
+- [ ] Thêm dropdown filter điểm đo trong NG Trend Chart
+- [ ] Cập nhật query getNGTrendByDay để hỗ trợ filter theo workstation/measurement point
+- [ ] Hiển thị trend của workstation/điểm đo được chọn

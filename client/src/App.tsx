@@ -25,11 +25,13 @@ import ChangePassword from "./pages/ChangePassword";
 import AuditLogs from "./pages/AuditLogs";
 import SessionManagement from "./pages/SessionManagement";
 import { ProductComparison } from "./pages/ProductComparison";
+import Setup from "./pages/Setup";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
+      <Route path="/setup" component={Setup} />
       <Route path="/login" component={Login} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/history" component={History} />

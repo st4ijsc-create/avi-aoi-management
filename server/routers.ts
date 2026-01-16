@@ -2994,6 +2994,29 @@ export const appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
+    setupAdmin: publicProcedure
+      .input(z.object({
+        email: z.string().email(),
+        name: z.string().min(1),
+        password: z.string().min(8),
+      }))
+      .mutation(async ({ input }) => {
+        // Check if any admin exists
+        const existingAdmins = await db.getUsersByRole('admin');
+        if (existingAdmins.length > 0) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin already exists' });
+        }
+        
+        // Create first admin user
+        const userId = await db.createUser({
+          email: input.email,
+          name: input.name,
+          password: input.password,
+          role: 'admin',
+        });
+        
+        return { success: true, userId };
+      }),
   }),
 
   // Feature routers
