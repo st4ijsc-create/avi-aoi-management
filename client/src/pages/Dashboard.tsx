@@ -157,6 +157,8 @@ export default function Dashboard() {
   const [machineStatusFilter, setMachineStatusFilter] = useState<"all" | "online" | "offline">("all");
   const [ngTimeFilter, setNgTimeFilter] = useState<"day" | "week" | "month">("week");
   const [selectedWorkstationForDrilldown, setSelectedWorkstationForDrilldown] = useState<{ id: number; code: string; name: string } | null>(null);
+  const [trendFilterWorkstationId, setTrendFilterWorkstationId] = useState<number | undefined>(undefined);
+  const [trendFilterMeasurementPointId, setTrendFilterMeasurementPointId] = useState<number | undefined>(undefined);
   const [drilldownDialogOpen, setDrilldownDialogOpen] = useState(false);
   const [exportingPDF, setExportingPDF] = useState(false);
   
@@ -430,10 +432,21 @@ export default function Dashboard() {
   const { data: ngTrendData, isLoading: ngTrendLoading } = trpc.workstation.ngTrend.useQuery({
     startDate: ngDateRange.startDate,
     endDate: ngDateRange.endDate,
+    workstationId: trendFilterWorkstationId,
+    measurementPointDefId: trendFilterMeasurementPointId,
   });
 
   // Fetch NG comparison data
   const { data: ngComparisonData, isLoading: ngComparisonLoading } = trpc.workstation.ngComparison.useQuery(ngComparisonDates);
+
+  // Fetch all workstations for filter dropdown
+  const { data: allWorkstations } = trpc.workstation.list.useQuery();
+
+  // Fetch all measurement points for filter dropdown (we'll filter by workstation in UI)
+  const { data: allMeasurementPoints } = trpc.measurementPoint.listByProductModel.useQuery(
+    { productModelId: 0 }, // Get all measurement points
+    { enabled: false } // Disable for now, will use ngTopNGPoints data
+  );
 
   // Update last refresh time
   useEffect(() => {
@@ -1670,13 +1683,76 @@ export default function Dashboard() {
               {/* NG Trend Chart */}
               <Card className="glass-card">
                 <CardHeader>
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-primary" />
-                    Xu hướng tỉ lệ NG theo ngày
-                  </CardTitle>
-                  <CardDescription>
-                    Biểu đồ thể hiện xu hướng tỉ lệ NG theo thời gian
-                  </CardDescription>
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <TrendingUp className="h-5 w-5 text-primary" />
+                        Xu hướng tỉ lệ NG theo ngày
+                        {(trendFilterWorkstationId || trendFilterMeasurementPointId) && (
+                          <Badge variant="secondary" className="ml-2">Đã lọc</Badge>
+                        )}
+                      </CardTitle>
+                      <CardDescription>
+                        Biểu đồ thể hiện xu hướng tỉ lệ NG theo thời gian
+                      </CardDescription>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Select 
+                        value={trendFilterWorkstationId?.toString() || "all"} 
+                        onValueChange={(v) => {
+                          setTrendFilterWorkstationId(v === "all" ? undefined : Number(v));
+                          setTrendFilterMeasurementPointId(undefined); // Reset measurement point filter
+                        }}
+                      >
+                        <SelectTrigger className="w-[180px]">
+                          <SelectValue placeholder="Chọn công trạm" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Tất cả công trạm</SelectItem>
+                          {allWorkstations?.map((ws: any) => (
+                            <SelectItem key={ws.id} value={ws.id.toString()}>
+                              {ws.code} - {ws.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      
+                      {trendFilterWorkstationId && (
+                        <Select 
+                          value={trendFilterMeasurementPointId?.toString() || "all"} 
+                          onValueChange={(v) => setTrendFilterMeasurementPointId(v === "all" ? undefined : Number(v))}
+                        >
+                          <SelectTrigger className="w-[200px]">
+                            <SelectValue placeholder="Chọn điểm đo" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Tất cả điểm đo</SelectItem>
+                            {ngTopNGPoints
+                              ?.filter((mp: any) => mp.workstationId === trendFilterWorkstationId)
+                              .map((mp: any) => (
+                                <SelectItem key={mp.measurementPointDefId} value={mp.measurementPointDefId.toString()}>
+                                  {mp.measurementPointCode} - {mp.measurementPointName}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      
+                      {(trendFilterWorkstationId || trendFilterMeasurementPointId) && (
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            setTrendFilterWorkstationId(undefined);
+                            setTrendFilterMeasurementPointId(undefined);
+                          }}
+                        >
+                          <XCircle className="h-4 w-4 mr-1" />
+                          Xóa bộ lọc
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {ngTrendLoading ? (

@@ -2879,6 +2879,7 @@ const workstationRouter = router({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
       workstationId: z.number().optional(),
+      measurementPointDefId: z.number().optional(),
     }).optional())
     .query(async ({ input }) => {
       return db.getNGTrendByDay(input);

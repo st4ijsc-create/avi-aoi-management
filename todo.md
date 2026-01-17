@@ -1025,3 +1025,30 @@
 - [ ] Thêm dropdown filter điểm đo trong NG Trend Chart
 - [ ] Cập nhật query getNGTrendByDay để hỗ trợ filter theo workstation/measurement point
 - [ ] Hiển thị trend của workstation/điểm đo được chọn
+
+## Phase 71: Trend Chart Filters trong NG Visual
+
+### Backend API Enhancement
+- [x] Cập nhật getNGTrendByDay API để hỗ trợ optional workstationId filter
+- [x] Cập nhật getNGTrendByDay API để hỗ trợ optional measurementPointDefId filter
+- [x] Thêm validation cho filter parameters
+- [x] Test API với các filter combinations (8 unit tests passed)
+
+### Frontend UI
+- [x] Thêm workstation dropdown filter trong NG Visual tab
+- [x] Thêm measurement point dropdown filter trong NG Visual tab (chỉ hiển thị khi workstation được chọn)
+- [x] Kết nối filters với API query
+- [x] Hiển thị loading state khi filter thay đổi
+- [x] Thêm "Đã lọc" badge khi filters đang active
+- [x] Cập nhật chart title để hiển thị filter đang áp dụng
+- [x] Test UI với filters trên browser - dropdown hiển thị danh sách workstations
+
+### Unit Tests
+- [x] Viết tests cho getNGTrendByDay với workstationId filter
+- [x] Viết tests cho getNGTrendByDay với measurementPointDefId filter
+- [x] Viết tests cho getNGTrendByDay với cả 2 filters kết hợp
+- [x] Viết tests cho getNGTrendByDay với date range filters
+- [x] Viết tests cho non-existent workstation/measurement point
+- [x] Tất cả 8 unit tests passed
+- [ ] Viết tests cho getNGTrendByDay với cả hai filters
+- [ ] Verify data accuracy với filters

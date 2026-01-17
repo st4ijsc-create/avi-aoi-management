@@ -3604,6 +3604,7 @@ export async function getNGTrendByDay(filters?: {
   startDate?: Date;
   endDate?: Date;
   workstationId?: number;
+  measurementPointDefId?: number;
 }) {
   const db = await getDb();
   if (!db) return [];
@@ -3624,6 +3625,7 @@ export async function getNGTrendByDay(filters?: {
       ${filters?.startDate ? sql`AND pi.inspectionTime >= ${filters.startDate}` : sql``}
       ${filters?.endDate ? sql`AND pi.inspectionTime <= ${filters.endDate}` : sql``}
       ${filters?.workstationId ? sql`AND mpd.workstationId = ${filters.workstationId}` : sql``}
+      ${filters?.measurementPointDefId ? sql`AND mr.pointDefId = ${filters.measurementPointDefId}` : sql``}
       GROUP BY DATE(pi.inspectionTime)
       ORDER BY date ASC
     `;
