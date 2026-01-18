@@ -1052,3 +1052,12 @@
 - [x] Tất cả 8 unit tests passed
 - [ ] Viết tests cho getNGTrendByDay với cả hai filters
 - [ ] Verify data accuracy với filters
+
+## Bug Fix: Product Model Update Error
+
+- [x] Kiểm tra database schema product_models table
+- [x] Kiểm tra updateProductModel function trong server/db.ts
+- [x] Fix SQL update query - duplicate key error khi update code không thay đổi
+- [x] Thêm logic kiểm tra code trùng lặp và loại bỏ code khỏi update data nếu không thay đổi
+- [x] Test update product model trên UI - thành công
+- [x] Verify fix hoạt động đúng

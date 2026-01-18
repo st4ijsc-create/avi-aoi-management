@@ -459,6 +459,21 @@ const productModelRouter = router({
       const { id, ...data } = input;
       let finalData = { ...data };
       
+      // Check if code is being updated and if it's a duplicate
+      if (data.code) {
+        const existing = await db.getProductModelById(id);
+        if (existing && existing.code !== data.code) {
+          // Code is changing, check for duplicates
+          const duplicate = await db.getProductModelByCode(data.code);
+          if (duplicate) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'Mã sản phẩm đã tồn tại' });
+          }
+        } else if (existing && existing.code === data.code) {
+          // Code is not changing, remove it from update data to avoid duplicate key error
+          delete finalData.code;
+        }
+      }
+      
       // Check if referenceImageUrl is a base64 data URL and upload to S3
       if (data.referenceImageUrl && data.referenceImageUrl.startsWith('data:')) {
         try {
