@@ -32,7 +32,12 @@ import {
   Target,
   ThumbsDown,
   Wifi,
-  Activity
+  Activity,
+  ChevronDown,
+  ChevronRight,
+  Factory,
+  Cog,
+  Award
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { ErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
@@ -73,6 +78,11 @@ export default function Settings() {
   const isAdmin = user?.role === "admin";
 
   const [activeTab, setActiveTab] = useState("factories");
+  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
+  
+  const toggleCategory = (category: string) => {
+    setCollapsedCategories(prev => ({ ...prev, [category]: !prev[category] }));
+  };
   
   // Factory form
   const [factoryForm, setFactoryForm] = useState({ code: "", name: "", description: "", address: "" });
@@ -603,52 +613,181 @@ export default function Settings() {
 
         <ErrorBoundary>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-10">
-            <TabsTrigger value="factories" className="gap-2">
-              <Building2 className="h-4 w-4" />
-              Nhà máy
-            </TabsTrigger>
-            <TabsTrigger value="workshops" className="gap-2">
-              <Warehouse className="h-4 w-4" />
-              Nhà xưởng
-            </TabsTrigger>
-            <TabsTrigger value="lines" className="gap-2">
-              <GitBranch className="h-4 w-4" />
-              Dây chuyền
-            </TabsTrigger>
-            <TabsTrigger value="stations" className="gap-2">
-              <Cpu className="h-4 w-4" />
-              Công trạm
-            </TabsTrigger>
-            <TabsTrigger value="machines" className="gap-2">
-              <Cpu className="h-4 w-4" />
-              Máy
-            </TabsTrigger>
-            <TabsTrigger value="shifts" className="gap-2">
-              <Clock className="h-4 w-4" />
-              Ca làm việc
-            </TabsTrigger>
-            <TabsTrigger value="stages" className="gap-2">
-              <GitBranch className="h-4 w-4" />
-              Công đoạn
-            </TabsTrigger>
-            <TabsTrigger value="alerts" className="gap-2">
-              <Bell className="h-4 w-4" />
-              Cảnh báo
-            </TabsTrigger>
-            <TabsTrigger value="mapping" className="gap-2">
-              <Wifi className="h-4 w-4" />
-              Mapping
-            </TabsTrigger>
-            <TabsTrigger value="yield-thresholds" className="gap-2">
-              <Target className="h-4 w-4" />
-              Yield
-            </TabsTrigger>
-            <TabsTrigger value="audit" className="gap-2" onClick={() => window.location.href = '/audit-logs'}>
-              <Activity className="h-4 w-4" />
-              Audit Log
-            </TabsTrigger>
-          </TabsList>
+          <div className="flex gap-6">
+            {/* Vertical Sidebar Navigation */}
+            <div className="w-64 shrink-0 space-y-1">
+              {/* Category: Cơ sở hạ tầng */}
+              <div className="space-y-1">
+                <button
+                  onClick={() => toggleCategory('infrastructure')}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Factory className="h-4 w-4 text-blue-500" />
+                    <span>Cơ sở hạ tầng</span>
+                  </div>
+                  {collapsedCategories['infrastructure'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </button>
+                {!collapsedCategories['infrastructure'] && (
+                  <div className="ml-6 space-y-1">
+                    <button
+                      onClick={() => setActiveTab('factories')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'factories' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <Building2 className="h-4 w-4" />
+                      Nhà máy
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('workshops')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'workshops' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <Warehouse className="h-4 w-4" />
+                      Nhà xưởng
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('lines')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'lines' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <GitBranch className="h-4 w-4" />
+                      Dây chuyền
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('stations')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'stations' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <Cpu className="h-4 w-4" />
+                      Công trạm
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('machines')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'machines' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <Cpu className="h-4 w-4" />
+                      Máy
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Category: Sản xuất */}
+              <div className="space-y-1">
+                <button
+                  onClick={() => toggleCategory('production')}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Cog className="h-4 w-4 text-green-500" />
+                    <span>Sản xuất</span>
+                  </div>
+                  {collapsedCategories['production'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </button>
+                {!collapsedCategories['production'] && (
+                  <div className="ml-6 space-y-1">
+                    <button
+                      onClick={() => setActiveTab('shifts')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'shifts' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <Clock className="h-4 w-4" />
+                      Ca làm việc
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('stages')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'stages' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <GitBranch className="h-4 w-4" />
+                      Công đoạn
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('mapping')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'mapping' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <Wifi className="h-4 w-4" />
+                      Mapping
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Category: Chất lượng */}
+              <div className="space-y-1">
+                <button
+                  onClick={() => toggleCategory('quality')}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Award className="h-4 w-4 text-yellow-500" />
+                    <span>Chất lượng</span>
+                  </div>
+                  {collapsedCategories['quality'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </button>
+                {!collapsedCategories['quality'] && (
+                  <div className="ml-6 space-y-1">
+                    <button
+                      onClick={() => setActiveTab('yield-thresholds')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'yield-thresholds' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <Target className="h-4 w-4" />
+                      Yield
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('alerts')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'alerts' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <Bell className="h-4 w-4" />
+                      Cảnh báo
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Category: Hệ thống */}
+              <div className="space-y-1">
+                <button
+                  onClick={() => toggleCategory('system')}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <SettingsIcon className="h-4 w-4 text-purple-500" />
+                    <span>Hệ thống</span>
+                  </div>
+                  {collapsedCategories['system'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </button>
+                {!collapsedCategories['system'] && (
+                  <div className="ml-6 space-y-1">
+                    <button
+                      onClick={() => window.location.href = '/audit-logs'}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-accent transition-colors"
+                    >
+                      <Activity className="h-4 w-4" />
+                      Audit Log
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Main Content Area */}
+            <div className="flex-1 min-w-0">
 
           {/* Factories Tab */}
           <TabsContent value="factories">
@@ -1993,6 +2132,8 @@ export default function Settings() {
           <TabsContent value="yield-thresholds">
             <YieldThresholdSettings />
           </TabsContent>
+            </div>
+          </div>
         </Tabs>
         </ErrorBoundary>
       </div>

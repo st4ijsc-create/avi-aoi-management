@@ -1071,3 +1071,14 @@
 - [x] Move early return xuống sau tất cả hooks
 - [x] Test AuditLogs page trên browser - thành công, không còn lỗi
 - [x] Verify fix hoạt động đúng
+
+## Settings Page Tablist Optimization
+
+- [x] Kiểm tra Settings.tsx để xem tất cả tabs hiện tại (11 tabs ngang)
+- [x] Phân loại tabs theo category: Cơ sở hạ tầng (5), Sản xuất (3), Chất lượng (2), Hệ thống (1)
+- [x] Thiết kế grouped navigation với category headers và collapsible sections
+- [x] Implement vertical sidebar navigation (256px width) với 4 categories
+- [x] Thêm icons cho mỗi category (Factory, Cog, Award, SettingsIcon) với color coding
+- [x] Thêm ChevronDown/ChevronRight icons cho collapse/expand
+- [x] Test UX trên browser - collapse/expand và navigation hoạt động tốt
+- [x] Verify tất cả settings vẫn accessible - tất cả 11 tabs đều truy cập được
