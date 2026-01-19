@@ -1061,3 +1061,13 @@
 - [x] Thêm logic kiểm tra code trùng lặp và loại bỏ code khỏi update data nếu không thay đổi
 - [x] Test update product model trên UI - thành công
 - [x] Verify fix hoạt động đúng
+
+## Bug Fix: AuditLogs Hooks Order Error
+
+- [x] Kiểm tra AuditLogs.tsx để tìm conditional hooks
+- [x] Xác định hooks nào đang được gọi conditionally - early return trước hooks
+- [x] Sửa hooks order - move tất cả hooks lên trước early return
+- [x] Thêm `enabled` option cho queries để chỉ fetch khi user là admin
+- [x] Move early return xuống sau tất cả hooks
+- [x] Test AuditLogs page trên browser - thành công, không còn lỗi
+- [x] Verify fix hoạt động đúng

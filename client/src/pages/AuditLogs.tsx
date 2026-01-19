@@ -60,8 +60,25 @@ export default function AuditLogs() {
   const [page, setPage] = useState(0);
   const pageSize = 20;
 
-  // Check admin access
-  if ((user as any)?.role !== "admin") {
+  // Always call hooks before any conditional returns
+  const isAdmin = (user as any)?.role === "admin";
+  
+  const { data: logsData, isLoading } = trpc.audit.list.useQuery({
+    action: filters.action === "all" ? undefined : filters.action || undefined,
+    entityType: filters.entityType === "all" ? undefined : filters.entityType || undefined,
+    status: filters.status === "all" ? undefined : filters.status as "success" | "failure" | undefined,
+    limit: pageSize,
+    offset: page * pageSize,
+  }, {
+    enabled: isAdmin, // Only fetch when user is admin
+  });
+
+  const { data: stats } = trpc.audit.stats.useQuery({ days: 7 }, {
+    enabled: isAdmin, // Only fetch when user is admin
+  });
+
+  // Check admin access after all hooks
+  if (!isAdmin) {
     return (
       <DashboardLayout title="Lịch sử hoạt động" currentPath="/audit-logs">
         <div className="container py-12 text-center">
@@ -74,16 +91,6 @@ export default function AuditLogs() {
       </DashboardLayout>
     );
   }
-
-  const { data: logsData, isLoading } = trpc.audit.list.useQuery({
-    action: filters.action === "all" ? undefined : filters.action || undefined,
-    entityType: filters.entityType === "all" ? undefined : filters.entityType || undefined,
-    status: filters.status === "all" ? undefined : filters.status as "success" | "failure" | undefined,
-    limit: pageSize,
-    offset: page * pageSize,
-  });
-
-  const { data: stats } = trpc.audit.stats.useQuery({ days: 7 });
 
   const totalPages = Math.ceil((logsData?.total || 0) / pageSize);
 
