@@ -1142,3 +1142,28 @@
 - [x] Hiển thị "Đã lọc" badge khi search hoặc filter active
 - [x] Thêm "Xóa bộ lọc" button để reset search và filters
 - [x] Test UX với search "PCB" - hoạt động tốt, hiển thị 2 kết quả
+
+## Dashboard Machine 2D Image & Realtime Status
+
+### Database Schema Enhancement
+- [x] image2DUrl và image2DKey fields đã có sẵn trong machines table schema
+- [x] Tạo default machine 2D SVG image tại /client/public/default-machine-2d.svg
+- [x] Không cần migration - schema đã có sẵn
+
+### Dashboard UI Enhancement
+- [x] Cập nhật Dashboard.tsx line 2038: machineImage = image2DUrl || image3DUrl || '/default-machine-2d.svg'
+- [x] Hiển thị ảnh mặc định SVG cho tất cả machines chưa có custom image
+- [x] Online/offline status indicator đã có sẵn (lines 2106-2126): Wifi icon (green) = online, WifiOff icon (gray) = offline
+- [x] Machine cards đã có style với gradient background, border, shadow, hover effects
+
+### WebSocket Realtime Status
+- [x] Server emit machine:status_change events (socket.ts line 209)
+- [x] Dashboard listen machine:online_list event (Dashboard.tsx lines 184-186)
+- [x] onlineMachines Set tracks online machine codes realtime
+- [x] Server tracks connectedMachines và onlineMachineCodesMap (socket.ts lines 25-27)
+- [x] Test: 0 online, 13 offline, 0% availability - hoạt động đúng
+
+### Settings Page Enhancement
+- [ ] Thêm upload 2D image field trong Machine CRUD (Settings > Máy móc)
+- [ ] Preview ảnh 2D khi upload
+- [ ] Validate image format (SVG, PNG, JPG)

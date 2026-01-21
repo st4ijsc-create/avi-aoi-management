@@ -2035,7 +2035,7 @@ export default function Dashboard() {
                           const fpyNum = parseFloat(fpy);
                           const status = getStatusIndicator(fpyNum);
                           const StatusIcon = status.icon;
-                          const machineImage = machine.image2DUrl || machine.image3DUrl;
+                          const machineImage = machine.image2DUrl || machine.image3DUrl || '/default-machine-2d.svg';
 
                           return (
                             <div
