@@ -123,6 +123,12 @@ export default function ProductModels() {
   const [isSavingPoint, setIsSavingPoint] = useState(false);
   const [imageSourceMode, setImageSourceMode] = useState<"upload" | "auto-crop">("auto-crop");
   
+  // Product list search and filter states
+  const [productSearchQuery, setProductSearchQuery] = useState("");
+  const [productLifecycleFilter, setProductLifecycleFilter] = useState<"all" | "development" | "active" | "eol" | "archived">("all");
+  const [productSortBy, setProductSortBy] = useState<"code" | "name" | "createdAt" | "updatedAt">("createdAt");
+  const [productSortOrder, setProductSortOrder] = useState<"asc" | "desc">("desc");
+  
   // Product form validation
   const productValidation = useFormValidation<{
     code: string;
@@ -188,7 +194,12 @@ export default function ProductModels() {
   const { data: workstations } = trpc.workstation.list.useQuery();
   const { data: templates, refetch: refetchTemplates } = trpc.template.list.useQuery();
 
-  const { data: productModels, refetch: refetchProducts } = trpc.productModel.list.useQuery();
+  const { data: productModels, refetch: refetchProducts } = trpc.productModel.list.useQuery({
+    search: productSearchQuery || undefined,
+    lifecycleStatus: productLifecycleFilter !== "all" ? productLifecycleFilter : undefined,
+    sortBy: productSortBy,
+    sortOrder: productSortOrder,
+  });
   const { data: points, refetch: refetchPoints } = trpc.measurementPoint.listByProductModel.useQuery(
     { productModelId: selectedProduct?.id || 0 },
     { enabled: !!selectedProduct }
@@ -1089,6 +1100,85 @@ export default function ProductModels() {
             </Dialog>
           </CardHeader>
           <CardContent>
+            {/* Search and Filter Controls */}
+            <div className="space-y-3 mb-4">
+              {/* Search Bar */}
+              <div className="relative">
+                <Input
+                  placeholder="Tìm theo mã hoặc tên sản phẩm..."
+                  value={productSearchQuery}
+                  onChange={(e) => setProductSearchQuery(e.target.value)}
+                  className="pr-8"
+                />
+                {productSearchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
+                    onClick={() => setProductSearchQuery("")}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+              
+              {/* Filter and Sort Row */}
+              <div className="flex gap-2">
+                {/* Lifecycle Filter */}
+                <Select value={productLifecycleFilter} onValueChange={(val: any) => setProductLifecycleFilter(val)}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue placeholder="Trạng thái" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tất cả</SelectItem>
+                    <SelectItem value="development">Phát triển</SelectItem>
+                    <SelectItem value="active">Đang dùng</SelectItem>
+                    <SelectItem value="eol">EOL</SelectItem>
+                    <SelectItem value="archived">Lưu trữ</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                {/* Sort Dropdown */}
+                <Select value={`${productSortBy}-${productSortOrder}`} onValueChange={(val) => {
+                  const [sortBy, sortOrder] = val.split("-") as [typeof productSortBy, typeof productSortOrder];
+                  setProductSortBy(sortBy);
+                  setProductSortOrder(sortOrder);
+                }}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Sắp xếp" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="createdAt-desc">Mới nhất</SelectItem>
+                    <SelectItem value="createdAt-asc">Cũ nhất</SelectItem>
+                    <SelectItem value="name-asc">Tên A-Z</SelectItem>
+                    <SelectItem value="name-desc">Tên Z-A</SelectItem>
+                    <SelectItem value="code-asc">Mã A-Z</SelectItem>
+                    <SelectItem value="code-desc">Mã Z-A</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Active Filters Badge */}
+              {(productSearchQuery || productLifecycleFilter !== "all") && (
+                <div className="flex items-center gap-2 text-sm">
+                  <Badge variant="secondary" className="gap-1">
+                    Đã lọc
+                  </Badge>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => {
+                      setProductSearchQuery("");
+                      setProductLifecycleFilter("all");
+                    }}
+                  >
+                    Xóa bộ lọc
+                  </Button>
+                </div>
+              )}
+            </div>
+            
             <ScrollArea className="h-[500px]">
               <div className="space-y-2">
                 {productModels?.map((product) => (

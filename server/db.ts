@@ -1,4 +1,4 @@
-import { eq, and, desc, gte, lte, like, sql, or, isNull, not, ne } from "drizzle-orm";
+import { eq, and, desc, asc, gte, lte, like, sql, or, isNull, not, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { 
   InsertUser, users,
@@ -548,10 +548,73 @@ export async function createProductModel(data: InsertProductModel) {
   return result[0].insertId;
 }
 
-export async function getProductModels() {
+export async function getProductModels(options?: {
+  search?: string;
+  lifecycleStatus?: "development" | "active" | "eol" | "archived";
+  sortBy?: "code" | "name" | "createdAt" | "updatedAt";
+  sortOrder?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
+}) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(productModels).where(eq(productModels.isActive, true)).orderBy(productModels.name);
+  
+  // Build WHERE conditions
+  const conditions = [eq(productModels.isActive, true)];
+  
+  // Apply search filter
+  if (options?.search) {
+    const searchTerm = `%${options.search}%`;
+    conditions.push(
+      or(
+        like(productModels.code, searchTerm),
+        like(productModels.name, searchTerm),
+        like(productModels.description, searchTerm)
+      )!
+    );
+  }
+  
+  // Apply lifecycle status filter
+  if (options?.lifecycleStatus) {
+    conditions.push(eq(productModels.lifecycleStatus, options.lifecycleStatus));
+  }
+  
+  // Determine sorting
+  const sortOrder = options?.sortOrder === "desc" ? desc : asc;
+  let orderByClause;
+  switch (options?.sortBy) {
+    case "code":
+      orderByClause = sortOrder(productModels.code);
+      break;
+    case "name":
+      orderByClause = sortOrder(productModels.name);
+      break;
+    case "createdAt":
+      orderByClause = sortOrder(productModels.createdAt);
+      break;
+    case "updatedAt":
+      orderByClause = sortOrder(productModels.updatedAt);
+      break;
+    default:
+      orderByClause = desc(productModels.createdAt);
+  }
+  
+  // Build final query with pagination
+  let query = db
+    .select()
+    .from(productModels)
+    .where(and(...conditions))
+    .orderBy(orderByClause);
+  
+  if (options?.limit && options?.offset) {
+    return query.limit(options.limit).offset(options.offset);
+  } else if (options?.limit) {
+    return query.limit(options.limit);
+  } else if (options?.offset) {
+    return query.offset(options.offset);
+  }
+  
+  return query;
 }
 
 export async function getProductModelById(id: number) {

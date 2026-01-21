@@ -1082,3 +1082,63 @@
 - [x] Thêm ChevronDown/ChevronRight icons cho collapse/expand
 - [x] Test UX trên browser - collapse/expand và navigation hoạt động tốt
 - [x] Verify tất cả settings vẫn accessible - tất cả 11 tabs đều truy cập được
+
+## Products Page Search & Advanced Features
+
+### Search Functionality
+- [ ] Thêm search bar ở đầu Products page
+- [ ] Backend API hỗ trợ search theo code, name, description
+- [ ] Debounce search input để tránh quá nhiều API calls
+- [ ] Highlight search keywords trong kết quả
+
+### Advanced Filters
+- [ ] Filter theo lifecycle status (active, discontinued, development)
+- [ ] Filter theo product category/type
+- [ ] Filter theo date range (createdAt, updatedAt)
+- [ ] Multi-select filters với clear all button
+
+### Sorting
+- [ ] Sort theo code (A-Z, Z-A)
+- [ ] Sort theo name (A-Z, Z-A)
+- [ ] Sort theo createdAt (newest, oldest)
+- [ ] Sort theo updatedAt (newest, oldest)
+
+### Pagination
+- [ ] Thêm pagination controls (prev, next, page numbers)
+- [ ] Configurable page size (10, 25, 50, 100)
+- [ ] Show total count và current range
+
+### Bulk Actions
+- [ ] Checkbox để select multiple products
+- [ ] Bulk delete với confirmation dialog
+- [ ] Bulk export to CSV/Excel
+- [ ] Select all / Deselect all
+
+### UI Enhancements
+- [ ] Loading skeleton khi fetching data
+- [ ] Empty state khi không có kết quả
+- [ ] Error state với retry button
+- [ ] Responsive design cho mobile
+
+### Unit Tests
+- [ ] Test search API với các keywords khác nhau
+- [ ] Test filters combinations
+- [ ] Test sorting logic
+- [ ] Test pagination edge cases
+
+## Products Page Search & Advanced Features
+
+### Backend API Enhancement
+- [x] Cập nhật productModel.list API để hỗ trợ search parameter (code, name)
+- [x] Thêm lifecycleStatus filter parameter
+- [x] Thêm sortBy và sortOrder parameters
+- [x] Cập nhật getProductModels function trong db.ts với WHERE, ORDER BY
+- [x] Test API với search "PCB" - chỉ hiển thị 2 products
+
+### Frontend UI
+- [x] Thêm search bar với clear button (X icon)
+- [x] Thêm lifecycle status filter dropdown (Tất cả, Phát triển, Đang dùng, EOL, Lưu trữ)
+- [x] Thêm sort dropdown (Mới nhất, Cũ nhất, Tên A-Z/Z-A, Mã A-Z/Z-A)
+- [x] Hiển thị "Đã lọc" badge khi search hoặc filter active
+- [x] Thêm "Xóa bộ lọc" button để reset search và filters
+- [x] Test UX với search "PCB" - hoạt động tốt, hiển thị 2 kết quả

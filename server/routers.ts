@@ -359,9 +359,18 @@ const machineRouter = router({
 
 // ============ PRODUCT MODEL ROUTER ============
 const productModelRouter = router({
-  list: protectedProcedure.query(async () => {
-    return db.getProductModels();
-  }),
+  list: protectedProcedure
+    .input(z.object({
+      search: z.string().optional(),
+      lifecycleStatus: z.enum(["development", "active", "eol", "archived"]).optional(),
+      sortBy: z.enum(["code", "name", "createdAt", "updatedAt"]).optional(),
+      sortOrder: z.enum(["asc", "desc"]).optional(),
+      limit: z.number().min(1).max(100).optional(),
+      offset: z.number().min(0).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getProductModels(input);
+    }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
