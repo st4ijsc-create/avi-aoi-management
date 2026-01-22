@@ -11,6 +11,8 @@ import { initializeSocket } from "./socket";
 import { startOfflineMonitor } from "./offlineMonitor";
 import { initializeEmailTransporter } from "./email";
 import { initializeScheduledReports, shutdownScheduledReports } from "../services/reportScheduler";
+import { initMqttBroker, shutdownMqttBroker } from "../services/mqttService";
+import { initSummaryScheduler, stopSummaryScheduler } from "../services/mqttSummaryScheduler";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -58,6 +60,15 @@ async function startServer() {
   
   // Initialize scheduled reports
   await initializeScheduledReports();
+  
+  // Initialize MQTT broker (if enabled)
+  if (process.env.MQTT_ENABLED === 'true') {
+    initMqttBroker();
+    initSummaryScheduler();
+    console.log('[MQTT] MQTT broker enabled');
+  } else {
+    console.log('[MQTT] MQTT broker disabled (set MQTT_ENABLED=true to enable)');
+  }
 
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
@@ -81,6 +92,10 @@ async function startServer() {
   process.on("SIGTERM", () => {
     console.log("SIGTERM received, shutting down gracefully...");
     shutdownScheduledReports();
+    if (process.env.MQTT_ENABLED === 'true') {
+      shutdownMqttBroker();
+      stopSummaryScheduler();
+    }
     server.close(() => {
       console.log("Server closed");
       process.exit(0);
@@ -90,6 +105,10 @@ async function startServer() {
   process.on("SIGINT", () => {
     console.log("SIGINT received, shutting down gracefully...");
     shutdownScheduledReports();
+    if (process.env.MQTT_ENABLED === 'true') {
+      shutdownMqttBroker();
+      stopSummaryScheduler();
+    }
     server.close(() => {
       console.log("Server closed");
       process.exit(0);

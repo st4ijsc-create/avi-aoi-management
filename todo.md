@@ -1474,3 +1474,32 @@
 - [x] Test MQTT Dashboard UI - Đã hoạt động
 - [x] All 168 unit tests passing
 - [x] TypeScript compilation successful
+
+
+## Phase 80: FCM, Mobile App Build & MQTT Configuration (Jan 22, 2025)
+
+### 1. FCM Configuration (HTTP v1 API)
+- [x] Cập nhật fcmService.ts sử dụng FCM HTTP v1 API
+- [x] Sử dụng Service Account authentication thay vì Server Key
+- [x] Hướng dẫn tạo Firebase project và Service Account
+- [x] Thêm FIREBASE_SERVICE_ACCOUNT_JSON vào environment
+- [x] Validate Service Account JSON với unit test
+
+### 2. Mobile App Build
+- [x] Mobile app source code đã sẵn sàng trong mobile-app/
+- [ ] Cài đặt dependencies: cd mobile-app && npm install
+- [ ] Chạy Expo development server: npm start
+- [ ] Test app trên Expo Go
+
+### 3. MQTT Broker
+- [x] Thêm MQTT_ENABLED=true vào environment
+- [x] Tích hợp MQTT broker vào server index.ts
+- [x] MQTT Server đã Online (port 1883)
+- [x] MQTT Summary Scheduler đã khởi động
+
+### 4. Testing
+- [x] All 172 unit tests passing
+- [x] TypeScript compilation successful
+- [x] MQTT Dashboard hiển thị "Online"
+- [ ] Test MQTT connection
+- [ ] Verify MQTT Dashboard hiển thị đúng

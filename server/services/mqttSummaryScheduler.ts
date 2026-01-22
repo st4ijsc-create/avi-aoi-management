@@ -8,15 +8,18 @@ import { eq, and, sql, gte, lte, desc } from 'drizzle-orm';
 import * as schema from '../../drizzle/schema';
 import { publishSummary, isMqttRunning } from './mqttService';
 
-let db: ReturnType<typeof drizzle<typeof schema>> | null = null;
+let db: any = null;
 let dailyJob: cron.ScheduledTask | null = null;
 let weeklyJob: cron.ScheduledTask | null = null;
 
 /**
  * Initialize the summary scheduler
  */
-export function initSummaryScheduler(database: ReturnType<typeof drizzle<typeof schema>>) {
-  db = database;
+export function initSummaryScheduler() {
+  // Get db instance
+  import('../db').then(async module => {
+    db = await module.getDb();
+  });
 
   // Daily summary - Run at 6:00 AM every day
   dailyJob = cron.schedule('0 6 * * *', async () => {
@@ -292,9 +295,9 @@ async function getTopNGPointsForStation(
     .limit(limit);
 
     // Calculate percentages
-    const totalNG = results.reduce((sum, r) => sum + r.ngCount, 0);
+    const totalNG = results.reduce((sum: number, r: any) => sum + r.ngCount, 0);
     
-    return results.map(r => ({
+    return results.map((r: any) => ({
       pointId: r.pointId,
       pointName: r.pointName,
       ngCount: r.ngCount,

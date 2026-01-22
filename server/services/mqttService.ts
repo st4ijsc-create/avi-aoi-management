@@ -71,7 +71,7 @@ interface SummaryPayload {
 // MQTT Broker instance
 let aedes: Aedes | null = null;
 let mqttServer: ReturnType<typeof createServer> | null = null;
-let db: ReturnType<typeof drizzle<typeof schema>> | null = null;
+let db: any = null;
 
 // Configuration
 const MQTT_PORT = parseInt(process.env.MQTT_PORT || '1883');
@@ -81,13 +81,16 @@ const MQTT_ENABLED = process.env.MQTT_ENABLED === 'true';
 /**
  * Initialize MQTT broker
  */
-export function initMqttBroker(database: ReturnType<typeof drizzle<typeof schema>>) {
+export function initMqttBroker() {
   if (!MQTT_ENABLED) {
     console.log('[MQTT] MQTT is disabled. Set MQTT_ENABLED=true to enable.');
     return;
   }
 
-  db = database;
+  // Get db instance
+  import('../db').then(async module => {
+    db = await module.getDb();
+  });
   
   // Create Aedes broker
   aedes = new Aedes();
