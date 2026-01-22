@@ -1222,3 +1222,118 @@
 - [ ] Test generateNGVisualReport function
 - [ ] Test email sending function
 - [ ] Test scheduler initialization
+
+## Phase 73: SMTP Configuration, Test Email & Report Customization
+
+### SMTP Configuration UI
+- [x] Tạo smtp_config table (host, port, secure, username, password, fromEmail, fromName)
+- [x] Tạo API endpoints: smtp.getConfig, smtp.updateConfig, smtp.testConnection
+- [x] Tạo SMTP Configuration tab trong Settings (Hệ thống category)
+- [x] Form fields: Host, Port, Secure (SSL/TLS toggle), Username, Password, From Email, From Name
+- [x] Test Connection button để verify SMTP config
+- [x] Cập nhật email service để sử dụng SMTP config từ database (createTransporterFromConfig)
+- [x] Database helpers: getSmtpConfig, updateSmtpConfig
+- [x] SMTPConfig component với form và test connection
+
+### Test Email Sending
+- [x] Thêm "Gửi thử" (Send icon) button trong scheduled reports list
+- [x] Tạo API endpoint scheduledReport.sendTest
+- [x] Generate sample report data cho test email (last 7 days)
+- [x] Gửi test email với [TEST] prefix trong subject
+- [x] Hiển thị success/error toast sau khi gửi
+- [x] Log test email sends vào scheduled_report_logs (SUCCESS/FAILED)
+- [x] Check SMTP config exists trước khi gửi
+
+### Report Customization (Not Implemented - Optional Enhancement)
+- [ ] Thêm reportFormat field vào scheduled_reports table (HTML/PDF/EXCEL)
+- [ ] Thêm customization fields: logoUrl, primaryColor, footerText
+- [ ] Cập nhật ScheduledReports form để include customization options
+- [ ] Color picker cho primaryColor
+- [ ] Logo upload với preview
+- [ ] Footer text textarea
+- [ ] Cập nhật email template generator để sử dụng custom colors/logo
+- [ ] Implement PDF generation với puppeteer hoặc html-pdf
+- [ ] Implement Excel generation với exceljs
+
+### Unit Tests
+- [ ] Test SMTP config CRUD APIs
+- [ ] Test SMTP connection validation
+- [ ] Test email sending với custom SMTP config
+- [ ] Test scheduledReport.sendTest endpoint
+
+## Phase 74: Review & Complete Email Features
+
+### Review Status
+- [ ] Review Email Scheduling UI - kiểm tra CRUD hoạt động đúng
+- [ ] Review Cron Job Scheduler - kiểm tra scheduler khởi động và chạy đúng
+- [ ] Review SMTP Configuration - kiểm tra form và test connection
+- [ ] Review Test Email Sending - kiểm tra nút "Gửi thử" hoạt động
+- [ ] Test toàn bộ flow: config SMTP → tạo scheduled report → gửi thử → verify email
+
+### Bug Fixes (nếu có)
+- [ ] Fix các lỗi phát hiện trong quá trình review
+
+### Report Customization Implementation
+- [ ] Thêm reportFormat field vào scheduled_reports table (HTML/PDF/EXCEL)
+- [ ] Thêm customization fields: logoUrl, primaryColor, footerText
+- [ ] Cập nhật ScheduledReports form để include customization options
+- [ ] Color picker cho primaryColor
+- [ ] Logo upload với preview
+- [ ] Footer text textarea
+- [ ] Cập nhật email template generator để sử dụng custom colors/logo
+- [ ] Implement PDF generation
+- [ ] Implement Excel generation
+
+### Unit Tests
+- [ ] Test SMTP config CRUD APIs
+- [ ] Test scheduledReport.sendTest endpoint
+- [ ] Test report customization rendering
+
+## Phase 75: SMTP Configuration UI Fix
+
+### Bug Fixes
+- [x] Fix "Kiểm tra kết nối" button visibility issue in SMTP Configuration
+- [x] Update button variant from outline to outline with bg-muted/50 for better visibility
+- [x] Update testConnection API to accept form data for testing before saving
+- [x] Enable test connection button when host and username are filled (not just when config saved)
+- [x] Improve UX: users can test SMTP connection before saving configuration
+
+### Testing
+- [x] Verified button displays correctly when form fields are filled
+- [x] All 153 unit tests passing
+- [x] No regressions detected
+
+## Phase 76: Report Customization Implementation (Jan 22, 2025)
+
+### Database Schema
+- [x] Add reportFormat column (ENUM: HTML, PDF, EXCEL) to scheduled_reports table
+- [x] Add logoUrl column (VARCHAR 500) for custom logo URL
+- [x] Add primaryColor column (VARCHAR 20) for email primary color
+- [x] Add footerText column (TEXT) for custom footer text
+
+### Backend API
+- [x] Update scheduledReport.create mutation with customization fields
+- [x] Update scheduledReport.update mutation with customization fields
+- [x] Add scheduledReport.uploadLogo mutation for logo upload to S3
+
+### Frontend UI
+- [x] Add Tabs component to ScheduledReports dialog (Cơ bản / Tùy chỉnh)
+- [x] Create Report Format selector (HTML/PDF/Excel)
+- [x] Create Logo upload with preview and delete button
+- [x] Create Color picker with hex input and preview bar
+- [x] Create Footer text textarea
+- [x] Create Live email preview section showing header/content/footer
+- [x] Add reportFormat column to reports table display
+
+### Testing
+- [x] All 153 unit tests passing
+- [x] UI tested and working correctly
+
+### Unit Tests Added
+- [x] Create scheduledReport.test.ts with 15 test cases
+- [x] Test scheduled report CRUD operations
+- [x] Test SMTP configuration retrieval
+- [x] Test report customization fields validation
+- [x] Test logo upload filename generation
+- [x] Test base64 data extraction
+- [x] All 168 unit tests passing

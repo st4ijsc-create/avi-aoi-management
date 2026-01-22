@@ -116,3 +116,49 @@ export async function verifyEmailConnection(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Test SMTP connection with provided config
+ */
+export async function testSmtpConnection(config: {
+  host: string;
+  port: number;
+  secure: boolean;
+  username: string;
+  password: string;
+}): Promise<void> {
+  const testTransporter = nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    auth: {
+      user: config.username,
+      pass: config.password,
+    },
+  });
+
+  await testTransporter.verify();
+}
+
+/**
+ * Create transporter from database config
+ */
+export function createTransporterFromConfig(config: {
+  host: string;
+  port: number;
+  secure: boolean;
+  username: string;
+  password: string;
+  fromEmail: string;
+  fromName: string;
+}): Transporter {
+  return nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    auth: {
+      user: config.username,
+      pass: config.password,
+    },
+  });
+}

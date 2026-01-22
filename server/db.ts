@@ -34,7 +34,8 @@ import {
   auditLogs, InsertAuditLog,
   workstations, InsertWorkstation,
   scheduledReports, InsertScheduledReport,
-  scheduledReportLogs, InsertScheduledReportLog
+  scheduledReportLogs, InsertScheduledReportLog,
+  smtpConfig, InsertSmtpConfig
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -3906,4 +3907,31 @@ export async function updateReportNextSchedule(id: number, nextScheduledAt: Date
       updatedAt: new Date()
     })
     .where(eq(scheduledReports.id, id));
+}
+
+// ============= SMTP Configuration =============
+
+export async function getSmtpConfig() {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const configs = await db.select().from(smtpConfig).limit(1);
+  return configs[0] || null;
+}
+
+export async function createOrUpdateSmtpConfig(data: Omit<InsertSmtpConfig, 'id' | 'createdAt' | 'updatedAt'>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const existing = await getSmtpConfig();
+  
+  if (existing) {
+    await db.update(smtpConfig)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(smtpConfig.id, existing.id));
+    return existing.id;
+  } else {
+    const result = await db.insert(smtpConfig).values(data);
+    return result[0].insertId;
+  }
 }

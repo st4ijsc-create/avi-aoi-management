@@ -903,6 +903,11 @@ export const scheduledReports = mysqlTable("scheduled_reports", {
   includeTopNGPoints: boolean("includeTopNGPoints").default(true).notNull(),
   includeTrendChart: boolean("includeTrendChart").default(true).notNull(),
   includeComparison: boolean("includeComparison").default(true).notNull(),
+  // Report Customization
+  reportFormat: mysqlEnum("reportFormat", ["HTML", "PDF", "EXCEL"]).default("HTML").notNull(),
+  logoUrl: varchar("logoUrl", { length: 500 }), // Custom logo URL
+  primaryColor: varchar("primaryColor", { length: 20 }).default("#3b82f6"), // Primary color for email
+  footerText: text("footerText"), // Custom footer text
   isActive: boolean("isActive").default(true).notNull(),
   lastSentAt: timestamp("lastSentAt"),
   nextScheduledAt: timestamp("nextScheduledAt"),
@@ -942,3 +947,20 @@ export const scheduledReportLogs = mysqlTable("scheduled_report_logs", {
 
 export type ScheduledReportLog = typeof scheduledReportLogs.$inferSelect;
 export type InsertScheduledReportLog = typeof scheduledReportLogs.$inferInsert;
+
+// SMTP Configuration Table
+export const smtpConfig = mysqlTable("smtp_config", {
+  id: int("id").primaryKey().autoincrement(),
+  host: varchar("host", { length: 255 }).notNull(),
+  port: int("port").notNull().default(587),
+  secure: boolean("secure").notNull().default(false), // true for 465, false for other ports
+  username: varchar("username", { length: 255 }).notNull(),
+  password: text("password").notNull(), // Encrypted
+  fromEmail: varchar("from_email", { length: 255 }).notNull(),
+  fromName: varchar("from_name", { length: 255 }).notNull().default("AVI/AOI Management System"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+});
+
+export type SmtpConfig = typeof smtpConfig.$inferSelect;
+export type InsertSmtpConfig = typeof smtpConfig.$inferInsert;

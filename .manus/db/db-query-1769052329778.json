@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE scheduled_reports \nADD COLUMN reportFormat ENUM('HTML', 'PDF', 'EXCEL') DEFAULT 'HTML' NOT NULL,\nADD COLUMN logoUrl VARCHAR(500),\nADD COLUMN primaryColor VARCHAR(20) DEFAULT '#3b82f6',\nADD COLUMN footerText TEXT;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute ALTER TABLE scheduled_reports \nADD COLUMN reportFormat ENUM('HTML', 'PDF', 'EXCEL') DEFAULT 'HTML' NOT NULL,\nADD COLUMN logoUrl VARCHAR(500),\nADD COLUMN primaryColor VARCHAR(20) DEFAULT '#3b82f6',\nADD COLUMN footerText TEXT;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 2722
+}

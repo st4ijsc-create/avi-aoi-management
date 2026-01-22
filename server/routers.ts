@@ -2960,6 +2960,11 @@ const scheduledReportRouter = router({
       includeTrendChart: z.boolean().default(true),
       includeComparison: z.boolean().default(true),
       isActive: z.boolean().default(true),
+      // Customization fields
+      reportFormat: z.enum(["HTML", "PDF", "EXCEL"]).default("HTML"),
+      logoUrl: z.string().optional(),
+      primaryColor: z.string().optional(),
+      footerText: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const id = await db.createScheduledReport({
@@ -3003,6 +3008,11 @@ const scheduledReportRouter = router({
       includeTrendChart: z.boolean().optional(),
       includeComparison: z.boolean().optional(),
       isActive: z.boolean().optional(),
+      // Customization fields
+      reportFormat: z.enum(["HTML", "PDF", "EXCEL"]).optional(),
+      logoUrl: z.string().optional(),
+      primaryColor: z.string().optional(),
+      footerText: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
@@ -3044,6 +3054,180 @@ const scheduledReportRouter = router({
     }))
     .query(async ({ input }) => {
       return db.getScheduledReportLogs(input.reportId, input.limit);
+    }),
+
+  sendTest: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const report = await db.getScheduledReportById(input.id);
+      if (!report) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Report not found' });
+      }
+
+      const smtpConfig = await db.getSmtpConfig();
+      if (!smtpConfig) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'SMTP config not found. Please configure SMTP first.' });
+      }
+
+      try {
+        const { generateNGVisualReport, generateNGVisualEmailHTML } = await import('./services/reportGenerator');
+        const { createTransporterFromConfig } = await import('./_core/email');
+        
+        // Generate report data
+        const reportData = await generateNGVisualReport({
+          startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days
+          endDate: new Date(),
+        });
+
+        // Generate HTML email
+        const emailHtml = generateNGVisualEmailHTML(reportData);
+
+        // Create email transporter
+        const transporter = createTransporterFromConfig(smtpConfig);
+
+        // Send test email
+        await transporter.sendMail({
+          from: `${smtpConfig.fromName} <${smtpConfig.fromEmail}>`,
+          to: report.recipients.join(','),
+          subject: `[TEST] ${report.name} - NG Visual Report`,
+          html: emailHtml,
+        });
+
+        // Log test send
+        await db.createScheduledReportLog({
+          reportId: report.id,
+          status: 'SUCCESS',
+          sentAt: new Date(),
+          recipientCount: report.recipients.length,
+          errorMessage: null,
+        });
+
+        return { success: true, message: 'Test email sent successfully' };
+      } catch (error: any) {
+        // Log failure
+        await db.createScheduledReportLog({
+          reportId: report.id,
+          status: 'FAILED',
+          sentAt: new Date(),
+          recipientCount: 0,
+          errorMessage: error.message,
+        });
+
+        throw new TRPCError({ 
+          code: 'INTERNAL_SERVER_ERROR', 
+          message: `Failed to send test email: ${error.message}` 
+        });
+      }
+    }),
+
+  uploadLogo: adminProcedure
+    .input(z.object({
+      base64: z.string(),
+      filename: z.string(),
+      mimeType: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const { storagePut } = await import('./storage');
+      
+      // Extract base64 data
+      const base64Data = input.base64.replace(/^data:image\/\w+;base64,/, '');
+      const buffer = Buffer.from(base64Data, 'base64');
+      
+      // Generate unique filename
+      const ext = input.filename.split('.').pop() || 'png';
+      const uniqueFilename = `report-logos/${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`;
+      
+      // Upload to S3
+      const { url } = await storagePut(uniqueFilename, buffer, input.mimeType);
+      
+      return { url };
+    }),
+});
+
+// ============= SMTP Configuration Router =============
+const smtpRouter = router({
+  getConfig: adminProcedure
+    .query(async () => {
+      const config = await db.getSmtpConfig();
+      // Don't return password to frontend
+      if (config) {
+        return {
+          ...config,
+          password: config.password ? '********' : '',
+        };
+      }
+      return null;
+    }),
+
+  updateConfig: adminProcedure
+    .input(z.object({
+      host: z.string().min(1),
+      port: z.number().min(1).max(65535),
+      secure: z.boolean(),
+      username: z.string().min(1),
+      password: z.string().optional(),
+      fromEmail: z.string().email(),
+      fromName: z.string().min(1),
+    }))
+    .mutation(async ({ input }) => {
+      // If password is '********', don't update it
+      const dataToUpdate: any = { ...input };
+      if (input.password === '********' || !input.password) {
+        const existing = await db.getSmtpConfig();
+        if (existing) {
+          dataToUpdate.password = existing.password;
+        } else {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Password is required for new SMTP config' });
+        }
+      }
+      
+      const id = await db.createOrUpdateSmtpConfig(dataToUpdate);
+      return { success: true, id };
+    }),
+
+  testConnection: adminProcedure
+    .input(z.object({
+      host: z.string().optional(),
+      port: z.number().optional(),
+      secure: z.boolean().optional(),
+      username: z.string().optional(),
+      password: z.string().optional(),
+      fromEmail: z.string().optional(),
+      fromName: z.string().optional(),
+    }).optional())
+    .mutation(async ({ input }) => {
+      let config: any;
+      
+      if (input && input.host && input.username) {
+        // Use provided config for testing
+        config = input;
+        // If password is masked, get from database
+        if (input.password === '********' || !input.password) {
+          const existingConfig = await db.getSmtpConfig();
+          if (existingConfig) {
+            config.password = existingConfig.password;
+          } else {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'Password is required' });
+          }
+        }
+      } else {
+        // Use saved config from database
+        config = await db.getSmtpConfig();
+        if (!config) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'SMTP config not found. Please save config first.' });
+        }
+      }
+      
+      try {
+        const { testSmtpConnection } = await import('./_core/email');
+        await testSmtpConnection(config);
+        return { success: true, message: 'SMTP connection successful' };
+      } catch (error: any) {
+        throw new TRPCError({ 
+          code: 'INTERNAL_SERVER_ERROR', 
+          message: `SMTP connection failed: ${error.message}` 
+        });
+      }
     }),
 });
 
@@ -3110,6 +3294,7 @@ export const appRouter = router({
   workstation: workstationRouter,
   template: templateRouter,
   scheduledReport: scheduledReportRouter,
+  smtp: smtpRouter,
 });
 
 export type AppRouter = typeof appRouter;

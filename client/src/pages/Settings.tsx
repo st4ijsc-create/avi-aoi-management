@@ -46,6 +46,7 @@ import MachineMapping from "@/components/MachineMapping";
 import ManualMachineMapping from "@/components/ManualMachineMapping";
 import YieldThresholdSettings from "@/components/YieldThresholdSettings";
 import ScheduledReports from "@/components/ScheduledReports";
+import { SMTPConfig } from "@/components/SMTPConfig";
 import { useState } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
@@ -784,6 +785,15 @@ export default function Settings() {
                     >
                       <Mail className="h-4 w-4" />
                       Báo cáo tự động
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('smtp-config')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'smtp-config' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <SettingsIcon className="h-4 w-4" />
+                      Cấu hình SMTP
                     </button>
                     <button
                       onClick={() => window.location.href = '/audit-logs'}
@@ -2147,6 +2157,11 @@ export default function Settings() {
           {/* Scheduled Reports Tab */}
           <TabsContent value="scheduled-reports">
             <ScheduledReports />
+          </TabsContent>
+
+          {/* SMTP Config Tab */}
+          <TabsContent value="smtp-config">
+            <SMTPConfig />
           </TabsContent>
             </div>
           </div>

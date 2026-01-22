@@ -169,6 +169,20 @@
       "when": 1768442404822,
       "tag": "0023_nappy_mentallo",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1769049084396,
+      "tag": "0024_loud_post",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1769052307449,
+      "tag": "0025_yielding_living_tribunal",
+      "breakpoints": true
     }
   ]
 }
