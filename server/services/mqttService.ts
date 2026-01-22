@@ -635,19 +635,45 @@ export function isExternalMqttConnected(): boolean {
 }
 
 /**
+ * Publish message to external MQTT broker
+ */
+export function publishToExternalMqtt(topic: string, payload: string): boolean {
+  if (!EXTERNAL_MQTT_ENABLED || !externalMqttClient || !externalMqttClient.connected) {
+    console.log('[MQTT External] Cannot publish - not connected');
+    return false;
+  }
+  
+  externalMqttClient.publish(topic, payload, { qos: 1 }, (error) => {
+    if (error) {
+      console.error('[MQTT External] Publish error:', error);
+    } else {
+      console.log(`[MQTT External] Published to ${topic}`);
+    }
+  });
+  
+  return true;
+}
+
+/**
  * Get external MQTT broker info
  */
 export function getExternalMqttInfo(): {
   enabled: boolean;
   broker: string;
+  port: number;
   connected: boolean;
   topicPrefix: string;
+  useTLS: boolean;
+  hasCredentials: boolean;
 } {
   return {
     enabled: EXTERNAL_MQTT_ENABLED,
     broker: EXTERNAL_MQTT_BROKER,
+    port: EXTERNAL_MQTT_PORT,
     connected: isExternalMqttConnected(),
     topicPrefix: EXTERNAL_MQTT_TOPIC_PREFIX,
+    useTLS: EXTERNAL_MQTT_BROKER.startsWith('mqtts://') || EXTERNAL_MQTT_BROKER.startsWith('wss://'),
+    hasCredentials: !!EXTERNAL_MQTT_USERNAME,
   };
 }
 

@@ -1548,3 +1548,35 @@
 - [x] Cập nhật README với hướng dẫn HiveMQ Public Broker
 - [x] Cập nhật MQTT Topics cho cả local và external broker
 - [x] Hướng dẫn cấu hình cho Android Emulator và iOS Simulator
+
+
+## Phase 83: MQTT Enhancements - Test NG Alert, Authentication & Monitoring (Jan 22, 2025)
+
+### 1. Test NG Alert trên Mobile
+- [x] Tạo API endpoint để simulate NG inspection (testNGAlert mutation)
+- [x] Thêm Test NG Alert button trên MQTT Dashboard
+- [x] Test MQTT publish đến local và external broker
+- [x] Verify message được gửi đến HiveMQ
+
+### 2. MQTT Authentication
+- [x] Thêm username/password config cho external MQTT (EXTERNAL_MQTT_USERNAME, EXTERNAL_MQTT_PASSWORD)
+- [x] Cập nhật mqttService để sử dụng credentials
+- [x] Thêm TLS/SSL support (EXTERNAL_MQTT_USE_TLS detection)
+- [x] Cập nhật getExternalMqttInfo để trả về thêm thông tin TLS và credentials
+
+### 3. Realtime Monitoring Dashboard
+- [x] Thêm realtimeStats endpoint với throughput và latency metrics
+- [x] Thêm getMqttMessageCountSince function trong db.ts
+- [x] Thêm getMqttLatencyStats function trong db.ts
+- [x] Thêm publishToExternalMqtt function trong mqttService.ts
+- [x] Thêm Realtime Monitoring section trên MQTT Dashboard
+  - Throughput (1 phút) - msg/phút
+  - Throughput (5 phút) - avg msg/phút
+  - Latency (Avg) - ms với P95
+  - External Broker Status - Connected/Connecting/Disabled
+- [x] Auto refresh mỗi 10 giây
+
+### 4. Testing
+- [x] Tạo unit tests cho MQTT features (mqtt.test.ts)
+- [x] All 184 unit tests passing
+- [x] TypeScript compilation successful

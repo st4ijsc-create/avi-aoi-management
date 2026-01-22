@@ -4296,3 +4296,67 @@ export async function getOfflineMqttClientsWithFcmToken(stationId?: number) {
     .from(mqttClients)
     .where(and(...conditions));
 }
+
+
+// ============ MQTT REALTIME STATS FUNCTIONS ============
+
+export async function getMqttMessageCountSince(since: Date) {
+  const db = await getDb();
+  if (!db) return { total: 0, delivered: 0, failed: 0, ngAlerts: 0 };
+  
+  const messages = await db.select({
+    deliveryStatus: mqttMessageLogs.deliveryStatus,
+    messageType: mqttMessageLogs.messageType,
+  })
+    .from(mqttMessageLogs)
+    .where(gte(mqttMessageLogs.createdAt, since));
+  
+  return {
+    total: messages.length,
+    delivered: messages.filter(m => m.deliveryStatus === 'DELIVERED').length,
+    failed: messages.filter(m => m.deliveryStatus === 'FAILED').length,
+    ngAlerts: messages.filter(m => m.messageType === 'NG_ALERT').length,
+  };
+}
+
+export async function getMqttLatencyStats() {
+  const db = await getDb();
+  if (!db) return { avgMs: 0, minMs: 0, maxMs: 0, p95Ms: 0 };
+  
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  
+  const messages = await db.select({
+    createdAt: mqttMessageLogs.createdAt,
+    deliveredAt: mqttMessageLogs.deliveredAt,
+  })
+    .from(mqttMessageLogs)
+    .where(and(
+      gte(mqttMessageLogs.createdAt, oneHourAgo),
+      isNotNull(mqttMessageLogs.deliveredAt)
+    ));
+  
+  if (messages.length === 0) {
+    return { avgMs: 0, minMs: 0, maxMs: 0, p95Ms: 0 };
+  }
+  
+  const latencies = messages
+    .map(m => {
+      if (!m.createdAt || !m.deliveredAt) return null;
+      return new Date(m.deliveredAt).getTime() - new Date(m.createdAt).getTime();
+    })
+    .filter((l): l is number => l !== null && l >= 0);
+  
+  if (latencies.length === 0) {
+    return { avgMs: 0, minMs: 0, maxMs: 0, p95Ms: 0 };
+  }
+  
+  latencies.sort((a, b) => a - b);
+  
+  const avgMs = Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length);
+  const minMs = latencies[0];
+  const maxMs = latencies[latencies.length - 1];
+  const p95Index = Math.floor(latencies.length * 0.95);
+  const p95Ms = latencies[p95Index] || maxMs;
+  
+  return { avgMs, minMs, maxMs, p95Ms };
+}

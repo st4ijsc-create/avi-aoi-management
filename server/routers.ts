@@ -2842,6 +2842,126 @@ const mqttClientRouter = router({
       await db.updateMqttClientFcmToken(input.clientId, input.fcmToken);
       return { success: true };
     }),
+
+  // Test NG Alert - Simulate NG inspection for testing MQTT publish
+  testNGAlert: protectedProcedure
+    .input(z.object({
+      machineName: z.string().optional(),
+      machineId: z.number().optional(),
+      stationId: z.number().optional(),
+      serialNumber: z.string().optional(),
+      ngPointName: z.string().optional(),
+      ngValue: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { publishNGAlert, publishToExternalMqtt, isMqttRunning } = await import('./services/mqttService');
+      
+      // Get a real station from database if not provided
+      let stationId = input.stationId;
+      if (!stationId) {
+        const stationList = await db.getStations();
+        if (stationList.length > 0) {
+          stationId = stationList[0].id;
+        } else {
+          stationId = 1; // Fallback
+        }
+      }
+      
+      const testData = {
+        machineId: input.machineId || 1,
+        machineName: input.machineName || 'Test Machine',
+        machineCode: 'TEST',
+        stationId,
+        stationName: 'Test Station',
+        serialNumber: input.serialNumber || `SN-${Date.now()}`,
+        inspectionId: Date.now(),
+        timestamp: new Date(),
+        measurementResults: [{
+          pointCode: input.ngPointName || 'Test Point',
+          result: 'NG' as const,
+          value: input.ngValue || 0.5,
+        }],
+      };
+      
+      // Publish to local broker
+      const localResult = await publishNGAlert(testData);
+      
+      // Also publish to external broker
+      const externalTopic = `avi-aoi/factory/1/station/${stationId}/ng-alert`;
+      const externalPayload = JSON.stringify({
+        type: 'NG_ALERT_TEST',
+        ...testData,
+        timestamp: testData.timestamp.toISOString(),
+      });
+      publishToExternalMqtt(externalTopic, externalPayload);
+      
+      return { 
+        success: true, 
+        message: `NG Alert published (Local: ${localResult ? 'OK' : 'Failed'}, External: sent)`,
+        data: testData,
+        mqttEnabled: isMqttRunning(),
+      };
+    }),
+
+  // Realtime MQTT statistics for monitoring dashboard
+  realtimeStats: protectedProcedure.query(async () => {
+    const { getExternalMqttInfo, isMqttRunning } = await import('./services/mqttService');
+    
+    // Get message stats from last hour for throughput calculation
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const oneMinAgo = new Date(Date.now() - 60 * 1000);
+    
+    // Get message counts
+    const [hourlyStats, fiveMinStats, oneMinStats] = await Promise.all([
+      db.getMqttMessageCountSince(oneHourAgo),
+      db.getMqttMessageCountSince(fiveMinAgo),
+      db.getMqttMessageCountSince(oneMinAgo),
+    ]);
+    
+    // Calculate throughput (messages per minute)
+    const throughputPerHour = hourlyStats.total / 60;
+    const throughputPer5Min = fiveMinStats.total / 5;
+    const throughputPerMin = oneMinStats.total;
+    
+    // Get latency stats
+    const latencyStats = await db.getMqttLatencyStats();
+    
+    // Get external MQTT info
+    const externalInfo = getExternalMqttInfo();
+    
+    return {
+      localBroker: {
+        enabled: isMqttRunning(),
+        port: 1883,
+      },
+      externalBroker: {
+        enabled: externalInfo.enabled,
+        broker: externalInfo.broker,
+        port: externalInfo.port,
+        connected: externalInfo.connected,
+        useTLS: externalInfo.useTLS,
+        hasCredentials: externalInfo.hasCredentials,
+      },
+      throughput: {
+        lastMinute: throughputPerMin,
+        last5Minutes: Math.round(throughputPer5Min * 100) / 100,
+        lastHour: Math.round(throughputPerHour * 100) / 100,
+      },
+      latency: {
+        avgMs: latencyStats.avgMs || 0,
+        minMs: latencyStats.minMs || 0,
+        maxMs: latencyStats.maxMs || 0,
+        p95Ms: latencyStats.p95Ms || 0,
+      },
+      messages: {
+        lastMinute: oneMinStats,
+        last5Minutes: fiveMinStats,
+        lastHour: hourlyStats,
+      },
+      timestamp: new Date(),
+    };
+  }),
 });
 
 // Yield Alert Threshold Router

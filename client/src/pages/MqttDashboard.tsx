@@ -10,8 +10,9 @@ import { trpc } from "@/lib/trpc";
 import { 
   Wifi, WifiOff, Users, MessageSquare, CheckCircle, XCircle, Clock, 
   RefreshCw, Activity, Bell, TrendingUp, Send, AlertTriangle,
-  Smartphone, Server
+  Smartphone, Server, TestTube2, Gauge, Timer, Zap, BarChart3
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   LineChart,
   Line,
@@ -38,10 +39,34 @@ export default function MqttDashboard() {
   const { data: recentMessages, isLoading: messagesLoading, refetch: refetchMessages } = trpc.mqttClient.recentMessages.useQuery({ limit: 20 });
   const { data: clients } = trpc.mqttClient.list.useQuery({});
   const { data: mqttStatus } = trpc.mqttClient.status.useQuery();
+  const { data: realtimeStats, refetch: refetchRealtimeStats } = trpc.mqttClient.realtimeStats.useQuery(undefined, {
+    refetchInterval: 10000, // Auto refresh every 10 seconds
+  });
+
+  const testNGAlertMutation = trpc.mqttClient.testNGAlert.useMutation({
+    onSuccess: (data) => {
+      toast.success(`NG Alert đã gửi: ${data.data.serialNumber}`);
+      refetchMessages();
+      refetchRealtimeStats();
+    },
+    onError: (error) => {
+      toast.error(`Lỗi: ${error.message}`);
+    },
+  });
+
+  const handleTestNGAlert = () => {
+    testNGAlertMutation.mutate({
+      machineName: 'Test Machine ' + Math.floor(Math.random() * 100),
+      serialNumber: `SN-TEST-${Date.now()}`,
+      ngPointName: 'Test Point',
+      ngValue: Math.random() * 10,
+    });
+  };
 
   const handleRefresh = () => {
     refetchStats();
     refetchMessages();
+    refetchRealtimeStats();
   };
 
   const formatDate = (date: Date | string | null) => {
@@ -116,6 +141,15 @@ export default function MqttDashboard() {
                 </Badge>
               )
             )}
+            <Button 
+              variant="destructive" 
+              size="sm" 
+              onClick={handleTestNGAlert}
+              disabled={testNGAlertMutation.isPending}
+            >
+              <TestTube2 className="w-4 h-4 mr-2" />
+              {testNGAlertMutation.isPending ? 'Đang gửi...' : 'Test NG Alert'}
+            </Button>
             <Button variant="outline" size="sm" onClick={handleRefresh}>
               <RefreshCw className="w-4 h-4 mr-2" />
               Làm mới
@@ -193,6 +227,96 @@ export default function MqttDashboard() {
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 {stats?.messages.delivered || 0} / {stats?.messages.total || 0} tin nhắn
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Realtime Monitoring Section */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Throughput - Last Minute */}
+          <Card className="bg-gradient-to-br from-cyan-500/10 to-cyan-600/5 border-cyan-500/20">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <Zap className="w-4 h-4 text-cyan-400" />
+                Throughput (1 phút)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-cyan-400">
+                {realtimeStats?.throughput.lastMinute || 0}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                msg/phút
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Throughput - Last 5 Minutes */}
+          <Card className="bg-gradient-to-br from-indigo-500/10 to-indigo-600/5 border-indigo-500/20">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-indigo-400" />
+                Throughput (5 phút)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-indigo-400">
+                {realtimeStats?.throughput.last5Minutes || 0}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                avg msg/phút
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Average Latency */}
+          <Card className="bg-gradient-to-br from-rose-500/10 to-rose-600/5 border-rose-500/20">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <Timer className="w-4 h-4 text-rose-400" />
+                Latency (Avg)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-rose-400">
+                {realtimeStats?.latency.avgMs || 0}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                ms (P95: {realtimeStats?.latency.p95Ms || 0}ms)
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* External Broker Status */}
+          <Card className="bg-gradient-to-br from-teal-500/10 to-teal-600/5 border-teal-500/20">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <Gauge className="w-4 h-4 text-teal-400" />
+                External Broker
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-2">
+                {realtimeStats?.externalBroker.connected ? (
+                  <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                    <CheckCircle className="w-3 h-3 mr-1" /> Connected
+                  </Badge>
+                ) : realtimeStats?.externalBroker.enabled ? (
+                  <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
+                    <Clock className="w-3 h-3 mr-1" /> Connecting...
+                  </Badge>
+                ) : (
+                  <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">
+                    <XCircle className="w-3 h-3 mr-1" /> Disabled
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2 truncate">
+                {realtimeStats?.externalBroker.broker || 'N/A'}
+                {realtimeStats?.externalBroker.useTLS && (
+                  <Badge variant="outline" className="ml-2 text-xs">TLS</Badge>
+                )}
               </p>
             </CardContent>
           </Card>
