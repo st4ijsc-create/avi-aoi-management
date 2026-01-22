@@ -69,14 +69,23 @@ eas build --platform ios --profile preview
 
 ### MQTT Settings
 Trong app, vào **Settings** để cấu hình:
-- **Broker URL**: URL của MQTT broker
-  - Local development: `mqtt://localhost` hoặc `mqtt://10.0.2.2` (Android emulator)
-  - Production: `mqtt://your-server-ip`
-- **Port**: Port của MQTT broker (mặc định: 1883)
-- **Username/Password**: Thông tin xác thực (nếu có)
 
-**Lưu ý với Android Emulator:**
-- Sử dụng `10.0.2.2` thay vì `localhost` để kết nối đến host machine
+**Option 1: Sử dụng HiveMQ Public Broker (Khuyến nghị cho testing)**
+- **Broker URL**: `mqtt://broker.hivemq.com`
+- **Port**: `1883`
+- **Username/Password**: Để trống (không cần xác thực)
+- **Topic prefix**: `avi-aoi` (hoặc tùy chỉnh)
+
+**Option 2: Kết nối trực tiếp đến server**
+- **Broker URL**: 
+  - Local development: `mqtt://10.0.2.2` (Android emulator) hoặc `mqtt://localhost` (iOS simulator)
+  - Production: `mqtt://your-server-ip`
+- **Port**: `1883`
+- **Username/Password**: Theo cấu hình server
+
+**Lưu ý:**
+- Android Emulator sử dụng `10.0.2.2` để kết nối đến host machine
+- iOS Simulator sử dụng `localhost` trực tiếp
 - Đảm bảo MQTT broker đang chạy và port 1883 được mở
 
 ### Notification Settings
@@ -97,10 +106,18 @@ Trong app, vào **Settings** để cấu hình:
 
 ## MQTT Topics
 
-App subscribe các topics sau:
-- `avi/+/+/+/station/{stationId}/errors` - NG alerts
-- `avi/+/+/+/station/{stationId}/summary/daily` - Daily summary
-- `avi/+/+/+/station/{stationId}/summary/weekly` - Weekly summary
+**Local Broker Topics:**
+- `avi/factory/{factoryId}/workshop/{workshopId}/station/{stationId}/errors` - NG alerts
+- `avi/factory/{factoryId}/workshop/{workshopId}/station/{stationId}/summary/daily` - Daily summary
+- `avi/factory/{factoryId}/workshop/{workshopId}/station/{stationId}/summary/weekly` - Weekly summary
+
+**External Broker Topics (HiveMQ):**
+- `avi-aoi/factory/{factoryId}/workshop/{workshopId}/station/{stationId}/errors` - NG alerts
+- `avi-aoi/factory/{factoryId}/workshop/{workshopId}/station/{stationId}/summary/daily` - Daily summary
+- `avi-aoi/factory/{factoryId}/workshop/{workshopId}/station/{stationId}/summary/weekly` - Weekly summary
+
+**Wildcard Subscription:**
+- `avi-aoi/#` - Subscribe tất cả messages từ server
 
 ## Message Format
 

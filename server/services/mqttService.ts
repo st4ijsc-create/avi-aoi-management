@@ -14,6 +14,7 @@ import { createServer } from 'aedes-server-factory';
 import { drizzle } from 'drizzle-orm/mysql2';
 import { eq, and, sql } from 'drizzle-orm';
 import * as schema from '../../drizzle/schema';
+import mqtt, { MqttClient } from 'mqtt';
 
 // Types
 interface MqttClientInfo {
@@ -68,15 +69,26 @@ interface SummaryPayload {
   timestamp: string;
 }
 
-// MQTT Broker instance
+// MQTT Broker instance (local)
 let aedes: Aedes | null = null;
 let mqttServer: ReturnType<typeof createServer> | null = null;
 let db: any = null;
+
+// External MQTT client (for cloud broker)
+let externalMqttClient: MqttClient | null = null;
 
 // Configuration
 const MQTT_PORT = parseInt(process.env.MQTT_PORT || '1883');
 const MQTT_WS_PORT = parseInt(process.env.MQTT_WS_PORT || '8883');
 const MQTT_ENABLED = process.env.MQTT_ENABLED === 'true';
+
+// External MQTT broker configuration (HiveMQ Public or custom)
+const EXTERNAL_MQTT_ENABLED = process.env.EXTERNAL_MQTT_ENABLED === 'true';
+const EXTERNAL_MQTT_BROKER = process.env.EXTERNAL_MQTT_BROKER || 'mqtt://broker.hivemq.com';
+const EXTERNAL_MQTT_PORT = parseInt(process.env.EXTERNAL_MQTT_PORT || '1883');
+const EXTERNAL_MQTT_USERNAME = process.env.EXTERNAL_MQTT_USERNAME || '';
+const EXTERNAL_MQTT_PASSWORD = process.env.EXTERNAL_MQTT_PASSWORD || '';
+const EXTERNAL_MQTT_TOPIC_PREFIX = process.env.EXTERNAL_MQTT_TOPIC_PREFIX || 'avi-aoi';
 
 /**
  * Initialize MQTT broker
@@ -103,6 +115,52 @@ export function initMqttBroker() {
 
   // Setup event handlers
   setupEventHandlers();
+
+  // Initialize external MQTT client if enabled
+  initExternalMqttClient();
+}
+
+/**
+ * Initialize external MQTT client for cloud broker
+ */
+function initExternalMqttClient() {
+  if (!EXTERNAL_MQTT_ENABLED) {
+    console.log('[MQTT External] External MQTT is disabled. Set EXTERNAL_MQTT_ENABLED=true to enable.');
+    return;
+  }
+
+  const brokerUrl = `${EXTERNAL_MQTT_BROKER}:${EXTERNAL_MQTT_PORT}`;
+  console.log(`[MQTT External] Connecting to ${brokerUrl}...`);
+
+  const options: mqtt.IClientOptions = {
+    clientId: `avi-aoi-server-${Date.now()}`,
+    clean: true,
+    reconnectPeriod: 5000,
+    connectTimeout: 30000,
+  };
+
+  if (EXTERNAL_MQTT_USERNAME) {
+    options.username = EXTERNAL_MQTT_USERNAME;
+    options.password = EXTERNAL_MQTT_PASSWORD;
+  }
+
+  externalMqttClient = mqtt.connect(brokerUrl, options);
+
+  externalMqttClient.on('connect', () => {
+    console.log(`[MQTT External] Connected to ${brokerUrl}`);
+  });
+
+  externalMqttClient.on('error', (error) => {
+    console.error('[MQTT External] Connection error:', error.message);
+  });
+
+  externalMqttClient.on('close', () => {
+    console.log('[MQTT External] Connection closed');
+  });
+
+  externalMqttClient.on('reconnect', () => {
+    console.log('[MQTT External] Reconnecting...');
+  });
 }
 
 /**
@@ -339,6 +397,18 @@ export async function publishNGAlert(data: {
 
     console.log(`[MQTT] Published NG alert to ${topic}`);
 
+    // Also publish to external MQTT broker if enabled
+    if (externalMqttClient && externalMqttClient.connected) {
+      const externalTopic = `${EXTERNAL_MQTT_TOPIC_PREFIX}/factory/${factory.id}/workshop/${workshop.id}/station/${stationId}/errors`;
+      externalMqttClient.publish(externalTopic, message, { qos: 1 }, (error) => {
+        if (error) {
+          console.error('[MQTT External] Publish error:', error);
+        } else {
+          console.log(`[MQTT External] Published NG alert to ${externalTopic}`);
+        }
+      });
+    }
+
     // Send FCM push notification to offline clients
     try {
       const { sendNGAlertPushNotification } = await import('./fcmService');
@@ -431,6 +501,18 @@ export async function publishSummary(
     });
 
     console.log(`[MQTT] Published ${summaryType} summary to ${topic}`);
+
+    // Also publish to external MQTT broker if enabled
+    if (externalMqttClient && externalMqttClient.connected) {
+      const externalTopic = `${EXTERNAL_MQTT_TOPIC_PREFIX}/factory/${factory.id}/workshop/${workshop.id}/station/${stationId}/summary/${summaryPath}`;
+      externalMqttClient.publish(externalTopic, message, { qos: 1, retain: true }, (error) => {
+        if (error) {
+          console.error('[MQTT External] Publish error:', error);
+        } else {
+          console.log(`[MQTT External] Published ${summaryType} summary to ${externalTopic}`);
+        }
+      });
+    }
 
     // Send FCM push notification to offline clients
     try {
@@ -545,4 +627,28 @@ export function shutdownMqttBroker(): Promise<void> {
   });
 }
 
-export { aedes, MQTT_ENABLED };
+/**
+ * Check if external MQTT is connected
+ */
+export function isExternalMqttConnected(): boolean {
+  return EXTERNAL_MQTT_ENABLED && externalMqttClient !== null && externalMqttClient.connected;
+}
+
+/**
+ * Get external MQTT broker info
+ */
+export function getExternalMqttInfo(): {
+  enabled: boolean;
+  broker: string;
+  connected: boolean;
+  topicPrefix: string;
+} {
+  return {
+    enabled: EXTERNAL_MQTT_ENABLED,
+    broker: EXTERNAL_MQTT_BROKER,
+    connected: isExternalMqttConnected(),
+    topicPrefix: EXTERNAL_MQTT_TOPIC_PREFIX,
+  };
+}
+
+export { aedes, MQTT_ENABLED, EXTERNAL_MQTT_ENABLED };

@@ -2765,10 +2765,11 @@ const mqttClientRouter = router({
 
   // Get MQTT status
   status: protectedProcedure.query(async () => {
-    const { isMqttRunning, getConnectedClientsCount } = await import('./services/mqttService');
+    const { isMqttRunning, getConnectedClientsCount, getExternalMqttInfo } = await import('./services/mqttService');
     return {
       enabled: isMqttRunning(),
       connectedClients: getConnectedClientsCount(),
+      external: getExternalMqttInfo(),
     };
   }),
 

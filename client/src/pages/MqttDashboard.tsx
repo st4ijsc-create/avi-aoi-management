@@ -95,13 +95,26 @@ export default function MqttDashboard() {
             {mqttStatus?.enabled ? (
               <Badge className="bg-green-500/20 text-green-400 border-green-500/30 px-3 py-1">
                 <Server className="w-4 h-4 mr-2" />
-                MQTT Server: Online
+                Local: Online
               </Badge>
             ) : (
               <Badge className="bg-red-500/20 text-red-400 border-red-500/30 px-3 py-1">
                 <Server className="w-4 h-4 mr-2" />
-                MQTT Server: Offline
+                Local: Offline
               </Badge>
+            )}
+            {mqttStatus?.external?.enabled && (
+              mqttStatus.external.connected ? (
+                <Badge className="bg-cyan-500/20 text-cyan-400 border-cyan-500/30 px-3 py-1">
+                  <Wifi className="w-4 h-4 mr-2" />
+                  Cloud: Connected
+                </Badge>
+              ) : (
+                <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 px-3 py-1">
+                  <WifiOff className="w-4 h-4 mr-2" />
+                  Cloud: Disconnected
+                </Badge>
+              )
             )}
             <Button variant="outline" size="sm" onClick={handleRefresh}>
               <RefreshCw className="w-4 h-4 mr-2" />

@@ -1522,3 +1522,29 @@
 - [x] Test publish với mosquitto_pub - Thành công
 - [x] Test subscribe với mosquitto_sub - Thành công
 - [x] Message được truyền đúng giữa publisher và subscriber
+
+
+## Phase 82: Mobile App Expo & Cloud MQTT Integration (Jan 22, 2025)
+
+### 1. Chạy Mobile App với Expo
+- [x] Mobile app dependencies đã cài đặt
+- [x] Source code sẵn sàng trong mobile-app/
+- [ ] Chạy trên máy local: cd mobile-app && npm start
+
+### 4. Testing
+- [x] All 175 unit tests passing
+- [x] TypeScript compilation successful
+- [x] MQTT Dashboard hiển thị Local: Online và Cloud: Connected
+
+### 2. Cloud MQTT Broker Integration
+- [x] Chọn HiveMQ Public Broker (miễn phí, không cần đăng ký)
+- [x] Thêm mqtt package vào server
+- [x] Tạo external MQTT client trong mqttService.ts
+- [x] Publish đồng thời đến local và external broker
+- [x] Thêm external MQTT status vào dashboard
+- [x] Cấu hình qua env: EXTERNAL_MQTT_ENABLED, EXTERNAL_MQTT_BROKER, EXTERNAL_MQTT_TOPIC_PREFIX
+
+### 3. Hướng dẫn Test trên thiết bị thật
+- [x] Cập nhật README với hướng dẫn HiveMQ Public Broker
+- [x] Cập nhật MQTT Topics cho cả local và external broker
+- [x] Hướng dẫn cấu hình cho Android Emulator và iOS Simulator
