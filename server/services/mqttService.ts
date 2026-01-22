@@ -89,6 +89,9 @@ const EXTERNAL_MQTT_PORT = parseInt(process.env.EXTERNAL_MQTT_PORT || '1883');
 const EXTERNAL_MQTT_USERNAME = process.env.EXTERNAL_MQTT_USERNAME || '';
 const EXTERNAL_MQTT_PASSWORD = process.env.EXTERNAL_MQTT_PASSWORD || '';
 const EXTERNAL_MQTT_TOPIC_PREFIX = process.env.EXTERNAL_MQTT_TOPIC_PREFIX || 'avi-aoi';
+const EXTERNAL_MQTT_USE_TLS = process.env.EXTERNAL_MQTT_USE_TLS === 'true' || 
+  EXTERNAL_MQTT_BROKER.startsWith('mqtts://') || 
+  EXTERNAL_MQTT_BROKER.startsWith('wss://');
 
 /**
  * Initialize MQTT broker
@@ -672,7 +675,7 @@ export function getExternalMqttInfo(): {
     port: EXTERNAL_MQTT_PORT,
     connected: isExternalMqttConnected(),
     topicPrefix: EXTERNAL_MQTT_TOPIC_PREFIX,
-    useTLS: EXTERNAL_MQTT_BROKER.startsWith('mqtts://') || EXTERNAL_MQTT_BROKER.startsWith('wss://'),
+    useTLS: EXTERNAL_MQTT_USE_TLS,
     hasCredentials: !!EXTERNAL_MQTT_USERNAME,
   };
 }

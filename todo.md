@@ -1580,3 +1580,27 @@
 - [x] Tạo unit tests cho MQTT features (mqtt.test.ts)
 - [x] All 184 unit tests passing
 - [x] TypeScript compilation successful
+
+
+## Phase 84: MQTT Advanced Features - Credentials, Charts & Alert Rules (Jan 22, 2025)
+
+### 1. HiveMQ Cloud Credentials
+- [x] Hướng dẫn cấu hình EXTERNAL_MQTT_USERNAME và EXTERNAL_MQTT_PASSWORD
+- [x] Thêm TLS/SSL support cho HiveMQ Cloud (EXTERNAL_MQTT_USE_TLS)
+- [x] Cập nhật mqttService để sử dụng mqtts:// protocol
+
+### 2. Biểu đồ Throughput theo thời gian
+- [x] Thêm throughputHistory endpoint trong routers.ts
+- [x] Thêm getMqttThroughputHistory function trong db.ts
+- [x] Thêm Line Chart component hiển thị throughput 1 giờ qua
+- [x] Thêm vào MQTT Dashboard (auto refresh mỗi phút)
+
+### 3. Alert Rules cho MQTT
+- [x] Tạo bảng mqtt_alert_rules và mqtt_alert_history trong schema.ts
+- [x] Thêm CRUD endpoints cho alert rules (mqttAlertRouter)
+- [x] Tạo trang MqttAlertRules.tsx với UI quản lý rules
+- [x] Thêm vào navigation sidebar
+- [ ] Thêm logic kiểm tra latency threshold
+- [ ] Thêm logic kiểm tra broker disconnect
+- [ ] Gửi notification khi alert triggered
+- [ ] Thêm UI quản lý alert rules

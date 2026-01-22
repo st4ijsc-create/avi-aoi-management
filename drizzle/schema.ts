@@ -1095,3 +1095,77 @@ export const mqttMessageLogs = mysqlTable("mqtt_message_logs", {
 
 export type MqttMessageLog = typeof mqttMessageLogs.$inferSelect;
 export type InsertMqttMessageLog = typeof mqttMessageLogs.$inferInsert;
+
+
+/**
+ * MQTT Alert Rules - Cấu hình cảnh báo cho MQTT
+ */
+export const mqttAlertRules = mysqlTable("mqtt_alert_rules", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(), // Tên rule
+  description: text("description"), // Mô tả
+  ruleType: mysqlEnum("ruleType", [
+    "LATENCY_THRESHOLD",      // Latency vượt ngưỡng
+    "BROKER_DISCONNECT",      // Broker bị disconnect
+    "MESSAGE_FAILURE_RATE",   // Tỷ lệ message thất bại
+    "THROUGHPUT_LOW",         // Throughput thấp
+    "THROUGHPUT_HIGH",        // Throughput cao (có thể là spam)
+    "CLIENT_OFFLINE"          // Client offline quá lâu
+  ]).notNull(),
+  // Threshold configuration
+  thresholdValue: decimal("thresholdValue", { precision: 10, scale: 2 }).notNull(), // Giá trị ngưỡng
+  thresholdUnit: varchar("thresholdUnit", { length: 50 }).default("ms").notNull(), // Đơn vị (ms, %, msg/min, minutes)
+  comparisonOperator: mysqlEnum("comparisonOperator", ["GT", "GTE", "LT", "LTE", "EQ"]).default("GT").notNull(),
+  // Time window for evaluation
+  timeWindowMinutes: int("timeWindowMinutes").default(5).notNull(), // Khoảng thời gian đánh giá (phút)
+  // Notification settings
+  notifyOwner: boolean("notifyOwner").default(true).notNull(), // Gửi notification cho owner
+  notifyEmail: boolean("notifyEmail").default(false).notNull(), // Gửi email
+  notifyMqtt: boolean("notifyMqtt").default(false).notNull(), // Gửi qua MQTT
+  // Cooldown to prevent spam
+  cooldownMinutes: int("cooldownMinutes").default(15).notNull(), // Thời gian chờ giữa các alert
+  lastTriggeredAt: timestamp("lastTriggeredAt"), // Lần trigger gần nhất
+  // Status
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  createdBy: int("createdBy"), // FK to users
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_mqtt_alert_rules_type").on(table.ruleType),
+  index("idx_mqtt_alert_rules_enabled").on(table.isEnabled),
+]);
+
+export type MqttAlertRule = typeof mqttAlertRules.$inferSelect;
+export type InsertMqttAlertRule = typeof mqttAlertRules.$inferInsert;
+
+/**
+ * MQTT Alert History - Lịch sử các alert đã trigger
+ */
+export const mqttAlertHistory = mysqlTable("mqtt_alert_history", {
+  id: int("id").autoincrement().primaryKey(),
+  ruleId: int("ruleId").notNull(), // FK to mqtt_alert_rules
+  ruleName: varchar("ruleName", { length: 255 }).notNull(), // Snapshot của tên rule
+  ruleType: varchar("ruleType", { length: 50 }).notNull(), // Snapshot của loại rule
+  // Alert details
+  triggeredValue: decimal("triggeredValue", { precision: 10, scale: 2 }).notNull(), // Giá trị khi trigger
+  thresholdValue: decimal("thresholdValue", { precision: 10, scale: 2 }).notNull(), // Ngưỡng đã set
+  message: text("message").notNull(), // Nội dung alert
+  // Notification status
+  notificationSent: boolean("notificationSent").default(false).notNull(),
+  notificationError: text("notificationError"),
+  // Resolution
+  isResolved: boolean("isResolved").default(false).notNull(),
+  resolvedAt: timestamp("resolvedAt"),
+  resolvedBy: int("resolvedBy"), // FK to users
+  resolutionNote: text("resolutionNote"),
+  // Timestamps
+  triggeredAt: timestamp("triggeredAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_mqtt_alert_history_rule").on(table.ruleId),
+  index("idx_mqtt_alert_history_type").on(table.ruleType),
+  index("idx_mqtt_alert_history_resolved").on(table.isResolved),
+  index("idx_mqtt_alert_history_triggered").on(table.triggeredAt),
+]);
+
+export type MqttAlertHistory = typeof mqttAlertHistory.$inferSelect;
+export type InsertMqttAlertHistory = typeof mqttAlertHistory.$inferInsert;

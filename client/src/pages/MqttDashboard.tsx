@@ -42,6 +42,9 @@ export default function MqttDashboard() {
   const { data: realtimeStats, refetch: refetchRealtimeStats } = trpc.mqttClient.realtimeStats.useQuery(undefined, {
     refetchInterval: 10000, // Auto refresh every 10 seconds
   });
+  const { data: throughputHistory, refetch: refetchThroughputHistory } = trpc.mqttClient.throughputHistory.useQuery({ minutes: 60 }, {
+    refetchInterval: 60000, // Auto refresh every minute
+  });
 
   const testNGAlertMutation = trpc.mqttClient.testNGAlert.useMutation({
     onSuccess: (data) => {
@@ -67,6 +70,7 @@ export default function MqttDashboard() {
     refetchStats();
     refetchMessages();
     refetchRealtimeStats();
+    refetchThroughputHistory();
   };
 
   const formatDate = (date: Date | string | null) => {
@@ -321,6 +325,79 @@ export default function MqttDashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Realtime Throughput Chart */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-cyan-400" />
+                  Throughput Realtime
+                </CardTitle>
+                <CardDescription>Số lượng message trong 1 giờ qua (theo phút)</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[250px]">
+              {!throughputHistory || throughputHistory.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-muted-foreground">
+                  Chưa có dữ liệu
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={throughputHistory}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                    <XAxis 
+                      dataKey="time" 
+                      stroke="#888"
+                      tick={{ fontSize: 10 }}
+                      interval={9}
+                    />
+                    <YAxis stroke="#888" />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
+                    />
+                    <Legend />
+                    <Line 
+                      type="monotone" 
+                      dataKey="count" 
+                      name="Tổng" 
+                      stroke="#06b6d4" 
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="delivered" 
+                      name="Đã gửi" 
+                      stroke="#10b981" 
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="failed" 
+                      name="Thất bại" 
+                      stroke="#ef4444" 
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="ngAlerts" 
+                      name="NG Alerts" 
+                      stroke="#f59e0b" 
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Charts Row */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

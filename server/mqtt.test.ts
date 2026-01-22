@@ -192,3 +192,81 @@ describe("mqttClient router", () => {
     });
   });
 });
+
+
+describe("mqttAlert router", () => {
+  describe("list", () => {
+    it("returns list of alert rules", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.mqttAlert.list();
+
+      expect(Array.isArray(result)).toBe(true);
+    });
+  });
+
+  describe("create", () => {
+    it("creates a new alert rule", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.mqttAlert.create({
+        name: "Test Latency Alert",
+        description: "Alert when latency exceeds 1000ms",
+        ruleType: "LATENCY_THRESHOLD",
+        thresholdValue: 1000,
+        thresholdUnit: "ms",
+        comparisonOperator: "GT",
+        timeWindowMinutes: 5,
+        notifyOwner: true,
+        notifyEmail: false,
+        notifyMqtt: false,
+        cooldownMinutes: 15,
+      });
+
+      expect(result).toHaveProperty("id");
+      expect(typeof result?.id).toBe("number");
+    });
+  });
+
+  describe("history", () => {
+    it("returns alert history", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.mqttAlert.history({ limit: 10 });
+
+      expect(Array.isArray(result)).toBe(true);
+    });
+  });
+
+  describe("unresolved", () => {
+    it("returns unresolved alerts", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.mqttAlert.unresolved();
+
+      expect(Array.isArray(result)).toBe(true);
+    });
+  });
+
+  describe("throughputHistory", () => {
+    it("returns throughput history data", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.mqttClient.throughputHistory({ minutes: 60 });
+
+      expect(Array.isArray(result)).toBe(true);
+      if (result.length > 0) {
+        expect(result[0]).toHaveProperty("time");
+        expect(result[0]).toHaveProperty("count");
+        expect(result[0]).toHaveProperty("delivered");
+        expect(result[0]).toHaveProperty("failed");
+        expect(result[0]).toHaveProperty("ngAlerts");
+      }
+    });
+  });
+});

@@ -39,7 +39,9 @@ import {
   mqttClients, InsertMqttClient,
   mqttSubscriptions, InsertMqttSubscription,
   mqttErrorSummary, InsertMqttErrorSummary,
-  mqttMessageLogs, InsertMqttMessageLog
+  mqttMessageLogs, InsertMqttMessageLog,
+  mqttAlertRules, InsertMqttAlertRule,
+  mqttAlertHistory, InsertMqttAlertHistory
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -4359,4 +4361,229 @@ export async function getMqttLatencyStats() {
   const p95Ms = latencies[p95Index] || maxMs;
   
   return { avgMs, minMs, maxMs, p95Ms };
+}
+
+
+export async function getMqttThroughputHistory(minutes: number = 60) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const since = new Date(Date.now() - minutes * 60 * 1000);
+  
+  const messages = await db.select({
+    createdAt: mqttMessageLogs.createdAt,
+    deliveryStatus: mqttMessageLogs.deliveryStatus,
+    messageType: mqttMessageLogs.messageType,
+  })
+    .from(mqttMessageLogs)
+    .where(gte(mqttMessageLogs.createdAt, since))
+    .orderBy(mqttMessageLogs.createdAt);
+  
+  // Group by minute
+  const minuteData: Record<string, { 
+    time: string; 
+    timestamp: number;
+    count: number; 
+    delivered: number; 
+    failed: number;
+    ngAlerts: number;
+  }> = {};
+  
+  // Initialize all minutes in the range
+  for (let i = 0; i < minutes; i++) {
+    const date = new Date(Date.now() - (minutes - i - 1) * 60 * 1000);
+    const minuteKey = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+    minuteData[minuteKey] = { 
+      time: minuteKey, 
+      timestamp: date.getTime(),
+      count: 0, 
+      delivered: 0, 
+      failed: 0,
+      ngAlerts: 0,
+    };
+  }
+  
+  messages.forEach(m => {
+    if (!m.createdAt) return;
+    const date = new Date(m.createdAt);
+    const minuteKey = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+    
+    if (minuteData[minuteKey]) {
+      minuteData[minuteKey].count++;
+      if (m.deliveryStatus === 'DELIVERED') minuteData[minuteKey].delivered++;
+      if (m.deliveryStatus === 'FAILED') minuteData[minuteKey].failed++;
+      if (m.messageType === 'NG_ALERT') minuteData[minuteKey].ngAlerts++;
+    }
+  });
+  
+  return Object.values(minuteData).sort((a, b) => a.timestamp - b.timestamp);
+}
+
+
+// ============ MQTT ALERT RULES FUNCTIONS ============
+
+export async function getMqttAlertRules() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select()
+    .from(mqttAlertRules)
+    .orderBy(desc(mqttAlertRules.createdAt));
+}
+
+export async function getMqttAlertRuleById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select()
+    .from(mqttAlertRules)
+    .where(eq(mqttAlertRules.id, id))
+    .limit(1);
+  
+  return result[0] || null;
+}
+
+export async function getEnabledMqttAlertRules() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select()
+    .from(mqttAlertRules)
+    .where(eq(mqttAlertRules.isEnabled, true));
+}
+
+export async function createMqttAlertRule(data: {
+  name: string;
+  description?: string;
+  ruleType: 'LATENCY_THRESHOLD' | 'BROKER_DISCONNECT' | 'MESSAGE_FAILURE_RATE' | 'THROUGHPUT_LOW' | 'THROUGHPUT_HIGH' | 'CLIENT_OFFLINE';
+  thresholdValue: string;
+  thresholdUnit?: string;
+  comparisonOperator?: 'GT' | 'GTE' | 'LT' | 'LTE' | 'EQ';
+  timeWindowMinutes?: number;
+  notifyOwner?: boolean;
+  notifyEmail?: boolean;
+  notifyMqtt?: boolean;
+  cooldownMinutes?: number;
+  createdBy?: number;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.insert(mqttAlertRules).values({
+    name: data.name,
+    description: data.description,
+    ruleType: data.ruleType,
+    thresholdValue: data.thresholdValue,
+    thresholdUnit: data.thresholdUnit || 'ms',
+    comparisonOperator: data.comparisonOperator || 'GT',
+    timeWindowMinutes: data.timeWindowMinutes || 5,
+    notifyOwner: data.notifyOwner ?? true,
+    notifyEmail: data.notifyEmail ?? false,
+    notifyMqtt: data.notifyMqtt ?? false,
+    cooldownMinutes: data.cooldownMinutes || 15,
+    createdBy: data.createdBy,
+  });
+  
+  return { id: Number(result[0].insertId) };
+}
+
+export async function updateMqttAlertRule(id: number, data: Partial<{
+  name: string;
+  description: string;
+  thresholdValue: string;
+  thresholdUnit: string;
+  comparisonOperator: 'GT' | 'GTE' | 'LT' | 'LTE' | 'EQ';
+  timeWindowMinutes: number;
+  notifyOwner: boolean;
+  notifyEmail: boolean;
+  notifyMqtt: boolean;
+  cooldownMinutes: number;
+  isEnabled: boolean;
+}>) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.update(mqttAlertRules)
+    .set(data)
+    .where(eq(mqttAlertRules.id, id));
+}
+
+export async function deleteMqttAlertRule(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.delete(mqttAlertRules)
+    .where(eq(mqttAlertRules.id, id));
+}
+
+export async function updateMqttAlertRuleLastTriggered(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.update(mqttAlertRules)
+    .set({ lastTriggeredAt: new Date() })
+    .where(eq(mqttAlertRules.id, id));
+}
+
+// ============ MQTT ALERT HISTORY FUNCTIONS ============
+
+export async function getMqttAlertHistory(limit: number = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select()
+    .from(mqttAlertHistory)
+    .orderBy(desc(mqttAlertHistory.triggeredAt))
+    .limit(limit);
+}
+
+export async function getUnresolvedMqttAlerts() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select()
+    .from(mqttAlertHistory)
+    .where(eq(mqttAlertHistory.isResolved, false))
+    .orderBy(desc(mqttAlertHistory.triggeredAt));
+}
+
+export async function createMqttAlertHistoryEntry(data: {
+  ruleId: number;
+  ruleName: string;
+  ruleType: string;
+  triggeredValue: string;
+  thresholdValue: string;
+  message: string;
+  notificationSent?: boolean;
+  notificationError?: string;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.insert(mqttAlertHistory).values({
+    ruleId: data.ruleId,
+    ruleName: data.ruleName,
+    ruleType: data.ruleType,
+    triggeredValue: data.triggeredValue,
+    thresholdValue: data.thresholdValue,
+    message: data.message,
+    notificationSent: data.notificationSent ?? false,
+    notificationError: data.notificationError,
+  });
+  
+  return { id: Number(result[0].insertId) };
+}
+
+export async function resolveMqttAlert(id: number, userId: number, note?: string) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.update(mqttAlertHistory)
+    .set({
+      isResolved: true,
+      resolvedAt: new Date(),
+      resolvedBy: userId,
+      resolutionNote: note,
+    })
+    .where(eq(mqttAlertHistory.id, id));
 }

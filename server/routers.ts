@@ -2962,6 +2962,117 @@ const mqttClientRouter = router({
       timestamp: new Date(),
     };
   }),
+
+  // Throughput history for line chart (last 60 minutes by default)
+  throughputHistory: protectedProcedure
+    .input(z.object({ minutes: z.number().default(60) }).optional())
+    .query(async ({ input }) => {
+      return db.getMqttThroughputHistory(input?.minutes || 60);
+    }),
+});
+
+// MQTT Alert Rules Router
+const mqttAlertRouter = router({
+  // List all alert rules
+  list: protectedProcedure.query(async () => {
+    return db.getMqttAlertRules();
+  }),
+
+  // Get single rule by ID
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getMqttAlertRuleById(input.id);
+    }),
+
+  // Create new alert rule
+  create: protectedProcedure
+    .input(z.object({
+      name: z.string().min(1),
+      description: z.string().optional(),
+      ruleType: z.enum(['LATENCY_THRESHOLD', 'BROKER_DISCONNECT', 'MESSAGE_FAILURE_RATE', 'THROUGHPUT_LOW', 'THROUGHPUT_HIGH', 'CLIENT_OFFLINE']),
+      thresholdValue: z.number(),
+      thresholdUnit: z.string().default('ms'),
+      comparisonOperator: z.enum(['GT', 'GTE', 'LT', 'LTE', 'EQ']).default('GT'),
+      timeWindowMinutes: z.number().default(5),
+      notifyOwner: z.boolean().default(true),
+      notifyEmail: z.boolean().default(false),
+      notifyMqtt: z.boolean().default(false),
+      cooldownMinutes: z.number().default(15),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const result = await db.createMqttAlertRule({
+        ...input,
+        thresholdValue: String(input.thresholdValue),
+        createdBy: ctx.user?.id,
+      });
+      return result;
+    }),
+
+  // Update alert rule
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      description: z.string().optional(),
+      thresholdValue: z.number().optional(),
+      thresholdUnit: z.string().optional(),
+      comparisonOperator: z.enum(['GT', 'GTE', 'LT', 'LTE', 'EQ']).optional(),
+      timeWindowMinutes: z.number().optional(),
+      notifyOwner: z.boolean().optional(),
+      notifyEmail: z.boolean().optional(),
+      notifyMqtt: z.boolean().optional(),
+      cooldownMinutes: z.number().optional(),
+      isEnabled: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, thresholdValue, ...rest } = input;
+      await db.updateMqttAlertRule(id, {
+        ...rest,
+        ...(thresholdValue !== undefined ? { thresholdValue: String(thresholdValue) } : {}),
+      });
+      return { success: true };
+    }),
+
+  // Delete alert rule
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteMqttAlertRule(input.id);
+      return { success: true };
+    }),
+
+  // Toggle enable/disable
+  toggle: protectedProcedure
+    .input(z.object({ id: z.number(), isEnabled: z.boolean() }))
+    .mutation(async ({ input }) => {
+      await db.updateMqttAlertRule(input.id, { isEnabled: input.isEnabled });
+      return { success: true };
+    }),
+
+  // Get alert history
+  history: protectedProcedure
+    .input(z.object({ limit: z.number().default(50) }).optional())
+    .query(async ({ input }) => {
+      return db.getMqttAlertHistory(input?.limit || 50);
+    }),
+
+  // Get unresolved alerts
+  unresolved: protectedProcedure.query(async () => {
+    return db.getUnresolvedMqttAlerts();
+  }),
+
+  // Resolve an alert
+  resolve: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      note: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+      await db.resolveMqttAlert(input.id, ctx.user.id, input.note);
+      return { success: true };
+    }),
 });
 
 // Yield Alert Threshold Router
@@ -3687,6 +3798,7 @@ export const appRouter = router({
   scheduledReport: scheduledReportRouter,
   smtp: smtpRouter,
   mqttClient: mqttClientRouter,
+  mqttAlert: mqttAlertRouter,
 });
 
 export type AppRouter = typeof appRouter;
