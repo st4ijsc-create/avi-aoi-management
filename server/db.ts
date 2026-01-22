@@ -35,7 +35,11 @@ import {
   workstations, InsertWorkstation,
   scheduledReports, InsertScheduledReport,
   scheduledReportLogs, InsertScheduledReportLog,
-  smtpConfig, InsertSmtpConfig
+  smtpConfig, InsertSmtpConfig,
+  mqttClients, InsertMqttClient,
+  mqttSubscriptions, InsertMqttSubscription,
+  mqttErrorSummary, InsertMqttErrorSummary,
+  mqttMessageLogs, InsertMqttMessageLog
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -3934,4 +3938,206 @@ export async function createOrUpdateSmtpConfig(data: Omit<InsertSmtpConfig, 'id'
     const result = await db.insert(smtpConfig).values(data);
     return result[0].insertId;
   }
+}
+
+
+// ============= MQTT Client Functions =============
+
+export async function getMqttClients(filters?: {
+  approvalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  connectionStatus?: 'ONLINE' | 'OFFLINE' | 'DISCONNECTED';
+  stationId?: number;
+  mappingType?: 'AUTO' | 'MANUAL';
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions = [eq(mqttClients.isActive, true)];
+  
+  if (filters?.approvalStatus) {
+    conditions.push(eq(mqttClients.approvalStatus, filters.approvalStatus));
+  }
+  if (filters?.connectionStatus) {
+    conditions.push(eq(mqttClients.connectionStatus, filters.connectionStatus));
+  }
+  if (filters?.stationId) {
+    conditions.push(eq(mqttClients.stationId, filters.stationId));
+  }
+  if (filters?.mappingType) {
+    conditions.push(eq(mqttClients.mappingType, filters.mappingType));
+  }
+  
+  return db.select()
+    .from(mqttClients)
+    .where(and(...conditions))
+    .orderBy(desc(mqttClients.createdAt));
+}
+
+export async function getMqttClientById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const results = await db.select()
+    .from(mqttClients)
+    .where(eq(mqttClients.id, id))
+    .limit(1);
+  
+  return results[0] || null;
+}
+
+export async function getMqttClientByDeviceId(deviceId: string) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const results = await db.select()
+    .from(mqttClients)
+    .where(eq(mqttClients.deviceId, deviceId))
+    .limit(1);
+  
+  return results[0] || null;
+}
+
+export async function approveMqttClient(
+  id: number, 
+  approvedBy: number, 
+  stationId?: number,
+  mappingType?: 'AUTO' | 'MANUAL'
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(mqttClients)
+    .set({
+      approvalStatus: 'APPROVED',
+      approvedBy,
+      approvedAt: new Date(),
+      stationId: stationId || null,
+      mappingType: mappingType || 'MANUAL',
+    })
+    .where(eq(mqttClients.id, id));
+}
+
+export async function rejectMqttClient(id: number, reason?: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(mqttClients)
+    .set({
+      approvalStatus: 'REJECTED',
+      rejectionReason: reason || null,
+    })
+    .where(eq(mqttClients.id, id));
+}
+
+export async function updateMqttClientMapping(id: number, data: {
+  stationId?: number | null;
+  processId?: number | null;
+  mappingType?: 'AUTO' | 'MANUAL';
+  autoReconnect?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(mqttClients)
+    .set(data)
+    .where(eq(mqttClients.id, id));
+}
+
+export async function updateMqttClientSettings(id: number, data: {
+  deviceName?: string;
+  receiveNGAlerts?: boolean;
+  receiveDailySummary?: boolean;
+  receiveWeeklySummary?: boolean;
+  isActive?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(mqttClients)
+    .set(data)
+    .where(eq(mqttClients.id, id));
+}
+
+export async function deleteMqttClient(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Soft delete
+  await db.update(mqttClients)
+    .set({ isActive: false })
+    .where(eq(mqttClients.id, id));
+}
+
+export async function disconnectAndResetMqttClient(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(mqttClients)
+    .set({
+      stationId: null,
+      processId: null,
+      connectionStatus: 'DISCONNECTED',
+      lastDisconnectedAt: new Date(),
+    })
+    .where(eq(mqttClients.id, id));
+}
+
+export async function getMqttErrorSummaries(filters?: {
+  stationId?: number;
+  summaryType?: 'DAILY' | 'WEEKLY';
+  startDate?: Date;
+  endDate?: Date;
+  limit?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions = [];
+  
+  if (filters?.stationId) {
+    conditions.push(eq(mqttErrorSummary.stationId, filters.stationId));
+  }
+  if (filters?.summaryType) {
+    conditions.push(eq(mqttErrorSummary.summaryType, filters.summaryType));
+  }
+  if (filters?.startDate) {
+    conditions.push(gte(mqttErrorSummary.summaryDate, filters.startDate));
+  }
+  if (filters?.endDate) {
+    conditions.push(lte(mqttErrorSummary.summaryDate, filters.endDate));
+  }
+  
+  return db.select()
+    .from(mqttErrorSummary)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(mqttErrorSummary.summaryDate))
+    .limit(filters?.limit || 50);
+}
+
+export async function getMqttMessageLogs(filters?: {
+  clientId?: number;
+  stationId?: number;
+  messageType?: 'NG_ALERT' | 'DAILY_SUMMARY' | 'WEEKLY_SUMMARY' | 'CUSTOM';
+  limit?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions = [];
+  
+  if (filters?.clientId) {
+    conditions.push(eq(mqttMessageLogs.targetClientId, filters.clientId));
+  }
+  if (filters?.stationId) {
+    conditions.push(eq(mqttMessageLogs.stationId, filters.stationId));
+  }
+  if (filters?.messageType) {
+    conditions.push(eq(mqttMessageLogs.messageType, filters.messageType));
+  }
+  
+  return db.select()
+    .from(mqttMessageLogs)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(mqttMessageLogs.createdAt))
+    .limit(filters?.limit || 100);
 }

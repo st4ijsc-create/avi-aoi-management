@@ -44,6 +44,7 @@ import { navItems } from "@/lib/navigation";
 import { ErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
 import MachineMapping from "@/components/MachineMapping";
 import ManualMachineMapping from "@/components/ManualMachineMapping";
+import { UnifiedMappingTable } from "@/components/UnifiedMappingTable";
 import YieldThresholdSettings from "@/components/YieldThresholdSettings";
 import ScheduledReports from "@/components/ScheduledReports";
 import { SMTPConfig } from "@/components/SMTPConfig";
@@ -2115,12 +2116,15 @@ export default function Settings() {
           {/* Machine Mapping Tab */}
           <TabsContent value="mapping">
             <div className="space-y-6">
-              {/* Auto Mapping via WebSocket */}
+              {/* Unified Mapping Table - MQTT + Manual */}
+              <UnifiedMappingTable />
+              
+              {/* Legacy Auto Mapping via WebSocket */}
               <Card className="glass-card">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Wifi className="h-5 w-5 text-primary" />
-                    Đăng ký tự động (WebSocket)
+                    Đăng ký tự động (WebSocket) - Legacy
                   </CardTitle>
                   <CardDescription>
                     Quản lý đăng ký và kết nối máy qua WebSocket - máy tự động gửi yêu cầu đăng ký
@@ -2128,22 +2132,6 @@ export default function Settings() {
                 </CardHeader>
                 <CardContent>
                   <MachineMapping />
-                </CardContent>
-              </Card>
-
-              {/* Manual Mapping via IP:Port */}
-              <Card className="glass-card">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Wifi className="h-5 w-5 text-cyan-500" />
-                    Kết nối thủ công (IP:Port)
-                  </CardTitle>
-                  <CardDescription>
-                    Cấu hình kết nối socket đến máy qua địa chỉ IP và Port - admin chủ động cấu hình
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ManualMachineMapping />
                 </CardContent>
               </Card>
             </div>

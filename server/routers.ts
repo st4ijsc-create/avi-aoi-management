@@ -1371,6 +1371,31 @@ const machineApiRouter = router({
           factory?.name,
           workshop?.name
         );
+        
+        // Publish NG alert to MQTT clients
+        try {
+          const { publishNGAlert } = await import('./services/mqttService');
+          await publishNGAlert({
+            machineId: machine.id,
+            machineName: machine.name,
+            machineCode: machine.code,
+            serialNumber: input.serialNumber,
+            stationId: machine.stationId,
+            factoryName: factory?.name,
+            workshopName: workshop?.name,
+            lineName: line?.name,
+            stationName: station?.name,
+            inspectionId,
+            timestamp: new Date(),
+            measurementResults: input.measurements?.filter(m => m.result === 'NG').map(m => ({
+              pointCode: m.pointCode,
+              result: m.result,
+              value: m.measuredValue,
+            })) || [],
+          });
+        } catch (mqttError) {
+          console.error('[MQTT] Failed to publish NG alert:', mqttError);
+        }
       }
 
       // Invalidate cache after new inspection
@@ -2641,6 +2666,153 @@ const manualMappingRouter = router({
     }),
 });
 
+// ============ MQTT CLIENT ROUTER ============
+const mqttClientRouter = router({
+  // List all MQTT clients with optional filters
+  list: protectedProcedure
+    .input(z.object({
+      approvalStatus: z.enum(['PENDING', 'APPROVED', 'REJECTED']).optional(),
+      connectionStatus: z.enum(['ONLINE', 'OFFLINE', 'DISCONNECTED']).optional(),
+      stationId: z.number().optional(),
+      mappingType: z.enum(['AUTO', 'MANUAL']).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getMqttClients(input);
+    }),
+
+  // Get single client by ID
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getMqttClientById(input.id);
+    }),
+
+  // Get pending approval count
+  pendingCount: protectedProcedure.query(async () => {
+    const clients = await db.getMqttClients({ approvalStatus: 'PENDING' });
+    return { count: clients.length };
+  }),
+
+  // Approve client registration
+  approve: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      stationId: z.number().optional(),
+      mappingType: z.enum(['AUTO', 'MANUAL']).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await db.approveMqttClient(input.id, ctx.user.id, input.stationId, input.mappingType);
+      return { success: true };
+    }),
+
+  // Reject client registration
+  reject: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      reason: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      await db.rejectMqttClient(input.id, input.reason);
+      return { success: true };
+    }),
+
+  // Update client mapping (station assignment)
+  updateMapping: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      stationId: z.number().nullable(),
+      processId: z.number().nullable().optional(),
+      mappingType: z.enum(['AUTO', 'MANUAL']).optional(),
+      autoReconnect: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateMqttClientMapping(id, data);
+      return { success: true };
+    }),
+
+  // Update client settings
+  updateSettings: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      deviceName: z.string().optional(),
+      receiveNGAlerts: z.boolean().optional(),
+      receiveDailySummary: z.boolean().optional(),
+      receiveWeeklySummary: z.boolean().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateMqttClientSettings(id, data);
+      return { success: true };
+    }),
+
+  // Delete client
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteMqttClient(input.id);
+      return { success: true };
+    }),
+
+  // Disconnect and reset mapping
+  disconnectAndReset: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.disconnectAndResetMqttClient(input.id);
+      return { success: true };
+    }),
+
+  // Get MQTT status
+  status: protectedProcedure.query(async () => {
+    const { isMqttRunning, getConnectedClientsCount } = await import('./services/mqttService');
+    return {
+      enabled: isMqttRunning(),
+      connectedClients: getConnectedClientsCount(),
+    };
+  }),
+
+  // Get error summaries
+  errorSummaries: protectedProcedure
+    .input(z.object({
+      stationId: z.number().optional(),
+      summaryType: z.enum(['DAILY', 'WEEKLY']).optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      limit: z.number().default(50),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getMqttErrorSummaries(input);
+    }),
+
+  // Get message logs
+  messageLogs: protectedProcedure
+    .input(z.object({
+      clientId: z.number().optional(),
+      stationId: z.number().optional(),
+      messageType: z.enum(['NG_ALERT', 'DAILY_SUMMARY', 'WEEKLY_SUMMARY', 'CUSTOM']).optional(),
+      limit: z.number().default(100),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getMqttMessageLogs(input);
+    }),
+
+  // Manually trigger summary (for testing)
+  triggerSummary: adminProcedure
+    .input(z.object({
+      type: z.enum(['DAILY', 'WEEKLY']),
+    }))
+    .mutation(async ({ input }) => {
+      const { triggerDailySummary, triggerWeeklySummary } = await import('./services/mqttSummaryScheduler');
+      if (input.type === 'DAILY') {
+        await triggerDailySummary();
+      } else {
+        await triggerWeeklySummary();
+      }
+      return { success: true };
+    }),
+});
+
 // Yield Alert Threshold Router
 const yieldThresholdRouter = router({
   list: protectedProcedure.query(async () => {
@@ -3363,6 +3535,7 @@ export const appRouter = router({
   template: templateRouter,
   scheduledReport: scheduledReportRouter,
   smtp: smtpRouter,
+  mqttClient: mqttClientRouter,
 });
 
 export type AppRouter = typeof appRouter;

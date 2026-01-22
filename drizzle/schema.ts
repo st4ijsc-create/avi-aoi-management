@@ -964,3 +964,133 @@ export const smtpConfig = mysqlTable("smtp_config", {
 
 export type SmtpConfig = typeof smtpConfig.$inferSelect;
 export type InsertSmtpConfig = typeof smtpConfig.$inferInsert;
+
+
+// ============= MQTT Client Management =============
+
+/**
+ * MQTT Clients - Quản lý các thiết bị client (Android/Tablet) kết nối qua MQTT
+ */
+export const mqttClients = mysqlTable("mqtt_clients", {
+  id: int("id").autoincrement().primaryKey(),
+  clientId: varchar("clientId", { length: 128 }).notNull().unique(), // MQTT client ID
+  deviceId: varchar("deviceId", { length: 128 }).notNull().unique(), // Unique device identifier (Android ID)
+  deviceName: varchar("deviceName", { length: 255 }), // Tên thiết bị do user đặt
+  deviceModel: varchar("deviceModel", { length: 100 }), // Model thiết bị (Samsung, Xiaomi, etc.)
+  osVersion: varchar("osVersion", { length: 50 }), // Android version
+  appVersion: varchar("appVersion", { length: 50 }), // App version
+  // Mapping to station
+  stationId: int("stationId"), // Công trạm được gán
+  processId: int("processId"), // Công đoạn được gán (optional, for filtering)
+  // Approval status
+  approvalStatus: mysqlEnum("approvalStatus", ["PENDING", "APPROVED", "REJECTED"]).default("PENDING").notNull(),
+  approvedBy: int("approvedBy"), // User ID who approved
+  approvedAt: timestamp("approvedAt"),
+  rejectionReason: text("rejectionReason"),
+  // Mapping type
+  mappingType: mysqlEnum("mappingType", ["AUTO", "MANUAL"]).default("MANUAL").notNull(),
+  autoReconnect: boolean("autoReconnect").default(true).notNull(), // Tự động kết nối lại khi disconnect
+  // Connection status
+  connectionStatus: mysqlEnum("connectionStatus", ["ONLINE", "OFFLINE", "DISCONNECTED"]).default("OFFLINE").notNull(),
+  lastConnectedAt: timestamp("lastConnectedAt"),
+  lastDisconnectedAt: timestamp("lastDisconnectedAt"),
+  lastHeartbeat: timestamp("lastHeartbeat"),
+  // Settings
+  receiveNGAlerts: boolean("receiveNGAlerts").default(true).notNull(), // Nhận cảnh báo NG
+  receiveDailySummary: boolean("receiveDailySummary").default(true).notNull(), // Nhận tổng hợp ngày
+  receiveWeeklySummary: boolean("receiveWeeklySummary").default(true).notNull(), // Nhận tổng hợp tuần
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_mqtt_clients_clientId").on(table.clientId),
+  index("idx_mqtt_clients_deviceId").on(table.deviceId),
+  index("idx_mqtt_clients_station").on(table.stationId),
+  index("idx_mqtt_clients_approval").on(table.approvalStatus),
+  index("idx_mqtt_clients_connection").on(table.connectionStatus),
+  index("idx_mqtt_clients_active").on(table.isActive),
+]);
+
+export type MqttClient = typeof mqttClients.$inferSelect;
+export type InsertMqttClient = typeof mqttClients.$inferInsert;
+
+/**
+ * MQTT Subscriptions - Các topic mà client đăng ký nhận
+ */
+export const mqttSubscriptions = mysqlTable("mqtt_subscriptions", {
+  id: int("id").autoincrement().primaryKey(),
+  clientId: int("clientId").notNull(), // FK to mqtt_clients
+  topic: varchar("topic", { length: 255 }).notNull(), // MQTT topic pattern
+  qos: int("qos").default(1).notNull(), // Quality of Service (0, 1, 2)
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_mqtt_subs_client").on(table.clientId),
+  index("idx_mqtt_subs_topic").on(table.topic),
+]);
+
+export type MqttSubscription = typeof mqttSubscriptions.$inferSelect;
+export type InsertMqttSubscription = typeof mqttSubscriptions.$inferInsert;
+
+/**
+ * MQTT Error Summary - Tổng hợp lỗi theo ngày/tuần cho từng điểm đo và trạm
+ */
+export const mqttErrorSummary = mysqlTable("mqtt_error_summary", {
+  id: int("id").autoincrement().primaryKey(),
+  summaryType: mysqlEnum("summaryType", ["DAILY", "WEEKLY"]).notNull(),
+  summaryDate: timestamp("summaryDate").notNull(), // Ngày/tuần tổng hợp
+  stationId: int("stationId").notNull(),
+  processId: int("processId"), // Công đoạn (optional)
+  measurementPointId: int("measurementPointId"), // Điểm đo cụ thể (optional)
+  // Statistics
+  totalInspections: int("totalInspections").default(0).notNull(),
+  totalNG: int("totalNG").default(0).notNull(),
+  totalNTF: int("totalNTF").default(0).notNull(),
+  ngRate: decimal("ngRate", { precision: 5, scale: 2 }).default("0").notNull(),
+  // Top NG points JSON
+  topNGPoints: json("topNGPoints").$type<Array<{
+    pointId: number;
+    pointName: string;
+    ngCount: number;
+    percentage: number;
+  }>>(),
+  // Sent status
+  sentToClients: boolean("sentToClients").default(false).notNull(),
+  sentAt: timestamp("sentAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_error_summary_type").on(table.summaryType),
+  index("idx_error_summary_date").on(table.summaryDate),
+  index("idx_error_summary_station").on(table.stationId),
+  index("idx_error_summary_sent").on(table.sentToClients),
+]);
+
+export type MqttErrorSummary = typeof mqttErrorSummary.$inferSelect;
+export type InsertMqttErrorSummary = typeof mqttErrorSummary.$inferInsert;
+
+/**
+ * MQTT Message Log - Log các message đã gửi qua MQTT
+ */
+export const mqttMessageLogs = mysqlTable("mqtt_message_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  messageType: mysqlEnum("messageType", ["NG_ALERT", "DAILY_SUMMARY", "WEEKLY_SUMMARY", "CUSTOM"]).notNull(),
+  topic: varchar("topic", { length: 255 }).notNull(),
+  payload: json("payload").notNull(), // Message content
+  targetClientId: int("targetClientId"), // Specific client (null = broadcast)
+  stationId: int("stationId"), // Related station
+  inspectionId: int("inspectionId"), // Related inspection (for NG alerts)
+  deliveryStatus: mysqlEnum("deliveryStatus", ["PENDING", "DELIVERED", "FAILED"]).default("PENDING").notNull(),
+  deliveredAt: timestamp("deliveredAt"),
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_mqtt_logs_type").on(table.messageType),
+  index("idx_mqtt_logs_topic").on(table.topic),
+  index("idx_mqtt_logs_client").on(table.targetClientId),
+  index("idx_mqtt_logs_station").on(table.stationId),
+  index("idx_mqtt_logs_status").on(table.deliveryStatus),
+  index("idx_mqtt_logs_created").on(table.createdAt),
+]);
+
+export type MqttMessageLog = typeof mqttMessageLogs.$inferSelect;
+export type InsertMqttMessageLog = typeof mqttMessageLogs.$inferInsert;

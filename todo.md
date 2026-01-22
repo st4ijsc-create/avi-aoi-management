@@ -1375,3 +1375,59 @@
 ### Testing
 - [x] All 168 unit tests passing
 - [x] UI tested and working correctly
+
+
+## Phase 78: MQTT Integration & Client Management (Jan 22, 2025)
+
+### 1. Database Schema
+- [x] Create mqtt_clients table (id, clientId, deviceId, stationId, status, approvalStatus, lastSeen, createdAt)
+- [x] Create mqtt_subscriptions table (id, clientId, topic, createdAt)
+- [x] Create mqtt_error_summary table for storing aggregated summaries
+- [x] Create mqtt_message_logs table for tracking sent messages
+- [x] Add mappingType column (AUTO/MANUAL) to mqtt_clients
+- [x] Add autoReconnect flag to client registration
+- [x] Add notification settings (receiveNGAlerts, receiveDailySummary, receiveWeeklySummary)
+
+### 2. MQTT Server Setup
+- [x] Install aedes package for MQTT broker
+- [x] Create MQTT broker service with authentication (mqttService.ts)
+- [x] Implement client connection/disconnection handlers
+- [x] Setup topic structure: avi/factory/{id}/workshop/{id}/station/{id}/errors
+- [x] Integrate MQTT with existing Express server (disabled by default, MQTT_ENABLED=true to enable)
+
+### 3. Client Registration & Auto-Mapping
+- [x] Create API for client registration via MQTT auth
+- [x] Create admin UI for approving/rejecting client registrations
+- [x] Implement auto-reconnect logic based on deviceId
+- [x] Store client-station mapping in database
+- [x] Allow disconnect and re-mapping for auto-connected clients (disconnectAndReset API)
+- [x] Update mapping settings (stationId, processId, mappingType)
+- [x] Update notification settings per client
+
+### 4. Scheduled Error Summary
+- [x] Create daily error summary aggregation job (6:00 AM)
+- [x] Create weekly error summary aggregation job (Monday 6:00 AM)
+- [x] Store summary data in mqtt_error_summary table
+- [x] Publish summary to MQTT topics for relevant stations
+- [x] Include measurement point statistics in summary (topNGPoints)
+
+### 5. Unified Mapping Table UI
+- [x] Create UnifiedMappingTable component
+- [x] Merge MQTT clients and manual connections in same table
+- [x] Add tabs filter (All/MQTT/Manual)
+- [x] Add search and status filter
+- [x] Add approve/reject/edit/delete actions
+- [x] Display client status (online/offline/pending approval)
+- [x] Add notification settings toggle (NG alerts, daily/weekly summary)
+
+### 6. MQTT Error Message Publishing
+- [x] Implement publishNGAlert function in mqttService.ts
+- [x] Integrate with inspection router - publish on NG detection
+- [x] Include measurement results in MQTT payload
+- [x] Implement publishSummary function for daily/weekly summaries
+- [x] Log messages to mqtt_message_logs table
+
+### 7. Testing
+- [x] All 168 unit tests passing
+- [x] TypeScript compilation successful
+- [x] UI tested and working correctly
