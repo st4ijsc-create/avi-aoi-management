@@ -3070,28 +3070,58 @@ const scheduledReportRouter = router({
       }
 
       try {
-        const { generateNGVisualReport, generateNGVisualEmailHTML } = await import('./services/reportGenerator');
+        const { generateNGVisualReport, generateNGVisualEmailHTML, generateReport } = await import('./services/reportGenerator');
         const { createTransporterFromConfig } = await import('./_core/email');
         
         // Generate report data
         const reportData = await generateNGVisualReport({
           startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days
           endDate: new Date(),
+          factoryId: report.factoryId ?? undefined,
+          workshopId: report.workshopId ?? undefined,
+          lineId: report.lineId ?? undefined,
         });
 
-        // Generate HTML email
-        const emailHtml = generateNGVisualEmailHTML(reportData);
+        // Get customization from report
+        const customization = {
+          logoUrl: (report as any).logoUrl,
+          primaryColor: (report as any).primaryColor,
+          footerText: (report as any).footerText,
+          reportFormat: (report as any).reportFormat || 'HTML',
+        };
+
+        // Generate HTML email (always needed for email body)
+        const emailHtml = generateNGVisualEmailHTML(reportData, customization);
 
         // Create email transporter
         const transporter = createTransporterFromConfig(smtpConfig);
 
-        // Send test email
-        await transporter.sendMail({
+        // Prepare email options
+        const mailOptions: any = {
           from: `${smtpConfig.fromName} <${smtpConfig.fromEmail}>`,
           to: report.recipients.join(','),
           subject: `[TEST] ${report.name} - NG Visual Report`,
           html: emailHtml,
-        });
+        };
+
+        // Add attachment if PDF or Excel format
+        if (customization.reportFormat === 'PDF' || customization.reportFormat === 'EXCEL') {
+          const { content, mimeType, extension } = await generateReport(
+            reportData,
+            customization.reportFormat,
+            customization
+          );
+          
+          const dateStr = new Date().toISOString().split('T')[0];
+          mailOptions.attachments = [{
+            filename: `NG_Visual_Report_${dateStr}.${extension}`,
+            content: content,
+            contentType: mimeType,
+          }];
+        }
+
+        // Send test email
+        await transporter.sendMail(mailOptions);
 
         // Log test send
         await db.createScheduledReportLog({
@@ -3102,7 +3132,7 @@ const scheduledReportRouter = router({
           errorMessage: null,
         });
 
-        return { success: true, message: 'Test email sent successfully' };
+        return { success: true, message: `Test email sent successfully (format: ${customization.reportFormat})` };
       } catch (error: any) {
         // Log failure
         await db.createScheduledReportLog({
@@ -3118,6 +3148,44 @@ const scheduledReportRouter = router({
           message: `Failed to send test email: ${error.message}` 
         });
       }
+    }),
+
+  // Preview email with real data
+  previewEmail: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const report = await db.getScheduledReportById(input.id);
+      if (!report) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Report not found' });
+      }
+
+      const { generateNGVisualReport, generateNGVisualEmailHTML } = await import('./services/reportGenerator');
+      
+      // Generate report data with real filters
+      const reportData = await generateNGVisualReport({
+        startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days
+        endDate: new Date(),
+        factoryId: report.factoryId ?? undefined,
+        workshopId: report.workshopId ?? undefined,
+        lineId: report.lineId ?? undefined,
+      });
+
+      // Get customization from report
+      const customization = {
+        logoUrl: (report as any).logoUrl,
+        primaryColor: (report as any).primaryColor,
+        footerText: (report as any).footerText,
+        reportFormat: (report as any).reportFormat || 'HTML',
+      };
+
+      // Generate HTML email
+      const emailHtml = generateNGVisualEmailHTML(reportData, customization);
+
+      return {
+        html: emailHtml,
+        reportData,
+        customization,
+      };
     }),
 
   uploadLogo: adminProcedure

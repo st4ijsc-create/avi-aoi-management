@@ -1,7 +1,7 @@
 import cron, { ScheduledTask } from "node-cron";
 import * as db from "../db";
-import { sendEmail } from "../_core/email";
-import { generateNGVisualReport, generateNGVisualEmailHTML } from "./reportGenerator";
+import { sendEmail, createTransporterFromConfig } from "../_core/email";
+import { generateNGVisualReport, generateNGVisualEmailHTML, generateReport, ReportCustomization } from "./reportGenerator";
 
 // Store active cron jobs
 const activeCronJobs = new Map<number, ScheduledTask>();
@@ -51,6 +51,18 @@ async function executeScheduledReport(reportId: number) {
       return;
     }
 
+    // Get SMTP config
+    const smtpConfig = await db.getSmtpConfig();
+    if (!smtpConfig) {
+      console.error(`[ReportScheduler] No SMTP config found, cannot send report ${reportId}`);
+      await db.createScheduledReportLog({
+        reportId,
+        status: "FAILED",
+        errorMessage: "SMTP configuration not found",
+      });
+      return;
+    }
+
     // Calculate date range based on report type
     const endDate = new Date();
     let startDate = new Date();
@@ -74,10 +86,10 @@ async function executeScheduledReport(reportId: number) {
         startDate.setDate(startDate.getDate() - 1);
     }
 
-    // Filters would come from report configuration if needed
-    const factoryId = undefined;
-    const workshopId = undefined;
-    const lineId = undefined;
+    // Get filters from report configuration
+    const factoryId = report.factoryId ?? undefined;
+    const workshopId = report.workshopId ?? undefined;
+    const lineId = report.lineId ?? undefined;
 
     // Generate report data
     const reportData = await generateNGVisualReport({
@@ -88,8 +100,16 @@ async function executeScheduledReport(reportId: number) {
       lineId,
     });
 
-    // Generate HTML email
-    const emailHTML = generateNGVisualEmailHTML(reportData);
+    // Get customization from report
+    const customization: ReportCustomization = {
+      logoUrl: (report as any).logoUrl,
+      primaryColor: (report as any).primaryColor,
+      footerText: (report as any).footerText,
+      reportFormat: (report as any).reportFormat || 'HTML',
+    };
+
+    // Generate HTML email (always needed for email body)
+    const emailHTML = generateNGVisualEmailHTML(reportData, customization);
 
     // Send email to all recipients
     const recipients = report.recipients || [];
@@ -103,36 +123,57 @@ async function executeScheduledReport(reportId: number) {
       return;
     }
 
-    const emailResult = await sendEmail({
-      to: recipients,
+    // Create transporter from SMTP config
+    const transporter = createTransporterFromConfig(smtpConfig);
+
+    // Prepare email options
+    const mailOptions: any = {
+      from: `${smtpConfig.fromName} <${smtpConfig.fromEmail}>`,
+      to: recipients.join(','),
       subject: `${report.name} - ${new Date().toLocaleDateString("vi-VN")}`,
       html: emailHTML,
+    };
+
+    // Add attachment if PDF or Excel format
+    if (customization.reportFormat === 'PDF' || customization.reportFormat === 'EXCEL') {
+      try {
+        const { content, mimeType, extension } = await generateReport(
+          reportData,
+          customization.reportFormat,
+          customization
+        );
+        
+        const dateStr = new Date().toISOString().split('T')[0];
+        mailOptions.attachments = [{
+          filename: `NG_Visual_Report_${dateStr}.${extension}`,
+          content: content,
+          contentType: mimeType,
+        }];
+        
+        console.log(`[ReportScheduler] Generated ${customization.reportFormat} attachment for report ${reportId}`);
+      } catch (attachmentError: any) {
+        console.error(`[ReportScheduler] Failed to generate attachment for report ${reportId}:`, attachmentError);
+        // Continue sending email without attachment
+      }
+    }
+
+    // Send email
+    await transporter.sendMail(mailOptions);
+
+    console.log(`[ReportScheduler] Report ${reportId} sent successfully to ${recipients.length} recipients (format: ${customization.reportFormat})`);
+    
+    // Log success
+    await db.createScheduledReportLog({
+      reportId,
+      status: "SUCCESS",
+      recipientCount: recipients.length,
     });
 
-    if (emailResult.success) {
-      console.log(`[ReportScheduler] Report ${reportId} sent successfully to ${recipients.length} recipients`);
-      
-      // Log success
-      await db.createScheduledReportLog({
-        reportId,
-        status: "SUCCESS",
-        recipientCount: recipients.length,
-      });
+    // Update lastSentAt
+    await db.updateScheduledReport(reportId, {
+      lastSentAt: new Date(),
+    });
 
-      // Update lastSentAt
-      await db.updateScheduledReport(reportId, {
-        lastSentAt: new Date(),
-      });
-    } else {
-      console.error(`[ReportScheduler] Failed to send report ${reportId}:`, emailResult.error);
-      
-      // Log failure
-      await db.createScheduledReportLog({
-        reportId,
-        status: "FAILED",
-        errorMessage: emailResult.error,
-      });
-    }
   } catch (error: any) {
     console.error(`[ReportScheduler] Error executing report ${reportId}:`, error);
     

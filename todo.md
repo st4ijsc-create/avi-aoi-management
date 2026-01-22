@@ -1337,3 +1337,41 @@
 - [x] Test logo upload filename generation
 - [x] Test base64 data extraction
 - [x] All 168 unit tests passing
+
+## Phase 77: PDF/Excel Generation & Email Template Customization (Jan 22, 2025)
+
+### Email Template với Customization
+- [x] Cập nhật generateNGVisualEmailHTML để sử dụng logoUrl, primaryColor, footerText
+- [x] Tạo email template với header động (logo + màu chủ đạo)
+- [x] Tạo footer động với custom text
+- [x] Hỗ trợ inline CSS cho email compatibility
+- [x] Gradient colors tự động tính từ primary color
+
+### PDF Generation
+- [x] Install puppeteer cho PDF generation
+- [x] Tạo generateNGVisualPDF function
+- [x] Include charts và tables trong PDF
+- [x] Support custom logo và colors trong PDF
+
+### Excel Generation
+- [x] Sử dụng exceljs để generate Excel files
+- [x] Tạo generateNGVisualExcel function
+- [x] Include data tables với formatting
+- [x] Add summary sheet với statistics
+- [x] Styled headers và alternating row colors
+
+### Cập nhật Send Email Logic
+- [x] Cập nhật sendTest để hỗ trợ PDF/Excel attachments
+- [x] Cập nhật cron job để gửi đúng format đã chọn
+- [x] Xử lý attachments trong nodemailer
+
+### Preview Email với Dữ liệu Thực
+- [x] Tạo API endpoint previewEmail để preview email với data thực
+- [x] Thêm nút "Xem trước với dữ liệu thực" trong UI (icon Eye)
+- [x] Hiển thị preview trong modal với HTML rendered
+- [x] Hiển thị summary statistics (Tổng kiểm tra, Tổng NG, Tỷ lệ NG, Định dạng)
+- [x] Fix toFixed bug trong formatPercent function
+
+### Testing
+- [x] All 168 unit tests passing
+- [x] UI tested and working correctly

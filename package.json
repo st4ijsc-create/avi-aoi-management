@@ -61,6 +61,7 @@
     "dotenv": "^17.2.2",
     "drizzle-orm": "^0.44.5",
     "embla-carousel-react": "^8.6.0",
+    "exceljs": "^4.4.0",
     "express": "^4.21.2",
     "framer-motion": "^12.23.22",
     "html2canvas": "^1.4.1",
@@ -79,6 +80,7 @@
     "otplib": "^13.1.0",
     "papaparse": "^5.5.3",
     "pdfkit": "^0.17.2",
+    "puppeteer": "^24.35.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.1",
     "react-day-picker": "^9.11.1",
@@ -135,6 +137,9 @@
     },
     "overrides": {
       "tailwindcss>nanoid": "3.3.7"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "puppeteer"
+    ]
   }
 }

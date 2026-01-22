@@ -12,7 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Loader2, Mail, Calendar, Users, Filter, Send, Palette, Image, FileText, Upload } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, Mail, Calendar, Users, Filter, Send, Palette, Image, FileText, Upload, Eye } from "lucide-react";
 import { DeleteConfirmDialog } from "./ConfirmDialog";
 
 type ScheduledReport = {
@@ -43,6 +43,8 @@ export default function ScheduledReports() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [reportToDelete, setReportToDelete] = useState<ScheduledReport | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+  const [previewReportId, setPreviewReportId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState({
@@ -186,6 +188,11 @@ export default function ScheduledReports() {
   const handleDelete = (report: ScheduledReport) => {
     setReportToDelete(report);
     setDeleteDialogOpen(true);
+  };
+
+  const handlePreview = (reportId: number) => {
+    setPreviewReportId(reportId);
+    setPreviewDialogOpen(true);
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -350,6 +357,15 @@ export default function ScheduledReports() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handlePreview(report.id)}
+                        className="h-8 w-8 p-0"
+                        title="Xem trước email"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -776,7 +792,98 @@ export default function ScheduledReports() {
           onConfirm={() => reportToDelete && deleteMutation.mutate({ id: reportToDelete.id })}
           isLoading={deleteMutation.isPending}
         />
+
+        {/* Preview Email Dialog */}
+        <EmailPreviewDialog
+          open={previewDialogOpen}
+          onOpenChange={setPreviewDialogOpen}
+          reportId={previewReportId}
+        />
       </CardContent>
     </Card>
+  );
+}
+
+// Email Preview Dialog Component
+function EmailPreviewDialog({
+  open,
+  onOpenChange,
+  reportId,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  reportId: number | null;
+}) {
+  const { data, isLoading, error } = trpc.scheduledReport.previewEmail.useQuery(
+    { id: reportId! },
+    { enabled: open && reportId !== null }
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Eye className="h-5 w-5" />
+            Xem trước email với dữ liệu thực
+          </DialogTitle>
+          <DialogDescription>
+            Preview email sẽ được gửi với dữ liệu 7 ngày gần nhất
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="flex-1 overflow-hidden">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-96">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-muted-foreground">Đang tải preview...</span>
+            </div>
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center h-96 text-center">
+              <Mail className="h-12 w-12 text-destructive mb-4" />
+              <h3 className="text-lg font-semibold text-destructive mb-2">Lỗi tải preview</h3>
+              <p className="text-sm text-muted-foreground">{error.message}</p>
+            </div>
+          ) : data ? (
+            <div className="h-[60vh] overflow-auto border rounded-lg bg-white">
+              <iframe
+                srcDoc={data.html}
+                className="w-full h-full border-0"
+                title="Email Preview"
+              />
+            </div>
+          ) : null}
+        </div>
+
+        {data && (
+          <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div>
+                <span className="text-muted-foreground">Tổng kiểm tra:</span>
+                <span className="ml-2 font-medium">{data.reportData.summary.totalInspections.toLocaleString()}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Tổng NG:</span>
+                <span className="ml-2 font-medium text-red-500">{data.reportData.summary.totalNG.toLocaleString()}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Tỷ lệ NG:</span>
+                <span className="ml-2 font-medium">{Number(data.reportData.summary.ngRate || 0).toFixed(2)}%</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Định dạng:</span>
+                <Badge variant="secondary" className="ml-2">{data.customization.reportFormat}</Badge>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Đóng
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
