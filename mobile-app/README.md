@@ -69,9 +69,15 @@ eas build --platform ios --profile preview
 
 ### MQTT Settings
 Trong app, vào **Settings** để cấu hình:
-- **Broker URL**: URL của MQTT broker (ví dụ: `mqtt://your-server.com`)
+- **Broker URL**: URL của MQTT broker
+  - Local development: `mqtt://localhost` hoặc `mqtt://10.0.2.2` (Android emulator)
+  - Production: `mqtt://your-server-ip`
 - **Port**: Port của MQTT broker (mặc định: 1883)
 - **Username/Password**: Thông tin xác thực (nếu có)
+
+**Lưu ý với Android Emulator:**
+- Sử dụng `10.0.2.2` thay vì `localhost` để kết nối đến host machine
+- Đảm bảo MQTT broker đang chạy và port 1883 được mở
 
 ### Notification Settings
 - **Thời gian hiển thị**: Thời gian popup hiển thị (giây)

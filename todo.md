@@ -1503,3 +1503,22 @@
 - [x] MQTT Dashboard hiển thị "Online"
 - [ ] Test MQTT connection
 - [ ] Verify MQTT Dashboard hiển thị đúng
+
+
+## Phase 81: Mobile App Build & MQTT Testing (Jan 22, 2025)
+
+### 1. Build Mobile App
+- [x] Cài đặt dependencies cho mobile-app (npm install)
+- [x] Mobile app sẵn sàng chạy với Expo
+- [x] Cập nhật README với hướng dẫn kết nối MQTT
+
+### 2. Expose MQTT Port
+- [x] Expose port 1883 cho external access
+- [x] Public URL: https://1883-idqnmv2bbepy0zwa36z11-7e70e14f.sg1.manus.computer
+- [x] Lưu ý: MQTT sử dụng TCP, không phải HTTPS
+
+### 3. Test MQTT Connection
+- [x] Kiểm tra MQTT broker đang chạy (port 1883)
+- [x] Test publish với mosquitto_pub - Thành công
+- [x] Test subscribe với mosquitto_sub - Thành công
+- [x] Message được truyền đúng giữa publisher và subscriber
