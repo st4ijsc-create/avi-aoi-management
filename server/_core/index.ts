@@ -9,6 +9,8 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { initializeSocket } from "./socket";
 import { startOfflineMonitor } from "./offlineMonitor";
+import { initializeEmailTransporter } from "./email";
+import { initializeScheduledReports, shutdownScheduledReports } from "../services/reportScheduler";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -50,6 +52,12 @@ async function startServer() {
   
   // Start offline machine monitor
   startOfflineMonitor();
+  
+  // Initialize email transporter
+  initializeEmailTransporter();
+  
+  // Initialize scheduled reports
+  await initializeScheduledReports();
 
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
@@ -67,6 +75,25 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+  });
+  
+  // Graceful shutdown
+  process.on("SIGTERM", () => {
+    console.log("SIGTERM received, shutting down gracefully...");
+    shutdownScheduledReports();
+    server.close(() => {
+      console.log("Server closed");
+      process.exit(0);
+    });
+  });
+  
+  process.on("SIGINT", () => {
+    console.log("SIGINT received, shutting down gracefully...");
+    shutdownScheduledReports();
+    server.close(() => {
+      console.log("Server closed");
+      process.exit(0);
+    });
   });
 }
 

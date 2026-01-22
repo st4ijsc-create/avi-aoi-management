@@ -1167,3 +1167,58 @@
 - [ ] Thêm upload 2D image field trong Machine CRUD (Settings > Máy móc)
 - [ ] Preview ảnh 2D khi upload
 - [ ] Validate image format (SVG, PNG, JPG)
+
+## Email Scheduling UI & Cron Job Scheduler
+
+### Database Schema
+- [x] scheduled_reports table đã có sẵn trong schema (drizzle/schema.ts lines 882-918)
+- [x] scheduled_report_logs table đã có sẵn trong schema (drizzle/schema.ts lines 926-941)
+- [x] Tables đã tồn tại trong database
+
+### Backend API
+- [x] scheduledReport router đã có sẵn với CRUD procedures (list, create, update, delete, getLogs)
+- [x] Database helpers đã có sẵn: getScheduledReports, createScheduledReport, updateScheduledReport, deleteScheduledReport
+- [x] Tạo email service với Nodemailer (server/_core/email.ts)
+- [x] Tạo report generator (server/services/reportGenerator.ts) - generate NG Visual report data
+- [x] Tạo HTML email template cho NG Visual reports
+- [x] Thêm scheduler hooks vào create/update/delete procedures
+
+### Settings UI - Scheduled Reports Tab
+- [x] Thêm "Báo cáo tự động" tab trong Settings page (Hệ thống category)
+- [x] Tạo ScheduledReports component (client/src/components/ScheduledReports.tsx)
+- [x] Hiển thị danh sách scheduled reports với status badges
+- [x] Thêm "Tạo báo cáo mới" button và dialog
+- [x] Dialog form fields: name, description, reportType, schedule (DAILY/WEEKLY/MONTHLY), scheduleTime, dayOfWeek/dayOfMonth, recipients
+- [x] Edit dialog để sửa scheduled report
+- [x] Delete confirmation dialog
+- [x] Toggle active/inactive switch
+- [x] Hiển thị lastSentAt và nextScheduledAt
+- [x] Empty state khi chưa có reports
+- [x] Test UI trên browser - hiển thị đúng
+
+### Cron Job Scheduler
+- [x] Install node-cron và nodemailer packages
+- [x] Tạo reportScheduler service (server/services/reportScheduler.ts)
+- [x] scheduleToCronExpression() function convert schedule config sang cron expression
+- [x] scheduleReport() function để schedule/re-schedule reports
+- [x] stopScheduledReport() function để stop cron jobs
+- [x] initializeScheduledReports() được gọi khi server start (server/_core/index.ts)
+- [x] shutdownScheduledReports() được gọi khi server shutdown (SIGTERM/SIGINT)
+- [x] executeScheduledReport() function generate report + send email
+- [x] Log execution results vào scheduled_report_logs table
+- [x] Error handling và logging
+- [x] Scheduler hooks trong create/update/delete procedures
+
+### Email Template
+- [x] Tạo HTML email template cho NG Visual report (generateNGVisualEmailHTML function)
+- [x] Include report summary (totalInspections, totalNG, ngRate, avgNGPerProduct)
+- [x] Include top NG points table
+- [x] Include trend chart data
+- [x] Professional HTML/CSS styling
+
+### Unit Tests
+- [ ] Test scheduledReport CRUD APIs
+- [ ] Test cron expression conversion
+- [ ] Test generateNGVisualReport function
+- [ ] Test email sending function
+- [ ] Test scheduler initialization

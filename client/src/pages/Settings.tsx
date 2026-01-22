@@ -37,13 +37,15 @@ import {
   ChevronRight,
   Factory,
   Cog,
-  Award
+  Award,
+  Mail
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { ErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
 import MachineMapping from "@/components/MachineMapping";
 import ManualMachineMapping from "@/components/ManualMachineMapping";
 import YieldThresholdSettings from "@/components/YieldThresholdSettings";
+import ScheduledReports from "@/components/ScheduledReports";
 import { useState } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
@@ -774,6 +776,15 @@ export default function Settings() {
                 </button>
                 {!collapsedCategories['system'] && (
                   <div className="ml-6 space-y-1">
+                    <button
+                      onClick={() => setActiveTab('scheduled-reports')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'scheduled-reports' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <Mail className="h-4 w-4" />
+                      Báo cáo tự động
+                    </button>
                     <button
                       onClick={() => window.location.href = '/audit-logs'}
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-accent transition-colors"
@@ -2131,6 +2142,11 @@ export default function Settings() {
           {/* Yield Thresholds Tab */}
           <TabsContent value="yield-thresholds">
             <YieldThresholdSettings />
+          </TabsContent>
+
+          {/* Scheduled Reports Tab */}
+          <TabsContent value="scheduled-reports">
+            <ScheduledReports />
           </TabsContent>
             </div>
           </div>

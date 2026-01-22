@@ -2923,6 +2923,8 @@ const workstationRouter = router({
 });
 
 // ============ SCHEDULED REPORT ROUTER ============
+import { scheduleReport, stopScheduledReport } from "./services/reportScheduler";
+
 const scheduledReportRouter = router({
   list: protectedProcedure
     .input(z.object({
@@ -2964,6 +2966,21 @@ const scheduledReportRouter = router({
         ...input,
         createdBy: ctx.user.id,
       });
+      
+      // Schedule the report if active
+      if (input.isActive) {
+        const report = await db.getScheduledReportById(id);
+        if (report) {
+          scheduleReport({
+            id: report.id,
+            schedule: report.schedule,
+            scheduleTime: report.scheduleTime,
+            scheduleDayOfWeek: report.scheduleDayOfWeek,
+            scheduleDayOfMonth: report.scheduleDayOfMonth,
+          });
+        }
+      }
+      
       return { id };
     }),
 
@@ -2990,12 +3007,32 @@ const scheduledReportRouter = router({
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
       await db.updateScheduledReport(id, data);
+      
+      // Re-schedule if schedule/time changed or isActive changed
+      const report = await db.getScheduledReportById(id);
+      if (report) {
+        if (report.isActive) {
+          scheduleReport({
+            id: report.id,
+            schedule: report.schedule,
+            scheduleTime: report.scheduleTime,
+            scheduleDayOfWeek: report.scheduleDayOfWeek,
+            scheduleDayOfMonth: report.scheduleDayOfMonth,
+          });
+        } else {
+          stopScheduledReport(id);
+        }
+      }
+      
       return { success: true };
     }),
 
   delete: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
+      // Stop scheduler first
+      stopScheduledReport(input.id);
+      
       await db.deleteScheduledReport(input.id);
       return { success: true };
     }),
