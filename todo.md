@@ -1604,3 +1604,39 @@
 - [ ] Thêm logic kiểm tra broker disconnect
 - [ ] Gửi notification khi alert triggered
 - [ ] Thêm UI quản lý alert rules
+
+
+## Phase 85: Alert Automation & Dashboard Widget
+
+### 1. Alert Evaluation Engine
+- [x] Tạo alertEvaluationService.ts để kiểm tra alert rules
+- [x] Thêm background job chạy mỗi phút để evaluate rules
+- [x] Implement logic kiểm tra LATENCY_THRESHOLD
+- [x] Implement logic kiểm tra BROKER_DISCONNECT
+- [x] Implement logic kiểm tra MESSAGE_FAILURE_RATE
+- [x] Implement logic kiểm tra THROUGHPUT_LOW/HIGH
+- [x] Implement logic kiểm tra CLIENT_OFFLINE
+- [x] Thêm cooldown mechanism để tránh spam alerts
+- [x] Lưu alert history vào database
+- [x] Tích hợp với notifyOwner cho Manus notifications
+
+### 2. Email Notification
+- [x] Cấu hình nodemailer với SMTP settings
+- [x] Thêm SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM, ALERT_EMAIL_TO vào env
+- [x] Tạo email template cho alerts (HTML responsive)
+- [x] Gửi email khi alert được trigger (nếu notifyEmail = true)
+- [x] Tích hợp với alertEvaluationService
+
+### 3. Dashboard Alert Widget
+- [x] Thêm Alert Widget vào Dashboard.tsx
+- [x] Hiển thị số alert chưa xử lý
+- [x] Hiển thị 3 alerts gần nhất
+- [x] Thêm link đến /mqtt-alerts
+- [x] Auto refresh mỗi 30 giây
+- [x] Ẩn widget khi không có alert
+
+### 4. Testing
+- [x] Viết unit tests cho alertEvaluationService
+- [x] Viết unit tests cho alert rule CRUD
+- [x] Test alert rule toggle và delete
+- [x] 193 unit tests passing

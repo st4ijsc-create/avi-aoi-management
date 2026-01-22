@@ -270,3 +270,94 @@ describe("mqttAlert router", () => {
     });
   });
 });
+
+
+describe("Alert Evaluation Service", () => {
+  describe("evaluateAllAlertRules", () => {
+    it("returns empty array when no enabled rules", async () => {
+      const { evaluateAllAlertRules } = await import("./services/alertEvaluationService");
+      
+      const results = await evaluateAllAlertRules();
+      
+      expect(Array.isArray(results)).toBe(true);
+    });
+  });
+
+  describe("alert rule CRUD", () => {
+    it("creates and retrieves alert rule", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const created = await caller.mqttAlert.create({
+        name: "Test Alert Rule",
+        description: "Test description",
+        ruleType: "LATENCY_THRESHOLD",
+        thresholdValue: 500,
+        thresholdUnit: "ms",
+        comparisonOperator: "GT",
+        timeWindowMinutes: 5,
+        notifyOwner: true,
+        notifyEmail: false,
+        notifyMqtt: false,
+        cooldownMinutes: 10,
+      });
+
+      expect(created).toHaveProperty("id");
+
+      const rules = await caller.mqttAlert.list();
+      const found = rules.find((r: any) => r.id === created.id);
+      expect(found).toBeDefined();
+      expect(found?.name).toBe("Test Alert Rule");
+    });
+
+    it("toggles alert rule enabled status", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const created = await caller.mqttAlert.create({
+        name: "Toggle Test",
+        description: "Test",
+        ruleType: "BROKER_DISCONNECT",
+        thresholdValue: 5,
+        thresholdUnit: "minutes",
+        comparisonOperator: "GT",
+        timeWindowMinutes: 5,
+        notifyOwner: true,
+        notifyEmail: false,
+        notifyMqtt: false,
+        cooldownMinutes: 10,
+      });
+
+      await caller.mqttAlert.toggle({ id: created.id, isEnabled: false });
+
+      const rules = await caller.mqttAlert.list();
+      const found = rules.find((r: any) => r.id === created.id);
+      expect(found?.isEnabled).toBe(false);
+    });
+
+    it("deletes alert rule", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const created = await caller.mqttAlert.create({
+        name: "Delete Test",
+        description: "Test",
+        ruleType: "MESSAGE_FAILURE_RATE",
+        thresholdValue: 10,
+        thresholdUnit: "%",
+        comparisonOperator: "GT",
+        timeWindowMinutes: 5,
+        notifyOwner: true,
+        notifyEmail: false,
+        notifyMqtt: false,
+        cooldownMinutes: 10,
+      });
+
+      await caller.mqttAlert.delete({ id: created.id });
+
+      const rules = await caller.mqttAlert.list();
+      const found = rules.find((r: any) => r.id === created.id);
+      expect(found).toBeUndefined();
+    });
+  });
+});

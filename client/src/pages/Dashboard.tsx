@@ -1194,6 +1194,9 @@ export default function Dashboard() {
             </div>
             )}
 
+            {/* MQTT Alert Widget */}
+            <MqttAlertWidget />
+
             {/* Shift Stats & Top/Bottom Machines */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Shift Statistics */}
@@ -2460,5 +2463,67 @@ export default function Dashboard() {
         </DialogContent>
       </Dialog>
     </DashboardLayout>
+  );
+}
+
+// MQTT Alert Widget Component
+function MqttAlertWidget() {
+  const { data: unresolvedAlerts } = trpc.mqttAlert.unresolved.useQuery(undefined, {
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
+  if (!unresolvedAlerts || unresolvedAlerts.length === 0) {
+    return null; // Don't show widget if no alerts
+  }
+
+  return (
+    <Card className="glass-card border-red-500/50 bg-red-500/5">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-red-400" />
+            MQTT Alerts
+            <Badge variant="destructive" className="ml-2">
+              {unresolvedAlerts.length}
+            </Badge>
+          </CardTitle>
+          <Link href="/mqtt-alerts">
+            <Button variant="outline" size="sm">
+              View All
+              <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          </Link>
+        </div>
+        <CardDescription>Unresolved MQTT system alerts</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          {unresolvedAlerts.slice(0, 3).map((alert: any) => (
+            <div
+              key={alert.id}
+              className="flex items-start gap-3 p-3 rounded-lg bg-background/50 border border-red-500/20"
+            >
+              <div className="mt-0.5">
+                <AlertTriangle className="w-4 h-4 text-red-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm">{alert.ruleName}</p>
+                <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
+                  {alert.message}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {new Date(alert.triggeredAt).toLocaleString('vi-VN')}
+                </p>
+              </div>
+            </div>
+          ))}
+          {unresolvedAlerts.length > 3 && (
+            <p className="text-xs text-muted-foreground text-center pt-2">
+              +{unresolvedAlerts.length - 3} more alerts
+            </p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

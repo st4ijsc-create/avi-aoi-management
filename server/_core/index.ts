@@ -12,6 +12,7 @@ import { startOfflineMonitor } from "./offlineMonitor";
 import { initializeEmailTransporter } from "./email";
 import { initializeScheduledReports, shutdownScheduledReports } from "../services/reportScheduler";
 import { initMqttBroker, shutdownMqttBroker } from "../services/mqttService";
+import { startAlertEvaluationJob, stopAlertEvaluationJob } from "../services/alertEvaluationService";
 import { initSummaryScheduler, stopSummaryScheduler } from "../services/mqttSummaryScheduler";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -65,7 +66,8 @@ async function startServer() {
   if (process.env.MQTT_ENABLED === 'true') {
     initMqttBroker();
     initSummaryScheduler();
-    console.log('[MQTT] MQTT broker enabled');
+    startAlertEvaluationJob(1); // Run every 1 minute
+    console.log('[MQTT] MQTT broker and alert evaluation enabled');
   } else {
     console.log('[MQTT] MQTT broker disabled (set MQTT_ENABLED=true to enable)');
   }
