@@ -3733,6 +3733,42 @@ const smtpRouter = router({
     }),
 });
 
+// ============ SYSTEM CONFIG ROUTER ============
+const systemConfigRouter = router({
+  list: adminProcedure.query(async () => {
+    return db.getAllSystemConfig();
+  }),
+
+  getByKey: adminProcedure
+    .input(z.object({ key: z.string() }))
+    .query(async ({ input }) => {
+      return db.getSystemConfigByKey(input.key);
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      key: z.string(),
+      value: z.string(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      await db.updateSystemConfig(input.key, input.value, ctx.user.id);
+      return { success: true };
+    }),
+
+  create: adminProcedure
+    .input(z.object({
+      configKey: z.string(),
+      configValue: z.string(),
+      description: z.string().optional(),
+      dataType: z.enum(["STRING", "NUMBER", "BOOLEAN", "JSON"]).optional(),
+      isEditable: z.boolean().optional(),
+      requiresRestart: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      return db.createSystemConfig(input);
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -3799,6 +3835,7 @@ export const appRouter = router({
   smtp: smtpRouter,
   mqttClient: mqttClientRouter,
   mqttAlert: mqttAlertRouter,
+  systemConfig: systemConfigRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -1169,3 +1169,25 @@ export const mqttAlertHistory = mysqlTable("mqtt_alert_history", {
 
 export type MqttAlertHistory = typeof mqttAlertHistory.$inferSelect;
 export type InsertMqttAlertHistory = typeof mqttAlertHistory.$inferInsert;
+
+
+/**
+ * System Configuration - Cấu hình hệ thống (Admin only)
+ */
+export const systemConfig = mysqlTable("system_config", {
+  id: int("id").autoincrement().primaryKey(),
+  configKey: varchar("configKey", { length: 100 }).notNull().unique(), // Unique key
+  configValue: text("configValue").notNull(), // JSON or string value
+  description: text("description"), // Mô tả cấu hình
+  dataType: mysqlEnum("dataType", ["STRING", "NUMBER", "BOOLEAN", "JSON"]).default("STRING").notNull(),
+  isEditable: boolean("isEditable").default(true).notNull(), // Có thể chỉnh sửa qua UI không
+  requiresRestart: boolean("requiresRestart").default(false).notNull(), // Cần restart server sau khi thay đổi
+  updatedBy: int("updatedBy"), // FK to users
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_system_config_key").on(table.configKey),
+]);
+
+export type SystemConfig = typeof systemConfig.$inferSelect;
+export type InsertSystemConfig = typeof systemConfig.$inferInsert;

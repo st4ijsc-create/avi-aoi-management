@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS system_config (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  configKey VARCHAR(100) NOT NULL UNIQUE,\n  configValue TEXT NOT NULL,\n  description TEXT,\n  dataType ENUM('STRING', 'NUMBER', 'BOOLEAN', 'JSON') DEFAULT 'STRING' NOT NULL,\n  isEditable BOOLEAN DEFAULT TRUE NOT NULL,\n  requiresRestart BOOLEAN DEFAULT FALSE NOT NULL,\n  updatedBy INT,\n  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,\n  updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,\n  INDEX idx_system_config_key (configKey)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute CREATE TABLE IF NOT EXISTS system_config (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  configKey VARCHAR(100) NOT NULL UNIQUE,\n  configValue TEXT NOT NULL,\n  description TEXT,\n  dataType ENUM('STRING', 'NUMBER', 'BOOLEAN', 'JSON') DEFAULT 'STRING' NOT NULL,\n  isEditable BOOLEAN DEFAULT TRUE NOT NULL,\n  requiresRestart BOOLEAN DEFAULT FALSE NOT NULL,\n  updatedBy INT,\n  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,\n  updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,\n  INDEX idx_system_config_key (configKey)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1681
+}

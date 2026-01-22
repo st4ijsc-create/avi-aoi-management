@@ -220,11 +220,11 @@ async function getAverageLatency(minutes: number): Promise<number> {
   const since = new Date(Date.now() - minutes * 60 * 1000);
   
   const result = await db.execute(sql`
-    SELECT AVG(TIMESTAMPDIFF(MICROSECOND, published_at, delivered_at) / 1000.0) as avg_latency
+    SELECT AVG(TIMESTAMPDIFF(MICROSECOND, createdAt, deliveredAt) / 1000.0) as avg_latency
     FROM mqtt_message_logs
-    WHERE published_at >= ${since}
-      AND delivered_at IS NOT NULL
-      AND status = 'DELIVERED'
+    WHERE createdAt >= ${since}
+      AND deliveredAt IS NOT NULL
+      AND deliveryStatus = 'DELIVERED'
   `);
 
   const rows = result as any[];
@@ -247,9 +247,9 @@ async function getMessageFailureRate(minutes: number): Promise<number> {
   const result = await db.execute(sql`
     SELECT 
       COUNT(*) as total,
-      SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed
+      SUM(CASE WHEN deliveryStatus = 'FAILED' THEN 1 ELSE 0 END) as failed
     FROM mqtt_message_logs
-    WHERE published_at >= ${since}
+    WHERE createdAt >= ${since}
   `);
 
   const rows = result as any[];
@@ -268,7 +268,7 @@ async function getThroughput(minutes: number): Promise<number> {
   const result = await db.execute(sql`
     SELECT COUNT(*) as count
     FROM mqtt_message_logs
-    WHERE published_at >= ${since}
+    WHERE createdAt >= ${since}
   `);
 
   const rows = result as any[];

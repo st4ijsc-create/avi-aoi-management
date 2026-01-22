@@ -41,7 +41,8 @@ import {
   mqttErrorSummary, InsertMqttErrorSummary,
   mqttMessageLogs, InsertMqttMessageLog,
   mqttAlertRules, InsertMqttAlertRule,
-  mqttAlertHistory, InsertMqttAlertHistory
+  mqttAlertHistory, InsertMqttAlertHistory,
+  systemConfig, InsertSystemConfig
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -4586,4 +4587,53 @@ export async function resolveMqttAlert(id: number, userId: number, note?: string
       resolutionNote: note,
     })
     .where(eq(mqttAlertHistory.id, id));
+}
+
+
+// ============ SYSTEM CONFIG FUNCTIONS ============
+export async function getAllSystemConfig() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select().from(systemConfig).orderBy(systemConfig.configKey);
+}
+
+export async function getSystemConfigByKey(key: string) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select()
+    .from(systemConfig)
+    .where(eq(systemConfig.configKey, key))
+    .limit(1);
+  
+  return result[0] || null;
+}
+
+export async function updateSystemConfig(key: string, value: string, userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.update(systemConfig)
+    .set({
+      configValue: value,
+      updatedBy: userId,
+      updatedAt: new Date(),
+    })
+    .where(eq(systemConfig.configKey, key));
+}
+
+export async function createSystemConfig(data: {
+  configKey: string;
+  configValue: string;
+  description?: string;
+  dataType?: "STRING" | "NUMBER" | "BOOLEAN" | "JSON";
+  isEditable?: boolean;
+  requiresRestart?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.insert(systemConfig).values(data);
+  return { id: Number(result[0].insertId) };
 }

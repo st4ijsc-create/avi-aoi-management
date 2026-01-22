@@ -1640,3 +1640,45 @@
 - [x] Viết unit tests cho alert rule CRUD
 - [x] Test alert rule toggle và delete
 - [x] 193 unit tests passing
+
+
+## Phase 86: System Configuration & Alert Enhancements
+
+### 0. MQTT/WebSocket Configuration (Admin Only)
+- [x] Tạo bảng system_config trong schema.ts
+- [x] Thêm CRUD endpoints cho system config (adminProcedure)
+- [x] Tạo trang System Configuration (/system-config)
+- [x] Thêm toggle switches cho MQTT_ENABLED và WEBSOCKET_ENABLED
+- [x] Hiển thị current status của MQTT và WebSocket
+- [x] Thêm vào navigation sidebar
+- [ ] Implement server restart functionality (requires backend support)
+
+### 1. Alert Notification History Dashboard
+- [ ] Tạo bảng alert_notification_logs trong schema.ts
+- [ ] Log tất cả notifications (owner, email, MQTT) vào database
+- [ ] Tạo trang Alert Notification History
+- [ ] Thêm filters: date range, notification type, status
+- [ ] Thêm search by rule name
+- [ ] Hiển thị statistics: total sent, success rate, failed count
+- [ ] Thêm retry button cho failed notifications
+
+### 2. Alert Rule Templates
+- [ ] Tạo predefined templates trong code
+- [ ] Thêm "Use Template" button trong Create Alert Rule page
+- [ ] Templates: High Latency, Broker Down, High Failure Rate, Low Throughput
+- [ ] User có thể customize template trước khi save
+- [ ] Thêm "Save as Template" cho existing rules
+
+### 3. Alert Severity Levels
+- [ ] Thêm severity column vào mqtt_alert_rules (CRITICAL, WARNING, INFO)
+- [ ] Cập nhật UI để hiển thị severity với màu sắc khác nhau
+- [ ] Thêm severity filter trong Alert Rules page
+- [ ] Cập nhật Dashboard Alert Widget để ưu tiên CRITICAL
+- [ ] Thêm severity vào email template
+- [ ] Sort alerts by severity trong history
+
+### 4. Testing
+- [ ] Viết unit tests cho system config CRUD
+- [ ] Viết unit tests cho notification logging
+- [ ] Test alert templates
+- [ ] Test severity levels

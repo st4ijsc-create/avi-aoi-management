@@ -28,6 +28,7 @@ import { ProductComparison } from "./pages/ProductComparison";
 import Setup from "./pages/Setup";
 import MqttDashboard from "./pages/MqttDashboard";
 import MqttAlertRules from "./pages/MqttAlertRules";
+import SystemConfiguration from "./pages/SystemConfiguration";
 
 function Router() {
   return (
@@ -57,6 +58,7 @@ function Router() {
       <Route path="/product-comparison" component={ProductComparison} />
       <Route path="/mqtt-dashboard" component={MqttDashboard} />
       <Route path="/mqtt-alerts" component={MqttAlertRules} />
+      <Route path="/system-config" component={SystemConfiguration} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
