@@ -1682,3 +1682,50 @@
 - [ ] Viết unit tests cho notification logging
 - [ ] Test alert templates
 - [ ] Test severity levels
+
+
+## Phase 87: System Audit & CRUD Completion
+
+### 1. Database Schema Audit
+- [ ] Rà soát tất cả các bảng trong schema.ts
+- [ ] Liệt kê các bảng chưa có CRUD endpoints
+- [ ] Kiểm tra relationships và foreign keys
+- [ ] Kiểm tra indexes và performance
+
+### 2. CRUD Completion
+- [ ] Bổ sung CRUD cho factories (nếu thiếu)
+- [ ] Bổ sung CRUD cho workshops
+- [ ] Bổ sung CRUD cho production_lines
+- [ ] Bổ sung CRUD cho stations
+- [ ] Bổ sung CRUD cho machines
+- [ ] Bổ sung CRUD cho processes
+- [ ] Bổ sung CRUD cho measurement_point_defs
+- [ ] Bổ sung CRUD cho product_models
+- [ ] Bổ sung CRUD cho shift_configs
+- [ ] Bổ sung CRUD cho production_orders
+- [ ] Bổ sung CRUD cho alert_settings
+- [ ] Bổ sung CRUD cho system_settings
+
+### 3. API Inspection Enhancement
+- [x] Thêm corporateCode vào product_inspections table
+- [x] Thêm factoryCode vào product_inspections table
+- [x] Thêm indexes cho corporateCode và factoryCode
+- [x] Cập nhật submitInspection API để nhận companyCode và factoryCode
+- [x] Cập nhật getInspections API để filter theo corporateCode và factoryCode
+- [x] Cập nhật schema.ts với corporateCode và factoryCode
+- [ ] Cập nhật dashboard statistics để group theo corporate và factory
+
+### 4. Error Checking & Fixes
+- [x] Kiểm tra tất cả routers có missing procedures không
+- [x] Kiểm tra tất cả db functions có missing exports không
+- [x] Kiểm tra TypeScript errors (0 errors)
+- [x] Tạo CRUD Coverage Summary document
+- [ ] Kiểm tra foreign key constraints
+- [ ] Kiểm tra data validation trong input schemas
+- [ ] Kiểm tra authorization (admin vs user procedures)
+
+### 5. Testing
+- [x] Viết tests cho inspection API với corporate/factory codes
+- [x] Test submitInspection với companyCode và factoryCode
+- [x] Test backward compatibility (không có corporate/factory codes)
+- [x] 2 tests passed

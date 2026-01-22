@@ -642,6 +642,8 @@ const inspectionRouter = router({
   list: protectedProcedure
     .input(z.object({
       machineId: z.number().optional(),
+      corporateCode: z.string().optional(),
+      factoryCode: z.string().optional(),
       serialNumber: z.string().optional(),
       result: z.enum(["OK", "NG", "NTF"]).optional(),
       startDate: z.date().optional(),
@@ -1320,6 +1322,8 @@ const machineApiRouter = router({
         batchNumber: input.batchNumber,
         overallResult: input.overallResult,
         originalResult: input.overallResult,
+        corporateCode: input.companyCode, // Mã tập đoàn
+        factoryCode: input.factoryCode, // Mã nhà máy
         inspectionTime: input.inspectionTime ? new Date(input.inspectionTime) : new Date(),
         cycleTime: input.cycleTime ? String(input.cycleTime) : undefined,
 

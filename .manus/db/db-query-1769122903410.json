@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE product_inspections \nADD COLUMN factoryCode VARCHAR(50) NULL AFTER corporateCode;\n\nALTER TABLE product_inspections\nADD INDEX idx_inspections_corporate (corporateCode),\nADD INDEX idx_inspections_factory (factoryCode),\nADD INDEX idx_inspections_corporate_factory (corporateCode, factoryCode);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute ALTER TABLE product_inspections \nADD COLUMN factoryCode VARCHAR(50) NULL AFTER corporateCode;\n\nALTER TABLE product_inspections\nADD INDEX idx_inspections_corporate (corporateCode),\nADD INDEX idx_inspections_factory (factoryCode),\nADD INDEX idx_inspections_corporate_factory (corporateCode, factoryCode);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 3017
+}

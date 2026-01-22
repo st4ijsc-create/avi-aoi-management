@@ -664,6 +664,8 @@ export async function createProductInspection(data: InsertProductInspection) {
 
 export async function getProductInspections(filters: {
   machineId?: number;
+  corporateCode?: string;
+  factoryCode?: string;
   serialNumber?: string;
   result?: "OK" | "NG" | "NTF";
   startDate?: Date;
@@ -676,6 +678,8 @@ export async function getProductInspections(filters: {
 
   const conditions = [];
   if (filters.machineId) conditions.push(eq(productInspections.machineId, filters.machineId));
+  if (filters.corporateCode) conditions.push(eq(productInspections.corporateCode, filters.corporateCode));
+  if (filters.factoryCode) conditions.push(eq(productInspections.factoryCode, filters.factoryCode));
   if (filters.serialNumber) conditions.push(like(productInspections.serialNumber, `%${filters.serialNumber}%`));
   if (filters.result) conditions.push(eq(productInspections.overallResult, filters.result));
   if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));

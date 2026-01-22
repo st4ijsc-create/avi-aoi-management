@@ -232,6 +232,8 @@ export const productInspections = mysqlTable("product_inspections", {
   id: int("id").autoincrement().primaryKey(),
   machineId: int("machineId").notNull(),
   productModelId: int("productModelId"), // Liên kết với Product Model
+  corporateCode: varchar("corporateCode", { length: 50 }), // Mã tập đoàn
+  factoryCode: varchar("factoryCode", { length: 50 }), // Mã nhà máy
   serialNumber: varchar("serialNumber", { length: 100 }).notNull(),
   productModel: varchar("productModel", { length: 100 }), // Backward compatibility
   batchNumber: varchar("batchNumber", { length: 100 }),
@@ -250,8 +252,11 @@ export const productInspections = mysqlTable("product_inspections", {
   index("idx_inspections_time").on(table.inspectionTime),
   index("idx_inspections_result").on(table.overallResult),
   index("idx_inspections_product_model").on(table.productModelId),
+  index("idx_inspections_corporate").on(table.corporateCode),
+  index("idx_inspections_factory").on(table.factoryCode),
   // Composite index for common queries
   index("idx_inspections_machine_time").on(table.machineId, table.inspectionTime),
+  index("idx_inspections_corporate_factory").on(table.corporateCode, table.factoryCode),
 ]);
 
 export type ProductInspection = typeof productInspections.$inferSelect;
