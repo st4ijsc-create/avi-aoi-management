@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, gte, lte, like, sql, or, isNull, not, ne } from "drizzle-orm";
+import { eq, and, desc, asc, gte, lte, like, sql, or, isNull, isNotNull, not, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { 
   InsertUser, users,
@@ -4140,4 +4140,159 @@ export async function getMqttMessageLogs(filters?: {
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(mqttMessageLogs.createdAt))
     .limit(filters?.limit || 100);
+}
+
+
+// ============ MQTT DASHBOARD STATISTICS ============
+
+export async function getMqttDashboardStats() {
+  const db = await getDb();
+  if (!db) return null;
+  
+  // Get client counts by status
+  const clients = await db.select().from(mqttClients);
+  
+  const totalClients = clients.length;
+  const onlineClients = clients.filter(c => c.connectionStatus === 'ONLINE').length;
+  const offlineClients = clients.filter(c => c.connectionStatus === 'OFFLINE').length;
+  const pendingApproval = clients.filter(c => c.approvalStatus === 'PENDING').length;
+  const approvedClients = clients.filter(c => c.approvalStatus === 'APPROVED').length;
+  
+  // Get message stats for today
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const messages = await db.select()
+    .from(mqttMessageLogs)
+    .where(gte(mqttMessageLogs.createdAt, today));
+  
+  const totalMessages = messages.length;
+  const deliveredMessages = messages.filter(m => m.deliveryStatus === 'DELIVERED').length;
+  const failedMessages = messages.filter(m => m.deliveryStatus === 'FAILED').length;
+  const pendingMessages = messages.filter(m => m.deliveryStatus === 'PENDING').length;
+  
+  // Get message breakdown by type
+  const ngAlerts = messages.filter(m => m.messageType === 'NG_ALERT').length;
+  const dailySummaries = messages.filter(m => m.messageType === 'DAILY_SUMMARY').length;
+  const weeklySummaries = messages.filter(m => m.messageType === 'WEEKLY_SUMMARY').length;
+  
+  return {
+    clients: {
+      total: totalClients,
+      online: onlineClients,
+      offline: offlineClients,
+      pendingApproval,
+      approved: approvedClients,
+    },
+    messages: {
+      total: totalMessages,
+      delivered: deliveredMessages,
+      failed: failedMessages,
+      pending: pendingMessages,
+      deliveryRate: totalMessages > 0 ? (deliveredMessages / totalMessages * 100).toFixed(1) : '0',
+    },
+    breakdown: {
+      ngAlerts,
+      dailySummaries,
+      weeklySummaries,
+    },
+  };
+}
+
+export async function getMqttMessageTrend(days: number = 7) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+  startDate.setHours(0, 0, 0, 0);
+  
+  const messages = await db.select()
+    .from(mqttMessageLogs)
+    .where(gte(mqttMessageLogs.createdAt, startDate))
+    .orderBy(mqttMessageLogs.createdAt);
+  
+  // Group by date
+  const trend: Record<string, { date: string; total: number; delivered: number; failed: number; ngAlerts: number }> = {};
+  
+  for (let i = 0; i <= days; i++) {
+    const date = new Date();
+    date.setDate(date.getDate() - (days - i));
+    const dateStr = date.toISOString().split('T')[0];
+    trend[dateStr] = { date: dateStr, total: 0, delivered: 0, failed: 0, ngAlerts: 0 };
+  }
+  
+  messages.forEach(m => {
+    const dateStr = new Date(m.createdAt!).toISOString().split('T')[0];
+    if (trend[dateStr]) {
+      trend[dateStr].total++;
+      if (m.deliveryStatus === 'DELIVERED') trend[dateStr].delivered++;
+      if (m.deliveryStatus === 'FAILED') trend[dateStr].failed++;
+      if (m.messageType === 'NG_ALERT') trend[dateStr].ngAlerts++;
+    }
+  });
+  
+  return Object.values(trend);
+}
+
+export async function getRecentMqttMessages(limit: number = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select({
+    id: mqttMessageLogs.id,
+    messageType: mqttMessageLogs.messageType,
+    topic: mqttMessageLogs.topic,
+    deliveryStatus: mqttMessageLogs.deliveryStatus,
+    deliveredAt: mqttMessageLogs.deliveredAt,
+    createdAt: mqttMessageLogs.createdAt,
+    stationId: mqttMessageLogs.stationId,
+    inspectionId: mqttMessageLogs.inspectionId,
+  })
+    .from(mqttMessageLogs)
+    .orderBy(desc(mqttMessageLogs.createdAt))
+    .limit(limit);
+}
+
+export async function updateMqttClientFcmToken(clientId: number, fcmToken: string) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.update(mqttClients)
+    .set({ fcmToken, updatedAt: new Date() })
+    .where(eq(mqttClients.id, clientId));
+}
+
+export async function getMqttClientsWithFcmToken() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select()
+    .from(mqttClients)
+    .where(and(
+      isNotNull(mqttClients.fcmToken),
+      eq(mqttClients.approvalStatus, 'APPROVED'),
+      eq(mqttClients.isActive, true)
+    ));
+}
+
+export async function getOfflineMqttClientsWithFcmToken(stationId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions = [
+    isNotNull(mqttClients.fcmToken),
+    eq(mqttClients.approvalStatus, 'APPROVED'),
+    eq(mqttClients.isActive, true),
+    eq(mqttClients.connectionStatus, 'OFFLINE'),
+    eq(mqttClients.receiveNGAlerts, true),
+  ];
+  
+  if (stationId) {
+    conditions.push(eq(mqttClients.stationId, stationId));
+  }
+  
+  return db.select()
+    .from(mqttClients)
+    .where(and(...conditions));
 }

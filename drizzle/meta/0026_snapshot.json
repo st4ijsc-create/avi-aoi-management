@@ -1,8 +1,8 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "65f52170-3d42-4f90-8aa7-7ca7f2a290cf",
-  "prevId": "12c85829-fa86-4d1b-82d1-88d7a6e45155",
+  "id": "5db39e4f-1df4-4d82-bfac-b264d8c4a559",
+  "prevId": "65f52170-3d42-4f90-8aa7-7ca7f2a290cf",
   "tables": {
     "alert_history": {
       "name": "alert_history",
@@ -2587,6 +2587,13 @@
           "notNull": true,
           "autoincrement": false,
           "default": true
+        },
+        "fcmToken": {
+          "name": "fcmToken",
+          "type": "varchar(500)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "isActive": {
           "name": "isActive",

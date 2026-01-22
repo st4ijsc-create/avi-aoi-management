@@ -1431,3 +1431,46 @@
 - [x] All 168 unit tests passing
 - [x] TypeScript compilation successful
 - [x] UI tested and working correctly
+
+
+## Phase 79: Mobile App, MQTT Dashboard & Push Notifications (Jan 22, 2025)
+
+###### 1. MQTT Dashboard
+- [x] Tạo trang MQTT Dashboard trong web app (/mqtt-dashboard)
+- [x] Hiển thị connected clients (online/offline count)
+- [x] Hiển thị message statistics (sent/failed/NG alerts)
+- [x] Hiển thị delivery status và success rate
+- [x] Thêm charts cho message trends (Recharts line chart, pie chart)
+- [x] Thêm recent messages table
+- [x] Thêm tabs Connected Clients và Recent Messages
+- [x] Thêm time range filter (7/14/30 ngày)
+
+### 2. Firebase Cloud Messaging (FCM)
+- [x] Tạo fcmService.ts
+- [x] Implement sendNGAlertPushNotification
+- [x] Implement sendSummaryPushNotification
+- [x] Tích hợp FCM vào mqttService khi publish NG alerts
+- [x] Tích hợp FCM vào mqttService khi publish summaries
+- [x] Thêm fcmToken column vào mqtt_clients table
+- [x] Tạo notification payload với NG alert data
+
+### 3. Mobile App Setup (React Native)
+- [x] Tạo React Native project với Expo (mobile-app/)
+- [x] Setup MQTT client library (mqtt.js)
+- [x] Implement connection/reconnection logic (Zustand store)
+- [x] Setup Expo Notifications cho push notifications
+- [x] Tạo app settings screen (display time, server URL, etc.)
+
+### 4. Mobile App UI
+- [x] Tạo NG Alert popup overlay với auto-dismiss (NGAlertPopup.tsx)
+- [x] Hiển thị thông tin lỗi (machine, serial, timestamp)
+- [x] Hiển thị ảnh vị trí lỗi
+- [x] Hiển thị thống kê lỗi theo trạm (HomeScreen.tsx)
+- [x] Cài đặt thời gian hiển thị popup (mặc định 60 giây)
+- [x] Nút tắt popup thủ công
+- [x] Progress bar animation cho auto-dismiss
+
+### 5. Testing
+- [x] Test MQTT Dashboard UI - Đã hoạt động
+- [x] All 168 unit tests passing
+- [x] TypeScript compilation successful

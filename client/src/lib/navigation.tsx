@@ -16,7 +16,8 @@ import {
   Factory,
   Database,
   Shield,
-  BookOpen
+  BookOpen,
+  Radio
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -78,6 +79,7 @@ export const navGroups: NavGroup[] = [
     defaultOpen: false,
     items: [
       { href: "/users", label: "Người dùng", icon: <Users className="h-4 w-4" /> },
+      { href: "/mqtt-dashboard", label: "MQTT Dashboard", icon: <Radio className="h-4 w-4" /> },
       { href: "/settings", label: "Cài đặt", icon: <Settings className="h-4 w-4" /> },
       { href: "/api-docs", label: "API Docs", icon: <FileText className="h-4 w-4" /> },
     ],

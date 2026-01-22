@@ -1,0 +1,1 @@
+ALTER TABLE `mqtt_clients` ADD `fcmToken` varchar(500);

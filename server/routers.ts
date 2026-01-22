@@ -2811,6 +2811,36 @@ const mqttClientRouter = router({
       }
       return { success: true };
     }),
+
+  // Dashboard statistics
+  dashboardStats: protectedProcedure.query(async () => {
+    return db.getMqttDashboardStats();
+  }),
+
+  // Message trend for charts
+  messageTrend: protectedProcedure
+    .input(z.object({ days: z.number().default(7) }).optional())
+    .query(async ({ input }) => {
+      return db.getMqttMessageTrend(input?.days || 7);
+    }),
+
+  // Recent messages for activity feed
+  recentMessages: protectedProcedure
+    .input(z.object({ limit: z.number().default(20) }).optional())
+    .query(async ({ input }) => {
+      return db.getRecentMqttMessages(input?.limit || 20);
+    }),
+
+  // Update FCM token for push notifications
+  updateFcmToken: protectedProcedure
+    .input(z.object({
+      clientId: z.number(),
+      fcmToken: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      await db.updateMqttClientFcmToken(input.clientId, input.fcmToken);
+      return { success: true };
+    }),
 });
 
 // Yield Alert Threshold Router

@@ -999,6 +999,7 @@ export const mqttClients = mysqlTable("mqtt_clients", {
   receiveNGAlerts: boolean("receiveNGAlerts").default(true).notNull(), // Nhận cảnh báo NG
   receiveDailySummary: boolean("receiveDailySummary").default(true).notNull(), // Nhận tổng hợp ngày
   receiveWeeklySummary: boolean("receiveWeeklySummary").default(true).notNull(), // Nhận tổng hợp tuần
+  fcmToken: varchar("fcmToken", { length: 500 }), // Firebase Cloud Messaging token for push notifications
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

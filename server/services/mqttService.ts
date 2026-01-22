@@ -335,6 +335,29 @@ export async function publishNGAlert(data: {
     });
 
     console.log(`[MQTT] Published NG alert to ${topic}`);
+
+    // Send FCM push notification to offline clients
+    try {
+      const { sendNGAlertPushNotification } = await import('./fcmService');
+      const fcmResult = await sendNGAlertPushNotification({
+        stationId,
+        stationName: data.stationName || station[0].station.name,
+        machineId: data.machineId,
+        machineName: data.machineName,
+        productCode: data.serialNumber,
+        ngCount: data.measurementResults.filter(r => r.result === 'NG').length,
+        measurementResults: data.measurementResults.map(m => ({
+          pointName: m.pointCode,
+          result: m.result,
+          measuredValue: typeof m.value === 'number' ? m.value : undefined,
+        })),
+        inspectionId: data.inspectionId,
+      });
+      console.log(`[FCM] Push notification sent: ${fcmResult.sent} success, ${fcmResult.failed} failed`);
+    } catch (fcmError) {
+      console.error('[FCM] Error sending push notification:', fcmError);
+    }
+
     return true;
   } catch (error) {
     console.error('[MQTT] Error publishing NG alert:', error);
@@ -405,6 +428,27 @@ export async function publishSummary(
     });
 
     console.log(`[MQTT] Published ${summaryType} summary to ${topic}`);
+
+    // Send FCM push notification to offline clients
+    try {
+      const { sendSummaryPushNotification } = await import('./fcmService');
+      const fcmResult = await sendSummaryPushNotification({
+        type: summaryType,
+        stationId,
+        stationName: station[0].station.name,
+        totalInspections: payload.statistics.totalInspections,
+        totalNG: payload.statistics.totalNG,
+        ngRate: payload.statistics.ngRate,
+        topNGPoints: payload.topNGPoints?.map(p => ({
+          pointName: p.pointName,
+          count: p.ngCount,
+        })) || [],
+      });
+      console.log(`[FCM] Summary push notification sent: ${fcmResult.sent} success, ${fcmResult.failed} failed`);
+    } catch (fcmError) {
+      console.error('[FCM] Error sending summary push notification:', fcmError);
+    }
+
     return true;
   } catch (error) {
     console.error('[MQTT] Error publishing summary:', error);

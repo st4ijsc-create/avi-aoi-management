@@ -26,6 +26,7 @@ import AuditLogs from "./pages/AuditLogs";
 import SessionManagement from "./pages/SessionManagement";
 import { ProductComparison } from "./pages/ProductComparison";
 import Setup from "./pages/Setup";
+import MqttDashboard from "./pages/MqttDashboard";
 
 function Router() {
   return (
@@ -53,6 +54,7 @@ function Router() {
       <Route path="/audit-logs" component={AuditLogs} />
       <Route path="/sessions" component={SessionManagement} />
       <Route path="/product-comparison" component={ProductComparison} />
+      <Route path="/mqtt-dashboard" component={MqttDashboard} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
