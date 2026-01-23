@@ -49,6 +49,7 @@ import YieldThresholdSettings from "@/components/YieldThresholdSettings";
 import ScheduledReports from "@/components/ScheduledReports";
 import { SMTPConfig } from "@/components/SMTPConfig";
 import { CacheStatsDashboard } from "@/components/CacheStatsDashboard";
+import { EmailTemplateEditor } from "@/components/EmailTemplateEditor";
 import { useState } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
@@ -796,6 +797,15 @@ export default function Settings() {
                     >
                       <SettingsIcon className="h-4 w-4" />
                       Cấu hình SMTP
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('email-template')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'email-template' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <Mail className="h-4 w-4" />
+                      Email Template
                     </button>
                     <button
                       onClick={() => window.location.href = '/audit-logs'}
@@ -2160,6 +2170,11 @@ export default function Settings() {
           {/* SMTP Config Tab */}
           <TabsContent value="smtp-config">
             <SMTPConfig />
+          </TabsContent>
+
+          {/* Email Template Tab */}
+          <TabsContent value="email-template">
+            <EmailTemplateEditor />
           </TabsContent>
 
           {/* Cache Stats Tab */}

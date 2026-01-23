@@ -44,7 +44,8 @@ import {
   mqttAlertHistory, InsertMqttAlertHistory,
   systemConfig, InsertSystemConfig,
   userCorporateAssignments, InsertUserCorporateAssignment,
-  userFactoryAssignments, InsertUserFactoryAssignment
+  userFactoryAssignments, InsertUserFactoryAssignment,
+  emailTemplateConfig, InsertEmailTemplateConfig
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -5053,4 +5054,86 @@ export async function hasAccessToFactory(userId: number, factoryCode: string): P
     .limit(1);
   
   return assignments.length > 0;
+}
+
+
+// ============ EMAIL TEMPLATE CONFIG FUNCTIONS ============
+
+export async function getEmailTemplateConfigs() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select().from(emailTemplateConfig).orderBy(desc(emailTemplateConfig.isDefault));
+}
+
+export async function getEmailTemplateConfigById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const results = await db.select().from(emailTemplateConfig).where(eq(emailTemplateConfig.id, id)).limit(1);
+  return results[0] || null;
+}
+
+export async function getDefaultEmailTemplateConfig() {
+  const db = await getDb();
+  if (!db) return null;
+  
+  // First try to get the default template
+  const defaultResults = await db.select()
+    .from(emailTemplateConfig)
+    .where(eq(emailTemplateConfig.isDefault, true))
+    .limit(1);
+  
+  if (defaultResults[0]) return defaultResults[0];
+  
+  // If no default, get the first active one
+  const activeResults = await db.select()
+    .from(emailTemplateConfig)
+    .where(eq(emailTemplateConfig.isActive, true))
+    .limit(1);
+  
+  return activeResults[0] || null;
+}
+
+export async function createEmailTemplateConfig(data: InsertEmailTemplateConfig) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  // If this is set as default, unset other defaults
+  if (data.isDefault) {
+    await db.update(emailTemplateConfig).set({ isDefault: false });
+  }
+  
+  const [result] = await db.insert(emailTemplateConfig).values(data);
+  return { id: Number(result.insertId) };
+}
+
+export async function updateEmailTemplateConfig(id: number, data: Partial<InsertEmailTemplateConfig>) {
+  const db = await getDb();
+  if (!db) return;
+  
+  // If this is set as default, unset other defaults
+  if (data.isDefault) {
+    await db.update(emailTemplateConfig).set({ isDefault: false });
+  }
+  
+  await db.update(emailTemplateConfig).set(data).where(eq(emailTemplateConfig.id, id));
+}
+
+export async function deleteEmailTemplateConfig(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.delete(emailTemplateConfig).where(eq(emailTemplateConfig.id, id));
+}
+
+export async function setDefaultEmailTemplateConfig(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  // Unset all defaults
+  await db.update(emailTemplateConfig).set({ isDefault: false });
+  
+  // Set new default
+  await db.update(emailTemplateConfig).set({ isDefault: true }).where(eq(emailTemplateConfig.id, id));
 }

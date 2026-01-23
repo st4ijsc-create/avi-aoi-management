@@ -3783,6 +3783,91 @@ const smtpRouter = router({
         });
       }
     }),
+
+  // Email Template Config endpoints
+  getEmailTemplates: adminProcedure.query(async () => {
+    return db.getEmailTemplateConfigs();
+  }),
+
+  getEmailTemplateById: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getEmailTemplateConfigById(input.id);
+    }),
+
+  getDefaultEmailTemplate: adminProcedure.query(async () => {
+    return db.getDefaultEmailTemplateConfig();
+  }),
+
+  createEmailTemplate: adminProcedure
+    .input(z.object({
+      name: z.string().min(1).max(100),
+      logoUrl: z.string().optional().nullable(),
+      companyName: z.string().optional().nullable(),
+      primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+      secondaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+      accentColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+      warningColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+      dangerColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+      backgroundColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+      fontFamily: z.string().optional(),
+      footerText: z.string().optional().nullable(),
+      footerLinks: z.string().optional().nullable(), // JSON string
+      contactEmail: z.string().email().optional().nullable(),
+      contactPhone: z.string().optional().nullable(),
+      contactAddress: z.string().optional().nullable(),
+      socialLinks: z.string().optional().nullable(), // JSON string
+      isDefault: z.boolean().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const result = await db.createEmailTemplateConfig({
+        ...input,
+        createdBy: ctx.user.id,
+      });
+      return result;
+    }),
+
+  updateEmailTemplate: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(100).optional(),
+      logoUrl: z.string().optional().nullable(),
+      companyName: z.string().optional().nullable(),
+      primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+      secondaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+      accentColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+      warningColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+      dangerColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+      backgroundColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+      fontFamily: z.string().optional(),
+      footerText: z.string().optional().nullable(),
+      footerLinks: z.string().optional().nullable(),
+      contactEmail: z.string().email().optional().nullable(),
+      contactPhone: z.string().optional().nullable(),
+      contactAddress: z.string().optional().nullable(),
+      socialLinks: z.string().optional().nullable(),
+      isDefault: z.boolean().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateEmailTemplateConfig(id, data);
+      return { success: true };
+    }),
+
+  deleteEmailTemplate: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteEmailTemplateConfig(input.id);
+      return { success: true };
+    }),
+
+  setDefaultEmailTemplate: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.setDefaultEmailTemplateConfig(input.id);
+      return { success: true };
+    }),
 });
 
 // ============ SYSTEM CONFIG ROUTER ============
@@ -3906,6 +3991,21 @@ const corporateFactoryStatsRouter = router({
     .mutation(async () => {
       await cachedStats.invalidateStatisticsCache();
       return { success: true, message: 'Statistics cache cleared' };
+    }),
+
+  // Cache warming statistics
+  warmingStats: adminProcedure
+    .query(async () => {
+      const { cacheWarmingService } = await import('./services/cacheWarmingService');
+      return cacheWarmingService.getStats();
+    }),
+
+  // Trigger cache warming manually
+  triggerWarming: adminProcedure
+    .mutation(async () => {
+      const { cacheWarmingService } = await import('./services/cacheWarmingService');
+      await cacheWarmingService.triggerWarming();
+      return { success: true, message: 'Cache warming triggered' };
     }),
 });
 

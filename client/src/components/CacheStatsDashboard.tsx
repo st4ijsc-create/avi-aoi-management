@@ -16,7 +16,9 @@ import {
   AlertTriangle,
   Activity,
   HardDrive,
-  Gauge
+  Gauge,
+  Flame,
+  Play
 } from 'lucide-react';
 
 interface CacheStats {
@@ -34,6 +36,116 @@ interface CacheHealth {
   redis: boolean;
   memory: boolean;
   latency?: number;
+}
+
+// Cache Warming Section Component
+function CacheWarmingSection() {
+  const { data: warmingStats, refetch } = trpc.corporateFactoryStats.warmingStats.useQuery(undefined, {
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
+  const triggerWarmingMutation = trpc.corporateFactoryStats.triggerWarming.useMutation({
+    onSuccess: () => {
+      toast.success('Cache warming triggered successfully');
+      refetch();
+    },
+    onError: (error) => {
+      toast.error('Failed to trigger warming', { description: error.message });
+    },
+  });
+
+  const formatDuration = (ms: number) => {
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(2)}s`;
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Flame className="h-5 w-5 text-orange-500" />
+          Cache Warming
+        </CardTitle>
+        <CardDescription>
+          Pre-cache statistics phổ biến để giảm cold start latency
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Warming Status */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between py-2 border-b">
+              <span className="text-muted-foreground">Trạng thái</span>
+              <Badge variant={warmingStats?.isWarming ? 'default' : 'secondary'}>
+                {warmingStats?.isWarming ? 'Warming...' : 'Idle'}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between py-2 border-b">
+              <span className="text-muted-foreground">Enabled</span>
+              <Badge variant={warmingStats?.config.enabled ? 'default' : 'outline'}>
+                {warmingStats?.config.enabled ? 'Yes' : 'No'}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between py-2 border-b">
+              <span className="text-muted-foreground">Interval</span>
+              <span className="font-medium">{warmingStats?.config.intervalMinutes || 30} phút</span>
+            </div>
+            <div className="flex items-center justify-between py-2 border-b">
+              <span className="text-muted-foreground">Lần warm cuối</span>
+              <span className="font-medium">
+                {warmingStats?.lastWarmingTime 
+                  ? new Date(warmingStats.lastWarmingTime).toLocaleString('vi-VN')
+                  : 'Chưa có'
+                }
+              </span>
+            </div>
+          </div>
+
+          {/* Warming Stats */}
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="text-center p-3 bg-green-500/10 rounded-lg">
+                <p className="text-2xl font-bold text-green-600">
+                  {warmingStats?.stats.successfulWarms || 0}
+                </p>
+                <p className="text-xs text-muted-foreground">Thành công</p>
+              </div>
+              <div className="text-center p-3 bg-red-500/10 rounded-lg">
+                <p className="text-2xl font-bold text-red-600">
+                  {warmingStats?.stats.failedWarms || 0}
+                </p>
+                <p className="text-xs text-muted-foreground">Thất bại</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between py-2 border-b">
+              <span className="text-muted-foreground">Tổng số lần warm</span>
+              <span className="font-medium">{warmingStats?.stats.totalWarms || 0}</span>
+            </div>
+            <div className="flex items-center justify-between py-2 border-b">
+              <span className="text-muted-foreground">Thời gian lần cuối</span>
+              <span className="font-medium">
+                {warmingStats?.stats.lastDuration 
+                  ? formatDuration(warmingStats.stats.lastDuration)
+                  : '--'
+                }
+              </span>
+            </div>
+            <Button 
+              className="w-full mt-4"
+              onClick={() => triggerWarmingMutation.mutate()}
+              disabled={triggerWarmingMutation.isPending || warmingStats?.isWarming}
+            >
+              <Play className="h-4 w-4 mr-2" />
+              {triggerWarmingMutation.isPending || warmingStats?.isWarming 
+                ? 'Warming...' 
+                : 'Trigger Warming'
+              }
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 export function CacheStatsDashboard() {
@@ -338,6 +450,9 @@ export function CacheStatsDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Cache Warming */}
+      <CacheWarmingSection />
 
       {/* Cache Tips */}
       <Card>

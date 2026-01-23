@@ -1970,3 +1970,32 @@
 - [x] Thêm documentation cho cache management APIs (cacheStats, cacheHealth, clearCache)
 - [x] Thêm 3 tabs mới: Thống kê, Export, Báo cáo
 - [ ] Update examples và response schemas
+
+
+## Phase 95: Redis Config, Email Customization, Cache Warming
+
+### 1. Redis URL Configuration
+- [x] Cập nhật redisService để đọc REDIS_URL từ env
+- [x] Request REDIS_URL secret từ user
+- [x] Thêm connection retry logic (max 3 retries)
+- [x] Cập nhật cacheHealth endpoint với Redis info
+- [x] Redis tests pass (4 tests)
+
+### 2. Email Templates Customization
+- [x] Tạo emailTemplateConfig table trong schema (22 columns)
+- [x] API endpoints cho CRUD email template config (7 endpoints)
+- [x] UI component EmailTemplateEditor cho admin customize templates
+- [x] Preview email với custom settings (live preview)
+- [x] Tabs: Branding, Colors, Typography, Contact
+- [x] Set default template functionality
+
+### 3. Cache Warming
+- [x] Tạo cacheWarmingService với auto-initialization
+- [x] Pre-cache yield rate statistics khi server start (30 days)
+- [x] Pre-cache throughput statistics (corporate & factory)
+- [x] Pre-cache dashboard overview stats
+- [x] Logging cho cache warming process
+- [x] Configurable warming intervals (default 30 minutes)
+- [x] Thêm API endpoints (warmingStats, triggerWarming)
+- [x] Thêm CacheWarmingSection vào cache dashboard
+- [x] Graceful shutdown handling

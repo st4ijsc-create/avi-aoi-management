@@ -14,6 +14,7 @@ import { initializeScheduledReports, shutdownScheduledReports } from "../service
 import { initMqttBroker, shutdownMqttBroker } from "../services/mqttService";
 import { startAlertEvaluationJob, stopAlertEvaluationJob } from "../services/alertEvaluationService";
 import { initSummaryScheduler, stopSummaryScheduler } from "../services/mqttSummaryScheduler";
+import { cacheWarmingService } from "../services/cacheWarmingService";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -88,12 +89,18 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+    
+    // Initialize cache warming service
+    cacheWarmingService.initialize().catch(err => {
+      console.error('[CacheWarming] Failed to initialize:', err.message);
+    });
   });
   
   // Graceful shutdown
   process.on("SIGTERM", () => {
     console.log("SIGTERM received, shutting down gracefully...");
     shutdownScheduledReports();
+    cacheWarmingService.stop();
     if (process.env.MQTT_ENABLED === 'true') {
       shutdownMqttBroker();
       stopSummaryScheduler();
@@ -107,6 +114,7 @@ async function startServer() {
   process.on("SIGINT", () => {
     console.log("SIGINT received, shutting down gracefully...");
     shutdownScheduledReports();
+    cacheWarmingService.stop();
     if (process.env.MQTT_ENABLED === 'true') {
       shutdownMqttBroker();
       stopSummaryScheduler();

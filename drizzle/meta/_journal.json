@@ -218,6 +218,13 @@
       "when": 1769130253767,
       "tag": "0030_slippery_pretty_boy",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "5",
+      "when": 1769136686920,
+      "tag": "0031_deep_jack_flag",
+      "breakpoints": true
     }
   ]
 }

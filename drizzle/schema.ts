@@ -1235,3 +1235,48 @@ export const userFactoryAssignments = mysqlTable("user_factory_assignments", {
 
 export type UserFactoryAssignment = typeof userFactoryAssignments.$inferSelect;
 export type InsertUserFactoryAssignment = typeof userFactoryAssignments.$inferInsert;
+
+
+// ============= Email Template Configuration =============
+
+/**
+ * Email Template Config - Cấu hình giao diện email báo cáo
+ */
+export const emailTemplateConfig = mysqlTable("email_template_config", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull().default("default"),
+  // Branding
+  logoUrl: text("logoUrl"), // URL logo công ty
+  companyName: varchar("companyName", { length: 255 }), // Tên công ty hiển thị
+  // Colors
+  primaryColor: varchar("primaryColor", { length: 20 }).default("#2563eb"), // Màu chính (hex)
+  secondaryColor: varchar("secondaryColor", { length: 20 }).default("#64748b"), // Màu phụ
+  accentColor: varchar("accentColor", { length: 20 }).default("#10b981"), // Màu nhấn (success)
+  warningColor: varchar("warningColor", { length: 20 }).default("#f59e0b"), // Màu cảnh báo
+  dangerColor: varchar("dangerColor", { length: 20 }).default("#ef4444"), // Màu nguy hiểm
+  backgroundColor: varchar("backgroundColor", { length: 20 }).default("#f8fafc"), // Màu nền
+  // Typography
+  fontFamily: varchar("fontFamily", { length: 100 }).default("Arial, sans-serif"),
+  // Footer
+  footerText: text("footerText"), // Nội dung footer tùy chỉnh
+  footerLinks: text("footerLinks"), // JSON array of {label, url}
+  // Contact info
+  contactEmail: varchar("contactEmail", { length: 255 }),
+  contactPhone: varchar("contactPhone", { length: 50 }),
+  contactAddress: text("contactAddress"),
+  // Social links
+  socialLinks: text("socialLinks"), // JSON object {facebook, linkedin, website}
+  // Active status
+  isDefault: boolean("isDefault").default(false).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  createdBy: int("createdBy"), // FK to users
+}, (table) => [
+  index("idx_email_template_name").on(table.name),
+  index("idx_email_template_default").on(table.isDefault),
+]);
+
+export type EmailTemplateConfig = typeof emailTemplateConfig.$inferSelect;
+export type InsertEmailTemplateConfig = typeof emailTemplateConfig.$inferInsert;
