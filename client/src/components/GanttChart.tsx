@@ -4,7 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, GripVertical, Undo2, Redo2, AlertTriangle, Gauge } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, GripVertical, Undo2, Redo2, AlertTriangle, Gauge, Download, FileSpreadsheet, FileText } from "lucide-react";
 import { format, addDays, differenceInDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isToday, isSameDay } from "date-fns";
 import { vi } from "date-fns/locale";
 import { toast } from "sonner";
@@ -612,6 +618,180 @@ export default function GanttChart({
     }
   };
 
+  // Export to Excel (CSV)
+  const handleExportExcel = () => {
+    const headers = [
+      'Mã lệnh',
+      'Mã công ty',
+      'Dây chuyền',
+      'Sản phẩm',
+      'Số lượng mục tiêu',
+      'Đã hoàn thành',
+      'OK',
+      'NG',
+      'NTF',
+      'Trạng thái',
+      'Ngày bắt đầu',
+      'Ngày kết thúc',
+      'Độ ưu tiên',
+    ];
+
+    const getLineName = (lineId: number) => lines.find(l => l.id === lineId)?.name || '-';
+    const getProductName = (productId: number) => products.find(p => p.id === productId)?.name || '-';
+    const getStatusLabel = (status: string) => {
+      const map: Record<string, string> = {
+        pending: 'Chờ xử lý',
+        in_progress: 'Đang sản xuất',
+        completed: 'Hoàn thành',
+        cancelled: 'Đã hủy',
+        paused: 'Tạm dừng',
+      };
+      return map[status] || status;
+    };
+    const getPriorityLabel = (priority: number) => {
+      const map: Record<number, string> = { 0: 'Bình thường', 1: 'Cao', 2: 'Khẩn cấp' };
+      return map[priority] || priority.toString();
+    };
+
+    const rows = filteredOrders.map(order => [
+      order.orderCode,
+      order.companyCode,
+      getLineName(order.lineId),
+      getProductName(order.productModelId),
+      order.targetQuantity,
+      order.completedQuantity,
+      order.okQuantity,
+      order.ngQuantity,
+      order.ntfQuantity,
+      getStatusLabel(order.status),
+      order.scheduledStartDate ? format(new Date(order.scheduledStartDate), 'dd/MM/yyyy') : '-',
+      order.scheduledEndDate ? format(new Date(order.scheduledEndDate), 'dd/MM/yyyy') : '-',
+      getPriorityLabel(order.priority),
+    ]);
+
+    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${c}"`).join(','))].join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `gantt-chart-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success('Xuất Excel thành công');
+  };
+
+  // Export to PDF (HTML print)
+  const handleExportPDF = () => {
+    const getLineName = (lineId: number) => lines.find(l => l.id === lineId)?.name || '-';
+    const getProductName = (productId: number) => products.find(p => p.id === productId)?.name || '-';
+    const getStatusLabel = (status: string) => {
+      const map: Record<string, string> = {
+        pending: 'Chờ xử lý',
+        in_progress: 'Đang sản xuất',
+        completed: 'Hoàn thành',
+        cancelled: 'Đã hủy',
+        paused: 'Tạm dừng',
+      };
+      return map[status] || status;
+    };
+    const getStatusColor = (status: string) => {
+      const map: Record<string, string> = {
+        pending: '#6b7280',
+        in_progress: '#3b82f6',
+        completed: '#10b981',
+        cancelled: '#ef4444',
+        paused: '#f59e0b',
+      };
+      return map[status] || '#6b7280';
+    };
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast.error('Không thể mở cửa sổ in. Vui lòng cho phép popup.');
+      return;
+    }
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Gantt Chart - Lịch sản xuất</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          h1 { text-align: center; margin-bottom: 10px; }
+          .info { text-align: center; color: #666; margin-bottom: 20px; }
+          table { width: 100%; border-collapse: collapse; font-size: 12px; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+          th { background-color: #f5f5f5; font-weight: bold; }
+          .status { padding: 2px 8px; border-radius: 4px; color: white; font-size: 11px; }
+          .progress-bar { width: 100px; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
+          .progress-fill { height: 100%; background: #3b82f6; }
+          @media print {
+            body { padding: 0; }
+            button { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <h1>Gantt Chart - Lịch sản xuất</h1>
+        <div class="info">
+          Xuất ngày: ${format(new Date(), 'dd/MM/yyyy HH:mm')}<br/>
+          Khoảng thời gian: ${format(dateRange.start, 'dd/MM/yyyy')} - ${format(dateRange.end, 'dd/MM/yyyy')}
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Mã lệnh</th>
+              <th>Dây chuyền</th>
+              <th>Sản phẩm</th>
+              <th>Tiến độ</th>
+              <th>OK/NG/NTF</th>
+              <th>Trạng thái</th>
+              <th>Ngày bắt đầu</th>
+              <th>Ngày kết thúc</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredOrders.map(order => {
+              const progress = order.targetQuantity > 0 
+                ? Math.round((order.completedQuantity / order.targetQuantity) * 100) 
+                : 0;
+              return `
+                <tr>
+                  <td><strong>${order.orderCode}</strong><br/><small style="color:#666">${order.companyCode}</small></td>
+                  <td>${getLineName(order.lineId)}</td>
+                  <td>${getProductName(order.productModelId)}</td>
+                  <td>
+                    <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
+                    <small>${order.completedQuantity}/${order.targetQuantity} (${progress}%)</small>
+                  </td>
+                  <td>
+                    <span style="color:#10b981">${order.okQuantity}</span> / 
+                    <span style="color:#ef4444">${order.ngQuantity}</span> / 
+                    <span style="color:#f59e0b">${order.ntfQuantity}</span>
+                  </td>
+                  <td><span class="status" style="background:${getStatusColor(order.status)}">${getStatusLabel(order.status)}</span></td>
+                  <td>${order.scheduledStartDate ? format(new Date(order.scheduledStartDate), 'dd/MM/yyyy') : '-'}</td>
+                  <td>${order.scheduledEndDate ? format(new Date(order.scheduledEndDate), 'dd/MM/yyyy') : '-'}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+        <div style="margin-top: 20px; text-align: center;">
+          <button onclick="window.print()" style="padding: 10px 20px; cursor: pointer;">In / Lưu PDF</button>
+        </div>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+    toast.success('Mở cửa sổ xuất PDF');
+  };
+
   return (
     <Card>
       <CardHeader className="pb-4">
@@ -695,6 +875,26 @@ export default function GanttChart({
                 <ChevronRight className="w-4 h-4" />
               </Button>
             </div>
+
+            {/* Export Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Download className="w-4 h-4 mr-2" />
+                  Xuất
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExportExcel}>
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  Xuất Excel (CSV)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportPDF}>
+                  <FileText className="w-4 h-4 mr-2" />
+                  Xuất PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
         

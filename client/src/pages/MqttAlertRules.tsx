@@ -50,11 +50,13 @@ export default function MqttAlertRules() {
     notifyEmail: false,
     notifyMqtt: false,
     cooldownMinutes: 15,
+    categoryId: null as number | null,
   });
 
   const { data: rules, refetch: refetchRules } = trpc.mqttAlert.list.useQuery();
   const { data: history, refetch: refetchHistory } = trpc.mqttAlert.history.useQuery({ limit: 50 });
   const { data: unresolvedAlerts, refetch: refetchUnresolved } = trpc.mqttAlert.unresolved.useQuery();
+  const { data: categories } = trpc.productCategory.list.useQuery({});
 
   const createMutation = trpc.mqttAlert.create.useMutation({
     onSuccess: () => {
@@ -113,6 +115,7 @@ export default function MqttAlertRules() {
       notifyEmail: false,
       notifyMqtt: false,
       cooldownMinutes: 15,
+      categoryId: null,
     });
   };
 
@@ -150,8 +153,15 @@ export default function MqttAlertRules() {
       notifyEmail: rule.notifyEmail,
       notifyMqtt: rule.notifyMqtt,
       cooldownMinutes: rule.cooldownMinutes,
+      categoryId: rule.categoryId || null,
     });
     setIsCreateDialogOpen(true);
+  };
+
+  const getCategoryName = (categoryId: number | null) => {
+    if (!categoryId) return 'Tất cả';
+    const cat = categories?.find(c => c.id === categoryId);
+    return cat?.name || '-';
   };
 
   const getRuleTypeBadge = (type: string) => {
@@ -296,6 +306,29 @@ export default function MqttAlertRules() {
                       />
                     </div>
                   </div>
+                  <div className="space-y-2">
+                    <Label>Category sản phẩm (áp dụng cho)</Label>
+                    <Select 
+                      value={formData.categoryId?.toString() || 'all'} 
+                      onValueChange={(v) => setFormData(prev => ({ ...prev, categoryId: v === 'all' ? null : parseInt(v) }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Tất cả category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Tất cả category</SelectItem>
+                        {categories?.map(cat => (
+                          <SelectItem key={cat.id} value={cat.id.toString()}>
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color || '#3b82f6' }} />
+                              {cat.name}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Chọn category để chỉ áp dụng cảnh báo cho sản phẩm thuộc category đó</p>
+                  </div>
                   <div className="space-y-4 pt-4 border-t">
                     <Label className="text-base font-semibold">Thông báo</Label>
                     <div className="flex items-center justify-between">
@@ -399,6 +432,7 @@ export default function MqttAlertRules() {
                       <TableHead>Tên</TableHead>
                       <TableHead>Loại</TableHead>
                       <TableHead>Điều kiện</TableHead>
+                      <TableHead>Category</TableHead>
                       <TableHead>Thông báo</TableHead>
                       <TableHead>Trạng thái</TableHead>
                       <TableHead className="text-right">Thao tác</TableHead>
@@ -420,6 +454,15 @@ export default function MqttAlertRules() {
                           <code className="text-sm bg-muted px-2 py-1 rounded">
                             {COMPARISON_OPERATORS.find(o => o.value === rule.comparisonOperator)?.label} {rule.thresholdValue} {rule.thresholdUnit}
                           </code>
+                        </TableCell>
+                        <TableCell>
+                          {rule.categoryId ? (
+                            <Badge variant="outline" className="text-xs">
+                              {getCategoryName(rule.categoryId)}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">Tất cả</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-1">

@@ -203,6 +203,12 @@ export const navGroups: NavGroup[] = [
         description: "Xem và xuất báo cáo"
       },
       { 
+        href: "/category-analytics", 
+        label: "Phân tích Category", 
+        icon: <PieChart className="h-4 w-4" />,
+        description: "Phân tích sản lượng/yield theo category"
+      },
+      { 
         href: "/scheduled-reports", 
         label: "Báo cáo định kỳ", 
         icon: <Calendar className="h-4 w-4" />,
@@ -297,6 +303,12 @@ export const navGroups: NavGroup[] = [
         icon: <FileText className="h-4 w-4" />,
         description: "Tài liệu API tích hợp",
         requiredRole: 'admin'
+      },
+      { 
+        href: "/user-guide", 
+        label: "Hướng dẫn", 
+        icon: <BookOpen className="h-4 w-4" />,
+        description: "Tài liệu hướng dẫn sử dụng"
       },
     ],
   },

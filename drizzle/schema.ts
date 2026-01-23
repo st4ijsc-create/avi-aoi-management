@@ -1134,6 +1134,8 @@ export const mqttAlertRules = mysqlTable("mqtt_alert_rules", {
   // Cooldown to prevent spam
   cooldownMinutes: int("cooldownMinutes").default(15).notNull(), // Thời gian chờ giữa các alert
   lastTriggeredAt: timestamp("lastTriggeredAt"), // Lần trigger gần nhất
+  // Category filter (optional - only trigger for specific product category)
+  categoryId: int("categoryId"), // FK to product_categories (null = all categories)
   // Status
   isEnabled: boolean("isEnabled").default(true).notNull(),
   createdBy: int("createdBy"), // FK to users

@@ -2978,3 +2978,35 @@ Menu structure mới:
 - [x] Preview trước khi import (toCreate, toUpdate, errors)
 - [x] Progress indicator cho bulk operations (isImporting state)
 
+
+
+## Phase 128: Left Menu Enhancement, Category Analytics, Gantt Export & Category Alerts
+
+### 1. Kiểm tra và bổ sung Left Menu
+- [x] Kiểm tra các menu items còn thiếu
+- [x] Thêm User Guide page vào menu (Hướng dẫn sử dụng)
+- [x] Thêm Category Analytics vào menu Thống kê (Phân tích Category)
+- [x] Đảm bảo tất cả routes đều có menu tương ứng
+
+### 2. Dashboard Category Analytics
+- [x] Tạo CategoryAnalytics component (CategoryAnalytics.tsx)
+- [x] Biểu đồ sản lượng theo category (Pie chart - phân bố sản lượng)
+- [x] Biểu đồ yield rate theo category (Bar chart horizontal)
+- [x] Stacked bar chart chi tiết OK/NG/NTF
+- [x] Filter theo time range (today/week/month/quarter)
+- [x] Bảng chi tiết với export CSV
+
+### 3. Gantt Chart Export
+- [x] Export Gantt Chart ra PDF (handleExportPDF - print window)
+- [x] Export Gantt Chart ra Excel (handleExportExcel - CSV)
+- [x] Include header với thông tin filter (date range, factory)
+- [x] Include legend và chú thích (status colors, progress)
+- [x] Dropdown menu xuất trong GanttChart header
+
+### 4. Category-based Alerts
+- [x] Thêm categoryId vào mqttAlertRules schema
+- [x] Cập nhật alert rules UI với category dropdown
+- [x] Hiển thị category trong danh sách rules
+- [x] Ngưỡng cảnh báo riêng cho từng category
+- [x] getCategoryName helper function
+
