@@ -2463,37 +2463,53 @@ Menu structure mới:
 ## Phase 111: Security & Access Control (Ưu tiên cao)
 
 ### 1. 2FA Login Flow
-- [ ] Thêm bước xác thực OTP khi đăng nhập nếu user đã bật 2FA
-- [ ] Tạo OTP verification page/modal sau OAuth callback
-- [ ] Validate TOTP code với speakeasy
-- [ ] Redirect về trang chính sau khi verify thành công
-- [ ] Handle invalid OTP với error message và retry
-
-### 2. Multi-tenant Access Control
-- [ ] Update getYieldRateByCorporate để filter theo user assignments
-- [ ] Update getYieldRateByFactory để filter theo user assignments
-- [ ] Update getThroughputByCorporate để filter theo user assignments
-- [ ] Update getThroughputByFactory để filter theo user assignments
-- [ ] Update corporateFactoryStatsRouter để pass userId và userRole
-- [ ] Update dashboardRouter.stats để filter theo user assignments
-- [ ] Test với non-admin user
+- [x] Thêm bước xác thực OTP khi đăng nhập nếu user đã bật 2FA (oauth.ts)
+- [x] Tạo OTP verification page/modal trong Login.tsx
+- [x] Validate TOTP code với speakeasy (window: 1 cho clock drift)
+- [x] Hỗ trợ backup codes khi TOTP fails
+- [x] Redirect về trang chính sau khi verify thành công
+- [x] Handle invalid OTP với error message và retry
+- [x] UI 2FA verification với input 6 số và nút quay### 2. Multi-tenant Access Control
+- [x] getYieldRateByCorporate đã filter theo user assignments (db.ts)
+- [x] getYieldRateByFactory đã filter theo user assignments (db.ts)
+- [x] getThroughputByCorporate đã filter theo user assignments (db.ts)
+- [x] getThroughputByFactory đã filter theo user assignments (db.ts)
+- [x] corporateFactoryStatsRouter truyền userId và userRole vào các queries
+- [x] getUserCorporateAssignments và getUserFactoryAssignments functions
+- [x] hasAccessToCorporate và hasAccessToFactory helper functions
+- [x] userAssignmentRouter đã có sẵn trong routers.ts
+- [x] Tạo UI quản lý user assignments (UserAssignments.tsx) với route /user-assignments
+- [x] Thêm vào navigation menu
 
 ## Phase 112: Dashboard & Analytics Enhancement
 
 ### 1. Dashboard Drill-down
-- [ ] Thêm onClick handler cho corporate bar chart
-- [ ] Thêm drill-down state management
-- [ ] Implement factory details modal/panel
-- [ ] Thêm machine-level analytics query
-- [ ] Implement breadcrumb navigation
-- [ ] Thêm back button để quay lại corporate view
-- [ ] Thêm loading states cho drill-down transitions
+- [x] Thêm onClick handler cho corporate bar chart (handleBarClick)
+- [x] Thêm drill-down state management (drillLevel, selectedCorporate, selectedFactory, selectedMachine)
+- [x] Implement factory details với yield cards và charts
+- [x] Thêm machine-level analytics (MachineAnalyticsView)
+- [x] Implement breadcrumb navigation (Home → Corporate → Factory → Machine)
+- [x] Thêm back button để quay lại level trước
+- [x] Thêm loading states cho drill-down transitions
+- [x] Pie chart phân bố sản lượng
+- [x] Color-coded bars theo yield rate (green/yellow/red)
 
 ### 2. Machine Status Realtime
-- [ ] Thêm trạng thái hoạt động máy (chạy/dừng/lỗi) vào schema
-- [ ] Hiển thị trạng thái máy trên layout với màu sắc (xanh=chạy, vàng=dừng, đỏ=lỗi)
-- [ ] Cập nhật trạng thái realtime qua MQTT/WebSocket
-- [ ] Cảnh báo khi máy offline quá lâu
+- [x] operationStatus field trong machines table (running/stopped/error/maintenance)
+- [x] machineStatusLogs table cho lịch sử trạng thái
+- [x] machineHeartbeats table cho heartbeat history
+- [x] MachineStatusMonitor page với:
+  - Machine cards với online/offline status
+  - Uptime percentage và progress bar
+  - Last seen time và heartbeat status
+  - UptimeTimeline component
+- [x] WorkshopLayoutEditor hiển thị trạng thái máy với màu sắc:
+  - Xanh lá = đang chạy (running)
+  - Vàng = dừng (stopped)
+  - Đỏ = lỗi (error) với animation pulse
+  - Xanh dương = bảo trì (maintenance)
+- [x] MQTT integration cho realtime updates
+- [x] Alert rules cho machine_status và machine_offline
 
 ### 3. Workstation Management
 - [ ] Thêm trường workstation vào measurement_point_defs
@@ -2504,17 +2520,30 @@ Menu structure mới:
 ## Phase 113: Production & Layout Enhancement
 
 ### 1. Gantt Chart Improvements
-- [ ] Zoom controls (day/week/month) với smooth transition
-- [ ] Filter theo factory và line
-- [ ] Click to edit production order
-- [ ] Drag to resize order duration
-- [ ] Today marker và auto-scroll
+- [x] Zoom controls (day/week/month) với viewMode state
+- [x] Filter theo factory và line (selectedFactoryId, selectedLineId)
+- [x] Click to edit production order (onOrderClick callback)
+- [x] Today marker và scrollToToday function
+- [x] Navigate prev/next timeline
+- [x] Status colors (pending/in_progress/completed/paused/cancelled)
+- [x] Progress bar trên mỗi order
+- [x] Group orders theo line
+- [ ] Drag to resize order duration (advanced feature)
 
 ### 2. Layout Workshop CRUD
-- [ ] CRUD cho Layout Workshop (thêm/sửa/xóa dây chuyền, máy, công trạm)
-- [ ] Drag-drop để sắp xếp dây chuyền trong nhà xưởng
-- [ ] Drag-drop để sắp xếp máy móc trong dây chuyền
-- [ ] Hiển thị công đoạn của công trạm
+- [x] WorkshopLayoutEditor component đã có sẵn với:
+  - Drag-drop để sắp xếp máy móc trong layout
+  - Zoom controls (zoom in/out/reset)
+  - Pan navigation
+  - Add machine to layout (addMachinePosition mutation)
+  - Update machine position (updateMachinePosition mutation)
+  - Remove machine from layout (removeMachinePosition mutation)
+  - Hiển thị trạng thái máy với màu sắc
+  - Hiển thị stats (total, ok, ng, ntf, yieldRate)
+  - Hỗ trợ 2D và 3D layout types
+- [x] Layout CRUD APIs (layout router)
+- [x] Machine position management
+- [ ] Drag-drop để sắp xếp dây chuyền trong nhà xưởng (advanced)
 
 ### 3. Process Management Enhancement
 - [ ] Drag-drop sắp xếp thứ tự processes

@@ -113,17 +113,22 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
       
-      // Verify OTP token
-      const { OTP } = await import('otplib');
-      const otp = new OTP({ strategy: 'totp' });
-      const result = await otp.verify({
-        token: token,
+      // Verify OTP token using speakeasy
+      const speakeasy = await import('speakeasy');
+      const verified = speakeasy.default.totp.verify({
         secret: twoFAStatus.twoFactorSecret,
+        encoding: 'base32',
+        token: token,
+        window: 1, // Allow 1 step before/after for clock drift
       });
       
-      if (!result.valid) {
-        res.status(401).json({ error: "Mã xác thực không hợp lệ" });
-        return;
+      if (!verified) {
+        // Try backup code if TOTP fails
+        const isBackupCode = await db.verifyBackupCode(userId, token);
+        if (!isBackupCode) {
+          res.status(401).json({ error: "Mã xác thực không hợp lệ" });
+          return;
+        }
       }
       
       // Update last signed in

@@ -3091,25 +3091,30 @@ export async function verifyBackupCode(userId: number, code: string) {
   const db = await getDb();
   if (!db) return false;
   
-  const [backupCode] = await db.select()
+  // Get all unused backup codes for user
+  const codes = await db.select()
     .from(backupCodes)
     .where(
       and(
         eq(backupCodes.userId, userId),
-        eq(backupCodes.code, code),
         eq(backupCodes.isUsed, false)
       )
-    )
-    .limit(1);
+    );
   
-  if (!backupCode) return false;
+  // Check each code with bcrypt compare (codes are hashed)
+  const bcrypt = await import('bcryptjs');
+  for (const backupCode of codes) {
+    const isMatch = await bcrypt.compare(code.toUpperCase(), backupCode.code);
+    if (isMatch) {
+      // Mark as used
+      await db.update(backupCodes)
+        .set({ isUsed: true, usedAt: new Date() })
+        .where(eq(backupCodes.id, backupCode.id));
+      return true;
+    }
+  }
   
-  // Mark as used
-  await db.update(backupCodes)
-    .set({ isUsed: true, usedAt: new Date() })
-    .where(eq(backupCodes.id, backupCode.id));
-  
-  return true;
+  return false;
 }
 
 export async function getUnusedBackupCodesCount(userId: number) {
