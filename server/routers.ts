@@ -5,6 +5,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { processRouter } from "./routers/processRouter";
 import { spcAnalysisRouter } from "./routers/spcAnalysisRouter";
 import { twoFactorRouter } from "./routers/twoFactorRouter";
+import { sessionRouter } from "./routers/sessionRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -4953,6 +4954,7 @@ export const appRouter = router({
   process: processRouter,
   spcAnalysis: spcAnalysisRouter,
   twoFactor: twoFactorRouter,
+  session: sessionRouter,
 });
 
 export type AppRouter = typeof appRouter;

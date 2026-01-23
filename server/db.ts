@@ -5826,7 +5826,8 @@ export async function getNGByWorkstation(filters: {
   
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
   
-  const results = await db
+  // First get NG counts
+  const ngResults = await db
     .select({
       workstationId: measurementPointDefs.workstationId,
       workstationCode: workstations.code,
@@ -5842,11 +5843,43 @@ export async function getNGByWorkstation(filters: {
     .groupBy(measurementPointDefs.workstationId, workstations.code, workstations.name, workstations.processType)
     .orderBy(sql`COUNT(*) DESC`);
   
-  return results.map(r => ({
+  // Get total counts per workstation (all results, not just NG)
+  const totalConditions: SQL[] = [];
+  if (filters.startDate) {
+    totalConditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  }
+  if (filters.endDate) {
+    totalConditions.push(lte(productInspections.inspectionTime, filters.endDate));
+  }
+  if (filters.machineId) {
+    totalConditions.push(eq(productInspections.machineId, filters.machineId));
+  }
+  if (filters.factoryCode) {
+    totalConditions.push(eq(productInspections.factoryCode, filters.factoryCode));
+  }
+  
+  const totalWhereClause = totalConditions.length > 0 ? and(...totalConditions) : undefined;
+  
+  const totalResults = await db
+    .select({
+      workstationId: measurementPointDefs.workstationId,
+      totalCount: sql<number>`COUNT(*)`,
+    })
+    .from(measurementResults)
+    .leftJoin(measurementPointDefs, eq(measurementResults.pointDefId, measurementPointDefs.id))
+    .leftJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
+    .where(totalWhereClause)
+    .groupBy(measurementPointDefs.workstationId);
+  
+  // Create map of total counts
+  const totalMap = new Map(totalResults.map(r => [r.workstationId, Number(r.totalCount)]));
+  
+  return ngResults.map(r => ({
     workstationId: r.workstationId,
     workstationCode: r.workstationCode || 'N/A',
     workstationName: r.workstationName || 'Unknown',
     processType: r.processType || 'OTHER',
     ngCount: Number(r.ngCount),
+    totalCount: totalMap.get(r.workstationId) || Number(r.ngCount),
   }));
 }

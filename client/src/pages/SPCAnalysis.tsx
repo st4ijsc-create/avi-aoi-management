@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { WorkstationAnalysis } from "@/components/WorkstationAnalysis";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,8 @@ import {
   Target,
   Lightbulb,
   RefreshCw,
-  Download
+  Download,
+  Wrench
 } from "lucide-react";
 
 // Date helpers
@@ -182,7 +184,7 @@ export default function SPCAnalysis() {
 
       {/* Main Content */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="pareto" className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
             Pareto Analysis
@@ -198,6 +200,10 @@ export default function SPCAnalysis() {
           <TabsTrigger value="rootcause" className="flex items-center gap-2">
             <Lightbulb className="h-4 w-4" />
             Root Cause
+          </TabsTrigger>
+          <TabsTrigger value="workstation" className="flex items-center gap-2">
+            <Wrench className="h-4 w-4" />
+            Workstation
           </TabsTrigger>
         </TabsList>
 
@@ -551,6 +557,16 @@ export default function SPCAnalysis() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Workstation Analysis Tab */}
+        <TabsContent value="workstation" className="space-y-4">
+          <WorkstationAnalysis 
+            startDate={dateRange.startDate}
+            endDate={dateRange.endDate}
+            machineId={selectedMachine !== "all" ? Number(selectedMachine) : undefined}
+            factoryCode={selectedFactory !== "all" ? selectedFactory : undefined}
+          />
         </TabsContent>
 
         {/* Root Cause Tab */}

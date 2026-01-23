@@ -2349,3 +2349,41 @@ Menu structure mới:
 - [x] Option disable 2FA (yêu cầu OTP hoặc backup code)
 - [x] Hiển thị status 2FA (enabled/disabled)
 - [x] Tạo TwoFactorSetup component mới với UI cải tiến
+
+
+## Phase 108: Session Management, Audit Logs UI & Workstation Analysis
+
+### 1. Session Management
+- [x] Tạo API list sessions cho user hiện tại (session.list)
+- [x] Tạo API revoke session (session.revoke)
+- [x] Tạo API revoke all sessions (session.revokeAll)
+- [x] Hiển thị device info (browser, OS, IP, location)
+- [x] Hiển thị last activity time với formatDistanceToNow
+- [x] Highlight session hiện tại với badge
+- [x] Tạo SessionManagement component
+- [x] Tạo sessionRouter và thêm vào appRouter
+- [ ] Tích hợp vào Profile page
+
+### 2. Audit Logs UI
+- [x] Tạo API list audit logs với pagination (audit.list)
+- [x] Tạo API filter audit logs (user, action, date range)
+- [x] Tạo AuditLogs page trong Settings (đã có sẵn)
+- [x] Hiển thị action type với icon và color
+- [x] Hiển thị user info, timestamp, IP
+- [x] Hiển thị details với JSON viewer
+- [x] Tab Thống kê với charts (PieChart, BarChart)
+- [x] Chỉ admin mới có quyền xem
+- [ ] Export audit logs to CSV (cần thêm)
+
+### 3. Workstation Analysis
+- [x] Tạo API ngByWorkstation với totalCount và ngRate
+- [x] Tạo WorkstationAnalysis component với:
+  - Summary cards (số công trạm, tổng NG, tổng kiểm tra, tỷ lệ NG TB)
+  - Top workstations alert (top 3 cần cải thiện)
+  - Bar chart phân bố lỗi theo workstation
+  - Pie chart tỷ lệ NG theo workstation
+  - Bảng chi tiết với progress bars
+- [x] Thêm tab Workstation trong SPC Analysis page
+- [x] Tạo biểu đồ pie chart tỷ lệ lỗi theo workstation
+- [x] Hiển thị top workstations có nhiều lỗi nhất
+- [x] Filter theo time range và factory/machine

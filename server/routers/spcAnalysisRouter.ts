@@ -331,4 +331,39 @@ export const spcAnalysisRouter = router({
         percentage: totalNG > 0 ? ((item.ngCount / totalNG) * 100).toFixed(2) : '0.00',
       }));
     }),
+
+  // NG by workstation for charts
+  ngByWorkstation: protectedProcedure
+    .input(z.object({
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      machineId: z.number().optional(),
+      factoryCode: z.string().optional(),
+      limit: z.number().default(20),
+    }))
+    .query(async ({ input }) => {
+      const data = await db.getNGByWorkstation({
+        startDate: input.startDate ? new Date(input.startDate) : undefined,
+        endDate: input.endDate ? new Date(input.endDate) : undefined,
+        machineId: input.machineId,
+        factoryCode: input.factoryCode,
+      });
+      
+      // Sort by NG count descending and limit
+      const sorted = data
+        .sort((a, b) => b.ngCount - a.ngCount)
+        .slice(0, input.limit);
+      
+      // Calculate totals
+      const totalNG = data.reduce((sum, item) => sum + item.ngCount, 0);
+      const totalInspections = data.reduce((sum, item) => sum + item.totalCount, 0);
+      
+      return sorted.map(item => ({
+        workstation: item.workstationName || item.workstationCode || 'Unknown',
+        ngCount: item.ngCount,
+        totalCount: item.totalCount,
+        ngRate: item.totalCount > 0 ? (item.ngCount / item.totalCount) * 100 : 0,
+        percentage: totalNG > 0 ? (item.ngCount / totalNG) * 100 : 0,
+      }));
+    }),
 });
