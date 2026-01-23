@@ -225,6 +225,13 @@
       "when": 1769136686920,
       "tag": "0031_deep_jack_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "5",
+      "when": 1769141025392,
+      "tag": "0032_silly_red_ghost",
+      "breakpoints": true
     }
   ]
 }

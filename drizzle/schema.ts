@@ -1280,3 +1280,149 @@ export const emailTemplateConfig = mysqlTable("email_template_config", {
 
 export type EmailTemplateConfig = typeof emailTemplateConfig.$inferSelect;
 export type InsertEmailTemplateConfig = typeof emailTemplateConfig.$inferInsert;
+
+
+// ============= Notifications System =============
+
+/**
+ * Notifications - Thông báo hệ thống cho user
+ */
+export const notifications = mysqlTable("notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK to users (recipient)
+  type: mysqlEnum("type", ["ALERT", "REPORT", "SYSTEM", "INFO", "WARNING", "SUCCESS"]).default("INFO").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message").notNull(),
+  // Link to related entity
+  entityType: varchar("entityType", { length: 50 }), // 'inspection', 'report', 'alert', etc.
+  entityId: int("entityId"), // ID of related entity
+  actionUrl: varchar("actionUrl", { length: 500 }), // URL to navigate when clicked
+  // Status
+  isRead: boolean("isRead").default(false).notNull(),
+  readAt: timestamp("readAt"),
+  // Priority
+  priority: mysqlEnum("priority", ["LOW", "NORMAL", "HIGH", "URGENT"]).default("NORMAL").notNull(),
+  // Expiration
+  expiresAt: timestamp("expiresAt"), // Optional expiration time
+  // Metadata
+  metadata: json("metadata").$type<Record<string, any>>(), // Additional data
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_notifications_user").on(table.userId),
+  index("idx_notifications_type").on(table.type),
+  index("idx_notifications_read").on(table.isRead),
+  index("idx_notifications_priority").on(table.priority),
+  index("idx_notifications_created").on(table.createdAt),
+  index("idx_notifications_user_unread").on(table.userId, table.isRead),
+]);
+
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = typeof notifications.$inferInsert;
+
+/**
+ * User Notification Preferences - Cài đặt thông báo của user
+ */
+export const userNotificationPreferences = mysqlTable("user_notification_preferences", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(), // FK to users
+  // Email notifications
+  emailEnabled: boolean("emailEnabled").default(true).notNull(),
+  emailAlerts: boolean("emailAlerts").default(true).notNull(),
+  emailReports: boolean("emailReports").default(true).notNull(),
+  emailSystem: boolean("emailSystem").default(true).notNull(),
+  // Push notifications
+  pushEnabled: boolean("pushEnabled").default(true).notNull(),
+  pushAlerts: boolean("pushAlerts").default(true).notNull(),
+  pushReports: boolean("pushReports").default(true).notNull(),
+  pushSystem: boolean("pushSystem").default(true).notNull(),
+  // In-app notifications
+  inAppEnabled: boolean("inAppEnabled").default(true).notNull(),
+  inAppAlerts: boolean("inAppAlerts").default(true).notNull(),
+  inAppReports: boolean("inAppReports").default(true).notNull(),
+  inAppSystem: boolean("inAppSystem").default(true).notNull(),
+  // Sound
+  soundEnabled: boolean("soundEnabled").default(true).notNull(),
+  // Quiet hours
+  quietHoursEnabled: boolean("quietHoursEnabled").default(false).notNull(),
+  quietHoursStart: varchar("quietHoursStart", { length: 10 }).default("22:00"), // HH:mm
+  quietHoursEnd: varchar("quietHoursEnd", { length: 10 }).default("07:00"), // HH:mm
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_notif_prefs_user").on(table.userId),
+]);
+
+export type UserNotificationPreference = typeof userNotificationPreferences.$inferSelect;
+export type InsertUserNotificationPreference = typeof userNotificationPreferences.$inferInsert;
+
+// ============= Dashboard Widgets =============
+
+/**
+ * Dashboard Widget Layouts - Cấu hình layout widgets của user
+ */
+export const dashboardWidgetLayouts = mysqlTable("dashboard_widget_layouts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK to users
+  layoutName: varchar("layoutName", { length: 100 }).default("default").notNull(),
+  // Widget configuration as JSON array
+  widgets: json("widgets").$type<Array<{
+    id: string; // Unique widget ID
+    type: string; // Widget type (e.g., 'yield_chart', 'throughput', 'alerts', etc.)
+    title: string; // Display title
+    // Position and size (grid-based)
+    x: number; // Column position (0-based)
+    y: number; // Row position (0-based)
+    w: number; // Width in grid units
+    h: number; // Height in grid units
+    // Widget-specific settings
+    settings?: Record<string, any>;
+    // Visibility
+    visible: boolean;
+  }>>().notNull(),
+  // Active layout
+  isActive: boolean("isActive").default(true).notNull(),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_widget_layouts_user").on(table.userId),
+  index("idx_widget_layouts_active").on(table.isActive),
+  index("idx_widget_layouts_user_active").on(table.userId, table.isActive),
+]);
+
+export type DashboardWidgetLayout = typeof dashboardWidgetLayouts.$inferSelect;
+export type InsertDashboardWidgetLayout = typeof dashboardWidgetLayouts.$inferInsert;
+
+/**
+ * User Settings - Cài đặt chung của user (bao gồm language)
+ */
+export const userSettings = mysqlTable("user_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(), // FK to users
+  // Language preference
+  language: varchar("language", { length: 10 }).default("vi").notNull(), // vi, en, zh, ja
+  // Theme preference
+  theme: mysqlEnum("theme", ["light", "dark", "system"]).default("system").notNull(),
+  // Timezone
+  timezone: varchar("timezone", { length: 50 }).default("Asia/Ho_Chi_Minh"),
+  // Date/time format preferences
+  dateFormat: varchar("dateFormat", { length: 20 }).default("DD/MM/YYYY"),
+  timeFormat: varchar("timeFormat", { length: 10 }).default("24h"), // 12h or 24h
+  // Number format
+  numberFormat: varchar("numberFormat", { length: 20 }).default("1.234,56"), // Decimal separator
+  // Dashboard preferences
+  defaultDashboardTab: varchar("defaultDashboardTab", { length: 50 }).default("overview"),
+  // Sidebar preferences
+  sidebarCollapsed: boolean("sidebarCollapsed").default(false).notNull(),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_user_settings_user").on(table.userId),
+  index("idx_user_settings_language").on(table.language),
+]);
+
+export type UserSetting = typeof userSettings.$inferSelect;
+export type InsertUserSetting = typeof userSettings.$inferInsert;

@@ -280,6 +280,11 @@ export function initializeSocket(server: HttpServer): Server {
     });
   });
 
+  // Initialize notification service with Socket.io
+  import('../services/notificationService').then(({ initNotificationService }) => {
+    initNotificationService(io!);
+  });
+  
   console.log("[Socket.io] WebSocket server initialized");
   return io;
 }

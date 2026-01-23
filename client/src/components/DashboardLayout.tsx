@@ -29,6 +29,7 @@ import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { Cpu, LogOut, PanelLeft, Key, User, Monitor, ChevronRight } from "lucide-react";
 import { NotificationCenter } from "./NotificationCenter";
+import { LanguageSwitcher } from "./LanguageSwitcher";
 import { CSSProperties, ReactNode, useEffect, useRef, useState } from "react";
 import { useLocation, Link } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -355,6 +356,7 @@ function DashboardLayoutContent({
               {activeItem?.label ?? title}
             </span>
           </div>
+          <LanguageSwitcher />
           <NotificationCenter />
         </div>
         <main className="flex-1 p-6 overflow-auto">{children}</main>

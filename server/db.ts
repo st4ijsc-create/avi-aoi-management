@@ -45,7 +45,11 @@ import {
   systemConfig, InsertSystemConfig,
   userCorporateAssignments, InsertUserCorporateAssignment,
   userFactoryAssignments, InsertUserFactoryAssignment,
-  emailTemplateConfig, InsertEmailTemplateConfig
+  emailTemplateConfig, InsertEmailTemplateConfig,
+  notifications, InsertNotification,
+  userNotificationPreferences, InsertUserNotificationPreference,
+  dashboardWidgetLayouts, InsertDashboardWidgetLayout,
+  userSettings, InsertUserSetting
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -5136,4 +5140,220 @@ export async function setDefaultEmailTemplateConfig(id: number) {
   
   // Set new default
   await db.update(emailTemplateConfig).set({ isDefault: true }).where(eq(emailTemplateConfig.id, id));
+}
+
+
+// ============ NOTIFICATIONS FUNCTIONS ============
+
+export async function createNotification(data: InsertNotification) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const [result] = await db.insert(notifications).values(data);
+  return { id: Number(result.insertId) };
+}
+
+export async function getNotifications(userId: number, filters?: {
+  type?: 'ALERT' | 'REPORT' | 'SYSTEM' | 'INFO' | 'WARNING' | 'SUCCESS';
+  isRead?: boolean;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions = [eq(notifications.userId, userId)];
+  
+  if (filters?.type) {
+    conditions.push(eq(notifications.type, filters.type));
+  }
+  if (filters?.isRead !== undefined) {
+    conditions.push(eq(notifications.isRead, filters.isRead));
+  }
+  
+  return db.select()
+    .from(notifications)
+    .where(and(...conditions))
+    .orderBy(desc(notifications.createdAt))
+    .limit(filters?.limit || 50)
+    .offset(filters?.offset || 0);
+}
+
+export async function getUnreadNotificationCount(userId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  
+  const result = await db.select({ count: sql<number>`COUNT(*)` })
+    .from(notifications)
+    .where(and(
+      eq(notifications.userId, userId),
+      eq(notifications.isRead, false)
+    ));
+  
+  return result[0]?.count || 0;
+}
+
+export async function markNotificationAsRead(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.update(notifications)
+    .set({ isRead: true, readAt: new Date() })
+    .where(and(
+      eq(notifications.id, id),
+      eq(notifications.userId, userId)
+    ));
+}
+
+export async function markAllNotificationsAsRead(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.update(notifications)
+    .set({ isRead: true, readAt: new Date() })
+    .where(and(
+      eq(notifications.userId, userId),
+      eq(notifications.isRead, false)
+    ));
+}
+
+export async function deleteNotification(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.delete(notifications)
+    .where(and(
+      eq(notifications.id, id),
+      eq(notifications.userId, userId)
+    ));
+}
+
+export async function deleteOldNotifications(userId: number, daysOld: number = 30) {
+  const db = await getDb();
+  if (!db) return;
+  
+  const cutoffDate = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
+  
+  await db.delete(notifications)
+    .where(and(
+      eq(notifications.userId, userId),
+      lte(notifications.createdAt, cutoffDate)
+    ));
+}
+
+// Broadcast notification to multiple users
+export async function broadcastNotification(userIds: number[], data: Omit<InsertNotification, 'userId'>) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const results: number[] = [];
+  for (const userId of userIds) {
+    const [result] = await db.insert(notifications).values({ ...data, userId });
+    results.push(Number(result.insertId));
+  }
+  return results;
+}
+
+// ============ USER NOTIFICATION PREFERENCES ============
+
+export async function getUserNotificationPreferences(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const results = await db.select()
+    .from(userNotificationPreferences)
+    .where(eq(userNotificationPreferences.userId, userId))
+    .limit(1);
+  
+  return results[0] || null;
+}
+
+export async function upsertUserNotificationPreferences(userId: number, data: Partial<InsertUserNotificationPreference>) {
+  const db = await getDb();
+  if (!db) return;
+  
+  const existing = await getUserNotificationPreferences(userId);
+  
+  if (existing) {
+    await db.update(userNotificationPreferences)
+      .set(data)
+      .where(eq(userNotificationPreferences.userId, userId));
+  } else {
+    await db.insert(userNotificationPreferences).values({ userId, ...data });
+  }
+}
+
+// ============ USER SETTINGS FUNCTIONS ============
+
+export async function getUserSettings(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const results = await db.select()
+    .from(userSettings)
+    .where(eq(userSettings.userId, userId))
+    .limit(1);
+  
+  return results[0] || null;
+}
+
+export async function upsertUserSettings(userId: number, data: Partial<InsertUserSetting>) {
+  const db = await getDb();
+  if (!db) return;
+  
+  const existing = await getUserSettings(userId);
+  
+  if (existing) {
+    await db.update(userSettings)
+      .set(data)
+      .where(eq(userSettings.userId, userId));
+  } else {
+    await db.insert(userSettings).values({ userId, ...data });
+  }
+}
+
+// ============ DASHBOARD WIDGET LAYOUTS FUNCTIONS ============
+
+export async function getDashboardWidgetLayout(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const results = await db.select()
+    .from(dashboardWidgetLayouts)
+    .where(and(
+      eq(dashboardWidgetLayouts.userId, userId),
+      eq(dashboardWidgetLayouts.isActive, true)
+    ))
+    .limit(1);
+  
+  return results[0] || null;
+}
+
+export async function saveDashboardWidgetLayout(userId: number, widgets: InsertDashboardWidgetLayout['widgets']) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const existing = await getDashboardWidgetLayout(userId);
+  
+  if (existing) {
+    await db.update(dashboardWidgetLayouts)
+      .set({ widgets })
+      .where(eq(dashboardWidgetLayouts.id, existing.id));
+    return { id: existing.id };
+  } else {
+    const [result] = await db.insert(dashboardWidgetLayouts).values({
+      userId,
+      widgets,
+      isActive: true,
+    });
+    return { id: Number(result.insertId) };
+  }
+}
+
+export async function resetDashboardWidgetLayout(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.delete(dashboardWidgetLayouts)
+    .where(eq(dashboardWidgetLayouts.userId, userId));
 }

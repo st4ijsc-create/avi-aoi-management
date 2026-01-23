@@ -2046,3 +2046,39 @@ Menu structure mới:
 4. Dữ liệu - Sản phẩm, Layout, Tập đoàn
 5. Thống kê - Báo cáo, Báo cáo định kỳ
 6. Quản trị - Users, Settings, API (Admin only)
+
+## Phase 97: Notifications, i18n, Dashboard Widgets
+
+### 1. Notification Center Enhancement
+- [x] Tạo notification service với Socket.io real-time
+- [x] Thêm notification types (ALERT, REPORT, SYSTEM, INFO, WARNING, SUCCESS)
+- [x] Tạo notifications table trong database
+- [x] Tạo user_notification_preferences table
+- [x] API endpoints cho notifications CRUD (list, markAsRead, markAllAsRead, delete)
+- [x] Notification preferences API (get, update)
+- [x] Admin endpoints (sendToUser, broadcast)
+- [x] Quiet hours support
+- [x] Priority levels (LOW, NORMAL, HIGH, URGENT)
+
+### 2. Multi-language Support (i18n)
+- [x] Cài đặt i18next, react-i18next, i18next-browser-languagedetector
+- [x] Tạo translation files (vi.json, en.json, zh.json)
+- [x] Tạo i18n configuration với language detection
+- [x] Tạo LanguageSwitcher component với dropdown
+- [x] Dịch navigation menu (nav.*)
+- [x] Dịch Dashboard page (dashboard.*)
+- [x] Dịch Settings page (settings.*)
+- [x] Dịch common UI elements (common.*, validation.*, errors.*)
+- [x] Lưu language preference vào localStorage
+- [x] Thêm LanguageSwitcher vào header
+
+### 3. Dashboard Widgets Customization
+- [x] Tạo widget configuration schema (8 widget types)
+- [x] Tạo dashboard_widget_layouts table trong database
+- [x] Tạo DashboardWidgetManager component với dialog
+- [x] Implement drag-and-drop widget reordering (@dnd-kit)
+- [x] Cho phép show/hide widgets với Switch
+- [x] Lưu widget layout vào user preferences
+- [x] Default widget layouts cho new users
+- [x] useVisibleWidgets hook cho Dashboard
+- [x] Multi-language widget names (vi, en, zh)
