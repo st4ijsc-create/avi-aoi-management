@@ -8,7 +8,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
-import { User, Mail, Phone, Building, Briefcase, Shield, Calendar, Clock, ShieldCheck, ShieldOff, QrCode, Copy, CheckCircle2, AlertTriangle, KeyRound, Download } from "lucide-react";
+import { User, Mail, Phone, Building, Briefcase, Shield, Calendar, Clock, ShieldCheck, ShieldOff, QrCode, Copy, CheckCircle2, AlertTriangle, KeyRound, Download, Monitor } from "lucide-react";
+import SessionManagement from "@/components/SessionManagement";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 
@@ -418,6 +419,22 @@ export default function Profile() {
             </CardContent>
           </Card>
         )}
+
+        {/* Session Management Section */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Monitor className="h-5 w-5" />
+              Phiên đăng nhập
+            </CardTitle>
+            <CardDescription>
+              Quản lý các phiên đăng nhập của bạn trên các thiết bị
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SessionManagement />
+          </CardContent>
+        </Card>
       </div>
 
       {/* 2FA Setup Dialog */}

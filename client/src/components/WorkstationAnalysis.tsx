@@ -11,7 +11,11 @@ import {
   TrendingUp, 
   TrendingDown,
   BarChart3,
-  PieChart as PieChartIcon
+  PieChart as PieChartIcon,
+  Lightbulb,
+  CheckCircle2,
+  Target,
+  Zap
 } from "lucide-react";
 import {
   BarChart,
@@ -82,6 +86,81 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
       .sort((a, b) => b.ngCount - a.ngCount)
       .slice(0, 3);
   }, [workstationData]);
+
+  // Generate AI recommendations based on workstation data
+  const recommendations = useMemo(() => {
+    if (!workstationData || workstationData.length === 0) return [];
+    
+    const recs: Array<{
+      id: string;
+      severity: 'high' | 'medium' | 'low';
+      type: 'process' | 'equipment' | 'training' | 'quality';
+      title: string;
+      description: string;
+      workstation?: string;
+      impact: string;
+    }> = [];
+    
+    // Analyze each workstation
+    workstationData.forEach((ws, index) => {
+      const wsName = ws.workstation || `WS-${index + 1}`;
+      
+      // High NG rate (> 5%)
+      if (ws.ngRate > 5) {
+        recs.push({
+          id: `high-ng-${index}`,
+          severity: 'high',
+          type: 'process',
+          title: `Kiểm tra quy trình tại ${wsName}`,
+          description: `Công trạm ${wsName} có tỷ lệ NG ${ws.ngRate.toFixed(2)}%, cao hơn ngưỡng cho phép 5%. Cần rà soát lại quy trình làm việc và kiểm tra thiết bị.`,
+          workstation: wsName,
+          impact: `Giảm ${Math.round((ws.ngRate - 2) * ws.totalCount / 100)} sản phẩm lỗi nếu đạt mục tiêu 2%`
+        });
+      }
+      
+      // Medium NG rate (2-5%)
+      else if (ws.ngRate > 2) {
+        recs.push({
+          id: `medium-ng-${index}`,
+          severity: 'medium',
+          type: 'equipment',
+          title: `Bảo trì thiết bị tại ${wsName}`,
+          description: `Công trạm ${wsName} có tỷ lệ NG ${ws.ngRate.toFixed(2)}%. Kiểm tra và bảo trì định kỳ thiết bị để duy trì hiệu suất.`,
+          workstation: wsName,
+          impact: `Tiết kiệm ${Math.round(ws.ngRate * ws.totalCount / 100 * 0.3)} sản phẩm lỗi/kỳ`
+        });
+      }
+      
+      // High volume workstation
+      if (ws.totalCount > totals.totalInspections / workstationData.length * 1.5) {
+        recs.push({
+          id: `high-volume-${index}`,
+          severity: 'low',
+          type: 'training',
+          title: `Tăng cường đào tạo tại ${wsName}`,
+          description: `Công trạm ${wsName} có khối lượng kiểm tra cao (${ws.totalCount.toLocaleString()} sản phẩm). Đảm bảo nhân viên được đào tạo đầy đủ.`,
+          workstation: wsName,
+          impact: `Cải thiện năng suất và chất lượng đồng đều`
+        });
+      }
+    });
+    
+    // Overall recommendations
+    if (totals.avgNGRate > 3) {
+      recs.push({
+        id: 'overall-quality',
+        severity: 'high',
+        type: 'quality',
+        title: 'Cải thiện chất lượng toàn diện',
+        description: `Tỷ lệ NG trung bình ${totals.avgNGRate.toFixed(2)}% cao hơn mục tiêu. Cần triển khai chương trình cải tiến chất lượng toàn diện.`,
+        impact: `Giảm ${Math.round((totals.avgNGRate - 2) * totals.totalInspections / 100)} sản phẩm lỗi nếu đạt mục tiêu 2%`
+      });
+    }
+    
+    // Sort by severity
+    const severityOrder = { high: 0, medium: 1, low: 2 };
+    return recs.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+  }, [workstationData, totals]);
 
   if (isLoading) {
     return (
@@ -290,6 +369,69 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
           </CardContent>
         </Card>
       </div>
+
+      {/* AI Recommendations */}
+      {recommendations.length > 0 && (
+        <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+              <Lightbulb className="h-5 w-5" />
+              Đề xuất cải thiện từ AI
+            </CardTitle>
+            <CardDescription>
+              Các đề xuất dựa trên phân tích dữ liệu công trạm
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {recommendations.map((rec) => {
+                const severityConfig = {
+                  high: { bg: 'bg-red-100 dark:bg-red-950/50', border: 'border-red-300 dark:border-red-800', icon: AlertTriangle, iconColor: 'text-red-500' },
+                  medium: { bg: 'bg-yellow-100 dark:bg-yellow-950/50', border: 'border-yellow-300 dark:border-yellow-800', icon: Target, iconColor: 'text-yellow-500' },
+                  low: { bg: 'bg-green-100 dark:bg-green-950/50', border: 'border-green-300 dark:border-green-800', icon: CheckCircle2, iconColor: 'text-green-500' },
+                }[rec.severity];
+                
+                const typeConfig = {
+                  process: { label: 'Quy trình', color: 'bg-purple-500' },
+                  equipment: { label: 'Thiết bị', color: 'bg-blue-500' },
+                  training: { label: 'Đào tạo', color: 'bg-green-500' },
+                  quality: { label: 'Chất lượng', color: 'bg-orange-500' },
+                }[rec.type];
+                
+                const SeverityIcon = severityConfig.icon;
+                
+                return (
+                  <div 
+                    key={rec.id}
+                    className={`p-4 rounded-lg border ${severityConfig.bg} ${severityConfig.border}`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <SeverityIcon className={`h-5 w-5 mt-0.5 ${severityConfig.iconColor}`} />
+                      <div className="flex-1 space-y-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-semibold">{rec.title}</h4>
+                          <Badge variant="secondary" className={`${typeConfig.color} text-white text-xs`}>
+                            {typeConfig.label}
+                          </Badge>
+                          <Badge variant={rec.severity === 'high' ? 'destructive' : rec.severity === 'medium' ? 'secondary' : 'outline'}>
+                            {rec.severity === 'high' ? 'Cao' : rec.severity === 'medium' ? 'Trung bình' : 'Thấp'}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{rec.description}</p>
+                        <div className="flex items-center gap-2 text-sm">
+                          <Zap className="h-4 w-4 text-yellow-500" />
+                          <span className="font-medium">Tác động dự kiến:</span>
+                          <span className="text-muted-foreground">{rec.impact}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Detailed Table */}
       <Card>

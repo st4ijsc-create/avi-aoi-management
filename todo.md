@@ -2387,3 +2387,31 @@ Menu structure mới:
 - [x] Tạo biểu đồ pie chart tỷ lệ lỗi theo workstation
 - [x] Hiển thị top workstations có nhiều lỗi nhất
 - [x] Filter theo time range và factory/machine
+
+
+## Phase 109: Export Audit Logs, Session Management Profile, Workstation Recommendations
+
+### 1. Export Audit Logs to CSV
+- [x] Tạo handleExportCSV function trong AuditLogs page
+- [x] Tạo nút Export CSV trong CardTitle
+- [x] Format CSV với headers tiếng Việt (BOM UTF-8)
+- [x] Download file với tên có timestamp (audit-logs-YYYY-MM-DD.csv)
+- [x] Toast notification khi xuất thành công
+
+### 2. Session Management trong Profile
+- [x] Import SessionManagement component vào Profile page
+- [x] Thêm section "Phiên đăng nhập" trong Profile
+- [x] Hiển thị danh sách sessions với device info (browser, OS, IP)
+- [x] Nút revoke session và revoke all (từ SessionManagement component)
+
+### 3. Workstation Recommendations
+- [x] Phân tích pattern lỗi theo workstation (useMemo logic)
+- [x] Generate AI suggestions cho cải thiện dựa trên:
+  - Tỷ lệ NG cao (> 5%): Kiểm tra quy trình
+  - Tỷ lệ NG trung bình (2-5%): Bảo trì thiết bị
+  - Khối lượng cao: Tăng cường đào tạo
+  - Tỷ lệ NG TB cao: Cải thiện chất lượng toàn diện
+- [x] Hiển thị recommendations trong WorkstationAnalysis
+- [x] Severity levels (high, medium, low) với màu sắc và icons
+- [x] Actionable recommendations với impact dự kiến
+- [x] Type badges (Quy trình, Thiết bị, Đào tạo, Chất lượng)

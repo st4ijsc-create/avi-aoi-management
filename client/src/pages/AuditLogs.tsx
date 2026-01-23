@@ -12,8 +12,10 @@ import { trpc } from "@/lib/trpc";
 import { 
   Activity, Shield, User, Clock, Search, Filter, 
   LogIn, LogOut, Plus, Edit, Trash2, Key, RefreshCw,
-  TrendingUp, Users, AlertTriangle, CheckCircle, XCircle
+  TrendingUp, Users, AlertTriangle, CheckCircle, XCircle,
+  Download
 } from "lucide-react";
+import { toast } from "sonner";
 import { useState } from "react";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -111,6 +113,54 @@ export default function AuditLogs() {
       icon: <Activity className="h-4 w-4" />, 
       color: "bg-gray-500" 
     };
+  };
+
+  // Export to CSV function
+  const handleExportCSV = () => {
+    if (!logsData?.logs || logsData.logs.length === 0) {
+      toast.error("Không có dữ liệu để xuất");
+      return;
+    }
+
+    const headers = [
+      "Thời gian",
+      "Người dùng",
+      "Hành động",
+      "Đối tượng",
+      "ID đối tượng",
+      "Trạng thái",
+      "Địa chỉ IP",
+      "Chi tiết"
+    ];
+
+    const rows = logsData.logs.map(log => [
+      formatDate(log.createdAt),
+      log.userName || "Hệ thống",
+      ACTION_LABELS[log.action]?.label || log.action,
+      ENTITY_LABELS[log.entityType || ""] || log.entityType || "",
+      log.entityId || "",
+      log.status === "success" ? "Thành công" : "Thất bại",
+      log.ipAddress || "",
+      log.details ? JSON.stringify(log.details) : ""
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+    ].join("\n");
+
+    const BOM = "\uFEFF";
+    const blob = new Blob([BOM + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `audit-logs-${new Date().toISOString().split("T")[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    toast.success(`Đã xuất ${logsData.logs.length} bản ghi`);
   };
 
   // Prepare chart data
@@ -224,7 +274,18 @@ export default function AuditLogs() {
                     <Activity className="h-5 w-5" />
                     Nhật ký hoạt động
                   </span>
-                  <Badge variant="secondary">{logsData?.total || 0} bản ghi</Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">{logsData?.total || 0} bản ghi</Badge>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={handleExportCSV}
+                      disabled={!logsData?.logs || logsData.logs.length === 0}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Xuất CSV
+                    </Button>
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent>
