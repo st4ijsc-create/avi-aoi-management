@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
@@ -47,6 +47,9 @@ import {
   Eye,
   Check,
   Copy,
+  Download,
+  Upload,
+  FileJson,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -232,6 +235,31 @@ export function WidgetStylePresetManager({ currentStyle, onStyleChange }: { curr
 
   const applyPresetMutation = trpc.dashboardWidget.applyStylePreset.useMutation();
 
+  // Import/Export state
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importJson, setImportJson] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const importPresetMutation = trpc.dashboardWidget.importStylePreset.useMutation({
+    onSuccess: () => {
+      toast.success('Preset imported successfully');
+      setImportDialogOpen(false);
+      setImportJson('');
+      refetchPresets();
+    },
+    onError: (error) => toast.error(error.message || 'Failed to import preset'),
+  });
+
+  const importMultipleMutation = trpc.dashboardWidget.importMultiplePresets.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Imported ${data.imported} presets${data.failed > 0 ? `, ${data.failed} failed` : ''}`);
+      setImportDialogOpen(false);
+      setImportJson('');
+      refetchPresets();
+    },
+    onError: (error) => toast.error(error.message || 'Failed to import presets'),
+  });
+
   useEffect(() => { if (currentStyle) setEditingStyle(currentStyle); }, [currentStyle]);
 
   const handleApplyStyle = (style: WidgetStyle, presetId?: number) => {
@@ -253,6 +281,119 @@ export function WidgetStylePresetManager({ currentStyle, onStyleChange }: { curr
   const handleCopyStyle = () => {
     navigator.clipboard.writeText(JSON.stringify(editingStyle, null, 2));
     toast.success('Style copied to clipboard');
+  };
+
+  // Export single preset
+  const handleExportPreset = (preset: any) => {
+    const exportData = {
+      name: preset.name,
+      description: preset.description,
+      backgroundColor: preset.backgroundColor,
+      textColor: preset.textColor,
+      borderColor: preset.borderColor,
+      accentColor: preset.accentColor,
+      borderRadius: preset.borderRadius,
+      shadow: preset.shadow,
+      opacity: preset.opacity,
+      exportedAt: new Date().toISOString(),
+      version: '1.0',
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `widget-style-${preset.name.toLowerCase().replace(/\s+/g, '-')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success('Preset exported');
+  };
+
+  // Export all user presets
+  const handleExportAllPresets = () => {
+    if (!savedPresets || savedPresets.length === 0) {
+      toast.error('No presets to export');
+      return;
+    }
+    const userPresets = savedPresets.filter(p => p.createdBy === user?.id);
+    if (userPresets.length === 0) {
+      toast.error('No user presets to export');
+      return;
+    }
+    const exportData = {
+      presets: userPresets.map(p => ({
+        name: p.name,
+        description: p.description,
+        backgroundColor: p.backgroundColor,
+        textColor: p.textColor,
+        borderColor: p.borderColor,
+        accentColor: p.accentColor,
+        borderRadius: p.borderRadius,
+        shadow: p.shadow,
+        opacity: p.opacity,
+      })),
+      exportedAt: new Date().toISOString(),
+      version: '1.0',
+      count: userPresets.length,
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `widget-styles-export-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${userPresets.length} presets`);
+  };
+
+  // Handle file import
+  const handleFileImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      setImportJson(content);
+    };
+    reader.readAsText(file);
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Process import
+  const handleImport = () => {
+    if (!importJson.trim()) {
+      toast.error('Please paste or upload JSON data');
+      return;
+    }
+    try {
+      const data = JSON.parse(importJson);
+      // Check if it's a bulk export (has presets array)
+      if (data.presets && Array.isArray(data.presets)) {
+        importMultipleMutation.mutate({ presets: data.presets });
+      } else if (data.name && data.backgroundColor) {
+        // Single preset import
+        importPresetMutation.mutate({
+          name: data.name,
+          description: data.description,
+          backgroundColor: data.backgroundColor,
+          textColor: data.textColor,
+          borderColor: data.borderColor,
+          accentColor: data.accentColor,
+          borderRadius: data.borderRadius,
+          shadow: data.shadow,
+          opacity: data.opacity,
+          isPublic: false,
+        });
+      } else {
+        toast.error('Invalid preset format');
+      }
+    } catch (error) {
+      toast.error('Invalid JSON format');
+    }
   };
 
   return (
@@ -336,6 +477,21 @@ export function WidgetStylePresetManager({ currentStyle, onStyleChange }: { curr
             </TabsContent>
 
             <TabsContent value="saved" className="flex-1 overflow-y-auto">
+              {/* Export/Import toolbar */}
+              <div className="flex items-center justify-between p-2 border-b mb-2">
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={handleExportAllPresets} disabled={!savedPresets || savedPresets.filter(p => p.createdBy === user?.id).length === 0}>
+                    <Download className="h-4 w-4 mr-2" />Export All
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)}>
+                    <Upload className="h-4 w-4 mr-2" />Import
+                  </Button>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {savedPresets?.filter(p => p.createdBy === user?.id).length || 0} user presets
+                </span>
+              </div>
+              
               {savedPresets && savedPresets.length > 0 ? (
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4 p-2">
                   {savedPresets.map((preset) => (
@@ -355,6 +511,9 @@ export function WidgetStylePresetManager({ currentStyle, onStyleChange }: { curr
                         <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <Button size="sm" variant="secondary" className="flex-1 h-7 text-xs" onClick={() => handleApplyStyle({ backgroundColor: preset.backgroundColor, textColor: preset.textColor, borderColor: preset.borderColor, accentColor: preset.accentColor, borderRadius: preset.borderRadius, shadow: preset.shadow, opacity: preset.opacity }, preset.id)}>
                             <Eye className="h-3 w-3 mr-1" />Apply
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => handleExportPreset(preset)} title="Export">
+                            <Download className="h-3 w-3" />
                           </Button>
                           {preset.presetType !== 'system' && preset.createdBy === user?.id && (
                             <Button size="sm" variant="destructive" className="h-7 px-2" onClick={() => handleDeletePreset(preset.id)}><Trash2 className="h-3 w-3" /></Button>
@@ -399,6 +558,52 @@ export function WidgetStylePresetManager({ currentStyle, onStyleChange }: { curr
           <DialogFooter>
             <Button variant="outline" onClick={() => setSaveDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSavePreset} disabled={createPresetMutation.isPending}>{createPresetMutation.isPending ? 'Saving...' : 'Save Preset'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Dialog */}
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><FileJson className="h-5 w-5" />Import Style Presets</DialogTitle>
+            <DialogDescription>Import presets from a JSON file or paste JSON data</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Upload JSON File</Label>
+              <div className="flex gap-2">
+                <Input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  onChange={handleFileImport}
+                  className="flex-1"
+                />
+              </div>
+            </div>
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+              <div className="relative flex justify-center text-xs uppercase"><span className="bg-background px-2 text-muted-foreground">or paste JSON</span></div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="import-json">JSON Data</Label>
+              <Textarea
+                id="import-json"
+                value={importJson}
+                onChange={(e) => setImportJson(e.target.value)}
+                placeholder='{"name": "My Style", "backgroundColor": "#ffffff", ...}'
+                rows={8}
+                className="font-mono text-xs"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">Supports single preset or bulk export format (with presets array)</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setImportDialogOpen(false); setImportJson(''); }}>Cancel</Button>
+            <Button onClick={handleImport} disabled={importPresetMutation.isPending || importMultipleMutation.isPending}>
+              {(importPresetMutation.isPending || importMultipleMutation.isPending) ? 'Importing...' : 'Import'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

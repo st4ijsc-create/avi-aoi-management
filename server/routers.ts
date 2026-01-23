@@ -4979,6 +4979,142 @@ const dashboardWidgetRouter = router({
     .query(async () => {
       return db.getPublicWidgetStylePresets();
     }),
+
+  // Export preset as JSON
+  exportStylePreset: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const preset = await db.getWidgetStylePresetById(input.id);
+      if (!preset) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Preset not found' });
+      }
+      // Check access - user can export their own, public, or system presets
+      if (preset.createdBy !== ctx.user.id && !preset.isPublic && preset.presetType !== 'system') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized to export this preset' });
+      }
+      return {
+        name: preset.name,
+        description: preset.description,
+        backgroundColor: preset.backgroundColor,
+        textColor: preset.textColor,
+        borderColor: preset.borderColor,
+        accentColor: preset.accentColor,
+        borderRadius: preset.borderRadius,
+        shadow: preset.shadow,
+        opacity: preset.opacity,
+        exportedAt: new Date().toISOString(),
+        exportedBy: ctx.user.name,
+        version: '1.0',
+      };
+    }),
+
+  // Import preset from JSON
+  importStylePreset: protectedProcedure
+    .input(z.object({
+      name: z.string().min(1).max(100),
+      description: z.string().optional(),
+      backgroundColor: z.string(),
+      textColor: z.string(),
+      borderColor: z.string(),
+      accentColor: z.string(),
+      borderRadius: z.string(),
+      shadow: z.enum(['none', 'sm', 'md', 'lg', 'xl']),
+      opacity: z.string(),
+      isPublic: z.boolean().default(false),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Check for duplicate name
+      const existingPresets = await db.getUserWidgetStylePresets(ctx.user.id);
+      const duplicateName = existingPresets.find(p => p.name === input.name && p.createdBy === ctx.user.id);
+      if (duplicateName) {
+        // Append timestamp to make unique
+        input.name = `${input.name} (imported ${new Date().toLocaleDateString()})`;
+      }
+      
+      // Only admin can create public presets
+      if (input.isPublic && ctx.user.role !== 'admin') {
+        input.isPublic = false;
+      }
+      
+      return db.createWidgetStylePreset({
+        ...input,
+        presetType: 'user',
+        createdBy: ctx.user.id,
+      });
+    }),
+
+  // Bulk export presets
+  exportAllUserPresets: protectedProcedure
+    .query(async ({ ctx }) => {
+      const presets = await db.getUserWidgetStylePresets(ctx.user.id);
+      const userPresets = presets.filter(p => p.createdBy === ctx.user.id);
+      return {
+        presets: userPresets.map(p => ({
+          name: p.name,
+          description: p.description,
+          backgroundColor: p.backgroundColor,
+          textColor: p.textColor,
+          borderColor: p.borderColor,
+          accentColor: p.accentColor,
+          borderRadius: p.borderRadius,
+          shadow: p.shadow,
+          opacity: p.opacity,
+        })),
+        exportedAt: new Date().toISOString(),
+        exportedBy: ctx.user.name,
+        version: '1.0',
+        count: userPresets.length,
+      };
+    }),
+
+  // Bulk import presets
+  importMultiplePresets: protectedProcedure
+    .input(z.object({
+      presets: z.array(z.object({
+        name: z.string().min(1).max(100),
+        description: z.string().optional(),
+        backgroundColor: z.string(),
+        textColor: z.string(),
+        borderColor: z.string(),
+        accentColor: z.string(),
+        borderRadius: z.string(),
+        shadow: z.enum(['none', 'sm', 'md', 'lg', 'xl']),
+        opacity: z.string(),
+      })),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const results: { name: string; success: boolean; error?: string }[] = [];
+      const existingPresets = await db.getUserWidgetStylePresets(ctx.user.id);
+      const existingNames = new Set(existingPresets.filter(p => p.createdBy === ctx.user.id).map(p => p.name));
+      
+      for (const preset of input.presets) {
+        try {
+          let name = preset.name;
+          // Handle duplicate names
+          if (existingNames.has(name)) {
+            name = `${name} (imported ${new Date().toLocaleDateString()})`;
+          }
+          
+          await db.createWidgetStylePreset({
+            ...preset,
+            name,
+            presetType: 'user',
+            isPublic: false,
+            createdBy: ctx.user.id,
+          });
+          existingNames.add(name);
+          results.push({ name: preset.name, success: true });
+        } catch (error) {
+          results.push({ name: preset.name, success: false, error: (error as Error).message });
+        }
+      }
+      
+      return {
+        imported: results.filter(r => r.success).length,
+        failed: results.filter(r => !r.success).length,
+        results,
+      };
+    }),
 });
 
 export const appRouter = router({

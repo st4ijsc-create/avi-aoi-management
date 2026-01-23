@@ -5993,3 +5993,113 @@ export async function getUserWidgetStylePresets(userId: number) {
     ))
     .orderBy(desc(widgetStylePresets.usageCount));
 }
+
+
+// ============ WORKSTATION-MEASUREMENT POINT LINKED ANALYSIS ============
+
+export async function getNGByMeasurementPointForWorkstation(filters: {
+  workstationId: number;
+  startDate?: Date;
+  endDate?: Date;
+  machineId?: number;
+  factoryCode?: string;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions: SQL[] = [
+    eq(measurementPointDefs.workstationId, filters.workstationId),
+    eq(measurementResults.result, 'NG'),
+  ];
+  
+  if (filters.startDate) {
+    conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  }
+  if (filters.endDate) {
+    conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+  }
+  if (filters.machineId) {
+    conditions.push(eq(productInspections.machineId, filters.machineId));
+  }
+  if (filters.factoryCode) {
+    conditions.push(eq(productInspections.factoryCode, filters.factoryCode));
+  }
+  
+  const whereClause = and(...conditions);
+  
+  // Get NG counts by measurement point
+  const ngResults = await db
+    .select({
+      pointDefId: measurementPointDefs.id,
+      pointCode: measurementPointDefs.code,
+      pointName: measurementPointDefs.name,
+      ngCount: sql<number>`COUNT(*)`,
+    })
+    .from(measurementResults)
+    .innerJoin(measurementPointDefs, eq(measurementResults.pointDefId, measurementPointDefs.id))
+    .leftJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
+    .where(whereClause)
+    .groupBy(measurementPointDefs.id, measurementPointDefs.code, measurementPointDefs.name)
+    .orderBy(sql`COUNT(*) DESC`);
+  
+  // Get total counts per measurement point (all results)
+  const totalConditions: SQL[] = [
+    eq(measurementPointDefs.workstationId, filters.workstationId),
+  ];
+  if (filters.startDate) {
+    totalConditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  }
+  if (filters.endDate) {
+    totalConditions.push(lte(productInspections.inspectionTime, filters.endDate));
+  }
+  if (filters.machineId) {
+    totalConditions.push(eq(productInspections.machineId, filters.machineId));
+  }
+  if (filters.factoryCode) {
+    totalConditions.push(eq(productInspections.factoryCode, filters.factoryCode));
+  }
+  
+  const totalWhereClause = and(...totalConditions);
+  
+  const totalResults = await db
+    .select({
+      pointDefId: measurementPointDefs.id,
+      totalCount: sql<number>`COUNT(*)`,
+    })
+    .from(measurementResults)
+    .innerJoin(measurementPointDefs, eq(measurementResults.pointDefId, measurementPointDefs.id))
+    .leftJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
+    .where(totalWhereClause)
+    .groupBy(measurementPointDefs.id);
+  
+  // Create map of total counts
+  const totalMap = new Map(totalResults.map(r => [r.pointDefId, Number(r.totalCount)]));
+  
+  return ngResults.map(r => ({
+    pointDefId: r.pointDefId,
+    pointCode: r.pointCode || 'N/A',
+    pointName: r.pointName || 'Unknown',
+    ngCount: Number(r.ngCount),
+    totalCount: totalMap.get(r.pointDefId) || Number(r.ngCount),
+  }));
+}
+
+// Get linked measurement points for a workstation
+export async function getLinkedMeasurementPointsForWorkstation(workstationId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select({
+    id: measurementPointDefs.id,
+    code: measurementPointDefs.code,
+    name: measurementPointDefs.name,
+    unit: measurementPointDefs.unit,
+    lowerLimit: measurementPointDefs.lowerLimit,
+    upperLimit: measurementPointDefs.upperLimit,
+    nominalValue: measurementPointDefs.nominalValue,
+    productModelId: measurementPointDefs.productModelId,
+  })
+  .from(measurementPointDefs)
+  .where(eq(measurementPointDefs.workstationId, workstationId))
+  .orderBy(measurementPointDefs.code);
+}

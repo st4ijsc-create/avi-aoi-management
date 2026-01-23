@@ -359,11 +359,45 @@ export const spcAnalysisRouter = router({
       const totalInspections = data.reduce((sum, item) => sum + item.totalCount, 0);
       
       return sorted.map(item => ({
+        workstationId: item.workstationId,
+        workstationCode: item.workstationCode || 'N/A',
         workstation: item.workstationName || item.workstationCode || 'Unknown',
+        processType: item.processType || 'OTHER',
         ngCount: item.ngCount,
         totalCount: item.totalCount,
         ngRate: item.totalCount > 0 ? (item.ngCount / item.totalCount) * 100 : 0,
         percentage: totalNG > 0 ? (item.ngCount / totalNG) * 100 : 0,
+        // Linked measurement points info
+        linkedFromMeasurementPoints: true,
+      }));
+    }),
+
+  // Get NG details by measurement point for a specific workstation
+  ngByMeasurementPointForWorkstation: protectedProcedure
+    .input(z.object({
+      workstationId: z.number(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      machineId: z.number().optional(),
+      factoryCode: z.string().optional(),
+      limit: z.number().default(20),
+    }))
+    .query(async ({ input }) => {
+      const data = await db.getNGByMeasurementPointForWorkstation({
+        workstationId: input.workstationId,
+        startDate: input.startDate ? new Date(input.startDate) : undefined,
+        endDate: input.endDate ? new Date(input.endDate) : undefined,
+        machineId: input.machineId,
+        factoryCode: input.factoryCode,
+      });
+      
+      return data.slice(0, input.limit).map(item => ({
+        pointDefId: item.pointDefId,
+        pointCode: item.pointCode,
+        pointName: item.pointName,
+        ngCount: item.ngCount,
+        totalCount: item.totalCount,
+        ngRate: item.totalCount > 0 ? (item.ngCount / item.totalCount) * 100 : 0,
       }));
     }),
 });

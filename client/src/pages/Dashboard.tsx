@@ -44,10 +44,12 @@ import {
   WifiOff,
   Factory,
   FileDown,
-  Calendar
+  Calendar,
+  Palette
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { EmptyState, NoWorkstationData } from "@/components/EmptyState";
+import { WidgetStylePresetManager, useWidgetStyle, type WidgetStyle } from "@/components/WidgetStylePresetManager";
 import { CorporateFactoryStats } from "@/components/CorporateFactoryStats";
 import { ChartErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
 import { StatsCardSkeleton, ChartSkeleton, PieChartSkeleton, ListSkeleton, MachineGridSkeleton } from "@/components/AnalyticsSkeleton";
@@ -163,6 +165,46 @@ export default function Dashboard() {
   const [trendFilterMeasurementPointId, setTrendFilterMeasurementPointId] = useState<number | undefined>(undefined);
   const [drilldownDialogOpen, setDrilldownDialogOpen] = useState(false);
   const [exportingPDF, setExportingPDF] = useState(false);
+  
+  // Widget style state with localStorage persistence
+  const [widgetStyle, setWidgetStyle] = useState<WidgetStyle>(() => {
+    const saved = localStorage.getItem('dashboard_widget_style');
+    return saved ? JSON.parse(saved) : {
+      backgroundColor: '#ffffff',
+      textColor: '#1f2937',
+      borderColor: '#e5e7eb',
+      accentColor: '#3b82f6',
+      borderRadius: '0.5rem',
+      shadow: 'sm',
+      opacity: '1.00',
+    };
+  });
+  
+  // Save widget style to localStorage
+  useEffect(() => {
+    localStorage.setItem('dashboard_widget_style', JSON.stringify(widgetStyle));
+  }, [widgetStyle]);
+  
+  // Get style props for cards
+  const getCardStyle = () => {
+    const shadowMap: Record<string, string> = {
+      'none': '',
+      'sm': 'shadow-sm',
+      'md': 'shadow-md',
+      'lg': 'shadow-lg',
+      'xl': 'shadow-xl',
+    };
+    return {
+      style: {
+        backgroundColor: widgetStyle.backgroundColor,
+        color: widgetStyle.textColor,
+        borderColor: widgetStyle.borderColor,
+        borderRadius: widgetStyle.borderRadius,
+        opacity: parseFloat(widgetStyle.opacity),
+      },
+      className: `border ${shadowMap[widgetStyle.shadow] || ''}`,
+    };
+  };
   
   // Machine online status from WebSocket
   const [onlineMachines, setOnlineMachines] = useState<Set<string>>(new Set());
@@ -952,6 +994,12 @@ export default function Dashboard() {
             <Button variant="outline" size="icon" onClick={handleRefresh}>
               <RefreshCw className="h-4 w-4" />
             </Button>
+            
+            {/* Widget Style Presets */}
+            <WidgetStylePresetManager
+              currentStyle={widgetStyle}
+              onStyleChange={setWidgetStyle}
+            />
           </div>
         </div>
 

@@ -2680,3 +2680,32 @@ Menu structure mới:
 - [x] Unit tests cho widget style presets (13 tests passed)
 - [ ] Tích hợp vào Dashboard page (tùy chọn)
 
+
+
+## Phase 117: Dashboard Widget Presets Integration & WorkstationAnalysis Enhancement
+
+### 1. Tích hợp WidgetStylePresetManager vào Dashboard
+- [x] Thêm button "Style Presets" vào Dashboard header controls
+- [x] Tích hợp WidgetStylePresetManager component
+- [x] Lưu style vào localStorage với persistence
+- [x] State widgetStyle và getCardStyle helper function
+- [x] Persist style across sessions
+
+### 2. Export/Import Presets
+- [x] API exportStylePreset: Export single preset thành JSON
+- [x] API importStylePreset: Import single preset từ JSON
+- [x] API exportAllUserPresets: Export tất cả user presets
+- [x] API importMultiplePresets: Import nhiều presets cùng lúc
+- [x] UI Export button cho từng preset
+- [x] UI Export All button trong My Presets tab
+- [x] UI Import dialog với file upload và paste JSON
+- [x] Validation khi import (check format, required fields)
+- [x] Handle duplicate names khi import (append date suffix)
+
+### 3. WorkstationAnalysis với Linked Measurement Points
+- [x] Cập nhật ngByWorkstation API trả về workstationId, workstationCode, processType
+- [x] Thêm API ngByMeasurementPointForWorkstation - drill-down NG theo measurement point
+- [x] Thêm db function getNGByMeasurementPointForWorkstation
+- [x] Thêm db function getLinkedMeasurementPointsForWorkstation
+- [x] All 269 tests passed (29 test files)
+
