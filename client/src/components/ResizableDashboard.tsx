@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Responsive, type LayoutItem, type ResponsiveLayouts, type Layout, type Breakpoint } from 'react-grid-layout';
+import { Responsive, type LayoutItem, type ResponsiveLayouts, type Layout as GridLayout, type Breakpoint } from 'react-grid-layout';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/_core/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -26,11 +26,25 @@ import {
   Clock,
   Target,
   Maximize2,
+  Minimize2,
   Lock,
   Unlock,
   RotateCcw,
+  LayoutIcon,
+  Download,
+  FileImage,
+  FileText,
+  X,
   type LucideIcon,
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from '@/components/ui/dropdown-menu';
 import 'react-grid-layout/css/styles.css';
 
 // Widget definitions with default sizes
@@ -234,6 +248,8 @@ export function ResizableDashboard({ children }: ResizableDashboardProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [containerWidth, setContainerWidth] = useState(1200);
+  const [fullscreenWidget, setFullscreenWidget] = useState<string | null>(null);
+  const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
 
   // Fetch saved layout
   const { data: savedLayout, refetch } = trpc.dashboardWidget.getLayout.useQuery(undefined, {
@@ -299,7 +315,7 @@ export function ResizableDashboard({ children }: ResizableDashboardProps) {
     }
   }, [savedLayout]);
 
-  const handleLayoutChange = useCallback((currentLayout: Layout, allLayouts: ResponsiveLayouts) => {
+  const handleLayoutChange = useCallback((currentLayout: GridLayout, allLayouts: ResponsiveLayouts) => {
     setLayouts(allLayouts);
     setHasChanges(true);
   }, []);
@@ -369,6 +385,134 @@ export function ResizableDashboard({ children }: ResizableDashboardProps) {
     return def.name;
   }, [i18n.language]);
 
+  // Template definitions
+  const TEMPLATES: Record<string, { widgets: string[], layout: (widgets: string[]) => LayoutItem[] }> = {
+    compact: {
+      widgets: ['kpiCards', 'trendChart', 'machineStatus', 'alerts'],
+      layout: (widgets) => widgets.map((id, idx) => ({
+        i: id,
+        x: idx % 2 * 2,
+        y: Math.floor(idx / 2) * 2,
+        w: 2,
+        h: 2,
+        minW: WIDGET_DEFINITIONS[id]?.minW || 1,
+        minH: WIDGET_DEFINITIONS[id]?.minH || 1,
+      })),
+    },
+    wide: {
+      widgets: ['kpiCards', 'trendChart', 'recentInspections', 'factoryStats'],
+      layout: (widgets) => widgets.map((id, idx) => ({
+        i: id,
+        x: 0,
+        y: idx * 2,
+        w: 4,
+        h: 2,
+        minW: WIDGET_DEFINITIONS[id]?.minW || 1,
+        minH: WIDGET_DEFINITIONS[id]?.minH || 1,
+      })),
+    },
+    analytics: {
+      widgets: ['kpiCards', 'trendChart', 'topMachines', 'factoryStats', 'shiftStats'],
+      layout: (widgets) => [
+        { i: 'kpiCards', x: 0, y: 0, w: 4, h: 1, minW: 2, minH: 1 },
+        { i: 'trendChart', x: 0, y: 1, w: 2, h: 2, minW: 2, minH: 2 },
+        { i: 'topMachines', x: 2, y: 1, w: 2, h: 2, minW: 1, minH: 2 },
+        { i: 'factoryStats', x: 0, y: 3, w: 2, h: 2, minW: 2, minH: 2 },
+        { i: 'shiftStats', x: 2, y: 3, w: 2, h: 2, minW: 1, minH: 1 },
+      ],
+    },
+  };
+
+  const applyTemplate = useCallback((templateName: string) => {
+    const template = TEMPLATES[templateName];
+    if (!template) return;
+    
+    const lgLayout = template.layout(template.widgets);
+    const newLayouts: ResponsiveLayouts = {
+      lg: lgLayout,
+      md: lgLayout.map(item => ({ ...item, w: Math.min(item.w, 3), x: item.x % 3 })),
+      sm: lgLayout.map(item => ({ ...item, w: 2, x: 0 })),
+      xs: lgLayout.map(item => ({ ...item, w: 1, x: 0 })),
+    };
+    
+    setLayouts(newLayouts);
+    setVisibleWidgets(new Set(template.widgets));
+    setHasChanges(true);
+    toast.success(`Applied ${templateName} template`);
+  }, []);
+
+  const exportDashboard = useCallback(async (format: 'png' | 'pdf') => {
+    const dashboardEl = document.getElementById('dashboard-grid');
+    if (!dashboardEl) {
+      toast.error('Dashboard not found');
+      return;
+    }
+    
+    toast.info(`Preparing ${format.toUpperCase()} export...`);
+    
+    try {
+      // Dynamic import html2canvas
+      const html2canvas = (await import('html2canvas')).default;
+      const canvas = await html2canvas(dashboardEl, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+      
+      if (format === 'png') {
+        const link = document.createElement('a');
+        link.download = `dashboard-${new Date().toISOString().split('T')[0]}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        toast.success('Dashboard exported as PNG');
+      } else {
+        // Dynamic import jspdf
+        const { jsPDF } = await import('jspdf');
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF({
+          orientation: 'landscape',
+          unit: 'px',
+          format: [canvas.width / 2, canvas.height / 2],
+        });
+        
+        // Add header
+        pdf.setFontSize(16);
+        pdf.text('Dashboard Report', 20, 30);
+        pdf.setFontSize(10);
+        pdf.text(`Generated: ${new Date().toLocaleString()}`, 20, 45);
+        
+        // Add dashboard image
+        pdf.addImage(imgData, 'PNG', 0, 60, canvas.width / 2, canvas.height / 2);
+        
+        pdf.save(`dashboard-${new Date().toISOString().split('T')[0]}.pdf`);
+        toast.success('Dashboard exported as PDF');
+      }
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Failed to export dashboard');
+    }
+  }, []);
+
+  const handleFullscreen = useCallback((widgetId: string) => {
+    setFullscreenWidget(widgetId);
+  }, []);
+
+  const closeFullscreen = useCallback(() => {
+    setFullscreenWidget(null);
+  }, []);
+
+  // Keyboard shortcut for closing fullscreen
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && fullscreenWidget) {
+        closeFullscreen();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [fullscreenWidget, closeFullscreen]);
+
   // Filter layouts to only show visible widgets
   const visibleLayouts = useMemo(() => {
     const filtered: ResponsiveLayouts = {
@@ -410,15 +554,64 @@ export function ResizableDashboard({ children }: ResizableDashboardProps) {
         </div>
         
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleReset}
-            className="gap-2"
-          >
-            <RotateCcw className="h-4 w-4" />
-            {t('common.reset')}
-          </Button>
+          {/* Templates Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <LayoutIcon className="h-4 w-4" />
+                Templates
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Layout Templates</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => applyTemplate('compact')}>
+                <div className="flex flex-col">
+                  <span className="font-medium">Compact</span>
+                  <span className="text-xs text-muted-foreground">Smaller widgets, more density</span>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => applyTemplate('wide')}>
+                <div className="flex flex-col">
+                  <span className="font-medium">Wide</span>
+                  <span className="text-xs text-muted-foreground">Full-width charts and tables</span>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => applyTemplate('analytics')}>
+                <div className="flex flex-col">
+                  <span className="font-medium">Analytics</span>
+                  <span className="text-xs text-muted-foreground">Focus on charts and trends</span>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleReset}>
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Reset to Default
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Export Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Download className="h-4 w-4" />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Export Dashboard</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => exportDashboard('png')}>
+                <FileImage className="h-4 w-4 mr-2" />
+                Export as PNG
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportDashboard('pdf')}>
+                <FileText className="h-4 w-4 mr-2" />
+                Export as PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           
           <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
             <DialogTrigger asChild>
@@ -467,6 +660,7 @@ export function ResizableDashboard({ children }: ResizableDashboardProps) {
 
       {/* Grid Layout */}
       <div 
+        id="dashboard-grid"
         className="relative"
         ref={(el) => {
           if (el) {
@@ -507,9 +701,15 @@ export function ResizableDashboard({ children }: ResizableDashboardProps) {
                     <Icon className="h-4 w-4 text-primary" />
                     <span className="font-medium text-sm">{getWidgetName(item.i)}</span>
                   </div>
-                  {!isLocked && (
-                    <Maximize2 className="h-3 w-3 text-muted-foreground" />
-                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => handleFullscreen(item.i)}
+                    title="Fullscreen"
+                  >
+                    <Maximize2 className="h-3 w-3" />
+                  </Button>
                 </div>
                 <div className="p-4 h-[calc(100%-40px)] overflow-auto">
                   {children(item.i)}
@@ -519,6 +719,56 @@ export function ResizableDashboard({ children }: ResizableDashboardProps) {
           })}
         </Responsive>
       </div>
+
+      {/* Fullscreen Modal */}
+      {fullscreenWidget && (
+        <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm">
+          <div className="h-full flex flex-col">
+            {/* Fullscreen Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b bg-card">
+              <div className="flex items-center gap-3">
+                {(() => {
+                  const def = WIDGET_DEFINITIONS[fullscreenWidget];
+                  const Icon = def?.icon || Gauge;
+                  return (
+                    <>
+                      <Icon className="h-5 w-5 text-primary" />
+                      <span className="font-semibold text-lg">{getWidgetName(fullscreenWidget)}</span>
+                    </>
+                  );
+                })()}
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={closeFullscreen}
+                className="h-8 w-8"
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+            {/* Fullscreen Content */}
+            <div className="flex-1 p-6 overflow-auto">
+              <div className="h-full bg-card rounded-lg border p-6">
+                {children(fullscreenWidget)}
+              </div>
+            </div>
+            {/* Fullscreen Footer */}
+            <div className="flex items-center justify-between px-6 py-3 border-t bg-card text-sm text-muted-foreground">
+              <span>Press ESC to exit fullscreen</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={closeFullscreen}
+                className="gap-2"
+              >
+                <Minimize2 className="h-4 w-4" />
+                Exit Fullscreen
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

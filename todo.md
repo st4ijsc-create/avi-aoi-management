@@ -2096,3 +2096,25 @@ Menu structure mới:
 - [x] Lock/Unlock mode để bảo vệ layout
 - [x] Reset to default layout
 - [x] 8 widget types với min/max sizes
+
+
+## Phase 99: Widget Fullscreen, Templates, Export
+
+### 1. Widget Fullscreen Mode
+- [x] Thêm nút expand/fullscreen cho mỗi widget
+- [x] Tạo fullscreen modal với backdrop blur
+- [x] Giữ nguyên nội dung widget khi fullscreen
+- [x] Keyboard shortcut (Esc) để đóng fullscreen
+- [x] Header với icon và tên widget, footer với Exit button
+
+### 2. Dashboard Templates
+- [x] Định nghĩa preset templates (Compact, Wide, Analytics)
+- [x] Dropdown menu để chọn và apply template
+- [x] Mỗi template có widgets và layout riêng
+- [x] Reset to Default option trong menu
+
+### 3. Export Dashboard as Image/PDF
+- [x] Cài đặt html2canvas và jspdf
+- [x] Export dropdown với PNG và PDF options
+- [x] Capture toàn bộ dashboard với scale 2x
+- [x] PDF có header với title và timestamp
