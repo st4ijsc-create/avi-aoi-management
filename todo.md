@@ -2415,3 +2415,46 @@ Menu structure mới:
 - [x] Severity levels (high, medium, low) với màu sắc và icons
 - [x] Actionable recommendations với impact dự kiến
 - [x] Type badges (Quy trình, Thiết bị, Đào tạo, Chất lượng)
+
+
+## Phase 110: Dashboard Widgets Customization & Report Scheduling
+
+### 1. Dashboard Widgets Customization
+- [x] Tạo WidgetStyleEditor component với color picker
+- [x] Thêm 8 preset color themes (Default, Ocean, Sunset, Forest, Midnight, Coral, Aurora, Steel)
+- [x] Cho phép tùy chỉnh border radius, shadow (none/sm/md/lg/xl), opacity
+- [x] Lưu widget styles vào localStorage
+- [x] Thêm nút Palette vào widget header
+- [x] Preview changes trước khi apply
+- [x] Tích hợp vào ResizableDashboard
+- [x] Áp dụng custom styles vào widget cards
+
+### 2. Report Scheduling - Database & API
+- [x] Bảng scheduled_reports đã có sẵn trong schema
+- [x] Bảng scheduled_report_logs đã có sẵn trong schema
+- [x] Tạo reportScheduleRouter với CRUD APIs:
+  - list: Liệt kê reports với filters
+  - getById: Lấy chi tiết report
+  - create: Tạo report mới
+  - update: Cập nhật report
+  - delete: Xóa report
+  - toggleActive: Bật/tắt report
+  - getLogs: Lịch sử gửi report
+  - getStats: Thống kê
+  - triggerNow: Gửi report ngay
+- [x] Định nghĩa report types (NG_VISUAL, DAILY/WEEKLY/MONTHLY_SUMMARY, CUSTOM)
+- [x] Định nghĩa report formats (HTML, PDF, EXCEL)
+- [x] Tính toán nextScheduledAt tự động
+
+### 3. Report Scheduling - UI
+- [x] Tạo ReportScheduler component với:
+  - Stats cards (tổng, đang hoạt động, tạm dừng, người nhận)
+  - Table hiển thị danh sách lịch báo cáo
+  - Dropdown actions (edit, logs, send, toggle, delete)
+- [x] UI tạo lịch báo cáo mới với 3 tabs:
+  - Cơ bản: tên, mô tả, loại, định dạng, người nhận
+  - Lịch gửi: tần suất, giờ, ngày, filter factory
+  - Nội dung: toggles cho sections, màu, footer
+- [x] UI quản lý danh sách lịch báo cáo
+- [x] Hiển thị lịch sử báo cáo đã gửi (logs dialog)
+- [x] Route /scheduled-reports đã có sẵn trong App.tsx

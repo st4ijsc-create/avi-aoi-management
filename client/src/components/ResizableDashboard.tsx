@@ -41,11 +41,22 @@ import {
   Trash2,
   Plus,
   Circle,
+  Palette,
   type LucideIcon,
 } from 'lucide-react';
 import { useDashboardWidgetCache } from '@/hooks/useWidgetCache';
 import { TemplatePreview, PRESET_TEMPLATES } from './TemplatePreview';
 import { WidgetDataExport, DashboardDataExport, type WidgetData } from './WidgetDataExport';
+import { 
+  WidgetStyleEditor, 
+  type WidgetStyle, 
+  DEFAULT_WIDGET_STYLE,
+  getWidgetStyle,
+  setWidgetStyle,
+  getWidgetCSSStyles,
+  getWidgetHeaderColor,
+  loadWidgetStyles,
+} from './WidgetStyleEditor';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -292,6 +303,11 @@ export function ResizableDashboard({ children, onRefreshWidget, widgetCacheStatu
   });
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState('');
+  
+  // Widget styles state
+  const [widgetStyles, setWidgetStyles] = useState<Record<string, WidgetStyle>>(() => loadWidgetStyles());
+  const [styleEditorOpen, setStyleEditorOpen] = useState(false);
+  const [editingWidgetStyle, setEditingWidgetStyle] = useState<string | null>(null);
 
   // Fetch saved layout
   const { data: savedLayout, refetch } = trpc.dashboardWidget.getLayout.useQuery(undefined, {
@@ -1053,9 +1069,23 @@ export function ResizableDashboard({ children, onRefreshWidget, widgetCacheStatu
             if (!def) return null;
             const Icon = def.icon;
             
+            // Get custom style for this widget
+            const customStyle = widgetStyles[item.i];
+            const hasCustomStyle = customStyle && customStyle.theme !== 'default';
+            
             return (
-              <div key={item.i} className="bg-card rounded-lg border shadow-sm overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/30">
+              <div 
+                key={item.i} 
+                className={hasCustomStyle ? 'overflow-hidden' : 'bg-card rounded-lg border shadow-sm overflow-hidden'}
+                style={hasCustomStyle ? getWidgetCSSStyles(customStyle) : undefined}
+              >
+                <div 
+                  className="flex items-center justify-between px-4 py-2 border-b"
+                  style={hasCustomStyle ? { 
+                    backgroundColor: 'rgba(255,255,255,0.1)',
+                    borderColor: 'rgba(255,255,255,0.2)'
+                  } : { backgroundColor: 'hsl(var(--muted) / 0.3)' }}
+                >
                   <div className="flex items-center gap-2">
                     {!isLocked && (
                       <div className="widget-drag-handle cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground">
@@ -1102,6 +1132,18 @@ export function ResizableDashboard({ children, onRefreshWidget, widgetCacheStatu
                         size="sm"
                       />
                     )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={() => {
+                        setEditingWidgetStyle(item.i);
+                        setStyleEditorOpen(true);
+                      }}
+                      title="Tùy chỉnh style"
+                    >
+                      <Palette className="h-3 w-3" />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -1215,6 +1257,28 @@ export function ResizableDashboard({ children, onRefreshWidget, widgetCacheStatu
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Widget Style Editor Dialog */}
+      {editingWidgetStyle && (
+        <WidgetStyleEditor
+          widgetId={editingWidgetStyle}
+          widgetName={getWidgetName(editingWidgetStyle)}
+          open={styleEditorOpen}
+          onOpenChange={(open) => {
+            setStyleEditorOpen(open);
+            if (!open) setEditingWidgetStyle(null);
+          }}
+          currentStyle={widgetStyles[editingWidgetStyle] || DEFAULT_WIDGET_STYLE}
+          onStyleChange={(style) => {
+            setWidgetStyles(prev => {
+              const newStyles = { ...prev, [editingWidgetStyle]: style };
+              // Save to localStorage
+              setWidgetStyle(editingWidgetStyle, style);
+              return newStyles;
+            });
+          }}
+        />
+      )}
     </div>
   );
 }
