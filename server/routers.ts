@@ -4,6 +4,7 @@ import { emitNGAlert, emitYieldWarning, emitDashboardUpdate } from "./_core/sock
 import { systemRouter } from "./_core/systemRouter";
 import { processRouter } from "./routers/processRouter";
 import { spcAnalysisRouter } from "./routers/spcAnalysisRouter";
+import { twoFactorRouter } from "./routers/twoFactorRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -4951,6 +4952,7 @@ export const appRouter = router({
   dashboardWidget: dashboardWidgetRouter,
   process: processRouter,
   spcAnalysis: spcAnalysisRouter,
+  twoFactor: twoFactorRouter,
 });
 
 export type AppRouter = typeof appRouter;

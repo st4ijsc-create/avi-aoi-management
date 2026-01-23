@@ -2295,3 +2295,57 @@ Menu structure mới:
 - [ ] Quét barcode/QR để tra cứu SN
 - [ ] Hiển thị kết quả ngay sau quét
 - [ ] Fallback manual input
+
+
+## Phase 107: Gantt Chart, Barcode Scanner & 2FA Security
+
+### 1. Gantt Chart cho Production Orders
+- [x] Tạo GanttChart component với timeline visualization
+- [x] Hiển thị production orders theo dây chuyền
+- [x] Color-coded theo status (pending, in_progress, completed, paused, cancelled)
+- [x] Zoom controls (day/week/month view)
+- [x] Scroll horizontal cho timeline dài
+- [x] Click vào order để xem chi tiết (edit dialog)
+- [x] Thêm tab Gantt trong ProductionOrders page
+- [x] Filter theo factory và line
+- [x] Navigate prev/next và Today button
+- [x] Progress bar trên mỗi order
+
+### 2. Barcode Scanner
+- [x] Tích hợp html5-qrcode library
+- [x] Tạo BarcodeScanner component với camera access
+- [x] UI cho scan barcode/QR trong History page
+- [x] Tự động search khi quét thành công
+- [x] Fallback manual input nếu camera không khả dụng
+- [x] Hiển thị kết quả inspection ngay sau quét
+- [x] Hỗ trợ nhiều format: QR, Code 128, Code 39, EAN-13, EAN-8, UPC-A, UPC-E, Data Matrix
+- [x] Camera mode và manual input mode toggle
+
+### 3. 2FA Security - TOTP Setup
+- [x] Cài đặt speakeasy và qrcode packages
+- [x] Tạo API generate TOTP secret (twoFactor.generateSecret)
+- [x] Tạo API verify TOTP code (twoFactor.verify)
+- [x] Tạo API enable/disable 2FA (twoFactor.enable, twoFactor.disable)
+- [x] Lưu TOTP secret vào user table (twoFactorSecret field)
+
+### 4. 2FA Security - Login Flow
+- [x] Profile page đã có sẵn 2FA UI với setup/disable dialogs
+- [x] OTP verification trong Profile page
+- [x] Handle invalid OTP với error message
+- [ ] Cập nhật login flow để check 2FA status (OAuth flow)
+
+### 5. 2FA Security - Backup Codes
+- [x] Generate 10 backup codes khi enable 2FA
+- [x] Lưu backup codes (hashed với bcrypt) vào database
+- [x] UI hiển thị backup codes (chỉ 1 lần sau khi enable)
+- [x] Download backup codes as text file
+- [x] Regenerate backup codes option (twoFactor.regenerateBackupCodes)
+- [x] Validate backup code khi disable 2FA
+
+### 6. 2FA Profile UI
+- [x] Profile page đã có sẵn section 2FA
+- [x] Hiển thị QR code khi enable 2FA
+- [x] Verify OTP trước khi enable
+- [x] Option disable 2FA (yêu cầu OTP hoặc backup code)
+- [x] Hiển thị status 2FA (enabled/disabled)
+- [x] Tạo TwoFactorSetup component mới với UI cải tiến
