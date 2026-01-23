@@ -1196,3 +1196,42 @@ export const systemConfig = mysqlTable("system_config", {
 
 export type SystemConfig = typeof systemConfig.$inferSelect;
 export type InsertSystemConfig = typeof systemConfig.$inferInsert;
+
+
+/**
+ * User Corporate Assignments - Phân quyền user theo công ty
+ */
+export const userCorporateAssignments = mysqlTable("user_corporate_assignments", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK to users
+  corporateCode: varchar("corporateCode", { length: 50 }).notNull(),
+  assignedBy: int("assignedBy"), // FK to users (admin who assigned)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_user_corporate_user").on(table.userId),
+  index("idx_user_corporate_code").on(table.corporateCode),
+  // Unique constraint: một user không thể được assign vào cùng một corporate 2 lần
+  index("idx_user_corporate_unique").on(table.userId, table.corporateCode),
+]);
+
+export type UserCorporateAssignment = typeof userCorporateAssignments.$inferSelect;
+export type InsertUserCorporateAssignment = typeof userCorporateAssignments.$inferInsert;
+
+/**
+ * User Factory Assignments - Phân quyền user theo nhà máy
+ */
+export const userFactoryAssignments = mysqlTable("user_factory_assignments", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK to users
+  factoryCode: varchar("factoryCode", { length: 50 }).notNull(),
+  assignedBy: int("assignedBy"), // FK to users (admin who assigned)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_user_factory_user").on(table.userId),
+  index("idx_user_factory_code").on(table.factoryCode),
+  // Unique constraint: một user không thể được assign vào cùng một factory 2 lần
+  index("idx_user_factory_unique").on(table.userId, table.factoryCode),
+]);
+
+export type UserFactoryAssignment = typeof userFactoryAssignments.$inferSelect;
+export type InsertUserFactoryAssignment = typeof userFactoryAssignments.$inferInsert;

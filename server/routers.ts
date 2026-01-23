@@ -3815,6 +3815,228 @@ const corporateFactoryStatsRouter = router({
     }),
 });
 
+const importRouter = router({  
+  importFactories: adminProcedure
+    .input(z.object({
+      data: z.array(z.object({
+        code: z.string(),
+        name: z.string(),
+        description: z.string().optional(),
+        address: z.string().optional(),
+        region: z.string().optional(),
+        country: z.string().optional(),
+        isActive: z.boolean().optional(),
+      })),
+    }))
+    .mutation(async ({ input }) => {
+      const results = { success: 0, failed: 0, errors: [] as string[] };
+      
+      for (const item of input.data) {
+        try {
+          // Check if factory code already exists
+          const existing = await db.getFactoryByCode(item.code);
+          if (existing) {
+            throw new Error('Factory code already exists');
+          }
+          
+          await db.createFactory(item);
+          results.success++;
+        } catch (error: any) {
+          results.failed++;
+          results.errors.push(`${item.code}: ${error.message}`);
+        }
+      }
+      
+      return results;
+    }),
+
+  importWorkshops: adminProcedure
+    .input(z.object({
+      data: z.array(z.object({
+        factoryCode: z.string(),
+        code: z.string(),
+        name: z.string(),
+        description: z.string().optional(),
+        isActive: z.boolean().optional(),
+      })),
+    }))
+    .mutation(async ({ input }) => {
+      const results = { success: 0, failed: 0, errors: [] as string[] };
+      
+      for (const item of input.data) {
+        try {
+          // Lookup factory by code
+          const factory = await db.getFactoryByCode(item.factoryCode);
+          if (!factory) {
+            throw new Error(`Factory ${item.factoryCode} not found`);
+          }
+          
+          // Check if workshop code already exists
+          const existing = await db.getWorkshopByCode(item.code);
+          if (existing) {
+            throw new Error('Workshop code already exists');
+          }
+          
+          await db.createWorkshop({
+            factoryId: factory.id,
+            code: item.code,
+            name: item.name,
+            description: item.description,
+            isActive: item.isActive ?? true,
+          });
+          results.success++;
+        } catch (error: any) {
+          results.failed++;
+          results.errors.push(`${item.code}: ${error.message}`);
+        }
+      }
+      
+      return results;
+    }),
+
+  importMachines: adminProcedure
+    .input(z.object({
+      data: z.array(z.object({
+        stationCode: z.string(),
+        code: z.string(),
+        name: z.string(),
+        machineType: z.enum(['AVI', 'AOI', 'AUTOMATION']),
+        model: z.string().optional(),
+        manufacturer: z.string().optional(),
+        isActive: z.boolean().optional(),
+      })),
+    }))
+    .mutation(async ({ input }) => {
+      const results = { success: 0, failed: 0, errors: [] as string[] };
+      
+      for (const item of input.data) {
+        try {
+          // Lookup station by code
+          const station = await db.getStationByCode(item.stationCode);
+          if (!station) {
+            throw new Error(`Station ${item.stationCode} not found`);
+          }
+          
+          // Generate API key
+          const crypto = await import('crypto');
+          const apiKey = crypto.randomBytes(32).toString('hex');
+          
+          await db.createMachine({
+            stationId: station.id,
+            code: item.code,
+            name: item.name,
+            machineType: item.machineType,
+            model: item.model,
+            manufacturer: item.manufacturer,
+            apiKey,
+            isActive: item.isActive ?? true,
+          });
+          results.success++;
+        } catch (error: any) {
+          results.failed++;
+          results.errors.push(`${item.code}: ${error.message}`);
+        }
+      }
+      
+      return results;
+    }),
+});
+
+const exportRouter = router({
+  exportInspections: protectedProcedure
+    .input(z.object({
+      corporateCode: z.string().optional(),
+      factoryCode: z.string().optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const XLSX = await import('xlsx');
+      
+      const inspections = await db.getProductInspections({
+        corporateCode: input.corporateCode,
+        factoryCode: input.factoryCode,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        limit: 10000, // Max export limit
+      });
+
+      // Transform data for Excel
+      const data = inspections.data.map((i: any) => ({
+        'Inspection ID': i.id,
+        'Corporate Code': i.corporateCode || 'N/A',
+        'Factory Code': i.factoryCode || 'N/A',
+        'Serial Number': i.serialNumber,
+        'Product Model': i.productModelName || i.productModelCode,
+        'Result': i.overallResult,
+        'Inspection Time': new Date(i.inspectionTime).toLocaleString('vi-VN'),
+        'Batch Number': i.batchNumber || '',
+        'Machine Code': i.machineCode,
+        'Station Code': i.stationCode,
+      }));
+
+      // Create workbook
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, ws, 'Inspections');
+
+      // Generate buffer
+      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      
+      // Upload to S3
+      const { storagePut } = await import('./storage');
+      const filename = `inspections_${Date.now()}.xlsx`;
+      const { url } = await storagePut(`exports/${filename}`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      
+      return { url, filename, count: data.length };
+    }),
+
+  exportStatistics: adminProcedure
+    .input(z.object({
+      startDate: z.date(),
+      endDate: z.date(),
+    }))
+    .mutation(async ({ input }) => {
+      const XLSX = await import('xlsx');
+      
+      const corporateStats = await db.getYieldRateByCorporate(input);
+      const factoryStats = await db.getYieldRateByFactory(input);
+
+      const wb = XLSX.utils.book_new();
+      
+      // Corporate sheet
+      const corporateWs = XLSX.utils.json_to_sheet(corporateStats.map((s: any) => ({
+        'Corporate Code': s.corporateCode,
+        'Total Inspections': s.totalInspections,
+        'OK Count': s.okCount,
+        'NG Count': s.ngCount,
+        'NTF Count': s.ntfCount,
+        'Yield Rate (%)': s.yieldRate,
+      })));
+      XLSX.utils.book_append_sheet(wb, corporateWs, 'Corporate Stats');
+
+      // Factory sheet
+      const factoryWs = XLSX.utils.json_to_sheet(factoryStats.map((s: any) => ({
+        'Corporate Code': s.corporateCode,
+        'Factory Code': s.factoryCode,
+        'Total Inspections': s.totalInspections,
+        'OK Count': s.okCount,
+        'NG Count': s.ngCount,
+        'NTF Count': s.ntfCount,
+        'Yield Rate (%)': s.yieldRate,
+      })));
+      XLSX.utils.book_append_sheet(wb, factoryWs, 'Factory Stats');
+
+      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      
+      const { storagePut } = await import('./storage');
+      const filename = `statistics_${Date.now()}.xlsx`;
+      const { url } = await storagePut(`exports/${filename}`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      
+      return { url, filename };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -3883,6 +4105,8 @@ export const appRouter = router({
   mqttAlert: mqttAlertRouter,
   systemConfig: systemConfigRouter,
   corporateFactoryStats: corporateFactoryStatsRouter,
+  import: importRouter,
+  export: exportRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -42,7 +42,9 @@ import {
   mqttMessageLogs, InsertMqttMessageLog,
   mqttAlertRules, InsertMqttAlertRule,
   mqttAlertHistory, InsertMqttAlertHistory,
-  systemConfig, InsertSystemConfig
+  systemConfig, InsertSystemConfig,
+  userCorporateAssignments, InsertUserCorporateAssignment,
+  userFactoryAssignments, InsertUserFactoryAssignment
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -4808,4 +4810,135 @@ export async function getThroughputByFactory(filters: {
     timeInterval: r.timeInterval,
     count: Number(r.count),
   }));
+}
+
+
+// Helper functions for Bulk Import
+export async function getFactoryByCode(code: string) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const results = await db.select().from(factories).where(eq(factories.code, code)).limit(1);
+  return results[0] || null;
+}
+
+export async function getWorkshopByCode(code: string) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const results = await db.select().from(workshops).where(eq(workshops.code, code)).limit(1);
+  return results[0] || null;
+}
+
+export async function getStationByCode(code: string) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const results = await db.select().from(stations).where(eq(stations.code, code)).limit(1);
+  return results[0] || null;
+}
+
+export async function getProductionLineByCode(code: string) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const results = await db.select().from(productionLines).where(eq(productionLines.code, code)).limit(1);
+  return results[0] || null;
+}
+
+
+// User Assignment Functions
+export async function getUserCorporateAssignments(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const results = await db.select().from(userCorporateAssignments).where(eq(userCorporateAssignments.userId, userId));
+  return results;
+}
+
+export async function getUserFactoryAssignments(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const results = await db.select().from(userFactoryAssignments).where(eq(userFactoryAssignments.userId, userId));
+  return results;
+}
+
+export async function createCorporateAssignment(data: InsertUserCorporateAssignment) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const [result] = await db.insert(userCorporateAssignments).values(data);
+  return result;
+}
+
+export async function createFactoryAssignment(data: InsertUserFactoryAssignment) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const [result] = await db.insert(userFactoryAssignments).values(data);
+  return result;
+}
+
+export async function deleteCorporateAssignment(userId: number, corporateCode: string) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  await db.delete(userCorporateAssignments)
+    .where(and(
+      eq(userCorporateAssignments.userId, userId),
+      eq(userCorporateAssignments.corporateCode, corporateCode)
+    ));
+  return true;
+}
+
+export async function deleteFactoryAssignment(userId: number, factoryCode: string) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  await db.delete(userFactoryAssignments)
+    .where(and(
+      eq(userFactoryAssignments.userId, userId),
+      eq(userFactoryAssignments.factoryCode, factoryCode)
+    ));
+  return true;
+}
+
+// Helper to check if user has access to corporate/factory
+export async function hasAccessToCorporate(userId: number, corporateCode: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  
+  // Admin has access to all
+  const user = await getUserById(userId);
+  if (user?.role === 'admin') return true;
+  
+  const assignments = await db.select()
+    .from(userCorporateAssignments)
+    .where(and(
+      eq(userCorporateAssignments.userId, userId),
+      eq(userCorporateAssignments.corporateCode, corporateCode)
+    ))
+    .limit(1);
+  
+  return assignments.length > 0;
+}
+
+export async function hasAccessToFactory(userId: number, factoryCode: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  
+  // Admin has access to all
+  const user = await getUserById(userId);
+  if (user?.role === 'admin') return true;
+  
+  const assignments = await db.select()
+    .from(userFactoryAssignments)
+    .where(and(
+      eq(userFactoryAssignments.userId, userId),
+      eq(userFactoryAssignments.factoryCode, factoryCode)
+    ))
+    .limit(1);
+  
+  return assignments.length > 0;
 }

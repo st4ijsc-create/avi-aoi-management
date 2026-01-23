@@ -1770,3 +1770,37 @@
 - [ ] Viết tests cho import/export functions
 - [ ] Viết tests cho multi-tenant access control
 - [ ] Run all tests và fix failures
+
+
+## Phase 89: Enterprise Features Implementation
+
+### 1. Bulk Import/Export
+- [x] Thêm importRouter với importFactories, importWorkshops, importMachines endpoints
+- [x] Thêm exportRouter với exportInspections, exportStatistics endpoints
+- [x] Thêm db helper functions: getFactoryByCode, getWorkshopByCode, getStationByCode, getProductionLineByCode
+- [x] Tạo ImportExport.tsx page với file upload UI
+- [x] Implement Excel template download (3 templates)
+- [x] Implement Excel parsing với xlsx library
+- [x] Implement batch insert với error handling và result summary
+- [x] Implement export với S3 upload (inspections và statistics)
+- [x] Thêm vào navigation (admin only)
+- [x] Thêm route /import-export trong App.tsx
+
+### 2. Multi-tenant Access Control
+- [x] Thêm userCorporateAssignments và userFactoryAssignments tables
+- [x] Thêm db helper functions: getUserCorporateAssignments, getUserFactoryAssignments, createCorporateAssignment, createFactoryAssignment, deleteCorporateAssignment, deleteFactoryAssignment
+- [x] Thêm access check functions: hasAccessToCorporate, hasAccessToFactory
+- [ ] Tạo userAssignmentRouter với CRUD endpoints
+- [ ] Cập nhật tất cả inspection/statistics procedures với access control
+- [ ] Tạo UserAssignments.tsx page
+- [ ] Implement assignment UI với badges và selectors
+- [ ] Test access control trong tất cả endpoints
+
+### 3. Dashboard Drill-down
+- [ ] Thêm onClick handler cho corporate bar chart
+- [ ] Thêm drill-down state management
+- [ ] Implement factory details modal/panel
+- [ ] Thêm machine-level analytics query
+- [ ] Implement breadcrumb navigation
+- [ ] Thêm back button để quay lại corporate view
+- [ ] Thêm loading states cho drill-down transitions

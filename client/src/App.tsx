@@ -29,6 +29,7 @@ import Setup from "./pages/Setup";
 import MqttDashboard from "./pages/MqttDashboard";
 import MqttAlertRules from "./pages/MqttAlertRules";
 import SystemConfiguration from "./pages/SystemConfiguration";
+import ImportExport from "./pages/ImportExport";
 
 function Router() {
   return (
@@ -59,6 +60,7 @@ function Router() {
       <Route path="/mqtt-dashboard" component={MqttDashboard} />
       <Route path="/mqtt-alerts" component={MqttAlertRules} />
       <Route path="/system-config" component={SystemConfiguration} />
+      <Route path="/import-export" component={ImportExport} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

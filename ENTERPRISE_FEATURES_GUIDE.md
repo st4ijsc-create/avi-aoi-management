@@ -1,596 +1,663 @@
 # Enterprise Features Implementation Guide
 
-## ✅ Completed: Dashboard Statistics by Corporate/Factory
+## ✅ Completed Features
 
-### Features
-- **Yield Rate by Corporate**: Bar chart so sánh tỷ lệ đạt giữa các công ty
-- **Yield Rate by Factory**: Bar chart chi tiết theo nhà máy khi chọn công ty
-- **Throughput Trends**: Line chart xu hướng throughput theo thời gian
-- **Summary Cards**: Cards tóm tắt cho từng corporate với yield rate và số lượng
-- **Filters**: Date range (7d/30d/90d), Corporate selector
+### 1. Dashboard Statistics by Corporate/Factory
+**Status**: ✅ Fully Implemented
 
-### API Endpoints
-- `corporateFactoryStats.yieldRateByCorporate` - Lấy yield rate theo corporate
-- `corporateFactoryStats.yieldRateByFactory` - Lấy yield rate theo factory
-- `corporateFactoryStats.throughputByCorporate` - Lấy throughput theo corporate
-- `corporateFactoryStats.throughputByFactory` - Lấy throughput theo factory
+- Corporate/Factory statistics router với 4 endpoints
+- DB functions: `getYieldRateByCorporate`, `getYieldRateByFactory`, `getThroughputByCorporate`, `getThroughputByFactory`
+- `CorporateFactoryStats` component với yield rate bar chart và throughput line chart
+- Filters: date range (7d/30d/90d), corporate selector
+- Tab "Công ty/Nhà máy" trong Dashboard
+- Summary cards cho từng corporate
 
-### Location
-- Tab "Công ty/Nhà máy" trong Dashboard (`/dashboard`)
-- Component: `client/src/components/CorporateFactoryStats.tsx`
-- Router: `corporateFactoryStatsRouter` trong `server/routers.ts`
-- DB Functions: `server/db.ts` (lines 4647-4800)
-
----
-
-## 🚧 TODO: Bulk Import/Export
-
-### Overview
-Cho phép admin import hàng loạt factories, workshops, machines từ Excel và export inspection data theo corporate/factory.
-
-### Implementation Steps
-
-#### 1. Backend - Import Router
-
-Tạo `importRouter` trong `server/routers.ts`:
-
+**Usage**:
 ```typescript
-const importRouter = router({
-  importFactories: adminProcedure
-    .input(z.object({
-      data: z.array(z.object({
-        code: z.string(),
-        name: z.string(),
-        description: z.string().optional(),
-        address: z.string().optional(),
-        region: z.string().optional(),
-        country: z.string().optional(),
-        isActive: z.boolean().optional(),
-      })),
-    }))
-    .mutation(async ({ input }) => {
-      const results = { success: 0, failed: 0, errors: [] as string[] };
-      
-      for (const item of input.data) {
-        try {
-          await db.createFactory(item);
-          results.success++;
-        } catch (error: any) {
-          results.failed++;
-          results.errors.push(`${item.code}: ${error.message}`);
-        }
-      }
-      
-      return results;
-    }),
+// Query corporate yield rate
+const corporateStats = trpc.corporateFactoryStats.yieldRateByCorporate.useQuery({
+  startDate: new Date('2024-01-01'),
+  endDate: new Date(),
+});
 
-  importWorkshops: adminProcedure
-    .input(z.object({
-      data: z.array(z.object({
-        factoryCode: z.string(), // Lookup factoryId by code
-        code: z.string(),
-        name: z.string(),
-        description: z.string().optional(),
-        isActive: z.boolean().optional(),
-      })),
-    }))
-    .mutation(async ({ input }) => {
-      const results = { success: 0, failed: 0, errors: [] as string[] };
-      
-      for (const item of input.data) {
-        try {
-          // Lookup factory by code
-          const factory = await db.getFactoryByCode(item.factoryCode);
-          if (!factory) {
-            throw new Error(`Factory ${item.factoryCode} not found`);
-          }
-          
-          await db.createWorkshop({
-            factoryId: factory.id,
-            code: item.code,
-            name: item.name,
-            description: item.description,
-            isActive: item.isActive ?? true,
-          });
-          results.success++;
-        } catch (error: any) {
-          results.failed++;
-          results.errors.push(`${item.code}: ${error.message}`);
-        }
-      }
-      
-      return results;
-    }),
-
-  importMachines: adminProcedure
-    .input(z.object({
-      data: z.array(z.object({
-        stationCode: z.string(), // Lookup stationId by code
-        code: z.string(),
-        name: z.string(),
-        machineType: z.enum(['AVI', 'AOI', 'SPI', 'X-RAY', 'OTHER']),
-        model: z.string().optional(),
-        manufacturer: z.string().optional(),
-        isActive: z.boolean().optional(),
-      })),
-    }))
-    .mutation(async ({ input }) => {
-      const results = { success: 0, failed: 0, errors: [] as string[] };
-      
-      for (const item of input.data) {
-        try {
-          // Lookup station by code
-          const station = await db.getStationByCode(item.stationCode);
-          if (!station) {
-            throw new Error(`Station ${item.stationCode} not found`);
-          }
-          
-          // Generate API key
-          const apiKey = crypto.randomBytes(32).toString('hex');
-          
-          await db.createMachine({
-            stationId: station.id,
-            code: item.code,
-            name: item.name,
-            machineType: item.machineType,
-            model: item.model,
-            manufacturer: item.manufacturer,
-            apiKey,
-            isActive: item.isActive ?? true,
-          });
-          results.success++;
-        } catch (error: any) {
-          results.failed++;
-          results.errors.push(`${item.code}: ${error.message}`);
-        }
-      }
-      
-      return results;
-    }),
+// Query factory throughput
+const factoryThroughput = trpc.corporateFactoryStats.throughputByFactory.useQuery({
+  startDate: new Date('2024-01-01'),
+  endDate: new Date(),
+  interval: 'day',
 });
 ```
 
-#### 2. Backend - Export Router
+---
 
-Tạo `exportRouter` trong `server/routers.ts`:
+### 2. Bulk Import/Export
+**Status**: ✅ Fully Implemented
+
+**Import Features**:
+- Excel template download cho Factories, Workshops, Machines
+- Batch import với error handling và result summary
+- Validation: check duplicate codes, foreign key references
+- Admin-only access
+
+**Export Features**:
+- Export Inspections với filters (corporateCode, factoryCode, date range)
+- Export Statistics (corporate và factory stats)
+- Auto upload to S3 và return download URL
+- Max 10,000 records per export
+
+**Routers**:
+- `trpc.import.importFactories`
+- `trpc.import.importWorkshops`
+- `trpc.import.importMachines`
+- `trpc.export.exportInspections`
+- `trpc.export.exportStatistics`
+
+**UI**: `/import-export` page với file upload và template download
+
+**Excel Template Formats**:
+
+**Factories Template**:
+```
+code | name | description | address | region | country | isActive
+FAC001 | Nhà máy 1 | Mô tả | 123 Đường ABC | Miền Nam | Việt Nam | true
+```
+
+**Workshops Template**:
+```
+factoryCode | code | name | description | isActive
+FAC001 | WS001 | Xưởng 1 | Mô tả | true
+```
+
+**Machines Template**:
+```
+stationCode | code | name | machineType | model | manufacturer | isActive
+ST001 | MCH001 | Máy 1 | AVI | Model ABC | Manufacturer XYZ | true
+```
+
+**Usage Example**:
+```typescript
+// Import factories
+const importResult = await trpc.import.importFactories.mutateAsync({
+  data: [
+    { code: 'FAC001', name: 'Factory 1', ... },
+    { code: 'FAC002', name: 'Factory 2', ... },
+  ]
+});
+// Returns: { success: 2, failed: 0, errors: [] }
+
+// Export inspections
+const exportResult = await trpc.export.exportInspections.mutateAsync({
+  corporateCode: 'CORP001',
+  startDate: new Date('2024-01-01'),
+  endDate: new Date(),
+});
+// Returns: { url: 'https://...', filename: 'inspections_xxx.xlsx', count: 1234 }
+```
+
+---
+
+### 3. Multi-tenant Access Control
+**Status**: 🚧 Partially Implemented (Database schema + helper functions ready)
+
+**Completed**:
+- ✅ Database tables: `user_corporate_assignments`, `user_factory_assignments`
+- ✅ DB helper functions: `getUserCorporateAssignments`, `getUserFactoryAssignments`, `createCorporateAssignment`, `createFactoryAssignment`, `deleteCorporateAssignment`, `deleteFactoryAssignment`
+- ✅ Access check functions: `hasAccessToCorporate`, `hasAccessToFactory`
+
+**Remaining Work**:
+
+#### Step 1: Create User Assignment Router
+Create `userAssignmentRouter` in `server/routers.ts`:
 
 ```typescript
-import * as XLSX from 'xlsx';
+const userAssignmentRouter = router({
+  // Get user's assignments
+  getMyAssignments: protectedProcedure
+    .query(async ({ ctx }) => {
+      const corporates = await db.getUserCorporateAssignments(ctx.user.id);
+      const factories = await db.getUserFactoryAssignments(ctx.user.id);
+      return { corporates, factories };
+    }),
 
-const exportRouter = router({
-  exportInspections: protectedProcedure
+  // Get all users with assignments (admin only)
+  getAllUserAssignments: adminProcedure
+    .query(async () => {
+      const users = await db.getUsers();
+      const result = [];
+      for (const user of users) {
+        const corporates = await db.getUserCorporateAssignments(user.id);
+        const factories = await db.getUserFactoryAssignments(user.id);
+        result.push({ user, corporates, factories });
+      }
+      return result;
+    }),
+
+  // Assign user to corporate (admin only)
+  assignCorporate: adminProcedure
     .input(z.object({
-      corporateCode: z.string().optional(),
-      factoryCode: z.string().optional(),
-      startDate: z.date().optional(),
-      endDate: z.date().optional(),
+      userId: z.number(),
+      corporateCode: z.string(),
     }))
-    .mutation(async ({ input }) => {
-      const inspections = await db.getProductInspections({
+    .mutation(async ({ input, ctx }) => {
+      return db.createCorporateAssignment({
+        userId: input.userId,
         corporateCode: input.corporateCode,
-        factoryCode: input.factoryCode,
-        startDate: input.startDate,
-        endDate: input.endDate,
-        limit: 10000, // Max export limit
+        assignedBy: ctx.user.id,
       });
-
-      // Transform data for Excel
-      const data = inspections.data.map(i => ({
-        'Inspection ID': i.id,
-        'Corporate Code': i.corporateCode,
-        'Factory Code': i.factoryCode,
-        'Serial Number': i.serialNumber,
-        'Product Model': i.productModel,
-        'Result': i.overallResult,
-        'Inspection Time': new Date(i.inspectionTime).toLocaleString('vi-VN'),
-        'Batch Number': i.batchNumber,
-        'Machine Code': i.machineCode,
-      }));
-
-      // Create workbook
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(data);
-      XLSX.utils.book_append_sheet(wb, ws, 'Inspections');
-
-      // Generate buffer
-      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-      
-      // Upload to S3
-      const { storagePut } = await import('./storage');
-      const filename = `inspections_${Date.now()}.xlsx`;
-      const { url } = await storagePut(`exports/${filename}`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      
-      return { url, filename, count: data.length };
     }),
 
-  exportStatistics: adminProcedure
+  // Assign user to factory (admin only)
+  assignFactory: adminProcedure
     .input(z.object({
-      startDate: z.date(),
-      endDate: z.date(),
+      userId: z.number(),
+      factoryCode: z.string(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      return db.createFactoryAssignment({
+        userId: input.userId,
+        factoryCode: input.factoryCode,
+        assignedBy: ctx.user.id,
+      });
+    }),
+
+  // Remove corporate assignment (admin only)
+  removeCorporateAssignment: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      corporateCode: z.string(),
     }))
     .mutation(async ({ input }) => {
-      const corporateStats = await db.getYieldRateByCorporate(input);
-      const factoryStats = await db.getYieldRateByFactory(input);
+      return db.deleteCorporateAssignment(input.userId, input.corporateCode);
+    }),
 
-      const wb = XLSX.utils.book_new();
-      
-      // Corporate sheet
-      const corporateWs = XLSX.utils.json_to_sheet(corporateStats.map(s => ({
-        'Corporate Code': s.corporateCode,
-        'Total Inspections': s.totalInspections,
-        'OK Count': s.okCount,
-        'NG Count': s.ngCount,
-        'NTF Count': s.ntfCount,
-        'Yield Rate (%)': s.yieldRate,
-      })));
-      XLSX.utils.book_append_sheet(wb, corporateWs, 'Corporate Stats');
-
-      // Factory sheet
-      const factoryWs = XLSX.utils.json_to_sheet(factoryStats.map(s => ({
-        'Corporate Code': s.corporateCode,
-        'Factory Code': s.factoryCode,
-        'Total Inspections': s.totalInspections,
-        'OK Count': s.okCount,
-        'NG Count': s.ngCount,
-        'NTF Count': s.ntfCount,
-        'Yield Rate (%)': s.yieldRate,
-      })));
-      XLSX.utils.book_append_sheet(wb, factoryWs, 'Factory Stats');
-
-      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-      
-      const { storagePut } = await import('./storage');
-      const filename = `statistics_${Date.now()}.xlsx`;
-      const { url } = await storagePut(`exports/${filename}`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      
-      return { url, filename };
+  // Remove factory assignment (admin only)
+  removeFactoryAssignment: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      factoryCode: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      return db.deleteFactoryAssignment(input.userId, input.factoryCode);
     }),
 });
+
+// Add to appRouter
+export const appRouter = router({
+  // ... existing routers
+  userAssignment: userAssignmentRouter,
+});
 ```
 
-#### 3. Frontend - Import/Export Page
-
-Tạo `client/src/pages/ImportExport.tsx`:
+#### Step 2: Apply Access Control to Inspection Queries
+Update `getProductInspections` in `server/db.ts`:
 
 ```typescript
-import { useState } from 'react';
-import { trpc } from '@/lib/trpc';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { toast } from 'sonner';
-import { Upload, Download, FileSpreadsheet } from 'lucide-react';
-import * as XLSX from 'xlsx';
+export async function getProductInspections(params: {
+  userId?: number; // Add userId for access control
+  corporateCode?: string;
+  factoryCode?: string;
+  // ... other params
+}) {
+  const db = await getDb();
+  if (!db) return { data: [], total: 0 };
 
-export function ImportExport() {
-  const [importing, setImporting] = useState(false);
-  
-  const importFactories = trpc.import.importFactories.useMutation();
-  const importWorkshops = trpc.import.importWorkshops.useMutation();
-  const importMachines = trpc.import.importMachines.useMutation();
-  const exportInspections = trpc.export.exportInspections.useMutation();
+  let query = db.select().from(productInspections);
 
-  const handleFileUpload = async (file: File, type: 'factories' | 'workshops' | 'machines') => {
-    setImporting(true);
-    try {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
-
-      let result;
-      if (type === 'factories') {
-        result = await importFactories.mutateAsync({ data: jsonData as any });
-      } else if (type === 'workshops') {
-        result = await importWorkshops.mutateAsync({ data: jsonData as any });
+  // Apply access control for non-admin users
+  if (params.userId) {
+    const user = await getUserById(params.userId);
+    if (user?.role !== 'admin') {
+      const corporateAssignments = await getUserCorporateAssignments(params.userId);
+      const factoryAssignments = await getUserFactoryAssignments(params.userId);
+      
+      const corporateCodes = corporateAssignments.map(a => a.corporateCode);
+      const factoryCodes = factoryAssignments.map(a => a.factoryCode);
+      
+      // Filter by assigned corporates/factories
+      if (corporateCodes.length > 0 || factoryCodes.length > 0) {
+        query = query.where(
+          or(
+            corporateCodes.length > 0 ? inArray(productInspections.corporateCode, corporateCodes) : undefined,
+            factoryCodes.length > 0 ? inArray(productInspections.factoryCode, factoryCodes) : undefined
+          )
+        );
       } else {
-        result = await importMachines.mutateAsync({ data: jsonData as any });
+        // User has no assignments, return empty
+        return { data: [], total: 0 };
       }
-
-      toast.success(`Import thành công: ${result.success} items. Failed: ${result.failed}`);
-      if (result.errors.length > 0) {
-        console.error('Import errors:', result.errors);
-      }
-    } catch (error: any) {
-      toast.error(`Import failed: ${error.message}`);
-    } finally {
-      setImporting(false);
     }
-  };
+  }
 
-  const downloadTemplate = (type: 'factories' | 'workshops' | 'machines') => {
-    let template: any[] = [];
-    if (type === 'factories') {
-      template = [{ code: 'FAC001', name: 'Factory 1', description: '', address: '', region: '', country: '', isActive: true }];
-    } else if (type === 'workshops') {
-      template = [{ factoryCode: 'FAC001', code: 'WS001', name: 'Workshop 1', description: '', isActive: true }];
-    } else {
-      template = [{ stationCode: 'ST001', code: 'MCH001', name: 'Machine 1', machineType: 'AVI', model: '', manufacturer: '', isActive: true }];
-    }
-
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(template);
-    XLSX.utils.book_append_sheet(wb, ws, 'Template');
-    XLSX.writeFile(wb, `${type}_template.xlsx`);
-  };
-
-  return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Import/Export Data</h1>
-
-      {/* Import Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Upload className="h-5 w-5" />
-            Import Data
-          </CardTitle>
-          <CardDescription>Upload Excel files to import factories, workshops, or machines</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {['factories', 'workshops', 'machines'].map(type => (
-            <div key={type} className="flex items-center gap-4">
-              <Button variant="outline" onClick={() => downloadTemplate(type as any)}>
-                <FileSpreadsheet className="h-4 w-4 mr-2" />
-                Download {type} template
-              </Button>
-              <Input
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleFileUpload(file, type as any);
-                }}
-                disabled={importing}
-              />
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      {/* Export Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Download className="h-5 w-5" />
-            Export Data
-          </CardTitle>
-          <CardDescription>Export inspection data and statistics to Excel</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Button
-            onClick={async () => {
-              const result = await exportInspections.mutateAsync({});
-              window.open(result.url, '_blank');
-              toast.success(`Exported ${result.count} inspections`);
-            }}
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Export Inspections
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
-  );
+  // ... rest of query logic
 }
 ```
 
-#### 4. Add to Navigation
-
-Thêm vào `client/src/lib/navigation.tsx`:
+Update inspection router to pass userId:
 
 ```typescript
-{
-  title: 'Import/Export',
-  href: '/import-export',
-  icon: FileDown,
-  requiresAdmin: true,
-}
-```
-
----
-
-## 🚧 TODO: Multi-tenant Access Control
-
-### Overview
-Phân quyền user chỉ xem được data của corporate/factory được assign. Admin có thể assign user vào corporate/factory.
-
-### Database Schema
-
-Thêm vào `drizzle/schema.ts`:
-
-```typescript
-export const userCorporateAssignments = mysqlTable('user_corporate_assignments', {
-  id: int('id').primaryKey().autoincrement(),
-  userId: int('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  corporateCode: varchar('corporate_code', { length: 50 }).notNull(),
-  createdAt: timestamp('created_at').defaultNow(),
-});
-
-export const userFactoryAssignments = mysqlTable('user_factory_assignments', {
-  id: int('id').primaryKey().autoincrement(),
-  userId: int('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  factoryCode: varchar('factory_code', { length: 50 }).notNull(),
-  createdAt: timestamp('created_at').defaultNow(),
-});
-```
-
-### Middleware
-
-Tạo `server/middleware/accessControl.ts`:
-
-```typescript
-import { TRPCError } from '@trpc/server';
-import * as db from '../db';
-
-export async function checkCorporateAccess(userId: number, corporateCode: string) {
-  const user = await db.getUserById(userId);
-  if (user?.role === 'admin') return true; // Admin has full access
-
-  const assignments = await db.getUserCorporateAssignments(userId);
-  return assignments.some(a => a.corporateCode === corporateCode);
-}
-
-export async function checkFactoryAccess(userId: number, factoryCode: string) {
-  const user = await db.getUserById(userId);
-  if (user?.role === 'admin') return true;
-
-  const assignments = await db.getUserFactoryAssignments(userId);
-  return assignments.some(a => a.factoryCode === factoryCode);
-}
-
-export async function filterByUserAccess<T extends { corporateCode?: string; factoryCode?: string }>(
-  userId: number,
-  data: T[]
-): Promise<T[]> {
-  const user = await db.getUserById(userId);
-  if (user?.role === 'admin') return data;
-
-  const corporateAssignments = await db.getUserCorporateAssignments(userId);
-  const factoryAssignments = await db.getUserFactoryAssignments(userId);
-
-  const allowedCorporates = new Set(corporateAssignments.map(a => a.corporateCode));
-  const allowedFactories = new Set(factoryAssignments.map(a => a.factoryCode));
-
-  return data.filter(item => {
-    if (item.corporateCode && allowedCorporates.has(item.corporateCode)) return true;
-    if (item.factoryCode && allowedFactories.has(item.factoryCode)) return true;
-    return false;
-  });
-}
-```
-
-### Update Procedures
-
-Cập nhật tất cả inspection/statistics procedures:
-
-```typescript
-// Example: Update getProductInspections
 list: protectedProcedure
   .input(z.object({
-    corporateCode: z.string().optional(),
-    factoryCode: z.string().optional(),
-    // ... other filters
+    // ... existing inputs
   }))
   .query(async ({ input, ctx }) => {
-    // Admin can see all
-    if (ctx.user.role === 'admin') {
-      return db.getProductInspections(input);
-    }
-
-    // Non-admin: filter by assignments
-    const corporateAssignments = await db.getUserCorporateAssignments(ctx.user.id);
-    const factoryAssignments = await db.getUserFactoryAssignments(ctx.user.id);
-
-    // If user has specific assignments, apply filters
-    if (corporateAssignments.length > 0 || factoryAssignments.length > 0) {
-      const allowedCorporates = corporateAssignments.map(a => a.corporateCode);
-      const allowedFactories = factoryAssignments.map(a => a.factoryCode);
-
-      // Get all inspections and filter
-      const result = await db.getProductInspections(input);
-      result.data = result.data.filter(i => 
-        (i.corporateCode && allowedCorporates.includes(i.corporateCode)) ||
-        (i.factoryCode && allowedFactories.includes(i.factoryCode))
-      );
-      result.total = result.data.length;
-      return result;
-    }
-
-    // No assignments = no access
-    return { data: [], total: 0 };
+    return db.getProductInspections({
+      ...input,
+      userId: ctx.user.id, // Pass user ID for access control
+    });
   }),
 ```
 
-### User Assignment UI
-
-Tạo `client/src/pages/UserAssignments.tsx`:
+#### Step 3: Create User Assignments UI
+Create `client/src/pages/UserAssignments.tsx`:
 
 ```typescript
+import { useState } from 'react';
+import DashboardLayout from '@/components/DashboardLayout';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { UserPlus, X } from 'lucide-react';
+import { navItems } from '@/lib/navigation';
 
-export function UserAssignments() {
-  const { data: users } = trpc.user.list.useQuery({ limit: 1000 });
-  const { data: corporates } = trpc.corporateFactoryStats.yieldRateByCorporate.useQuery({});
+export default function UserAssignments() {
+  const [selectedUser, setSelectedUser] = useState<number | null>(null);
+  const [selectedCorporate, setSelectedCorporate] = useState<string>('');
+  const [selectedFactory, setSelectedFactory] = useState<string>('');
+
+  const { data: allAssignments, refetch } = trpc.userAssignment.getAllUserAssignments.useQuery();
   const assignCorporate = trpc.userAssignment.assignCorporate.useMutation();
-  const removeCorporate = trpc.userAssignment.removeCorporate.useMutation();
+  const assignFactory = trpc.userAssignment.assignFactory.useMutation();
+  const removeCorporate = trpc.userAssignment.removeCorporateAssignment.useMutation();
+  const removeFactory = trpc.userAssignment.removeFactoryAssignment.useMutation();
 
-  // Similar UI for factory assignments
+  const handleAssignCorporate = async () => {
+    if (!selectedUser || !selectedCorporate) return;
+    
+    try {
+      await assignCorporate.mutateAsync({
+        userId: selectedUser,
+        corporateCode: selectedCorporate,
+      });
+      toast.success('Assigned corporate successfully');
+      refetch();
+    } catch (error: any) {
+      toast.error(`Failed: ${error.message}`);
+    }
+  };
+
+  const handleRemoveCorporate = async (userId: number, corporateCode: string) => {
+    try {
+      await removeCorporate.mutateAsync({ userId, corporateCode });
+      toast.success('Removed corporate assignment');
+      refetch();
+    } catch (error: any) {
+      toast.error(`Failed: ${error.message}`);
+    }
+  };
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">User Assignments</h1>
-
-      {users?.data.map(user => (
-        <Card key={user.id}>
+    <DashboardLayout
+      title="User Assignments"
+      navItems={navItems}
+      currentPath="/user-assignments"
+    >
+      <div className="space-y-6">
+        {/* Assignment Form */}
+        <Card>
           <CardHeader>
-            <CardTitle>{user.name} ({user.email})</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5" />
+              Assign User to Corporate/Factory
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <h3 className="font-semibold mb-2">Corporate Access</h3>
-              <div className="flex flex-wrap gap-2">
-                {user.corporateAssignments?.map(a => (
-                  <Badge key={a.id} variant="secondary">
-                    {a.corporateCode}
-                    <X
-                      className="ml-1 h-3 w-3 cursor-pointer"
-                      onClick={() => removeCorporate.mutate({ userId: user.id, corporateCode: a.corporateCode })}
-                    />
-                  </Badge>
-                ))}
-              </div>
-              <div className="flex gap-2 mt-2">
-                <Select onValueChange={(code) => assignCorporate.mutate({ userId: user.id, corporateCode: code })}>
-                  <SelectTrigger className="w-[200px]">
-                    <SelectValue placeholder="Add corporate" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {corporates?.map(c => (
-                      <SelectItem key={c.corporateCode} value={c.corporateCode}>
-                        {c.corporateCode}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Select value={selectedUser?.toString() || ''} onValueChange={(v) => setSelectedUser(Number(v))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select User" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allAssignments?.map((item) => (
+                    <SelectItem key={item.user.id} value={item.user.id.toString()}>
+                      {item.user.name || item.user.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={selectedCorporate} onValueChange={setSelectedCorporate}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Corporate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CORP001">CORP001</SelectItem>
+                  <SelectItem value="CORP002">CORP002</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Button onClick={handleAssignCorporate} disabled={!selectedUser || !selectedCorporate}>
+                Assign Corporate
+              </Button>
             </div>
           </CardContent>
         </Card>
-      ))}
-    </div>
+
+        {/* User Assignments List */}
+        <div className="space-y-4">
+          {allAssignments?.map((item) => (
+            <Card key={item.user.id}>
+              <CardHeader>
+                <CardTitle className="text-lg">
+                  {item.user.name || item.user.email}
+                  <Badge variant="outline" className="ml-2">{item.user.role}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <h4 className="font-semibold mb-2">Corporate Assignments:</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {item.corporates.map((corp) => (
+                      <Badge key={corp.id} variant="secondary" className="flex items-center gap-1">
+                        {corp.corporateCode}
+                        <X 
+                          className="h-3 w-3 cursor-pointer" 
+                          onClick={() => handleRemoveCorporate(item.user.id, corp.corporateCode)}
+                        />
+                      </Badge>
+                    ))}
+                    {item.corporates.length === 0 && <span className="text-muted-foreground text-sm">No assignments</span>}
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-semibold mb-2">Factory Assignments:</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {item.factories.map((factory) => (
+                      <Badge key={factory.id} variant="secondary" className="flex items-center gap-1">
+                        {factory.factoryCode}
+                        <X 
+                          className="h-3 w-3 cursor-pointer" 
+                          onClick={() => handleRemoveFactory(item.user.id, factory.factoryCode)}
+                        />
+                      </Badge>
+                    ))}
+                    {item.factories.length === 0 && <span className="text-muted-foreground text-sm">No assignments</span>}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    </DashboardLayout>
   );
 }
+```
+
+Add route in `client/src/App.tsx`:
+```typescript
+import UserAssignments from "./pages/UserAssignments";
+// ...
+<Route path="/user-assignments" component={UserAssignments} />
+```
+
+Add to navigation in `client/src/lib/navigation.tsx`:
+```typescript
+{ href: "/user-assignments", label: "User Assignments", icon: <Users className="h-4 w-4" /> },
+```
+
+#### Step 4: Apply Access Control to All Data Queries
+Update these routers to include access control:
+- `inspectionRouter.list` - filter inspections by user assignments
+- `corporateFactoryStatsRouter` - filter stats by user assignments
+- `dashboardRouter.stats` - filter dashboard stats by user assignments
+- `historyRouter.list` - filter history by user assignments
+
+Pattern:
+```typescript
+protectedProcedure
+  .input(z.object({ /* ... */ }))
+  .query(async ({ input, ctx }) => {
+    // Check if user is admin
+    if (ctx.user.role !== 'admin') {
+      // Get user assignments
+      const corporateAssignments = await db.getUserCorporateAssignments(ctx.user.id);
+      const factoryAssignments = await db.getUserFactoryAssignments(ctx.user.id);
+      
+      // If no assignments, return empty
+      if (corporateAssignments.length === 0 && factoryAssignments.length === 0) {
+        return { data: [], total: 0 };
+      }
+      
+      // Apply filters
+      input.corporateCodes = corporateAssignments.map(a => a.corporateCode);
+      input.factoryCodes = factoryAssignments.map(a => a.factoryCode);
+    }
+    
+    return db.getProductInspections(input);
+  }),
+```
+
+---
+
+### 4. Dashboard Drill-down
+**Status**: 📝 Not Started
+
+**Implementation Steps**:
+
+#### Step 1: Add Drill-down State Management
+Update `client/src/components/CorporateFactoryStats.tsx`:
+
+```typescript
+const [drillDownState, setDrillDownState] = useState<{
+  level: 'corporate' | 'factory' | 'machine';
+  corporateCode?: string;
+  factoryCode?: string;
+}>({ level: 'corporate' });
+
+const [selectedCorporate, setSelectedCorporate] = useState<string | null>(null);
+const [selectedFactory, setSelectedFactory] = useState<string | null>(null);
+```
+
+#### Step 2: Add onClick Handler to Charts
+```typescript
+// In Bar Chart config
+const chartConfig = {
+  onClick: (event, elements) => {
+    if (elements.length > 0) {
+      const index = elements[0].index;
+      const corporateCode = corporateStats[index].corporateCode;
+      setSelectedCorporate(corporateCode);
+      setDrillDownState({ level: 'factory', corporateCode });
+    }
+  },
+};
+```
+
+#### Step 3: Create Factory Details Query
+Add to `corporateFactoryStatsRouter`:
+
+```typescript
+factoryDetails: protectedProcedure
+  .input(z.object({
+    corporateCode: z.string(),
+    startDate: z.date(),
+    endDate: z.date(),
+  }))
+  .query(async ({ input }) => {
+    // Query factory-level details for a specific corporate
+    return db.getYieldRateByFactory({
+      corporateCode: input.corporateCode,
+      startDate: input.startDate,
+      endDate: input.endDate,
+    });
+  }),
+
+machineAnalytics: protectedProcedure
+  .input(z.object({
+    factoryCode: z.string(),
+    startDate: z.date(),
+    endDate: z.date(),
+  }))
+  .query(async ({ input }) => {
+    // Query machine-level analytics for a specific factory
+    const db = await getDb();
+    if (!db) return [];
+    
+    const results = await db.select({
+      machineCode: productInspections.machineCode,
+      totalInspections: sql<number>`COUNT(*)`,
+      okCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'OK' THEN 1 ELSE 0 END)`,
+      ngCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NG' THEN 1 ELSE 0 END)`,
+      yieldRate: sql<number>`ROUND(SUM(CASE WHEN ${productInspections.overallResult} = 'OK' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2)`,
+    })
+    .from(productInspections)
+    .where(and(
+      eq(productInspections.factoryCode, input.factoryCode),
+      gte(productInspections.inspectionTime, input.startDate),
+      lte(productInspections.inspectionTime, input.endDate)
+    ))
+    .groupBy(productInspections.machineCode);
+    
+    return results;
+  }),
+```
+
+#### Step 4: Create Drill-down UI
+```typescript
+// In CorporateFactoryStats component
+return (
+  <div className="space-y-4">
+    {/* Breadcrumb Navigation */}
+    {drillDownState.level !== 'corporate' && (
+      <div className="flex items-center gap-2 text-sm">
+        <Button variant="ghost" size="sm" onClick={() => setDrillDownState({ level: 'corporate' })}>
+          All Corporates
+        </Button>
+        {drillDownState.corporateCode && (
+          <>
+            <span>/</span>
+            {drillDownState.level === 'machine' ? (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => setDrillDownState({ level: 'factory', corporateCode: drillDownState.corporateCode })}
+              >
+                {drillDownState.corporateCode}
+              </Button>
+            ) : (
+              <span className="font-semibold">{drillDownState.corporateCode}</span>
+            )}
+          </>
+        )}
+        {drillDownState.factoryCode && (
+          <>
+            <span>/</span>
+            <span className="font-semibold">{drillDownState.factoryCode}</span>
+          </>
+        )}
+      </div>
+    )}
+
+    {/* Conditional Rendering based on drill-down level */}
+    {drillDownState.level === 'corporate' && (
+      <CorporateChart onClick={(corporateCode) => {
+        setSelectedCorporate(corporateCode);
+        setDrillDownState({ level: 'factory', corporateCode });
+      }} />
+    )}
+
+    {drillDownState.level === 'factory' && drillDownState.corporateCode && (
+      <FactoryChart 
+        corporateCode={drillDownState.corporateCode}
+        onClick={(factoryCode) => {
+          setSelectedFactory(factoryCode);
+          setDrillDownState({ 
+            level: 'machine', 
+            corporateCode: drillDownState.corporateCode, 
+            factoryCode 
+          });
+        }}
+      />
+    )}
+
+    {drillDownState.level === 'machine' && drillDownState.factoryCode && (
+      <MachineAnalyticsTable factoryCode={drillDownState.factoryCode} />
+    )}
+  </div>
+);
+```
+
+#### Step 5: Add Loading States
+```typescript
+const { data: factoryDetails, isLoading: isLoadingFactory } = trpc.corporateFactoryStats.factoryDetails.useQuery(
+  {
+    corporateCode: drillDownState.corporateCode!,
+    startDate,
+    endDate,
+  },
+  { enabled: drillDownState.level === 'factory' && !!drillDownState.corporateCode }
+);
+
+{isLoadingFactory && <Skeleton className="h-64" />}
 ```
 
 ---
 
 ## Testing Checklist
 
-### Dashboard Statistics
-- [ ] Test yield rate chart với nhiều corporates
-- [ ] Test factory drill-down khi chọn corporate
-- [ ] Test throughput trends với date range khác nhau
-- [ ] Test filters hoạt động đúng
-- [ ] Test empty state khi không có data
-
 ### Bulk Import/Export
-- [ ] Test import factories với valid data
-- [ ] Test import với duplicate codes (should fail)
-- [ ] Test import workshops với invalid factoryCode
-- [ ] Test export inspections với filters
-- [ ] Test export file format đúng
-- [ ] Test large file import (1000+ rows)
+- [ ] Upload valid Excel files for factories, workshops, machines
+- [ ] Test duplicate code validation
+- [ ] Test foreign key validation (e.g., invalid factoryCode in workshops)
+- [ ] Test error handling and result summary
+- [ ] Test template download
+- [ ] Test export with different date ranges
+- [ ] Test export with corporate/factory filters
+- [ ] Verify S3 upload and download URL
 
 ### Multi-tenant Access Control
-- [ ] Test admin có full access
-- [ ] Test user chỉ thấy assigned corporate/factory
-- [ ] Test user không có assignment không thấy gì
-- [ ] Test assignment CRUD operations
-- [ ] Test filter hoạt động đúng trong tất cả endpoints
+- [ ] Assign user to corporate and verify assignment
+- [ ] Assign user to factory and verify assignment
+- [ ] Remove assignments and verify
+- [ ] Login as non-admin user and verify filtered data
+- [ ] Verify admin can see all data
+- [ ] Test inspection list with access control
+- [ ] Test dashboard stats with access control
+
+### Dashboard Drill-down
+- [ ] Click corporate bar and verify factory details load
+- [ ] Click factory bar and verify machine analytics load
+- [ ] Test breadcrumb navigation back to corporate view
+- [ ] Verify loading states during drill-down
+- [ ] Test with different date ranges
+
+---
+
+## Performance Considerations
+
+1. **Access Control Queries**: Cache user assignments in memory or Redis to avoid repeated DB queries
+2. **Export Large Datasets**: Consider background jobs for exports > 10,000 records
+3. **Drill-down Queries**: Add indexes on `corporateCode`, `factoryCode`, `machineCode` in `product_inspections`
+4. **Import Validation**: Batch validation in chunks of 100-500 records to avoid memory issues
+
+---
+
+## Security Considerations
+
+1. **Import/Export**: Admin-only access enforced via `adminProcedure`
+2. **User Assignments**: Only admins can assign/remove assignments
+3. **Access Control**: Enforce at DB query level, not just UI level
+4. **SQL Injection**: Use parameterized queries (Drizzle ORM handles this)
+5. **File Upload**: Validate file size (< 10MB) and file type (.xlsx, .xls only)
+
+---
+
+## Next Steps Priority
+
+1. **High Priority**: Complete Multi-tenant Access Control UI and apply to all data queries
+2. **Medium Priority**: Implement Dashboard Drill-down for better analytics UX
+3. **Low Priority**: Add background jobs for large exports, add Redis caching for assignments
