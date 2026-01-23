@@ -16,7 +16,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Download, FileJson, FileSpreadsheet, FileCode, Loader2 } from 'lucide-react';
+import { Download, FileJson, FileSpreadsheet, FileCode, Loader2, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 
@@ -441,7 +441,7 @@ export function DashboardDataExport({ getAllWidgetsData, dashboardTitle = 'Dashb
   const { t } = useTranslation();
   const [isExporting, setIsExporting] = useState(false);
 
-  const handleExportAll = useCallback(async (format: 'json' | 'html') => {
+  const handleExportAll = useCallback(async (format: 'json' | 'html' | 'pdf') => {
     setIsExporting(true);
     try {
       const allData = await getAllWidgetsData();
@@ -456,11 +456,16 @@ export function DashboardDataExport({ getAllWidgetsData, dashboardTitle = 'Dashb
         }, null, 2);
         downloadFile(jsonContent, `${baseFilename}.json`, 'application/json');
         toast.success(t('common.exportSuccess', 'Exported successfully'));
-      } else {
+      } else if (format === 'html') {
         // Generate comprehensive HTML report
         const htmlContent = generateDashboardHTML(allData, dashboardTitle);
         downloadFile(htmlContent, `${baseFilename}.html`, 'text/html');
         toast.success(t('common.exportSuccess', 'Exported successfully'));
+      } else if (format === 'pdf') {
+        // Generate PDF report using jsPDF
+        toast.info(t('common.generatingPDF', 'Generating PDF...'));
+        await generateDashboardPDF(allData, dashboardTitle, baseFilename);
+        toast.success(t('common.exportSuccess', 'PDF exported successfully'));
       }
     } catch (error) {
       console.error('Dashboard export error:', error);
@@ -492,6 +497,10 @@ export function DashboardDataExport({ getAllWidgetsData, dashboardTitle = 'Dashb
         <DropdownMenuItem onClick={() => handleExportAll('html')}>
           <FileCode className="h-4 w-4 mr-2 text-blue-600" />
           <span>Export as HTML Report</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => handleExportAll('pdf')}>
+          <FileText className="h-4 w-4 mr-2 text-red-600" />
+          <span>Export as PDF Report</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -778,4 +787,195 @@ function generateDashboardHTML(widgets: WidgetData[], title: string): string {
   `.trim();
 }
 
-export { convertToCSV, convertToHTML, downloadFile };
+// Generate PDF report for dashboard
+async function generateDashboardPDF(widgets: WidgetData[], title: string, filename: string): Promise<void> {
+  // Dynamically import jsPDF to avoid bundle size issues
+  const { default: jsPDF } = await import('jspdf');
+  
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+  
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  let yPos = margin;
+  
+  // Helper to add new page if needed
+  const checkNewPage = (requiredHeight: number) => {
+    if (yPos + requiredHeight > pageHeight - margin) {
+      doc.addPage();
+      yPos = margin;
+      return true;
+    }
+    return false;
+  };
+  
+  // Header with gradient-like effect
+  doc.setFillColor(30, 64, 175); // Blue
+  doc.rect(0, 0, pageWidth, 45, 'F');
+  
+  // Title
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(24);
+  doc.setFont('helvetica', 'bold');
+  doc.text(title, margin, 25);
+  
+  // Subtitle
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'normal');
+  const timestamp = new Date().toLocaleString();
+  doc.text(`Dashboard Report - ${timestamp}`, margin, 35);
+  
+  yPos = 55;
+  
+  // Summary section
+  doc.setTextColor(31, 41, 55);
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Report Summary', margin, yPos);
+  yPos += 8;
+  
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(107, 114, 128);
+  doc.text(`Total Widgets: ${widgets.length}`, margin, yPos);
+  yPos += 6;
+  doc.text(`Generated: ${timestamp}`, margin, yPos);
+  yPos += 15;
+  
+  // Widgets
+  for (const widget of widgets) {
+    checkNewPage(40);
+    
+    // Widget header
+    doc.setFillColor(249, 250, 251);
+    doc.roundedRect(margin, yPos, contentWidth, 12, 2, 2, 'F');
+    
+    doc.setTextColor(17, 24, 39);
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text(widget.title, margin + 4, yPos + 8);
+    
+    // Widget type badge
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(30, 64, 175);
+    const typeWidth = doc.getTextWidth(widget.type) + 8;
+    doc.setFillColor(219, 234, 254);
+    doc.roundedRect(pageWidth - margin - typeWidth - 4, yPos + 2, typeWidth, 8, 2, 2, 'F');
+    doc.text(widget.type, pageWidth - margin - typeWidth, yPos + 7.5);
+    
+    yPos += 16;
+    
+    // Widget data
+    doc.setTextColor(55, 65, 81);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    
+    if (Array.isArray(widget.data) && widget.data.length > 0) {
+      const firstItem = widget.data[0];
+      const keys = typeof firstItem === 'object' && firstItem !== null 
+        ? Object.keys(firstItem).slice(0, 5) // Limit columns
+        : ['value'];
+      
+      // Table header
+      const colWidth = contentWidth / keys.length;
+      doc.setFillColor(243, 244, 246);
+      doc.rect(margin, yPos, contentWidth, 8, 'F');
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      keys.forEach((key, i) => {
+        const truncatedKey = key.length > 12 ? key.substring(0, 10) + '...' : key;
+        doc.text(truncatedKey, margin + (i * colWidth) + 2, yPos + 5.5);
+      });
+      yPos += 10;
+      
+      // Table rows (limit to 10 rows)
+      doc.setFont('helvetica', 'normal');
+      const maxRows = Math.min(widget.data.length, 10);
+      for (let rowIdx = 0; rowIdx < maxRows; rowIdx++) {
+        checkNewPage(8);
+        
+        const item = widget.data[rowIdx];
+        if (rowIdx % 2 === 1) {
+          doc.setFillColor(249, 250, 251);
+          doc.rect(margin, yPos, contentWidth, 7, 'F');
+        }
+        
+        keys.forEach((key, i) => {
+          const value = typeof item === 'object' && item !== null 
+            ? (item as Record<string, unknown>)[key] 
+            : item;
+          const displayValue = value === null || value === undefined 
+            ? '-' 
+            : typeof value === 'object' 
+              ? JSON.stringify(value).substring(0, 15) + '...' 
+              : String(value).substring(0, 15);
+          doc.text(displayValue, margin + (i * colWidth) + 2, yPos + 5);
+        });
+        yPos += 7;
+      }
+      
+      if (widget.data.length > 10) {
+        doc.setTextColor(156, 163, 175);
+        doc.setFontSize(8);
+        doc.text(`... and ${widget.data.length - 10} more rows`, margin, yPos + 4);
+        yPos += 8;
+      }
+    } else if (typeof widget.data === 'object' && widget.data !== null) {
+      // Key-value pairs
+      const entries = Object.entries(widget.data).slice(0, 8);
+      for (const [key, value] of entries) {
+        checkNewPage(8);
+        
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(107, 114, 128);
+        doc.text(`${key}:`, margin + 2, yPos + 5);
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(17, 24, 39);
+        const displayValue = value === null || value === undefined 
+          ? '-' 
+          : typeof value === 'object' 
+            ? JSON.stringify(value).substring(0, 50) 
+            : String(value).substring(0, 50);
+        doc.text(displayValue, margin + 40, yPos + 5);
+        yPos += 7;
+      }
+    } else {
+      doc.setTextColor(156, 163, 175);
+      doc.text('No data available', margin + 2, yPos + 5);
+      yPos += 8;
+    }
+    
+    yPos += 10;
+  }
+  
+  // Footer on each page
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFontSize(9);
+    doc.setTextColor(156, 163, 175);
+    doc.text(
+      `Generated by AVI/AOI Factory Management System`,
+      margin,
+      pageHeight - 10
+    );
+    doc.text(
+      `Page ${i} of ${totalPages}`,
+      pageWidth - margin - 20,
+      pageHeight - 10
+    );
+  }
+  
+  // Save the PDF
+  doc.save(`${filename}.pdf`);
+}
+
+export { convertToCSV, convertToHTML, downloadFile, generateDashboardPDF };
