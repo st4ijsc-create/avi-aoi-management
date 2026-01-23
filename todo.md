@@ -2709,3 +2709,38 @@ Menu structure mới:
 - [x] Thêm db function getLinkedMeasurementPointsForWorkstation
 - [x] All 269 tests passed (29 test files)
 
+
+## Phase 118: Dashboard Style Application, WorkstationAnalysis Drill-down & Preset Sharing
+
+### 1. Áp dụng getCardStyle() cho Dashboard
+- [x] Áp dụng style cho KPI cards (Total Output, FPY, OK, NG, NTF)
+- [x] Áp dụng style cho Shift Stats, Top/Bottom Machines cards
+- [x] Áp dụng style cho Timeline Chart, Pie Chart, Bar Chart cards
+- [x] Áp dụng style cho Workstation Defects card
+- [x] Áp dụng style cho NG Visual tab cards (Comparison, Trend, Heatmap, Top NG Points)
+- [x] Sử dụng cardStyleProps.accentColor cho icons
+- [x] Sử dụng opacity: 0.7 cho labels
+
+### 2. UI Drill-down trong WorkstationAnalysis
+- [x] Thêm click handler cho workstation rows trong table
+- [x] Tạo drill-down dialog hiển thị measurement points của workstation
+- [x] Hiển thị summary cards (số điểm đo, tổng NG, tổng kiểm tra)
+- [x] Table chi tiết measurement points với progress bar
+- [x] Bar chart phân bố NG theo điểm đo
+- [x] Thêm cột "Chi tiết" với button ChevronRight
+- [x] Gọi API ngByMeasurementPointForWorkstation
+- [x] Hiển thị NG count, rate cho từng measurement point
+- [x] Chart/table cho measurement point breakdown
+
+### 3. Preset Sharing Feature cho Admin
+- [x] API sharePreset: Admin share preset với team
+- [x] API unsharePreset: Admin thu hồi preset đã share
+- [x] API getSharedStylePresets: Lấy danh sách preset được share
+- [x] API cloneSharedPreset: User clone preset về collection của mình
+- [x] db.getSharedWidgetStylePresets helper function
+- [x] UI "Shared" tab trong WidgetStylePresetManager
+- [x] UI Share button (blue) cho admin trong My Presets
+- [x] UI Clone button (UserPlus icon) cho users trong Shared tab
+- [x] UI Unshare button (Lock icon) cho admin trong Shared tab
+- [x] Badge/icon phân biệt shared vs personal presets
+

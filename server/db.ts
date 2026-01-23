@@ -6103,3 +6103,19 @@ export async function getLinkedMeasurementPointsForWorkstation(workstationId: nu
   .where(eq(measurementPointDefs.workstationId, workstationId))
   .orderBy(measurementPointDefs.code);
 }
+
+// Get shared widget style presets (presetType = 'shared' or isPublic = true)
+export async function getSharedWidgetStylePresets() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select()
+    .from(widgetStylePresets)
+    .where(
+      or(
+        eq(widgetStylePresets.presetType, 'shared'),
+        eq(widgetStylePresets.isPublic, true)
+      )
+    )
+    .orderBy(desc(widgetStylePresets.usageCount), widgetStylePresets.name);
+}

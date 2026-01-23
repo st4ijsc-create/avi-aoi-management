@@ -5115,6 +5115,78 @@ const dashboardWidgetRouter = router({
         results,
       };
     }),
+
+  // Share preset with team (admin only)
+  sharePreset: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const preset = await db.getWidgetStylePresetById(input.id);
+      if (!preset) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Preset not found' });
+      }
+      // Update preset to be shared and public
+      await db.updateWidgetStylePreset(input.id, {
+        presetType: 'shared',
+        isPublic: true,
+      });
+      return { success: true, message: 'Preset shared with team' };
+    }),
+
+  // Unshare preset (admin only)
+  unsharePreset: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const preset = await db.getWidgetStylePresetById(input.id);
+      if (!preset) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Preset not found' });
+      }
+      // Cannot unshare system presets
+      if (preset.presetType === 'system') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot modify system presets' });
+      }
+      // Update preset to be private
+      await db.updateWidgetStylePreset(input.id, {
+        presetType: 'user',
+        isPublic: false,
+      });
+      return { success: true, message: 'Preset is now private' };
+    }),
+
+  // Get all shared presets (for team members)
+  getSharedStylePresets: protectedProcedure
+    .query(async () => {
+      return db.getSharedWidgetStylePresets();
+    }),
+
+  // Clone shared preset to user's collection
+  cloneSharedPreset: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const preset = await db.getWidgetStylePresetById(input.id);
+      if (!preset) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Preset not found' });
+      }
+      // Check if preset is accessible (public or shared)
+      if (!preset.isPublic && preset.presetType !== 'shared' && preset.createdBy !== ctx.user.id) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized to clone this preset' });
+      }
+      // Create a copy for the user
+      const newPresetId = await db.createWidgetStylePreset({
+        name: `${preset.name} (copy)`,
+        description: preset.description || undefined,
+        backgroundColor: preset.backgroundColor,
+        textColor: preset.textColor,
+        borderColor: preset.borderColor,
+        accentColor: preset.accentColor,
+        borderRadius: preset.borderRadius,
+        shadow: preset.shadow,
+        opacity: preset.opacity,
+        presetType: 'user',
+        isPublic: false,
+        createdBy: ctx.user.id,
+      });
+      return { success: true, newPresetId };
+    }),
 });
 
 export const appRouter = router({

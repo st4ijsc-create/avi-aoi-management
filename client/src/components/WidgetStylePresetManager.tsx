@@ -50,6 +50,9 @@ import {
   Download,
   Upload,
   FileJson,
+  Share2,
+  UserPlus,
+  Globe,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -260,6 +263,37 @@ export function WidgetStylePresetManager({ currentStyle, onStyleChange }: { curr
     onError: (error) => toast.error(error.message || 'Failed to import presets'),
   });
 
+  // Shared presets query
+  const { data: sharedPresets, refetch: refetchSharedPresets } = trpc.dashboardWidget.getSharedStylePresets.useQuery(undefined, { enabled: !!user });
+
+  // Share/Unshare mutations (admin only)
+  const sharePresetMutation = trpc.dashboardWidget.sharePreset.useMutation({
+    onSuccess: () => {
+      toast.success('Preset shared with team');
+      refetchPresets();
+      refetchSharedPresets();
+    },
+    onError: (error) => toast.error(error.message || 'Failed to share preset'),
+  });
+
+  const unsharePresetMutation = trpc.dashboardWidget.unsharePreset.useMutation({
+    onSuccess: () => {
+      toast.success('Preset is now private');
+      refetchPresets();
+      refetchSharedPresets();
+    },
+    onError: (error) => toast.error(error.message || 'Failed to unshare preset'),
+  });
+
+  // Clone shared preset
+  const clonePresetMutation = trpc.dashboardWidget.cloneSharedPreset.useMutation({
+    onSuccess: () => {
+      toast.success('Preset cloned to your collection');
+      refetchPresets();
+    },
+    onError: (error) => toast.error(error.message || 'Failed to clone preset'),
+  });
+
   useEffect(() => { if (currentStyle) setEditingStyle(currentStyle); }, [currentStyle]);
 
   const handleApplyStyle = (style: WidgetStyle, presetId?: number) => {
@@ -412,8 +446,9 @@ export function WidgetStylePresetManager({ currentStyle, onStyleChange }: { curr
           </DialogHeader>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 overflow-hidden flex flex-col">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="presets">Presets</TabsTrigger>
+              <TabsTrigger value="shared">Shared</TabsTrigger>
               <TabsTrigger value="customize">Customize</TabsTrigger>
               <TabsTrigger value="saved">My Presets</TabsTrigger>
             </TabsList>
@@ -476,6 +511,58 @@ export function WidgetStylePresetManager({ currentStyle, onStyleChange }: { curr
               </div>
             </TabsContent>
 
+            {/* Shared Presets Tab */}
+            <TabsContent value="shared" className="flex-1 overflow-y-auto">
+              <div className="p-2 mb-2 border-b">
+                <p className="text-sm text-muted-foreground">
+                  <Globe className="h-4 w-4 inline mr-1" />
+                  Team shared presets - available to all users
+                </p>
+              </div>
+              {sharedPresets && sharedPresets.length > 0 ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 p-2">
+                  {sharedPresets.map((preset) => (
+                    <Card key={preset.id} className="relative group">
+                      <CardHeader className="p-3 pb-2">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-sm truncate">{preset.name}</CardTitle>
+                          <div className="flex items-center gap-1">
+                            {preset.presetType === 'system' && <Lock className="h-3 w-3 text-muted-foreground" />}
+                            {preset.presetType === 'shared' && <Share2 className="h-3 w-3 text-blue-500" />}
+                            {preset.isPublic && <Globe className="h-3 w-3 text-green-500" />}
+                          </div>
+                        </div>
+                        {preset.description && <CardDescription className="text-xs truncate">{preset.description}</CardDescription>}
+                      </CardHeader>
+                      <CardContent className="p-3 pt-0">
+                        <StylePreview style={{ backgroundColor: preset.backgroundColor, textColor: preset.textColor, borderColor: preset.borderColor, accentColor: preset.accentColor, borderRadius: preset.borderRadius, shadow: preset.shadow, opacity: preset.opacity }} className="h-16" />
+                        <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button size="sm" variant="secondary" className="flex-1 h-7 text-xs" onClick={() => handleApplyStyle({ backgroundColor: preset.backgroundColor, textColor: preset.textColor, borderColor: preset.borderColor, accentColor: preset.accentColor, borderRadius: preset.borderRadius, shadow: preset.shadow, opacity: preset.opacity }, preset.id)}>
+                            <Eye className="h-3 w-3 mr-1" />Apply
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => clonePresetMutation.mutate({ id: preset.id })} title="Clone to My Presets">
+                            <UserPlus className="h-3 w-3" />
+                          </Button>
+                          {user?.role === 'admin' && preset.presetType !== 'system' && (
+                            <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => unsharePresetMutation.mutate({ id: preset.id })} title="Make Private">
+                              <Lock className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                      <div className="absolute top-2 right-2 text-xs text-muted-foreground">{preset.usageCount} uses</div>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
+                  <Share2 className="h-12 w-12 mb-4 opacity-50" />
+                  <p>No shared presets yet</p>
+                  <p className="text-sm">Admin can share presets with the team</p>
+                </div>
+              )}
+            </TabsContent>
+
             <TabsContent value="saved" className="flex-1 overflow-y-auto">
               {/* Export/Import toolbar */}
               <div className="flex items-center justify-between p-2 border-b mb-2">
@@ -512,9 +599,14 @@ export function WidgetStylePresetManager({ currentStyle, onStyleChange }: { curr
                           <Button size="sm" variant="secondary" className="flex-1 h-7 text-xs" onClick={() => handleApplyStyle({ backgroundColor: preset.backgroundColor, textColor: preset.textColor, borderColor: preset.borderColor, accentColor: preset.accentColor, borderRadius: preset.borderRadius, shadow: preset.shadow, opacity: preset.opacity }, preset.id)}>
                             <Eye className="h-3 w-3 mr-1" />Apply
                           </Button>
-                          <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => handleExportPreset(preset)} title="Export">
+                          <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => handleExportPreset(preset)}>
                             <Download className="h-3 w-3" />
                           </Button>
+                          {user?.role === 'admin' && preset.presetType !== 'system' && !preset.isPublic && preset.createdBy === user?.id && (
+                            <Button size="sm" variant="outline" className="h-7 px-2 text-blue-500 hover:text-blue-600" onClick={() => sharePresetMutation.mutate({ id: preset.id })}>
+                              <Share2 className="h-3 w-3" />
+                            </Button>
+                          )}
                           {preset.presetType !== 'system' && preset.createdBy === user?.id && (
                             <Button size="sm" variant="destructive" className="h-7 px-2" onClick={() => handleDeletePreset(preset.id)}><Trash2 className="h-3 w-3" /></Button>
                           )}

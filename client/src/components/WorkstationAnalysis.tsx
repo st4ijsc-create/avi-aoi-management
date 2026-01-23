@@ -1,10 +1,18 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { 
   Wrench, 
   AlertTriangle, 
@@ -15,7 +23,10 @@ import {
   Lightbulb,
   CheckCircle2,
   Target,
-  Zap
+  Zap,
+  ChevronRight,
+  Crosshair,
+  RefreshCw
 } from "lucide-react";
 import {
   BarChart,
@@ -44,6 +55,14 @@ const COLORS = [
 ];
 
 export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode }: WorkstationAnalysisProps) {
+  // Drill-down state
+  const [selectedWorkstation, setSelectedWorkstation] = useState<{
+    id: number;
+    name: string;
+    code: string;
+  } | null>(null);
+  const [drilldownOpen, setDrilldownOpen] = useState(false);
+
   // Fetch workstation NG data
   const { data: workstationData, isLoading } = trpc.spcAnalysis.ngByWorkstation.useQuery({
     startDate,
@@ -52,6 +71,21 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
     factoryCode,
     limit: 20,
   });
+
+  // Fetch measurement points for selected workstation (drill-down)
+  const { data: measurementPointsData, isLoading: mpLoading } = trpc.spcAnalysis.ngByMeasurementPointForWorkstation.useQuery(
+    {
+      workstationId: selectedWorkstation?.id || 0,
+      startDate,
+      endDate,
+      machineId,
+      factoryCode,
+      limit: 20,
+    },
+    {
+      enabled: !!selectedWorkstation?.id && drilldownOpen,
+    }
+  );
 
   // Process data for charts
   const chartData = useMemo(() => {
@@ -438,7 +472,7 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
         <CardHeader>
           <CardTitle>Chi tiết theo công trạm</CardTitle>
           <CardDescription>
-            Bảng thống kê chi tiết số lượng và tỷ lệ NG của từng công trạm
+            Bảng thống kê chi tiết số lượng và tỷ lệ NG của từng công trạm. Click vào công trạm để xem chi tiết điểm đo.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -451,11 +485,25 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
                 <TableHead className="text-right">Tổng kiểm tra</TableHead>
                 <TableHead className="text-right">Tỷ lệ NG</TableHead>
                 <TableHead className="w-[200px]">Biểu đồ</TableHead>
+                <TableHead className="w-[100px]">Chi tiết</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {workstationData.map((ws, index) => (
-                <TableRow key={ws.workstation || index}>
+                <TableRow 
+                  key={ws.workstation || index}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => {
+                    if (ws.workstationId) {
+                      setSelectedWorkstation({
+                        id: ws.workstationId,
+                        name: ws.workstation,
+                        code: ws.workstationCode || '',
+                      });
+                      setDrilldownOpen(true);
+                    }
+                  }}
+                >
                   <TableCell className="font-medium">{index + 1}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -488,12 +536,182 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
                       </span>
                     </div>
                   </TableCell>
+                  <TableCell>
+                    {ws.workstationId ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedWorkstation({
+                            id: ws.workstationId!,
+                            name: ws.workstation,
+                            code: ws.workstationCode || '',
+                          });
+                          setDrilldownOpen(true);
+                        }}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+
+      {/* Drill-down Dialog */}
+      <Dialog open={drilldownOpen} onOpenChange={setDrilldownOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Crosshair className="h-5 w-5" />
+              Chi tiết điểm đo - {selectedWorkstation?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Danh sách các điểm đo thuộc công trạm {selectedWorkstation?.code || selectedWorkstation?.name}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="mt-4">
+            {mpLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : measurementPointsData && measurementPointsData.length > 0 ? (
+              <div className="space-y-4">
+                {/* Summary */}
+                <div className="grid grid-cols-3 gap-4">
+                  <Card>
+                    <CardContent className="pt-4">
+                      <div className="text-sm text-muted-foreground">Điểm đo</div>
+                      <div className="text-2xl font-bold">{measurementPointsData.length}</div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="pt-4">
+                      <div className="text-sm text-muted-foreground">Tổng NG</div>
+                      <div className="text-2xl font-bold text-red-500">
+                        {measurementPointsData.reduce((sum, mp) => sum + mp.ngCount, 0).toLocaleString()}
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="pt-4">
+                      <div className="text-sm text-muted-foreground">Tổng kiểm tra</div>
+                      <div className="text-2xl font-bold">
+                        {measurementPointsData.reduce((sum, mp) => sum + mp.totalCount, 0).toLocaleString()}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Measurement Points Table */}
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[50px]">#</TableHead>
+                      <TableHead>Mã điểm đo</TableHead>
+                      <TableHead>Tên điểm đo</TableHead>
+                      <TableHead className="text-right">Số NG</TableHead>
+                      <TableHead className="text-right">Tổng</TableHead>
+                      <TableHead className="text-right">Tỷ lệ NG</TableHead>
+                      <TableHead className="w-[150px]">Biểu đồ</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {measurementPointsData.map((mp, index) => (
+                      <TableRow key={mp.pointDefId || index}>
+                        <TableCell className="font-medium">{index + 1}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{mp.pointCode || '-'}</Badge>
+                        </TableCell>
+                        <TableCell>{mp.pointName || `MP-${index + 1}`}</TableCell>
+                        <TableCell className="text-right font-medium text-red-500">
+                          {mp.ngCount.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {mp.totalCount.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Badge variant={mp.ngRate > 5 ? "destructive" : mp.ngRate > 2 ? "secondary" : "outline"}>
+                            {mp.ngRate.toFixed(2)}%
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Progress 
+                              value={mp.ngRate} 
+                              className="h-2 flex-1"
+                            />
+                            <span className="text-xs text-muted-foreground w-10 text-right">
+                              {mp.ngRate.toFixed(1)}%
+                            </span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+
+                {/* Bar Chart for Measurement Points */}
+                {measurementPointsData.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Phân bố NG theo điểm đo</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-[250px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart 
+                            data={measurementPointsData.slice(0, 10).map((mp, i) => ({
+                              name: mp.pointCode || `MP-${i + 1}`,
+                              ngCount: mp.ngCount,
+                              ngRate: mp.ngRate,
+                            }))}
+                            layout="vertical"
+                          >
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis type="number" />
+                            <YAxis 
+                              type="category" 
+                              dataKey="name" 
+                              width={80}
+                              tick={{ fontSize: 11 }}
+                            />
+                            <Tooltip 
+                              formatter={(value: number, name: string) => {
+                                if (name === "ngCount") return [value.toLocaleString(), "Số NG"];
+                                return [value, name];
+                              }}
+                            />
+                            <Bar 
+                              dataKey="ngCount" 
+                              fill="#ef4444"
+                              radius={[0, 4, 4, 0]}
+                            />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <Crosshair className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Không có dữ liệu điểm đo cho công trạm này</p>
+                <p className="text-sm">Công trạm chưa được liên kết với điểm đo nào</p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

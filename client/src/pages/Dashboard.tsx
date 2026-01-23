@@ -186,7 +186,7 @@ export default function Dashboard() {
   }, [widgetStyle]);
   
   // Get style props for cards
-  const getCardStyle = () => {
+  const cardStyleProps = useMemo(() => {
     const shadowMap: Record<string, string> = {
       'none': '',
       'sm': 'shadow-sm',
@@ -203,7 +203,20 @@ export default function Dashboard() {
         opacity: parseFloat(widgetStyle.opacity),
       },
       className: `border ${shadowMap[widgetStyle.shadow] || ''}`,
+      accentColor: widgetStyle.accentColor,
+      textColor: widgetStyle.textColor,
     };
+  }, [widgetStyle]);
+  
+  // Helper to get contrasting text color based on background
+  const getContrastColor = (hexColor: string) => {
+    // Convert hex to RGB
+    const r = parseInt(hexColor.slice(1, 3), 16);
+    const g = parseInt(hexColor.slice(3, 5), 16);
+    const b = parseInt(hexColor.slice(5, 7), 16);
+    // Calculate luminance
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.5 ? '#1f2937' : '#f9fafb';
   };
   
   // Machine online status from WebSocket
@@ -1149,31 +1162,31 @@ export default function Dashboard() {
               </div>
             ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          <Card className="glass-card">
+          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardContent className="pt-4">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Output</p>
+                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>Total Output</p>
                   <div className="flex items-center gap-2 mt-1">
-                    <p className="text-2xl font-bold text-foreground">
+                    <p className="text-2xl font-bold">
                       {statsLoading ? "..." : stats?.total?.toLocaleString() || 0}
                     </p>
                     <TrendIndicator value={trends?.output} suffix="%" />
                   </div>
-                  <Sparkline data={sparklineData} dataKey="output" color="oklch(0.7 0.15 200)" />
+                  <Sparkline data={sparklineData} dataKey="output" color={cardStyleProps.accentColor} />
                 </div>
-                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Box className="h-5 w-5 text-primary" />
+                <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${cardStyleProps.accentColor}20` }}>
+                  <Box className="h-5 w-5" style={{ color: cardStyleProps.accentColor }} />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="glass-card">
+          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardContent className="pt-4">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">FPY</p>
+                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>FPY</p>
                   <div className="flex items-center gap-2 mt-1">
                     <p className="text-2xl font-bold text-success">
                       {statsLoading ? "..." : `${stats?.yieldRate?.toFixed(1) || 0}%`}
@@ -1189,11 +1202,11 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className="glass-card">
+          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardContent className="pt-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">OK</p>
+                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>OK</p>
                   <div className="flex items-center gap-2 mt-1">
                     <p className="text-2xl font-bold text-success">
                       {statsLoading ? "..." : stats?.ok?.toLocaleString() || 0}
@@ -1208,11 +1221,11 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className="glass-card">
+          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardContent className="pt-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">NG</p>
+                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>NG</p>
                   <div className="flex items-center gap-2 mt-1">
                     <p className="text-2xl font-bold text-destructive">
                       {statsLoading ? "..." : stats?.ng?.toLocaleString() || 0}
@@ -1227,11 +1240,11 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className="glass-card">
+          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardContent className="pt-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">NTF</p>
+                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>NTF</p>
                   <div className="flex items-center gap-2 mt-1">
                     <p className="text-2xl font-bold text-warning">
                       {statsLoading ? "..." : stats?.ntf?.toLocaleString() || 0}
@@ -1254,10 +1267,10 @@ export default function Dashboard() {
             {/* Shift Stats & Top/Bottom Machines */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Shift Statistics */}
-          <Card className="glass-card">
+          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
-                <Clock className="h-4 w-4 text-primary" />
+                <Clock className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />
                 Thống kê theo ca
               </CardTitle>
             </CardHeader>
@@ -1288,7 +1301,7 @@ export default function Dashboard() {
           </Card>
 
           {/* Top Performing Machines */}
-          <Card className="glass-card">
+          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
                 <Award className="h-4 w-4 text-success" />
@@ -1319,7 +1332,7 @@ export default function Dashboard() {
           </Card>
 
           {/* Bottom Performing Machines */}
-          <Card className="glass-card">
+          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
                 <ThumbsDown className="h-4 w-4 text-destructive" />
@@ -1351,10 +1364,10 @@ export default function Dashboard() {
         </div>
 
         {/* Timeline Chart - Full Width */}
-        <Card className="glass-card">
+        <Card className={cardStyleProps.className} style={cardStyleProps.style}>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <Activity className="h-4 w-4 text-primary" />
+              <Activity className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />
               Biểu đồ theo thời gian (24 giờ qua)
             </CardTitle>
             <CardDescription>FPY, FY, NTFY và Output theo từng giờ</CardDescription>
@@ -1450,7 +1463,7 @@ export default function Dashboard() {
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Pie Chart */}
-          <Card className="glass-card">
+          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardHeader>
               <CardTitle className="text-base">Phân bố kết quả</CardTitle>
               <CardDescription>Tỷ lệ OK/NG/NTF tổng hợp</CardDescription>
@@ -1489,7 +1502,7 @@ export default function Dashboard() {
           </Card>
 
           {/* Bar Chart - Top machines */}
-          <Card className="glass-card">
+          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardHeader>
               <CardTitle className="text-base">Top máy theo sản lượng</CardTitle>
               <CardDescription>10 máy có output cao nhất</CardDescription>
@@ -1530,10 +1543,10 @@ export default function Dashboard() {
           </Card>
 
           {/* Top 5 Workstations with Defects */}
-          <Card className="glass-card">
+          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
-                <Factory className="h-4 w-4 text-orange-500" />
+                <Factory className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />
                 Top 5 Công trạm có lỗi cao nhất
               </CardTitle>
               <CardDescription>Công trạm cần ưu tiên cải thiện</CardDescription>
@@ -1641,9 +1654,9 @@ export default function Dashboard() {
               {/* NG Comparison Cards */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Current Period Stats */}
-                <Card className="glass-card">
+                <Card className={cardStyleProps.className} style={cardStyleProps.style}>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                    <CardTitle className="text-sm font-medium" style={{ opacity: 0.7 }}>
                       {ngTimeFilter === "day" ? "Hôm nay" : ngTimeFilter === "week" ? "7 ngày qua" : "30 ngày qua"}
                     </CardTitle>
                   </CardHeader>
@@ -1670,9 +1683,9 @@ export default function Dashboard() {
                 </Card>
 
                 {/* Previous Period Stats */}
-                <Card className="glass-card">
+                <Card className={cardStyleProps.className} style={cardStyleProps.style}>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                    <CardTitle className="text-sm font-medium" style={{ opacity: 0.7 }}>
                       {ngTimeFilter === "day" ? "Hôm qua" : ngTimeFilter === "week" ? "7 ngày trước" : "30 ngày trước"}
                     </CardTitle>
                   </CardHeader>
@@ -1699,9 +1712,9 @@ export default function Dashboard() {
                 </Card>
 
                 {/* Change Indicator */}
-                <Card className={`glass-card ${ngComparisonData?.changes.isImproved ? 'border-green-500/50' : 'border-red-500/50'}`}>
+                <Card className={`${cardStyleProps.className} ${ngComparisonData?.changes.isImproved ? 'border-green-500/50' : 'border-red-500/50'}`} style={cardStyleProps.style}>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">So sánh</CardTitle>
+                    <CardTitle className="text-sm font-medium" style={{ opacity: 0.7 }}>So sánh</CardTitle>
                   </CardHeader>
                   <CardContent>
                     {ngComparisonLoading ? (
@@ -1738,12 +1751,12 @@ export default function Dashboard() {
               </div>
 
               {/* NG Trend Chart */}
-              <Card className="glass-card">
+              <Card className={cardStyleProps.className} style={cardStyleProps.style}>
                 <CardHeader>
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div>
                       <CardTitle className="text-lg flex items-center gap-2">
-                        <TrendingUp className="h-5 w-5 text-primary" />
+                        <TrendingUp className="h-5 w-5" style={{ color: cardStyleProps.accentColor }} />
                         Xu hướng tỉ lệ NG theo ngày
                         {(trendFilterWorkstationId || trendFilterMeasurementPointId) && (
                           <Badge variant="secondary" className="ml-2">Đã lọc</Badge>
@@ -1872,10 +1885,10 @@ export default function Dashboard() {
               </Card>
 
               {/* Workstation NG Heatmap */}
-              <Card className="glass-card">
+              <Card className={cardStyleProps.className} style={cardStyleProps.style}>
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2">
-                    <Factory className="h-5 w-5 text-primary" />
+                    <Factory className="h-5 w-5" style={{ color: cardStyleProps.accentColor }} />
                     Tỉ lệ NG theo Công trạm
                   </CardTitle>
                   <CardDescription>
@@ -1914,10 +1927,10 @@ export default function Dashboard() {
               </Card>
 
               {/* Top NG Measurement Points */}
-              <Card className="glass-card">
+              <Card className={cardStyleProps.className} style={cardStyleProps.style}>
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2">
-                    <Target className="h-5 w-5 text-orange-500" />
+                    <Target className="h-5 w-5" style={{ color: cardStyleProps.accentColor }} />
                     Top Điểm đo có tỉ lệ NG cao
                   </CardTitle>
                   <CardDescription>
