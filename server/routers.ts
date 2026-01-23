@@ -1412,8 +1412,10 @@ const machineApiRouter = router({
       statsCache.invalidate(CACHE_KEYS.MACHINE_STATS);
       statsCache.invalidate(CACHE_KEYS.DAILY_STATS);
       
-      // Invalidate statistics cache
-      cachedStats.invalidateStatisticsCache();
+      // Invalidate statistics cache (async, don't await)
+      cachedStats.invalidateStatisticsCache().catch(err => {
+        console.error('[Cache] Failed to invalidate statistics cache:', err);
+      });
 
       // Get updated stats and emit dashboard update
       const machineStats = await db.getMachineStats(machine.id);
@@ -3656,6 +3658,44 @@ const scheduledReportRouter = router({
       
       return { url };
     }),
+
+  // Preview statistics report
+  previewStatisticsReport: adminProcedure
+    .input(z.object({
+      frequency: z.enum(['daily', 'weekly', 'monthly']),
+      corporateCode: z.string().optional(),
+      factoryCode: z.string().optional(),
+    }))
+    .query(async ({ input }) => {
+      const { scheduledReportService } = await import('./services/scheduledReportService');
+      return scheduledReportService.previewReport(input);
+    }),
+
+  // Send one-time statistics report
+  sendStatisticsReport: adminProcedure
+    .input(z.object({
+      name: z.string(),
+      frequency: z.enum(['daily', 'weekly', 'monthly']),
+      recipients: z.array(z.string().email()).min(1),
+      corporateCode: z.string().optional(),
+      factoryCode: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { scheduledReportService } = await import('./services/scheduledReportService');
+      const content = await scheduledReportService.generateAndSendReport({
+        name: input.name,
+        type: 'statistics',
+        frequency: input.frequency,
+        recipients: input.recipients,
+        corporateCode: input.corporateCode,
+        factoryCode: input.factoryCode,
+      });
+      return { 
+        success: true, 
+        message: `Report sent to ${input.recipients.length} recipients`,
+        summary: content.summary,
+      };
+    }),
 });
 
 // ============= SMTP Configuration Router =============
@@ -3853,6 +3893,19 @@ const corporateFactoryStatsRouter = router({
   cacheStats: adminProcedure
     .query(async () => {
       return cachedStats.getCacheStats();
+    }),
+
+  // Cache health check
+  cacheHealth: adminProcedure
+    .query(async () => {
+      return cachedStats.getCacheHealth();
+    }),
+
+  // Clear all statistics cache
+  clearCache: adminProcedure
+    .mutation(async () => {
+      await cachedStats.invalidateStatisticsCache();
+      return { success: true, message: 'Statistics cache cleared' };
     }),
 });
 

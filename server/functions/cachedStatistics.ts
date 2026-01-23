@@ -2,13 +2,14 @@
  * Cached Statistics Functions
  * 
  * Wrapper functions that add caching layer to statistics queries.
- * Cache TTL: 5 minutes (300,000ms)
+ * Uses Redis with fallback to in-memory cache.
+ * Cache TTL: 5 minutes (300 seconds)
  */
 
-import { cacheService, getCachedOrFetch } from '../services/cacheService';
+import { redisService, getCachedOrFetch } from '../services/redisService';
 import * as db from '../db';
 
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 300; // 5 minutes in seconds
 
 /**
  * Get yield rate by corporate with caching
@@ -19,7 +20,7 @@ export async function getCachedYieldRateByCorporate(filters: {
   userId?: number;
   userRole?: 'admin' | 'user';
 }) {
-  const cacheKey = cacheService.generateKey('yield:corporate', {
+  const cacheKey = redisService.generateKey('yield:corporate', {
     startDate: filters.startDate,
     endDate: filters.endDate,
     userId: filters.userId,
@@ -43,7 +44,7 @@ export async function getCachedYieldRateByFactory(filters: {
   userId?: number;
   userRole?: 'admin' | 'user';
 }) {
-  const cacheKey = cacheService.generateKey('yield:factory', {
+  const cacheKey = redisService.generateKey('yield:factory', {
     corporateCode: filters.corporateCode,
     startDate: filters.startDate,
     endDate: filters.endDate,
@@ -68,7 +69,7 @@ export async function getCachedThroughputByCorporate(filters: {
   userId?: number;
   userRole?: 'admin' | 'user';
 }) {
-  const cacheKey = cacheService.generateKey('throughput:corporate', {
+  const cacheKey = redisService.generateKey('throughput:corporate', {
     startDate: filters.startDate,
     endDate: filters.endDate,
     interval: filters.interval,
@@ -94,7 +95,7 @@ export async function getCachedThroughputByFactory(filters: {
   userId?: number;
   userRole?: 'admin' | 'user';
 }) {
-  const cacheKey = cacheService.generateKey('throughput:factory', {
+  const cacheKey = redisService.generateKey('throughput:factory', {
     corporateCode: filters.corporateCode,
     startDate: filters.startDate,
     endDate: filters.endDate,
@@ -140,7 +141,7 @@ export async function getCachedMachineStats(filters: {
   startDate?: Date;
   endDate?: Date;
 }): Promise<MachineStats> {
-  const cacheKey = cacheService.generateKey('stats:machine', {
+  const cacheKey = redisService.generateKey('stats:machine', {
     machineId: filters.machineId,
     startDate: filters.startDate,
     endDate: filters.endDate,
@@ -211,13 +212,20 @@ export async function getCachedMachineStats(filters: {
  * Invalidate all statistics caches
  * Should be called when new inspection data is submitted
  */
-export function invalidateStatisticsCache(): void {
-  cacheService.invalidateStatistics();
+export async function invalidateStatisticsCache(): Promise<void> {
+  await redisService.invalidateStatistics();
 }
 
 /**
  * Get cache statistics for monitoring
  */
-export function getCacheStats() {
-  return cacheService.getStats();
+export async function getCacheStats() {
+  return redisService.getStats();
+}
+
+/**
+ * Get cache health check
+ */
+export async function getCacheHealth() {
+  return redisService.healthCheck();
 }

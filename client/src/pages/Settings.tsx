@@ -48,6 +48,7 @@ import { UnifiedMappingTable } from "@/components/UnifiedMappingTable";
 import YieldThresholdSettings from "@/components/YieldThresholdSettings";
 import ScheduledReports from "@/components/ScheduledReports";
 import { SMTPConfig } from "@/components/SMTPConfig";
+import { CacheStatsDashboard } from "@/components/CacheStatsDashboard";
 import { useState } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
@@ -802,6 +803,15 @@ export default function Settings() {
                     >
                       <Activity className="h-4 w-4" />
                       Audit Log
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('cache-stats')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'cache-stats' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <Cpu className="h-4 w-4" />
+                      Cache Statistics
                     </button>
                   </div>
                 )}
@@ -2150,6 +2160,11 @@ export default function Settings() {
           {/* SMTP Config Tab */}
           <TabsContent value="smtp-config">
             <SMTPConfig />
+          </TabsContent>
+
+          {/* Cache Stats Tab */}
+          <TabsContent value="cache-stats">
+            <CacheStatsDashboard />
           </TabsContent>
             </div>
           </div>

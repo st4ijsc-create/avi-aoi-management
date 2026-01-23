@@ -11,7 +11,11 @@ import {
   Upload,
   CheckCircle2,
   AlertCircle,
-  Wifi
+  Wifi,
+  Database,
+  FileDown,
+  BarChart3,
+  Mail
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 
@@ -143,7 +147,7 @@ export default function ApiDocs() {
 
         {/* API Endpoints */}
         <Tabs defaultValue="submit">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="submit" className="gap-2">
               <Send className="h-4 w-4" />
               Gửi kết quả
@@ -155,6 +159,18 @@ export default function ApiDocs() {
             <TabsTrigger value="websocket" className="gap-2">
               <Wifi className="h-4 w-4" />
               WebSocket
+            </TabsTrigger>
+            <TabsTrigger value="statistics" className="gap-2">
+              <BarChart3 className="h-4 w-4" />
+              Thống kê
+            </TabsTrigger>
+            <TabsTrigger value="export" className="gap-2">
+              <FileDown className="h-4 w-4" />
+              Export
+            </TabsTrigger>
+            <TabsTrigger value="reports" className="gap-2">
+              <Mail className="h-4 w-4" />
+              Báo cáo
             </TabsTrigger>
             <TabsTrigger value="errors" className="gap-2">
               <AlertCircle className="h-4 w-4" />
@@ -542,6 +558,327 @@ tcp://{ip}:{port}`} language="text" />
                     <li>Hệ thống sẽ tự động thử lại kết nối khi mất kết nối</li>
                     <li>Timeout mặc định cho test kết nối: 5 giây</li>
                     <li>Nên sử dụng WebSocket để có hiệu suất tốt nhất</li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Statistics APIs */}
+          <TabsContent value="statistics">
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5 text-primary" />
+                  Statistics APIs
+                </CardTitle>
+                <CardDescription>
+                  APIs thống kê với caching tự động (TTL: 5 phút)
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div>
+                  <h4 className="font-medium text-foreground mb-3">1. Yield Rate theo Công ty</h4>
+                  <div className="flex items-center gap-3 mb-2">
+                    <Badge className="bg-blue-500 text-white">GET</Badge>
+                    <code className="text-foreground">/api/trpc/corporateFactoryStats.yieldByCorporate</code>
+                  </div>
+                  <CodeBlock code={`// Query params
+{
+  "startDate": "2025-01-01T00:00:00Z",
+  "endDate": "2025-01-31T23:59:59Z"
+}
+
+// Response
+[
+  {
+    "corporateCode": "CORP001",
+    "totalInspections": 15000,
+    "okCount": 14250,
+    "ngCount": 500,
+    "ntfCount": 250,
+    "yieldRate": "95.00"
+  }
+]`} />
+                </div>
+
+                <div>
+                  <h4 className="font-medium text-foreground mb-3">2. Yield Rate theo Nhà máy</h4>
+                  <div className="flex items-center gap-3 mb-2">
+                    <Badge className="bg-blue-500 text-white">GET</Badge>
+                    <code className="text-foreground">/api/trpc/corporateFactoryStats.yieldByFactory</code>
+                  </div>
+                  <CodeBlock code={`// Query params
+{
+  "corporateCode": "CORP001",  // Optional
+  "startDate": "2025-01-01T00:00:00Z",
+  "endDate": "2025-01-31T23:59:59Z"
+}
+
+// Response
+[
+  {
+    "factoryCode": "FAC001",
+    "corporateCode": "CORP001",
+    "totalInspections": 5000,
+    "okCount": 4750,
+    "ngCount": 200,
+    "ntfCount": 50,
+    "yieldRate": "95.00"
+  }
+]`} />
+                </div>
+
+                <div>
+                  <h4 className="font-medium text-foreground mb-3">3. Throughput theo Công ty</h4>
+                  <div className="flex items-center gap-3 mb-2">
+                    <Badge className="bg-blue-500 text-white">GET</Badge>
+                    <code className="text-foreground">/api/trpc/corporateFactoryStats.throughputByCorporate</code>
+                  </div>
+                  <CodeBlock code={`// Query params
+{
+  "startDate": "2025-01-01T00:00:00Z",
+  "endDate": "2025-01-31T23:59:59Z",
+  "interval": "day"  // "hour" | "day" | "week"
+}
+
+// Response
+[
+  {
+    "date": "2025-01-15",
+    "corporateCode": "CORP001",
+    "count": 500
+  }
+]`} />
+                </div>
+
+                <div>
+                  <h4 className="font-medium text-foreground mb-3">4. Cache Statistics (Admin)</h4>
+                  <div className="flex items-center gap-3 mb-2">
+                    <Badge className="bg-blue-500 text-white">GET</Badge>
+                    <code className="text-foreground">/api/trpc/corporateFactoryStats.cacheStats</code>
+                  </div>
+                  <CodeBlock code={`// Response
+{
+  "hits": 1250,
+  "misses": 150,
+  "size": 45,
+  "memoryUsage": 524288,
+  "isRedisConnected": true,
+  "lastError": null,
+  "uptime": 86400000
+}`} />
+                </div>
+
+                <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
+                  <h4 className="font-medium text-primary mb-2">Lưu ý về Caching</h4>
+                  <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
+                    <li>Tất cả statistics APIs được cache với TTL 5 phút</li>
+                    <li>Cache tự động invalidate khi có inspection mới</li>
+                    <li>Hỗ trợ Redis với fallback về in-memory cache</li>
+                    <li>Admin có thể xem cache stats và clear cache thủ công</li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Export APIs */}
+          <TabsContent value="export">
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <FileDown className="h-5 w-5 text-primary" />
+                  Export APIs
+                </CardTitle>
+                <CardDescription>
+                  APIs xuất dữ liệu ra Excel và PDF
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div>
+                  <h4 className="font-medium text-foreground mb-3">1. Export Inspections</h4>
+                  <div className="flex items-center gap-3 mb-2">
+                    <Badge className="bg-green-500 text-white">POST</Badge>
+                    <code className="text-foreground">/api/trpc/export.exportInspections</code>
+                  </div>
+                  <CodeBlock code={`// Request body
+{
+  "startDate": "2025-01-01T00:00:00Z",
+  "endDate": "2025-01-31T23:59:59Z",
+  "format": "excel",  // "excel" | "csv"
+  "machineId": 1,     // Optional
+  "result": "NG"      // Optional: "OK" | "NG" | "NTF"
+}
+
+// Response
+{
+  "url": "https://storage.example.com/exports/inspections_2025-01-31.xlsx",
+  "filename": "inspections_2025-01-31.xlsx"
+}`} />
+                </div>
+
+                <div>
+                  <h4 className="font-medium text-foreground mb-3">2. Export Dashboard Statistics</h4>
+                  <div className="flex items-center gap-3 mb-2">
+                    <Badge className="bg-green-500 text-white">POST</Badge>
+                    <code className="text-foreground">/api/trpc/export.exportDashboardStats</code>
+                  </div>
+                  <CodeBlock code={`// Request body
+{
+  "startDate": "2025-01-01T00:00:00Z",
+  "endDate": "2025-01-31T23:59:59Z",
+  "format": "excel",  // "excel" | "pdf"
+  "corporateCode": "CORP001"  // Optional
+}
+
+// Response
+{
+  "url": "https://storage.example.com/exports/dashboard_stats_2025-01-31.xlsx",
+  "filename": "dashboard_stats_2025-01-31.xlsx"
+}
+
+// Excel file includes 4 sheets:
+// - Summary: Tổng quan thống kê
+// - Corporate Stats: Thống kê theo công ty
+// - Factory Stats: Thống kê theo nhà máy
+// - Daily Throughput: Sản lượng theo ngày`} />
+                </div>
+
+                <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
+                  <h4 className="font-medium text-primary mb-2">Lưu ý về Export</h4>
+                  <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
+                    <li>File export được lưu trên S3 và có URL tạm thời</li>
+                    <li>Access control: User chỉ export được data của corporates/factories được assign</li>
+                    <li>Giới hạn: Tối đa 100,000 records mỗi lần export</li>
+                    <li>Format PDF sẽ tạo HTML report có thể in ấn</li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Scheduled Reports APIs */}
+          <TabsContent value="reports">
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Mail className="h-5 w-5 text-primary" />
+                  Scheduled Reports APIs
+                </CardTitle>
+                <CardDescription>
+                  APIs quản lý báo cáo tự động gửi qua email
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div>
+                  <h4 className="font-medium text-foreground mb-3">1. Preview Statistics Report</h4>
+                  <div className="flex items-center gap-3 mb-2">
+                    <Badge className="bg-blue-500 text-white">GET</Badge>
+                    <code className="text-foreground">/api/trpc/scheduledReport.previewStatisticsReport</code>
+                  </div>
+                  <CodeBlock code={`// Query params
+{
+  "frequency": "weekly",  // "daily" | "weekly" | "monthly"
+  "corporateCode": "CORP001",  // Optional
+  "factoryCode": "FAC001"      // Optional
+}
+
+// Response
+{
+  "content": {
+    "title": "Báo cáo Hàng tuần - Preview Report",
+    "period": { "start": "...", "end": "..." },
+    "summary": {
+      "totalInspections": 5000,
+      "okCount": 4750,
+      "ngCount": 200,
+      "ntfCount": 50,
+      "yieldRate": "95.00"
+    },
+    "corporateStats": [...],
+    "factoryStats": [...],
+    "topNGMachines": [...]
+  },
+  "html": "<html>...</html>"
+}`} />
+                </div>
+
+                <div>
+                  <h4 className="font-medium text-foreground mb-3">2. Send Statistics Report</h4>
+                  <div className="flex items-center gap-3 mb-2">
+                    <Badge className="bg-green-500 text-white">POST</Badge>
+                    <code className="text-foreground">/api/trpc/scheduledReport.sendStatisticsReport</code>
+                  </div>
+                  <CodeBlock code={`// Request body
+{
+  "name": "Báo cáo tuần",
+  "frequency": "weekly",
+  "recipients": ["manager@company.com", "qa@company.com"],
+  "corporateCode": "CORP001",  // Optional
+  "factoryCode": "FAC001"      // Optional
+}
+
+// Response
+{
+  "success": true,
+  "message": "Report sent to 2 recipients",
+  "summary": {
+    "totalInspections": 5000,
+    "yieldRate": "95.00"
+  }
+}`} />
+                </div>
+
+                <div>
+                  <h4 className="font-medium text-foreground mb-3">3. CRUD Scheduled Reports</h4>
+                  <div className="bg-secondary/50 rounded-lg p-4">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="text-left py-2 text-muted-foreground">Method</th>
+                          <th className="text-left py-2 text-muted-foreground">Endpoint</th>
+                          <th className="text-left py-2 text-muted-foreground">Mô tả</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-foreground">
+                        <tr className="border-b border-border/50">
+                          <td className="py-2"><Badge className="bg-blue-500 text-white">GET</Badge></td>
+                          <td className="py-2"><code>scheduledReport.list</code></td>
+                          <td className="py-2 text-muted-foreground">Danh sách báo cáo đã lên lịch</td>
+                        </tr>
+                        <tr className="border-b border-border/50">
+                          <td className="py-2"><Badge className="bg-green-500 text-white">POST</Badge></td>
+                          <td className="py-2"><code>scheduledReport.create</code></td>
+                          <td className="py-2 text-muted-foreground">Tạo báo cáo tự động mới</td>
+                        </tr>
+                        <tr className="border-b border-border/50">
+                          <td className="py-2"><Badge className="bg-yellow-500 text-white">PUT</Badge></td>
+                          <td className="py-2"><code>scheduledReport.update</code></td>
+                          <td className="py-2 text-muted-foreground">Cập nhật cấu hình báo cáo</td>
+                        </tr>
+                        <tr className="border-b border-border/50">
+                          <td className="py-2"><Badge variant="destructive">DELETE</Badge></td>
+                          <td className="py-2"><code>scheduledReport.delete</code></td>
+                          <td className="py-2 text-muted-foreground">Xóa báo cáo</td>
+                        </tr>
+                        <tr>
+                          <td className="py-2"><Badge className="bg-green-500 text-white">POST</Badge></td>
+                          <td className="py-2"><code>scheduledReport.sendTest</code></td>
+                          <td className="py-2 text-muted-foreground">Gửi email test</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
+                  <h4 className="font-medium text-primary mb-2">Lưu ý về Scheduled Reports</h4>
+                  <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
+                    <li>Cần cấu hình SMTP trước khi sử dụng (Settings &gt; Cấu hình SMTP)</li>
+                    <li>Hỗ trợ 3 tần suất: Hàng ngày, Hàng tuần, Hàng tháng</li>
+                    <li>Email template bao gồm: Summary, Corporate Stats, Factory Stats, Top NG</li>
+                    <li>Có thể preview trước khi gửi</li>
                   </ul>
                 </div>
               </CardContent>

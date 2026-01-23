@@ -1935,3 +1935,38 @@
 - [x] Thêm ExportDashboardButton component với dropdown
 - [x] Hỗ trợ export theo date range và filters
 - [x] Tích hợp access control (user chỉ export data được assign)
+
+
+## Phase 94: Redis Cache, Scheduled Reports, Cache Dashboard & API Docs
+
+### 1. Redis Cache Upgrade
+- [x] Cài đặt ioredis package
+- [x] Tạo Redis connection service với fallback to in-memory
+- [x] Migrate cachedStatistics để sử dụng Redis service
+- [x] Thêm Redis health check endpoint (cacheHealth)
+- [x] Update cache invalidation để broadcast qua pub/sub
+- [x] Thêm clearCache mutation cho admin
+
+### 2. Scheduled Reports
+- [x] Tạo scheduledReportService với report generation
+- [x] Định nghĩa report templates (daily/weekly/monthly)
+- [x] Tích hợp với email service để gửi reports
+- [x] Thêm previewStatisticsReport endpoint
+- [x] Thêm sendStatisticsReport endpoint
+- [x] HTML email template với statistics summary
+
+### 3. Cache Stats Dashboard
+- [x] Tạo API endpoints (cacheStats, cacheHealth, clearCache)
+- [x] Tạo CacheStatsDashboard component
+- [x] Hiển thị hit rate, miss rate, memory usage
+- [x] Auto-refresh every 10 seconds
+- [x] Thêm vào Admin Settings page (tab Cache Statistics)
+- [x] Clear cache button với confirmation
+
+### 4. Update API Documentation
+- [x] Cập nhật API docs với cached statistics endpoints
+- [x] Thêm documentation cho export APIs (exportInspections, exportDashboardStats)
+- [x] Thêm documentation cho scheduled reports APIs (preview, send, CRUD)
+- [x] Thêm documentation cho cache management APIs (cacheStats, cacheHealth, clearCache)
+- [x] Thêm 3 tabs mới: Thống kê, Export, Báo cáo
+- [ ] Update examples và response schemas
