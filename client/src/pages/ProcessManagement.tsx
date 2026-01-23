@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,10 +14,26 @@ import {
   Edit, 
   Trash2, 
   GripVertical,
-  Settings,
   Workflow,
   Factory
 } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 const PROCESS_TYPES = [
   { value: 'SMT', label: 'SMT (Surface Mount)', color: 'bg-blue-500' },
@@ -50,6 +66,103 @@ const defaultFormData: ProcessFormData = {
   color: '#3b82f6',
   icon: '',
 };
+
+// Sortable Process Item Component
+function SortableProcessItem({ 
+  process, 
+  index, 
+  onEdit, 
+  onDelete, 
+  getProcessTypeInfo 
+}: { 
+  process: any; 
+  index: number; 
+  onEdit: (process: any) => void; 
+  onDelete: (id: number) => void;
+  getProcessTypeInfo: (type: string) => { value: string; label: string; color: string };
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: process.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const typeInfo = getProcessTypeInfo(process.processType);
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-4 p-4 border rounded-lg hover:bg-muted/50 transition-colors ${
+        isDragging ? 'shadow-lg bg-background z-50' : ''
+      }`}
+    >
+      <div 
+        className="cursor-grab text-muted-foreground hover:text-foreground touch-none"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="h-5 w-5" />
+      </div>
+      <div 
+        className="flex items-center justify-center w-10 h-10 rounded-lg text-white font-bold"
+        style={{ backgroundColor: process.color || '#3b82f6' }}
+      >
+        {index + 1}
+      </div>
+      <div className="flex-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-medium">{process.name}</span>
+          <Badge variant="outline" className="font-mono text-xs">
+            {process.code}
+          </Badge>
+          <Badge className={`${typeInfo.color} text-white`}>
+            {typeInfo.label}
+          </Badge>
+          {!process.isActive && (
+            <Badge variant="secondary">Inactive</Badge>
+          )}
+        </div>
+        {process.description && (
+          <p className="text-sm text-muted-foreground mt-1">
+            {process.description}
+          </p>
+        )}
+        {process.cycleTimeTarget && (
+          <p className="text-xs text-muted-foreground mt-1">
+            Target Cycle Time: {process.cycleTimeTarget}s
+          </p>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onEdit(process)}
+        >
+          <Edit className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onDelete(process.id)}
+          className="text-red-500 hover:text-red-600"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export default function ProcessManagement() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -100,6 +213,49 @@ export default function ProcessManagement() {
       toast.error(error.message);
     },
   });
+
+  const reorderMutation = trpc.process.reorder.useMutation({
+    onSuccess: () => {
+      toast.success("Đã cập nhật thứ tự công đoạn");
+      utils.process.list.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
+
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // Sorted processes for drag-drop
+  const sortedProcesses = useMemo(() => {
+    if (!processes) return [];
+    return [...processes].sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
+  }, [processes]);
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = sortedProcesses.findIndex((p) => p.id === active.id);
+      const newIndex = sortedProcesses.findIndex((p) => p.id === over.id);
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newOrder = arrayMove(sortedProcesses, oldIndex, newIndex);
+        const orderedIds = newOrder.map((p) => p.id);
+        reorderMutation.mutate({ orderedIds });
+      }
+    }
+  };
 
   const handleCreate = () => {
     createMutation.mutate({
@@ -221,7 +377,7 @@ export default function ProcessManagement() {
         <CardHeader>
           <CardTitle>Production Processes</CardTitle>
           <CardDescription>
-            Drag to reorder processes in the production flow
+            Kéo thả để sắp xếp thứ tự công đoạn trong quy trình sản xuất
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -231,68 +387,30 @@ export default function ProcessManagement() {
                 <Skeleton key={i} className="h-20 w-full" />
               ))}
             </div>
-          ) : processes && processes.length > 0 ? (
-            <div className="space-y-3">
-              {processes.map((process, index) => {
-                const typeInfo = getProcessTypeInfo(process.processType);
-                return (
-                  <div
-                    key={process.id}
-                    className="flex items-center gap-4 p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="cursor-grab text-muted-foreground">
-                      <GripVertical className="h-5 w-5" />
-                    </div>
-                    <div className="flex items-center justify-center w-10 h-10 rounded-lg text-white font-bold"
-                      style={{ backgroundColor: process.color || '#3b82f6' }}
-                    >
-                      {index + 1}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{process.name}</span>
-                        <Badge variant="outline" className="font-mono text-xs">
-                          {process.code}
-                        </Badge>
-                        <Badge className={`${typeInfo.color} text-white`}>
-                          {typeInfo.label}
-                        </Badge>
-                        {!process.isActive && (
-                          <Badge variant="secondary">Inactive</Badge>
-                        )}
-                      </div>
-                      {process.description && (
-                        <p className="text-sm text-muted-foreground mt-1">
-                          {process.description}
-                        </p>
-                      )}
-                      {process.cycleTimeTarget && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Target Cycle Time: {process.cycleTimeTarget}s
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleEdit(process)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDelete(process.id)}
-                        className="text-red-500 hover:text-red-600"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+          ) : sortedProcesses.length > 0 ? (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={sortedProcesses.map((p) => p.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-3">
+                  {sortedProcesses.map((process, index) => (
+                    <SortableProcessItem
+                      key={process.id}
+                      process={process}
+                      index={index}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                      getProcessTypeInfo={getProcessTypeInfo}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
           ) : (
             <div className="text-center py-12 text-muted-foreground">
               <Factory className="h-12 w-12 mx-auto mb-4 opacity-50" />

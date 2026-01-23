@@ -2577,3 +2577,55 @@ Menu structure mới:
 - [ ] Tạo User Guide documentation
 - [ ] Tạo Admin Guide documentation
 - [ ] Video tutorials (optional)
+
+
+## Phase 114: Workstation Management, Process Drag-drop & Redis Caching
+
+### 1. Workstation Management - Database & API
+- [x] Bảng workstations đã có trong schema (id, code, name, lineId, workshopId, factoryId, processType, orderIndex)
+- [x] workstationRouter đã có với CRUD APIs (list, getById, create, update, delete)
+- [x] API ngStats cho thống kê NG theo workstation
+- [x] API ngByMeasurementPoint cho chi tiết NG theo điểm đo
+- [ ] Liên kết workstation với measurement_point_defs (thêm workstationId field)
+
+### 2. Workstation Management - UI
+- [x] Tạo WorkstationManagement page trong Settings
+- [x] UI danh sách workstations với filter theo line/factory/processType
+- [x] Dialog tạo/sửa workstation với đầy đủ fields
+- [x] Stats cards (tổng, hoạt động, tạm dừng, theo loại)
+- [x] Delete confirmation dialog
+- [x] Thêm route /workstation-management
+- [x] Thêm vào navigation menu (Quy trình > Công trạm)
+
+### 3. Process Drag-drop
+- [x] orderIndex field đã có trong processes table
+- [x] API reorder processes đã có (process.reorder)
+- [x] Implement drag-drop UI với @dnd-kit/sortable
+- [x] Cập nhật ProcessManagement page với drag-drop
+- [x] Tạo SortableProcessItem component với useSortable hook
+- [x] Visual feedback khi kéo (opacity, shadow)
+- [x] Keyboard navigation support
+
+### 4. Server-side Caching
+- [x] RedisService đã có với full implementation:
+  - In-memory fallback khi Redis không khả dụng
+  - Connection status tracking và history
+  - Pub/Sub cho cache invalidation
+  - Health check và stats
+- [x] cachedStatistics.ts với cached functions:
+  - getCachedYieldRateByCorporate
+  - getCachedYieldRateByFactory
+  - getCachedThroughputByCorporate
+  - getCachedThroughputByFactory
+  - getCachedMachineStatistics
+- [x] cacheWarmingService.ts cho pre-warming cache:
+  - warmYieldRateByCorporate
+  - warmYieldRateByFactory
+  - warmThroughputByCorporate
+  - warmThroughputByFactory
+  - warmDashboardStats
+- [x] Cache invalidation khi có inspection mới (invalidateStatistics)
+- [x] Configurable cache TTL (default 300s = 5 minutes)
+- [x] Admin APIs: redisConnectionStatus, redisConnectionHistory, clearStatisticsCache
+- [ ] Cache hit/miss logging
+

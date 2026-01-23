@@ -34,6 +34,7 @@ import UserAssignments from "./pages/UserAssignments";
 import ScheduledReports from "./pages/ScheduledReports";
 import SPCAnalysis from "./pages/SPCAnalysis";
 import ProcessManagement from "./pages/ProcessManagement";
+import WorkstationManagement from "./pages/WorkstationManagement";
 
 function Router() {
   return (
@@ -69,6 +70,7 @@ function Router() {
       <Route path="/scheduled-reports" component={ScheduledReports} />
       <Route path="/spc-analysis" component={SPCAnalysis} />
       <Route path="/process-management" component={ProcessManagement} />
+      <Route path="/workstation-management" component={WorkstationManagement} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

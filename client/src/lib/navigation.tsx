@@ -33,7 +33,8 @@ import {
   FileBarChart,
   MonitorCheck,
   Workflow,
-  Brain
+  Brain,
+  Wrench
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -232,6 +233,13 @@ export const navGroups: NavGroup[] = [
         label: "Công đoạn", 
         icon: <Workflow className="h-4 w-4" />,
         description: "Quản lý công đoạn sản xuất",
+        requiredRole: 'admin'
+      },
+      { 
+        href: "/workstation-management", 
+        label: "Công trạm", 
+        icon: <Wrench className="h-4 w-4" />,
+        description: "Quản lý công trạm sản xuất",
         requiredRole: 'admin'
       },
     ],
