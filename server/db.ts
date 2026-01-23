@@ -4684,6 +4684,8 @@ export async function createSystemConfig(data: {
 export async function getYieldRateByCorporate(filters: {
   startDate?: Date;
   endDate?: Date;
+  userId?: number;
+  userRole?: 'admin' | 'user';
 }) {
   const db = await getDb();
   if (!db) return [];
@@ -4691,6 +4693,18 @@ export async function getYieldRateByCorporate(filters: {
   const conditions = [];
   if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
   if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+
+  // Apply access control for non-admin users
+  if (filters.userId && filters.userRole !== 'admin') {
+    const corporateAssignments = await getUserCorporateAssignments(filters.userId);
+    if (corporateAssignments.length > 0) {
+      const corporateCodes = corporateAssignments.map(a => a.corporateCode);
+      conditions.push(sql`${productInspections.corporateCode} IN (${corporateCodes.map(c => `'${c}'`).join(',')})`);
+    } else {
+      // User has no corporate assignments, return empty
+      return [];
+    }
+  }
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 

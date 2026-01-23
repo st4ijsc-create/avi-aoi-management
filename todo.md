@@ -1843,3 +1843,44 @@
 - [x] Test backward compatibility
 - [ ] Test user assignment CRUD (manual testing required)
 - [ ] Test access control filtering với non-admin user (manual testing required)
+
+
+## Phase 91: Final Enterprise Features
+
+### 1. Test User Assignments
+- [ ] Tạo test user với role='user'
+- [ ] Assign test user vào corporate "CORP001"
+- [ ] Assign test user vào factory "FAC001"
+- [ ] Login với test user
+- [ ] Verify chỉ xem được inspections của CORP001/FAC001
+- [ ] Verify không xem được inspections của corporates/factories khác
+
+### 2. Apply Access Control to Statistics
+- [ ] Update getYieldRateByCorporate để filter theo user assignments
+- [ ] Update getYieldRateByFactory để filter theo user assignments
+- [ ] Update getThroughputByCorporate để filter theo user assignments
+- [ ] Update getThroughputByFactory để filter theo user assignments
+- [ ] Update corporateFactoryStatsRouter để pass userId và userRole
+- [ ] Update dashboardRouter.stats để filter theo user assignments
+
+### 3. Dashboard Drill-down
+- [ ] Update CorporateFactoryStats component để handle chart click events
+- [ ] Thêm state management cho drill-down navigation
+- [ ] Implement FactoryChart component với factory-level details
+- [ ] Implement MachineAnalyticsTable component
+- [ ] Thêm breadcrumb navigation
+- [ ] Thêm back button để quay lại corporate view
+
+### 4. API Documentation
+- [x] Tạo API_DOCUMENTATION.md với tất cả endpoints
+- [x] Document authentication và authorization
+- [x] Document corporate/factory code integration
+- [x] Document user assignment APIs
+- [x] Document inspection APIs với access control
+- [x] Document statistics APIs
+- [x] Document import/export APIs
+- [x] Document MQTT APIs
+- [x] Document alert APIs
+- [x] Thêm request/response examples
+- [x] Thêm error codes và handling
+- [x] Thêm rate limits và best practices

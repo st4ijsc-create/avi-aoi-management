@@ -1,0 +1,148 @@
+{
+  "query": "SHOW TABLES;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute SHOW TABLES;",
+  "rows": [
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "__drizzle_migrations"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "alert_history"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "alert_settings"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "audit_logs"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "backup_codes"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "daily_statistics"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "factories"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "factory_layouts"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "factory_positions"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "line_product_assignments"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "line_stages"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "machine_heartbeats"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "machine_positions"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "machine_status_logs"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "machines"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "manual_machine_connections"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "measurement_point_defs"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "measurement_point_templates"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "measurement_results"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "mqtt_alert_history"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "mqtt_alert_rules"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "mqtt_clients"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "mqtt_error_summary"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "mqtt_message_logs"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "mqtt_subscriptions"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "product_inspections"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "product_machine_mappings"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "product_models"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "production_lines"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "production_orders"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "scheduled_report_logs"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "scheduled_reports"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "shift_configs"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "smtp_config"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "stations"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "system_config"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "system_settings"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "user_corporate_assignments"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "user_factory_assignments"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "user_sessions"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "users"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "workshop_positions"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "workshops"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "workstations"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "yield_alert_thresholds"
+    },
+    {
+      "Tables_in_QHAn5mxdYwZFfFZze5gD7q": "yield_threshold_history"
+    }
+  ],
+  "messages": [],
+  "stdout": "Tables_in_QHAn5mxdYwZFfFZze5gD7q\n__drizzle_migrations\nalert_history\nalert_settings\naudit_logs\nbackup_codes\ndaily_statistics\nfactories\nfactory_layouts\nfactory_positions\nline_product_assignments\nline_stages\nmachine_heartbeats\nmachine_positions\nmachine_status_logs\nmachines\nmanual_machine_connections\nmeasurement_point_defs\nmeasurement_point_templates\nmeasurement_results\nmqtt_alert_history\nmqtt_alert_rules\nmqtt_clients\nmqtt_error_summary\nmqtt_message_logs\nmqtt_subscriptions\nproduct_inspections\nproduct_machine_mappings\nproduct_models\nproduction_lines\nproduction_orders\nscheduled_report_logs\nscheduled_reports\nshift_configs\nsmtp_config\nstations\nsystem_config\nsystem_settings\nuser_corporate_assignments\nuser_factory_assignments\nuser_sessions\nusers\nworkshop_positions\nworkshops\nworkstations\nyield_alert_thresholds\nyield_threshold_history\n",
+  "stderr": "",
+  "execution_time_ms": 1509
+}
