@@ -50,7 +50,9 @@ import {
   userNotificationPreferences, InsertUserNotificationPreference,
   dashboardTemplates, InsertDashboardTemplate,
   dashboardWidgetLayouts, InsertDashboardWidgetLayout,
-  userSettings, InsertUserSetting
+  userSettings, InsertUserSetting,
+  processes, InsertProcess,
+  lineProcessAssignments, InsertLineProcessAssignment
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -5436,4 +5438,415 @@ export async function incrementTemplateUsage(id: number) {
   await db.update(dashboardTemplates)
     .set({ usageCount: sql`${dashboardTemplates.usageCount} + 1` })
     .where(eq(dashboardTemplates.id, id));
+}
+
+
+// ============ PROCESSES FUNCTIONS ============
+
+export async function getProcesses(filters?: {
+  processType?: 'SMT' | 'DIP' | 'ASSEMBLY' | 'TESTING' | 'PACKAGING' | 'INSPECTION' | 'OTHER';
+  isActive?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions: SQL[] = [];
+  
+  if (filters?.processType) {
+    conditions.push(eq(processes.processType, filters.processType));
+  }
+  if (filters?.isActive !== undefined) {
+    conditions.push(eq(processes.isActive, filters.isActive));
+  }
+  
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  
+  return db.select()
+    .from(processes)
+    .where(whereClause)
+    .orderBy(asc(processes.orderIndex));
+}
+
+export async function getProcessById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const results = await db.select()
+    .from(processes)
+    .where(eq(processes.id, id))
+    .limit(1);
+  
+  return results[0] || null;
+}
+
+export async function getProcessByCode(code: string) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const results = await db.select()
+    .from(processes)
+    .where(eq(processes.code, code))
+    .limit(1);
+  
+  return results[0] || null;
+}
+
+export async function createProcess(data: InsertProcess) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const [result] = await db.insert(processes).values(data);
+  return { id: Number(result.insertId) };
+}
+
+export async function updateProcess(id: number, data: Partial<InsertProcess>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(processes)
+    .set(data)
+    .where(eq(processes.id, id));
+}
+
+export async function deleteProcess(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // First delete all line process assignments
+  await db.delete(lineProcessAssignments)
+    .where(eq(lineProcessAssignments.processId, id));
+  
+  // Then delete the process
+  await db.delete(processes)
+    .where(eq(processes.id, id));
+}
+
+export async function reorderProcesses(orderedIds: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  for (let i = 0; i < orderedIds.length; i++) {
+    await db.update(processes)
+      .set({ orderIndex: i })
+      .where(eq(processes.id, orderedIds[i]));
+  }
+}
+
+// ============ LINE PROCESS ASSIGNMENTS FUNCTIONS ============
+
+export async function getLineProcessAssignments(lineId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select({
+    assignment: lineProcessAssignments,
+    process: processes,
+  })
+    .from(lineProcessAssignments)
+    .leftJoin(processes, eq(lineProcessAssignments.processId, processes.id))
+    .where(eq(lineProcessAssignments.lineId, lineId))
+    .orderBy(asc(lineProcessAssignments.orderIndex));
+}
+
+export async function getLineProcessAssignmentById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const results = await db.select()
+    .from(lineProcessAssignments)
+    .where(eq(lineProcessAssignments.id, id))
+    .limit(1);
+  
+  return results[0] || null;
+}
+
+export async function createLineProcessAssignment(data: InsertLineProcessAssignment) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const [result] = await db.insert(lineProcessAssignments).values(data);
+  return { id: Number(result.insertId) };
+}
+
+export async function updateLineProcessAssignment(id: number, data: Partial<InsertLineProcessAssignment>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(lineProcessAssignments)
+    .set(data)
+    .where(eq(lineProcessAssignments.id, id));
+}
+
+export async function deleteLineProcessAssignment(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.delete(lineProcessAssignments)
+    .where(eq(lineProcessAssignments.id, id));
+}
+
+export async function reorderLineProcessAssignments(lineId: number, orderedIds: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  for (let i = 0; i < orderedIds.length; i++) {
+    await db.update(lineProcessAssignments)
+      .set({ orderIndex: i })
+      .where(and(
+        eq(lineProcessAssignments.id, orderedIds[i]),
+        eq(lineProcessAssignments.lineId, lineId)
+      ));
+  }
+}
+
+export async function deleteLineProcessAssignmentsByLine(lineId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.delete(lineProcessAssignments)
+    .where(eq(lineProcessAssignments.lineId, lineId));
+}
+
+// ============ TOP NG ANALYSIS FUNCTIONS (ENHANCED) ============
+
+export async function getTopNGMeasurementPointsEnhanced(filters: {
+  startDate?: Date;
+  endDate?: Date;
+  machineId?: number;
+  factoryCode?: string;
+  productModelId?: number;
+  limit?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const limitCount = filters.limit || 10;
+  const conditions: SQL[] = [];
+  
+  // Join with inspections to filter by date and factory
+  if (filters.startDate) {
+    conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  }
+  if (filters.endDate) {
+    conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+  }
+  if (filters.machineId) {
+    conditions.push(eq(productInspections.machineId, filters.machineId));
+  }
+  if (filters.factoryCode) {
+    conditions.push(eq(productInspections.factoryCode, filters.factoryCode));
+  }
+  if (filters.productModelId) {
+    conditions.push(eq(productInspections.productModelId, filters.productModelId));
+  }
+  
+  // Filter for NG results only
+  conditions.push(eq(measurementResults.result, 'NG'));
+  
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  
+  const results = await db
+    .select({
+      measurementPointId: measurementResults.pointDefId,
+      pointCode: measurementPointDefs.code,
+      pointName: measurementPointDefs.name,
+      measurementType: measurementPointDefs.measurementType,
+      ngCount: sql<number>`COUNT(*)`,
+      totalCount: sql<number>`(
+        SELECT COUNT(*) FROM measurement_results mr2 
+        WHERE mr2.measurementPointId = ${measurementResults.pointDefId}
+      )`,
+    })
+    .from(measurementResults)
+    .leftJoin(measurementPointDefs, eq(measurementResults.pointDefId, measurementPointDefs.id))
+    .leftJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
+    .where(whereClause)
+    .groupBy(measurementResults.pointDefId, measurementPointDefs.code, measurementPointDefs.name, measurementPointDefs.measurementType)
+    .orderBy(sql`COUNT(*) DESC`)
+    .limit(limitCount);
+  
+  return results.map((r, index) => ({
+    rank: index + 1,
+    measurementPointId: r.measurementPointId,
+    pointCode: r.pointCode || 'N/A',
+    pointName: r.pointName || 'Unknown',
+    measurementType: r.measurementType || 'OTHER',
+    ngCount: Number(r.ngCount),
+    totalCount: Number(r.totalCount),
+    ngRate: Number(r.totalCount) > 0 
+      ? ((Number(r.ngCount) / Number(r.totalCount)) * 100).toFixed(2)
+      : '0.00',
+    // For Pareto chart - cumulative percentage
+    cumulativePercent: 0, // Will be calculated in router
+  }));
+}
+
+// ============ TREND ANALYSIS FUNCTIONS ============
+
+export async function getYieldTrendData(filters: {
+  startDate: Date;
+  endDate: Date;
+  machineId?: number;
+  factoryCode?: string;
+  interval?: 'hour' | 'day' | 'week' | 'month';
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const interval = filters.interval || 'day';
+  const conditions: SQL[] = [
+    gte(productInspections.inspectionTime, filters.startDate),
+    lte(productInspections.inspectionTime, filters.endDate),
+  ];
+  
+  if (filters.machineId) {
+    conditions.push(eq(productInspections.machineId, filters.machineId));
+  }
+  if (filters.factoryCode) {
+    conditions.push(eq(productInspections.factoryCode, filters.factoryCode));
+  }
+  
+  let dateFormat: SQL;
+  if (interval === 'hour') {
+    dateFormat = sql`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%m-%d %H:00:00')`;
+  } else if (interval === 'week') {
+    dateFormat = sql`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%u')`;
+  } else if (interval === 'month') {
+    dateFormat = sql`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%m')`;
+  } else {
+    dateFormat = sql`DATE(${productInspections.inspectionTime})`;
+  }
+  
+  const results = await db
+    .select({
+      timeInterval: dateFormat.as('timeInterval'),
+      totalCount: sql<number>`COUNT(*)`,
+      okCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'OK' THEN 1 ELSE 0 END)`,
+      ngCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NG' THEN 1 ELSE 0 END)`,
+      ntfCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NTF' THEN 1 ELSE 0 END)`,
+    })
+    .from(productInspections)
+    .where(and(...conditions))
+    .groupBy(sql`timeInterval`)
+    .orderBy(sql`timeInterval`);
+  
+  return results.map(r => ({
+    timeInterval: r.timeInterval,
+    totalCount: Number(r.totalCount),
+    okCount: Number(r.okCount),
+    ngCount: Number(r.ngCount),
+    ntfCount: Number(r.ntfCount),
+    yieldRate: Number(r.totalCount) > 0 
+      ? ((Number(r.okCount) / Number(r.totalCount)) * 100)
+      : 0,
+    ngRate: Number(r.totalCount) > 0 
+      ? ((Number(r.ngCount) / Number(r.totalCount)) * 100)
+      : 0,
+  }));
+}
+
+// ============ ANOMALY DETECTION FUNCTIONS ============
+
+export async function getRecentYieldData(filters: {
+  machineId?: number;
+  factoryCode?: string;
+  days?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const days = filters.days || 30;
+  const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  
+  const conditions: SQL[] = [
+    gte(productInspections.inspectionTime, startDate),
+  ];
+  
+  if (filters.machineId) {
+    conditions.push(eq(productInspections.machineId, filters.machineId));
+  }
+  if (filters.factoryCode) {
+    conditions.push(eq(productInspections.factoryCode, filters.factoryCode));
+  }
+  
+  const results = await db
+    .select({
+      date: sql`DATE(${productInspections.inspectionTime})`.as('date'),
+      totalCount: sql<number>`COUNT(*)`,
+      okCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'OK' THEN 1 ELSE 0 END)`,
+      ngCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NG' THEN 1 ELSE 0 END)`,
+    })
+    .from(productInspections)
+    .where(and(...conditions))
+    .groupBy(sql`date`)
+    .orderBy(sql`date`);
+  
+  return results.map(r => ({
+    date: r.date,
+    totalCount: Number(r.totalCount),
+    okCount: Number(r.okCount),
+    ngCount: Number(r.ngCount),
+    yieldRate: Number(r.totalCount) > 0 
+      ? ((Number(r.okCount) / Number(r.totalCount)) * 100)
+      : 0,
+    ngRate: Number(r.totalCount) > 0 
+      ? ((Number(r.ngCount) / Number(r.totalCount)) * 100)
+      : 0,
+  }));
+}
+
+// ============ WORKSTATION ANALYSIS FUNCTIONS ============
+
+export async function getNGByWorkstation(filters: {
+  startDate?: Date;
+  endDate?: Date;
+  machineId?: number;
+  factoryCode?: string;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions: SQL[] = [];
+  
+  if (filters.startDate) {
+    conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  }
+  if (filters.endDate) {
+    conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+  }
+  if (filters.machineId) {
+    conditions.push(eq(productInspections.machineId, filters.machineId));
+  }
+  if (filters.factoryCode) {
+    conditions.push(eq(productInspections.factoryCode, filters.factoryCode));
+  }
+  
+  // Filter for NG results
+  conditions.push(eq(measurementResults.result, 'NG'));
+  
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  
+  const results = await db
+    .select({
+      workstationId: measurementPointDefs.workstationId,
+      workstationCode: workstations.code,
+      workstationName: workstations.name,
+      processType: workstations.processType,
+      ngCount: sql<number>`COUNT(*)`,
+    })
+    .from(measurementResults)
+    .leftJoin(measurementPointDefs, eq(measurementResults.pointDefId, measurementPointDefs.id))
+    .leftJoin(workstations, eq(measurementPointDefs.workstationId, workstations.id))
+    .leftJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
+    .where(whereClause)
+    .groupBy(measurementPointDefs.workstationId, workstations.code, workstations.name, workstations.processType)
+    .orderBy(sql`COUNT(*) DESC`);
+  
+  return results.map(r => ({
+    workstationId: r.workstationId,
+    workstationCode: r.workstationCode || 'N/A',
+    workstationName: r.workstationName || 'Unknown',
+    processType: r.processType || 'OTHER',
+    ngCount: Number(r.ngCount),
+  }));
 }

@@ -2201,3 +2201,97 @@ Menu structure mới:
 - [x] Review toàn bộ todo.md để xác định các chức năng chưa hoàn thiện (322 tasks)
 - [x] Phân loại theo priority (Critical: 6, High: 8, Medium: 15, Low: 11)
 - [x] Tạo kế hoạch hoàn thiện chi tiết (INCOMPLETE_FEATURES_ANALYSIS.md)
+
+
+## Phase 104: Security & Authentication Enhancement
+
+### 1. 2FA Login Flow
+- [ ] Thêm bước xác thực OTP khi đăng nhập nếu user đã bật 2FA
+- [ ] Tạo OTP verification page/modal
+- [ ] Validate TOTP code với speakeasy
+- [ ] Redirect về trang chính sau khi verify thành công
+
+### 2. 2FA Profile UI
+- [ ] Cập nhật trang Profile với section 2FA
+- [ ] Hiển thị QR code khi enable 2FA
+- [ ] Verify OTP trước khi enable 2FA
+- [ ] Option disable 2FA (yêu cầu password)
+
+### 3. Backup Codes
+- [ ] Generate backup codes khi enable 2FA
+- [ ] UI hiển thị backup codes (chỉ hiện 1 lần)
+- [ ] Download backup codes as text file
+- [ ] Regenerate backup codes option
+
+### 4. Session Management
+- [ ] API list all active sessions
+- [ ] API revoke single session
+- [ ] API revoke all other sessions
+- [ ] UI quản lý sessions trong Profile
+- [ ] Hiển thị device info, IP, last active
+
+### 5. Audit Logs
+- [ ] Tạo bảng audit_logs trong database
+- [ ] Ghi log đăng nhập thành công/thất bại
+- [ ] Ghi log các thao tác CRUD quan trọng
+- [ ] Tạo UI xem audit log trong Settings (admin only)
+- [ ] Filter và search audit logs
+
+## Phase 105: SPC/AI Analysis Enhancement
+
+### 1. Top NG Analysis
+- [x] API endpoint cho top NG measurement points (spcAnalysisRouter.topNGPoints)
+- [x] Pareto chart cho top NG points (SPCAnalysis.tsx)
+- [x] Filter theo time range và factory/machine
+- [x] Hiển thị cumulative percentage cho Pareto
+
+### 2. Trend Prediction
+- [x] Implement moving average calculation (5-point MA)
+- [x] Implement linear regression cho trend
+- [x] Predict next 7 days based on trend
+- [x] Visualize prediction với confidence interval
+- [x] Hiển thị R² score và trend direction
+
+### 3. Anomaly Detection
+- [x] Implement z-score based anomaly detection
+- [x] Calculate UCL/LCL control limits
+- [x] Hiển thị anomalies với severity levels
+- [x] Statistics overview (mean, stdDev, anomaly count)
+
+### 4. Root Cause Suggestions
+- [x] Analyze patterns trong NG data
+- [x] Generate suggestions dựa trên patterns
+- [x] Display suggestions với severity và recommendations
+- [x] Support multiple suggestion types (process, equipment, material, method)
+
+### 5. Workstation Analysis
+- [x] API thống kê lỗi theo workstation (getNGByWorkstation)
+- [ ] Thêm trường workstation vào measurement_point_defs
+- [ ] Biểu đồ phân bố lỗi theo workstation
+- [ ] Recommendations cho workstation improvement
+
+## Phase 106: Production Management
+
+### 1. Process/Stage CRUD
+- [x] Tạo bảng processes trong database schema
+- [x] Tạo bảng line_process_assignments
+- [x] API CRUD cho processes (processRouter.ts)
+- [x] UI quản lý processes (ProcessManagement.tsx)
+- [x] Filter theo process type (SMT, DIP, ASSEMBLY, TESTING, etc.)
+- [x] Thêm menu navigation cho Process Management
+- [x] Unit tests cho processRouter
+- [ ] Drag-drop sắp xếp thứ tự processes
+- [ ] Liên kết process với production line (UI)
+
+### 2. Gantt Chart
+- [ ] Thêm tab Gantt trong Production Orders
+- [ ] Implement Gantt chart component
+- [ ] Hiển thị timeline production orders
+- [ ] Color-coded theo status
+- [ ] Zoom in/out (day/week/month view)
+
+### 3. Barcode Scanner
+- [ ] Tích hợp camera scanner trong History
+- [ ] Quét barcode/QR để tra cứu SN
+- [ ] Hiển thị kết quả ngay sau quét
+- [ ] Fallback manual input

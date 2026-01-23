@@ -31,7 +31,9 @@ import {
   Target,
   Cog,
   FileBarChart,
-  MonitorCheck
+  MonitorCheck,
+  Workflow,
+  Brain
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -204,6 +206,33 @@ export const navGroups: NavGroup[] = [
         label: "Báo cáo định kỳ", 
         icon: <Calendar className="h-4 w-4" />,
         description: "Cấu hình báo cáo tự động"
+      },
+      { 
+        href: "/spc-analysis", 
+        label: "SPC / AI Analysis", 
+        icon: <Brain className="h-4 w-4" />,
+        description: "Phân tích SPC và AI dự đoán"
+      },
+    ],
+  },
+
+  // ============================================
+  // 5.5. QUẢN LÝ QUY TRÌNH - Process Management
+  // ============================================
+  {
+    id: "process-management",
+    label: "Quy trình",
+    icon: <Workflow className="h-4 w-4" />,
+    description: "Quản lý quy trình sản xuất",
+    defaultOpen: false,
+    requiredRole: 'admin',
+    items: [
+      { 
+        href: "/process-management", 
+        label: "Công đoạn", 
+        icon: <Workflow className="h-4 w-4" />,
+        description: "Quản lý công đoạn sản xuất",
+        requiredRole: 'admin'
       },
     ],
   },

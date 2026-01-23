@@ -2,6 +2,8 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { emitNGAlert, emitYieldWarning, emitDashboardUpdate } from "./_core/socket";
 import { systemRouter } from "./_core/systemRouter";
+import { processRouter } from "./routers/processRouter";
+import { spcAnalysisRouter } from "./routers/spcAnalysisRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -4947,6 +4949,8 @@ export const appRouter = router({
   notification: notificationRouter,
   userSettingsRouter: userSettingsRouter,
   dashboardWidget: dashboardWidgetRouter,
+  process: processRouter,
+  spcAnalysis: spcAnalysisRouter,
 });
 
 export type AppRouter = typeof appRouter;

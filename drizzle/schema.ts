@@ -1469,3 +1469,62 @@ export const dashboardTemplates = mysqlTable("dashboard_templates", {
 
 export type DashboardTemplate = typeof dashboardTemplates.$inferSelect;
 export type InsertDashboardTemplate = typeof dashboardTemplates.$inferInsert;
+
+
+// ============= Production Processes =============
+
+/**
+ * Processes - Công đoạn sản xuất (khác với lineStages - đây là công đoạn chung)
+ */
+export const processes = mysqlTable("processes", {
+  id: int("id").autoincrement().primaryKey(),
+  code: varchar("code", { length: 50 }).notNull().unique(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  processType: mysqlEnum("processType", ["SMT", "DIP", "ASSEMBLY", "TESTING", "PACKAGING", "INSPECTION", "OTHER"]).default("OTHER").notNull(),
+  // Thời gian chu kỳ mục tiêu (giây)
+  cycleTimeTarget: decimal("cycleTimeTarget", { precision: 10, scale: 2 }),
+  // Thứ tự trong quy trình sản xuất chung
+  orderIndex: int("orderIndex").default(0).notNull(),
+  // Màu sắc hiển thị trên Gantt chart
+  color: varchar("color", { length: 20 }).default("#3b82f6"),
+  // Icon (lucide icon name)
+  icon: varchar("icon", { length: 50 }),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_processes_code").on(table.code),
+  index("idx_processes_type").on(table.processType),
+  index("idx_processes_order").on(table.orderIndex),
+  index("idx_processes_active").on(table.isActive),
+]);
+
+export type Process = typeof processes.$inferSelect;
+export type InsertProcess = typeof processes.$inferInsert;
+
+/**
+ * Line Process Assignments - Gán công đoạn cho dây chuyền
+ */
+export const lineProcessAssignments = mysqlTable("line_process_assignments", {
+  id: int("id").autoincrement().primaryKey(),
+  lineId: int("lineId").notNull(), // FK to production_lines
+  processId: int("processId").notNull(), // FK to processes
+  // Thứ tự công đoạn trong dây chuyền này
+  orderIndex: int("orderIndex").default(0).notNull(),
+  // Thời gian chu kỳ riêng cho dây chuyền này (override process default)
+  cycleTimeTarget: decimal("cycleTimeTarget", { precision: 10, scale: 2 }),
+  // Station thực hiện công đoạn này trên dây chuyền
+  stationId: int("stationId"),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_lpa_line").on(table.lineId),
+  index("idx_lpa_process").on(table.processId),
+  index("idx_lpa_station").on(table.stationId),
+  index("idx_lpa_order").on(table.orderIndex),
+]);
+
+export type LineProcessAssignment = typeof lineProcessAssignments.$inferSelect;
+export type InsertLineProcessAssignment = typeof lineProcessAssignments.$inferInsert;
