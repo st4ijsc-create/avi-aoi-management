@@ -53,7 +53,8 @@ import {
   userSettings, InsertUserSetting,
   processes, InsertProcess,
   lineProcessAssignments, InsertLineProcessAssignment,
-  widgetStylePresets, InsertWidgetStylePreset
+  widgetStylePresets, InsertWidgetStylePreset,
+  productCategories, InsertProductCategory
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -6467,4 +6468,141 @@ export async function getMqttAlertHistoryCursor(params: CursorPaginationParams &
     prevCursor: firstItem ? encodeCursor(firstItem.id, firstItem.triggeredAt) : null,
     hasMore,
   };
+}
+
+
+// ============ PRODUCT CATEGORY FUNCTIONS ============
+
+export async function getProductCategories(filters?: { parentId?: number | null; isActive?: boolean }) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  let query = db.select().from(productCategories);
+  
+  const conditions: SQL[] = [];
+  
+  if (filters?.parentId !== undefined) {
+    if (filters.parentId === null) {
+      conditions.push(isNull(productCategories.parentId));
+    } else {
+      conditions.push(eq(productCategories.parentId, filters.parentId));
+    }
+  }
+  
+  if (filters?.isActive !== undefined) {
+    conditions.push(eq(productCategories.isActive, filters.isActive));
+  }
+  
+  if (conditions.length > 0) {
+    query = query.where(and(...conditions)) as typeof query;
+  }
+  
+  return query.orderBy(asc(productCategories.orderIndex), asc(productCategories.name));
+}
+
+export async function getProductCategoryById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select().from(productCategories).where(eq(productCategories.id, id)).limit(1);
+  return result[0] || null;
+}
+
+export async function getProductCategoryByCode(code: string) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db.select().from(productCategories).where(eq(productCategories.code, code)).limit(1);
+  return result[0] || null;
+}
+
+export async function createProductCategory(data: InsertProductCategory) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(productCategories).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function updateProductCategory(id: number, data: Partial<InsertProductCategory>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(productCategories).set(data).where(eq(productCategories.id, id));
+}
+
+export async function deleteProductCategory(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Check if category has children
+  const children = await db.select().from(productCategories).where(eq(productCategories.parentId, id)).limit(1);
+  if (children.length > 0) {
+    throw new Error("Cannot delete category with children");
+  }
+  
+  await db.delete(productCategories).where(eq(productCategories.id, id));
+}
+
+export async function getProductCategoryTree() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const allCategories = await db.select().from(productCategories)
+    .where(eq(productCategories.isActive, true))
+    .orderBy(asc(productCategories.orderIndex), asc(productCategories.name));
+  
+  // Build tree structure
+  const categoryMap = new Map<number, typeof allCategories[0] & { children: typeof allCategories }>();
+  const rootCategories: (typeof allCategories[0] & { children: typeof allCategories })[] = [];
+  
+  // First pass: create map
+  for (const cat of allCategories) {
+    categoryMap.set(cat.id, { ...cat, children: [] });
+  }
+  
+  // Second pass: build tree
+  for (const cat of allCategories) {
+    const catWithChildren = categoryMap.get(cat.id)!;
+    if (cat.parentId === null) {
+      rootCategories.push(catWithChildren);
+    } else {
+      const parent = categoryMap.get(cat.parentId);
+      if (parent) {
+        parent.children.push(catWithChildren);
+      }
+    }
+  }
+  
+  return rootCategories;
+}
+
+export async function updateProductCategoryCount(categoryId: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  // Count products in this category
+  const category = await getProductCategoryById(categoryId);
+  if (!category) return;
+  
+  const products = await db.select({ count: sql<number>`COUNT(*)` })
+    .from(productModels)
+    .where(eq(productModels.category, category.code));
+  
+  const count = products[0]?.count || 0;
+  
+  await db.update(productCategories)
+    .set({ productCount: count })
+    .where(eq(productCategories.id, categoryId));
+}
+
+export async function reorderProductCategories(categoryIds: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  for (let i = 0; i < categoryIds.length; i++) {
+    await db.update(productCategories)
+      .set({ orderIndex: i })
+      .where(eq(productCategories.id, categoryIds[i]));
+  }
 }

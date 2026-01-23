@@ -2312,6 +2312,13 @@ const productionOrderRouter = router({
 
       const targetLineId = input.lineId || order.lineId;
 
+      // Get line info for capacity check
+      const lines = await db.getProductionLines();
+      const targetLine = lines.find(l => l.id === targetLineId);
+      if (!targetLine) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Production line not found' });
+      }
+
       // Check for overlap unless force override is set
       if (!input.forceOverride) {
         const orders = await db.getProductionOrders({ lineId: targetLineId });
@@ -2333,6 +2340,40 @@ const productionOrderRouter = router({
             message: `Lịch trùng với ${overlappingOrders.length} lệnh sản xuất khác: ${overlappingOrders.map(o => o.orderCode).join(', ')}. Sử dụng forceOverride=true để bỏ qua.`,
           });
         }
+
+        // Capacity validation - check max concurrent orders
+        const maxConcurrent = targetLine.maxConcurrentOrders || 1;
+        const concurrentOrders = orders.filter(o => {
+          if (o.id === input.id || o.status === 'cancelled' || o.status === 'completed') return false;
+          
+          const oStart = o.plannedStartDate ? new Date(o.plannedStartDate) : null;
+          const oEnd = o.plannedEndDate ? new Date(o.plannedEndDate) : null;
+          
+          if (!oStart || !oEnd) return false;
+          
+          // Check if order overlaps with new schedule
+          return input.scheduledStartDate < oEnd && input.scheduledEndDate > oStart;
+        });
+
+        if (concurrentOrders.length >= maxConcurrent) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: `Dây chuyền ${targetLine.name} chỉ hỗ trợ tối đa ${maxConcurrent} lệnh cùng lúc. Hiện đã có ${concurrentOrders.length} lệnh trong khoảng thời gian này. Sử dụng forceOverride=true để bỏ qua.`,
+          });
+        }
+
+        // Capacity validation - check production capacity
+        if (targetLine.capacityPerHour && order.targetQuantity) {
+          const durationHours = (input.scheduledEndDate.getTime() - input.scheduledStartDate.getTime()) / (1000 * 60 * 60);
+          const maxCapacity = targetLine.capacityPerHour * durationHours;
+          
+          if (order.targetQuantity > maxCapacity) {
+            throw new TRPCError({
+              code: 'PRECONDITION_FAILED',
+              message: `Số lượng ${order.targetQuantity} vượt quá năng lực dây chuyền (${Math.floor(maxCapacity)} sản phẩm trong ${durationHours.toFixed(1)} giờ với ${targetLine.capacityPerHour} sp/giờ). Sử dụng forceOverride=true để bỏ qua.`,
+            });
+          }
+        }
       }
 
       const updateData: Record<string, unknown> = {
@@ -2342,7 +2383,6 @@ const productionOrderRouter = router({
 
       // If line changed, also update workshopId from the new line
       if (input.lineId && input.lineId !== order.lineId) {
-        const lines = await db.getProductionLines();
         const newLine = lines.find(l => l.id === input.lineId);
         if (!newLine) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Production line not found' });
@@ -5347,6 +5387,101 @@ const dashboardWidgetRouter = router({
     }),
 });
 
+// ============ PRODUCT CATEGORY ROUTER ============
+const productCategoryRouter = router({
+  list: protectedProcedure
+    .input(z.object({
+      parentId: z.number().nullable().optional(),
+      isActive: z.boolean().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getProductCategories(input);
+    }),
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getProductCategoryById(input.id);
+    }),
+
+  getByCode: protectedProcedure
+    .input(z.object({ code: z.string() }))
+    .query(async ({ input }) => {
+      return db.getProductCategoryByCode(input.code);
+    }),
+
+  getTree: protectedProcedure
+    .query(async () => {
+      return db.getProductCategoryTree();
+    }),
+
+  create: adminProcedure
+    .input(z.object({
+      code: z.string().min(1).max(50),
+      name: z.string().min(1).max(255),
+      description: z.string().optional(),
+      parentId: z.number().nullable().optional(),
+      color: z.string().optional(),
+      icon: z.string().optional(),
+      orderIndex: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      // Check if code already exists
+      const existing = await db.getProductCategoryByCode(input.code);
+      if (existing) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Category code already exists' });
+      }
+      const result = await db.createProductCategory(input);
+      return { id: result.id };
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      code: z.string().min(1).max(50).optional(),
+      name: z.string().min(1).max(255).optional(),
+      description: z.string().optional(),
+      parentId: z.number().nullable().optional(),
+      color: z.string().optional(),
+      icon: z.string().optional(),
+      orderIndex: z.number().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      // Check if code already exists (if changing code)
+      if (data.code) {
+        const existing = await db.getProductCategoryByCode(data.code);
+        if (existing && existing.id !== id) {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Category code already exists' });
+        }
+      }
+      await db.updateProductCategory(id, data);
+      return { success: true };
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteProductCategory(input.id);
+      return { success: true };
+    }),
+
+  reorder: adminProcedure
+    .input(z.object({ categoryIds: z.array(z.number()) }))
+    .mutation(async ({ input }) => {
+      await db.reorderProductCategories(input.categoryIds);
+      return { success: true };
+    }),
+
+  updateCount: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.updateProductCategoryCount(input.id);
+      return { success: true };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -5425,6 +5560,7 @@ export const appRouter = router({
   spcAnalysis: spcAnalysisRouter,
   twoFactor: twoFactorRouter,
   session: sessionRouter,
+  productCategory: productCategoryRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -39,7 +39,8 @@ import {
   Cog,
   Award,
   Mail,
-  Users
+  Users,
+  FolderTree
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { ErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
@@ -53,6 +54,7 @@ import { CacheStatsDashboard } from "@/components/CacheStatsDashboard";
 import { EmailTemplateEditor } from "@/components/EmailTemplateEditor";
 import UserAssignments from "@/components/UserAssignments";
 import WorkstationManagement from "@/components/WorkstationManagement";
+import { ProductCategoryManagement } from "@/components/ProductCategoryManagement";
 import { useState } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
@@ -756,6 +758,13 @@ export default function Settings() {
                 </button>
                 {!collapsedCategories['products'] && (
                   <div className="ml-6 space-y-1">
+                    <button
+                      onClick={() => setActiveTab('product-categories')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-accent transition-colors ${activeTab === 'product-categories' ? 'bg-accent' : ''}`}
+                    >
+                      <FolderTree className="h-4 w-4" />
+                      Danh mục sản phẩm
+                    </button>
                     <button
                       onClick={() => window.location.href = '/product-models'}
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-accent transition-colors"
@@ -2245,6 +2254,11 @@ export default function Settings() {
           {/* User Assignments Tab */}
           <TabsContent value="user-assignments">
             <UserAssignments />
+          </TabsContent>
+
+          {/* Product Categories Tab */}
+          <TabsContent value="product-categories">
+            <ProductCategoryManagement />
           </TabsContent>
             </div>
           </div>

@@ -253,6 +253,20 @@
       "when": 1769158996353,
       "tag": "0035_nebulous_captain_midlands",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "5",
+      "when": 1769180840204,
+      "tag": "0036_graceful_the_renegades",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "5",
+      "when": 1769181863619,
+      "tag": "0037_lazy_dreadnoughts",
+      "breakpoints": true
     }
   ]
 }

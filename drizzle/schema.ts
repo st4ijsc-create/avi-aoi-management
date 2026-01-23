@@ -84,6 +84,8 @@ export const productionLines = mysqlTable("production_lines", {
   code: varchar("code", { length: 50 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
+  capacityPerHour: int("capacityPerHour"), // Sản lượng mỗi giờ
+  maxConcurrentOrders: int("maxConcurrentOrders").default(1), // Số lệnh tối đa cùng lúc
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -1566,3 +1568,35 @@ export const widgetStylePresets = mysqlTable("widget_style_presets", {
 
 export type WidgetStylePreset = typeof widgetStylePresets.$inferSelect;
 export type InsertWidgetStylePreset = typeof widgetStylePresets.$inferInsert;
+
+
+// ============= Product Categories =============
+
+/**
+ * Product Categories - Danh mục sản phẩm tập trung
+ */
+export const productCategories = mysqlTable("product_categories", {
+  id: int("id").autoincrement().primaryKey(),
+  code: varchar("code", { length: 50 }).notNull().unique(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  // Parent category for hierarchical structure
+  parentId: int("parentId"), // FK to self (null = root category)
+  // Display settings
+  color: varchar("color", { length: 20 }).default("#3b82f6"),
+  icon: varchar("icon", { length: 50 }), // Lucide icon name
+  orderIndex: int("orderIndex").default(0).notNull(),
+  // Stats
+  productCount: int("productCount").default(0).notNull(), // Cached count of products in this category
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_product_categories_code").on(table.code),
+  index("idx_product_categories_parent").on(table.parentId),
+  index("idx_product_categories_order").on(table.orderIndex),
+  index("idx_product_categories_active").on(table.isActive),
+]);
+
+export type ProductCategory = typeof productCategories.$inferSelect;
+export type InsertProductCategory = typeof productCategories.$inferInsert;

@@ -52,6 +52,7 @@ import { StatsCardSkeleton, ChartSkeleton, TableSkeleton, WorkstationSummarySkel
 import { toast } from "sonner";
 import { navItems } from "@/lib/navigation";
 import { useState, useMemo } from "react";
+import { HistoryInfiniteScroll } from "@/components/HistoryInfiniteScroll";
 import { Link } from "wouter";
 import { format as formatDate, subDays, startOfDay, endOfDay } from "date-fns";
 import { vi } from "date-fns/locale";
@@ -882,10 +883,14 @@ export default function History() {
 
         {/* Tabs: List and Analysis */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full max-w-4xl grid-cols-6">
+          <TabsList className="grid w-full max-w-4xl grid-cols-7">
             <TabsTrigger value="list" className="gap-2">
               <HistoryIcon className="h-4 w-4" />
               Danh sách
+            </TabsTrigger>
+            <TabsTrigger value="infinite" className="gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Infinite
             </TabsTrigger>
             <TabsTrigger value="yield" className="gap-2">
               <Target className="h-4 w-4" />
@@ -1080,6 +1085,21 @@ export default function History() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Infinite Scroll Tab */}
+          <TabsContent value="infinite">
+            <HistoryInfiniteScroll
+              filters={{
+                factoryCode: filters.factoryCode || undefined,
+                serialNumber: filters.serialNumber || undefined,
+                productModel: filters.productModel || undefined,
+                result: filters.result !== "all" ? filters.result : undefined,
+                startDate: dateRangeValues.startDate,
+                endDate: dateRangeValues.endDate,
+              }}
+              machines={machines}
+            />
           </TabsContent>
 
           {/* Analysis Tab */}

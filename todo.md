@@ -2926,3 +2926,31 @@ Menu structure mới:
 - [x] Thêm links đến "Mẫu sản phẩm" và "Mapping sản phẩm"
 - [x] Collapsible category với icon orangehị đúng
 
+
+## Phase 126: InfiniteScrollList, Capacity Validation & Product Category CRUD
+
+### 1. InfiniteScrollList cho History Page
+- [x] Tạo HistoryInfiniteScroll component
+- [x] Tích hợp với inspection.listCursor API
+- [x] Hiển thị loading states và progress
+- [x] Support filter và search với infinite scroll
+- [x] Thêm tab "Infinite" trong History page
+- [x] Auto-reload khi filters thay đổi
+
+### 2. Capacity Validation khi Reschedule
+- [x] Thêm capacity field vào productionLines schema (dailyCapacity)
+- [x] Tính toán capacity dựa trên existing orders trong ngày
+- [x] Hiển thị capacity warning trong reschedule API response
+- [x] Validate capacity trong reschedule mutation
+- [x] Trả về capacityExceeded, currentLoad, lineCapacity trong response
+
+### 3. Product Category CRUD
+- [x] Tạo productCategories table trong schema (code, name, description, parentId, color, icon, orderIndex, productCount, isActive)
+- [x] Thêm helper functions trong db.ts (getProductCategories, getProductCategoryTree, createProductCategory, updateProductCategory, deleteProductCategory)
+- [x] Tạo productCategoryRouter với CRUD APIs (list, getTree, create, update, delete)
+- [x] Tạo ProductCategoryManagement component với tree view
+- [x] Thêm tab "Danh mục sản phẩm" trong Settings (category Sản phẩm)
+- [x] Support hierarchical categories (parent-child) với expand/collapse
+- [x] Color và icon cho categories (8 colors, 8 icons)
+- [x] Product count display và validation khi xóa
+
