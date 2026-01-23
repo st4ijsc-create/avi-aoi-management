@@ -1426,3 +1426,46 @@ export const userSettings = mysqlTable("user_settings", {
 
 export type UserSetting = typeof userSettings.$inferSelect;
 export type InsertUserSetting = typeof userSettings.$inferInsert;
+
+
+// ============= Dashboard Templates (Shared) =============
+
+/**
+ * Dashboard Templates - Templates layout dashboard có thể chia sẻ
+ */
+export const dashboardTemplates = mysqlTable("dashboard_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  description: text("description"),
+  // Template type: system (preset), shared (admin created for team)
+  templateType: mysqlEnum("templateType", ["system", "shared"]).default("shared").notNull(),
+  // Layout configuration
+  widgets: json("widgets").$type<string[]>().notNull(), // Array of widget IDs
+  layout: json("layout").$type<Array<{
+    i: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    minW?: number;
+    minH?: number;
+  }>>().notNull(),
+  // Preview image (optional)
+  previewImageUrl: text("previewImageUrl"),
+  // Access control
+  isPublic: boolean("isPublic").default(true).notNull(), // Visible to all users
+  createdBy: int("createdBy").notNull(), // FK to users (admin who created)
+  // Usage stats
+  usageCount: int("usageCount").default(0).notNull(),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_dashboard_templates_type").on(table.templateType),
+  index("idx_dashboard_templates_public").on(table.isPublic),
+  index("idx_dashboard_templates_creator").on(table.createdBy),
+  index("idx_dashboard_templates_usage").on(table.usageCount),
+]);
+
+export type DashboardTemplate = typeof dashboardTemplates.$inferSelect;
+export type InsertDashboardTemplate = typeof dashboardTemplates.$inferInsert;

@@ -40,8 +40,10 @@ import {
   Save,
   Trash2,
   Plus,
+  Circle,
   type LucideIcon,
 } from 'lucide-react';
+import { useDashboardWidgetCache } from '@/hooks/useWidgetCache';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -185,9 +187,15 @@ export const WIDGET_DEFINITIONS: Record<string, {
   },
 };
 
+interface WidgetCacheStatus {
+  isStale: boolean;
+  lastUpdated: number | null;
+}
+
 interface ResizableDashboardProps {
   children: (widgetId: string) => React.ReactNode;
-  onRefreshWidget?: (widgetId: string) => void;
+  onRefreshWidget?: (widgetId: string) => Promise<void>;
+  widgetCacheStatus?: Record<string, WidgetCacheStatus>;
 }
 
 type AutoRefreshInterval = 0 | 30 | 60 | 300; // 0 = off, seconds
@@ -255,7 +263,7 @@ const generateDefaultLayouts = (): ResponsiveLayouts => {
   };
 };
 
-export function ResizableDashboard({ children, onRefreshWidget }: ResizableDashboardProps) {
+export function ResizableDashboard({ children, onRefreshWidget, widgetCacheStatus }: ResizableDashboardProps) {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const [layouts, setLayouts] = useState<ResponsiveLayouts>(generateDefaultLayouts);
@@ -284,6 +292,31 @@ export function ResizableDashboard({ children, onRefreshWidget }: ResizableDashb
   // Fetch saved layout
   const { data: savedLayout, refetch } = trpc.dashboardWidget.getLayout.useQuery(undefined, {
     enabled: !!user,
+  });
+
+  // Fetch shared templates from database
+  const { data: sharedTemplates } = trpc.dashboardWidget.getSharedTemplates.useQuery(undefined, {
+    enabled: !!user,
+  });
+
+  // Apply shared template mutation
+  const applySharedTemplateMutation = trpc.dashboardWidget.applySharedTemplate.useMutation();
+
+  // Save as shared template mutation (admin only)
+  const saveAsSharedTemplateMutation = trpc.dashboardWidget.saveAsSharedTemplate.useMutation({
+    onSuccess: () => {
+      toast.success('Template saved and shared with team');
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
+
+  // Delete shared template mutation (admin only)
+  const deleteSharedTemplateMutation = trpc.dashboardWidget.deleteSharedTemplate.useMutation({
+    onSuccess: () => {
+      toast.success('Shared template deleted');
+    },
   });
 
   // Save layout mutation
@@ -663,6 +696,38 @@ export function ResizableDashboard({ children, onRefreshWidget }: ResizableDashb
     toast.success(t('dashboard.templateApplied', `Template "${template.name}" applied`));
   }, [t]);
 
+  // Apply shared template from database
+  const handleApplySharedTemplate = useCallback((template: NonNullable<typeof sharedTemplates>[0]) => {
+    setVisibleWidgets(new Set(template.widgets as string[]));
+    setLayouts(prev => ({
+      ...prev,
+      lg: (template.layout as LayoutItem[]),
+    }));
+    setHasChanges(true);
+    applySharedTemplateMutation.mutate({ id: template.id });
+    toast.success(t('dashboard.templateApplied', `Template "${template.name}" applied`));
+  }, [t, applySharedTemplateMutation]);
+
+  // Save current layout as shared template (admin only)
+  const handleSaveAsSharedTemplate = useCallback(() => {
+    if (!newTemplateName.trim()) {
+      toast.error('Please enter a template name');
+      return;
+    }
+    saveAsSharedTemplateMutation.mutate({
+      name: newTemplateName.trim(),
+      description: `Shared by ${user?.name || 'Admin'}`,
+      isPublic: true,
+    });
+    setNewTemplateName('');
+    setSaveTemplateOpen(false);
+  }, [newTemplateName, user, saveAsSharedTemplateMutation]);
+
+  // Delete shared template (admin only)
+  const handleDeleteSharedTemplate = useCallback((id: number) => {
+    deleteSharedTemplateMutation.mutate({ id });
+  }, [deleteSharedTemplateMutation]);
+
   // Filter layouts to only show visible widgets
   const visibleLayouts = useMemo(() => {
     const filtered: ResponsiveLayouts = {
@@ -771,10 +836,44 @@ export function ResizableDashboard({ children, onRefreshWidget }: ResizableDashb
                 </div>
               </DropdownMenuItem>
               
+              {/* Shared Templates from Database */}
+              {sharedTemplates && sharedTemplates.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>Shared Templates</DropdownMenuLabel>
+                  {sharedTemplates.map(template => (
+                    <DropdownMenuItem key={template.id} className="flex justify-between">
+                      <span onClick={() => handleApplySharedTemplate(template)} className="flex-1 cursor-pointer">
+                        <div className="flex flex-col">
+                          <span className="font-medium">{template.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {template.description || `Used ${template.usageCount} times`}
+                          </span>
+                        </div>
+                      </span>
+                      {user?.role === 'admin' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 ml-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteSharedTemplate(template.id);
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3 text-destructive" />
+                        </Button>
+                      )}
+                    </DropdownMenuItem>
+                  ))}
+                </>
+              )}
+
+              {/* Local Custom Templates */}
               {customTemplates.length > 0 && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuLabel>Custom Templates</DropdownMenuLabel>
+                  <DropdownMenuLabel>My Templates (Local)</DropdownMenuLabel>
                   {customTemplates.map(template => (
                     <DropdownMenuItem key={template.id} className="flex justify-between">
                       <span onClick={() => handleApplyCustomTemplate(template)} className="flex-1 cursor-pointer">
@@ -799,8 +898,14 @@ export function ResizableDashboard({ children, onRefreshWidget }: ResizableDashb
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setSaveTemplateOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />
-                Save Current as Template
+                Save as Local Template
               </DropdownMenuItem>
+              {user?.role === 'admin' && (
+                <DropdownMenuItem onClick={handleSaveAsSharedTemplate}>
+                  <Save className="h-4 w-4 mr-2" />
+                  Share with Team
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={handleReset}>
                 <RotateCcw className="h-4 w-4 mr-2" />
                 Reset to Default
@@ -917,6 +1022,24 @@ export function ResizableDashboard({ children, onRefreshWidget }: ResizableDashb
                     )}
                     <Icon className="h-4 w-4 text-primary" />
                     <span className="font-medium text-sm">{getWidgetName(item.i)}</span>
+                    {/* Cache status indicator */}
+                    {widgetCacheStatus?.[item.i] && (
+                      <div 
+                        className="flex items-center gap-1 ml-2"
+                        title={widgetCacheStatus[item.i].isStale 
+                          ? 'Data is stale - click refresh' 
+                          : `Last updated: ${widgetCacheStatus[item.i].lastUpdated 
+                              ? new Date(widgetCacheStatus[item.i].lastUpdated!).toLocaleTimeString() 
+                              : 'Never'}`
+                        }
+                      >
+                        <Circle 
+                          className={`h-2 w-2 ${widgetCacheStatus[item.i].isStale 
+                            ? 'fill-yellow-500 text-yellow-500' 
+                            : 'fill-green-500 text-green-500'}`} 
+                        />
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-1">
                     <Button

@@ -4736,6 +4736,141 @@ const dashboardWidgetRouter = router({
       await db.resetDashboardWidgetLayout(ctx.user.id);
       return { success: true };
     }),
+
+  // ============= SHARED TEMPLATES =============
+  
+  // Get all shared templates (public or created by user)
+  getSharedTemplates: protectedProcedure
+    .query(async ({ ctx }) => {
+      // Get all public templates
+      const publicTemplates = await db.getDashboardTemplates({ isPublic: true });
+      
+      // Get user's own templates (if not admin)
+      let userTemplates: Awaited<ReturnType<typeof db.getDashboardTemplates>> = [];
+      if (ctx.user.role !== 'admin') {
+        userTemplates = await db.getDashboardTemplates({ createdBy: ctx.user.id, isPublic: false });
+      }
+      
+      // Combine and deduplicate
+      const allTemplates = [...publicTemplates, ...userTemplates];
+      const uniqueTemplates = allTemplates.filter((t, i, arr) => 
+        arr.findIndex(x => x.id === t.id) === i
+      );
+      
+      return uniqueTemplates;
+    }),
+
+  // Get template by ID
+  getSharedTemplateById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getDashboardTemplateById(input.id);
+    }),
+
+  // Create shared template (admin only)
+  createSharedTemplate: adminProcedure
+    .input(z.object({
+      name: z.string().min(1).max(100),
+      description: z.string().optional(),
+      widgets: z.array(z.string()),
+      layout: z.array(z.object({
+        i: z.string(),
+        x: z.number(),
+        y: z.number(),
+        w: z.number(),
+        h: z.number(),
+        minW: z.number().optional(),
+        minH: z.number().optional(),
+      })),
+      isPublic: z.boolean().default(true),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return db.createDashboardTemplate({
+        name: input.name,
+        description: input.description,
+        templateType: 'shared',
+        widgets: input.widgets,
+        layout: input.layout,
+        isPublic: input.isPublic,
+        createdBy: ctx.user.id,
+      });
+    }),
+
+  // Update shared template (admin only)
+  updateSharedTemplate: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(100).optional(),
+      description: z.string().optional(),
+      widgets: z.array(z.string()).optional(),
+      layout: z.array(z.object({
+        i: z.string(),
+        x: z.number(),
+        y: z.number(),
+        w: z.number(),
+        h: z.number(),
+        minW: z.number().optional(),
+        minH: z.number().optional(),
+      })).optional(),
+      isPublic: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateDashboardTemplate(id, data);
+      return { success: true };
+    }),
+
+  // Delete shared template (admin only)
+  deleteSharedTemplate: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteDashboardTemplate(input.id);
+      return { success: true };
+    }),
+
+  // Apply shared template (increment usage count)
+  applySharedTemplate: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.incrementTemplateUsage(input.id);
+      return { success: true };
+    }),
+
+  // Save current layout as shared template (admin only)
+  saveAsSharedTemplate: adminProcedure
+    .input(z.object({
+      name: z.string().min(1).max(100),
+      description: z.string().optional(),
+      isPublic: z.boolean().default(true),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Get current user's layout
+      const currentLayout = await db.getDashboardWidgetLayout(ctx.user.id);
+      
+      if (!currentLayout) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'No layout found to save' });
+      }
+      
+      // Extract widgets and layout from current layout
+      const widgets = currentLayout.widgets.map(w => w.id);
+      const layout = currentLayout.widgets.map(w => ({
+        i: w.id,
+        x: w.x,
+        y: w.y,
+        w: w.w,
+        h: w.h,
+      }));
+      
+      return db.createDashboardTemplate({
+        name: input.name,
+        description: input.description,
+        templateType: 'shared',
+        widgets,
+        layout,
+        isPublic: input.isPublic,
+        createdBy: ctx.user.id,
+      });
+    }),
 });
 
 export const appRouter = router({

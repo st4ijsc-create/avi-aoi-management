@@ -2141,3 +2141,23 @@ Menu structure mới:
 - [x] Hiển thị custom templates trong dropdown
 - [x] Delete custom template option
 - [x] Apply custom template
+
+
+## Phase 101: Widget Data Caching & Template Sharing
+
+### 1. Widget Data Caching
+- [x] Tạo useWidgetCache hook với TTL configurable per widget type
+- [x] Cache data cho từng widget type riêng biệt (8 widget types)
+- [x] Invalidate và refresh methods
+- [x] Hiển thị cache status (green dot = fresh, yellow dot = stale)
+- [x] Stale-while-revalidate pattern cho UX tốt hơn
+- [x] Cache statistics (hits, misses, hit rate)
+- [x] useDashboardWidgetCache hook cho dashboard-level management
+
+### 2. Template Sharing
+- [x] Tạo dashboard_templates table trong database
+- [x] API endpoints cho CRUD shared templates (6 endpoints)
+- [x] Phân quyền: admin tạo/edit/delete, user chỉ apply
+- [x] UI hiển thị shared templates trong dropdown (separate section)
+- [x] Usage tracking (usageCount) khi apply template
+- [x] "Share with Team" button cho admin

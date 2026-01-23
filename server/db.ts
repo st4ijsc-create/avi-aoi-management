@@ -48,6 +48,7 @@ import {
   emailTemplateConfig, InsertEmailTemplateConfig,
   notifications, InsertNotification,
   userNotificationPreferences, InsertUserNotificationPreference,
+  dashboardTemplates, InsertDashboardTemplate,
   dashboardWidgetLayouts, InsertDashboardWidgetLayout,
   userSettings, InsertUserSetting
 } from "../drizzle/schema";
@@ -5356,4 +5357,83 @@ export async function resetDashboardWidgetLayout(userId: number) {
   
   await db.delete(dashboardWidgetLayouts)
     .where(eq(dashboardWidgetLayouts.userId, userId));
+}
+
+
+// ============ DASHBOARD TEMPLATES (SHARED) FUNCTIONS ============
+
+export async function getDashboardTemplates(filters?: {
+  templateType?: 'system' | 'shared';
+  isPublic?: boolean;
+  createdBy?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions: SQL[] = [];
+  
+  if (filters?.templateType) {
+    conditions.push(eq(dashboardTemplates.templateType, filters.templateType));
+  }
+  if (filters?.isPublic !== undefined) {
+    conditions.push(eq(dashboardTemplates.isPublic, filters.isPublic));
+  }
+  if (filters?.createdBy) {
+    conditions.push(eq(dashboardTemplates.createdBy, filters.createdBy));
+  }
+  
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  
+  const results = await db.select()
+    .from(dashboardTemplates)
+    .where(whereClause)
+    .orderBy(desc(dashboardTemplates.usageCount));
+  
+  return results;
+}
+
+export async function getDashboardTemplateById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const results = await db.select()
+    .from(dashboardTemplates)
+    .where(eq(dashboardTemplates.id, id))
+    .limit(1);
+  
+  return results[0] || null;
+}
+
+export async function createDashboardTemplate(data: InsertDashboardTemplate) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const [result] = await db.insert(dashboardTemplates).values(data);
+  return { id: Number(result.insertId) };
+}
+
+export async function updateDashboardTemplate(id: number, data: Partial<InsertDashboardTemplate>) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.update(dashboardTemplates)
+    .set(data)
+    .where(eq(dashboardTemplates.id, id));
+}
+
+export async function deleteDashboardTemplate(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.delete(dashboardTemplates)
+    .where(eq(dashboardTemplates.id, id));
+}
+
+export async function incrementTemplateUsage(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.update(dashboardTemplates)
+    .set({ usageCount: sql`${dashboardTemplates.usageCount} + 1` })
+    .where(eq(dashboardTemplates.id, id));
 }
