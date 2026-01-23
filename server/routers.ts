@@ -4875,6 +4875,110 @@ const dashboardWidgetRouter = router({
         createdBy: ctx.user.id,
       });
     }),
+
+  // ============= WIDGET STYLE PRESETS =============
+  
+  // Get all style presets (user's own + public + system)
+  getStylePresets: protectedProcedure
+    .query(async ({ ctx }) => {
+      return db.getUserWidgetStylePresets(ctx.user.id);
+    }),
+
+  // Get preset by ID
+  getStylePresetById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getWidgetStylePresetById(input.id);
+    }),
+
+  // Create style preset
+  createStylePreset: protectedProcedure
+    .input(z.object({
+      name: z.string().min(1).max(100),
+      description: z.string().optional(),
+      backgroundColor: z.string().default('#ffffff'),
+      textColor: z.string().default('#1f2937'),
+      borderColor: z.string().default('#e5e7eb'),
+      accentColor: z.string().default('#3b82f6'),
+      borderRadius: z.string().default('0.5rem'),
+      shadow: z.enum(['none', 'sm', 'md', 'lg', 'xl']).default('sm'),
+      opacity: z.string().default('1.00'),
+      presetType: z.enum(['user', 'shared']).default('user'),
+      isPublic: z.boolean().default(false),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Only admin can create shared presets
+      if (input.presetType === 'shared' && ctx.user.role !== 'admin') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Only admin can create shared presets' });
+      }
+      return db.createWidgetStylePreset({
+        ...input,
+        createdBy: ctx.user.id,
+      });
+    }),
+
+  // Update style preset
+  updateStylePreset: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(100).optional(),
+      description: z.string().optional(),
+      backgroundColor: z.string().optional(),
+      textColor: z.string().optional(),
+      borderColor: z.string().optional(),
+      accentColor: z.string().optional(),
+      borderRadius: z.string().optional(),
+      shadow: z.enum(['none', 'sm', 'md', 'lg', 'xl']).optional(),
+      opacity: z.string().optional(),
+      isPublic: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const preset = await db.getWidgetStylePresetById(input.id);
+      if (!preset) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Preset not found' });
+      }
+      // Only owner or admin can update
+      if (preset.createdBy !== ctx.user.id && ctx.user.role !== 'admin') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized to update this preset' });
+      }
+      const { id, ...data } = input;
+      await db.updateWidgetStylePreset(id, data);
+      return { success: true };
+    }),
+
+  // Delete style preset
+  deleteStylePreset: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const preset = await db.getWidgetStylePresetById(input.id);
+      if (!preset) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Preset not found' });
+      }
+      // Only owner or admin can delete
+      if (preset.createdBy !== ctx.user.id && ctx.user.role !== 'admin') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized to delete this preset' });
+      }
+      // Cannot delete system presets
+      if (preset.presetType === 'system') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot delete system presets' });
+      }
+      await db.deleteWidgetStylePreset(input.id);
+      return { success: true };
+    }),
+
+  // Apply style preset (increment usage count)
+  applyStylePreset: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.incrementWidgetStylePresetUsage(input.id);
+      return { success: true };
+    }),
+
+  // Get public style presets only
+  getPublicStylePresets: protectedProcedure
+    .query(async () => {
+      return db.getPublicWidgetStylePresets();
+    }),
 });
 
 export const appRouter = router({

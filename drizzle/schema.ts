@@ -1528,3 +1528,41 @@ export const lineProcessAssignments = mysqlTable("line_process_assignments", {
 
 export type LineProcessAssignment = typeof lineProcessAssignments.$inferSelect;
 export type InsertLineProcessAssignment = typeof lineProcessAssignments.$inferInsert;
+
+
+// ============= Dashboard Widget Style Presets =============
+
+/**
+ * Widget Style Presets - Preset styles cho dashboard widgets
+ */
+export const widgetStylePresets = mysqlTable("widget_style_presets", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  description: text("description"),
+  // Style configuration
+  backgroundColor: varchar("backgroundColor", { length: 20 }).default("#ffffff").notNull(),
+  textColor: varchar("textColor", { length: 20 }).default("#1f2937").notNull(),
+  borderColor: varchar("borderColor", { length: 20 }).default("#e5e7eb").notNull(),
+  accentColor: varchar("accentColor", { length: 20 }).default("#3b82f6").notNull(),
+  borderRadius: varchar("borderRadius", { length: 20 }).default("0.5rem").notNull(),
+  shadow: mysqlEnum("shadow", ["none", "sm", "md", "lg", "xl"]).default("sm").notNull(),
+  opacity: decimal("opacity", { precision: 3, scale: 2 }).default("1.00").notNull(),
+  // Preset type: system (built-in), shared (admin created), user (personal)
+  presetType: mysqlEnum("presetType", ["system", "shared", "user"]).default("user").notNull(),
+  // Access control
+  isPublic: boolean("isPublic").default(false).notNull(), // Visible to all users
+  createdBy: int("createdBy").notNull(), // FK to users
+  // Usage stats
+  usageCount: int("usageCount").default(0).notNull(),
+  // Timestamps
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_widget_presets_type").on(table.presetType),
+  index("idx_widget_presets_public").on(table.isPublic),
+  index("idx_widget_presets_creator").on(table.createdBy),
+  index("idx_widget_presets_name").on(table.name),
+]);
+
+export type WidgetStylePreset = typeof widgetStylePresets.$inferSelect;
+export type InsertWidgetStylePreset = typeof widgetStylePresets.$inferInsert;

@@ -52,7 +52,8 @@ import {
   dashboardWidgetLayouts, InsertDashboardWidgetLayout,
   userSettings, InsertUserSetting,
   processes, InsertProcess,
-  lineProcessAssignments, InsertLineProcessAssignment
+  lineProcessAssignments, InsertLineProcessAssignment,
+  widgetStylePresets, InsertWidgetStylePreset
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -5887,4 +5888,108 @@ export async function getNGByWorkstation(filters: {
     ngCount: Number(r.ngCount),
     totalCount: totalMap.get(r.workstationId) || Number(r.ngCount),
   }));
+}
+
+
+// ============ WIDGET STYLE PRESETS FUNCTIONS ============
+
+export async function getWidgetStylePresets(filters?: {
+  presetType?: 'system' | 'shared' | 'user';
+  isPublic?: boolean;
+  createdBy?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions: SQL[] = [];
+  
+  if (filters?.presetType) {
+    conditions.push(eq(widgetStylePresets.presetType, filters.presetType));
+  }
+  if (filters?.isPublic !== undefined) {
+    conditions.push(eq(widgetStylePresets.isPublic, filters.isPublic));
+  }
+  if (filters?.createdBy) {
+    conditions.push(eq(widgetStylePresets.createdBy, filters.createdBy));
+  }
+  
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  
+  return db.select()
+    .from(widgetStylePresets)
+    .where(whereClause)
+    .orderBy(desc(widgetStylePresets.usageCount));
+}
+
+export async function getWidgetStylePresetById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const results = await db.select()
+    .from(widgetStylePresets)
+    .where(eq(widgetStylePresets.id, id))
+    .limit(1);
+  
+  return results[0] || null;
+}
+
+export async function createWidgetStylePreset(data: Omit<InsertWidgetStylePreset, 'id' | 'createdAt' | 'updatedAt'>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const [result] = await db.insert(widgetStylePresets).values(data);
+  return { id: Number(result.insertId) };
+}
+
+export async function updateWidgetStylePreset(id: number, data: Partial<InsertWidgetStylePreset>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.update(widgetStylePresets)
+    .set(data)
+    .where(eq(widgetStylePresets.id, id));
+}
+
+export async function deleteWidgetStylePreset(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.delete(widgetStylePresets)
+    .where(eq(widgetStylePresets.id, id));
+}
+
+export async function incrementWidgetStylePresetUsage(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  
+  await db.update(widgetStylePresets)
+    .set({ usageCount: sql`${widgetStylePresets.usageCount} + 1` })
+    .where(eq(widgetStylePresets.id, id));
+}
+
+export async function getPublicWidgetStylePresets() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select()
+    .from(widgetStylePresets)
+    .where(or(
+      eq(widgetStylePresets.isPublic, true),
+      eq(widgetStylePresets.presetType, 'system')
+    ))
+    .orderBy(desc(widgetStylePresets.usageCount));
+}
+
+export async function getUserWidgetStylePresets(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select()
+    .from(widgetStylePresets)
+    .where(or(
+      eq(widgetStylePresets.createdBy, userId),
+      eq(widgetStylePresets.isPublic, true),
+      eq(widgetStylePresets.presetType, 'system')
+    ))
+    .orderBy(desc(widgetStylePresets.usageCount));
 }

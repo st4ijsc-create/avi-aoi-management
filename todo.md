@@ -2629,3 +2629,54 @@ Menu structure mới:
 - [x] Admin APIs: redisConnectionStatus, redisConnectionHistory, clearStatisticsCache
 - [ ] Cache hit/miss logging
 
+
+
+## Phase 116: Workstation-MeasurementPoint Linking, Email Notifications & Dashboard Widget Presets
+
+### 1. Workstation-MeasurementPoint Linking
+- [x] workstationId field đã có trong measurement_point_defs table
+- [x] API create/update measurementPoint đã hỗ trợ workstationId
+- [x] UI gán workstation trong ProductModels page (form edit điểm đo)
+- [x] Load workstationId khi chọn điểm đo
+- [x] Reset workstationId khi reset form
+- [ ] Cập nhật WorkstationAnalysis để sử dụng linked data (tùy chọn)
+
+### 2. Email Notifications
+- [x] Email Service đã được triển khai đầy đủ:
+  - server/_core/email.ts: Core email service với nodemailer, SMTP config
+  - server/services/emailService.ts: Alert email service với template HTML
+  - server/services/reportScheduler.ts: Scheduled report email
+  - server/services/scheduledReportService.ts: Statistics report email
+  - server/services/alertEvaluationService.ts: Alert notification email
+- [x] SMTP Configuration trong Settings
+- [x] Email templates với HTML đẹp
+- [x] Gửi email tự động khi có cảnh báo NG hoặc anomaly detection
+
+### 3. Dashboard Widget Presets
+- [x] Tạo table widget_style_presets trong database
+- [x] API CRUD cho presets:
+  - getStylePresets: Lấy tất cả presets (user's own + public + system)
+  - getStylePresetById: Lấy preset theo ID
+  - createStylePreset: Tạo preset mới
+  - updateStylePreset: Cập nhật preset
+  - deleteStylePreset: Xóa preset
+  - applyStylePreset: Áp dụng preset (tăng usage count)
+  - getPublicStylePresets: Lấy presets public
+- [x] Helper functions trong db.ts:
+  - getUserWidgetStylePresets
+  - getWidgetStylePresetById
+  - createWidgetStylePreset
+  - updateWidgetStylePreset
+  - deleteWidgetStylePreset
+  - incrementWidgetStylePresetUsage
+  - getPublicWidgetStylePresets
+- [x] UI component WidgetStylePresetManager:
+  - Tab Presets: Built-in themes (Light Default, Dark Mode, Ocean Blue, Forest Green, Sunset Orange, Purple Dream)
+  - Tab Customize: Color pickers, border radius, shadow, opacity
+  - Tab My Presets: User's saved presets
+  - Preview component với live preview
+  - Save as Preset dialog
+  - Share with team option (admin only)
+- [x] Unit tests cho widget style presets (13 tests passed)
+- [ ] Tích hợp vào Dashboard page (tùy chọn)
+
