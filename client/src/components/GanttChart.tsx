@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, GripVertical, Undo2, Redo2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, GripVertical, Undo2, Redo2, AlertTriangle, Gauge } from "lucide-react";
 import { format, addDays, differenceInDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isToday, isSameDay } from "date-fns";
 import { vi } from "date-fns/locale";
 import { toast } from "sonner";
@@ -56,9 +56,17 @@ interface ScheduleChange {
   newLineId: number;
 }
 
+interface ProductionLine {
+  id: number;
+  name: string;
+  workshopId: number;
+  capacityPerHour?: number | null;
+  maxConcurrentOrders?: number | null;
+}
+
 interface GanttChartProps {
   orders: ProductionOrder[];
-  lines: { id: number; name: string; workshopId: number }[];
+  lines: ProductionLine[];
   workshops: { id: number; name: string; factoryId: number }[];
   factories: { id: number; name: string }[];
   products: { id: number; name: string }[];
@@ -189,7 +197,8 @@ export default function GanttChart({
     newLineId: number | null;
     hasOverlap?: boolean;
     overlappingOrders?: { orderCode: string }[];
-  }>({ open: false, order: null, newStartDate: null, newEndDate: null, newLineId: null, hasOverlap: false, overlappingOrders: [] });
+    capacityWarning?: { type: 'concurrent' | 'capacity'; message: string } | null;
+  }>({ open: false, order: null, newStartDate: null, newEndDate: null, newLineId: null, hasOverlap: false, overlappingOrders: [], capacityWarning: null });
   const [undoStack, setUndoStack] = useState<ScheduleChange[]>([]);
   const [redoStack, setRedoStack] = useState<ScheduleChange[]>([]);
   const [isRescheduling, setIsRescheduling] = useState(false);
@@ -340,6 +349,73 @@ export default function GanttChart({
     return Math.round((order.completedQuantity / order.targetQuantity) * 100);
   };
 
+  // Calculate capacity utilization for each line
+  const getLineCapacityInfo = useCallback((lineId: number) => {
+    const line = lines.find(l => l.id === lineId);
+    if (!line) return null;
+
+    const lineOrders = ordersByLine[lineId] || [];
+    const activeOrders = lineOrders.filter(o => 
+      o.status !== 'cancelled' && o.status !== 'completed'
+    );
+
+    // Calculate concurrent orders (overlapping schedules)
+    const maxConcurrent = line.maxConcurrentOrders || 1;
+    let maxOverlap = 0;
+    
+    activeOrders.forEach(order => {
+      const orderStart = order.scheduledStartDate ? new Date(order.scheduledStartDate) : null;
+      const orderEnd = order.scheduledEndDate ? new Date(order.scheduledEndDate) : null;
+      if (!orderStart || !orderEnd) return;
+
+      const overlapping = activeOrders.filter(o => {
+        if (o.id === order.id) return false;
+        const oStart = o.scheduledStartDate ? new Date(o.scheduledStartDate) : null;
+        const oEnd = o.scheduledEndDate ? new Date(o.scheduledEndDate) : null;
+        if (!oStart || !oEnd) return false;
+        return orderStart < oEnd && orderEnd > oStart;
+      });
+      maxOverlap = Math.max(maxOverlap, overlapping.length + 1);
+    });
+
+    const concurrentUtilization = maxConcurrent > 0 ? (maxOverlap / maxConcurrent) * 100 : 0;
+
+    // Calculate capacity utilization based on capacityPerHour
+    let capacityUtilization = 0;
+    if (line.capacityPerHour && line.capacityPerHour > 0) {
+      const totalTargetQty = activeOrders.reduce((sum, o) => sum + (o.targetQuantity || 0), 0);
+      // Estimate total hours needed
+      let totalHoursScheduled = 0;
+      activeOrders.forEach(order => {
+        const orderStart = order.scheduledStartDate ? new Date(order.scheduledStartDate) : null;
+        const orderEnd = order.scheduledEndDate ? new Date(order.scheduledEndDate) : null;
+        if (orderStart && orderEnd) {
+          totalHoursScheduled += (orderEnd.getTime() - orderStart.getTime()) / (1000 * 60 * 60);
+        }
+      });
+      const maxCapacity = line.capacityPerHour * totalHoursScheduled;
+      capacityUtilization = maxCapacity > 0 ? (totalTargetQty / maxCapacity) * 100 : 0;
+    }
+
+    // Determine status color
+    const utilization = Math.max(concurrentUtilization, capacityUtilization);
+    let status: 'low' | 'medium' | 'high' | 'overload' = 'low';
+    if (utilization > 100) status = 'overload';
+    else if (utilization >= 80) status = 'high';
+    else if (utilization >= 50) status = 'medium';
+
+    return {
+      activeOrders: activeOrders.length,
+      maxConcurrent,
+      currentConcurrent: maxOverlap,
+      concurrentUtilization,
+      capacityPerHour: line.capacityPerHour,
+      capacityUtilization,
+      status,
+      utilization: Math.round(utilization),
+    };
+  }, [lines, ordersByLine]);
+
   // Handle drag start
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
@@ -391,7 +467,43 @@ export default function GanttChart({
       return newStartDate < oEnd && newEndDate > oStart;
     });
 
-    // Show confirmation dialog with overlap warning
+    // Check capacity warning
+    const lineInfo = lines.find(l => l.id === targetLine);
+    let capacityWarning: { type: 'concurrent' | 'capacity'; message: string } | null = null;
+    
+    if (lineInfo) {
+      // Check concurrent orders
+      const maxConcurrent = lineInfo.maxConcurrentOrders || 1;
+      const concurrentOrders = ordersOnLine.filter(o => {
+        if (o.status === 'completed') return false;
+        const oStart = o.scheduledStartDate ? new Date(o.scheduledStartDate) : null;
+        const oEnd = o.scheduledEndDate ? new Date(o.scheduledEndDate) : null;
+        if (!oStart || !oEnd) return false;
+        return newStartDate < oEnd && newEndDate > oStart;
+      });
+      
+      if (concurrentOrders.length >= maxConcurrent) {
+        capacityWarning = {
+          type: 'concurrent',
+          message: `Dây chuyền chỉ hỗ trợ tối đa ${maxConcurrent} lệnh cùng lúc. Hiện đã có ${concurrentOrders.length} lệnh trong khoảng thời gian này.`
+        };
+      }
+      
+      // Check production capacity
+      if (!capacityWarning && lineInfo.capacityPerHour && order.targetQuantity) {
+        const durationHours = (newEndDate.getTime() - newStartDate.getTime()) / (1000 * 60 * 60);
+        const maxCapacity = lineInfo.capacityPerHour * durationHours;
+        
+        if (order.targetQuantity > maxCapacity) {
+          capacityWarning = {
+            type: 'capacity',
+            message: `Số lượng ${order.targetQuantity} vượt quá năng lực dây chuyền (${Math.floor(maxCapacity)} sản phẩm trong ${durationHours.toFixed(1)} giờ với ${lineInfo.capacityPerHour} sp/giờ).`
+          };
+        }
+      }
+    }
+
+    // Show confirmation dialog with overlap and capacity warning
     setConfirmDialog({
       open: true,
       order,
@@ -400,6 +512,7 @@ export default function GanttChart({
       newLineId: targetLineId !== order.lineId ? targetLineId : null,
       hasOverlap: overlappingOrders.length > 0,
       overlappingOrders: overlappingOrders.map(o => ({ orderCode: o.orderCode })),
+      capacityWarning,
     });
   };
 
@@ -449,7 +562,7 @@ export default function GanttChart({
       setUndoStack(prev => prev.slice(0, -1));
     } finally {
       setIsRescheduling(false);
-      setConfirmDialog({ open: false, order: null, newStartDate: null, newEndDate: null, newLineId: null });
+      setConfirmDialog({ open: false, order: null, newStartDate: null, newEndDate: null, newLineId: null, hasOverlap: false, overlappingOrders: [], capacityWarning: null });
     }
   };
 
@@ -641,14 +754,69 @@ export default function GanttChart({
                   Không có dây chuyền nào
                 </div>
               ) : (
-                filteredLines.map(line => (
+                filteredLines.map(line => {
+                  const capacityInfo = getLineCapacityInfo(line.id);
+                  const capacityStatusColors = {
+                    low: 'bg-green-500',
+                    medium: 'bg-yellow-500',
+                    high: 'bg-orange-500',
+                    overload: 'bg-red-500',
+                  };
+                  const capacityStatusBg = {
+                    low: 'bg-green-500/10 border-green-500/30',
+                    medium: 'bg-yellow-500/10 border-yellow-500/30',
+                    high: 'bg-orange-500/10 border-orange-500/30',
+                    overload: 'bg-red-500/10 border-red-500/30',
+                  };
+                  return (
                   <div key={line.id} className="flex border-b hover:bg-muted/20">
-                    {/* Line name */}
+                    {/* Line name with capacity indicator */}
                     <div className="w-48 min-w-48 p-2 border-r bg-background sticky left-0 z-10">
-                      <div className="font-medium text-sm">{line.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {ordersByLine[line.id]?.length || 0} lệnh
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium text-sm flex-1">{line.name}</div>
+                        {capacityInfo && (
+                          <div 
+                            className={`w-2 h-2 rounded-full ${capacityStatusColors[capacityInfo.status]}`}
+                            title={`Tải: ${capacityInfo.utilization}%`}
+                          />
+                        )}
                       </div>
+                      <div className="text-xs text-muted-foreground flex items-center gap-2">
+                        <span>{ordersByLine[line.id]?.length || 0} lệnh</span>
+                        {capacityInfo && capacityInfo.utilization > 0 && (
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] border ${
+                            capacityInfo.status === 'overload' ? 'text-red-600 ' + capacityStatusBg.overload :
+                            capacityInfo.status === 'high' ? 'text-orange-600 ' + capacityStatusBg.high :
+                            capacityInfo.status === 'medium' ? 'text-yellow-600 ' + capacityStatusBg.medium :
+                            'text-green-600 ' + capacityStatusBg.low
+                          }`}>
+                            {capacityInfo.utilization > 100 ? (
+                              <span className="flex items-center gap-0.5">
+                                <AlertTriangle className="w-2.5 h-2.5" />
+                                {capacityInfo.utilization}%
+                              </span>
+                            ) : (
+                              `${capacityInfo.utilization}%`
+                            )}
+                          </span>
+                        )}
+                      </div>
+                      {/* Capacity tooltip on hover */}
+                      {capacityInfo && (capacityInfo.maxConcurrent > 1 || capacityInfo.capacityPerHour) && (
+                        <div className="text-[10px] text-muted-foreground mt-1 space-y-0.5">
+                          {capacityInfo.maxConcurrent > 1 && (
+                            <div className="flex items-center gap-1">
+                              <Gauge className="w-2.5 h-2.5" />
+                              <span>{capacityInfo.currentConcurrent}/{capacityInfo.maxConcurrent} đồng thời</span>
+                            </div>
+                          )}
+                          {capacityInfo.capacityPerHour && (
+                            <div className="flex items-center gap-1">
+                              <span>{capacityInfo.capacityPerHour} sp/giờ</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                     
                     {/* Timeline */}
@@ -689,7 +857,8 @@ export default function GanttChart({
                       </DroppableTimelineRow>
                     </div>
                   </div>
-                ))
+                );
+                })
               )}
             </div>
           </div>
@@ -738,7 +907,7 @@ export default function GanttChart({
       </CardContent>
 
       {/* Confirmation Dialog */}
-      <Dialog open={confirmDialog.open} onOpenChange={(open) => !open && setConfirmDialog({ open: false, order: null, newStartDate: null, newEndDate: null, newLineId: null, hasOverlap: false, overlappingOrders: [] })}>
+      <Dialog open={confirmDialog.open} onOpenChange={(open) => !open && setConfirmDialog({ open: false, order: null, newStartDate: null, newEndDate: null, newLineId: null, hasOverlap: false, overlappingOrders: [], capacityWarning: null })}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Xác nhận thay đổi lịch</DialogTitle>
@@ -788,11 +957,29 @@ export default function GanttChart({
                 </p>
               </div>
             )}
+
+            {/* Capacity Warning */}
+            {confirmDialog.capacityWarning && (
+              <div className="bg-red-500/10 border border-red-500/30 p-3 rounded-lg space-y-2">
+                <div className="flex items-center gap-2 text-red-600 font-medium">
+                  <AlertTriangle className="h-5 w-5" />
+                  <span>
+                    Cảnh báo: {confirmDialog.capacityWarning.type === 'concurrent' ? 'Vượt số lệnh đồng thời!' : 'Vượt năng lực sản xuất!'}
+                  </span>
+                </div>
+                <p className="text-sm text-red-600/80">
+                  {confirmDialog.capacityWarning.message}
+                </p>
+                <p className="text-sm text-red-600/80 italic">
+                  Bạn vẫn có thể tiếp tục nhưng có thể gây quá tải cho dây chuyền.
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button 
               variant="outline" 
-              onClick={() => setConfirmDialog({ open: false, order: null, newStartDate: null, newEndDate: null, newLineId: null, hasOverlap: false, overlappingOrders: [] })}
+              onClick={() => setConfirmDialog({ open: false, order: null, newStartDate: null, newEndDate: null, newLineId: null, hasOverlap: false, overlappingOrders: [], capacityWarning: null })}
               disabled={isRescheduling}
             >
               Hủy
@@ -800,9 +987,14 @@ export default function GanttChart({
             <Button 
               onClick={confirmReschedule} 
               disabled={isRescheduling}
-              variant={confirmDialog.hasOverlap ? "destructive" : "default"}
+              variant={(confirmDialog.hasOverlap || confirmDialog.capacityWarning) ? "destructive" : "default"}
             >
-              {isRescheduling ? "Đang xử lý..." : confirmDialog.hasOverlap ? "Xác nhận (bỏ qua cảnh báo)" : "Xác nhận"}
+              {isRescheduling 
+                ? "Đang xử lý..." 
+                : (confirmDialog.hasOverlap || confirmDialog.capacityWarning) 
+                  ? "Xác nhận (bỏ qua cảnh báo)" 
+                  : "Xác nhận"
+              }
             </Button>
           </DialogFooter>
         </DialogContent>

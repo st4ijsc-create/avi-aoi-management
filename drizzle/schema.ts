@@ -162,7 +162,8 @@ export const productModels = mysqlTable("product_models", {
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   // Product hierarchy
-  category: varchar("category", { length: 100 }), // Product family/category
+  category: varchar("category", { length: 100 }), // Product family/category (legacy text field)
+  categoryId: int("categoryId"), // Foreign key to product_categories table
   productLine: varchar("productLine", { length: 100 }), // Product line
   variant: varchar("variant", { length: 100 }), // Product variant
   // Lifecycle status
@@ -181,6 +182,7 @@ export const productModels = mysqlTable("product_models", {
 }, (table) => [
   index("idx_product_models_code").on(table.code),
   index("idx_product_models_category").on(table.category),
+  index("idx_product_models_category_id").on(table.categoryId),
   index("idx_product_models_lifecycle").on(table.lifecycleStatus),
 ]);
 

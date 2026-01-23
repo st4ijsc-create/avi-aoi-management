@@ -39,7 +39,12 @@ import {
   ChevronRight,
   ChevronDown,
   Package,
-  Palette
+  Palette,
+  Download,
+  Upload,
+  FileJson,
+  AlertCircle,
+  CheckCircle2
 } from "lucide-react";
 
 // Color options for categories
@@ -82,10 +87,23 @@ type CategoryWithChildren = {
   children: CategoryWithChildren[];
 };
 
+// Type for import preview
+type ImportPreview = {
+  toCreate: { code: string; name: string; parentCode?: string }[];
+  toUpdate: { code: string; name: string; changes: string[] }[];
+  errors: string[];
+};
+
 export function ProductCategoryManagement() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<CategoryWithChildren | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Set<number>>(new Set());
+  
+  // Import/Export state
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [importJsonText, setImportJsonText] = useState("");
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
   
   // Form state
   const [formData, setFormData] = useState({
@@ -203,6 +221,182 @@ export function ProductCategoryManagement() {
     });
   };
 
+  // Export all categories to JSON
+  const handleExportAll = () => {
+    if (!categories || categories.length === 0) {
+      toast.error("Không có danh mục nào để xuất");
+      return;
+    }
+
+    const exportData = categories.map(cat => ({
+      code: cat.code,
+      name: cat.name,
+      description: cat.description,
+      parentCode: categories.find(p => p.id === cat.parentId)?.code || null,
+      color: cat.color,
+      icon: cat.icon,
+      orderIndex: cat.orderIndex,
+      isActive: cat.isActive,
+    }));
+
+    const jsonStr = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `product-categories-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success(`Đã xuất ${categories.length} danh mục`);
+  };
+
+  // Validate and preview import JSON
+  const handlePreviewImport = () => {
+    if (!importJsonText.trim()) {
+      toast.error("Vui lòng nhập hoặc dán nội dung JSON");
+      return;
+    }
+
+    try {
+      const data = JSON.parse(importJsonText);
+      
+      if (!Array.isArray(data)) {
+        toast.error("JSON phải là một mảng các danh mục");
+        return;
+      }
+
+      const preview: ImportPreview = {
+        toCreate: [],
+        toUpdate: [],
+        errors: [],
+      };
+
+      const existingCodes = new Set(categories?.map(c => c.code) || []);
+
+      data.forEach((item: any, index: number) => {
+        // Validate required fields
+        if (!item.code || typeof item.code !== 'string') {
+          preview.errors.push(`Dòng ${index + 1}: Thiếu hoặc sai định dạng mã (code)`);
+          return;
+        }
+        if (!item.name || typeof item.name !== 'string') {
+          preview.errors.push(`Dòng ${index + 1}: Thiếu hoặc sai định dạng tên (name)`);
+          return;
+        }
+
+        // Check if category exists
+        if (existingCodes.has(item.code)) {
+          const existing = categories?.find(c => c.code === item.code);
+          const changes: string[] = [];
+          if (existing) {
+            if (item.name !== existing.name) changes.push(`Tên: ${existing.name} → ${item.name}`);
+            if (item.description !== existing.description) changes.push('Mô tả');
+            if (item.color !== existing.color) changes.push('Màu sắc');
+            if (item.icon !== existing.icon) changes.push('Icon');
+          }
+          if (changes.length > 0) {
+            preview.toUpdate.push({ code: item.code, name: item.name, changes });
+          }
+        } else {
+          preview.toCreate.push({
+            code: item.code,
+            name: item.name,
+            parentCode: item.parentCode,
+          });
+        }
+      });
+
+      setImportPreview(preview);
+
+      if (preview.errors.length > 0) {
+        toast.error(`Có ${preview.errors.length} lỗi trong dữ liệu`);
+      } else if (preview.toCreate.length === 0 && preview.toUpdate.length === 0) {
+        toast.info("Không có thay đổi nào cần thực hiện");
+      } else {
+        toast.success(`Sẵn sàng: ${preview.toCreate.length} tạo mới, ${preview.toUpdate.length} cập nhật`);
+      }
+    } catch (e) {
+      toast.error("JSON không hợp lệ. Vui lòng kiểm tra lại định dạng.");
+      setImportPreview(null);
+    }
+  };
+
+  // Execute import
+  const handleExecuteImport = async () => {
+    if (!importPreview || (importPreview.toCreate.length === 0 && importPreview.toUpdate.length === 0)) {
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const data = JSON.parse(importJsonText);
+      let created = 0;
+      let updated = 0;
+
+      // Process in order to handle parent references
+      for (const item of data) {
+        const existingCategory = categories?.find(c => c.code === item.code);
+        const parentCategory = item.parentCode ? categories?.find(c => c.code === item.parentCode) : null;
+
+        if (existingCategory) {
+          // Update existing
+          await updateMutation.mutateAsync({
+            id: existingCategory.id,
+            code: item.code,
+            name: item.name,
+            description: item.description || "",
+            parentId: parentCategory?.id || null,
+            color: item.color || "#3b82f6",
+            icon: item.icon || "Package",
+          });
+          updated++;
+        } else {
+          // Create new
+          await createMutation.mutateAsync({
+            code: item.code,
+            name: item.name,
+            description: item.description || "",
+            parentId: parentCategory?.id || null,
+            color: item.color || "#3b82f6",
+            icon: item.icon || "Package",
+          });
+          created++;
+        }
+      }
+
+      toast.success(`Import hoàn tất: ${created} tạo mới, ${updated} cập nhật`);
+      setIsImportDialogOpen(false);
+      setImportJsonText("");
+      setImportPreview(null);
+      refetch();
+    } catch (error: any) {
+      toast.error(error.message || "Lỗi khi import dữ liệu");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  // Handle file upload for import
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.json')) {
+      toast.error("Vui lòng chọn file JSON");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      setImportJsonText(content);
+      setImportPreview(null);
+    };
+    reader.readAsText(file);
+  };
+
   const renderCategoryRow = (category: CategoryWithChildren, level: number = 0): React.ReactNode => {
     const hasChildren = category.children && category.children.length > 0;
     const isExpanded = expandedCategories.has(category.id);
@@ -306,10 +500,20 @@ export function ProductCategoryManagement() {
                 Tạo và quản lý cấu trúc phân cấp danh mục sản phẩm
               </CardDescription>
             </div>
-            <Button onClick={() => handleOpenDialog()}>
-              <Plus className="h-4 w-4 mr-2" />
-              Thêm danh mục
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={handleExportAll} disabled={!categories || categories.length === 0}>
+                <Download className="h-4 w-4 mr-2" />
+                Xuất JSON
+              </Button>
+              <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
+                <Upload className="h-4 w-4 mr-2" />
+                Nhập JSON
+              </Button>
+              <Button onClick={() => handleOpenDialog()}>
+                <Plus className="h-4 w-4 mr-2" />
+                Thêm danh mục
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -470,6 +674,141 @@ export function ProductCategoryManagement() {
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               )}
               {editingCategory ? "Cập nhật" : "Tạo mới"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Dialog */}
+      <Dialog open={isImportDialogOpen} onOpenChange={(open) => {
+        setIsImportDialogOpen(open);
+        if (!open) {
+          setImportJsonText("");
+          setImportPreview(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileJson className="h-5 w-5" />
+              Nhập danh mục từ JSON
+            </DialogTitle>
+            <DialogDescription>
+              Tải lên file JSON hoặc dán nội dung JSON để nhập danh mục sản phẩm
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* File upload */}
+            <div className="space-y-2">
+              <Label>Tải file JSON</Label>
+              <Input
+                type="file"
+                accept=".json"
+                onChange={handleFileUpload}
+                className="cursor-pointer"
+              />
+            </div>
+
+            {/* Or paste JSON */}
+            <div className="space-y-2">
+              <Label>Hoặc dán nội dung JSON</Label>
+              <Textarea
+                value={importJsonText}
+                onChange={(e) => {
+                  setImportJsonText(e.target.value);
+                  setImportPreview(null);
+                }}
+                placeholder='[{"code": "ELEC", "name": "Linh kiện điện tử", ...}]'
+                rows={6}
+                className="font-mono text-sm"
+              />
+            </div>
+
+            {/* Preview button */}
+            <Button
+              variant="outline"
+              onClick={handlePreviewImport}
+              disabled={!importJsonText.trim()}
+              className="w-full"
+            >
+              Kiểm tra và xem trước
+            </Button>
+
+            {/* Preview results */}
+            {importPreview && (
+              <div className="space-y-3 border rounded-lg p-4">
+                <h4 className="font-medium">Kết quả kiểm tra:</h4>
+                
+                {/* Errors */}
+                {importPreview.errors.length > 0 && (
+                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+                    <div className="flex items-center gap-2 text-red-600 font-medium mb-2">
+                      <AlertCircle className="h-4 w-4" />
+                      <span>{importPreview.errors.length} lỗi</span>
+                    </div>
+                    <ul className="text-sm text-red-600/80 list-disc list-inside max-h-32 overflow-y-auto">
+                      {importPreview.errors.map((err, i) => (
+                        <li key={i}>{err}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* To Create */}
+                {importPreview.toCreate.length > 0 && (
+                  <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
+                    <div className="flex items-center gap-2 text-green-600 font-medium mb-2">
+                      <CheckCircle2 className="h-4 w-4" />
+                      <span>{importPreview.toCreate.length} danh mục mới</span>
+                    </div>
+                    <ul className="text-sm text-green-600/80 list-disc list-inside max-h-32 overflow-y-auto">
+                      {importPreview.toCreate.map((item, i) => (
+                        <li key={i}>
+                          <span className="font-mono">{item.code}</span> - {item.name}
+                          {item.parentCode && <span className="text-muted-foreground"> (cha: {item.parentCode})</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* To Update */}
+                {importPreview.toUpdate.length > 0 && (
+                  <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
+                    <div className="flex items-center gap-2 text-yellow-600 font-medium mb-2">
+                      <Pencil className="h-4 w-4" />
+                      <span>{importPreview.toUpdate.length} danh mục cập nhật</span>
+                    </div>
+                    <ul className="text-sm text-yellow-600/80 list-disc list-inside max-h-32 overflow-y-auto">
+                      {importPreview.toUpdate.map((item, i) => (
+                        <li key={i}>
+                          <span className="font-mono">{item.code}</span> - {item.name}
+                          <span className="text-muted-foreground"> ({item.changes.join(', ')})</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsImportDialogOpen(false)}>
+              Hủy
+            </Button>
+            <Button
+              onClick={handleExecuteImport}
+              disabled={
+                isImporting ||
+                !importPreview ||
+                importPreview.errors.length > 0 ||
+                (importPreview.toCreate.length === 0 && importPreview.toUpdate.length === 0)
+              }
+            >
+              {isImporting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Thực hiện nhập
             </Button>
           </DialogFooter>
         </DialogContent>

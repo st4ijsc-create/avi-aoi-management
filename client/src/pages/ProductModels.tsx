@@ -85,6 +85,7 @@ export default function ProductModels() {
   const [newProductName, setNewProductName] = useState("");
   const [newProductDescription, setNewProductDescription] = useState("");
   const [newProductCategory, setNewProductCategory] = useState("");
+  const [newProductCategoryId, setNewProductCategoryId] = useState<number | undefined>(undefined);
   const [newProductLine, setNewProductLine] = useState("");
   const [newProductVariant, setNewProductVariant] = useState("");
   const [newProductLifecycle, setNewProductLifecycle] = useState<"development" | "active" | "eol" | "archived">("active");
@@ -97,6 +98,7 @@ export default function ProductModels() {
   const [editProductName, setEditProductName] = useState("");
   const [editProductDescription, setEditProductDescription] = useState("");
   const [editProductCategory, setEditProductCategory] = useState("");
+  const [editProductCategoryId, setEditProductCategoryId] = useState<number | undefined>(undefined);
   const [editProductLine, setEditProductLine] = useState("");
   const [editProductVariant, setEditProductVariant] = useState("");
   const [editProductLifecycle, setEditProductLifecycle] = useState<"development" | "active" | "eol" | "archived">("active");
@@ -193,6 +195,7 @@ export default function ProductModels() {
 
   const { data: workstations } = trpc.workstation.list.useQuery();
   const { data: templates, refetch: refetchTemplates } = trpc.template.list.useQuery();
+  const { data: productCategories } = trpc.productCategory.list.useQuery();
 
   const { data: productModels, refetch: refetchProducts } = trpc.productModel.list.useQuery({
     search: productSearchQuery || undefined,
@@ -618,6 +621,7 @@ export default function ProductModels() {
       name: newProductName,
       description: newProductDescription || undefined,
       category: newProductCategory || undefined,
+      categoryId: newProductCategoryId,
       productLine: newProductLine || undefined,
       variant: newProductVariant || undefined,
       lifecycleStatus: newProductLifecycle,
@@ -639,6 +643,7 @@ export default function ProductModels() {
       name: editProductName,
       description: editProductDescription || undefined,
       category: editProductCategory || undefined,
+      categoryId: editProductCategoryId,
       productLine: editProductLine || undefined,
       variant: editProductVariant || undefined,
       lifecycleStatus: editProductLifecycle,

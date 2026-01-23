@@ -2954,3 +2954,27 @@ Menu structure mới:
 - [x] Color và icon cho categories (8 colors, 8 icons)
 - [x] Product count display và validation khi xóa
 
+
+## Phase 127: Product Category Integration, Capacity Warning UI & Bulk Operations
+
+### 1. Liên kết Product Category với ProductModels
+- [x] Thêm categoryId field vào productModels schema (already exists)
+- [x] Cập nhật ProductModels page với category dropdown (create/edit forms)
+- [x] Hiển thị category name trong danh sách sản phẩm
+- [x] Filter sản phẩm theo category
+
+### 2. Capacity Warning trong Gantt Chart UI
+- [x] Hiển thị capacity indicator cho mỗi line trong Gantt (dot + percentage badge)
+- [x] Màu sắc theo mức độ sử dụng (xanh/vàng/cam/đỏ)
+- [x] Hiển thị chi tiết capacity (concurrent orders, capacity per hour)
+- [x] Warning icon khi vượt quá capacity (AlertTriangle)
+- [x] Capacity warning trong confirmation dialog khi drag-drop
+- [x] getLineCapacityInfo function tính toán utilization
+
+### 3. Bulk Operations cho Product Categories
+- [x] Export categories to JSON file (handleExportAll function)
+- [x] Import categories from JSON file (file upload + paste)
+- [x] Validation khi import (check duplicates, format, required fields)
+- [x] Preview trước khi import (toCreate, toUpdate, errors)
+- [x] Progress indicator cho bulk operations (isImporting state)
+
