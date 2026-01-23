@@ -2458,3 +2458,93 @@ Menu structure mới:
 - [x] UI quản lý danh sách lịch báo cáo
 - [x] Hiển thị lịch sử báo cáo đã gửi (logs dialog)
 - [x] Route /scheduled-reports đã có sẵn trong App.tsx
+
+
+## Phase 111: Security & Access Control (Ưu tiên cao)
+
+### 1. 2FA Login Flow
+- [ ] Thêm bước xác thực OTP khi đăng nhập nếu user đã bật 2FA
+- [ ] Tạo OTP verification page/modal sau OAuth callback
+- [ ] Validate TOTP code với speakeasy
+- [ ] Redirect về trang chính sau khi verify thành công
+- [ ] Handle invalid OTP với error message và retry
+
+### 2. Multi-tenant Access Control
+- [ ] Update getYieldRateByCorporate để filter theo user assignments
+- [ ] Update getYieldRateByFactory để filter theo user assignments
+- [ ] Update getThroughputByCorporate để filter theo user assignments
+- [ ] Update getThroughputByFactory để filter theo user assignments
+- [ ] Update corporateFactoryStatsRouter để pass userId và userRole
+- [ ] Update dashboardRouter.stats để filter theo user assignments
+- [ ] Test với non-admin user
+
+## Phase 112: Dashboard & Analytics Enhancement
+
+### 1. Dashboard Drill-down
+- [ ] Thêm onClick handler cho corporate bar chart
+- [ ] Thêm drill-down state management
+- [ ] Implement factory details modal/panel
+- [ ] Thêm machine-level analytics query
+- [ ] Implement breadcrumb navigation
+- [ ] Thêm back button để quay lại corporate view
+- [ ] Thêm loading states cho drill-down transitions
+
+### 2. Machine Status Realtime
+- [ ] Thêm trạng thái hoạt động máy (chạy/dừng/lỗi) vào schema
+- [ ] Hiển thị trạng thái máy trên layout với màu sắc (xanh=chạy, vàng=dừng, đỏ=lỗi)
+- [ ] Cập nhật trạng thái realtime qua MQTT/WebSocket
+- [ ] Cảnh báo khi máy offline quá lâu
+
+### 3. Workstation Management
+- [ ] Thêm trường workstation vào measurement_point_defs
+- [ ] Tạo bảng workstations để quản lý danh sách công trạm
+- [ ] CRUD workstations trong Settings
+- [ ] Cập nhật UI tạo/sửa điểm đo với dropdown chọn công trạm
+
+## Phase 113: Production & Layout Enhancement
+
+### 1. Gantt Chart Improvements
+- [ ] Zoom controls (day/week/month) với smooth transition
+- [ ] Filter theo factory và line
+- [ ] Click to edit production order
+- [ ] Drag to resize order duration
+- [ ] Today marker và auto-scroll
+
+### 2. Layout Workshop CRUD
+- [ ] CRUD cho Layout Workshop (thêm/sửa/xóa dây chuyền, máy, công trạm)
+- [ ] Drag-drop để sắp xếp dây chuyền trong nhà xưởng
+- [ ] Drag-drop để sắp xếp máy móc trong dây chuyền
+- [ ] Hiển thị công đoạn của công trạm
+
+### 3. Process Management Enhancement
+- [ ] Drag-drop sắp xếp thứ tự processes
+- [ ] Liên kết process với production line (UI)
+- [ ] Hiển thị quy trình sản xuất theo công đoạn
+
+## Phase 114: Performance & Configuration
+
+### 1. Server-side Caching
+- [ ] Implement server-side caching cho statistics queries
+- [ ] Thêm cache invalidation khi có inspection mới
+- [ ] Update inspection list với configurable limit (max 1000)
+- [ ] Implement cursor-based pagination cho large datasets
+- [ ] Thêm loading states và skeleton UI
+
+### 2. Shift Configuration
+- [ ] Thêm Settings > Shift để cấu hình ca làm việc
+- [ ] CRUD cho shifts (tên, giờ bắt đầu, giờ kết thúc)
+- [ ] Filter báo cáo theo ca làm việc
+- [ ] Hiển thị thống kê theo ca
+
+## Phase 115: Export & Documentation
+
+### 1. PDF Export Enhancement
+- [ ] PDF Export cho History với charts
+- [ ] PDF Export cho Inspection Detail
+- [ ] Batch Operations cho CRUD (import/export nhiều records)
+
+### 2. Documentation
+- [ ] Update API Documentation với examples
+- [ ] Tạo User Guide documentation
+- [ ] Tạo Admin Guide documentation
+- [ ] Video tutorials (optional)
