@@ -10,6 +10,7 @@ import * as db from "./db";
 import { storagePut } from "./storage";
 import { invokeLLM } from "./_core/llm";
 import { statsCache, CACHE_KEYS, CACHE_TTL } from "./_core/cache";
+import * as cachedStats from "./functions/cachedStatistics";
 
 // Admin procedure - only admin users can access
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -1410,6 +1411,9 @@ const machineApiRouter = router({
       statsCache.invalidate(CACHE_KEYS.DASHBOARD_STATS);
       statsCache.invalidate(CACHE_KEYS.MACHINE_STATS);
       statsCache.invalidate(CACHE_KEYS.DAILY_STATS);
+      
+      // Invalidate statistics cache
+      cachedStats.invalidateStatisticsCache();
 
       // Get updated stats and emit dashboard update
       const machineStats = await db.getMachineStats(machine.id);
@@ -3784,7 +3788,7 @@ const corporateFactoryStatsRouter = router({
       endDate: z.date().optional(),
     }))
     .query(async ({ ctx, input }) => {
-      return db.getYieldRateByCorporate({
+      return cachedStats.getCachedYieldRateByCorporate({
         ...input,
         userId: ctx.user.id,
         userRole: ctx.user.role as 'admin' | 'user',
@@ -3798,7 +3802,7 @@ const corporateFactoryStatsRouter = router({
       endDate: z.date().optional(),
     }))
     .query(async ({ ctx, input }) => {
-      return db.getYieldRateByFactory({
+      return cachedStats.getCachedYieldRateByFactory({
         ...input,
         userId: ctx.user.id,
         userRole: ctx.user.role as 'admin' | 'user',
@@ -3812,7 +3816,7 @@ const corporateFactoryStatsRouter = router({
       interval: z.enum(['hour', 'day', 'week']).optional(),
     }))
     .query(async ({ ctx, input }) => {
-      return db.getThroughputByCorporate({
+      return cachedStats.getCachedThroughputByCorporate({
         ...input,
         userId: ctx.user.id,
         userRole: ctx.user.role as 'admin' | 'user',
@@ -3827,11 +3831,28 @@ const corporateFactoryStatsRouter = router({
       interval: z.enum(['hour', 'day', 'week']).optional(),
     }))
     .query(async ({ ctx, input }) => {
-      return db.getThroughputByFactory({
+      return cachedStats.getCachedThroughputByFactory({
         ...input,
         userId: ctx.user.id,
         userRole: ctx.user.role as 'admin' | 'user',
       });
+    }),
+
+  // Machine statistics with caching
+  machineStats: protectedProcedure
+    .input(z.object({
+      machineId: z.number(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }))
+    .query(async ({ input }) => {
+      return cachedStats.getCachedMachineStats(input);
+    }),
+
+  // Cache statistics for monitoring
+  cacheStats: adminProcedure
+    .query(async () => {
+      return cachedStats.getCacheStats();
     }),
 });
 
@@ -4054,6 +4075,240 @@ const exportRouter = router({
       const { url } = await storagePut(`exports/${filename}`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       
       return { url, filename };
+    }),
+
+  // Export Dashboard Statistics to Excel/PDF
+  exportDashboardStats: protectedProcedure
+    .input(z.object({
+      startDate: z.date(),
+      endDate: z.date(),
+      format: z.enum(['excel', 'pdf']).default('excel'),
+      corporateCode: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const XLSX = await import('xlsx');
+      
+      // Get statistics with access control
+      const corporateStats = await cachedStats.getCachedYieldRateByCorporate({
+        startDate: input.startDate,
+        endDate: input.endDate,
+        userId: ctx.user.id,
+        userRole: ctx.user.role as 'admin' | 'user',
+      });
+      
+      const factoryStats = await cachedStats.getCachedYieldRateByFactory({
+        corporateCode: input.corporateCode,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        userId: ctx.user.id,
+        userRole: ctx.user.role as 'admin' | 'user',
+      });
+      
+      const throughputCorporate = await cachedStats.getCachedThroughputByCorporate({
+        startDate: input.startDate,
+        endDate: input.endDate,
+        interval: 'day',
+        userId: ctx.user.id,
+        userRole: ctx.user.role as 'admin' | 'user',
+      });
+
+      if (input.format === 'excel') {
+        const wb = XLSX.utils.book_new();
+        
+        // Summary sheet
+        const totalInspections = corporateStats.reduce((sum, s) => sum + s.totalInspections, 0);
+        const totalOK = corporateStats.reduce((sum, s) => sum + s.okCount, 0);
+        const totalNG = corporateStats.reduce((sum, s) => sum + s.ngCount, 0);
+        const totalNTF = corporateStats.reduce((sum, s) => sum + s.ntfCount, 0);
+        const overallYield = totalInspections > 0 ? ((totalOK / totalInspections) * 100).toFixed(2) : '0.00';
+        
+        const summaryData = [
+          { 'Metric': 'Report Period', 'Value': `${input.startDate.toLocaleDateString('vi-VN')} - ${input.endDate.toLocaleDateString('vi-VN')}` },
+          { 'Metric': 'Total Inspections', 'Value': totalInspections },
+          { 'Metric': 'OK Count', 'Value': totalOK },
+          { 'Metric': 'NG Count', 'Value': totalNG },
+          { 'Metric': 'NTF Count', 'Value': totalNTF },
+          { 'Metric': 'Overall Yield Rate', 'Value': `${overallYield}%` },
+          { 'Metric': 'Number of Corporates', 'Value': corporateStats.length },
+          { 'Metric': 'Number of Factories', 'Value': factoryStats.length },
+          { 'Metric': 'Generated At', 'Value': new Date().toLocaleString('vi-VN') },
+          { 'Metric': 'Generated By', 'Value': ctx.user.name || ctx.user.email },
+        ];
+        const summaryWs = XLSX.utils.json_to_sheet(summaryData);
+        XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
+        
+        // Corporate Stats sheet
+        const corporateWs = XLSX.utils.json_to_sheet(corporateStats.map((s: any) => ({
+          'Mã Công ty': s.corporateCode,
+          'Tổng kiểm tra': s.totalInspections,
+          'Số OK': s.okCount,
+          'Số NG': s.ngCount,
+          'Số NTF': s.ntfCount,
+          'Tỷ lệ đạt (%)': s.yieldRate,
+        })));
+        XLSX.utils.book_append_sheet(wb, corporateWs, 'Corporate Stats');
+
+        // Factory Stats sheet
+        const factoryWs = XLSX.utils.json_to_sheet(factoryStats.map((s: any) => ({
+          'Mã Công ty': s.corporateCode,
+          'Mã Nhà máy': s.factoryCode,
+          'Tổng kiểm tra': s.totalInspections,
+          'Số OK': s.okCount,
+          'Số NG': s.ngCount,
+          'Số NTF': s.ntfCount,
+          'Tỷ lệ đạt (%)': s.yieldRate,
+        })));
+        XLSX.utils.book_append_sheet(wb, factoryWs, 'Factory Stats');
+
+        // Daily Throughput sheet
+        const throughputWs = XLSX.utils.json_to_sheet(throughputCorporate.map((t: any) => ({
+          'Mã Công ty': t.corporateCode,
+          'Ngày': t.timeInterval,
+          'Số lượng': t.count,
+        })));
+        XLSX.utils.book_append_sheet(wb, throughputWs, 'Daily Throughput');
+
+        const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+        
+        const { storagePut } = await import('./storage');
+        const filename = `dashboard_stats_${Date.now()}.xlsx`;
+        const { url } = await storagePut(`exports/${filename}`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        
+        return { url, filename, format: 'excel' };
+      } else {
+        // PDF export using HTML template
+        const totalInspections = corporateStats.reduce((sum, s) => sum + s.totalInspections, 0);
+        const totalOK = corporateStats.reduce((sum, s) => sum + s.okCount, 0);
+        const totalNG = corporateStats.reduce((sum, s) => sum + s.ngCount, 0);
+        const totalNTF = corporateStats.reduce((sum, s) => sum + s.ntfCount, 0);
+        const overallYield = totalInspections > 0 ? ((totalOK / totalInspections) * 100).toFixed(2) : '0.00';
+        
+        const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard Statistics Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; color: #333; }
+    h1 { color: #1a1a2e; border-bottom: 2px solid #3b82f6; padding-bottom: 10px; }
+    h2 { color: #1a1a2e; margin-top: 30px; }
+    .summary { background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0; }
+    .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    .stat-card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .stat-value { font-size: 24px; font-weight: bold; color: #3b82f6; }
+    .stat-label { color: #64748b; font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    th, td { border: 1px solid #e2e8f0; padding: 12px; text-align: left; }
+    th { background: #f1f5f9; font-weight: 600; }
+    tr:nth-child(even) { background: #f8fafc; }
+    .ok { color: #10b981; }
+    .ng { color: #ef4444; }
+    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Báo cáo Thống kê Dashboard</h1>
+  
+  <div class="summary">
+    <p><strong>Kỳ báo cáo:</strong> ${input.startDate.toLocaleDateString('vi-VN')} - ${input.endDate.toLocaleDateString('vi-VN')}</p>
+    <div class="summary-grid">
+      <div class="stat-card">
+        <div class="stat-value">${totalInspections.toLocaleString()}</div>
+        <div class="stat-label">Tổng kiểm tra</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value ok">${totalOK.toLocaleString()}</div>
+        <div class="stat-label">Số OK</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value ng">${totalNG.toLocaleString()}</div>
+        <div class="stat-label">Số NG</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${overallYield}%</div>
+        <div class="stat-label">Tỷ lệ đạt</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${corporateStats.length}</div>
+        <div class="stat-label">Số công ty</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${factoryStats.length}</div>
+        <div class="stat-label">Số nhà máy</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>Thống kê theo Công ty</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Mã Công ty</th>
+        <th>Tổng kiểm tra</th>
+        <th>OK</th>
+        <th>NG</th>
+        <th>NTF</th>
+        <th>Tỷ lệ đạt (%)</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${corporateStats.map((s: any) => `
+        <tr>
+          <td>${s.corporateCode}</td>
+          <td>${s.totalInspections.toLocaleString()}</td>
+          <td class="ok">${s.okCount.toLocaleString()}</td>
+          <td class="ng">${s.ngCount.toLocaleString()}</td>
+          <td>${s.ntfCount.toLocaleString()}</td>
+          <td>${s.yieldRate}%</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <h2>Thống kê theo Nhà máy</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Mã Công ty</th>
+        <th>Mã Nhà máy</th>
+        <th>Tổng kiểm tra</th>
+        <th>OK</th>
+        <th>NG</th>
+        <th>NTF</th>
+        <th>Tỷ lệ đạt (%)</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${factoryStats.map((s: any) => `
+        <tr>
+          <td>${s.corporateCode}</td>
+          <td>${s.factoryCode}</td>
+          <td>${s.totalInspections.toLocaleString()}</td>
+          <td class="ok">${s.okCount.toLocaleString()}</td>
+          <td class="ng">${s.ngCount.toLocaleString()}</td>
+          <td>${s.ntfCount.toLocaleString()}</td>
+          <td>${s.yieldRate}%</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <p>Báo cáo được tạo lúc: ${new Date().toLocaleString('vi-VN')}</p>
+    <p>Người tạo: ${ctx.user.name || ctx.user.email}</p>
+  </div>
+</body>
+</html>
+        `;
+        
+        // Convert HTML to PDF using WeasyPrint or return HTML for now
+        const { storagePut } = await import('./storage');
+        const filename = `dashboard_stats_${Date.now()}.html`;
+        const { url } = await storagePut(`exports/${filename}`, Buffer.from(htmlContent), 'text/html');
+        
+        return { url, filename, format: 'html' };
+      }
     }),
 });
 

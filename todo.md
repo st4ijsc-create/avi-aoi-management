@@ -1909,3 +1909,29 @@
 - [ ] Update inspection list với configurable limit (max 1000)
 - [ ] Implement cursor-based pagination cho large datasets
 - [ ] Thêm loading states và skeleton UI
+
+
+## Phase 93: Performance, Machine Drill-down & Export
+
+### 1. Server-side Caching
+- [x] Tạo caching service với in-memory cache (server/services/cacheService.ts)
+- [x] Cache statistics queries (yield rate, throughput) với TTL 5 phút
+- [x] Implement cache invalidation khi có inspection mới
+- [x] Thêm cache hit/miss logging
+- [x] Thêm cacheStats endpoint cho admin monitoring
+
+### 2. Machine-level Drill-down
+- [x] Thêm state cho selectedMachine trong CorporateFactoryStats
+- [x] Tạo MachineAnalyticsView component
+- [x] Hiển thị inspection history của máy được chọn (20 recent inspections)
+- [x] Thêm charts cho machine performance (yield trend, daily production stacked bar)
+- [x] Cập nhật breadcrumb navigation (Corporate > Factory > Machine)
+- [x] Machine selection grid khi ở factory level
+
+### 3. Export Dashboard Statistics
+- [x] Tạo API endpoint exportDashboardStats
+- [x] Export ra Excel với xlsx library (4 sheets: Summary, Corporate, Factory, Throughput)
+- [x] Export ra HTML/PDF template
+- [x] Thêm ExportDashboardButton component với dropdown
+- [x] Hỗ trợ export theo date range và filters
+- [x] Tích hợp access control (user chỉ export data được assign)

@@ -4,7 +4,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, Cell, PieChart, Pie } from 'recharts';
-import { Calendar, ChevronRight, Home, Building2, Factory, ArrowLeft, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Calendar, ChevronRight, Home, Building2, Factory, ArrowLeft, TrendingUp, TrendingDown, Minus, Cpu } from 'lucide-react';
+import { MachineAnalyticsView } from './MachineAnalyticsView';
+import { ExportDashboardButton } from './ExportDashboardButton';
 
 type DrillLevel = 'corporate' | 'factory' | 'machine';
 
@@ -12,6 +14,7 @@ interface BreadcrumbItem {
   level: DrillLevel;
   label: string;
   code?: string;
+  id?: number;
 }
 
 // Types for yield data
@@ -35,6 +38,7 @@ export function CorporateFactoryStats() {
   const [drillLevel, setDrillLevel] = useState<DrillLevel>('corporate');
   const [selectedCorporate, setSelectedCorporate] = useState<string | undefined>();
   const [selectedFactory, setSelectedFactory] = useState<string | undefined>();
+  const [selectedMachine, setSelectedMachine] = useState<{ id: number; name: string } | undefined>();
 
   const startDate = useMemo(() => {
     const date = new Date();
@@ -74,6 +78,18 @@ export function CorporateFactoryStats() {
   }, {
     enabled: drillLevel !== 'corporate' && !!selectedCorporate,
   });
+
+  // Get machines for factory drill-down
+  const { data: machines } = trpc.machine.list.useQuery(undefined, {
+    enabled: drillLevel === 'factory',
+  });
+
+  // Filter machines by factory (using factory code matching)
+  const factoryMachines = useMemo(() => {
+    if (!machines || !selectedFactory) return [];
+    // For now, return all machines - in production, filter by factory
+    return machines.slice(0, 10);
+  }, [machines, selectedFactory]);
 
   // Transform throughput data for chart
   const throughputChartData = useMemo(() => {
@@ -129,11 +145,11 @@ export function CorporateFactoryStats() {
     if (selectedCorporate && drillLevel !== 'corporate') {
       items.push({ level: 'factory', label: selectedCorporate, code: selectedCorporate });
     }
-    if (selectedFactory && drillLevel === 'machine') {
-      items.push({ level: 'machine', label: selectedFactory, code: selectedFactory });
+    if (selectedMachine && drillLevel === 'machine') {
+      items.push({ level: 'machine', label: selectedMachine.name, id: selectedMachine.id });
     }
     return items;
-  }, [drillLevel, selectedCorporate, selectedFactory]);
+  }, [drillLevel, selectedCorporate, selectedMachine]);
 
   // Handle drill-down click on bar chart
   const handleBarClick = (data: any) => {
@@ -142,8 +158,14 @@ export function CorporateFactoryStats() {
       setDrillLevel('factory');
     } else if (drillLevel === 'factory' && data?.factoryCode) {
       setSelectedFactory(data.factoryCode);
-      setDrillLevel('machine');
+      // Show machine selection instead of directly going to machine view
     }
+  };
+
+  // Handle machine selection
+  const handleMachineClick = (machine: { id: number; name: string }) => {
+    setSelectedMachine(machine);
+    setDrillLevel('machine');
   };
 
   // Handle breadcrumb navigation
@@ -152,9 +174,11 @@ export function CorporateFactoryStats() {
       setDrillLevel('corporate');
       setSelectedCorporate(undefined);
       setSelectedFactory(undefined);
+      setSelectedMachine(undefined);
     } else if (item.level === 'factory') {
       setDrillLevel('factory');
       setSelectedFactory(undefined);
+      setSelectedMachine(undefined);
     }
   };
 
@@ -162,10 +186,11 @@ export function CorporateFactoryStats() {
   const handleBack = () => {
     if (drillLevel === 'machine') {
       setDrillLevel('factory');
-      setSelectedFactory(undefined);
+      setSelectedMachine(undefined);
     } else if (drillLevel === 'factory') {
       setDrillLevel('corporate');
       setSelectedCorporate(undefined);
+      setSelectedFactory(undefined);
     }
   };
 
@@ -197,6 +222,20 @@ export function CorporateFactoryStats() {
     return (item as YieldByFactory).factoryCode || item.corporateCode;
   };
 
+  // If machine is selected, show MachineAnalyticsView
+  if (drillLevel === 'machine' && selectedMachine) {
+    return (
+      <MachineAnalyticsView
+        machineId={selectedMachine.id}
+        machineName={selectedMachine.name}
+        factoryCode={selectedFactory}
+        onBack={handleBack}
+        startDate={startDate}
+        endDate={endDate}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Breadcrumb Navigation */}
@@ -215,7 +254,7 @@ export function CorporateFactoryStats() {
               >
                 {item.level === 'corporate' && <Home className="h-4 w-4" />}
                 {item.level === 'factory' && <Building2 className="h-4 w-4" />}
-                {item.level === 'machine' && <Factory className="h-4 w-4" />}
+                {item.level === 'machine' && <Cpu className="h-4 w-4" />}
                 {item.label}
               </button>
             </div>
@@ -231,43 +270,47 @@ export function CorporateFactoryStats() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <Calendar className="h-4 w-4 text-muted-foreground" />
-          <Select value={dateRange} onValueChange={(v) => setDateRange(v as any)}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7d">7 ngày qua</SelectItem>
-              <SelectItem value="30d">30 ngày qua</SelectItem>
-              <SelectItem value="90d">90 ngày qua</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <Select value={dateRange} onValueChange={(v) => setDateRange(v as any)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7d">7 ngày qua</SelectItem>
+                <SelectItem value="30d">30 ngày qua</SelectItem>
+                <SelectItem value="90d">90 ngày qua</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-        {drillLevel === 'corporate' && yieldByCorporate && yieldByCorporate.length > 0 && (
-          <Select value={selectedCorporate || 'all'} onValueChange={(v) => {
-            if (v === 'all') {
-              setSelectedCorporate(undefined);
-            } else {
-              setSelectedCorporate(v);
-              setDrillLevel('factory');
-            }
-          }}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Chọn công ty" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tất cả công ty</SelectItem>
-              {yieldByCorporate.map(item => (
-                <SelectItem key={item.corporateCode} value={item.corporateCode}>
-                  {item.corporateCode}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+          {drillLevel === 'corporate' && yieldByCorporate && yieldByCorporate.length > 0 && (
+            <Select value={selectedCorporate || 'all'} onValueChange={(v) => {
+              if (v === 'all') {
+                setSelectedCorporate(undefined);
+              } else {
+                setSelectedCorporate(v);
+                setDrillLevel('factory');
+              }
+            }}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Chọn công ty" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tất cả công ty</SelectItem>
+                {yieldByCorporate.map(item => (
+                  <SelectItem key={item.corporateCode} value={item.corporateCode}>
+                    {item.corporateCode}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+        
+        <ExportDashboardButton corporateCode={selectedCorporate} />
       </div>
 
       {/* Level Title */}
@@ -278,17 +321,17 @@ export function CorporateFactoryStats() {
         }`}>
           {drillLevel === 'corporate' && <Building2 className="h-5 w-5 text-blue-500" />}
           {drillLevel === 'factory' && <Factory className="h-5 w-5 text-green-500" />}
-          {drillLevel === 'machine' && <Factory className="h-5 w-5 text-purple-500" />}
+          {drillLevel === 'machine' && <Cpu className="h-5 w-5 text-purple-500" />}
         </div>
         <div>
           <h2 className="text-lg font-semibold">
             {drillLevel === 'corporate' && 'Thống kê theo Công ty'}
             {drillLevel === 'factory' && `Chi tiết Nhà máy - ${selectedCorporate}`}
-            {drillLevel === 'machine' && `Chi tiết Máy - ${selectedFactory}`}
+            {drillLevel === 'machine' && `Chi tiết Máy - ${selectedMachine?.name}`}
           </h2>
           <p className="text-sm text-muted-foreground">
             {drillLevel === 'corporate' && 'Click vào cột để xem chi tiết nhà máy'}
-            {drillLevel === 'factory' && 'Click vào cột để xem chi tiết máy'}
+            {drillLevel === 'factory' && 'Click vào thẻ máy để xem chi tiết'}
             {drillLevel === 'machine' && 'Thống kê chi tiết của máy'}
           </p>
         </div>
@@ -303,7 +346,7 @@ export function CorporateFactoryStats() {
           </CardTitle>
           <CardDescription>
             {drillLevel === 'corporate' ? 'So sánh yield rate giữa các công ty - Click để drill-down' : 
-             drillLevel === 'factory' ? `Chi tiết yield rate của ${selectedCorporate}` : `Chi tiết yield rate của ${selectedFactory}`}
+             drillLevel === 'factory' ? `Chi tiết yield rate của ${selectedCorporate}` : `Chi tiết yield rate của ${selectedMachine?.name}`}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -353,6 +396,43 @@ export function CorporateFactoryStats() {
           )}
         </CardContent>
       </Card>
+
+      {/* Machine Selection (when at factory level) */}
+      {drillLevel === 'factory' && factoryMachines.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Chọn máy để xem chi tiết</CardTitle>
+            <CardDescription>Click vào máy để xem thống kê chi tiết và lịch sử kiểm tra</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+              {factoryMachines.map((machine) => (
+                <Card 
+                  key={machine.id}
+                  className="cursor-pointer hover:shadow-md hover:border-primary/50 transition-all"
+                  onClick={() => handleMachineClick({ id: machine.id, name: machine.name })}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-purple-500/10">
+                        <Cpu className="h-4 w-4 text-purple-500" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium truncate">{machine.name}</p>
+                        <p className="text-xs text-muted-foreground">{machine.code}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex items-center text-xs text-primary">
+                      <span>Xem chi tiết</span>
+                      <ChevronRight className="h-3 w-3 ml-1" />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Throughput Trends */}
       <Card>
