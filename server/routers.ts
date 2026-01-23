@@ -715,6 +715,25 @@ const inspectionRouter = router({
       return { success: true };
     }),
 
+  // Cursor-based pagination for large datasets
+  listCursor: protectedProcedure
+    .input(z.object({
+      cursor: z.string().optional(),
+      limit: z.number().min(1).max(500).optional(),
+      direction: z.enum(['forward', 'backward']).optional(),
+      machineId: z.number().optional(),
+      serialNumber: z.string().optional(),
+      productModel: z.string().optional(),
+      result: z.enum(["OK", "NG", "NTF"]).optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      corporateCode: z.string().optional(),
+      factoryCode: z.string().optional(),
+    }))
+    .query(async ({ input }) => {
+      return db.getProductInspectionsCursor(input);
+    }),
+
   topNGPoints: protectedProcedure
     .input(z.object({
       machineId: z.number().optional(),
@@ -2098,6 +2117,20 @@ const alertRouter = router({
       return db.getAlertHistory(input.alertSettingId, input.limit);
     }),
 
+  // Cursor-based pagination for alert history
+  historyCursor: protectedProcedure
+    .input(z.object({
+      cursor: z.string().optional(),
+      limit: z.number().min(1).max(200).optional(),
+      direction: z.enum(['forward', 'backward']).optional(),
+      alertSettingId: z.number().optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }))
+    .query(async ({ input }) => {
+      return db.getAlertHistoryCursor(input);
+    }),
+
   acknowledge: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
@@ -2213,6 +2246,58 @@ const productionOrderRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.deleteProductionOrder(input.id);
+      return { success: true };
+    }),
+
+  // Reschedule production order (drag-drop from Gantt chart)
+  reschedule: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      scheduledStartDate: z.date(),
+      scheduledEndDate: z.date(),
+      lineId: z.number().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const order = await db.getProductionOrderById(input.id);
+      if (!order) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Production order not found' });
+      }
+
+      const updateData: Record<string, unknown> = {
+        plannedStartDate: input.scheduledStartDate,
+        plannedEndDate: input.scheduledEndDate,
+      };
+
+      // If line changed, also update workshopId from the new line
+      if (input.lineId && input.lineId !== order.lineId) {
+        const lines = await db.getProductionLines();
+        const newLine = lines.find(l => l.id === input.lineId);
+        if (!newLine) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Production line not found' });
+        }
+        updateData.lineId = input.lineId;
+        updateData.workshopId = newLine.workshopId;
+      }
+
+      await db.updateProductionOrder(input.id, updateData);
+
+      // Log the reschedule action
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        action: 'reschedule_production_order',
+        entityType: 'production_order',
+        entityId: input.id,
+        entityName: order.orderCode,
+        details: {
+          oldStartDate: order.plannedStartDate,
+          oldEndDate: order.plannedEndDate,
+          oldLineId: order.lineId,
+          newStartDate: input.scheduledStartDate,
+          newEndDate: input.scheduledEndDate,
+          newLineId: input.lineId || order.lineId,
+        },
+      });
+
       return { success: true };
     }),
 });

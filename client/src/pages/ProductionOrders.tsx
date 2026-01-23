@@ -79,6 +79,26 @@ export default function ProductionOrders() {
     },
   });
 
+  const rescheduleMutation = trpc.productionOrder.reschedule.useMutation({
+    onSuccess: () => {
+      refetch();
+    },
+    onError: (error) => {
+      toast.error(`Lỗi: ${error.message}`);
+      throw error; // Re-throw to handle in GanttChart
+    },
+  });
+
+  // Handler for Gantt chart drag-drop reschedule
+  const handleOrderReschedule = async (orderId: number, newStartDate: Date, newEndDate: Date, newLineId?: number) => {
+    await rescheduleMutation.mutateAsync({
+      id: orderId,
+      scheduledStartDate: newStartDate,
+      scheduledEndDate: newEndDate,
+      lineId: newLineId,
+    });
+  };
+
   const resetForm = () => {
     setOrderCode("");
     setCompanyCode("");
@@ -472,6 +492,7 @@ export default function ProductionOrders() {
               factories={factories || []}
               products={products || []}
               onOrderClick={(order) => handleEdit(order)}
+              onOrderReschedule={handleOrderReschedule}
             />
           </TabsContent>
         </Tabs>

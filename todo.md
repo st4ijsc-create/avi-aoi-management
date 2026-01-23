@@ -2872,3 +2872,31 @@ Menu structure mới:
 - [ ] Batch import/export data
 - [ ] Progress indicator cho batch operations
 
+
+## Phase 124: Cursor-based Pagination & Gantt Drag-drop
+
+### 1. Cursor-based Pagination
+- [x] Tạo helper functions: encodeCursor, decodeCursor
+- [x] CursorPaginationResult interface với nextCursor, prevCursor, hasMore
+- [x] Áp dụng cho inspection history API (inspection.listCursor)
+- [x] Áp dụng cho measurement results API (getMeasurementResultsCursor)
+- [x] Áp dụng cho alert history API (alert.historyCursor)
+- [x] Áp dụng cho MQTT alert history (getMqttAlertHistoryCursor)
+- [x] Support forward/backward direction
+- [x] Max limits: inspections 500, measurements 1000, alerts 200
+- [ ] Frontend infinite scroll component (tùy chọn)
+
+### 2. Gantt Chart Drag-drop Reschedule
+- [x] Thêm @dnd-kit/core, @dnd-kit/sortable, @dnd-kit/utilities
+- [x] DraggableOrder component với useDraggable hook
+- [x] DroppableTimelineRow component với useDroppable hook
+- [x] Calculate new dates based on drag distance (delta.x / cellWidth)
+- [x] Confirmation dialog trước khi save (DialogContent với new dates preview)
+- [x] API productionOrder.reschedule với audit logging
+- [x] Undo/Redo functionality (undoStack, redoStack)
+- [x] Visual feedback khi drag (DragOverlay, opacity changes, ring highlight)
+- [x] Support drag to different line (update lineId và workshopId)
+- [x] GripVertical icon để indicate draggable
+- [x] Hint text hướng dẫn người dùng
+- [x] Toast notification khi reschedule thành công
+

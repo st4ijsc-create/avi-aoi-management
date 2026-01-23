@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, gte, lte, like, sql, or, isNull, isNotNull, not, ne, SQL } from "drizzle-orm";
+import { eq, and, desc, asc, gte, lte, gt, lt, like, sql, or, isNull, isNotNull, not, ne, SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { 
   InsertUser, users,
@@ -6118,4 +6118,353 @@ export async function getSharedWidgetStylePresets() {
       )
     )
     .orderBy(desc(widgetStylePresets.usageCount), widgetStylePresets.name);
+}
+
+
+// ============ CURSOR-BASED PAGINATION HELPERS ============
+
+export interface CursorPaginationResult<T> {
+  data: T[];
+  nextCursor: string | null;
+  prevCursor: string | null;
+  hasMore: boolean;
+  totalCount?: number;
+}
+
+export interface CursorPaginationParams {
+  cursor?: string;
+  limit?: number;
+  direction?: 'forward' | 'backward';
+}
+
+// Helper to encode cursor
+export function encodeCursor(id: number, timestamp: Date): string {
+  return Buffer.from(`${id}:${timestamp.getTime()}`).toString('base64');
+}
+
+// Helper to decode cursor
+export function decodeCursor(cursor: string): { id: number; timestamp: Date } | null {
+  try {
+    const decoded = Buffer.from(cursor, 'base64').toString('utf-8');
+    const [idStr, timestampStr] = decoded.split(':');
+    const id = parseInt(idStr, 10);
+    const timestamp = new Date(parseInt(timestampStr, 10));
+    if (isNaN(id) || isNaN(timestamp.getTime())) return null;
+    return { id, timestamp };
+  } catch {
+    return null;
+  }
+}
+
+// Cursor-based pagination for product inspections
+export async function getProductInspectionsCursor(params: CursorPaginationParams & {
+  machineId?: number;
+  serialNumber?: string;
+  productModel?: string;
+  result?: "OK" | "NG" | "NTF";
+  startDate?: Date;
+  endDate?: Date;
+  corporateCode?: string;
+  factoryCode?: string;
+}): Promise<CursorPaginationResult<typeof productInspections.$inferSelect>> {
+  const db = await getDb();
+  if (!db) return { data: [], nextCursor: null, prevCursor: null, hasMore: false };
+
+  const limit = Math.min(params.limit || 50, 500); // Max 500 per request
+  const conditions: SQL[] = [];
+
+  // Build filter conditions
+  if (params.machineId) conditions.push(eq(productInspections.machineId, params.machineId));
+  if (params.serialNumber) conditions.push(like(productInspections.serialNumber, `%${params.serialNumber}%`));
+  if (params.productModel) conditions.push(like(productInspections.productModel, `%${params.productModel}%`));
+  if (params.result) conditions.push(eq(productInspections.overallResult, params.result));
+  if (params.startDate) conditions.push(gte(productInspections.inspectionTime, params.startDate));
+  if (params.endDate) conditions.push(lte(productInspections.inspectionTime, params.endDate));
+  if (params.corporateCode) conditions.push(eq(productInspections.corporateCode, params.corporateCode));
+  if (params.factoryCode) conditions.push(eq(productInspections.factoryCode, params.factoryCode));
+
+  // Cursor condition
+  if (params.cursor) {
+    const cursorData = decodeCursor(params.cursor);
+    if (cursorData) {
+      if (params.direction === 'backward') {
+        conditions.push(
+          or(
+            gt(productInspections.inspectionTime, cursorData.timestamp),
+            and(
+              eq(productInspections.inspectionTime, cursorData.timestamp),
+              gt(productInspections.id, cursorData.id)
+            )
+          )!
+        );
+      } else {
+        conditions.push(
+          or(
+            lt(productInspections.inspectionTime, cursorData.timestamp),
+            and(
+              eq(productInspections.inspectionTime, cursorData.timestamp),
+              lt(productInspections.id, cursorData.id)
+            )
+          )!
+        );
+      }
+    }
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  // Fetch one extra to check if there are more
+  const results = await db.select()
+    .from(productInspections)
+    .where(whereClause)
+    .orderBy(
+      params.direction === 'backward' 
+        ? asc(productInspections.inspectionTime)
+        : desc(productInspections.inspectionTime),
+      params.direction === 'backward'
+        ? asc(productInspections.id)
+        : desc(productInspections.id)
+    )
+    .limit(limit + 1);
+
+  const hasMore = results.length > limit;
+  const data = hasMore ? results.slice(0, limit) : results;
+
+  // Reverse if backward direction
+  if (params.direction === 'backward') {
+    data.reverse();
+  }
+
+  // Generate cursors
+  const firstItem = data[0];
+  const lastItem = data[data.length - 1];
+
+  return {
+    data,
+    nextCursor: hasMore && lastItem ? encodeCursor(lastItem.id, lastItem.inspectionTime) : null,
+    prevCursor: firstItem ? encodeCursor(firstItem.id, firstItem.inspectionTime) : null,
+    hasMore,
+  };
+}
+
+// Cursor-based pagination for measurement results
+export async function getMeasurementResultsCursor(params: CursorPaginationParams & {
+  inspectionId?: number;
+  pointDefId?: number;
+  result?: "OK" | "NG" | "NTF";
+  startDate?: Date;
+  endDate?: Date;
+}): Promise<CursorPaginationResult<typeof measurementResults.$inferSelect>> {
+  const db = await getDb();
+  if (!db) return { data: [], nextCursor: null, prevCursor: null, hasMore: false };
+
+  const limit = Math.min(params.limit || 100, 1000); // Max 1000 per request
+  const conditions: SQL[] = [];
+
+  if (params.inspectionId) conditions.push(eq(measurementResults.inspectionId, params.inspectionId));
+  if (params.pointDefId) conditions.push(eq(measurementResults.pointDefId, params.pointDefId));
+  if (params.result) conditions.push(eq(measurementResults.result, params.result));
+
+  // Cursor condition (using id only since measurementResults doesn't have timestamp)
+  if (params.cursor) {
+    const cursorId = parseInt(Buffer.from(params.cursor, 'base64').toString('utf-8'), 10);
+    if (!isNaN(cursorId)) {
+      if (params.direction === 'backward') {
+        conditions.push(gt(measurementResults.id, cursorId));
+      } else {
+        conditions.push(lt(measurementResults.id, cursorId));
+      }
+    }
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const results = await db.select()
+    .from(measurementResults)
+    .where(whereClause)
+    .orderBy(
+      params.direction === 'backward' 
+        ? asc(measurementResults.id)
+        : desc(measurementResults.id)
+    )
+    .limit(limit + 1);
+
+  const hasMore = results.length > limit;
+  const data = hasMore ? results.slice(0, limit) : results;
+
+  if (params.direction === 'backward') {
+    data.reverse();
+  }
+
+  const firstItem = data[0];
+  const lastItem = data[data.length - 1];
+
+  return {
+    data,
+    nextCursor: hasMore && lastItem ? Buffer.from(lastItem.id.toString()).toString('base64') : null,
+    prevCursor: firstItem ? Buffer.from(firstItem.id.toString()).toString('base64') : null,
+    hasMore,
+  };
+}
+
+// Cursor-based pagination for alert history
+export async function getAlertHistoryCursor(params: CursorPaginationParams & {
+  alertSettingId?: number;
+  alertType?: string;
+  startDate?: Date;
+  endDate?: Date;
+}): Promise<CursorPaginationResult<typeof alertHistory.$inferSelect>> {
+  const db = await getDb();
+  if (!db) return { data: [], nextCursor: null, prevCursor: null, hasMore: false };
+
+  const limit = Math.min(params.limit || 50, 200); // Max 200 per request
+  const conditions: SQL[] = [];
+
+  if (params.alertSettingId) conditions.push(eq(alertHistory.alertSettingId, params.alertSettingId));
+  if (params.startDate) conditions.push(gte(alertHistory.createdAt, params.startDate));
+  if (params.endDate) conditions.push(lte(alertHistory.createdAt, params.endDate));
+
+  // Cursor condition
+  if (params.cursor) {
+    const cursorData = decodeCursor(params.cursor);
+    if (cursorData) {
+      if (params.direction === 'backward') {
+        conditions.push(
+          or(
+            gt(alertHistory.createdAt, cursorData.timestamp),
+            and(
+              eq(alertHistory.createdAt, cursorData.timestamp),
+              gt(alertHistory.id, cursorData.id)
+            )
+          )!
+        );
+      } else {
+        conditions.push(
+          or(
+            lt(alertHistory.createdAt, cursorData.timestamp),
+            and(
+              eq(alertHistory.createdAt, cursorData.timestamp),
+              lt(alertHistory.id, cursorData.id)
+            )
+          )!
+        );
+      }
+    }
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const results = await db.select()
+    .from(alertHistory)
+    .where(whereClause)
+    .orderBy(
+      params.direction === 'backward' 
+        ? asc(alertHistory.createdAt)
+        : desc(alertHistory.createdAt),
+      params.direction === 'backward'
+        ? asc(alertHistory.id)
+        : desc(alertHistory.id)
+    )
+    .limit(limit + 1);
+
+  const hasMore = results.length > limit;
+  const data = hasMore ? results.slice(0, limit) : results;
+
+  if (params.direction === 'backward') {
+    data.reverse();
+  }
+
+  const firstItem = data[0];
+  const lastItem = data[data.length - 1];
+
+  return {
+    data,
+    nextCursor: hasMore && lastItem ? encodeCursor(lastItem.id, lastItem.createdAt) : null,
+    prevCursor: firstItem ? encodeCursor(firstItem.id, firstItem.createdAt) : null,
+    hasMore,
+  };
+}
+
+// Cursor-based pagination for MQTT alert history
+export async function getMqttAlertHistoryCursor(params: CursorPaginationParams & {
+  ruleId?: number;
+  resolved?: boolean;
+  startDate?: Date;
+  endDate?: Date;
+}): Promise<CursorPaginationResult<typeof mqttAlertHistory.$inferSelect>> {
+  const db = await getDb();
+  if (!db) return { data: [], nextCursor: null, prevCursor: null, hasMore: false };
+
+  const limit = Math.min(params.limit || 50, 200);
+  const conditions: SQL[] = [];
+
+  if (params.ruleId) conditions.push(eq(mqttAlertHistory.ruleId, params.ruleId));
+  if (params.resolved !== undefined) {
+    if (params.resolved) {
+      conditions.push(isNotNull(mqttAlertHistory.resolvedAt));
+    } else {
+      conditions.push(isNull(mqttAlertHistory.resolvedAt));
+    }
+  }
+  if (params.startDate) conditions.push(gte(mqttAlertHistory.triggeredAt, params.startDate));
+  if (params.endDate) conditions.push(lte(mqttAlertHistory.triggeredAt, params.endDate));
+
+  if (params.cursor) {
+    const cursorData = decodeCursor(params.cursor);
+    if (cursorData) {
+      if (params.direction === 'backward') {
+        conditions.push(
+          or(
+            gt(mqttAlertHistory.triggeredAt, cursorData.timestamp),
+            and(
+              eq(mqttAlertHistory.triggeredAt, cursorData.timestamp),
+              gt(mqttAlertHistory.id, cursorData.id)
+            )
+          )!
+        );
+      } else {
+        conditions.push(
+          or(
+            lt(mqttAlertHistory.triggeredAt, cursorData.timestamp),
+            and(
+              eq(mqttAlertHistory.triggeredAt, cursorData.timestamp),
+              lt(mqttAlertHistory.id, cursorData.id)
+            )
+          )!
+        );
+      }
+    }
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const results = await db.select()
+    .from(mqttAlertHistory)
+    .where(whereClause)
+    .orderBy(
+      params.direction === 'backward' 
+        ? asc(mqttAlertHistory.triggeredAt)
+        : desc(mqttAlertHistory.triggeredAt),
+      params.direction === 'backward'
+        ? asc(mqttAlertHistory.id)
+        : desc(mqttAlertHistory.id)
+    )
+    .limit(limit + 1);
+
+  const hasMore = results.length > limit;
+  const data = hasMore ? results.slice(0, limit) : results;
+
+  if (params.direction === 'backward') {
+    data.reverse();
+  }
+
+  const firstItem = data[0];
+  const lastItem = data[data.length - 1];
+
+  return {
+    data,
+    nextCursor: hasMore && lastItem ? encodeCursor(lastItem.id, lastItem.triggeredAt) : null,
+    prevCursor: firstItem ? encodeCursor(firstItem.id, firstItem.triggeredAt) : null,
+    hasMore,
+  };
 }
