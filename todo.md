@@ -2082,3 +2082,17 @@ Menu structure mới:
 - [x] Default widget layouts cho new users
 - [x] useVisibleWidgets hook cho Dashboard
 - [x] Multi-language widget names (vi, en, zh)
+
+
+## Phase 98: Dashboard Widget Resize
+
+### 1. React Grid Layout Integration
+- [x] Cài đặt react-grid-layout v2.2.2
+- [x] Tạo ResizableDashboard component với Responsive grid
+- [x] Tích hợp với DashboardWidgetManager (show/hide widgets)
+- [x] Lưu layout (x, y, w, h) vào database
+- [x] Responsive breakpoints: lg (1200), md (996), sm (768), xs (480)
+- [x] Drag handles (.widget-drag-handle) và resize handles
+- [x] Lock/Unlock mode để bảo vệ layout
+- [x] Reset to default layout
+- [x] 8 widget types với min/max sizes
