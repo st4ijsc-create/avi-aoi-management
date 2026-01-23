@@ -52,6 +52,7 @@ import { CorporateFactoryStats } from "@/components/CorporateFactoryStats";
 import { ChartErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
 import { StatsCardSkeleton, ChartSkeleton, PieChartSkeleton, ListSkeleton, MachineGridSkeleton } from "@/components/AnalyticsSkeleton";
 import { WorkstationNGHeatmap, MeasurementPointNGList } from "@/components/NGVisualReflect";
+import type { WidgetData } from "@/components/WidgetDataExport";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 import { Link } from "wouter";

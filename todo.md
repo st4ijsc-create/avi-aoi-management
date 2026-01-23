@@ -2161,3 +2161,27 @@ Menu structure mới:
 - [x] UI hiển thị shared templates trong dropdown (separate section)
 - [x] Usage tracking (usageCount) khi apply template
 - [x] "Share with Team" button cho admin
+
+
+## Phase 102: Template Preview & Widget Data Export
+
+### 1. Template Preview
+- [x] Tạo TemplatePreview component với mini layout preview
+- [x] Hiển thị preview thumbnail trong dropdown (size sm/md/lg)
+- [x] Preview cho preset templates (Compact, Wide, Analytics)
+- [x] Preview cho shared templates từ database
+- [x] Preview cho custom templates (localStorage)
+- [x] Export PRESET_TEMPLATES cho reuse
+
+### 2. Widget Data Export
+- [x] Tạo WidgetDataExport component với dropdown menu
+- [x] Export từng widget riêng lẻ sang JSON với metadata
+- [x] Export từng widget riêng lẻ sang CSV với headers
+- [x] Export từng widget riêng lẻ sang HTML với styling
+- [x] Thêm export button vào widget header (Download icon)
+- [x] Preview dialog trước khi export
+- [x] Tạo DashboardDataExport component cho export toàn bộ dashboard
+- [x] Export dashboard sang JSON (all widgets data)
+- [x] Export dashboard sang HTML report (comprehensive styled report)
+- [x] Download file với tên có timestamp
+- [x] Tích hợp vào ResizableDashboard toolbar

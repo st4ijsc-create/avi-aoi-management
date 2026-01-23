@@ -44,6 +44,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useDashboardWidgetCache } from '@/hooks/useWidgetCache';
+import { TemplatePreview, PRESET_TEMPLATES } from './TemplatePreview';
+import { WidgetDataExport, DashboardDataExport, type WidgetData } from './WidgetDataExport';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -196,6 +198,8 @@ interface ResizableDashboardProps {
   children: (widgetId: string) => React.ReactNode;
   onRefreshWidget?: (widgetId: string) => Promise<void>;
   widgetCacheStatus?: Record<string, WidgetCacheStatus>;
+  getWidgetData?: (widgetId: string) => Promise<WidgetData>;
+  getAllWidgetsData?: () => Promise<WidgetData[]>;
 }
 
 type AutoRefreshInterval = 0 | 30 | 60 | 300; // 0 = off, seconds
@@ -263,7 +267,7 @@ const generateDefaultLayouts = (): ResponsiveLayouts => {
   };
 };
 
-export function ResizableDashboard({ children, onRefreshWidget, widgetCacheStatus }: ResizableDashboardProps) {
+export function ResizableDashboard({ children, onRefreshWidget, widgetCacheStatus, getWidgetData, getAllWidgetsData }: ResizableDashboardProps) {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const [layouts, setLayouts] = useState<ResponsiveLayouts>(generateDefaultLayouts);
@@ -817,19 +821,34 @@ export function ResizableDashboard({ children, onRefreshWidget, widgetCacheStatu
             <DropdownMenuContent align="end" className="w-64">
               <DropdownMenuLabel>Preset Templates</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => applyTemplate('compact')}>
+              <DropdownMenuItem onClick={() => applyTemplate('compact')} className="flex items-center gap-3 py-2">
+                <TemplatePreview 
+                  widgets={PRESET_TEMPLATES.compact.widgets} 
+                  layout={PRESET_TEMPLATES.compact.layout} 
+                  size="sm"
+                />
                 <div className="flex flex-col">
                   <span className="font-medium">Compact</span>
                   <span className="text-xs text-muted-foreground">Smaller widgets, more density</span>
                 </div>
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => applyTemplate('wide')}>
+              <DropdownMenuItem onClick={() => applyTemplate('wide')} className="flex items-center gap-3 py-2">
+                <TemplatePreview 
+                  widgets={PRESET_TEMPLATES.wide.widgets} 
+                  layout={PRESET_TEMPLATES.wide.layout} 
+                  size="sm"
+                />
                 <div className="flex flex-col">
                   <span className="font-medium">Wide</span>
                   <span className="text-xs text-muted-foreground">Full-width charts and tables</span>
                 </div>
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => applyTemplate('analytics')}>
+              <DropdownMenuItem onClick={() => applyTemplate('analytics')} className="flex items-center gap-3 py-2">
+                <TemplatePreview 
+                  widgets={PRESET_TEMPLATES.analytics.widgets} 
+                  layout={PRESET_TEMPLATES.analytics.layout} 
+                  size="sm"
+                />
                 <div className="flex flex-col">
                   <span className="font-medium">Analytics</span>
                   <span className="text-xs text-muted-foreground">Focus on charts and trends</span>
@@ -842,7 +861,12 @@ export function ResizableDashboard({ children, onRefreshWidget, widgetCacheStatu
                   <DropdownMenuSeparator />
                   <DropdownMenuLabel>Shared Templates</DropdownMenuLabel>
                   {sharedTemplates.map(template => (
-                    <DropdownMenuItem key={template.id} className="flex justify-between">
+                    <DropdownMenuItem key={template.id} className="flex items-center gap-3 py-2">
+                      <TemplatePreview 
+                        widgets={template.widgets as string[]} 
+                        layout={template.layout as { i: string; x: number; y: number; w: number; h: number }[]} 
+                        size="sm"
+                      />
                       <span onClick={() => handleApplySharedTemplate(template)} className="flex-1 cursor-pointer">
                         <div className="flex flex-col">
                           <span className="font-medium">{template.name}</span>
@@ -875,9 +899,19 @@ export function ResizableDashboard({ children, onRefreshWidget, widgetCacheStatu
                   <DropdownMenuSeparator />
                   <DropdownMenuLabel>My Templates (Local)</DropdownMenuLabel>
                   {customTemplates.map(template => (
-                    <DropdownMenuItem key={template.id} className="flex justify-between">
+                    <DropdownMenuItem key={template.id} className="flex items-center gap-3 py-2">
+                      <TemplatePreview 
+                        widgets={template.widgets} 
+                        layout={template.layout} 
+                        size="sm"
+                      />
                       <span onClick={() => handleApplyCustomTemplate(template)} className="flex-1 cursor-pointer">
-                        {template.name}
+                        <div className="flex flex-col">
+                          <span className="font-medium">{template.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(template.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
                       </span>
                       <Button
                         variant="ghost"
@@ -926,14 +960,22 @@ export function ResizableDashboard({ children, onRefreshWidget, widgetCacheStatu
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => exportDashboard('png')}>
                 <FileImage className="h-4 w-4 mr-2" />
-                Export as PNG
+                Export as PNG (Screenshot)
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => exportDashboard('pdf')}>
                 <FileText className="h-4 w-4 mr-2" />
-                Export as PDF
+                Export as PDF (Screenshot)
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          
+          {/* Export All Widgets Data */}
+          {getAllWidgetsData && (
+            <DashboardDataExport 
+              getAllWidgetsData={getAllWidgetsData}
+              dashboardTitle="AVI/AOI Dashboard"
+            />
+          )}
           
           <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
             <DialogTrigger asChild>
@@ -1052,6 +1094,14 @@ export function ResizableDashboard({ children, onRefreshWidget, widgetCacheStatu
                     >
                       <RefreshCw className={`h-3 w-3 ${refreshingWidgets.has(item.i) ? 'animate-spin' : ''}`} />
                     </Button>
+                    {getWidgetData && (
+                      <WidgetDataExport
+                        widgetId={item.i}
+                        widgetTitle={getWidgetName(item.i)}
+                        getData={() => getWidgetData(item.i)}
+                        size="sm"
+                      />
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"
