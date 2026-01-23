@@ -2744,3 +2744,131 @@ Menu structure mới:
 - [x] UI Unshare button (Lock icon) cho admin trong Shared tab
 - [x] Badge/icon phân biệt shared vs personal presets
 
+
+## Phase 119: Security & Access Control (theo Mục 4 - Phase 111)
+
+### 1. 2FA Login Flow với OTP Verification
+- [x] Tích hợp 2FA check vào login flow (oauth.ts)
+- [x] Hiển thị form nhập OTP sau khi đăng nhập thành công (Login.tsx)
+- [x] Verify OTP trước khi cấp session (/api/auth/verify-2fa)
+- [x] Redirect về trang ban đầu sau khi verify thành công
+- [x] Xử lý backup codes trong twoFactorRouter
+
+### 2. Multi-tenant Access Control
+- [x] Tables: userCorporateAssignments, userFactoryAssignments
+- [x] DB functions: getUserCorporateAssignments, getUserFactoryAssignments, hasAccessToCorporate, hasAccessToFactory
+- [x] APIs: userAssignment.assignCorporate, assignFactory, removeCorporateAssignment, removeFactoryAssignment
+- [x] UI component UserAssignments.tsx
+- [x] Tab "Phân quyền dữ liệu" trong Settings (admin only)
+
+### 3. Apply Access Control
+- [x] Access control đã được apply trong corporateFactoryStatsRouter
+- [x] hasAccessToCorporate và hasAccessToFactory functions
+- [x] Admin có quyền truy cập tất cả dữ liệu
+
+## Phase 120: Dashboard & Analytics Enhancement (theo Mục 4 - Phase 112)
+
+### 1. Dashboard Drill-down
+- [x] Filter Factory → Workshop → Line (selectedFactory, selectedWorkshop, selectedLine)
+- [x] Filter cascade khi chọn từng cấp (filteredWorkshops, filteredLines)
+- [x] Workstation drilldown dialog với measurement points
+- [x] Machine detail dialog khi click vào machine card
+
+### 2. Machine Status Realtime
+- [x] WebSocket connection cho machine status (socketRef, onlineMachines)
+- [x] Hiển thị online/offline status realtime (Wifi/WifiOff icons)
+- [x] Machine status filter (all/online/offline)
+- [x] Availability percentage display
+- [x] Online/Offline counts trong summary cards
+
+### 3. Workstation Management
+- [x] UI component WorkstationManagement.tsx
+- [x] Tab "Công trạm" trong Settings
+- [x] CRUD operations cho workstations
+- [x] Gán workstation vào line/workshop/factory
+- [x] Process type selection (SMT, DIP, Assembly, Testing, Packaging, Other)
+- [x] Liên kết workstation với measurement points (đã có từ Phase 116)
+
+## Phase 121: Production & Layout (theo Mục 4 - Phase 113)
+
+### 1. Gantt Chart Improvements
+- [x] Zoom in/out cho timeline (day/week/month view modes)
+- [x] Filter theo factory và line
+- [x] Click to view production order details (onOrderClick callback)
+- [x] Navigation (prev/next/today buttons)
+- [x] Weekend highlighting
+- [ ] Drag to reschedule (tùy chọn)
+- [ ] Export Gantt chart (tùy chọn)
+
+### 2. Layout Workshop CRUD
+- [x] Thêm/sửa/xóa workshop trong Settings
+- [x] Gán workshop vào factory
+- [x] Hiển thị danh sách workshops
+- [ ] Drag-drop machines trong workshop (tùy chọn)
+- [ ] Resize workshop area (tùy chọn)
+
+### 3. Process Management
+- [x] CRUD processes (processRouter)
+- [x] Reorder processes (reorder API)
+- [x] Liên kết process với production line (lineProcessAssignments)
+- [x] Reorder line process assignments
+- [x] Process types (SMT, DIP, Assembly, Testing, Packaging, Inspection, Other)
+
+## Phase 122: Performance & Configuration (theo Mục 4 - Phase 114)
+
+### 1. Server-side Caching
+- [x] Redis service với fallback to in-memory cache (redisService.ts)
+- [x] Cache invalidation khi có inspection mới (invalidateStatisticsCache)
+- [x] Configurable cache TTL (CACHE_TTL = 300s default)
+- [x] Cache hit/miss monitoring (cacheStats API)
+- [x] Cache warming service (cacheWarmingService.ts)
+- [x] Cache health check APIs
+- [x] Redis connection status monitoring
+
+### 2. Shift Configuration
+- [x] CRUD shifts trong Settings (shifts tab)
+- [x] Định nghĩa giờ bắt đầu/kết thúc
+- [x] Liên kết shift với factory
+- [x] Shift order index
+
+### 3. Performance Optimization
+- [x] In-memory cache service (cacheService.ts)
+- [x] Cached statistics functions (cachedStatistics.ts)
+- [x] Database connection pooling (TiDB)
+- [ ] Cursor-based pagination (tùy chọn)
+- [ ] Lazy loading cho dashboard widgets (tùy chọn)
+
+## Phase 123: Export & Documentation (theo Mục 4 - Phase 115)
+
+### 1. PDF Export cho History
+- [x] generateNGVisualPDF với puppeteer (reportGenerator.ts)
+- [x] Report formats: HTML, PDF, EXCEL
+- [x] Dashboard stats export API (exportDashboardStats)
+- [x] Customizable template với logo, colors, footer
+- [x] Include measurement results trong reports
+
+### 2. API Documentation
+- [x] API_DOCUMENTATION.md với đầy đủ sections
+- [x] Authentication & Authorization docs
+- [x] Corporate/Factory Code Integration docs
+- [x] User Assignment APIs docs
+- [x] Inspection APIs docs
+- [x] Statistics APIs docs
+- [x] MQTT APIs docs
+- [x] Alert APIs docs
+- [x] Error Codes docs
+
+### 3. User Guide
+- [x] ENTERPRISE_FEATURES_GUIDE.md
+- [x] CRUD_COVERAGE.md
+- [x] INDEX_OPTIMIZATION_GUIDE.md
+- [ ] Tạo trang User Guide trong hệ thống (tùy chọn)
+- [ ] Flowcharts cho các quy trình
+- [ ] FAQ section
+
+### 4. Batch Operations
+- [ ] Batch delete inspections
+- [ ] Batch update machine status
+- [ ] Batch import/export data
+- [ ] Progress indicator cho batch operations
+

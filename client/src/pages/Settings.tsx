@@ -38,7 +38,8 @@ import {
   Factory,
   Cog,
   Award,
-  Mail
+  Mail,
+  Users
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { ErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
@@ -50,6 +51,8 @@ import ScheduledReports from "@/components/ScheduledReports";
 import { SMTPConfig } from "@/components/SMTPConfig";
 import { CacheStatsDashboard } from "@/components/CacheStatsDashboard";
 import { EmailTemplateEditor } from "@/components/EmailTemplateEditor";
+import UserAssignments from "@/components/UserAssignments";
+import WorkstationManagement from "@/components/WorkstationManagement";
 import { useState } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
@@ -670,7 +673,7 @@ export default function Settings() {
                       }`}
                     >
                       <Cpu className="h-4 w-4" />
-                      Công trạm
+                      Trạm kiểm tra
                     </button>
                     <button
                       onClick={() => setActiveTab('machines')}
@@ -679,7 +682,16 @@ export default function Settings() {
                       }`}
                     >
                       <Cpu className="h-4 w-4" />
-                      Máy
+                      Máy kiểm tra
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('workstations')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'workstations' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <Cog className="h-4 w-4" />
+                      Công trạm
                     </button>
                   </div>
                 )}
@@ -823,6 +835,17 @@ export default function Settings() {
                       <Cpu className="h-4 w-4" />
                       Cache Statistics
                     </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => setActiveTab('user-assignments')}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                          activeTab === 'user-assignments' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                        }`}
+                      >
+                        <Users className="h-4 w-4" />
+                        Phân quyền dữ liệu
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -1453,6 +1476,11 @@ export default function Settings() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Workstations Tab */}
+          <TabsContent value="workstations">
+            <WorkstationManagement />
           </TabsContent>
 
           {/* Shifts Tab */}
@@ -2180,6 +2208,11 @@ export default function Settings() {
           {/* Cache Stats Tab */}
           <TabsContent value="cache-stats">
             <CacheStatsDashboard />
+          </TabsContent>
+
+          {/* User Assignments Tab */}
+          <TabsContent value="user-assignments">
+            <UserAssignments />
           </TabsContent>
             </div>
           </div>
