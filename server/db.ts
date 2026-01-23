@@ -229,6 +229,12 @@ export async function getUsersByRole(role: 'user' | 'admin') {
   return db.select().from(users).where(eq(users.role, role)).orderBy(desc(users.createdAt));
 }
 
+export async function getUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(users).orderBy(desc(users.createdAt));
+}
+
 export async function createUser(data: {
   email: string;
   name: string;
@@ -674,6 +680,8 @@ export async function getProductInspections(filters: {
   endDate?: Date;
   limit?: number;
   offset?: number;
+  userId?: number;
+  userRole?: 'admin' | 'user';
 }) {
   const db = await getDb();
   if (!db) return { data: [], total: 0 };
@@ -686,6 +694,33 @@ export async function getProductInspections(filters: {
   if (filters.result) conditions.push(eq(productInspections.overallResult, filters.result));
   if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
   if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+
+  // Apply access control for non-admin users
+  if (filters.userId && filters.userRole !== 'admin') {
+    const corporateAssignments = await getUserCorporateAssignments(filters.userId);
+    const factoryAssignments = await getUserFactoryAssignments(filters.userId);
+    
+    if (corporateAssignments.length > 0 || factoryAssignments.length > 0) {
+      const accessConditions = [];
+      if (corporateAssignments.length > 0) {
+        const corporateCodes = corporateAssignments.map(a => a.corporateCode);
+        accessConditions.push(sql`${productInspections.corporateCode} IN (${corporateCodes.map(c => `'${c}'`).join(',')})`);
+      }
+      if (factoryAssignments.length > 0) {
+        const factoryCodes = factoryAssignments.map(a => a.factoryCode);
+        accessConditions.push(sql`${productInspections.factoryCode} IN (${factoryCodes.map(c => `'${c}'`).join(',')})`);
+      }
+      if (accessConditions.length > 0) {
+        conditions.push(or(...accessConditions));
+      } else {
+        // User has no assignments, return empty result
+        return { data: [], total: 0 };
+      }
+    } else {
+      // User has no assignments, return empty result
+      return { data: [], total: 0 };
+    }
+  }
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 

@@ -85,6 +85,7 @@ export const navGroups: NavGroup[] = [
       { href: "/mqtt-alerts", label: "MQTT Alerts", icon: <AlertTriangle className="h-4 w-4" /> },
       { href: "/system-config", label: "System Config", icon: <Shield className="h-4 w-4" /> },
       { href: "/import-export", label: "Import/Export", icon: <Upload className="h-4 w-4" /> },
+      { href: "/user-assignments", label: "User Assignments", icon: <Users className="h-4 w-4" /> },
       { href: "/settings", label: "Cài đặt", icon: <Settings className="h-4 w-4" /> },
       { href: "/api-docs", label: "API Docs", icon: <FileText className="h-4 w-4" /> },
     ],

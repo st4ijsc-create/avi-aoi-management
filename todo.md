@@ -1804,3 +1804,42 @@
 - [ ] Implement breadcrumb navigation
 - [ ] Thêm back button để quay lại corporate view
 - [ ] Thêm loading states cho drill-down transitions
+
+
+## Phase 90: Complete Enterprise Features
+
+### 1. Multi-tenant UI Implementation
+- [x] Tạo userAssignmentRouter với getMyAssignments, getAllUserAssignments, assignCorporate, assignFactory, removeCorporateAssignment, removeFactoryAssignment
+- [x] Tạo UserAssignments.tsx page với user selector, corporate/factory input
+- [x] Implement assignment form với validation
+- [x] Implement assignment list với badges và remove buttons
+- [x] Thêm route /user-assignments trong App.tsx
+- [x] Thêm vào navigation (admin only)
+- [x] Thêm getUsers function vào db.ts
+
+### 2. Access Control Application
+- [x] Update getProductInspections để filter theo user assignments
+- [x] Update inspectionRouter.list để pass userId và userRole
+- [x] Thêm logic kiểm tra corporateAssignments và factoryAssignments
+- [x] Non-admin users chỉ xem được data của assigned corporates/factories
+- [ ] Update corporateFactoryStatsRouter để filter theo assignments
+- [ ] Update dashboardRouter.stats để filter theo assignments
+- [ ] Test access control với non-admin user
+- [ ] Verify admin can see all data
+
+### 3. Dashboard Drill-down
+- [ ] Add drill-down state management trong CorporateFactoryStats
+- [ ] Add onClick handler cho corporate bar chart
+- [ ] Thêm factoryDetails query endpoint
+- [ ] Thêm machineAnalytics query endpoint
+- [ ] Implement breadcrumb navigation
+- [ ] Implement FactoryChart component
+- [ ] Implement MachineAnalyticsTable component
+- [ ] Add loading states
+
+### 4. Testing
+- [x] Run all tests (195 tests passed)
+- [x] Test inspection API với corporate/factory codes
+- [x] Test backward compatibility
+- [ ] Test user assignment CRUD (manual testing required)
+- [ ] Test access control filtering với non-admin user (manual testing required)

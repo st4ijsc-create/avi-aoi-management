@@ -651,8 +651,12 @@ const inspectionRouter = router({
       limit: z.number().min(1).max(1000).optional(),
       offset: z.number().min(0).optional(),
     }))
-    .query(async ({ input }) => {
-      return db.getProductInspections(input);
+    .query(async ({ input, ctx }) => {
+      return db.getProductInspections({
+        ...input,
+        userId: ctx.user.id,
+        userRole: ctx.user.role,
+      });
     }),
 
   search: protectedProcedure
@@ -4037,6 +4041,77 @@ const exportRouter = router({
     }),
 });
 
+const userAssignmentRouter = router({
+  // Get current user's assignments
+  getMyAssignments: protectedProcedure
+    .query(async ({ ctx }) => {
+      const corporates = await db.getUserCorporateAssignments(ctx.user.id);
+      const factories = await db.getUserFactoryAssignments(ctx.user.id);
+      return { corporates, factories };
+    }),
+
+  // Get all users with their assignments (admin only)
+  getAllUserAssignments: adminProcedure
+    .query(async () => {
+      const users = await db.getUsers();
+      const result = [];
+      for (const user of users) {
+        const corporates = await db.getUserCorporateAssignments(user.id);
+        const factories = await db.getUserFactoryAssignments(user.id);
+        result.push({ user, corporates, factories });
+      }
+      return result;
+    }),
+
+  // Assign user to corporate (admin only)
+  assignCorporate: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      corporateCode: z.string(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      return db.createCorporateAssignment({
+        userId: input.userId,
+        corporateCode: input.corporateCode,
+        assignedBy: ctx.user.id,
+      });
+    }),
+
+  // Assign user to factory (admin only)
+  assignFactory: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      factoryCode: z.string(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      return db.createFactoryAssignment({
+        userId: input.userId,
+        factoryCode: input.factoryCode,
+        assignedBy: ctx.user.id,
+      });
+    }),
+
+  // Remove corporate assignment (admin only)
+  removeCorporateAssignment: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      corporateCode: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      return db.deleteCorporateAssignment(input.userId, input.corporateCode);
+    }),
+
+  // Remove factory assignment (admin only)
+  removeFactoryAssignment: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      factoryCode: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      return db.deleteFactoryAssignment(input.userId, input.factoryCode);
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -4107,6 +4182,7 @@ export const appRouter = router({
   corporateFactoryStats: corporateFactoryStatsRouter,
   import: importRouter,
   export: exportRouter,
+  userAssignment: userAssignmentRouter,
 });
 
 export type AppRouter = typeof appRouter;
