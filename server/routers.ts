@@ -3783,8 +3783,12 @@ const corporateFactoryStatsRouter = router({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
     }))
-    .query(async ({ input }) => {
-      return db.getYieldRateByCorporate(input);
+    .query(async ({ ctx, input }) => {
+      return db.getYieldRateByCorporate({
+        ...input,
+        userId: ctx.user.id,
+        userRole: ctx.user.role as 'admin' | 'user',
+      });
     }),
 
   yieldRateByFactory: protectedProcedure
@@ -3793,8 +3797,12 @@ const corporateFactoryStatsRouter = router({
       startDate: z.date().optional(),
       endDate: z.date().optional(),
     }))
-    .query(async ({ input }) => {
-      return db.getYieldRateByFactory(input);
+    .query(async ({ ctx, input }) => {
+      return db.getYieldRateByFactory({
+        ...input,
+        userId: ctx.user.id,
+        userRole: ctx.user.role as 'admin' | 'user',
+      });
     }),
 
   throughputByCorporate: protectedProcedure
@@ -3803,8 +3811,12 @@ const corporateFactoryStatsRouter = router({
       endDate: z.date().optional(),
       interval: z.enum(['hour', 'day', 'week']).optional(),
     }))
-    .query(async ({ input }) => {
-      return db.getThroughputByCorporate(input);
+    .query(async ({ ctx, input }) => {
+      return db.getThroughputByCorporate({
+        ...input,
+        userId: ctx.user.id,
+        userRole: ctx.user.role as 'admin' | 'user',
+      });
     }),
 
   throughputByFactory: protectedProcedure
@@ -3814,8 +3826,12 @@ const corporateFactoryStatsRouter = router({
       endDate: z.date().optional(),
       interval: z.enum(['hour', 'day', 'week']).optional(),
     }))
-    .query(async ({ input }) => {
-      return db.getThroughputByFactory(input);
+    .query(async ({ ctx, input }) => {
+      return db.getThroughputByFactory({
+        ...input,
+        userId: ctx.user.id,
+        userRole: ctx.user.role as 'admin' | 'user',
+      });
     }),
 });
 
