@@ -28,6 +28,14 @@ interface CacheStats {
   uptime: number;
 }
 
+interface ConnectionEvent {
+  type: 'connect' | 'disconnect' | 'error' | 'reconnect';
+  timestamp: Date;
+  message: string;
+}
+
+type ConnectionListener = (event: ConnectionEvent) => void;
+
 class RedisService {
   private redis: Redis | null = null;
   private subscriber: Redis | null = null;
@@ -43,6 +51,11 @@ class RedisService {
     hits: 0,
     misses: 0,
   };
+  
+  // Connection monitoring
+  private connectionListeners: ConnectionListener[] = [];
+  private connectionHistory: ConnectionEvent[] = [];
+  private readonly MAX_HISTORY = 100;
   
   private readonly DEFAULT_TTL = 300; // 5 minutes in seconds
   private readonly KEY_PREFIX = 'avi:';
@@ -74,19 +87,44 @@ class RedisService {
 
       this.redis.on('connect', () => {
         console.log('[Redis] Connected successfully');
+        const wasDisconnected = !this.isConnected;
         this.isConnected = true;
         this.lastError = null;
+        
+        // Emit connection event
+        this.emitConnectionEvent({
+          type: wasDisconnected ? 'reconnect' : 'connect',
+          timestamp: new Date(),
+          message: wasDisconnected ? 'Redis reconnected after disconnection' : 'Redis connected successfully',
+        });
       });
 
       this.redis.on('error', (err) => {
         console.error('[Redis] Connection error:', err.message);
         this.lastError = err.message;
         this.isConnected = false;
+        
+        // Emit error event
+        this.emitConnectionEvent({
+          type: 'error',
+          timestamp: new Date(),
+          message: `Redis error: ${err.message}`,
+        });
       });
 
       this.redis.on('close', () => {
         console.log('[Redis] Connection closed');
+        const wasConnected = this.isConnected;
         this.isConnected = false;
+        
+        // Emit disconnect event only if was previously connected
+        if (wasConnected) {
+          this.emitConnectionEvent({
+            type: 'disconnect',
+            timestamp: new Date(),
+            message: 'Redis connection closed - falling back to in-memory cache',
+          });
+        }
       });
 
       // Initialize subscriber for pub/sub
@@ -410,6 +448,67 @@ class RedisService {
   }
 
   /**
+   * Emit connection event to all listeners
+   */
+  private emitConnectionEvent(event: ConnectionEvent): void {
+    // Add to history
+    this.connectionHistory.push(event);
+    if (this.connectionHistory.length > this.MAX_HISTORY) {
+      this.connectionHistory.shift();
+    }
+    
+    // Notify all listeners
+    this.connectionListeners.forEach(listener => {
+      try {
+        listener(event);
+      } catch (err: any) {
+        console.error('[Redis] Listener error:', err.message);
+      }
+    });
+    
+    console.log(`[Redis] Connection event: ${event.type} - ${event.message}`);
+  }
+
+  /**
+   * Add connection event listener
+   */
+  onConnectionChange(listener: ConnectionListener): () => void {
+    this.connectionListeners.push(listener);
+    return () => {
+      const index = this.connectionListeners.indexOf(listener);
+      if (index > -1) {
+        this.connectionListeners.splice(index, 1);
+      }
+    };
+  }
+
+  /**
+   * Get connection history
+   */
+  getConnectionHistory(): ConnectionEvent[] {
+    return [...this.connectionHistory];
+  }
+
+  /**
+   * Get current connection status
+   */
+  getConnectionStatus(): {
+    isConnected: boolean;
+    lastError: string | null;
+    mode: 'redis' | 'memory';
+    uptime: number;
+    recentEvents: ConnectionEvent[];
+  } {
+    return {
+      isConnected: this.isConnected,
+      lastError: this.lastError,
+      mode: this.isConnected ? 'redis' : 'memory',
+      uptime: Date.now() - this.startTime,
+      recentEvents: this.connectionHistory.slice(-10),
+    };
+  }
+
+  /**
    * Cleanup resources
    */
   async destroy(): Promise<void> {
@@ -420,6 +519,7 @@ class RedisService {
       await this.redis.quit();
     }
     this.memoryCache.clear();
+    this.connectionListeners = [];
   }
 }
 

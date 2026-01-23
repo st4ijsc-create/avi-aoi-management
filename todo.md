@@ -1999,3 +1999,50 @@
 - [x] Thêm API endpoints (warmingStats, triggerWarming)
 - [x] Thêm CacheWarmingSection vào cache dashboard
 - [x] Graceful shutdown handling
+
+
+## Phase 96: API Enhancement, Email Branding, Cache UI, Redis Monitoring, Menu Reorganization
+
+### 1. API submit-inspection với companyCode/factoryCode
+- [x] API đã có sẵn companyCode, factoryCode, workshopCode, lineCode, stageCode, productionOrderCode, operatorId
+- [x] Database schema đã có corporateCode, factoryCode với indexes
+- [x] Validation và error handling đã hoàn chỉnh
+- [x] Backward compatibility - tất cả fields mới là optional
+- [x] Cập nhật API documentation với 7 enterprise fields mới
+
+### 2. Email Scheduled Reports Branding
+- [x] Tích hợp getDefaultEmailTemplateConfig vào scheduledReportService
+- [x] Apply template colors (primary, secondary, background) vào email HTML
+- [x] Apply logo, company name, footer text, copyright
+- [x] Apply contact info (email, phone, address)
+- [x] Preview email với template đã chọn
+- [x] Cập nhật formatReportHtml thành async function
+
+### 3. Cache Warming Configuration UI
+- [x] Thêm API endpoint updateWarmingConfig
+- [x] Tạo UI form cho warming settings (enable/disable, interval, warmOnStartup)
+- [x] Validation cho interval (min 5, max 1440 phút)
+- [x] Save và apply config changes
+- [x] Thêm vào Cache Statistics dashboard với nút "### 4. Redis Connection Monitoring
+- [x] Thêm event listeners cho Redis connect/disconnect/error/reconnect
+- [x] Tạo notification system với ConnectionEvent interface
+- [x] Hiển thị connection history trong Cache dashboard (10 recent events)
+- [x] Alert khi chuyển từ Redis sang fallback mode
+- [x] API endpoints: redisConnectionStatus, redisConnectionHistory
+- [x] Color-coded event display (green/red/yellow)
+
+### 5. Menu Reorganization
+- [x] Phân tích cấu trúc menu hiện tại
+- [x] Thiết kế menu categories theo chức năng (6 groups)
+- [x] Cập nhật navigation.tsx với cấu trúc mới
+- [x] Thêm role-based filtering (getFilteredNavGroups, hasAccessToItem)
+- [x] Tạo trang ScheduledReports cho báo cáo định kỳ
+- [x] Cập nhật DashboardLayout sử dụng getFilteredNavGroups
+
+Menu structure mới:
+1. Tổng quan - Dashboard
+2. Giám sát - Trạng thái máy, Cảnh báo, MQTT
+3. Sản xuất - Lệnh SX, Lịch sử kiểm tra
+4. Dữ liệu - Sản phẩm, Layout, Tập đoàn
+5. Thống kê - Báo cáo, Báo cáo định kỳ
+6. Quản trị - Users, Settings, API (Admin only)

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,8 +18,13 @@ import {
   HardDrive,
   Gauge,
   Flame,
-  Play
+  Play,
+  Settings,
+  Save
 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 
 interface CacheStats {
   hits: number;
@@ -40,9 +45,23 @@ interface CacheHealth {
 
 // Cache Warming Section Component
 function CacheWarmingSection() {
+  const [showConfig, setShowConfig] = useState(false);
+  const [configEnabled, setConfigEnabled] = useState(true);
+  const [configInterval, setConfigInterval] = useState(30);
+  const [configWarmOnStartup, setConfigWarmOnStartup] = useState(true);
+
   const { data: warmingStats, refetch } = trpc.corporateFactoryStats.warmingStats.useQuery(undefined, {
     refetchInterval: 30000, // Refresh every 30 seconds
   });
+
+  // Sync local state with server config
+  React.useEffect(() => {
+    if (warmingStats?.config) {
+      setConfigEnabled(warmingStats.config.enabled);
+      setConfigInterval(warmingStats.config.intervalMinutes);
+      setConfigWarmOnStartup(warmingStats.config.warmOnStart);
+    }
+  }, [warmingStats?.config]);
 
   const triggerWarmingMutation = trpc.corporateFactoryStats.triggerWarming.useMutation({
     onSuccess: () => {
@@ -54,23 +73,116 @@ function CacheWarmingSection() {
     },
   });
 
+  const updateConfigMutation = trpc.corporateFactoryStats.updateWarmingConfig.useMutation({
+    onSuccess: () => {
+      toast.success('Cấu hình đã được lưu');
+      refetch();
+      setShowConfig(false);
+    },
+    onError: (error) => {
+      toast.error('Lỗi lưu cấu hình', { description: error.message });
+    },
+  });
+
   const formatDuration = (ms: number) => {
     if (ms < 1000) return `${ms}ms`;
     return `${(ms / 1000).toFixed(2)}s`;
   };
 
+  const handleSaveConfig = () => {
+    updateConfigMutation.mutate({
+      enabled: configEnabled,
+      intervalMinutes: configInterval,
+      warmOnStartup: configWarmOnStartup,
+    });
+  };
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Flame className="h-5 w-5 text-orange-500" />
-          Cache Warming
-        </CardTitle>
-        <CardDescription>
-          Pre-cache statistics phổ biến để giảm cold start latency
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Flame className="h-5 w-5 text-orange-500" />
+              Cache Warming
+            </CardTitle>
+            <CardDescription>
+              Pre-cache statistics phổ biến để giảm cold start latency
+            </CardDescription>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => setShowConfig(!showConfig)}
+          >
+            <Settings className="h-4 w-4 mr-2" />
+            Cấu hình
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
+        {/* Configuration Panel */}
+        {showConfig && (
+          <div className="mb-6 p-4 bg-secondary/50 rounded-lg space-y-4">
+            <h4 className="font-medium text-foreground">Cấu hình Cache Warming</h4>
+            
+            <div className="flex items-center justify-between">
+              <Label htmlFor="warming-enabled" className="text-sm">
+                Kích hoạt Cache Warming
+              </Label>
+              <Switch
+                id="warming-enabled"
+                checked={configEnabled}
+                onCheckedChange={setConfigEnabled}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <Label htmlFor="warm-on-startup" className="text-sm">
+                Warm khi khởi động server
+              </Label>
+              <Switch
+                id="warm-on-startup"
+                checked={configWarmOnStartup}
+                onCheckedChange={setConfigWarmOnStartup}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="interval" className="text-sm">
+                Interval (phút) - Tối thiểu 5, tối đa 1440
+              </Label>
+              <Input
+                id="interval"
+                type="number"
+                min={5}
+                max={1440}
+                value={configInterval}
+                onChange={(e) => setConfigInterval(Math.max(5, Math.min(1440, parseInt(e.target.value) || 30)))}
+                className="w-full"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button 
+                size="sm" 
+                onClick={handleSaveConfig}
+                disabled={updateConfigMutation.isPending}
+              >
+                <Save className="h-4 w-4 mr-2" />
+                {updateConfigMutation.isPending ? 'Đang lưu...' : 'Lưu cấu hình'}
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setShowConfig(false)}
+              >
+                Hủy
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Warming Status */}
           <div className="space-y-4">
@@ -159,6 +271,12 @@ export function CacheStatsDashboard() {
   const { data: health, refetch: refetchHealth, isLoading: healthLoading } = 
     trpc.corporateFactoryStats.cacheHealth.useQuery(undefined, {
       refetchInterval: 10000,
+    });
+
+  // Redis connection status
+  const { data: redisStatus, refetch: refetchRedisStatus } = 
+    trpc.corporateFactoryStats.redisConnectionStatus.useQuery(undefined, {
+      refetchInterval: 15000, // Refresh every 15 seconds
     });
 
   const clearCacheMutation = trpc.corporateFactoryStats.clearCache.useMutation({
@@ -453,6 +571,96 @@ export function CacheStatsDashboard() {
 
       {/* Cache Warming */}
       <CacheWarmingSection />
+
+      {/* Redis Connection Monitoring */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-5 w-5 text-primary" />
+            Redis Connection Monitoring
+          </CardTitle>
+          <CardDescription>
+            Theo dõi trạng thái kết nối Redis và lịch sử sự kiện
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Current Status */}
+            <div className="space-y-4">
+              <h4 className="font-medium text-foreground">Trạng thái hiện tại</h4>
+              <div className="flex items-center justify-between py-2 border-b">
+                <span className="text-muted-foreground">Kết nối</span>
+                <Badge variant={redisStatus?.isConnected ? 'default' : 'secondary'}>
+                  {redisStatus?.isConnected ? 'Connected' : 'Disconnected'}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between py-2 border-b">
+                <span className="text-muted-foreground">Chế độ</span>
+                <Badge variant={redisStatus?.mode === 'redis' ? 'default' : 'outline'}>
+                  {redisStatus?.mode === 'redis' ? 'Redis' : 'In-Memory Fallback'}
+                </Badge>
+              </div>
+              {redisStatus?.lastError && (
+                <div className="p-3 bg-red-500/10 rounded-lg">
+                  <p className="text-sm font-medium text-red-600">Lỗi gần nhất</p>
+                  <p className="text-xs text-red-500 mt-1">{redisStatus.lastError}</p>
+                </div>
+              )}
+              {!redisStatus?.isConnected && !redisStatus?.lastError && (
+                <div className="p-3 bg-yellow-500/10 rounded-lg">
+                  <p className="text-sm font-medium text-yellow-600">
+                    <AlertTriangle className="h-4 w-4 inline mr-1" />
+                    Redis chưa được cấu hình
+                  </p>
+                  <p className="text-xs text-yellow-600 mt-1">
+                    Thêm REDIS_URL vào Secrets để kích hoạt Redis cache
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Recent Events */}
+            <div className="space-y-4">
+              <h4 className="font-medium text-foreground">Sự kiện gần đây</h4>
+              {redisStatus?.recentEvents && redisStatus.recentEvents.length > 0 ? (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {redisStatus.recentEvents.slice().reverse().map((event, idx) => (
+                    <div 
+                      key={idx} 
+                      className={`p-2 rounded text-sm flex items-start gap-2 ${
+                        event.type === 'connect' || event.type === 'reconnect' 
+                          ? 'bg-green-500/10 text-green-700' 
+                          : event.type === 'error' 
+                            ? 'bg-red-500/10 text-red-700'
+                            : 'bg-yellow-500/10 text-yellow-700'
+                      }`}
+                    >
+                      {event.type === 'connect' || event.type === 'reconnect' ? (
+                        <CheckCircle2 className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                      ) : event.type === 'error' ? (
+                        <XCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                      ) : (
+                        <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                      )}
+                      <div>
+                        <p className="font-medium capitalize">{event.type}</p>
+                        <p className="text-xs opacity-80">{event.message}</p>
+                        <p className="text-xs opacity-60">
+                          {new Date(event.timestamp).toLocaleString('vi-VN')}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground italic">
+                  Chưa có sự kiện nào
+                </p>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Cache Tips */}
       <Card>

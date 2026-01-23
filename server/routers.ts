@@ -3986,6 +3986,20 @@ const corporateFactoryStatsRouter = router({
       return cachedStats.getCacheHealth();
     }),
 
+  // Redis connection status with history
+  redisConnectionStatus: adminProcedure
+    .query(async () => {
+      const { redisService } = await import('./services/redisService');
+      return redisService.getConnectionStatus();
+    }),
+
+  // Redis connection history
+  redisConnectionHistory: adminProcedure
+    .query(async () => {
+      const { redisService } = await import('./services/redisService');
+      return redisService.getConnectionHistory();
+    }),
+
   // Clear all statistics cache
   clearCache: adminProcedure
     .mutation(async () => {
@@ -4005,6 +4019,19 @@ const corporateFactoryStatsRouter = router({
     .mutation(async () => {
       const { cacheWarmingService } = await import('./services/cacheWarmingService');
       await cacheWarmingService.triggerWarming();
+      return { success: true, message: 'Cache warming triggered' };
+    }),
+
+  // Update cache warming configuration
+  updateWarmingConfig: adminProcedure
+    .input(z.object({
+      enabled: z.boolean().optional(),
+      intervalMinutes: z.number().min(5).max(1440).optional(), // 5 min to 24 hours
+      warmOnStartup: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { cacheWarmingService } = await import('./services/cacheWarmingService');
+      cacheWarmingService.updateConfig(input);
       return { success: true, message: 'Cache warming triggered' };
     }),
 });

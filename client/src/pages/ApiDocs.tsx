@@ -52,6 +52,13 @@ export default function ApiDocs() {
   "batchNumber": "BATCH001",
   "cycleTime": 5.2,
   "overallResult": "OK",
+  "companyCode": "CORP-VN",
+  "factoryCode": "FAC-HN",
+  "workshopCode": "WS-01",
+  "lineCode": "LINE-A",
+  "stageCode": "STAGE-1",
+  "productionOrderCode": "PO-2025-001",
+  "operatorId": "OP-001",
   "measurements": [
     {
       "pointId": "POINT001",
@@ -271,6 +278,48 @@ export default function ApiDocs() {
                           <td className="py-2">string</td>
                           <td className="py-2"><CheckCircle2 className="h-4 w-4 text-success" /></td>
                           <td className="py-2 text-muted-foreground">"OK" hoặc "NG"</td>
+                        </tr>
+                        <tr className="border-b border-border/50">
+                          <td className="py-2"><code>companyCode</code></td>
+                          <td className="py-2">string</td>
+                          <td className="py-2">-</td>
+                          <td className="py-2 text-muted-foreground">Mã công ty/tập đoàn (Enterprise)</td>
+                        </tr>
+                        <tr className="border-b border-border/50">
+                          <td className="py-2"><code>factoryCode</code></td>
+                          <td className="py-2">string</td>
+                          <td className="py-2">-</td>
+                          <td className="py-2 text-muted-foreground">Mã nhà máy (Enterprise)</td>
+                        </tr>
+                        <tr className="border-b border-border/50">
+                          <td className="py-2"><code>workshopCode</code></td>
+                          <td className="py-2">string</td>
+                          <td className="py-2">-</td>
+                          <td className="py-2 text-muted-foreground">Mã nhà xưởng</td>
+                        </tr>
+                        <tr className="border-b border-border/50">
+                          <td className="py-2"><code>lineCode</code></td>
+                          <td className="py-2">string</td>
+                          <td className="py-2">-</td>
+                          <td className="py-2 text-muted-foreground">Mã dây chuyền</td>
+                        </tr>
+                        <tr className="border-b border-border/50">
+                          <td className="py-2"><code>stageCode</code></td>
+                          <td className="py-2">string</td>
+                          <td className="py-2">-</td>
+                          <td className="py-2 text-muted-foreground">Mã công đoạn</td>
+                        </tr>
+                        <tr className="border-b border-border/50">
+                          <td className="py-2"><code>productionOrderCode</code></td>
+                          <td className="py-2">string</td>
+                          <td className="py-2">-</td>
+                          <td className="py-2 text-muted-foreground">Mã lệnh sản xuất</td>
+                        </tr>
+                        <tr className="border-b border-border/50">
+                          <td className="py-2"><code>operatorId</code></td>
+                          <td className="py-2">string</td>
+                          <td className="py-2">-</td>
+                          <td className="py-2 text-muted-foreground">Mã công nhân vận hành</td>
                         </tr>
                         <tr>
                           <td className="py-2"><code>measurements</code></td>

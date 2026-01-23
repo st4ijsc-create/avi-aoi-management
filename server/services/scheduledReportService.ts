@@ -12,6 +12,33 @@ import * as db from '../db';
 import { sendEmail } from '../_core/email';
 import { notifyOwner } from '../_core/notification';
 
+// Email template config interface - matches db schema
+interface EmailTemplateConfig {
+  id: number;
+  name: string;
+  logoUrl: string | null;
+  companyName: string | null;
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  accentColor: string | null;
+  warningColor?: string | null;
+  successColor?: string | null;
+  errorColor?: string | null;
+  backgroundColor: string | null;
+  textColor?: string | null;
+  linkColor?: string | null;
+  fontFamily: string | null;
+  headingFontFamily?: string | null;
+  fontSize?: string | null;
+  footerText: string | null;
+  copyrightText?: string | null;
+  socialLinks?: any;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  contactAddress: string | null;
+  isDefault: boolean;
+}
+
 export type ReportFrequency = 'daily' | 'weekly' | 'monthly';
 export type ReportType = 'statistics' | 'alerts' | 'comprehensive';
 
@@ -134,7 +161,7 @@ class ScheduledReportService {
     console.log(`[ScheduledReport] Running report: ${report.name}`);
 
     const content = await this.generateReportContent(report);
-    const html = this.formatReportHtml(content);
+    const html = await this.formatReportHtml(content);
 
     // Send to all recipients
     for (const email of report.recipients) {
@@ -259,11 +286,32 @@ class ScheduledReportService {
   }
 
   /**
-   * Format report as HTML
+   * Format report as HTML with email template branding
    */
-  formatReportHtml(content: ReportContent): string {
+  async formatReportHtml(content: ReportContent, templateConfig?: EmailTemplateConfig | null): Promise<string> {
     const formatDate = (date: Date) => date.toLocaleDateString('vi-VN');
     const formatNumber = (num: number) => num.toLocaleString('vi-VN');
+
+    // Get default template if not provided
+    if (!templateConfig) {
+      templateConfig = await db.getDefaultEmailTemplateConfig();
+    }
+
+    // Default values if no template
+    const primaryColor = templateConfig?.primaryColor || '#2563eb';
+    const secondaryColor = templateConfig?.secondaryColor || '#1e40af';
+    const backgroundColor = templateConfig?.backgroundColor || '#f0f9ff';
+    const textColor = templateConfig?.textColor || '#333333';
+    const linkColor = templateConfig?.linkColor || '#2563eb';
+    const fontFamily = templateConfig?.fontFamily || 'Arial, sans-serif';
+    const headingFontFamily = templateConfig?.headingFontFamily || fontFamily;
+    const companyName = templateConfig?.companyName || 'AVI/AOI Factory Management System';
+    const logoUrl = templateConfig?.logoUrl;
+    const footerText = templateConfig?.footerText || 'Báo cáo được tạo tự động bởi hệ thống';
+    const copyrightText = templateConfig?.copyrightText || `© ${new Date().getFullYear()} ${companyName}`;
+    const contactEmail = templateConfig?.contactEmail;
+    const contactPhone = templateConfig?.contactPhone;
+    const contactAddress = templateConfig?.contactAddress;
 
     return `
 <!DOCTYPE html>
@@ -271,24 +319,35 @@ class ScheduledReportService {
 <head>
   <meta charset="utf-8">
   <style>
-    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }
-    h1 { color: #2563eb; border-bottom: 2px solid #2563eb; padding-bottom: 10px; }
-    h2 { color: #1e40af; margin-top: 30px; }
-    .summary { background: #f0f9ff; padding: 20px; border-radius: 8px; margin: 20px 0; }
+    body { font-family: ${fontFamily}; line-height: 1.6; color: ${textColor}; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #ffffff; }
+    .header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid ${primaryColor}; }
+    .logo { max-height: 60px; margin-bottom: 10px; }
+    .company-name { font-family: ${headingFontFamily}; font-size: 14px; color: ${secondaryColor}; margin: 0; }
+    h1 { font-family: ${headingFontFamily}; color: ${primaryColor}; border-bottom: 2px solid ${primaryColor}; padding-bottom: 10px; }
+    h2 { font-family: ${headingFontFamily}; color: ${secondaryColor}; margin-top: 30px; }
+    a { color: ${linkColor}; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .summary { background: ${backgroundColor}; padding: 20px; border-radius: 8px; margin: 20px 0; }
     .summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
     .stat-card { background: white; padding: 15px; border-radius: 6px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .stat-value { font-size: 24px; font-weight: bold; color: #2563eb; }
+    .stat-value { font-size: 24px; font-weight: bold; color: ${primaryColor}; }
     .stat-label { font-size: 12px; color: #666; text-transform: uppercase; }
     table { width: 100%; border-collapse: collapse; margin: 15px 0; }
     th, td { padding: 10px; text-align: left; border-bottom: 1px solid #e5e7eb; }
-    th { background: #f3f4f6; font-weight: 600; }
+    th { background: ${backgroundColor}; font-weight: 600; color: ${secondaryColor}; }
     .yield-high { color: #16a34a; }
     .yield-medium { color: #ca8a04; }
     .yield-low { color: #dc2626; }
-    .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #666; }
+    .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #666; text-align: center; }
+    .footer-contact { margin-top: 10px; }
+    .footer-contact a { color: ${linkColor}; }
   </style>
 </head>
 <body>
+  <div class="header">
+    ${logoUrl ? `<img src="${logoUrl}" alt="${companyName}" class="logo" />` : ''}
+    <p class="company-name">${companyName}</p>
+  </div>
   <h1>${content.title}</h1>
   <p>Kỳ báo cáo: ${formatDate(content.period.start)} - ${formatDate(content.period.end)}</p>
   
@@ -379,8 +438,16 @@ class ScheduledReportService {
   ` : ''}
 
   <div class="footer">
-    <p>Báo cáo được tạo tự động bởi AVI/AOI Factory Management System</p>
+    <p>${footerText}</p>
     <p>Thời gian tạo: ${content.generatedAt.toLocaleString('vi-VN')}</p>
+    ${(contactEmail || contactPhone || contactAddress) ? `
+    <div class="footer-contact">
+      ${contactEmail ? `<p>Email: <a href="mailto:${contactEmail}">${contactEmail}</a></p>` : ''}
+      ${contactPhone ? `<p>Điện thoại: ${contactPhone}</p>` : ''}
+      ${contactAddress ? `<p>Địa chỉ: ${contactAddress}</p>` : ''}
+    </div>
+    ` : ''}
+    <p style="margin-top: 15px; font-size: 11px; color: #999;">${copyrightText}</p>
   </div>
 </body>
 </html>
@@ -418,7 +485,7 @@ class ScheduledReportService {
     };
 
     const content = await this.generateReportContent(report);
-    const html = this.formatReportHtml(content);
+    const html = await this.formatReportHtml(content);
 
     // Send to all recipients
     for (const email of params.recipients) {
@@ -454,7 +521,7 @@ class ScheduledReportService {
     };
 
     const content = await this.generateReportContent(report);
-    const html = this.formatReportHtml(content);
+    const html = await this.formatReportHtml(content);
 
     return { content, html };
   }

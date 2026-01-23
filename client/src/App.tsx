@@ -31,6 +31,7 @@ import MqttAlertRules from "./pages/MqttAlertRules";
 import SystemConfiguration from "./pages/SystemConfiguration";
 import ImportExport from "./pages/ImportExport";
 import UserAssignments from "./pages/UserAssignments";
+import ScheduledReports from "./pages/ScheduledReports";
 
 function Router() {
   return (
@@ -63,6 +64,7 @@ function Router() {
       <Route path="/system-config" component={SystemConfiguration} />
       <Route path="/import-export" component={ImportExport} />
       <Route path="/user-assignments" component={UserAssignments} />
+      <Route path="/scheduled-reports" component={ScheduledReports} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

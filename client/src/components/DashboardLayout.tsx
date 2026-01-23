@@ -33,7 +33,7 @@ import { CSSProperties, ReactNode, useEffect, useRef, useState } from "react";
 import { useLocation, Link } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
-import { navGroups, NavGroup, NavItem, hasAccessToGroup } from "@/lib/navigation";
+import { navGroups, NavGroup, NavItem, hasAccessToGroup, getFilteredNavGroups } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
 type DashboardLayoutProps = {
@@ -212,10 +212,8 @@ function DashboardLayoutContent({
     }));
   };
 
-  // Filter groups based on user role
-  const visibleGroups = navGroups.filter(group => 
-    hasAccessToGroup(group.id, user?.role)
-  );
+  // Filter groups based on user role (also filters items within groups)
+  const visibleGroups = getFilteredNavGroups(user?.role);
 
   return (
     <>

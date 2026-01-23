@@ -269,9 +269,16 @@ class CacheWarmingService {
 
   /**
    * Update configuration
+   * @param config - Partial config with optional warmOnStartup (maps to warmOnStart)
    */
-  updateConfig(config: Partial<WarmingConfig>): void {
-    this.config = { ...this.config, ...config };
+  updateConfig(config: Partial<WarmingConfig> & { warmOnStartup?: boolean }): void {
+    // Map warmOnStartup to warmOnStart for API compatibility
+    const mappedConfig: Partial<WarmingConfig> = { ...config };
+    if ('warmOnStartup' in config) {
+      mappedConfig.warmOnStart = config.warmOnStartup;
+      delete (mappedConfig as any).warmOnStartup;
+    }
+    this.config = { ...this.config, ...mappedConfig };
     
     // Restart interval if needed
     if (this.warmingInterval) {
