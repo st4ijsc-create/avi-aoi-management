@@ -742,6 +742,38 @@ export default function Settings() {
                 )}
               </div>
 
+              {/* Category: Sản phẩm */}
+              <div className="space-y-1">
+                <button
+                  onClick={() => toggleCategory('products')}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Award className="h-4 w-4 text-orange-500" />
+                    <span>Sản phẩm</span>
+                  </div>
+                  {collapsedCategories['products'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </button>
+                {!collapsedCategories['products'] && (
+                  <div className="ml-6 space-y-1">
+                    <button
+                      onClick={() => window.location.href = '/product-models'}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-accent transition-colors"
+                    >
+                      <Award className="h-4 w-4" />
+                      Mẫu sản phẩm
+                    </button>
+                    <button
+                      onClick={() => window.location.href = '/product-machine-mapping'}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-accent transition-colors"
+                    >
+                      <Cpu className="h-4 w-4" />
+                      Mapping sản phẩm
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {/* Category: Chất lượng */}
               <div className="space-y-1">
                 <button

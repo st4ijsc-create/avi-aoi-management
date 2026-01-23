@@ -2900,3 +2900,29 @@ Menu structure mới:
 - [x] Hint text hướng dẫn người dùng
 - [x] Toast notification khi reschedule thành công
 
+
+## Phase 125: Infinite Scroll, Overlap Validation & Category/Catalog Fix
+
+### 1. Infinite Scroll Component
+- [x] Tạo useInfiniteScroll hook với cursor-based pagination
+- [x] InfiniteScrollList component với loading states
+- [x] Intersection Observer cho auto-load (rootMargin: 100px)
+- [x] Support refresh, reset, loadMore functions
+- [x] Error handling và retry functionality
+- [x] Total count display và progress indicator
+- [ ] Áp dụng cho History page (tùy chọn)
+- [ ] Áp dụng cho Alert History (tùy chọn)
+
+### 2. Gantt Overlap Validation
+- [x] API checkScheduleOverlap để kiểm tra xung đột
+- [x] Validate trước khi reschedule (trong reschedule mutation)
+- [x] Frontend check overlap khi drag-drop
+- [x] Hiển thị warning với danh sách lệnh trùng lịch
+- [x] Option forceOverride cho phép bỏ qua overlap
+- [x] Button "Xác nhận (bỏ qua cảnh báo)" với variant destructive### 3. Fix Category/Catalog Settings
+- [x] Kiểm tra Settings page tabs
+- [x] Xác định: ProductModels.tsx, ProductMachineMapping.tsx đã có
+- [x] Thêm category "Sản phẩm" vào Settings sidebar
+- [x] Thêm links đến "Mẫu sản phẩm" và "Mapping sản phẩm"
+- [x] Collapsible category với icon orangehị đúng
+

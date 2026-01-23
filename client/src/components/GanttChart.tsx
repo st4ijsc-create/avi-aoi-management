@@ -187,7 +187,9 @@ export default function GanttChart({
     newStartDate: Date | null;
     newEndDate: Date | null;
     newLineId: number | null;
-  }>({ open: false, order: null, newStartDate: null, newEndDate: null, newLineId: null });
+    hasOverlap?: boolean;
+    overlappingOrders?: { orderCode: string }[];
+  }>({ open: false, order: null, newStartDate: null, newEndDate: null, newLineId: null, hasOverlap: false, overlappingOrders: [] });
   const [undoStack, setUndoStack] = useState<ScheduleChange[]>([]);
   const [redoStack, setRedoStack] = useState<ScheduleChange[]>([]);
   const [isRescheduling, setIsRescheduling] = useState(false);
@@ -374,13 +376,30 @@ export default function GanttChart({
     const newStartDate = addDays(currentStart, daysMoved);
     const newEndDate = addDays(currentEnd, daysMoved);
 
-    // Show confirmation dialog
+    // Check for overlap with other orders on the same line
+    const targetLine = targetLineId !== order.lineId ? targetLineId : order.lineId;
+    const ordersOnLine = orders.filter(o => 
+      o.lineId === targetLine && 
+      o.id !== order.id && 
+      o.status !== 'cancelled'
+    );
+    
+    const overlappingOrders = ordersOnLine.filter(o => {
+      const oStart = o.scheduledStartDate ? new Date(o.scheduledStartDate) : null;
+      const oEnd = o.scheduledEndDate ? new Date(o.scheduledEndDate) : null;
+      if (!oStart || !oEnd) return false;
+      return newStartDate < oEnd && newEndDate > oStart;
+    });
+
+    // Show confirmation dialog with overlap warning
     setConfirmDialog({
       open: true,
       order,
       newStartDate,
       newEndDate,
       newLineId: targetLineId !== order.lineId ? targetLineId : null,
+      hasOverlap: overlappingOrders.length > 0,
+      overlappingOrders: overlappingOrders.map(o => ({ orderCode: o.orderCode })),
     });
   };
 
@@ -719,7 +738,7 @@ export default function GanttChart({
       </CardContent>
 
       {/* Confirmation Dialog */}
-      <Dialog open={confirmDialog.open} onOpenChange={(open) => !open && setConfirmDialog({ open: false, order: null, newStartDate: null, newEndDate: null, newLineId: null })}>
+      <Dialog open={confirmDialog.open} onOpenChange={(open) => !open && setConfirmDialog({ open: false, order: null, newStartDate: null, newEndDate: null, newLineId: null, hasOverlap: false, overlappingOrders: [] })}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Xác nhận thay đổi lịch</DialogTitle>
@@ -746,17 +765,44 @@ export default function GanttChart({
                 )}
               </div>
             )}
+            
+            {/* Overlap Warning */}
+            {confirmDialog.hasOverlap && confirmDialog.overlappingOrders && confirmDialog.overlappingOrders.length > 0 && (
+              <div className="bg-yellow-500/10 border border-yellow-500/30 p-3 rounded-lg space-y-2">
+                <div className="flex items-center gap-2 text-yellow-600 font-medium">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <span>Cảnh báo: Trùng lịch!</span>
+                </div>
+                <p className="text-sm text-yellow-600/80">
+                  Lịch này trùng với {confirmDialog.overlappingOrders.length} lệnh sản xuất khác:
+                </p>
+                <ul className="text-sm text-yellow-600/80 list-disc list-inside">
+                  {confirmDialog.overlappingOrders.map((o, i) => (
+                    <li key={i}>{o.orderCode}</li>
+                  ))}
+                </ul>
+                <p className="text-sm text-yellow-600/80 italic">
+                  Bạn vẫn có thể tiếp tục nếu chấp nhận lịch trùng.
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button 
               variant="outline" 
-              onClick={() => setConfirmDialog({ open: false, order: null, newStartDate: null, newEndDate: null, newLineId: null })}
+              onClick={() => setConfirmDialog({ open: false, order: null, newStartDate: null, newEndDate: null, newLineId: null, hasOverlap: false, overlappingOrders: [] })}
               disabled={isRescheduling}
             >
               Hủy
             </Button>
-            <Button onClick={confirmReschedule} disabled={isRescheduling}>
-              {isRescheduling ? "Đang xử lý..." : "Xác nhận"}
+            <Button 
+              onClick={confirmReschedule} 
+              disabled={isRescheduling}
+              variant={confirmDialog.hasOverlap ? "destructive" : "default"}
+            >
+              {isRescheduling ? "Đang xử lý..." : confirmDialog.hasOverlap ? "Xác nhận (bỏ qua cảnh báo)" : "Xác nhận"}
             </Button>
           </DialogFooter>
         </DialogContent>

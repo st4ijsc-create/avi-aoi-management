@@ -2250,17 +2250,89 @@ const productionOrderRouter = router({
     }),
 
   // Reschedule production order (drag-drop from Gantt chart)
+  // Check for schedule overlap
+  checkScheduleOverlap: protectedProcedure
+    .input(z.object({
+      lineId: z.number(),
+      startDate: z.date(),
+      endDate: z.date(),
+      excludeOrderId: z.number().optional(),
+    }))
+    .query(async ({ input }) => {
+      const orders = await db.getProductionOrders({ lineId: input.lineId });
+      
+      const overlappingOrders = orders.filter(order => {
+        // Skip the order being rescheduled
+        if (input.excludeOrderId && order.id === input.excludeOrderId) {
+          return false;
+        }
+        
+        // Skip cancelled orders
+        if (order.status === 'cancelled') {
+          return false;
+        }
+        
+        // Check for date overlap
+        const orderStart = order.plannedStartDate ? new Date(order.plannedStartDate) : null;
+        const orderEnd = order.plannedEndDate ? new Date(order.plannedEndDate) : null;
+        
+        if (!orderStart || !orderEnd) {
+          return false;
+        }
+        
+        // Overlap exists if: newStart < existingEnd AND newEnd > existingStart
+        return input.startDate < orderEnd && input.endDate > orderStart;
+      });
+      
+      return {
+        hasOverlap: overlappingOrders.length > 0,
+        overlappingOrders: overlappingOrders.map(o => ({
+          id: o.id,
+          orderCode: o.orderCode,
+          plannedStartDate: o.plannedStartDate,
+          plannedEndDate: o.plannedEndDate,
+          status: o.status,
+        })),
+      };
+    }),
+
   reschedule: adminProcedure
     .input(z.object({
       id: z.number(),
       scheduledStartDate: z.date(),
       scheduledEndDate: z.date(),
       lineId: z.number().optional(),
+      forceOverride: z.boolean().optional(), // Allow override overlap
     }))
     .mutation(async ({ input, ctx }) => {
       const order = await db.getProductionOrderById(input.id);
       if (!order) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Production order not found' });
+      }
+
+      const targetLineId = input.lineId || order.lineId;
+
+      // Check for overlap unless force override is set
+      if (!input.forceOverride) {
+        const orders = await db.getProductionOrders({ lineId: targetLineId });
+        
+        const overlappingOrders = orders.filter(o => {
+          if (o.id === input.id || o.status === 'cancelled') return false;
+          
+          const oStart = o.plannedStartDate ? new Date(o.plannedStartDate) : null;
+          const oEnd = o.plannedEndDate ? new Date(o.plannedEndDate) : null;
+          
+          if (!oStart || !oEnd) return false;
+          
+          return input.scheduledStartDate < oEnd && input.scheduledEndDate > oStart;
+        });
+        
+        if (overlappingOrders.length > 0) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: `Lịch trùng với ${overlappingOrders.length} lệnh sản xuất khác: ${overlappingOrders.map(o => o.orderCode).join(', ')}. Sử dụng forceOverride=true để bỏ qua.`,
+          });
+        }
       }
 
       const updateData: Record<string, unknown> = {
@@ -2295,6 +2367,7 @@ const productionOrderRouter = router({
           newStartDate: input.scheduledStartDate,
           newEndDate: input.scheduledEndDate,
           newLineId: input.lineId || order.lineId,
+          forceOverride: input.forceOverride || false,
         },
       });
 
