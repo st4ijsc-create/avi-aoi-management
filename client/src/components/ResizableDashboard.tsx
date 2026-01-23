@@ -35,8 +35,15 @@ import {
   FileImage,
   FileText,
   X,
+  RefreshCw,
+  Timer,
+  Save,
+  Trash2,
+  Plus,
   type LucideIcon,
 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -180,6 +187,17 @@ export const WIDGET_DEFINITIONS: Record<string, {
 
 interface ResizableDashboardProps {
   children: (widgetId: string) => React.ReactNode;
+  onRefreshWidget?: (widgetId: string) => void;
+}
+
+type AutoRefreshInterval = 0 | 30 | 60 | 300; // 0 = off, seconds
+
+interface CustomTemplate {
+  id: string;
+  name: string;
+  widgets: string[];
+  layout: LayoutItem[];
+  createdAt: number;
 }
 
 // Default layouts for different breakpoints
@@ -237,7 +255,7 @@ const generateDefaultLayouts = (): ResponsiveLayouts => {
   };
 };
 
-export function ResizableDashboard({ children }: ResizableDashboardProps) {
+export function ResizableDashboard({ children, onRefreshWidget }: ResizableDashboardProps) {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const [layouts, setLayouts] = useState<ResponsiveLayouts>(generateDefaultLayouts);
@@ -250,6 +268,18 @@ export function ResizableDashboard({ children }: ResizableDashboardProps) {
   const [containerWidth, setContainerWidth] = useState(1200);
   const [fullscreenWidget, setFullscreenWidget] = useState<string | null>(null);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
+  const [refreshingWidgets, setRefreshingWidgets] = useState<Set<string>>(new Set());
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState<AutoRefreshInterval>(() => {
+    const saved = localStorage.getItem('dashboard-auto-refresh');
+    return saved ? parseInt(saved) as AutoRefreshInterval : 0;
+  });
+  const [autoRefreshCountdown, setAutoRefreshCountdown] = useState(0);
+  const [customTemplates, setCustomTemplates] = useState<CustomTemplate[]>(() => {
+    const saved = localStorage.getItem('dashboard-custom-templates');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState('');
 
   // Fetch saved layout
   const { data: savedLayout, refetch } = trpc.dashboardWidget.getLayout.useQuery(undefined, {
@@ -513,6 +543,126 @@ export function ResizableDashboard({ children }: ResizableDashboardProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [fullscreenWidget, closeFullscreen]);
 
+  // Refresh widget handler
+  const handleRefreshWidget = useCallback(async (widgetId: string) => {
+    if (refreshingWidgets.has(widgetId)) return;
+    
+    setRefreshingWidgets(prev => new Set(prev).add(widgetId));
+    
+    try {
+      if (onRefreshWidget) {
+        await onRefreshWidget(widgetId);
+      }
+      toast.success(t('dashboard.widgetRefreshed', 'Widget refreshed'));
+    } catch (error) {
+      toast.error(t('dashboard.refreshFailed', 'Failed to refresh widget'));
+    } finally {
+      setTimeout(() => {
+        setRefreshingWidgets(prev => {
+          const next = new Set(prev);
+          next.delete(widgetId);
+          return next;
+        });
+      }, 500);
+    }
+  }, [refreshingWidgets, onRefreshWidget, t]);
+
+  // Refresh all visible widgets
+  const handleRefreshAll = useCallback(async () => {
+    const widgetIds = Array.from(visibleWidgets);
+    for (const widgetId of widgetIds) {
+      await handleRefreshWidget(widgetId);
+    }
+  }, [visibleWidgets, handleRefreshWidget]);
+
+  // Auto-refresh effect
+  useEffect(() => {
+    if (autoRefreshInterval === 0) {
+      setAutoRefreshCountdown(0);
+      return;
+    }
+
+    setAutoRefreshCountdown(autoRefreshInterval);
+    
+    const countdownInterval = setInterval(() => {
+      setAutoRefreshCountdown(prev => {
+        if (prev <= 1) {
+          // Trigger refresh
+          handleRefreshAll();
+          return autoRefreshInterval;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    // Pause when tab is not visible
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        clearInterval(countdownInterval);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(countdownInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [autoRefreshInterval, handleRefreshAll]);
+
+  // Save auto-refresh preference
+  const handleAutoRefreshChange = useCallback((interval: AutoRefreshInterval) => {
+    setAutoRefreshInterval(interval);
+    localStorage.setItem('dashboard-auto-refresh', String(interval));
+    if (interval > 0) {
+      toast.success(t('dashboard.autoRefreshEnabled', `Auto-refresh: every ${interval}s`));
+    } else {
+      toast.info(t('dashboard.autoRefreshDisabled', 'Auto-refresh disabled'));
+    }
+  }, [t]);
+
+  // Save custom template
+  const handleSaveTemplate = useCallback(() => {
+    if (!newTemplateName.trim()) {
+      toast.error(t('dashboard.templateNameRequired', 'Template name is required'));
+      return;
+    }
+
+    const newTemplate: CustomTemplate = {
+      id: `custom-${Date.now()}`,
+      name: newTemplateName.trim(),
+      widgets: Array.from(visibleWidgets),
+      layout: (layouts.lg || []).map(item => ({ ...item })),
+      createdAt: Date.now(),
+    };
+
+    const updated = [...customTemplates, newTemplate];
+    setCustomTemplates(updated);
+    localStorage.setItem('dashboard-custom-templates', JSON.stringify(updated));
+    
+    setNewTemplateName('');
+    setSaveTemplateOpen(false);
+    toast.success(t('dashboard.templateSaved', `Template "${newTemplate.name}" saved`));
+  }, [newTemplateName, visibleWidgets, layouts, customTemplates, t]);
+
+  // Delete custom template
+  const handleDeleteTemplate = useCallback((templateId: string) => {
+    const updated = customTemplates.filter(t => t.id !== templateId);
+    setCustomTemplates(updated);
+    localStorage.setItem('dashboard-custom-templates', JSON.stringify(updated));
+    toast.success(t('dashboard.templateDeleted', 'Template deleted'));
+  }, [customTemplates, t]);
+
+  // Apply custom template
+  const handleApplyCustomTemplate = useCallback((template: CustomTemplate) => {
+    setVisibleWidgets(new Set(template.widgets));
+    setLayouts(prev => ({
+      ...prev,
+      lg: template.layout,
+    }));
+    setHasChanges(true);
+    toast.success(t('dashboard.templateApplied', `Template "${template.name}" applied`));
+  }, [t]);
+
   // Filter layouts to only show visible widgets
   const visibleLayouts = useMemo(() => {
     const filtered: ResponsiveLayouts = {
@@ -554,6 +704,43 @@ export function ResizableDashboard({ children }: ResizableDashboardProps) {
         </div>
         
         <div className="flex items-center gap-2">
+          {/* Auto-refresh Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Timer className="h-4 w-4" />
+                {autoRefreshInterval > 0 ? (
+                  <span className="text-xs">
+                    {autoRefreshCountdown}s
+                  </span>
+                ) : (
+                  'Auto'
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Auto Refresh</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => handleAutoRefreshChange(0)}>
+                <span className={autoRefreshInterval === 0 ? 'font-bold' : ''}>Off</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleAutoRefreshChange(30)}>
+                <span className={autoRefreshInterval === 30 ? 'font-bold' : ''}>Every 30 seconds</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleAutoRefreshChange(60)}>
+                <span className={autoRefreshInterval === 60 ? 'font-bold' : ''}>Every 1 minute</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleAutoRefreshChange(300)}>
+                <span className={autoRefreshInterval === 300 ? 'font-bold' : ''}>Every 5 minutes</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleRefreshAll}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh Now
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           {/* Templates Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -562,8 +749,8 @@ export function ResizableDashboard({ children }: ResizableDashboardProps) {
                 Templates
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Layout Templates</DropdownMenuLabel>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuLabel>Preset Templates</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => applyTemplate('compact')}>
                 <div className="flex flex-col">
@@ -583,7 +770,37 @@ export function ResizableDashboard({ children }: ResizableDashboardProps) {
                   <span className="text-xs text-muted-foreground">Focus on charts and trends</span>
                 </div>
               </DropdownMenuItem>
+              
+              {customTemplates.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>Custom Templates</DropdownMenuLabel>
+                  {customTemplates.map(template => (
+                    <DropdownMenuItem key={template.id} className="flex justify-between">
+                      <span onClick={() => handleApplyCustomTemplate(template)} className="flex-1 cursor-pointer">
+                        {template.name}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 ml-2"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteTemplate(template.id);
+                        }}
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </Button>
+                    </DropdownMenuItem>
+                  ))}
+                </>
+              )}
+              
               <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setSaveTemplateOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Save Current as Template
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={handleReset}>
                 <RotateCcw className="h-4 w-4 mr-2" />
                 Reset to Default
@@ -701,15 +918,27 @@ export function ResizableDashboard({ children }: ResizableDashboardProps) {
                     <Icon className="h-4 w-4 text-primary" />
                     <span className="font-medium text-sm">{getWidgetName(item.i)}</span>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={() => handleFullscreen(item.i)}
-                    title="Fullscreen"
-                  >
-                    <Maximize2 className="h-3 w-3" />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={() => handleRefreshWidget(item.i)}
+                      disabled={refreshingWidgets.has(item.i)}
+                      title="Refresh widget"
+                    >
+                      <RefreshCw className={`h-3 w-3 ${refreshingWidgets.has(item.i) ? 'animate-spin' : ''}`} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={() => handleFullscreen(item.i)}
+                      title="Fullscreen"
+                    >
+                      <Maximize2 className="h-3 w-3" />
+                    </Button>
+                  </div>
                 </div>
                 <div className="p-4 h-[calc(100%-40px)] overflow-auto">
                   {children(item.i)}
@@ -769,6 +998,50 @@ export function ResizableDashboard({ children }: ResizableDashboardProps) {
           </div>
         </div>
       )}
+
+      {/* Save Template Dialog */}
+      <Dialog open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Save as Template</DialogTitle>
+            <DialogDescription>
+              Save your current dashboard layout as a custom template for quick access later.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="template-name">Template Name</Label>
+              <Input
+                id="template-name"
+                placeholder="My Custom Layout"
+                value={newTemplateName}
+                onChange={(e) => setNewTemplateName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSaveTemplate();
+                  }
+                }}
+              />
+            </div>
+            <div className="text-sm text-muted-foreground">
+              <p>This template will save:</p>
+              <ul className="list-disc list-inside mt-1">
+                <li>{visibleWidgets.size} visible widgets</li>
+                <li>Current layout positions and sizes</li>
+              </ul>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setSaveTemplateOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveTemplate} className="gap-2">
+              <Save className="h-4 w-4" />
+              Save Template
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

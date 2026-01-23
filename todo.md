@@ -2118,3 +2118,26 @@ Menu structure mới:
 - [x] Export dropdown với PNG và PDF options
 - [x] Capture toàn bộ dashboard với scale 2x
 - [x] PDF có header với title và timestamp
+
+
+## Phase 100: Widget Refresh, Auto-refresh, Custom Templates
+
+### 1. Widget Refresh Button
+- [x] Thêm nút refresh cho mỗi widget header
+- [x] Tạo callback mechanism (onRefreshWidget prop)
+- [x] Hiển thị loading state với animate-spin
+- [x] Toast notification khi refresh thành công
+
+### 2. Dashboard Auto-refresh
+- [x] Thêm dropdown chọn interval (Off, 30s, 1m, 5m)
+- [x] Lưu preference vào localStorage
+- [x] Hiển thị countdown timer trên button
+- [x] Pause auto-refresh khi tab không active
+- [x] Refresh Now button
+
+### 3. Custom Template Save
+- [x] Lưu custom templates vào localStorage
+- [x] UI dialog để save template với tên
+- [x] Hiển thị custom templates trong dropdown
+- [x] Delete custom template option
+- [x] Apply custom template
