@@ -3773,6 +3773,48 @@ const systemConfigRouter = router({
     }),
 });
 
+const corporateFactoryStatsRouter = router({
+  yieldRateByCorporate: protectedProcedure
+    .input(z.object({
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }))
+    .query(async ({ input }) => {
+      return db.getYieldRateByCorporate(input);
+    }),
+
+  yieldRateByFactory: protectedProcedure
+    .input(z.object({
+      corporateCode: z.string().optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }))
+    .query(async ({ input }) => {
+      return db.getYieldRateByFactory(input);
+    }),
+
+  throughputByCorporate: protectedProcedure
+    .input(z.object({
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      interval: z.enum(['hour', 'day', 'week']).optional(),
+    }))
+    .query(async ({ input }) => {
+      return db.getThroughputByCorporate(input);
+    }),
+
+  throughputByFactory: protectedProcedure
+    .input(z.object({
+      corporateCode: z.string().optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      interval: z.enum(['hour', 'day', 'week']).optional(),
+    }))
+    .query(async ({ input }) => {
+      return db.getThroughputByFactory(input);
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -3840,6 +3882,7 @@ export const appRouter = router({
   mqttClient: mqttClientRouter,
   mqttAlert: mqttAlertRouter,
   systemConfig: systemConfigRouter,
+  corporateFactoryStats: corporateFactoryStatsRouter,
 });
 
 export type AppRouter = typeof appRouter;

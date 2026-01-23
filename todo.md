@@ -1729,3 +1729,44 @@
 - [x] Test submitInspection với companyCode và factoryCode
 - [x] Test backward compatibility (không có corporate/factory codes)
 - [x] 2 tests passed
+
+
+## Phase 88: Enterprise Features
+
+### 1. Dashboard Statistics by Corporate/Factory
+- [x] Thêm corporateFactoryStatsRouter trong routers.ts
+- [x] Thêm db functions: getYieldRateByCorporate, getYieldRateByFactory
+- [x] Thêm db functions: getThroughputByCorporate, getThroughputByFactory
+- [x] Tạo CorporateFactoryStats component
+- [x] Thêm biểu đồ Bar Chart cho yield rate comparison
+- [x] Thêm biểu đồ Line Chart cho throughput trends
+- [x] Thêm filters: date range (7d/30d/90d), corporate selector
+- [x] Thêm tab "Công ty/Nhà máy" trong Dashboard
+- [x] Summary cards cho từng corporate
+
+### 2. Bulk Import/Export
+- [ ] Cài đặt xlsx package
+- [ ] Tạo importRouter với endpoints: importFactories, importWorkshops, importMachines
+- [ ] Tạo exportRouter với endpoints: exportInspections, exportStatistics
+- [ ] Thêm validation cho import data
+- [ ] Thêm error handling và rollback cho failed imports
+- [ ] Tạo Import/Export page trong UI
+- [ ] Thêm file upload component
+- [ ] Thêm download Excel template buttons
+- [ ] Thêm progress indicator cho bulk operations
+
+### 3. Multi-tenant Access Control
+- [ ] Thêm user_corporate_assignments table
+- [ ] Thêm user_factory_assignments table
+- [ ] Thêm middleware checkCorporateAccess
+- [ ] Thêm middleware checkFactoryAccess
+- [ ] Cập nhật tất cả inspection/statistics endpoints với access control
+- [ ] Tạo User Assignment page cho admin
+- [ ] Thêm corporate/factory selector trong user profile
+- [ ] Filter data theo user assignments trong tất cả list endpoints
+
+### 4. Testing
+- [ ] Viết tests cho corporate/factory statistics
+- [ ] Viết tests cho import/export functions
+- [ ] Viết tests cho multi-tenant access control
+- [ ] Run all tests và fix failures

@@ -48,6 +48,7 @@ import {
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { EmptyState, NoWorkstationData } from "@/components/EmptyState";
+import { CorporateFactoryStats } from "@/components/CorporateFactoryStats";
 import { ChartErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
 import { StatsCardSkeleton, ChartSkeleton, PieChartSkeleton, ListSkeleton, MachineGridSkeleton } from "@/components/AnalyticsSkeleton";
 import { WorkstationNGHeatmap, MeasurementPointNGList } from "@/components/NGVisualReflect";
@@ -153,7 +154,7 @@ export default function Dashboard() {
   const [autoRefreshInterval, setAutoRefreshInterval] = useState("30");
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(true);
   const [lastRefreshTime, setLastRefreshTime] = useState(new Date());
-  const [activeTab, setActiveTab] = useState<"overview" | "layout" | "ng-visual">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "layout" | "ng-visual" | "corporate-stats">("overview");
   const [machineStatusFilter, setMachineStatusFilter] = useState<"all" | "online" | "offline">("all");
   const [ngTimeFilter, setNgTimeFilter] = useState<"day" | "week" | "month">("week");
   const [selectedWorkstationForDrilldown, setSelectedWorkstationForDrilldown] = useState<{ id: number; code: string; name: string } | null>(null);
@@ -1068,8 +1069,8 @@ export default function Dashboard() {
         </Card>
 
         {/* Tabs for Overview and Layout */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "overview" | "layout" | "ng-visual")} className="w-full">
-          <TabsList className="grid w-full max-w-lg grid-cols-3">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "overview" | "layout" | "ng-visual" | "corporate-stats")} className="w-full">
+          <TabsList className="grid w-full max-w-2xl grid-cols-4">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
               Tổng quan
@@ -1077,6 +1078,10 @@ export default function Dashboard() {
             <TabsTrigger value="ng-visual" className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4" />
               NG Visual
+            </TabsTrigger>
+            <TabsTrigger value="corporate-stats" className="flex items-center gap-2">
+              <Factory className="h-4 w-4" />
+              Công ty/Nhà máy
             </TabsTrigger>
             <TabsTrigger value="layout" className="flex items-center gap-2">
               <LayoutGrid className="h-4 w-4" />
@@ -1900,6 +1905,11 @@ export default function Dashboard() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          {/* Corporate/Factory Stats Tab */}
+          <TabsContent value="corporate-stats" className="space-y-6 mt-6">
+            <CorporateFactoryStats />
           </TabsContent>
 
           {/* Layout Tab */}

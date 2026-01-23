@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, gte, lte, like, sql, or, isNull, isNotNull, not, ne } from "drizzle-orm";
+import { eq, and, desc, asc, gte, lte, like, sql, or, isNull, isNotNull, not, ne, SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { 
   InsertUser, users,
@@ -4640,4 +4640,172 @@ export async function createSystemConfig(data: {
   
   const result = await db.insert(systemConfig).values(data);
   return { id: Number(result[0].insertId) };
+}
+
+
+// ============ CORPORATE/FACTORY STATISTICS FUNCTIONS ============
+export async function getYieldRateByCorporate(filters: {
+  startDate?: Date;
+  endDate?: Date;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions = [];
+  if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const results = await db
+    .select({
+      corporateCode: productInspections.corporateCode,
+      totalInspections: sql<number>`COUNT(*)`,
+      okCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'OK' THEN 1 ELSE 0 END)`,
+      ngCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NG' THEN 1 ELSE 0 END)`,
+      ntfCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NTF' THEN 1 ELSE 0 END)`,
+    })
+    .from(productInspections)
+    .where(whereClause)
+    .groupBy(productInspections.corporateCode);
+
+  return results.map(r => ({
+    corporateCode: r.corporateCode || 'N/A',
+    totalInspections: Number(r.totalInspections),
+    okCount: Number(r.okCount),
+    ngCount: Number(r.ngCount),
+    ntfCount: Number(r.ntfCount),
+    yieldRate: Number(r.totalInspections) > 0 
+      ? (Number(r.okCount) / Number(r.totalInspections) * 100).toFixed(2)
+      : '0.00',
+  }));
+}
+
+export async function getYieldRateByFactory(filters: {
+  corporateCode?: string;
+  startDate?: Date;
+  endDate?: Date;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions = [];
+  if (filters.corporateCode) conditions.push(eq(productInspections.corporateCode, filters.corporateCode));
+  if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const results = await db
+    .select({
+      corporateCode: productInspections.corporateCode,
+      factoryCode: productInspections.factoryCode,
+      totalInspections: sql<number>`COUNT(*)`,
+      okCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'OK' THEN 1 ELSE 0 END)`,
+      ngCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NG' THEN 1 ELSE 0 END)`,
+      ntfCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NTF' THEN 1 ELSE 0 END)`,
+    })
+    .from(productInspections)
+    .where(whereClause)
+    .groupBy(productInspections.corporateCode, productInspections.factoryCode);
+
+  return results.map(r => ({
+    corporateCode: r.corporateCode || 'N/A',
+    factoryCode: r.factoryCode || 'N/A',
+    totalInspections: Number(r.totalInspections),
+    okCount: Number(r.okCount),
+    ngCount: Number(r.ngCount),
+    ntfCount: Number(r.ntfCount),
+    yieldRate: Number(r.totalInspections) > 0 
+      ? (Number(r.okCount) / Number(r.totalInspections) * 100).toFixed(2)
+      : '0.00',
+  }));
+}
+
+export async function getThroughputByCorporate(filters: {
+  startDate?: Date;
+  endDate?: Date;
+  interval?: 'hour' | 'day' | 'week';
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const interval = filters.interval || 'day';
+  const conditions = [];
+  if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  let dateFormat: SQL;
+  if (interval === 'hour') {
+    dateFormat = sql`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%m-%d %H:00:00')`;
+  } else if (interval === 'week') {
+    dateFormat = sql`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%u')`;
+  } else {
+    dateFormat = sql`DATE(${productInspections.inspectionTime})`;
+  }
+
+  const results = await db
+    .select({
+      corporateCode: productInspections.corporateCode,
+      timeInterval: dateFormat.as('timeInterval'),
+      count: sql<number>`COUNT(*)`,
+    })
+    .from(productInspections)
+    .where(whereClause)
+    .groupBy(productInspections.corporateCode, sql`timeInterval`)
+    .orderBy(sql`timeInterval`);
+
+  return results.map(r => ({
+    corporateCode: r.corporateCode || 'N/A',
+    timeInterval: r.timeInterval,
+    count: Number(r.count),
+  }));
+}
+
+export async function getThroughputByFactory(filters: {
+  corporateCode?: string;
+  startDate?: Date;
+  endDate?: Date;
+  interval?: 'hour' | 'day' | 'week';
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const interval = filters.interval || 'day';
+  const conditions = [];
+  if (filters.corporateCode) conditions.push(eq(productInspections.corporateCode, filters.corporateCode));
+  if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  let dateFormat: SQL;
+  if (interval === 'hour') {
+    dateFormat = sql`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%m-%d %H:00:00')`;
+  } else if (interval === 'week') {
+    dateFormat = sql`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%u')`;
+  } else {
+    dateFormat = sql`DATE(${productInspections.inspectionTime})`;
+  }
+
+  const results = await db
+    .select({
+      corporateCode: productInspections.corporateCode,
+      factoryCode: productInspections.factoryCode,
+      timeInterval: dateFormat.as('timeInterval'),
+      count: sql<number>`COUNT(*)`,
+    })
+    .from(productInspections)
+    .where(whereClause)
+    .groupBy(productInspections.corporateCode, productInspections.factoryCode, sql`timeInterval`)
+    .orderBy(sql`timeInterval`);
+
+  return results.map(r => ({
+    corporateCode: r.corporateCode || 'N/A',
+    factoryCode: r.factoryCode || 'N/A',
+    timeInterval: r.timeInterval,
+    count: Number(r.count),
+  }));
 }
