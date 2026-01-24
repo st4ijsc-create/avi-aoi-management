@@ -19,6 +19,7 @@ describe("auth.setupAdmin", () => {
     });
 
     const result = await caller.auth.setupAdmin({
+      username: "admin",
       email: "admin@test.com",
       name: "Test Admin",
       password: "password123",
@@ -44,6 +45,7 @@ describe("auth.setupAdmin", () => {
 
     // Create first admin
     await caller.auth.setupAdmin({
+      username: "admin1",
       email: "admin1@test.com",
       name: "First Admin",
       password: "password123",
@@ -52,6 +54,7 @@ describe("auth.setupAdmin", () => {
     // Try to create second admin
     await expect(
       caller.auth.setupAdmin({
+        username: "admin2",
         email: "admin2@test.com",
         name: "Second Admin",
         password: "password123",
@@ -68,6 +71,7 @@ describe("auth.setupAdmin", () => {
 
     await expect(
       caller.auth.setupAdmin({
+        username: "admin",
         email: "invalid-email",
         name: "Test Admin",
         password: "password123",
@@ -84,6 +88,7 @@ describe("auth.setupAdmin", () => {
 
     await expect(
       caller.auth.setupAdmin({
+        username: "admin",
         email: "admin@test.com",
         name: "Test Admin",
         password: "short",
@@ -100,6 +105,7 @@ describe("auth.setupAdmin", () => {
 
     await expect(
       caller.auth.setupAdmin({
+        username: "admin",
         email: "admin@test.com",
         name: "",
         password: "password123",
@@ -116,6 +122,7 @@ describe("auth.setupAdmin", () => {
 
     const plainPassword = "password123";
     await caller.auth.setupAdmin({
+      username: "testadmin",
       email: "admin@test.com",
       name: "Test Admin",
       password: plainPassword,

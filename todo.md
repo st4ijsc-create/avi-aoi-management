@@ -3010,3 +3010,39 @@ Menu structure mới:
 - [x] Ngưỡng cảnh báo riêng cho từng category
 - [x] getCategoryName helper function
 
+
+## Phase 129: Auth System Enhancement, Android MQTT App, Mobile Responsive & Report Scheduler
+
+### 1. Auth System Enhancement
+- [x] Kiểm tra đăng nhập bằng user/password (Login.tsx - local tab)
+- [x] Kiểm tra đăng nhập bằng OAuth (Login.tsx - oauth tab)
+- [x] Tạo tài khoản Admin mặc định nếu chưa có (Setup.tsx + setupAdmin API)
+- [x] Hoàn thiện quản lý username/password (changePassword, resetPassword APIs)
+- [x] Trang đăng nhập với cả 2 phương thức (tabs: Nội bộ + Manus OAuth)
+
+### 2. Android MQTT App
+- [x] Tạo React Native project cho Android app (android-mqtt-app/)
+- [x] Kết nối MQTT và nhận thông báo lỗi (mqttService.ts)
+- [x] Hiển thị thông báo theo bản tin MQTT (notificationService.ts)
+- [x] Bubble notification hiển thị trên tất cả app khác (BubbleModule.java)
+- [x] Build thành file APK (README.md hướng dẫn build)
+- [x] HomeScreen, SettingsScreen, NotificationHistoryScreen, StationConfigScreen
+- [x] Zustand store cho notification management
+
+### 3. Mobile Responsive
+- [x] Tối ưu DashboardLayout cho mobile/tablet (padding, gap responsive)
+- [x] Responsive sidebar (collapsible - đã có sẵn)
+- [x] Responsive tables và charts (mobile utility classes)
+- [x] Touch-friendly UI elements (min-height 44px, scrollable filters)
+- [x] Mobile CSS utilities (mobile-card, mobile-grid, mobile-table-container, etc.)
+- [x] Dashboard header responsive (quick actions on mobile, hidden controls)
+
+### 4. Report Scheduler
+- [x] Schema cho scheduled reports (đã có scheduledReports, scheduledReportLogs, smtpConfig)
+- [x] UI quản lý lịch gửi báo cáo (ScheduledReports.tsx)
+- [x] Cron job gửi báo cáo tự động (reportScheduler.ts, node-cron)
+- [x] Template email báo cáo (reportGenerator.ts)
+- [x] Lịch sử gửi báo cáo (scheduledReportLogs table)
+- [x] Preview báo cáo trước khi gửi
+- [x] Gửi báo cáo thủ công (Send Now)
+

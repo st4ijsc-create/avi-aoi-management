@@ -267,4 +267,97 @@
   .glow-destructive {
     box-shadow: 0 0 15px oklch(0.65 0.2 25 / 0.3);
   }
+
+  /* Mobile responsive utilities */
+  .mobile-card {
+    @apply p-3 sm:p-4 md:p-6;
+  }
+  
+  .mobile-grid {
+    @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 md:gap-6;
+  }
+  
+  .mobile-stat-grid {
+    @apply grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4;
+  }
+  
+  .mobile-table-container {
+    @apply overflow-x-auto -mx-3 sm:-mx-4 md:mx-0;
+  }
+  
+  .mobile-table {
+    @apply min-w-[600px] md:min-w-0;
+  }
+  
+  .mobile-form-grid {
+    @apply grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4;
+  }
+  
+  .mobile-button-group {
+    @apply flex flex-col sm:flex-row gap-2 sm:gap-3;
+  }
+  
+  .mobile-header {
+    @apply flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4;
+  }
+  
+  .mobile-text-sm {
+    @apply text-xs sm:text-sm;
+  }
+  
+  .mobile-text-base {
+    @apply text-sm sm:text-base;
+  }
+  
+  .mobile-text-lg {
+    @apply text-base sm:text-lg md:text-xl;
+  }
+  
+  .mobile-text-xl {
+    @apply text-lg sm:text-xl md:text-2xl;
+  }
+  
+  .mobile-hide {
+    @apply hidden md:block;
+  }
+  
+  .mobile-show {
+    @apply block md:hidden;
+  }
+  
+  .tablet-hide {
+    @apply hidden lg:block;
+  }
+  
+  .tablet-show {
+    @apply block lg:hidden;
+  }
+}
+
+/* Mobile-specific scrollbar */
+@media (max-width: 768px) {
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  
+  /* Touch-friendly tap targets */
+  button, a, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Reduce padding on mobile */
+  .container {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+}
+
+/* Tablet-specific adjustments */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
 }

@@ -5495,6 +5495,7 @@ export const appRouter = router({
     }),
     setupAdmin: publicProcedure
       .input(z.object({
+        username: z.string().min(3).max(50),
         email: z.string().email(),
         name: z.string().min(1),
         password: z.string().min(8),
@@ -5506,8 +5507,15 @@ export const appRouter = router({
           throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin already exists' });
         }
         
+        // Check if username already exists
+        const existingUser = await db.getUserByUsername(input.username);
+        if (existingUser) {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Tên đăng nhập đã tồn tại' });
+        }
+        
         // Create first admin user
         const userId = await db.createUser({
+          username: input.username,
           email: input.email,
           name: input.name,
           password: input.password,

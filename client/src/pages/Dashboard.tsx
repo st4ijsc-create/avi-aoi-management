@@ -880,42 +880,65 @@ export default function Dashboard() {
       navItems={navItems}
       currentPath="/dashboard"
     >
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         {/* Header with filters and auto-refresh controls */}
-        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-              <Activity className="h-6 w-6 text-primary" />
-              Production Dashboard
-            </h1>
-            <div className="flex items-center gap-2 mt-1">
-              <p className="text-muted-foreground text-sm">Theo dõi chất lượng sản xuất theo dây chuyền</p>
-              <span className="text-xs text-muted-foreground">
-                • Cập nhật lúc {lastRefreshTime.toLocaleTimeString('vi-VN')}
-              </span>
+        <div className="flex flex-col gap-3 sm:gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
+            <div>
+              <h1 className="text-xl sm:text-2xl font-bold text-foreground flex items-center gap-2">
+                <Activity className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
+                Production Dashboard
+              </h1>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mt-1">
+                <p className="text-muted-foreground text-xs sm:text-sm">Theo dõi chất lượng sản xuất</p>
+                <span className="text-xs text-muted-foreground">
+                  • Cập nhật lúc {lastRefreshTime.toLocaleTimeString('vi-VN')}
+                </span>
+              </div>
+            </div>
+            
+            {/* Quick actions - visible on mobile */}
+            <div className="flex items-center gap-2 sm:hidden">
+              <Button variant="outline" size="icon" onClick={handleRefresh} className="h-9 w-9">
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+              {(activeAlertsCount as number) > 0 && (
+                <Link href="/alerts">
+                  <Button variant="outline" size="icon" className="relative h-9 w-9">
+                    <Bell className="h-4 w-4" />
+                    <Badge variant="destructive" className="absolute -top-2 -right-2 h-4 w-4 p-0 flex items-center justify-center text-[10px]">
+                      {activeAlertsCount as number}
+                    </Badge>
+                  </Button>
+                </Link>
+              )}
             </div>
           </div>
           
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Alert Badge */}
-            {(activeAlertsCount as number) > 0 && (
-              <Link href="/alerts">
-                <Button variant="outline" size="sm" className="relative">
-                  <Bell className="h-4 w-4 mr-1" />
-                  Cảnh báo
-                  <Badge variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center text-xs">
-                    {activeAlertsCount as number}
-                  </Badge>
-                </Button>
-              </Link>
-            )}
+          {/* Filters - scrollable on mobile */}
+          <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto pb-2 sm:pb-0 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap">
+            {/* Alert Badge - hidden on mobile (shown in quick actions) */}
+            <div className="hidden sm:block">
+              {(activeAlertsCount as number) > 0 && (
+                <Link href="/alerts">
+                  <Button variant="outline" size="sm" className="relative">
+                    <Bell className="h-4 w-4 mr-1" />
+                    Cảnh báo
+                    <Badge variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center text-xs">
+                      {activeAlertsCount as number}
+                    </Badge>
+                  </Button>
+                </Link>
+              )}
+            </div>
 
             <Select value={selectedFactory} onValueChange={(v) => {
               setSelectedFactory(v);
               setSelectedWorkshop("all");
               setSelectedLine("all");
             }}>
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="w-[120px] sm:w-[160px] shrink-0">
+                <Factory className="h-4 w-4 mr-1 sm:hidden" />
                 <SelectValue placeholder="Nhà máy" />
               </SelectTrigger>
               <SelectContent>
@@ -932,8 +955,8 @@ export default function Dashboard() {
               setSelectedWorkshop(v);
               setSelectedLine("all");
             }}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Nhà xưởng" />
+              <SelectTrigger className="w-[120px] sm:w-[160px] shrink-0">
+                <SelectValue placeholder="Xưởng" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Tất cả xưởng</SelectItem>
@@ -946,8 +969,8 @@ export default function Dashboard() {
             </Select>
 
             <Select value={selectedLine} onValueChange={setSelectedLine}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Dây chuyền" />
+              <SelectTrigger className="w-[100px] sm:w-[160px] shrink-0">
+                <SelectValue placeholder="Line" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Tất cả line</SelectItem>
@@ -960,7 +983,7 @@ export default function Dashboard() {
             </Select>
 
             <Select value={timeRange} onValueChange={setTimeRange}>
-              <SelectTrigger className="w-[120px]">
+              <SelectTrigger className="w-[90px] sm:w-[120px] shrink-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -970,8 +993,8 @@ export default function Dashboard() {
               </SelectContent>
             </Select>
 
-            {/* Auto-refresh controls */}
-            <div className="flex items-center gap-1 border rounded-md">
+            {/* Auto-refresh controls - hidden on mobile */}
+            <div className="hidden sm:flex items-center gap-1 border rounded-md shrink-0">
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1004,15 +1027,18 @@ export default function Dashboard() {
               </Select>
             </div>
 
-            <Button variant="outline" size="icon" onClick={handleRefresh}>
+            {/* Refresh button - hidden on mobile (shown in quick actions) */}
+            <Button variant="outline" size="icon" onClick={handleRefresh} className="hidden sm:flex shrink-0">
               <RefreshCw className="h-4 w-4" />
             </Button>
             
-            {/* Widget Style Presets */}
-            <WidgetStylePresetManager
-              currentStyle={widgetStyle}
-              onStyleChange={setWidgetStyle}
-            />
+            {/* Widget Style Presets - hidden on mobile */}
+            <div className="hidden md:block shrink-0">
+              <WidgetStylePresetManager
+                currentStyle={widgetStyle}
+                onStyleChange={setWidgetStyle}
+              />
+            </div>
           </div>
         </div>
 

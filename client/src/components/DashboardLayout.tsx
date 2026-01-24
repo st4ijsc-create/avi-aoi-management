@@ -349,17 +349,19 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset className="bg-background">
-        <div className="flex border-b border-border h-14 items-center justify-between bg-card/95 px-3 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
-          <div className="flex items-center gap-3">
-            {isMobile && <SidebarTrigger className="h-9 w-9 rounded-lg" />}
-            <span className="font-medium text-foreground">
+        <div className="flex border-b border-border h-14 items-center justify-between bg-card/95 px-2 sm:px-3 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            {isMobile && <SidebarTrigger className="h-9 w-9 rounded-lg shrink-0" />}
+            <span className="font-medium text-foreground text-sm sm:text-base truncate">
               {activeItem?.label ?? title}
             </span>
           </div>
-          <LanguageSwitcher />
-          <NotificationCenter />
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            <LanguageSwitcher />
+            <NotificationCenter />
+          </div>
         </div>
-        <main className="flex-1 p-6 overflow-auto">{children}</main>
+        <main className="flex-1 p-3 sm:p-4 md:p-6 overflow-auto">{children}</main>
       </SidebarInset>
     </>
   );

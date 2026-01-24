@@ -11,6 +11,7 @@ import { Loader2, Shield } from "lucide-react";
 
 export default function Setup() {
   const [form, setForm] = useState({
+    username: "",
     email: "",
     name: "",
     password: "",
@@ -18,6 +19,11 @@ export default function Setup() {
   });
 
   const { errors, touched, validate, handleBlur, hasError, getFieldError } = useFormValidation({
+    username: {
+      required: true,
+      minLength: 3,
+      maxLength: 50,
+    },
     email: {
       required: true,
       pattern: ValidationPatterns.email,
@@ -45,7 +51,7 @@ export default function Setup() {
     onSuccess: () => {
       toast.success("Tạo admin thành công! Đang chuyển đến trang đăng nhập...");
       setTimeout(() => {
-        window.location.href = "/api/oauth/login";
+        window.location.href = "/login";
       }, 1500);
     },
     onError: (error) => {
@@ -65,6 +71,7 @@ export default function Setup() {
     }
 
     setupAdminMutation.mutate({
+      username: form.username,
       email: form.email,
       name: form.name,
       password: form.password,
@@ -85,6 +92,22 @@ export default function Setup() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="username">Tên đăng nhập</Label>
+              <Input
+                id="username"
+                type="text"
+                placeholder="admin"
+                value={form.username}
+                onChange={(e) => setForm({ ...form, username: e.target.value })}
+                onBlur={(e) => handleBlur("username", e.target.value)}
+                className={hasError("username") ? "border-red-500" : ""}
+              />
+              {hasError("username") && (
+                <p className="text-sm text-red-500">{getFieldError("username")}</p>
+              )}
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
