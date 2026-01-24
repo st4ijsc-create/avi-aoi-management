@@ -37,6 +37,8 @@ import ProcessManagement from "./pages/ProcessManagement";
 import WorkstationManagement from "./pages/WorkstationManagement";
 import CategoryAnalytics from "./pages/CategoryAnalytics";
 import UserGuide from "./pages/UserGuide";
+import DashboardTemplates from "./pages/DashboardTemplates";
+import BackupRestore from "./pages/BackupRestore";
 
 function Router() {
   return (
@@ -75,6 +77,8 @@ function Router() {
       <Route path="/workstation-management" component={WorkstationManagement} />
       <Route path="/category-analytics" component={CategoryAnalytics} />
       <Route path="/user-guide" component={UserGuide} />
+      <Route path="/dashboard-templates" component={DashboardTemplates} />
+      <Route path="/backup-restore" component={BackupRestore} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

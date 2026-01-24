@@ -77,4 +77,30 @@ export const systemRouter = router({
         return { success: true };
       }),
   }),
+
+  // Backup/Restore APIs
+  exportConfig: adminProcedure
+    .input(
+      z.object({
+        categories: z.array(z.string()),
+      })
+    )
+    .query(async ({ input }) => {
+      const db = await import("../db");
+      return db.exportSystemConfig(input.categories);
+    }),
+
+  importConfig: adminProcedure
+    .input(
+      z.object({
+        data: z.record(z.string(), z.array(z.any())),
+        categories: z.array(z.string()),
+        overwrite: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = await import("../db");
+      const dataTyped = input.data as Record<string, any[]>;
+      return db.importSystemConfig(dataTyped, input.categories, input.overwrite ?? false);
+    }),
 });

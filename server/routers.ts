@@ -1274,6 +1274,80 @@ const dashboardRouter = router({
     .query(async ({ input }) => {
       return db.getHourlyStats(input);
     }),
+
+  // Dashboard Templates
+  listTemplates: protectedProcedure
+    .query(async () => {
+      return db.listDashboardTemplates();
+    }),
+
+  getTemplate: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getDashboardTemplateById(input.id);
+    }),
+
+  createTemplate: adminProcedure
+    .input(z.object({
+      name: z.string().min(1).max(100),
+      description: z.string().optional(),
+      templateType: z.enum(['system', 'shared']).default('shared'),
+      widgets: z.array(z.string()),
+      layout: z.array(z.object({
+        i: z.string(),
+        x: z.number(),
+        y: z.number(),
+        w: z.number(),
+        h: z.number(),
+      })),
+      previewImageUrl: z.string().optional(),
+      isPublic: z.boolean().default(true),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      return db.createDashboardTemplate({
+        name: input.name,
+        description: input.description,
+        templateType: input.templateType,
+        widgets: input.widgets,
+        layout: input.layout,
+        previewImageUrl: input.previewImageUrl,
+        isPublic: input.isPublic,
+        createdBy: ctx.user.id,
+      });
+    }),
+
+  updateTemplate: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(100).optional(),
+      description: z.string().optional(),
+      widgets: z.array(z.string()).optional(),
+      layout: z.array(z.object({
+        i: z.string(),
+        x: z.number(),
+        y: z.number(),
+        w: z.number(),
+        h: z.number(),
+      })).optional(),
+      previewImageUrl: z.string().optional(),
+      isPublic: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      return db.updateDashboardTemplate(id, data);
+    }),
+
+  deleteTemplate: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      return db.deleteDashboardTemplate(input.id);
+    }),
+
+  applyTemplate: protectedProcedure
+    .input(z.object({ templateId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      return db.applyDashboardTemplate(ctx.user.id, input.templateId);
+    }),
 });
 
 // ============ SEED DATA ROUTER ============
@@ -1303,33 +1377,57 @@ const machineApiRouter = router({
   // Submit inspection data from machine
   submitInspection: publicProcedure
     .input(z.object({
-      apiKey: z.string(),
-      serialNumber: z.string(),
-      productModel: z.string().optional(),
-      batchNumber: z.string().optional(),
-      overallResult: z.enum(["OK", "NG"]),
-      inspectionTime: z.string().optional(),
-      cycleTime: z.number().optional(),
-      // New fields for enterprise integration
-      companyCode: z.string().optional(), // Mã công ty
+      // Machine identification
+      machineCode: z.string().optional(), // Mã máy (alternative to apiKey)
+      apiKey: z.string().optional(), // API key (backward compatible)
+      
+      // Product information
+      serialNumber: z.string(), // Số serial sản phẩm
+      productModel: z.string().optional(), // Model sản phẩm
+      batchNumber: z.string().optional(), // Số lô
+      
+      // Inspection results
+      cycleTime: z.number().optional(), // Thời gian chu kỳ (giây)
+      overallResult: z.enum(["OK", "NG"]), // Kết quả tổng thể
+      inspectionTime: z.string().optional(), // Thời gian kiểm tra
+      
+      // Enterprise hierarchy (top-down)
+      companyCode: z.string().optional(), // Mã tập đoàn/công ty
       factoryCode: z.string().optional(), // Mã nhà máy
       workshopCode: z.string().optional(), // Mã nhà xưởng
       lineCode: z.string().optional(), // Mã dây chuyền
       stageCode: z.string().optional(), // Mã công đoạn
+      
+      // Production context
       productionOrderCode: z.string().optional(), // Mã lệnh sản xuất
-      operatorId: z.string().optional(), // Mã công nhân
+      operatorId: z.string().optional(), // Mã công nhân vận hành
+      
+      // Measurement data
       measurements: z.array(z.object({
-        pointCode: z.string(),
-        measuredValue: z.number().optional(),
-        result: z.enum(["OK", "NG"]),
-        remark: z.string().optional(),
+        pointId: z.string().optional(), // ID điểm đo (new)
+        pointCode: z.string().optional(), // Mã điểm đo (backward compatible)
+        measuredValue: z.union([z.number(), z.string()]).optional(), // Giá trị đo (number hoặc string)
+        result: z.enum(["OK", "NG"]), // Kết quả
+        remark: z.string().optional(), // Ghi chú
+        imageBase64: z.string().optional(), // Hình ảnh base64 (optional)
       })),
+    }).refine(data => data.apiKey || data.machineCode, {
+      message: "Either apiKey or machineCode must be provided"
     }))
     .mutation(async ({ input }) => {
-      // Validate API key
-      const machine = await db.getMachineByApiKey(input.apiKey);
+      // Validate machine - support both apiKey and machineCode
+      let machine;
+      if (input.apiKey) {
+        machine = await db.getMachineByApiKey(input.apiKey);
+      } else if (input.machineCode) {
+        machine = await db.getMachineByCode(input.machineCode);
+      }
+      
       if (!machine) {
-        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid API key' });
+        throw new TRPCError({ 
+          code: 'UNAUTHORIZED', 
+          message: input.apiKey ? 'Invalid API key' : 'Invalid machine code' 
+        });
       }
 
       // Update machine heartbeat
@@ -1370,17 +1468,28 @@ const machineApiRouter = router({
         await db.updateProductionOrderQuantities(productionOrderId, updateData);
       }
 
-      // Process measurements
+      // Process measurements - support both pointId and pointCode
       const measurementResults = [];
       for (const measurement of input.measurements) {
-        const pointDef = await db.getMeasurementPointDefByCode(machine.id, measurement.pointCode);
+        let pointDef;
+        
+        // Try pointId first (new format), then pointCode (backward compatible)
+        if (measurement.pointId) {
+          pointDef = await db.getMeasurementPointDefByCode(machine.id, measurement.pointId);
+        }
+        if (!pointDef && measurement.pointCode) {
+          pointDef = await db.getMeasurementPointDefByCode(machine.id, measurement.pointCode);
+        }
+        
         if (pointDef) {
           measurementResults.push({
             inspectionId,
             pointDefId: pointDef.id,
-            measuredValue: measurement.measuredValue ? String(measurement.measuredValue) : undefined,
+            measuredValue: measurement.measuredValue !== undefined ? String(measurement.measuredValue) : undefined,
             result: measurement.result,
             remark: measurement.remark,
+            // Store image if provided (will need to upload to S3 in production)
+            imageUrl: measurement.imageBase64 ? measurement.imageBase64.substring(0, 100) + '...' : undefined,
           });
         }
       }
@@ -1422,7 +1531,7 @@ const machineApiRouter = router({
             inspectionId,
             timestamp: new Date(),
             measurementResults: input.measurements?.filter(m => m.result === 'NG').map(m => ({
-              pointCode: m.pointCode,
+              pointCode: m.pointId || m.pointCode || 'UNKNOWN',
               result: m.result,
               value: m.measuredValue,
             })) || [],

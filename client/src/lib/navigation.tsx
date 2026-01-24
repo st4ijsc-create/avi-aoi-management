@@ -1,4 +1,4 @@
-import {
+import { 
   BarChart3, 
   History, 
   LayoutGrid, 
@@ -34,7 +34,9 @@ import {
   MonitorCheck,
   Workflow,
   Brain,
-  Wrench
+  Wrench,
+  LayoutTemplate,
+  Archive
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -83,6 +85,19 @@ export const navGroups: NavGroup[] = [
         label: "Dashboard", 
         icon: <BarChart3 className="h-4 w-4" />,
         description: "Tổng quan số liệu và biểu đồ"
+      },
+      { 
+        href: "/dashboard-templates", 
+        label: "Dashboard Templates", 
+        icon: <LayoutTemplate className="h-4 w-4" />,
+        description: "Quản lý và áp dụng templates dashboard"
+      },
+      { 
+        href: "/backup-restore", 
+        label: "Backup & Restore", 
+        icon: <Archive className="h-4 w-4" />,
+        description: "Sao lưu và khôi phục cấu hình hệ thống",
+        requiredRole: "admin"
       },
     ],
   },

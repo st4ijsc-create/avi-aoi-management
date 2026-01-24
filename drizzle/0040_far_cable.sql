@@ -1,0 +1,2 @@
+CREATE INDEX `idx_results_inspection_result` ON `measurement_results` (`inspectionId`,`result`);--> statement-breakpoint
+CREATE INDEX `idx_results_point_result` ON `measurement_results` (`pointDefId`,`result`);

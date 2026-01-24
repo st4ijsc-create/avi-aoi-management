@@ -287,6 +287,9 @@ export const measurementResults = mysqlTable("measurement_results", {
   index("idx_results_inspection").on(table.inspectionId),
   index("idx_results_point").on(table.pointDefId),
   index("idx_results_result").on(table.result),
+  // Composite indexes for optimized queries
+  index("idx_results_inspection_result").on(table.inspectionId, table.result),
+  index("idx_results_point_result").on(table.pointDefId, table.result),
 ]);
 
 export type MeasurementResult = typeof measurementResults.$inferSelect;

@@ -3090,3 +3090,35 @@ Menu structure mới:
 - [x] Batch Operations - Đã có (BulkImportDialog, bulkImportRouter cho measurement points)
 - [x] API Documentation Update - Đã có (API_DOCUMENTATION.md với Auth, Corporate/Factory, Inspection, Statistics, MQTT, Alert APIs)
 
+
+## Phase 132: API Optimization, Database Upgrade, Dashboard Templates & Backup/Restore
+
+### 1. Sắp xếp lại thứ tự các biến trong API submit-inspection
+- [x] Cập nhật thứ tự fields theo yêu cầu: machineCode, serialNumber, productModel, batchNumber, cycleTime, overallResult, companyCode, factoryCode, workshopCode, lineCode, stageCode, productionOrderCode, operatorId, measurements
+- [x] Hỗ trợ cả machineCode và apiKey (để backward compatible)
+- [x] Hỗ trợ cả pointId và pointCode trong measurements
+- [x] Hỗ trợ measuredValue là number hoặc string
+- [x] Thêm imageBase64 cho measurements
+- [x] Thêm getMachineByCode function
+
+### 2. Nâng cấp database để lưu trữ dữ liệu tối ưu
+- [x] Đã có indexes cho productInspections (machine, serial, time, result, corporate, factory, composite)
+- [x] Đã có indexes cho measurementResults (inspection, point, result)
+- [x] Thêm composite indexes cho measurementResults (inspection_result, point_result)
+- [x] Schema đã hỗ trợ measuredValueText cho giá trị dạng te### 3. Dashboard Templates
+- [x] Tạo Production Overview template (6 system templates)
+- [x] Tạo Quality Control template
+- [x] Tạo Machine Health, Executive Summary, Realtime Monitoring, Alert Management templates
+- [x] Thêm UI quản lý templates (DashboardTemplates.tsx)
+- [x] API CRUD cho templates (listTemplates, createTemplate, updateTemplate, deleteTemplate, applyTemplate)
+- [x] Thêm vào navigation menu
+
+### 4. Backup/Restore cấu hình hệ thống
+- [x] API export/import cấu hình (exportSystemConfig, importSystemConfig)
+- [x] UI quản lý backup/restore (BackupRestore.tsx)
+- [x] 6 categories: corporate, products, processes, alerts, users, reports
+- [x] Export ra file JSON với metadata
+- [x] Import với preview trước khi khôi phục
+- [x] Lịch sử backup (mock data, có thể mở rộng)
+- [x] Thêm vào navigation menu (admin only)
+

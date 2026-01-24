@@ -548,6 +548,15 @@ export async function getMachineById(id: number) {
   return result[0];
 }
 
+export async function getMachineByCode(code: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(machines)
+    .where(and(eq(machines.code, code), eq(machines.isActive, true)))
+    .limit(1);
+  return result[0];
+}
+
 export async function updateMachineHeartbeat(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -5401,6 +5410,16 @@ export async function getDashboardTemplates(filters?: {
   return results;
 }
 
+export async function listDashboardTemplates() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return db.select()
+    .from(dashboardTemplates)
+    .where(eq(dashboardTemplates.isPublic, true))
+    .orderBy(desc(dashboardTemplates.usageCount));
+}
+
 export async function getDashboardTemplateById(id: number) {
   const db = await getDb();
   if (!db) return null;
@@ -5445,6 +5464,24 @@ export async function incrementTemplateUsage(id: number) {
   await db.update(dashboardTemplates)
     .set({ usageCount: sql`${dashboardTemplates.usageCount} + 1` })
     .where(eq(dashboardTemplates.id, id));
+}
+
+export async function applyDashboardTemplate(userId: number, templateId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  // Get template
+  const template = await getDashboardTemplateById(templateId);
+  if (!template) return null;
+  
+  // Increment usage count
+  await incrementTemplateUsage(templateId);
+  
+  // Return template data for frontend to apply
+  return {
+    widgets: template.widgets,
+    layout: template.layout,
+  };
 }
 
 
@@ -6605,4 +6642,93 @@ export async function reorderProductCategories(categoryIds: number[]) {
       .set({ orderIndex: i })
       .where(eq(productCategories.id, categoryIds[i]));
   }
+}
+
+
+// ============ BACKUP/RESTORE FUNCTIONS ============
+
+const CATEGORY_TABLE_MAP: Record<string, any[]> = {
+  corporate: [factories, workshops, productionLines, lineStages, workstations],
+  products: [productModels, productCategories, measurementPointDefs, productMachineMappings],
+  processes: [processes, shiftConfigs],
+  alerts: [mqttAlertRules],
+  users: [users],
+  reports: [scheduledReports],
+};
+
+export async function exportSystemConfig(categories: string[]) {
+  const db = await getDb();
+  if (!db) return {};
+  
+  const result: Record<string, any[]> = {};
+  
+  for (const category of categories) {
+    const tables = CATEGORY_TABLE_MAP[category];
+    if (!tables) continue;
+    
+    for (const table of tables) {
+      const tableName = (table as any)[Symbol.for("drizzle:Name")] || table._.name;
+      try {
+        const data = await db.select().from(table);
+        result[tableName] = data;
+      } catch (e) {
+        console.error(`Error exporting table ${tableName}:`, e);
+        result[tableName] = [];
+      }
+    }
+  }
+  
+  return result;
+}
+
+export async function importSystemConfig(
+  data: Record<string, any[]>,
+  categories: string[],
+  overwrite: boolean = false
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  let imported = 0;
+  let skipped = 0;
+  let errors: string[] = [];
+  
+  for (const category of categories) {
+    const tables = CATEGORY_TABLE_MAP[category];
+    if (!tables) continue;
+    
+    for (const table of tables) {
+      const tableName = (table as any)[Symbol.for("drizzle:Name")] || table._.name;
+      const tableData = data[tableName];
+      
+      if (!tableData || !Array.isArray(tableData) || tableData.length === 0) {
+        continue;
+      }
+      
+      try {
+        if (overwrite) {
+          // Delete existing data first
+          await db.delete(table);
+        }
+        
+        // Insert new data
+        for (const row of tableData) {
+          // Remove auto-generated fields
+          const { id, createdAt, updatedAt, ...insertData } = row;
+          
+          try {
+            await db.insert(table).values(insertData);
+            imported++;
+          } catch (e) {
+            // Skip duplicates
+            skipped++;
+          }
+        }
+      } catch (e) {
+        errors.push(`Error importing ${tableName}: ${(e as Error).message}`);
+      }
+    }
+  }
+  
+  return { imported, skipped, errors };
 }
