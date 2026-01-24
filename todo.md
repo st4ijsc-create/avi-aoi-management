@@ -3071,3 +3071,22 @@ Menu structure mới:
   - Pulse indicator cho máy online
   - Uptime badge với màu tương ứng
 
+
+## Phase 131: Hoàn thiện các task theo danh sách ưu tiên
+
+### ƯU TIÊN CAO (Critical)
+- [x] 2FA Login Flow với OTP - Đã có đầy đủ (twoFactorRouter, TwoFactorSetup UI, Login 2FA flow)
+- [x] Multi-tenant Access Control - Đã có đầy đủ (UserAssignments UI, API phân quyền theo corporate/factory)
+- [x] Workstation trong Measurement Points - Đã có (WorkstationNGHeatmap, MeasurementPointNGList, API filter by workstationId)
+
+### ƯU TIÊN TRUNG BÌNH (High)
+- [x] Gantt Chart cải thiện - Đã có (ZoomIn/ZoomOut, filter by factory/line, export CSV/PDF)
+- [x] Layout Workshop CRUD - Đã có (WorkshopLayoutEditor, Layout page, CorporateLayout)
+- [x] Shift Configuration - Đã có đầy đủ (shiftConfigs schema, Settings UI CRUD, Dashboard shift stats)
+- [x] Server-side Caching - Đã có đầy đủ (Redis + Memory fallback, cacheService, cacheWarmingService, cachedStatistics)
+
+### ƯU TIÊN THẤP (Medium)
+- [x] PDF Export cho History - Đã có (exportYieldReport, handleExportWorkstationReport với PDF/Excel/CSV)
+- [x] Batch Operations - Đã có (BulkImportDialog, bulkImportRouter cho measurement points)
+- [x] API Documentation Update - Đã có (API_DOCUMENTATION.md với Auth, Corporate/Factory, Inspection, Statistics, MQTT, Alert APIs)
+
