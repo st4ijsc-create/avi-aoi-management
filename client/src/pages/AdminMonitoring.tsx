@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import DashboardLayout from '@/components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -48,7 +49,8 @@ export default function AdminMonitoring() {
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <DashboardLayout title="Query Performance Monitoring">
+    <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Query Performance Monitoring</h1>
@@ -312,5 +314,6 @@ export default function AdminMonitoring() {
         </TabsContent>
       </Tabs>
     </div>
+    </DashboardLayout>
   );
 }

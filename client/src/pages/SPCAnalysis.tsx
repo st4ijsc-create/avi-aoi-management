@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import DashboardLayout from "@/components/DashboardLayout";
 import { WorkstationAnalysis } from "@/components/WorkstationAnalysis";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -95,6 +96,7 @@ export default function SPCAnalysis() {
   }, [paretoData]);
 
   return (
+    <DashboardLayout title="SPC / AI Analysis">
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -635,5 +637,6 @@ export default function SPCAnalysis() {
         </TabsContent>
       </Tabs>
     </div>
+    </DashboardLayout>
   );
 }

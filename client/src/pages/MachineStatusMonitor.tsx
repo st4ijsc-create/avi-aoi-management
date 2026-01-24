@@ -54,26 +54,53 @@ function MachineCard({ machine, onClick }: { machine: MachineWithStatus; onClick
     ? formatDistanceToNow(new Date(machine.latestHeartbeat), { addSuffix: true, locale: vi })
     : 'Chưa có dữ liệu';
 
+  // Get status color based on uptime and online status
+  const getStatusColor = () => {
+    if (!isOnline) return { border: 'border-red-500/50', bg: 'bg-red-500/5', pulse: 'bg-red-500' };
+    if (machine.uptimePercent >= 95) return { border: 'border-emerald-500/50', bg: 'bg-emerald-500/5', pulse: 'bg-emerald-500' };
+    if (machine.uptimePercent >= 80) return { border: 'border-green-500/50', bg: 'bg-green-500/5', pulse: 'bg-green-500' };
+    if (machine.uptimePercent >= 60) return { border: 'border-yellow-500/50', bg: 'bg-yellow-500/5', pulse: 'bg-yellow-500' };
+    return { border: 'border-orange-500/50', bg: 'bg-orange-500/5', pulse: 'bg-orange-500' };
+  };
+
+  const statusColor = getStatusColor();
+
   return (
     <Card 
-      className={`cursor-pointer transition-all hover:shadow-lg ${
-        isOnline ? 'border-emerald-500/50 bg-emerald-500/5' : 'border-red-500/50 bg-red-500/5'
-      }`}
+      className={`cursor-pointer transition-all hover:shadow-lg ${statusColor.border} ${statusColor.bg}`}
       onClick={onClick}
     >
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            {isOnline ? (
-              <Wifi className="h-5 w-5 text-emerald-500" />
-            ) : (
-              <WifiOff className="h-5 w-5 text-red-500" />
-            )}
+            <div className="relative">
+              {isOnline ? (
+                <>
+                  <Wifi className="h-5 w-5 text-emerald-500" />
+                  <span className={`absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full ${statusColor.pulse} animate-pulse`} />
+                </>
+              ) : (
+                <WifiOff className="h-5 w-5 text-red-500" />
+              )}
+            </div>
             <CardTitle className="text-base">{machine.name}</CardTitle>
           </div>
-          <Badge variant={isOnline ? "default" : "destructive"}>
-            {isOnline ? 'Online' : 'Offline'}
-          </Badge>
+          <div className="flex items-center gap-1">
+            <Badge 
+              variant="outline" 
+              className={`text-xs ${
+                machine.uptimePercent >= 95 ? 'border-emerald-500 text-emerald-600' :
+                machine.uptimePercent >= 80 ? 'border-green-500 text-green-600' :
+                machine.uptimePercent >= 60 ? 'border-yellow-500 text-yellow-600' :
+                'border-orange-500 text-orange-600'
+              }`}
+            >
+              {machine.uptimePercent}%
+            </Badge>
+            <Badge variant={isOnline ? "default" : "destructive"}>
+              {isOnline ? 'Online' : 'Offline'}
+            </Badge>
+          </div>
         </div>
         <CardDescription className="flex items-center gap-2">
           <span className="font-mono text-xs">{machine.code}</span>

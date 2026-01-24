@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -308,6 +309,7 @@ export default function ProcessManagement() {
   };
 
   return (
+    <DashboardLayout title="Process Management">
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -445,6 +447,7 @@ export default function ProcessManagement() {
         </DialogContent>
       </Dialog>
     </div>
+    </DashboardLayout>
   );
 }
 

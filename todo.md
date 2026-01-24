@@ -3046,3 +3046,28 @@ Menu structure mới:
 - [x] Preview báo cáo trước khi gửi
 - [x] Gửi báo cáo thủ công (Send Now)
 
+
+## Phase 130: Hoàn thiện hệ thống theo báo cáo, sửa lỗi menu trái, hướng dẫn Custom Dashboard
+
+### 1. Sửa lỗi mất menu trái
+- [x] Kiểm tra các pages không có DashboardLayout
+- [x] Thêm DashboardLayout vào AdminMonitoring.tsx
+- [x] Thêm DashboardLayout vào ProcessManagement.tsx
+- [x] Thêm DashboardLayout vào SPCAnalysis.tsx
+- [x] Đảm bảo navigation hoạt động đúng
+
+### 2. Hướng dẫn Custom Dashboard
+- [x] Thêm section hướng dẫn Custom Dashboard vào UserGuide
+- [x] Hướng dẫn tạo widget mới (6 loại widget)
+- [x] Hướng dẫn resize và di chuyển widgets (drag-drop, resize)
+- [x] Hướng dẫn lưu và chia sẻ templates
+- [x] Hướng dẫn export Dashboard (JSON, HTML, PDF)
+
+### 3. Hoàn thiện theo báo cáo (ưu tiên cao)
+- [x] Dashboard Drill-down - đã có CorporateFactoryStats với breadcrumb navigation
+- [x] Workstation Drilldown Dialog trong Dashboard
+- [x] Cải thiện Machine Status Realtime với màu sắc trực quan hơn
+  - Border/background color theo uptime (emerald/green/yellow/orange/red)
+  - Pulse indicator cho máy online
+  - Uptime badge với màu tương ứng
+

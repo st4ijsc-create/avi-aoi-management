@@ -115,6 +115,50 @@ const guideSections = [
 - Theo dõi trạng thái kết nối
 - Debug và troubleshoot vấn đề kết nối`,
       },
+      {
+        title: "Custom Dashboard (Tùy chỉnh Dashboard)",
+        content: `Hệ thống hỗ trợ tạo Dashboard tùy chỉnh với các widget linh hoạt:
+
+**Các loại Widget có sẵn**:
+- **Yield Rate**: Biểu đồ tỷ lệ đạt theo thời gian
+- **Production Volume**: Thống kê sản lượng OK/NG/NTF
+- **Machine Status**: Trạng thái máy real-time
+- **Recent Alerts**: Danh sách cảnh báo gần đây
+- **Top NG Points**: Pareto chart điểm lỗi
+- **Throughput**: Biểu đồ năng suất theo giờ
+
+**Cách tạo Dashboard mới**:
+1. Vào trang Dashboard
+2. Click biểu tượng cài đặt (Settings) ở góc trên
+3. Chọn "Tạo Dashboard mới" hoặc "Sử dụng template"
+4. Đặt tên và mô tả cho Dashboard
+
+**Thêm Widget**:
+1. Click nút "+ Thêm Widget"
+2. Chọn loại widget từ danh sách
+3. Cấu hình tiêu đề, bộ lọc, màu sắc
+4. Click "Lưu" để thêm vào Dashboard
+
+**Resize và di chuyển Widget**:
+- **Kéo thả (Drag)**: Giữ chuột vào tiêu đề widget, kéo đến vị trí mới
+- **Thay đổi kích thước**: Kéo góc dưới bên phải của widget
+- **Xem toàn màn hình**: Click biểu tượng mở rộng trên widget
+
+**Lưu và chia sẻ Template**:
+1. Sau khi cấu hình xong, click "Lưu layout"
+2. Chọn "Lưu làm template" để tái sử dụng
+3. Bật "Chia sẻ" để người dùng khác có thể sử dụng
+
+**Export Dashboard**:
+- **JSON**: Xuất cấu hình để backup hoặc import lại
+- **HTML**: Xuất dạng trang web tĩnh
+- **PDF**: Xuất dạng báo cáo PDF
+
+**Mẹo sử dụng**:
+- Sử dụng preset themes để đồng bộ màu sắc
+- Đặt auto-refresh để cập nhật dữ liệu tự động
+- Sử dụng bộ lọc chung để áp dụng cho tất cả widgets`,
+      },
     ],
   },
   {
