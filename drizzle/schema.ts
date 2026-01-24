@@ -1607,3 +1607,116 @@ export const productCategories = mysqlTable("product_categories", {
 
 export type ProductCategory = typeof productCategories.$inferSelect;
 export type InsertProductCategory = typeof productCategories.$inferInsert;
+
+
+/**
+ * Backup Logs - Lịch sử backup/restore
+ */
+export const backupLogs = mysqlTable("backup_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // FK to users
+  action: mysqlEnum("action", ["export", "import", "scheduled_export"]).notNull(),
+  categories: json("categories").$type<string[]>().notNull(), // Categories được backup/restore
+  status: mysqlEnum("status", ["success", "failed", "partial"]).notNull(),
+  fileSize: int("fileSize"), // Kích thước file backup (bytes)
+  fileName: varchar("fileName", { length: 255 }), // Tên file backup
+  fileUrl: text("fileUrl"), // URL file backup (nếu lưu S3)
+  recordCount: int("recordCount"), // Số records được backup/restore
+  errorMessage: text("errorMessage"), // Thông báo lỗi nếu có
+  metadata: json("metadata").$type<Record<string, any>>(), // Metadata bổ sung
+  ipAddress: varchar("ipAddress", { length: 45 }), // IP address của người thực hiện
+  userAgent: text("userAgent"), // User agent
+  duration: int("duration"), // Thời gian thực hiện (ms)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_backup_logs_user").on(table.userId),
+  index("idx_backup_logs_action").on(table.action),
+  index("idx_backup_logs_status").on(table.status),
+  index("idx_backup_logs_created").on(table.createdAt),
+]);
+
+export type BackupLog = typeof backupLogs.$inferSelect;
+export type InsertBackupLog = typeof backupLogs.$inferInsert;
+
+/**
+ * Scheduled Backups - Cấu hình backup tự động
+ */
+export const scheduledBackups = mysqlTable("scheduled_backups", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  categories: json("categories").$type<string[]>().notNull(), // Categories để backup
+  schedule: mysqlEnum("schedule", ["daily", "weekly", "monthly"]).notNull(),
+  scheduleTime: varchar("scheduleTime", { length: 5 }).notNull(), // HH:MM format
+  scheduleDayOfWeek: int("scheduleDayOfWeek"), // 0-6 for weekly (0 = Sunday)
+  scheduleDayOfMonth: int("scheduleDayOfMonth"), // 1-31 for monthly
+  retentionCount: int("retentionCount").default(7).notNull(), // Số bản backup giữ lại
+  storageType: mysqlEnum("storageType", ["local", "s3"]).default("s3").notNull(),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  lastRunAt: timestamp("lastRunAt"),
+  lastRunStatus: mysqlEnum("lastRunStatus", ["success", "failed"]),
+  nextRunAt: timestamp("nextRunAt"),
+  createdBy: int("createdBy").notNull(), // FK to users
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_scheduled_backups_enabled").on(table.isEnabled),
+  index("idx_scheduled_backups_next_run").on(table.nextRunAt),
+]);
+
+export type ScheduledBackup = typeof scheduledBackups.$inferSelect;
+export type InsertScheduledBackup = typeof scheduledBackups.$inferInsert;
+
+/**
+ * Template Marketplace - Templates được chia sẻ
+ */
+export const templateMarketplace = mysqlTable("template_marketplace", {
+  id: int("id").autoincrement().primaryKey(),
+  templateId: int("templateId").notNull(), // FK to dashboardTemplates
+  publisherId: int("publisherId").notNull(), // FK to users
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  category: varchar("category", { length: 100 }), // production, quality, monitoring, etc.
+  tags: json("tags").$type<string[]>(), // Tags cho tìm kiếm
+  thumbnailUrl: text("thumbnailUrl"), // Ảnh preview
+  previewData: json("previewData").$type<Record<string, any>>(), // Data để preview
+  downloadCount: int("downloadCount").default(0).notNull(),
+  rating: decimal("rating", { precision: 2, scale: 1 }).default("0"), // 0-5
+  ratingCount: int("ratingCount").default(0).notNull(),
+  isPublished: boolean("isPublished").default(true).notNull(),
+  isFeatured: boolean("isFeatured").default(false).notNull(),
+  version: varchar("version", { length: 20 }).default("1.0.0").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_marketplace_publisher").on(table.publisherId),
+  index("idx_marketplace_category").on(table.category),
+  index("idx_marketplace_published").on(table.isPublished),
+  index("idx_marketplace_featured").on(table.isFeatured),
+  index("idx_marketplace_rating").on(table.rating),
+  index("idx_marketplace_downloads").on(table.downloadCount),
+]);
+
+export type TemplateMarketplace = typeof templateMarketplace.$inferSelect;
+export type InsertTemplateMarketplace = typeof templateMarketplace.$inferInsert;
+
+/**
+ * Template Reviews - Đánh giá templates
+ */
+export const templateReviews = mysqlTable("template_reviews", {
+  id: int("id").autoincrement().primaryKey(),
+  marketplaceId: int("marketplaceId").notNull(), // FK to templateMarketplace
+  userId: int("userId").notNull(), // FK to users
+  rating: int("rating").notNull(), // 1-5
+  comment: text("comment"),
+  isVerified: boolean("isVerified").default(false).notNull(), // Đã download và sử dụng
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_reviews_marketplace").on(table.marketplaceId),
+  index("idx_reviews_user").on(table.userId),
+  index("idx_reviews_rating").on(table.rating),
+]);
+
+export type TemplateReview = typeof templateReviews.$inferSelect;
+export type InsertTemplateReview = typeof templateReviews.$inferInsert;

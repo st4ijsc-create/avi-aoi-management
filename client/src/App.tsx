@@ -39,6 +39,7 @@ import CategoryAnalytics from "./pages/CategoryAnalytics";
 import UserGuide from "./pages/UserGuide";
 import DashboardTemplates from "./pages/DashboardTemplates";
 import BackupRestore from "./pages/BackupRestore";
+import TemplateMarketplace from "./pages/TemplateMarketplace";
 
 function Router() {
   return (
@@ -79,6 +80,7 @@ function Router() {
       <Route path="/user-guide" component={UserGuide} />
       <Route path="/dashboard-templates" component={DashboardTemplates} />
       <Route path="/backup-restore" component={BackupRestore} />
+      <Route path="/template-marketplace" component={TemplateMarketplace} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

@@ -3122,3 +3122,29 @@ Menu structure mới:
 - [x] Lịch sử backup (mock data, có thể mở rộng)
 - [x] Thêm vào navigation menu (admin only)
 
+
+## Phase 133: Audit Trail, Scheduled Backup & Template Marketplace
+
+### 1. Audit Trail cho Backup/Restore
+- [x] Thêm backupLogs table vào schema (action, categories, status, fileSize, duration, ipAddress)
+- [x] Log chi tiết: user, action (export/import/scheduled_export), categories, timestamp, status
+- [x] API listBackupLogs, createBackupLog
+- [x] Filter theo user, action, status, date range
+
+### 2. Scheduled Backup
+- [x] Thêm scheduledBackups table vào schema (schedule, scheduleTime, retentionCount, storageType)
+- [x] API CRUD cho scheduled backups (list, get, create, update, delete, toggle)
+- [x] calculateNextRunTime helper function
+- [x] Lưu backup vào S3 storage (storageType: local/s3)
+- [x] Retention policy (retentionCount: 1-30)
+
+### 3. Template Marketplace
+- [x] Thêm templateMarketplace và templateReviews tables
+- [x] UI marketplace để browse templates (TemplateMarketplace.tsx)
+- [x] Publish template lên marketplace (publish API)
+- [x] Download và import template từ marketplace (download API)
+- [x] Rating và review cho templates (reviews router)
+- [x] Categories/tags cho templates (production, quality, monitoring, alerts, analytics, management)
+- [x] Featured templates section
+- [x] Search, filter, sort (newest/rating/downloads)
+

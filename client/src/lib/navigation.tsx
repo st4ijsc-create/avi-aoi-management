@@ -36,7 +36,8 @@ import {
   Brain,
   Wrench,
   LayoutTemplate,
-  Archive
+  Archive,
+  Store
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -98,6 +99,12 @@ export const navGroups: NavGroup[] = [
         icon: <Archive className="h-4 w-4" />,
         description: "Sao lưu và khôi phục cấu hình hệ thống",
         requiredRole: "admin"
+      },
+      { 
+        href: "/template-marketplace", 
+        label: "Template Marketplace", 
+        icon: <Store className="h-4 w-4" />,
+        description: "Chia sẻ và tải templates từ cộng đồng"
       },
     ],
   },
