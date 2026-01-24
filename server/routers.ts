@@ -2524,6 +2524,128 @@ const productionOrderRouter = router({
 
       return { success: true };
     }),
+
+  // Order Templates
+  listTemplates: protectedProcedure
+    .input(z.object({ factoryId: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      return db.listOrderTemplates(input?.factoryId);
+    }),
+
+  getTemplate: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getOrderTemplate(input.id);
+    }),
+
+  createTemplate: adminProcedure
+    .input(z.object({
+      name: z.string().min(1).max(255),
+      description: z.string().optional(),
+      factoryId: z.number().optional(),
+      workshopId: z.number().optional(),
+      productModelId: z.number().optional(),
+      defaultTargetQuantity: z.number().default(1000),
+      defaultPriority: z.number().default(0),
+      defaultNotes: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      return db.createOrderTemplate({ ...input, createdBy: ctx.user.id });
+    }),
+
+  updateTemplate: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(255).optional(),
+      description: z.string().optional(),
+      factoryId: z.number().optional(),
+      workshopId: z.number().optional(),
+      productModelId: z.number().optional(),
+      defaultTargetQuantity: z.number().optional(),
+      defaultPriority: z.number().optional(),
+      defaultNotes: z.string().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await db.updateOrderTemplate(id, data);
+      return { success: true };
+    }),
+
+  deleteTemplate: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteOrderTemplate(input.id);
+      return { success: true };
+    }),
+
+  createFromTemplate: protectedProcedure
+    .input(z.object({
+      templateId: z.number(),
+      orderCode: z.string().min(1),
+      lineId: z.number(),
+      targetQuantity: z.number().optional(),
+      priority: z.number().optional(),
+      notes: z.string().optional(),
+      scheduledStartDate: z.date().optional(),
+      scheduledEndDate: z.date().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const template = await db.getOrderTemplate(input.templateId);
+      if (!template) throw new Error('Template not found');
+
+      const orderData = {
+        orderCode: input.orderCode,
+        companyCode: 'DEFAULT',
+        factoryId: template.factoryId || 1,
+        workshopId: template.workshopId || 1,
+        lineId: input.lineId,
+        productModelId: template.productModelId || 1,
+        targetQuantity: input.targetQuantity || template.defaultTargetQuantity,
+        priority: input.priority ?? template.defaultPriority,
+        notes: input.notes || template.defaultNotes,
+        plannedStartDate: input.scheduledStartDate,
+        plannedEndDate: input.scheduledEndDate,
+        status: 'pending' as const,
+      };
+
+      const id = await db.createProductionOrder(orderData);
+      return { id };
+    }),
+
+  // WIP Tracking
+  getWIPStatus: protectedProcedure
+    .input(z.object({ factoryId: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      return db.getWIPStatus(input?.factoryId);
+    }),
+
+  getWIPByLine: protectedProcedure
+    .input(z.object({ lineId: z.number() }))
+    .query(async ({ input }) => {
+      return db.getWIPByLine(input.lineId);
+    }),
+
+  // Scheduling Optimization
+  optimizeSchedule: protectedProcedure
+    .input(z.object({ factoryId: z.number() }))
+    .mutation(async ({ input }) => {
+      return db.optimizeSchedule(input.factoryId);
+    }),
+
+  applyScheduleSuggestion: adminProcedure
+    .input(z.object({
+      orderId: z.number(),
+      suggestedLineId: z.number(),
+      suggestedStartDate: z.date(),
+      suggestedEndDate: z.date(),
+      reason: z.string(),
+      score: z.number(),
+    }))
+    .mutation(async ({ input }) => {
+      await db.applyScheduleSuggestion(input);
+      return { success: true };
+    }),
 });
 
 // ============ LINE STAGE ROUTER ============

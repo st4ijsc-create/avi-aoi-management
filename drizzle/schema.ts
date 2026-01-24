@@ -548,6 +548,7 @@ export const productionOrders = mysqlTable("production_orders", {
   actualStartDate: timestamp("actualStartDate"),
   actualEndDate: timestamp("actualEndDate"),
   notes: text("notes"),
+  dependencies: json("dependencies").$type<number[]>(), // Array of order IDs that this order depends on
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -1720,3 +1721,31 @@ export const templateReviews = mysqlTable("template_reviews", {
 
 export type TemplateReview = typeof templateReviews.$inferSelect;
 export type InsertTemplateReview = typeof templateReviews.$inferInsert;
+
+
+/**
+ * Production Order Templates - Template lệnh sản xuất
+ */
+export const productionOrderTemplates = mysqlTable("production_order_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  factoryId: int("factoryId"), // Nhà máy (null = all factories)
+  workshopId: int("workshopId"), // Nhà xưởng (null = all workshops)
+  productModelId: int("productModelId"), // Sản phẩm (null = any product)
+  defaultTargetQuantity: int("defaultTargetQuantity").default(1000).notNull(),
+  defaultPriority: int("defaultPriority").default(0).notNull(),
+  defaultNotes: text("defaultNotes"),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_order_template_factory").on(table.factoryId),
+  index("idx_order_template_workshop").on(table.workshopId),
+  index("idx_order_template_product").on(table.productModelId),
+  index("idx_order_template_active").on(table.isActive),
+]);
+
+export type ProductionOrderTemplate = typeof productionOrderTemplates.$inferSelect;
+export type InsertProductionOrderTemplate = typeof productionOrderTemplates.$inferInsert;

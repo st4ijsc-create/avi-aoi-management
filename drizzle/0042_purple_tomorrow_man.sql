@@ -1,0 +1,1 @@
+ALTER TABLE `production_orders` ADD `dependencies` json;

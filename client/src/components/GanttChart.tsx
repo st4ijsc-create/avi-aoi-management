@@ -45,6 +45,7 @@ interface ProductionOrder {
   status: string;
   priority: number;
   notes?: string | null;
+  dependencies?: number[] | null; // Array of order IDs that this order depends on
   createdAt: Date;
   updatedAt: Date;
   // Schedule fields
@@ -190,7 +191,8 @@ export default function GanttChart({
   onOrderClick,
   onOrderReschedule,
 }: GanttChartProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>("week");
+  const [viewMode, setViewMode] = useState<ViewMode>("day");
+  const [zoomLevel, setZoomLevel] = useState<number>(1); // 0.5, 1, 1.5, 2;
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedLineId, setSelectedLineId] = useState<string>("all");
   const [selectedFactoryId, setSelectedFactoryId] = useState<string>("all");
@@ -283,15 +285,30 @@ export default function GanttChart({
     return grouped;
   }, [filteredOrders, filteredLines]);
 
-  // Calculate cell width based on view mode
+  // Calculate cell width based on view mode and zoom level
   const cellWidth = useMemo(() => {
+    let baseWidth: number;
     switch (viewMode) {
-      case "day": return 80;
-      case "week": return 40;
-      case "month": return 20;
-      default: return 40;
+      case "day": baseWidth = 80; break;
+      case "week": baseWidth = 40; break;
+      case "month": baseWidth = 20; break;
+      default: baseWidth = 40;
     }
-  }, [viewMode]);
+    return baseWidth * zoomLevel;
+  }, [viewMode, zoomLevel]);
+
+  // Zoom functions
+  const handleZoomIn = () => {
+    setZoomLevel(prev => Math.min(prev + 0.25, 2));
+  };
+
+  const handleZoomOut = () => {
+    setZoomLevel(prev => Math.max(prev - 0.25, 0.5));
+  };
+
+  const handleZoomReset = () => {
+    setZoomLevel(1);
+  };
 
   // Calculate order position and width
   const getOrderStyle = useCallback((order: ProductionOrder) => {
@@ -862,6 +879,20 @@ export default function GanttChart({
                 <SelectItem value="month">Theo tháng</SelectItem>
               </SelectContent>
             </Select>
+            
+            {/* Zoom Controls */}
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="icon" onClick={handleZoomOut} disabled={zoomLevel <= 0.5}>
+                <ZoomOut className="w-4 h-4" />
+              </Button>
+              <span className="text-xs text-muted-foreground px-2 min-w-12 text-center">{Math.round(zoomLevel * 100)}%</span>
+              <Button variant="outline" size="icon" onClick={handleZoomIn} disabled={zoomLevel >= 2}>
+                <ZoomIn className="w-4 h-4" />
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleZoomReset}>
+                Reset
+              </Button>
+            </div>
             
             {/* Navigation */}
             <div className="flex items-center gap-1">

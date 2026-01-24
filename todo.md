@@ -3148,3 +3148,256 @@ Menu structure mới:
 - [x] Featured templates section
 - [x] Search, filter, sort (newest/rating/downloads)
 
+
+
+## Phase 134: Pre-Deployment Critical Tasks (Ưu tiên cực cao - Bắt buộc trước triển khai)
+
+### 1. Data Migration Tools (2 ngày)
+- [ ] Tool import Corporate/Factory/Workshop/Line hierarchy từ CSV/Excel
+- [ ] Tool import Product Models và Measurement Points
+- [ ] Tool import Machines và Product-Machine Mapping
+- [ ] Tool import Users và role assignments
+- [ ] Data validation scripts để check integrity
+- [ ] Rollback mechanism nếu import failed
+
+### 2. Production Testing (3 ngày)
+- [ ] Load testing với 100+ concurrent users
+- [ ] Stress testing với peak load scenarios
+- [ ] Test với production data (1 million+ inspections)
+- [ ] MQTT message handling stress test (1000+ msg/sec)
+- [ ] Database query performance testing
+- [ ] API endpoint response time validation (<200ms)
+- [ ] Memory leak testing (24h continuous operation)
+
+### 3. Security Hardening (2 ngày)
+- [ ] Password complexity validation (uppercase, lowercase, number, special char, min 8 chars)
+- [ ] Account lockout sau 5 lần đăng nhập sai (15 phút)
+- [ ] Password expiry policy (90 days) với email reminder
+- [ ] SSL/TLS certificate installation và HTTPS enforcement
+- [ ] Security headers (CSP, HSTS, X-Frame-Options)
+- [ ] SQL injection prevention audit
+- [ ] XSS protection audit
+- [ ] CSRF token validation
+
+### 4. User Training Materials (2 ngày)
+- [ ] Video tutorial: Đăng nhập và thiết lập tài khoản (5 phút)
+- [ ] Video tutorial: Dashboard và widgets (10 phút)
+- [ ] Video tutorial: Xem lịch sử kiểm tra và SPC analysis (10 phút)
+- [ ] Video tutorial: Tạo và quản lý Production Orders (8 phút)
+- [ ] Video tutorial: Cấu hình MQTT alerts (7 phút)
+- [ ] Quick Start Guide (PDF, 10 trang)
+- [ ] FAQ document (20+ câu hỏi thường gặp)
+- [ ] Troubleshooting guide
+
+### 5. Performance Optimization (2 ngày)
+- [ ] Database query optimization (add indexes, rewrite slow queries)
+- [ ] Implement query result caching với Redis
+- [ ] API response compression (gzip)
+- [ ] Image optimization (WebP format, lazy loading)
+- [ ] Code splitting và lazy loading cho React components
+- [ ] CDN setup cho static assets
+- [ ] Database connection pooling tuning
+
+### 6. Monitoring & Alerting (1 ngày)
+- [ ] System health dashboard (CPU, RAM, Disk, Network)
+- [ ] Database monitoring (query times, connections, locks)
+- [ ] API monitoring (response times, error rates)
+- [ ] Error alerting qua email/SMS khi critical errors
+- [ ] Uptime monitoring với external service
+- [ ] Log aggregation và search (ELK stack hoặc tương tự)
+- [ ] Performance metrics dashboard
+
+### 7. Backup Strategy (1 ngày)
+- [ ] Automated daily backup script (3 AM)
+- [ ] Offsite backup storage setup (S3 hoặc tương tự)
+- [ ] Backup encryption implementation
+- [ ] Backup restoration testing (verify backups work)
+- [ ] Disaster recovery plan document
+- [ ] Backup retention policy (30 daily, 12 monthly)
+- [ ] Backup monitoring và alerting
+
+
+## Phase 135: Quality Control Enhancement (Ưu tiên cao - Nên có trước triển khai)
+
+### 1. SPC Control Charts (3 ngày)
+- [ ] X-bar chart implementation (sample mean)
+- [ ] R-chart implementation (range)
+- [ ] S-chart implementation (standard deviation)
+- [ ] Control limits calculation (UCL, LCL)
+- [ ] Out-of-control detection rules (Western Electric rules)
+- [ ] Automatic alerts khi out-of-control
+- [ ] Chart export (PNG, PDF)
+
+### 2. CPK Calculation (1 ngày)
+- [ ] CPK calculation formula implementation
+- [ ] Trending CPK over time
+- [ ] CPK alerts khi < 1.33
+- [ ] CPK by product/machine/workstation
+- [ ] CPK dashboard widget
+
+### 3. OEE Calculation (2 ngày)
+- [ ] Availability calculation (uptime / planned production time)
+- [ ] Performance calculation (actual output / theoretical output)
+- [ ] Quality calculation (good units / total units)
+- [ ] OEE = Availability × Performance × Quality
+- [ ] Realtime OEE dashboard
+- [ ] OEE trending charts
+- [ ] OEE by machine/line/factory
+
+### 4. Downtime Tracking (2 ngày)
+- [ ] Downtime categories (planned, unplanned, breakdown, changeover)
+- [ ] Downtime logging UI
+- [ ] Downtime reason codes
+- [ ] Downtime duration calculation
+- [ ] Downtime reports và analytics
+- [ ] Pareto chart cho downtime reasons
+
+### 5. Shift Reports (2 ngày)
+- [ ] Shift configuration (ca sáng/chiều/tối với time ranges)
+- [ ] Shift-based statistics (production, yield, OEE)
+- [ ] Shift comparison reports
+- [ ] Shift handover notes
+- [ ] Shift performance dashboard
+
+### 6. Report Builder UI (3 ngày)
+- [ ] Drag-drop report sections
+- [ ] Custom report parameters (date range, filters)
+- [ ] Report preview before generation
+- [ ] Save report templates
+- [ ] Report scheduling integration
+- [ ] Export formats (PDF, Excel, HTML)
+
+### 7. Dashboard Sharing (1 ngày)
+- [ ] Share dashboard với specific users/groups
+- [ ] View-only vs edit permissions
+- [ ] Share link generation
+- [ ] Shared dashboard list UI
+
+
+## Phase 136: Production Optimization (Ưu tiên trung bình)
+
+### 1. Gantt Chart Enhancements (2 ngày)
+- [ ] Zoom in/out timeline (hour/day/week/month views)
+- [ ] Dependency arrows giữa các orders
+- [ ] Drag dependencies để link orders
+- [ ] Critical path highlighting
+- [ ] Resource allocation view
+- [ ] Gantt chart printing optimization
+
+### 2. Production Scheduling Algorithm (2 ngày)
+- [ ] Auto-schedule orders based on capacity
+- [ ] Minimize changeover time
+- [ ] Balance load across lines
+- [ ] Priority-based scheduling
+- [ ] What-if scenario analysis
+
+### 3. WIP Tracking (1 ngày)
+- [ ] Realtime WIP count per line/machine
+- [ ] WIP alerts khi vượt threshold
+- [ ] WIP dashboard widget
+- [ ] WIP trending chart
+
+### 4. Production Order Templates (1 ngày)
+- [ ] Save order as template
+- [ ] Create order from template
+- [ ] Template library UI
+- [ ] Template parameters (quantity, dates)
+
+
+## Phase 137: Advanced Features (Ưu tiên thấp - Sau khi hệ thống ổn định)
+
+### 1. Predictive Maintenance (3 ngày)
+- [ ] Machine health scoring algorithm
+- [ ] Anomaly detection từ sensor data
+- [ ] Predictive alerts trước khi breakdown
+- [ ] Maintenance schedule recommendations
+- [ ] ML model training pipeline
+
+### 2. First Article Inspection (2 ngày)
+- [ ] FAI workflow (submit, review, approve)
+- [ ] FAI checklist templates
+- [ ] FAI report generation
+- [ ] FAI history và tracking
+
+### 3. Cost Analysis Reports (2 ngày)
+- [ ] Cost per unit calculation
+- [ ] Scrap cost tracking
+- [ ] Labor cost allocation
+- [ ] Cost trending và forecasting
+- [ ] Cost breakdown by product/line
+
+### 4. Dashboard Real-time Collaboration (2 ngày)
+- [ ] WebSocket for real-time updates
+- [ ] Show active users on dashboard
+- [ ] Cursor tracking
+- [ ] Conflict resolution khi multiple edits
+
+### 5. Dark Mode (1 ngày)
+- [ ] Dark theme CSS variables
+- [ ] Theme toggle UI
+- [ ] Save theme preference
+- [ ] System theme detection
+
+### 6. Accessibility (2 ngày)
+- [ ] ARIA labels cho screen readers
+- [ ] Keyboard navigation improvements
+- [ ] Focus indicators
+- [ ] Color contrast audit (WCAG AA)
+- [ ] Alt text cho images
+
+
+## Phase 135: Gantt Chart & Production Enhancements
+
+### 1. Gantt Chart Zoom Timeline
+- [x] Thêm zoom controls (ZoomIn, ZoomOut, Reset buttons)
+- [x] Zoom level: 0.5x, 0.75x, 1x, 1.25x, 1.5x, 1.75x, 2x
+- [x] Day view - timeline theo ngày (default)
+- [x] Week view - timeline theo tuần
+- [x] Month view - timeline theo tháng
+- [x] Cell width động theo zoom level và view mode
+
+### 2. Gantt Chart Dependencies
+- [x] Thêm dependencies field vào productionOrders schema
+- [ ] UI để link orders (drag from order A to order B) - SKIP tạm thời
+- [ ] Render dependency arrows (SVG overlay) - SKIP tạm thời
+- [ ] Validate circular dependencies - SKIP tạm thời
+- [ ] Auto-adjust dates khi dependency thay đổi - SKIP tạm thờiircular dependencies)
+- [ ] Auto-adjust dates khi dependency changes
+
+### 3. Gantt Chart Resource Allocation
+- [ ] Resource allocation view toggle
+- [ ] Show capacity bars per line
+- [ ] Color-code over-allocated resources
+- [ ] Resource leveling suggestions
+- [ ] Export resource allocation report
+
+### 4. Process Drag-drop
+- [ ] Implement drag-drop cho stages trong ProcessManagement
+- [ ] Update sortOrder khi drag-drop
+- [ ] Visual feedback khi dragging
+- [ ] Save new order to database
+- [ ] Refresh UI after reorder
+
+### 5. Production Order Templates
+- [x] Thêm productionOrderTemplates table vào schema
+- [x] API CRUD cho templates (list, get, create, update, delete)
+- [x] Create order from template (createFromTemplate API)
+- [ ] Save order as template UI (có thể thêm sau)
+- [ ] Template library page (có thể thêm sau)
+
+### 6. WIP Tracking Realtime
+- [x] API getWIPStatus (summary + orders list)
+- [x] API getWIPByLine
+- [ ] WIP dashboard widget (có thể thêm sau)
+- [ ] Realtime updates với WebSocket (có thể thêm sau)
+- [ ] WIP alerts khi vượt threshold
+- [ ] WIP trending chart
+- [ ] WIP by product category
+
+### 7. Production Scheduling Optimization
+- [x] Auto-schedule algorithm (capacity-based) - optimizeSchedule API
+- [x] Balance load across lines (dựa trên line utilization)
+- [x] Priority-based scheduling (order by priority)
+- [x] API applyScheduleSuggestion
+- [ ] Minimize changeover time (có thể thêm sau)
+- [ ] What-if scenario analysis UI (có thể thêm sau)
