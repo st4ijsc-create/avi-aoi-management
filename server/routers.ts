@@ -4355,6 +4355,120 @@ const scheduledReportRouter = router({
       return { url };
     }),
 
+  // Report Templates
+  listTemplates: protectedProcedure
+    .query(async () => {
+      const { reportTemplates } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      const result = await database.select().from(reportTemplates).where(eq(reportTemplates.isActive, true));
+      return result;
+    }),
+
+  getTemplateById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const { reportTemplates } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      const result = await database.select().from(reportTemplates).where(eq(reportTemplates.id, input.id));
+      return result[0] || null;
+    }),
+
+  getTemplateByCode: protectedProcedure
+    .input(z.object({ code: z.string() }))
+    .query(async ({ input }) => {
+      const { reportTemplates } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      const result = await database.select().from(reportTemplates).where(eq(reportTemplates.code, input.code));
+      return result[0] || null;
+    }),
+
+  createFromTemplate: adminProcedure
+    .input(z.object({
+      templateCode: z.string(),
+      name: z.string().min(1).max(255),
+      recipients: z.array(z.string().email()).min(1),
+      scheduleTime: z.string().default("08:00"),
+      scheduleDayOfWeek: z.number().min(0).max(6).optional(),
+      scheduleDayOfMonth: z.number().min(1).max(31).optional(),
+      factoryId: z.number().optional(),
+      workshopId: z.number().optional(),
+      lineId: z.number().optional(),
+      isActive: z.boolean().default(true),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      // Get template
+      const { reportTemplates } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      const templateResult = await database.select().from(reportTemplates).where(eq(reportTemplates.code, input.templateCode));
+      const template = templateResult[0];
+      if (!template) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Template not found' });
+      }
+
+      // Map template type to schedule
+      const scheduleMap: Record<string, 'DAILY' | 'WEEKLY' | 'MONTHLY'> = {
+        'DAILY': 'DAILY',
+        'WEEKLY': 'WEEKLY',
+        'MONTHLY': 'MONTHLY',
+        'CUSTOM': 'DAILY',
+      };
+
+      // Map template type to report type
+      const reportTypeMap: Record<string, "NG_VISUAL" | "DAILY_SUMMARY" | "WEEKLY_SUMMARY" | "MONTHLY_SUMMARY" | "CUSTOM" | "OEE_REPORT" | "MACHINE_HEALTH"> = {
+        'DAILY_QUALITY': 'DAILY_SUMMARY',
+        'WEEKLY_SUMMARY': 'WEEKLY_SUMMARY',
+        'MONTHLY_PERFORMANCE': 'MONTHLY_SUMMARY',
+      };
+
+      // Create scheduled report from template
+      const sections = template.sections as any;
+      const reportType: "NG_VISUAL" | "DAILY_SUMMARY" | "WEEKLY_SUMMARY" | "MONTHLY_SUMMARY" | "CUSTOM" | "OEE_REPORT" | "MACHINE_HEALTH" = reportTypeMap[template.code] || 'CUSTOM';
+      const schedule: 'DAILY' | 'WEEKLY' | 'MONTHLY' = scheduleMap[template.templateType] || 'DAILY';
+      const id = await db.createScheduledReport({
+        name: input.name,
+        description: template.description ?? undefined,
+        reportType,
+        schedule,
+        scheduleTime: input.scheduleTime,
+        scheduleDayOfWeek: input.scheduleDayOfWeek,
+        scheduleDayOfMonth: input.scheduleDayOfMonth,
+        recipients: input.recipients,
+        factoryId: input.factoryId,
+        workshopId: input.workshopId,
+        lineId: input.lineId,
+        includeWorkstationHeatmap: sections.includeMachineComparison || false,
+        includeTopNGPoints: sections.includeTopNGPoints || false,
+        includeTrendChart: sections.includeTrendCharts || false,
+        includeComparison: true,
+        isActive: input.isActive,
+        createdBy: ctx.user.id,
+      });
+
+      // Schedule if active
+      if (input.isActive) {
+        const report = await db.getScheduledReportById(id);
+        if (report) {
+          scheduleReport({
+            id: report.id,
+            schedule: report.schedule,
+            scheduleTime: report.scheduleTime,
+            scheduleDayOfWeek: report.scheduleDayOfWeek,
+            scheduleDayOfMonth: report.scheduleDayOfMonth,
+          });
+        }
+      }
+
+      return { id, templateUsed: template.code };
+    }),
+
   // Preview statistics report
   previewStatisticsReport: adminProcedure
     .input(z.object({

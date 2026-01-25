@@ -3561,3 +3561,32 @@ Menu structure mới:
 - [x] API import measurement points from CSV/Excel
 - [x] Validation và error handling
 - [x] Template download cho import
+
+
+## Phase 141: Comparison Mode, Export PDF, Scheduled Report Templates
+
+### 1. Comparison Mode cho History
+- [x] Thêm tab "So sánh" trong History module (HistoryComparison.tsx)
+- [x] UI chọn 2 khoảng thời gian để so sánh (custom date pickers)
+- [x] API getComparisonStats trả về stats cho 2 periods
+- [x] Hiển thị side-by-side comparison (Total, OK, NG, NTF, Yield)
+- [x] Hiển thị % thay đổi (tăng/giảm) với màu sắc (xanh/đỏ)
+- [x] Bar chart so sánh 2 periods
+- [x] Quick compare options (tuần này vs tuần trước, tháng này vs tháng trước, 90 ngày)
+
+### 2. Export PDF với Charts
+- [x] Cài đặt jspdf và html2canvas
+- [x] Tạo PDF report template với header, footer (PDFExportService)
+- [x] Render charts thành images (html2canvas capture)
+- [x] Include statistics tables trong PDF
+- [x] Thêm nút Export PDF trong History/Analysis tab (HistoryComparison)
+- [x] Thêm nút Export PDF trong Reports page
+- [x] PDF có branding (logo, company name, page numbers)
+
+### 3. Scheduled Report Templates
+- [x] Tạo report_templates table trong database
+- [x] Tạo 3 default templates (Daily Quality, Weekly Summary, Monthly Performance)
+- [x] UI quản lý report templates (ReportTemplates.tsx)
+- [x] Cho phép customize template content (sections config)
+- [x] Tích hợp với scheduled reports để chọn template (createFromTemplate API)
+- [x] Preview template trước khi schedule (template cards với sections list)

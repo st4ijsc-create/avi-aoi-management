@@ -1929,3 +1929,44 @@ export const mqttMessageHistory = mysqlTable("mqtt_message_history", {
 
 export type MqttMessageHistory = typeof mqttMessageHistory.$inferSelect;
 export type InsertMqttMessageHistory = typeof mqttMessageHistory.$inferInsert;
+
+
+/**
+ * Report Templates - Mẫu báo cáo có sẵn (Daily, Weekly, Monthly)
+ */
+export const reportTemplates = mysqlTable("report_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  code: varchar("code", { length: 50 }).notNull().unique(), // DAILY_QUALITY, WEEKLY_SUMMARY, MONTHLY_PERFORMANCE
+  description: text("description"),
+  templateType: mysqlEnum("templateType", ["DAILY", "WEEKLY", "MONTHLY", "CUSTOM"]).notNull(),
+  // Content configuration
+  sections: json("sections").$type<{
+    includeYieldStats: boolean;
+    includeNGAnalysis: boolean;
+    includeMachineComparison: boolean;
+    includeOEEMetrics: boolean;
+    includeDowntimeAnalysis: boolean;
+    includeTrendCharts: boolean;
+    includeTopNGPoints: boolean;
+    customSections?: string[];
+  }>().notNull(),
+  // Email configuration
+  emailSubjectTemplate: varchar("emailSubjectTemplate", { length: 255 }),
+  emailBodyTemplate: text("emailBodyTemplate"),
+  // Schedule defaults
+  defaultSchedule: varchar("defaultSchedule", { length: 50 }), // e.g., "0 8 * * *" for daily at 8am
+  // Metadata
+  isSystem: boolean("isSystem").default(false).notNull(), // System templates cannot be deleted
+  isActive: boolean("isActive").default(true).notNull(),
+  createdBy: int("createdBy").references(() => users.id),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_report_templates_code").on(table.code),
+  index("idx_report_templates_type").on(table.templateType),
+  index("idx_report_templates_active").on(table.isActive),
+]);
+
+export type ReportTemplate = typeof reportTemplates.$inferSelect;
+export type InsertReportTemplate = typeof reportTemplates.$inferInsert;

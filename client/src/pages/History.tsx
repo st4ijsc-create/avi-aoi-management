@@ -43,10 +43,12 @@ import {
   Settings2,
   QrCode,
   FileSpreadsheet,
-  Factory
+  Factory,
+  GitCompare
 } from "lucide-react";
 import BarcodeScanner from "@/components/BarcodeScanner";
 import { EmptyState, NoWorkstationData, NoChartData } from "@/components/EmptyState";
+import HistoryComparison from "@/components/HistoryComparison";
 import { ChartErrorBoundary, TableErrorBoundary, AnalyticsErrorBoundary } from "@/components/ErrorBoundary";
 import { StatsCardSkeleton, ChartSkeleton, TableSkeleton, WorkstationSummarySkeleton } from "@/components/AnalyticsSkeleton";
 import { toast } from "sonner";
@@ -883,7 +885,7 @@ export default function History() {
 
         {/* Tabs: List and Analysis */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full max-w-4xl grid-cols-7">
+          <TabsList className="grid w-full max-w-4xl grid-cols-8">
             <TabsTrigger value="list" className="gap-2">
               <HistoryIcon className="h-4 w-4" />
               Danh sách
@@ -911,6 +913,10 @@ export default function History() {
             <TabsTrigger value="ai" className="gap-2">
               <Activity className="h-4 w-4" />
               AI Analysis
+            </TabsTrigger>
+            <TabsTrigger value="compare" className="gap-2">
+              <GitCompare className="h-4 w-4" />
+              So sánh
             </TabsTrigger>
           </TabsList>
 
@@ -2738,6 +2744,11 @@ export default function History() {
                 </Card>
               )}
             </div>
+          </TabsContent>
+
+          {/* Compare Tab */}
+          <TabsContent value="compare">
+            <HistoryComparison />
           </TabsContent>
         </Tabs>
       </div>

@@ -40,7 +40,8 @@ import {
   Award,
   Mail,
   Users,
-  FolderTree
+  FolderTree,
+  FileText
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { ErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
@@ -49,6 +50,7 @@ import ManualMachineMapping from "@/components/ManualMachineMapping";
 import { UnifiedMappingTable } from "@/components/UnifiedMappingTable";
 import YieldThresholdSettings from "@/components/YieldThresholdSettings";
 import ScheduledReports from "@/components/ScheduledReports";
+import ReportTemplates from "@/components/ReportTemplates";
 import { SMTPConfig } from "@/components/SMTPConfig";
 import { CacheStatsDashboard } from "@/components/CacheStatsDashboard";
 import { EmailTemplateEditor } from "@/components/EmailTemplateEditor";
@@ -833,6 +835,15 @@ export default function Settings() {
                 </button>
                 {!collapsedCategories['system'] && (
                   <div className="ml-6 space-y-1">
+                    <button
+                      onClick={() => setActiveTab('report-templates')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'report-templates' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <FileText className="h-4 w-4" />
+                      Mẫu báo cáo
+                    </button>
                     <button
                       onClick={() => setActiveTab('scheduled-reports')}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
@@ -2229,6 +2240,11 @@ export default function Settings() {
           {/* Yield Thresholds Tab */}
           <TabsContent value="yield-thresholds">
             <YieldThresholdSettings />
+          </TabsContent>
+
+          {/* Report Templates Tab */}
+          <TabsContent value="report-templates">
+            <ReportTemplates />
           </TabsContent>
 
           {/* Scheduled Reports Tab */}
