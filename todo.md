@@ -3590,3 +3590,22 @@ Menu structure mới:
 - [x] Cho phép customize template content (sections config)
 - [x] Tích hợp với scheduled reports để chọn template (createFromTemplate API)
 - [x] Preview template trước khi schedule (template cards với sections list)
+
+
+## Phase 142: Inspection Image Gallery
+
+### 1. ImageGallery Component
+- [x] Tạo ImageGallery.tsx component
+- [x] Grid view hiển thị thumbnails của measurement point images
+- [x] Lightbox view để xem ảnh full-size
+- [x] Navigation giữa các ảnh (prev/next buttons)
+- [x] Filter theo result (OK/NG/NTF/All)
+- [x] Zoom và pan functionality
+- [x] Keyboard shortcuts (arrow keys, ESC, +, -, R)
+- [x] Image loading states và error handling
+
+### 2. Integration
+- [x] Thêm tab "Gallery" vào History module
+- [x] Tích hợp vào InspectionDetail page (thông qua History)
+- [x] API endpoint để lấy images theo inspection (sử dụng inspection.search)
+- [x] Lazy loading cho large galleries (ImageWithLoader component)

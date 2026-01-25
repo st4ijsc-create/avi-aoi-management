@@ -44,9 +44,11 @@ import {
   QrCode,
   FileSpreadsheet,
   Factory,
-  GitCompare
+  GitCompare,
+  Image
 } from "lucide-react";
 import BarcodeScanner from "@/components/BarcodeScanner";
+import ImageGallery, { GalleryImage } from "@/components/ImageGallery";
 import { EmptyState, NoWorkstationData, NoChartData } from "@/components/EmptyState";
 import HistoryComparison from "@/components/HistoryComparison";
 import { ChartErrorBoundary, TableErrorBoundary, AnalyticsErrorBoundary } from "@/components/ErrorBoundary";
@@ -885,7 +887,7 @@ export default function History() {
 
         {/* Tabs: List and Analysis */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full max-w-4xl grid-cols-8">
+          <TabsList className="grid w-full max-w-5xl grid-cols-9">
             <TabsTrigger value="list" className="gap-2">
               <HistoryIcon className="h-4 w-4" />
               Danh sách
@@ -917,6 +919,10 @@ export default function History() {
             <TabsTrigger value="compare" className="gap-2">
               <GitCompare className="h-4 w-4" />
               So sánh
+            </TabsTrigger>
+            <TabsTrigger value="gallery" className="gap-2">
+              <Image className="h-4 w-4" />
+              Gallery
             </TabsTrigger>
           </TabsList>
 
@@ -2749,6 +2755,54 @@ export default function History() {
           {/* Compare Tab */}
           <TabsContent value="compare">
             <HistoryComparison />
+          </TabsContent>
+
+          {/* Gallery Tab */}
+          <TabsContent value="gallery">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Image className="h-5 w-5" />
+                  Gallery Hình Ảnh Kiểm Tra
+                </CardTitle>
+                <CardDescription>
+                  Xem tất cả hình ảnh từ các điểm đo trong kết quả kiểm tra
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {data?.data && data.data.length > 0 ? (
+                  <ImageGallery
+                    images={data.data.flatMap((inspection: any) => 
+                      (inspection.measurementResults || []).map((result: any, idx: number) => ({
+                        id: `${inspection.id}-${result.measurementPointDefId || idx}`,
+                        url: result.imageUrl || inspection.productModel?.referenceImageUrl || '',
+                        thumbnailUrl: result.imageUrl || inspection.productModel?.referenceImageUrl || '',
+                        title: `${inspection.serialNumber} - Điểm ${result.measurementPointDefId || idx + 1}`,
+                        description: result.remark || '',
+                        result: result.result as "OK" | "NG" | "NTF",
+                        measurementPointId: result.measurementPointDefId,
+                        measurementPointName: result.measurementPointDef?.name || `Điểm đo ${result.measurementPointDefId || idx + 1}`,
+                        value: result.value,
+                        standardValue: result.measurementPointDef?.standardValue,
+                        upperLimit: result.measurementPointDef?.upperLimit,
+                        lowerLimit: result.measurementPointDef?.lowerLimit,
+                        timestamp: new Date(inspection.inspectedAt),
+                      } as GalleryImage)).filter((img: GalleryImage) => img.url)
+                    )}
+                    title="Hình ảnh điểm đo"
+                    showFilters={true}
+                    showSearch={true}
+                    columns={5}
+                  />
+                ) : (
+                  <EmptyState
+                    icon={Image}
+                    title="Chưa có hình ảnh"
+                    description="Không có hình ảnh nào trong kết quả tìm kiếm hiện tại"
+                  />
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
