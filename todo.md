@@ -3639,3 +3639,22 @@ Menu structure mới:
 - [x] Slider mode (đường kẻ chia 2 ảnh)
 - [x] Swap images button (S key)
 - [x] Keyboard shortcuts cho navigation (1/2/3 modes, +/-, arrows)
+
+
+## Phase 144: Annotation Templates & Image Search
+
+### 1. Annotation Templates
+- [x] Tạo annotation_templates table trong database
+- [x] Tạo default templates (Defect Markers, Measurement Guides, Quality Stamps)
+- [x] UI để chọn và áp dụng template vào ảnh
+- [x] Cho phép user tạo custom templates từ annotations hiện có
+- [x] Save template với name, category, và preview thumbnail
+- [x] Template library với search và filter
+
+### 2. Image Search by Annotation
+- [x] Thêm search field trong Gallery tab
+- [x] Search theo annotation text content
+- [x] Filter theo annotation type (rectangle, circle, arrow, freehand, text)
+- [x] Filter theo defect category (nếu có)
+- [x] Highlight matching annotations trong search results
+- [x] API endpoint để search annotations

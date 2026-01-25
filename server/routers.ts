@@ -6618,6 +6618,87 @@ const annotationRouter = router({
       }));
     }),
 
+  // Search annotations
+  search: protectedProcedure
+    .input(z.object({
+      textQuery: z.string().optional(),
+      types: z.array(z.string()).optional(),
+      color: z.string().optional(),
+      dateFrom: z.date().optional(),
+      dateTo: z.date().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      
+      // Get all annotations and filter in memory for complex JSON queries
+      const result = await db.execute(
+        sql`SELECT * FROM image_annotations ORDER BY created_at DESC LIMIT 500`
+      ) as any;
+      
+      let annotations = (result.rows || []).map((row: any) => {
+        const parsedAnnotations = typeof row.annotations === 'string' 
+          ? JSON.parse(row.annotations) 
+          : row.annotations;
+        return {
+          id: row.id,
+          imageId: row.image_url,
+          imageUrl: row.image_url,
+          inspectionId: row.inspection_id,
+          measurementResultId: row.measurement_result_id,
+          annotations: parsedAnnotations,
+          createdBy: row.created_by,
+          createdAt: row.created_at,
+        };
+      });
+      
+      // Flatten to individual annotation results
+      const flatResults: any[] = [];
+      for (const ann of annotations) {
+        for (const item of ann.annotations || []) {
+          flatResults.push({
+            imageId: ann.imageId,
+            imageUrl: ann.imageUrl,
+            annotationId: ann.id,
+            annotationType: item.type,
+            annotationText: item.text || null,
+            annotationColor: item.color,
+            createdBy: ann.createdBy,
+            createdAt: ann.createdAt,
+            inspectionId: ann.inspectionId,
+          });
+        }
+      }
+      
+      // Apply filters
+      let filtered = flatResults;
+      
+      if (input?.textQuery) {
+        const query = input.textQuery.toLowerCase();
+        filtered = filtered.filter(r => 
+          r.annotationText?.toLowerCase().includes(query)
+        );
+      }
+      
+      if (input?.types && input.types.length > 0) {
+        filtered = filtered.filter(r => input.types!.includes(r.annotationType));
+      }
+      
+      if (input?.color) {
+        filtered = filtered.filter(r => r.annotationColor === input.color);
+      }
+      
+      if (input?.dateFrom) {
+        filtered = filtered.filter(r => new Date(r.createdAt) >= input.dateFrom!);
+      }
+      
+      if (input?.dateTo) {
+        filtered = filtered.filter(r => new Date(r.createdAt) <= input.dateTo!);
+      }
+      
+      return filtered;
+    }),
+
   // Delete annotations
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
@@ -6635,6 +6716,94 @@ const annotationRouter = router({
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized to delete this annotation' });
       }
       await db.execute(sql`DELETE FROM image_annotations WHERE id = ${input.id}`);
+      return { success: true };
+    }),
+});
+
+// Annotation Templates Router
+const annotationTemplateRouter = router({
+  // List templates
+  list: protectedProcedure
+    .input(z.object({
+      category: z.enum(['defect_marker', 'measurement_guide', 'quality_stamp', 'custom']).optional(),
+      search: z.string().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      
+      // Build dynamic query
+      let result: any;
+      if (input?.category && input?.search) {
+        result = await db.execute(
+          sql`SELECT * FROM annotation_templates WHERE category = ${input.category} AND (name LIKE ${`%${input.search}%`} OR description LIKE ${`%${input.search}%`}) ORDER BY is_system DESC, name ASC`
+        );
+      } else if (input?.category) {
+        result = await db.execute(
+          sql`SELECT * FROM annotation_templates WHERE category = ${input.category} ORDER BY is_system DESC, name ASC`
+        );
+      } else if (input?.search) {
+        result = await db.execute(
+          sql`SELECT * FROM annotation_templates WHERE name LIKE ${`%${input.search}%`} OR description LIKE ${`%${input.search}%`} ORDER BY is_system DESC, name ASC`
+        );
+      } else {
+        result = await db.execute(
+          sql`SELECT * FROM annotation_templates ORDER BY is_system DESC, name ASC`
+        );
+      }
+      return (result.rows || []).map((row: any) => ({
+        id: row.id,
+        name: row.name,
+        category: row.category,
+        description: row.description,
+        annotations: typeof row.annotations === 'string' ? JSON.parse(row.annotations) : row.annotations,
+        previewUrl: row.preview_url,
+        isSystem: Boolean(row.is_system),
+        createdBy: row.created_by,
+        createdAt: row.created_at,
+      }));
+    }),
+
+  // Create template
+  create: protectedProcedure
+    .input(z.object({
+      name: z.string().min(1),
+      category: z.enum(['defect_marker', 'measurement_guide', 'quality_stamp', 'custom']),
+      description: z.string().optional(),
+      annotations: z.array(z.any()),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      
+      await db.execute(
+        sql`INSERT INTO annotation_templates (name, category, description, annotations, created_by) VALUES (${input.name}, ${input.category}, ${input.description || null}, ${JSON.stringify(input.annotations)}, ${ctx.user.id})`
+      );
+      return { success: true };
+    }),
+
+  // Delete template
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      
+      // Check if system template
+      const existing = await db.execute(
+        sql`SELECT is_system, created_by FROM annotation_templates WHERE id = ${input.id}`
+      ) as any;
+      if (!existing.rows?.length) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Template not found' });
+      }
+      if (existing.rows[0].is_system) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cannot delete system templates' });
+      }
+      if (existing.rows[0].created_by !== ctx.user.id && ctx.user.role !== 'admin') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized to delete this template' });
+      }
+      
+      await db.execute(sql`DELETE FROM annotation_templates WHERE id = ${input.id}`);
       return { success: true };
     }),
 });
@@ -6729,6 +6898,7 @@ export const appRouter = router({
   oee: oeeRouter,
   drillDown: drillDownRouter,
   annotation: annotationRouter,
+  annotationTemplate: annotationTemplateRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -51,6 +51,7 @@ import BarcodeScanner from "@/components/BarcodeScanner";
 import ImageGallery, { GalleryImage } from "@/components/ImageGallery";
 import { EmptyState, NoWorkstationData, NoChartData } from "@/components/EmptyState";
 import HistoryComparison from "@/components/HistoryComparison";
+import { AnnotationSearch } from "@/components/AnnotationSearch";
 import { ChartErrorBoundary, TableErrorBoundary, AnalyticsErrorBoundary } from "@/components/ErrorBoundary";
 import { StatsCardSkeleton, ChartSkeleton, TableSkeleton, WorkstationSummarySkeleton } from "@/components/AnalyticsSkeleton";
 import { toast } from "sonner";
@@ -2760,14 +2761,17 @@ export default function History() {
           {/* Gallery Tab */}
           <TabsContent value="gallery">
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Image className="h-5 w-5" />
-                  Gallery Hình Ảnh Kiểm Tra
-                </CardTitle>
-                <CardDescription>
-                  Xem tất cả hình ảnh từ các điểm đo trong kết quả kiểm tra
-                </CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Image className="h-5 w-5" />
+                    Gallery Hình Ảnh Kiểm Tra
+                  </CardTitle>
+                  <CardDescription>
+                    Xem tất cả hình ảnh từ các điểm đo trong kết quả kiểm tra
+                  </CardDescription>
+                </div>
+                <AnnotationSearch />
               </CardHeader>
               <CardContent>
                 {data?.data && data.data.length > 0 ? (
