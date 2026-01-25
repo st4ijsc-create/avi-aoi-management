@@ -21,8 +21,11 @@ import {
   Image as ImageIcon,
   CheckCircle,
   XCircle,
-  AlertTriangle
+  AlertTriangle,
+  CheckSquare,
+  Square
 } from "lucide-react";
+import { BulkAnnotationToolbar } from "./BulkAnnotationToolbar";
 import { cn } from "@/lib/utils";
 
 export interface GalleryImage {
@@ -50,6 +53,8 @@ interface ImageGalleryProps {
   columns?: 2 | 3 | 4 | 5 | 6;
   onImageClick?: (image: GalleryImage, index: number) => void;
   className?: string;
+  enableMultiSelect?: boolean;
+  onRefresh?: () => void;
 }
 
 export function ImageGallery({
@@ -61,6 +66,8 @@ export function ImageGallery({
   columns = 4,
   onImageClick,
   className,
+  enableMultiSelect = true,
+  onRefresh,
 }: ImageGalleryProps) {
   const [viewMode, setViewMode] = useState<"grid" | "list">(initialViewMode);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -72,6 +79,44 @@ export function ImageGallery({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const imageRef = useRef<HTMLImageElement>(null);
+  
+  // Multi-select state
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+  const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
+
+  const toggleImageSelection = (imageId: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    setSelectedImages(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(imageId)) {
+        newSet.delete(imageId);
+      } else {
+        newSet.add(imageId);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllImages = () => {
+    setSelectedImages(new Set(filteredImages.map(img => String(img.id))));
+  };
+
+  const clearSelection = () => {
+    setSelectedImages(new Set());
+    setIsMultiSelectMode(false);
+  };
+
+  const getSelectedImagesData = () => {
+    return filteredImages
+      .filter(img => selectedImages.has(String(img.id)))
+      .map(img => ({
+        id: String(img.id),
+        url: img.url,
+        inspectionId: img.measurementPointId,
+      }));
+  };
 
   // Filter and search images
   const filteredImages = images.filter((img) => {
@@ -289,6 +334,24 @@ export function ImageGallery({
             </Select>
           )}
 
+          {/* Multi-Select Toggle */}
+          {enableMultiSelect && (
+            <Button
+              variant={isMultiSelectMode ? "secondary" : "outline"}
+              size="sm"
+              onClick={() => {
+                setIsMultiSelectMode(!isMultiSelectMode);
+                if (isMultiSelectMode) {
+                  setSelectedImages(new Set());
+                }
+              }}
+              className="gap-1"
+            >
+              <CheckSquare className="h-4 w-4" />
+              {isMultiSelectMode ? 'Thoát chọn' : 'Chọn nhiều'}
+            </Button>
+          )}
+
           {/* View Mode Toggle */}
           <div className="flex border rounded-md">
             <Button
@@ -319,82 +382,143 @@ export function ImageGallery({
         </div>
       ) : viewMode === "grid" ? (
         <div className={cn("grid gap-4", getColumnClass())}>
-          {filteredImages.map((image, index) => (
-            <div
-              key={image.id}
-              className="group relative aspect-square rounded-lg overflow-hidden border bg-muted cursor-pointer hover:ring-2 hover:ring-primary transition-all"
-              onClick={() => openLightbox(index)}
-            >
-              <ImageWithLoader
-                src={image.thumbnailUrl || image.url}
-                alt={image.title}
-                className="w-full h-full object-cover transition-transform group-hover:scale-105"
-              />
-              
-              {/* Overlay */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              
-              {/* Result Badge */}
-              {image.result && (
-                <div className="absolute top-2 right-2">
-                  {getResultBadge(image.result)}
-                </div>
-              )}
-
-              {/* Info Overlay */}
-              <div className="absolute bottom-0 left-0 right-0 p-2 text-white opacity-0 group-hover:opacity-100 transition-opacity">
-                <p className="text-sm font-medium truncate">{image.title}</p>
-                {image.measurementPointName && (
-                  <p className="text-xs opacity-80 truncate">{image.measurementPointName}</p>
+          {filteredImages.map((image, index) => {
+            const imageId = String(image.id);
+            const isSelected = selectedImages.has(imageId);
+            return (
+              <div
+                key={image.id}
+                className={cn(
+                  "group relative aspect-square rounded-lg overflow-hidden border bg-muted cursor-pointer transition-all",
+                  isSelected ? "ring-2 ring-primary" : "hover:ring-2 hover:ring-primary/50"
                 )}
-              </div>
-
-              {/* Expand Icon */}
-              <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <div className="bg-black/50 rounded-full p-1.5">
-                  <Maximize2 className="h-4 w-4 text-white" />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {filteredImages.map((image, index) => (
-            <div
-              key={image.id}
-              className="flex items-center gap-4 p-3 rounded-lg border bg-card hover:bg-accent/50 cursor-pointer transition-colors"
-              onClick={() => openLightbox(index)}
-            >
-              <div className="relative w-16 h-16 rounded-md overflow-hidden flex-shrink-0">
+                onClick={() => {
+                  if (isMultiSelectMode) {
+                    toggleImageSelection(imageId);
+                  } else {
+                    openLightbox(index);
+                  }
+                }}
+              >
                 <ImageWithLoader
                   src={image.thumbnailUrl || image.url}
                   alt={image.title}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover transition-transform group-hover:scale-105"
                 />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium truncate">{image.title}</p>
-                  {getResultIcon(image.result)}
-                </div>
-                {image.measurementPointName && (
-                  <p className="text-sm text-muted-foreground truncate">{image.measurementPointName}</p>
+                
+                {/* Overlay */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                
+                {/* Selection Checkbox */}
+                {isMultiSelectMode && (
+                  <div 
+                    className="absolute top-2 left-2 z-10"
+                    onClick={(e) => toggleImageSelection(imageId, e)}
+                  >
+                    <div className={cn(
+                      "w-6 h-6 rounded border-2 flex items-center justify-center transition-colors",
+                      isSelected 
+                        ? "bg-primary border-primary text-primary-foreground" 
+                        : "bg-black/50 border-white/70 hover:border-white"
+                    )}>
+                      {isSelected && <CheckSquare className="h-4 w-4" />}
+                    </div>
+                  </div>
                 )}
-                {image.value !== undefined && (
-                  <p className="text-sm text-muted-foreground">
-                    Giá trị: {image.value} 
-                    {image.standardValue !== undefined && ` / Chuẩn: ${image.standardValue}`}
-                  </p>
+
+                {/* Result Badge */}
+                {image.result && (
+                  <div className={cn("absolute top-2", isMultiSelectMode ? "right-2" : "right-2")}>
+                    {getResultBadge(image.result)}
+                  </div>
+                )}
+
+                {/* Info Overlay */}
+                <div className="absolute bottom-0 left-0 right-0 p-2 text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                  <p className="text-sm font-medium truncate">{image.title}</p>
+                  {image.measurementPointName && (
+                    <p className="text-xs opacity-80 truncate">{image.measurementPointName}</p>
+                  )}
+                </div>
+
+                {/* Expand Icon - only show when not in multi-select mode */}
+                {!isMultiSelectMode && (
+                  <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="bg-black/50 rounded-full p-1.5">
+                      <Maximize2 className="h-4 w-4 text-white" />
+                    </div>
+                  </div>
                 )}
               </div>
-              {image.result && (
-                <div className="flex-shrink-0">
-                  {getResultBadge(image.result)}
+            );
+          })}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filteredImages.map((image, index) => {
+            const imageId = String(image.id);
+            const isSelected = selectedImages.has(imageId);
+            return (
+              <div
+                key={image.id}
+                className={cn(
+                  "flex items-center gap-4 p-3 rounded-lg border bg-card cursor-pointer transition-colors",
+                  isSelected ? "ring-2 ring-primary bg-primary/5" : "hover:bg-accent/50"
+                )}
+                onClick={() => {
+                  if (isMultiSelectMode) {
+                    toggleImageSelection(imageId);
+                  } else {
+                    openLightbox(index);
+                  }
+                }}
+              >
+                {/* Selection Checkbox */}
+                {isMultiSelectMode && (
+                  <div 
+                    className="flex-shrink-0"
+                    onClick={(e) => toggleImageSelection(imageId, e)}
+                  >
+                    <div className={cn(
+                      "w-5 h-5 rounded border-2 flex items-center justify-center transition-colors",
+                      isSelected 
+                        ? "bg-primary border-primary text-primary-foreground" 
+                        : "border-muted-foreground/50 hover:border-primary"
+                    )}>
+                      {isSelected && <CheckSquare className="h-3 w-3" />}
+                    </div>
+                  </div>
+                )}
+                <div className="relative w-16 h-16 rounded-md overflow-hidden flex-shrink-0">
+                  <ImageWithLoader
+                    src={image.thumbnailUrl || image.url}
+                    alt={image.title}
+                    className="w-full h-full object-cover"
+                  />
                 </div>
-              )}
-            </div>
-          ))}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium truncate">{image.title}</p>
+                    {getResultIcon(image.result)}
+                  </div>
+                  {image.measurementPointName && (
+                    <p className="text-sm text-muted-foreground truncate">{image.measurementPointName}</p>
+                  )}
+                  {image.value !== undefined && (
+                    <p className="text-sm text-muted-foreground">
+                      Giá trị: {image.value} 
+                      {image.standardValue !== undefined && ` / Chuẩn: ${image.standardValue}`}
+                    </p>
+                  )}
+                </div>
+                {image.result && (
+                  <div className="flex-shrink-0">
+                    {getResultBadge(image.result)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -553,6 +677,17 @@ export function ImageGallery({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Bulk Annotation Toolbar */}
+      {enableMultiSelect && selectedImages.size > 0 && (
+        <BulkAnnotationToolbar
+          selectedImages={getSelectedImagesData()}
+          onClearSelection={clearSelection}
+          onSelectAll={selectAllImages}
+          totalImages={filteredImages.length}
+          onRefresh={onRefresh}
+        />
+      )}
     </div>
   );
 }

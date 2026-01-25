@@ -45,6 +45,7 @@ import MQTTReplay from "./pages/MQTTReplay";
 import OEETargetSettings from "./pages/OEETargetSettings";
 import MachineHealthMonitoring from "./pages/MachineHealthMonitoring";
 import DrillDownDashboard from "./pages/DrillDownDashboard";
+import AnnotationStatistics from "./pages/AnnotationStatistics";
 
 function Router() {
   return (
@@ -91,6 +92,7 @@ function Router() {
       <Route path="/oee-target-settings" component={OEETargetSettings} />
       <Route path="/machine-health" component={MachineHealthMonitoring} />
       <Route path="/drill-down" component={DrillDownDashboard} />
+      <Route path="/annotation-statistics" component={AnnotationStatistics} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

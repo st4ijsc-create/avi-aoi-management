@@ -3658,3 +3658,41 @@ Menu structure mới:
 - [x] Filter theo defect category (nếu có)
 - [x] Highlight matching annotations trong search results
 - [x] API endpoint để search annotations
+
+
+## Phase 145: Annotation Statistics, Bulk Actions & AI-Assisted Annotation
+
+### 1. Annotation Statistics Dashboard
+- [x] Tạo API endpoint để lấy annotation statistics (by type, color, machine, product)
+- [x] Tạo trang AnnotationStatistics.tsx với các charts:
+  - [x] Pie chart phân bố annotation theo type (rectangle, circle, arrow, freehand, text)
+  - [x] Bar chart số lượng annotations theo machine
+  - [x] Line chart xu hướng annotations theo thời gian
+  - [x] Heatmap annotations theo product model
+- [x] Thêm filters: date range, machine, product, annotation type
+- [x] Hiển thị top defect types và locations
+- [x] Export statistics to CSV/PDF
+- [x] Thêm route và menu item
+
+### 2. Bulk Annotation Actions
+- [x] Thêm multi-select mode vào ImageGallery
+- [x] Tạo BulkAnnotationToolbar component với actions:
+  - [x] Apply template to selected images
+  - [x] Copy annotations from one image to others
+  - [x] Delete annotations from selected images
+  - [x] Export selected images with annotations
+- [x] Tạo API endpoints cho bulk operations
+- [x] Progress indicator cho batch processing
+- [x] Undo/rollback cho bulk actions
+
+### 3. AI-Assisted Annotation
+- [x] Tạo API endpoint để analyze image với LLM
+- [x] Tạo AIAnnotationAssistant component với:
+  - [x] Button "Analyze Image" trong ImageAnnotation
+  - [x] AI gợi ý vị trí defects dựa trên image analysis
+  - [x] Hiển thị suggested annotations với confidence score
+  - [x] Accept/Reject từng suggestion
+  - [x] Auto-apply all suggestions option
+- [x] Tích hợp với invokeLLM để phân tích hình ảnh
+- [x] Cache AI results để tránh duplicate analysis
+- [x] Hiển thị loading state và error handling

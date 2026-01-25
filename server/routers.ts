@@ -6699,6 +6699,391 @@ const annotationRouter = router({
       return filtered;
     }),
 
+  // Get annotation statistics
+  statistics: protectedProcedure
+    .input(z.object({
+      dateFrom: z.date().optional(),
+      dateTo: z.date().optional(),
+      machineId: z.number().optional(),
+      productModelId: z.number().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      
+      // Get all annotations with inspection data
+      let query = sql`
+        SELECT 
+          ia.id,
+          ia.annotations,
+          ia.created_at,
+          ia.inspection_id,
+          i.machine_id,
+          i.product_model_id,
+          m.code as machine_code,
+          m.name as machine_name,
+          pm.code as product_code,
+          pm.name as product_name
+        FROM image_annotations ia
+        LEFT JOIN inspections i ON ia.inspection_id = i.id
+        LEFT JOIN machines m ON i.machine_id = m.id
+        LEFT JOIN product_models pm ON i.product_model_id = pm.id
+        WHERE 1=1
+      `;
+      
+      // Note: For simplicity, we'll filter in memory. In production, use proper SQL conditions.
+      const result = await db.execute(query) as any;
+      
+      let rows = result.rows || [];
+      
+      // Apply date filters
+      if (input?.dateFrom) {
+        rows = rows.filter((r: any) => new Date(r.created_at) >= input.dateFrom!);
+      }
+      if (input?.dateTo) {
+        rows = rows.filter((r: any) => new Date(r.created_at) <= input.dateTo!);
+      }
+      if (input?.machineId) {
+        rows = rows.filter((r: any) => r.machine_id === input.machineId);
+      }
+      if (input?.productModelId) {
+        rows = rows.filter((r: any) => r.product_model_id === input.productModelId);
+      }
+      
+      // Calculate statistics
+      const byType: Record<string, number> = {};
+      const byColor: Record<string, number> = {};
+      const byMachine: Record<string, { count: number; name: string }> = {};
+      const byProduct: Record<string, { count: number; name: string }> = {};
+      const byDate: Record<string, number> = {};
+      let totalAnnotations = 0;
+      
+      for (const row of rows) {
+        const annotations = typeof row.annotations === 'string' 
+          ? JSON.parse(row.annotations) 
+          : row.annotations;
+        
+        for (const ann of annotations || []) {
+          totalAnnotations++;
+          
+          // By type
+          byType[ann.type] = (byType[ann.type] || 0) + 1;
+          
+          // By color
+          byColor[ann.color] = (byColor[ann.color] || 0) + 1;
+          
+          // By machine
+          if (row.machine_code) {
+            if (!byMachine[row.machine_code]) {
+              byMachine[row.machine_code] = { count: 0, name: row.machine_name || row.machine_code };
+            }
+            byMachine[row.machine_code].count++;
+          }
+          
+          // By product
+          if (row.product_code) {
+            if (!byProduct[row.product_code]) {
+              byProduct[row.product_code] = { count: 0, name: row.product_name || row.product_code };
+            }
+            byProduct[row.product_code].count++;
+          }
+          
+          // By date (daily)
+          const dateKey = new Date(row.created_at).toISOString().split('T')[0];
+          byDate[dateKey] = (byDate[dateKey] || 0) + 1;
+        }
+      }
+      
+      return {
+        totalAnnotations,
+        totalImages: rows.length,
+        byType: Object.entries(byType).map(([type, count]) => ({ type, count })),
+        byColor: Object.entries(byColor).map(([color, count]) => ({ color, count })),
+        byMachine: Object.entries(byMachine).map(([code, data]) => ({ code, ...data })),
+        byProduct: Object.entries(byProduct).map(([code, data]) => ({ code, ...data })),
+        byDate: Object.entries(byDate).map(([date, count]) => ({ date, count })).sort((a, b) => a.date.localeCompare(b.date)),
+      };
+    }),
+
+  // Bulk apply template to multiple images
+  bulkApplyTemplate: protectedProcedure
+    .input(z.object({
+      templateId: z.number(),
+      imageUrls: z.array(z.string()),
+      inspectionIds: z.array(z.number()).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      
+      // Get template
+      const templateResult = await db.execute(
+        sql`SELECT annotations FROM annotation_templates WHERE id = ${input.templateId}`
+      ) as any;
+      if (!templateResult.rows?.length) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Template not found' });
+      }
+      const templateAnnotations = typeof templateResult.rows[0].annotations === 'string'
+        ? JSON.parse(templateResult.rows[0].annotations)
+        : templateResult.rows[0].annotations;
+      
+      // Apply to each image
+      let successCount = 0;
+      for (let i = 0; i < input.imageUrls.length; i++) {
+        const imageUrl = input.imageUrls[i];
+        const inspectionId = input.inspectionIds?.[i] || null;
+        
+        // Check if annotation exists
+        const existing = await db.execute(
+          sql`SELECT id, annotations FROM image_annotations WHERE image_url = ${imageUrl} LIMIT 1`
+        ) as any;
+        
+        if (existing.rows?.length > 0) {
+          // Merge with existing annotations
+          const existingAnnotations = typeof existing.rows[0].annotations === 'string'
+            ? JSON.parse(existing.rows[0].annotations)
+            : existing.rows[0].annotations;
+          const mergedAnnotations = [...existingAnnotations, ...templateAnnotations.map((a: any) => ({ ...a, id: nanoid() }))];
+          await db.execute(
+            sql`UPDATE image_annotations SET annotations = ${JSON.stringify(mergedAnnotations)}, updated_at = NOW() WHERE id = ${existing.rows[0].id}`
+          );
+        } else {
+          // Create new
+          await db.execute(
+            sql`INSERT INTO image_annotations (inspection_id, image_url, annotations, created_by) VALUES (${inspectionId}, ${imageUrl}, ${JSON.stringify(templateAnnotations.map((a: any) => ({ ...a, id: nanoid() })))}, ${ctx.user.id})`
+          );
+        }
+        successCount++;
+      }
+      
+      return { success: true, appliedCount: successCount };
+    }),
+
+  // Bulk delete annotations from multiple images
+  bulkDelete: protectedProcedure
+    .input(z.object({
+      imageUrls: z.array(z.string()),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      
+      let deletedCount = 0;
+      for (const imageUrl of input.imageUrls) {
+        const result = await db.execute(
+          sql`DELETE FROM image_annotations WHERE image_url = ${imageUrl} AND (created_by = ${ctx.user.id} OR ${ctx.user.role} = 'admin')`
+        ) as any;
+        deletedCount += result.rowsAffected || 0;
+      }
+      
+      return { success: true, deletedCount };
+    }),
+
+  // Copy annotations from one image to others
+  copyAnnotations: protectedProcedure
+    .input(z.object({
+      sourceImageUrl: z.string(),
+      targetImageUrls: z.array(z.string()),
+      targetInspectionIds: z.array(z.number()).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      
+      // Get source annotations
+      const sourceResult = await db.execute(
+        sql`SELECT annotations FROM image_annotations WHERE image_url = ${input.sourceImageUrl} ORDER BY updated_at DESC LIMIT 1`
+      ) as any;
+      if (!sourceResult.rows?.length) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Source image has no annotations' });
+      }
+      const sourceAnnotations = typeof sourceResult.rows[0].annotations === 'string'
+        ? JSON.parse(sourceResult.rows[0].annotations)
+        : sourceResult.rows[0].annotations;
+      
+      // Copy to each target
+      let successCount = 0;
+      for (let i = 0; i < input.targetImageUrls.length; i++) {
+        const targetUrl = input.targetImageUrls[i];
+        const inspectionId = input.targetInspectionIds?.[i] || null;
+        
+        // Check if annotation exists
+        const existing = await db.execute(
+          sql`SELECT id FROM image_annotations WHERE image_url = ${targetUrl} LIMIT 1`
+        ) as any;
+        
+        const newAnnotations = sourceAnnotations.map((a: any) => ({ ...a, id: nanoid() }));
+        
+        if (existing.rows?.length > 0) {
+          await db.execute(
+            sql`UPDATE image_annotations SET annotations = ${JSON.stringify(newAnnotations)}, updated_at = NOW() WHERE id = ${existing.rows[0].id}`
+          );
+        } else {
+          await db.execute(
+            sql`INSERT INTO image_annotations (inspection_id, image_url, annotations, created_by) VALUES (${inspectionId}, ${targetUrl}, ${JSON.stringify(newAnnotations)}, ${ctx.user.id})`
+          );
+        }
+        successCount++;
+      }
+      
+      return { success: true, copiedCount: successCount };
+    }),
+
+  // AI-assisted annotation analysis
+  analyzeImage: protectedProcedure
+    .input(z.object({
+      imageUrl: z.string(),
+      context: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      try {
+        const response = await invokeLLM({
+          messages: [
+            {
+              role: 'system',
+              content: `You are an expert quality control inspector analyzing inspection images from AVI/AOI machines. 
+Analyze the image and identify potential defects, anomalies, or areas that need attention.
+For each finding, provide:
+1. Type of annotation to use (rectangle, circle, arrow, or text)
+2. Approximate position (as percentage from top-left, e.g., x: 30%, y: 50%)
+3. Size (as percentage of image, e.g., width: 10%, height: 10%)
+4. Description of the defect/finding
+5. Severity (high, medium, low)
+6. Confidence score (0-100)
+
+Respond in JSON format with an array of findings.`
+            },
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: `Analyze this inspection image and identify any defects or areas needing annotation.${input.context ? ` Context: ${input.context}` : ''}`
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: input.imageUrl,
+                    detail: 'high'
+                  }
+                }
+              ]
+            }
+          ],
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'defect_analysis',
+              strict: true,
+              schema: {
+                type: 'object',
+                properties: {
+                  findings: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        type: { type: 'string', enum: ['rectangle', 'circle', 'arrow', 'text'] },
+                        x: { type: 'number', description: 'X position as percentage (0-100)' },
+                        y: { type: 'number', description: 'Y position as percentage (0-100)' },
+                        width: { type: 'number', description: 'Width as percentage (0-100)' },
+                        height: { type: 'number', description: 'Height as percentage (0-100)' },
+                        description: { type: 'string' },
+                        severity: { type: 'string', enum: ['high', 'medium', 'low'] },
+                        confidence: { type: 'number', description: 'Confidence score 0-100' },
+                        suggestedColor: { type: 'string', description: 'Hex color code' }
+                      },
+                      required: ['type', 'x', 'y', 'description', 'severity', 'confidence'],
+                      additionalProperties: false
+                    }
+                  },
+                  summary: { type: 'string', description: 'Overall summary of the analysis' },
+                  overallQuality: { type: 'string', enum: ['good', 'acceptable', 'needs_review', 'defective'] }
+                },
+                required: ['findings', 'summary', 'overallQuality'],
+                additionalProperties: false
+              }
+            }
+          }
+        });
+        
+        const content = response.choices[0]?.message?.content;
+        if (!content) {
+          throw new Error('No response from AI');
+        }
+        
+        const contentStr = typeof content === 'string' ? content : JSON.stringify(content);
+        const analysis = JSON.parse(contentStr);
+        
+        // Convert findings to annotation format
+        const suggestedAnnotations = analysis.findings.map((finding: any, index: number) => {
+          const baseAnnotation = {
+            id: `ai-${Date.now()}-${index}`,
+            type: finding.type,
+            color: finding.suggestedColor || (finding.severity === 'high' ? '#ef4444' : finding.severity === 'medium' ? '#f97316' : '#eab308'),
+            lineWidth: 2,
+            text: finding.description,
+            confidence: finding.confidence,
+            severity: finding.severity,
+          };
+          
+          // Calculate points based on type
+          const x = finding.x / 100;
+          const y = finding.y / 100;
+          const w = (finding.width || 10) / 100;
+          const h = (finding.height || 10) / 100;
+          
+          if (finding.type === 'rectangle') {
+            return {
+              ...baseAnnotation,
+              points: [
+                { x, y },
+                { x: x + w, y: y + h }
+              ]
+            };
+          } else if (finding.type === 'circle') {
+            return {
+              ...baseAnnotation,
+              points: [
+                { x, y },
+                { x: x + w/2, y: y + h/2 }
+              ]
+            };
+          } else if (finding.type === 'arrow') {
+            return {
+              ...baseAnnotation,
+              points: [
+                { x: x - 0.05, y: y - 0.05 },
+                { x, y }
+              ]
+            };
+          } else {
+            return {
+              ...baseAnnotation,
+              points: [{ x, y }],
+              fontSize: 14
+            };
+          }
+        });
+        
+        return {
+          success: true,
+          analysis: {
+            summary: analysis.summary,
+            overallQuality: analysis.overallQuality,
+            findingsCount: analysis.findings.length,
+          },
+          suggestedAnnotations,
+        };
+      } catch (error: any) {
+        console.error('AI analysis error:', error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `AI analysis failed: ${error.message}`
+        });
+      }
+    }),
+
   // Delete annotations
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))

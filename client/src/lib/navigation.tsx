@@ -1,4 +1,4 @@
-import { 
+import {
   BarChart3, 
   History, 
   LayoutGrid, 
@@ -40,7 +40,8 @@ import {
   Store,
   Timer,
   Play,
-  Heart
+  Heart,
+  Tags
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -274,6 +275,12 @@ export const navGroups: NavGroup[] = [
         label: "SPC / AI Analysis", 
         icon: <Brain className="h-4 w-4" />,
         description: "Phân tích SPC và AI dự đoán"
+      },
+      { 
+        href: "/annotation-statistics", 
+        label: "Thống kê Annotation", 
+        icon: <Tags className="h-4 w-4" />,
+        description: "Phân tích xu hướng annotation theo máy, sản phẩm"
       },
     ],
   },

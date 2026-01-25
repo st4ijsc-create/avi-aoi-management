@@ -27,8 +27,10 @@ import {
   Download,
   ZoomIn,
   ZoomOut,
+  Wand2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { AIAnnotationAssistant } from './AIAnnotationAssistant';
 
 // Annotation types
 export type AnnotationType = 'rectangle' | 'circle' | 'arrow' | 'freehand' | 'text';
@@ -620,6 +622,34 @@ export default function ImageAnnotation({
                 <TooltipContent>Xóa đã chọn (Delete)</TooltipContent>
               </Tooltip>
             </TooltipProvider>
+          </div>
+
+          {/* AI Assistant */}
+          <div className="flex items-center gap-1 border-r pr-2">
+            <AIAnnotationAssistant
+              imageUrl={imageUrl}
+              onApplyAnnotations={(aiAnnotations) => {
+                const newAnnotations = [...annotations, ...aiAnnotations.map(a => ({
+                  ...a,
+                  id: `ai-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                }))];
+                setAnnotations(newAnnotations);
+                addToHistory(newAnnotations);
+              }}
+              trigger={
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-1">
+                        <Wand2 className="h-4 w-4" />
+                        AI Phân tích
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>AI tự động phát hiện và gợi ý annotation</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              }
+            />
           </div>
 
           {/* Save & Download */}
