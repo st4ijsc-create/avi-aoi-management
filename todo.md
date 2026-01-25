@@ -3511,3 +3511,25 @@ Menu structure mới:
 - [x] Include OEE metrics in email report
 - [x] Include downtime summary in email report
 - [x] Include machine health summary in email report
+
+
+## Phase 139: Rà soát hệ thống và hoàn thiện chức năng
+
+### Đã rà soát và xác nhận hoàn thành
+- [x] Top NG Measurement Points Analysis (Dashboard, History, SPCAnalysis)
+- [x] Session Management UI (Profile page - SessionManagement component)
+- [x] Audit Log Export CSV (AuditLogs page)
+- [x] PDF Export cho History (Yield Report, Workstation Report)
+- [x] 2FA UI (Profile page - setup, verify, disable)
+- [x] Backup Codes UI (Profile page - generate, copy, download)
+- [x] Workstation Management (Settings page - WorkstationManagement component)
+- [x] workstationId field trong measurement_point_defs schema
+- [x] workstations table trong schema
+
+### Các chức năng tùy chọn/nâng cao (có thể thêm sau)
+- [ ] Process drag-drop sắp xếp thứ tự
+- [ ] Gantt Chart dependencies arrows
+- [ ] Dashboard drill-down (Corporate > Factory > Machine)
+- [ ] Bulk import/export data (CSV/Excel)
+- [ ] Video tutorials
+- [ ] User training materials

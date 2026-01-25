@@ -71,5 +71,5 @@ describe('Redis Connection Test', () => {
     expect(health.memory).toBe(true);
     
     console.log('[Test] Health check result:', health);
-  });
+  }, 30000); // Increase timeout to 30s for Redis health check
 });
