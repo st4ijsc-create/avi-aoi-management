@@ -1749,3 +1749,183 @@ export const productionOrderTemplates = mysqlTable("production_order_templates",
 
 export type ProductionOrderTemplate = typeof productionOrderTemplates.$inferSelect;
 export type InsertProductionOrderTemplate = typeof productionOrderTemplates.$inferInsert;
+
+
+// ============= OEE & Machine Performance =============
+
+/**
+ * OEE Metrics - Overall Equipment Effectiveness metrics
+ */
+export const oeeMetrics = mysqlTable("oee_metrics", {
+  id: int("id").autoincrement().primaryKey(),
+  machineId: int("machineId").notNull(),
+  machineCode: varchar("machineCode", { length: 50 }).notNull(),
+  // Time period
+  timestamp: timestamp("timestamp").notNull(),
+  periodType: mysqlEnum("periodType", ["HOUR", "SHIFT", "DAY", "WEEK", "MONTH"]).default("HOUR").notNull(),
+  // OEE Components (stored as percentage * 100, e.g., 85.5% = 8550)
+  availability: int("availability").notNull(), // Uptime / Planned time
+  performance: int("performance").notNull(), // Actual output / Theoretical output
+  quality: int("quality").notNull(), // Good output / Total output
+  oee: int("oee").notNull(), // A × P × Q / 10000
+  // Raw data for calculation
+  plannedTime: int("plannedTime").notNull(), // Minutes
+  runTime: int("runTime").notNull(), // Minutes
+  idealCycleTime: int("idealCycleTime").notNull(), // Seconds per unit
+  totalCount: int("totalCount").notNull(), // Total units produced
+  goodCount: int("goodCount").notNull(), // Good units
+  rejectCount: int("rejectCount").notNull(), // Rejected units
+  // Metadata
+  calculatedBy: varchar("calculatedBy", { length: 50 }).default("AUTO").notNull(), // AUTO or user ID
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_oee_machine").on(table.machineId),
+  index("idx_oee_machine_code").on(table.machineCode),
+  index("idx_oee_timestamp").on(table.timestamp),
+  index("idx_oee_period").on(table.periodType),
+  index("idx_oee_machine_time").on(table.machineId, table.timestamp),
+]);
+
+export type OEEMetric = typeof oeeMetrics.$inferSelect;
+export type InsertOEEMetric = typeof oeeMetrics.$inferInsert;
+
+/**
+ * Downtime Events - Machine downtime tracking
+ */
+export const downtimeEvents = mysqlTable("downtime_events", {
+  id: int("id").autoincrement().primaryKey(),
+  machineId: int("machineId").notNull(),
+  machineCode: varchar("machineCode", { length: 50 }).notNull(),
+  // Downtime classification
+  category: mysqlEnum("category", ["planned", "unplanned", "breakdown", "changeover", "maintenance", "other"]).notNull(),
+  reason: varchar("reason", { length: 255 }).notNull(),
+  detailedReason: text("detailedReason"),
+  // Time tracking
+  startTime: timestamp("startTime").notNull(),
+  endTime: timestamp("endTime"),
+  duration: int("duration"), // Minutes (calculated when endTime is set)
+  // Detection method
+  detectionMethod: mysqlEnum("detectionMethod", ["MANUAL", "AUTO", "MQTT"]).default("MANUAL").notNull(),
+  // Responsible party
+  reportedBy: int("reportedBy"), // User ID who reported
+  acknowledgedBy: int("acknowledgedBy"), // User ID who acknowledged
+  acknowledgedAt: timestamp("acknowledgedAt"),
+  // Resolution
+  resolution: text("resolution"),
+  resolvedBy: int("resolvedBy"), // User ID who resolved
+  resolvedAt: timestamp("resolvedAt"),
+  // Impact
+  affectedUnits: int("affectedUnits").default(0), // Units lost during downtime
+  estimatedCost: decimal("estimatedCost", { precision: 10, scale: 2 }), // Cost impact
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_downtime_machine").on(table.machineId),
+  index("idx_downtime_machine_code").on(table.machineCode),
+  index("idx_downtime_category").on(table.category),
+  index("idx_downtime_start").on(table.startTime),
+  index("idx_downtime_end").on(table.endTime),
+  index("idx_downtime_machine_time").on(table.machineId, table.startTime),
+]);
+
+export type DowntimeEvent = typeof downtimeEvents.$inferSelect;
+export type InsertDowntimeEvent = typeof downtimeEvents.$inferInsert;
+
+/**
+ * OEE Targets - Target OEE values for machines/lines
+ */
+export const oeeTargets = mysqlTable("oee_targets", {
+  id: int("id").autoincrement().primaryKey(),
+  // Target scope
+  machineId: int("machineId"), // Specific machine (null = line level)
+  lineId: int("lineId"), // Production line (null = machine level)
+  // Target values (stored as percentage * 100)
+  targetOEE: int("targetOEE").notNull().default(8000), // 80%
+  targetAvailability: int("targetAvailability").notNull().default(9000), // 90%
+  targetPerformance: int("targetPerformance").notNull().default(9500), // 95%
+  targetQuality: int("targetQuality").notNull().default(9900), // 99%
+  // Alert thresholds
+  alertThreshold: int("alertThreshold").notNull().default(7000), // Alert when OEE < 70%
+  criticalThreshold: int("criticalThreshold").notNull().default(6000), // Critical when OEE < 60%
+  // Validity period
+  effectiveFrom: timestamp("effectiveFrom").notNull().defaultNow(),
+  effectiveTo: timestamp("effectiveTo"),
+  isActive: boolean("isActive").default(true).notNull(),
+  // Metadata
+  setBy: int("setBy").notNull(), // User ID who set the target
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_oee_target_machine").on(table.machineId),
+  index("idx_oee_target_line").on(table.lineId),
+  index("idx_oee_target_active").on(table.isActive),
+  index("idx_oee_target_effective").on(table.effectiveFrom, table.effectiveTo),
+]);
+
+export type OEETarget = typeof oeeTargets.$inferSelect;
+export type InsertOEETarget = typeof oeeTargets.$inferInsert;
+
+/**
+ * Machine Health History - Historical health scores
+ */
+export const machineHealthHistory = mysqlTable("machine_health_history", {
+  id: int("id").autoincrement().primaryKey(),
+  machineId: int("machineId").notNull(),
+  machineCode: varchar("machineCode", { length: 50 }).notNull(),
+  timestamp: timestamp("timestamp").notNull(),
+  // Health score (0-100)
+  healthScore: int("healthScore").notNull(),
+  // Contributing factors (stored as percentage * 100)
+  oeeScore: int("oeeScore").notNull(),
+  uptimeScore: int("uptimeScore").notNull(),
+  errorRateScore: int("errorRateScore").notNull(),
+  cycleTimeScore: int("cycleTimeScore").notNull(),
+  // Raw metrics
+  currentOEE: int("currentOEE"),
+  uptimePercentage: int("uptimePercentage"),
+  errorCount: int("errorCount"),
+  cycleTimeVariance: decimal("cycleTimeVariance", { precision: 10, scale: 2 }),
+  // Predictions
+  predictedFailureRisk: int("predictedFailureRisk"), // 0-100
+  recommendedMaintenanceDate: timestamp("recommendedMaintenanceDate"),
+  maintenanceUrgency: mysqlEnum("maintenanceUrgency", ["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
+  // Metadata
+  calculationMethod: varchar("calculationMethod", { length: 50 }).default("WEIGHTED").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_health_machine").on(table.machineId),
+  index("idx_health_machine_code").on(table.machineCode),
+  index("idx_health_timestamp").on(table.timestamp),
+  index("idx_health_score").on(table.healthScore),
+  index("idx_health_machine_time").on(table.machineId, table.timestamp),
+]);
+
+export type MachineHealthHistory = typeof machineHealthHistory.$inferSelect;
+export type InsertMachineHealthHistory = typeof machineHealthHistory.$inferInsert;
+
+/**
+ * MQTT Message History - For replay and debugging
+ */
+export const mqttMessageHistory = mysqlTable("mqtt_message_history", {
+  id: int("id").autoincrement().primaryKey(),
+  topic: varchar("topic", { length: 255 }).notNull(),
+  machineCode: varchar("machineCode", { length: 50 }),
+  payload: json("payload").$type<Record<string, any>>().notNull(),
+  qos: int("qos").default(0).notNull(),
+  timestamp: timestamp("timestamp").notNull(),
+  // Metadata
+  messageSize: int("messageSize"), // Bytes
+  processingTime: int("processingTime"), // Milliseconds
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_mqtt_history_topic").on(table.topic),
+  index("idx_mqtt_history_machine").on(table.machineCode),
+  index("idx_mqtt_history_timestamp").on(table.timestamp),
+  index("idx_mqtt_history_topic_time").on(table.topic, table.timestamp),
+]);
+
+export type MqttMessageHistory = typeof mqttMessageHistory.$inferSelect;
+export type InsertMqttMessageHistory = typeof mqttMessageHistory.$inferInsert;

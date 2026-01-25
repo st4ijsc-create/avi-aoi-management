@@ -3567,6 +3567,120 @@ const mqttClientRouter = router({
     }),
 });
 
+// OEE Target Router
+const oeeRouter = router({
+  // List all OEE targets
+  listTargets: protectedProcedure.query(async () => {
+    const { getDb } = await import('./db');
+    const { sql } = await import('drizzle-orm');
+    const db = await getDb();
+    if (!db) return [];
+    
+    const result = await db.execute(sql`
+      SELECT * FROM oee_targets
+      WHERE isActive = true
+      ORDER BY createdAt DESC
+    `);
+    return result[0] || [];
+  }),
+
+  // Create OEE target
+  createTarget: protectedProcedure
+    .input(z.object({
+      machineId: z.number().optional(),
+      lineId: z.number().optional(),
+      targetOEE: z.number(),
+      targetAvailability: z.number(),
+      targetPerformance: z.number(),
+      targetQuality: z.number(),
+      alertThreshold: z.number(),
+      criticalThreshold: z.number(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { getDb } = await import('./db');
+      const { sql } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      
+      await db.execute(sql`
+        INSERT INTO oee_targets 
+         (machineId, lineId, targetOEE, targetAvailability, targetPerformance, targetQuality,
+          alertThreshold, criticalThreshold, setBy, notes)
+         VALUES (
+          ${input.machineId || null},
+          ${input.lineId || null},
+          ${input.targetOEE},
+          ${input.targetAvailability},
+          ${input.targetPerformance},
+          ${input.targetQuality},
+          ${input.alertThreshold},
+          ${input.criticalThreshold},
+          ${ctx.user?.id || 0},
+          ${input.notes || null}
+         )
+      `);
+      
+      return { success: true };
+    }),
+
+  // Update OEE target
+  updateTarget: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      machineId: z.number().optional(),
+      lineId: z.number().optional(),
+      targetOEE: z.number(),
+      targetAvailability: z.number(),
+      targetPerformance: z.number(),
+      targetQuality: z.number(),
+      alertThreshold: z.number(),
+      criticalThreshold: z.number(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { getDb } = await import('./db');
+      const { sql } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      
+      await db.execute(sql`
+        UPDATE oee_targets
+        SET machineId = ${input.machineId || null},
+            lineId = ${input.lineId || null},
+            targetOEE = ${input.targetOEE},
+            targetAvailability = ${input.targetAvailability},
+            targetPerformance = ${input.targetPerformance},
+            targetQuality = ${input.targetQuality},
+            alertThreshold = ${input.alertThreshold},
+            criticalThreshold = ${input.criticalThreshold},
+            notes = ${input.notes || null},
+            updatedAt = NOW()
+        WHERE id = ${input.id}
+      `);
+      
+      return { success: true };
+    }),
+
+  // Delete OEE target
+  deleteTarget: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const { getDb } = await import('./db');
+      const { sql } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      
+      await db.execute(sql`
+        UPDATE oee_targets
+        SET isActive = false
+        WHERE id = ${input.id}
+      `);
+      
+      return { success: true };
+    }),
+});
+
 // MQTT Alert Rules Router
 const mqttAlertRouter = router({
   // List all alert rules
@@ -5949,6 +6063,7 @@ export const appRouter = router({
   twoFactor: twoFactorRouter,
   session: sessionRouter,
   productCategory: productCategoryRouter,
+  oee: oeeRouter,
 });
 
 export type AppRouter = typeof appRouter;

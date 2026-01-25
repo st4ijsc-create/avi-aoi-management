@@ -3425,10 +3425,10 @@ Menu structure mới:
 - [x] OEE trending chart (bar chart comparison)
 
 ### 4. Downtime Tracking & Categorization
-- [x] Downtime events schema (in-memory store)
+- [x] Downtime events schema (database tables)
 - [x] Downtime categories (planned, unplanned, breakdown, changeover, maintenance, other)
 - [x] Manual downtime entry UI (OEEDashboard.tsx)
-- [ ] Auto-detect downtime từ machine status
+- [x] Auto-detect downtime từ machine status (downtimeDetectionService.ts)
 - [x] Downtime reports (pie chart by category)
 
 ### 5. Predictive Maintenance Alerts
@@ -3448,3 +3448,41 @@ Menu structure mới:
 - [x] Replay UI với timeline (MQTTReplay.tsx)
 - [x] Filter by topic, time range
 - [x] Export messages for debugging (JSON export)
+
+
+## Phase 137: Persist OEE/Downtime Data & Advanced Features
+
+### 1. Database Schema
+- [x] Create oee_metrics table (machineId, timestamp, availability, performance, quality, oee)
+- [x] Create downtime_events table (machineId, category, reason, startTime, endTime, duration)
+- [x] Create oee_targets table (machineId, lineId, targetOEE, targetAvailability, targetPerformance, targetQuality)
+- [x] Create machine_health_history table (machineId, timestamp, healthScore, factors)
+- [x] Add indexes for efficient querying
+
+### 2. Migrate to Database Persistence
+- [x] Update calculateOEE to save to database
+- [x] Update startDowntime/endDowntime to save to database
+- [x] Update calculateMachineHealth to save to database
+- [ ] Migrate messageHistory from in-memory to database (optional, current in-memory works well)
+- [x] Update all queries to read from database
+
+### 3. Auto-detect Downtime
+- [x] Track last message timestamp per machine
+- [x] Background job to detect inactive machines
+- [x] Auto-create downtime event when machine inactive > threshold
+- [x] Auto-end downtime when machine becomes active again
+- [x] Configurable threshold settings (10 minutes default)
+
+### 4. OEE Target Settings
+- [x] UI to set OEE targets per machine/line (OEETargetSettings.tsx)
+- [x] Display target vs actual comparison in OEE Dashboard
+- [x] Color coding (green if above target, red if below)
+- [x] Target achievement percentage
+- [x] Alerts when OEE drops below target (alert/critical thresholds)
+
+### 5. Historical Trending & Reports
+- [x] OEE trend chart (daily/weekly/monthly) - Already in OEEDashboard
+- [x] Downtime trend analysis - Already in OEEDashboard
+- [ ] Machine health history chart (can add later)
+- [ ] Export OEE reports to CSV/Excel (can add later)
+- [ ] Scheduled OEE reports via email (can add later)

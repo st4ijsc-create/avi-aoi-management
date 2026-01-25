@@ -152,6 +152,12 @@ export const navGroups: NavGroup[] = [
         description: "Theo dõi hiệu suất thiết bị tổng thể"
       },
       { 
+        href: "/oee-target-settings", 
+        label: "OEE Target Settings", 
+        icon: <Target className="h-4 w-4" />,
+        description: "Cài đặt mục tiêu OEE cho máy và dây chuyền"
+      },
+      { 
         href: "/mqtt-replay", 
         label: "MQTT Replay", 
         icon: <Play className="h-4 w-4" />,

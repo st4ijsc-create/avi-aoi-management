@@ -684,6 +684,43 @@ export function calculateOEE(
   
   machineOEEData.set(machineId, metrics);
   
+  // Save to database
+  (async () => {
+    try {
+      const { getDb } = await import('../db');
+      const dbConnection = await getDb();
+      if (!dbConnection) {
+        console.warn('[OEE] Database not available, skipping save');
+        return;
+      }
+      const { sql } = await import('drizzle-orm');
+      await dbConnection.execute(sql`
+        INSERT INTO oee_metrics 
+         (machineId, machineCode, timestamp, periodType, availability, performance, quality, oee,
+          plannedTime, runTime, idealCycleTime, totalCount, goodCount, rejectCount, calculatedBy)
+         VALUES (
+          ${machineId},
+          ${machineCode},
+          ${metrics.timestamp},
+          'HOUR',
+          ${Math.round(availability * 100)},
+          ${Math.round(performance * 100)},
+          ${Math.round(quality * 100)},
+          ${Math.round(oee * 100)},
+          ${plannedTime},
+          ${runTime},
+          ${idealCycleTime},
+          ${totalCount},
+          ${goodCount},
+          ${totalCount - goodCount},
+          'AUTO'
+         )
+      `);
+    } catch (error) {
+      console.error('[OEE] Failed to save to database:', error);
+    }
+  })();
+  
   // Emit OEE update to clients
   if (io) {
     io.to("global").emit("oee:update", metrics);
@@ -741,6 +778,30 @@ export function startDowntime(
   
   activeDowntimes.set(machineId, event);
   
+  // Save to database
+  (async () => {
+    try {
+      const { getDb } = await import('../db');
+      const dbConnection = await getDb();
+      if (!dbConnection) return;
+      const { sql } = await import('drizzle-orm');
+      await dbConnection.execute(sql`
+        INSERT INTO downtime_events 
+         (machineId, machineCode, category, reason, startTime, detectionMethod)
+         VALUES (
+          ${machineId},
+          ${machineCode},
+          ${category},
+          ${reason || 'No reason provided'},
+          ${event.startTime},
+          'MANUAL'
+         )
+      `);
+    } catch (error) {
+      console.error('[Downtime] Failed to save start event:', error);
+    }
+  })();
+  
   // Emit downtime start event
   if (io) {
     io.to("global").emit("downtime:start", event);
@@ -766,6 +827,27 @@ export function endDowntime(machineId: number, notes?: string): DowntimeEvent | 
   if (downtimeHistory.length > 1000) {
     downtimeHistory.shift();
   }
+  
+  // Update database
+  (async () => {
+    try {
+      const { getDb } = await import('../db');
+      const dbConnection = await getDb();
+      if (!dbConnection) return;
+      const { sql } = await import('drizzle-orm');
+      await dbConnection.execute(sql`
+        UPDATE downtime_events 
+        SET endTime = ${event.endTime},
+            duration = ${event.duration}
+        WHERE machineId = ${machineId}
+          AND endTime IS NULL
+        ORDER BY startTime DESC
+        LIMIT 1
+      `);
+    } catch (error) {
+      console.error('[Downtime] Failed to update end event:', error);
+    }
+  })();
   
   // Emit downtime end event
   if (io) {
