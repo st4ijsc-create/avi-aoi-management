@@ -39,7 +39,8 @@ import {
   Archive,
   Store,
   Timer,
-  Play
+  Play,
+  Heart
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -162,6 +163,12 @@ export const navGroups: NavGroup[] = [
         label: "MQTT Replay", 
         icon: <Play className="h-4 w-4" />,
         description: "Phát lại và debug tin nhắn MQTT"
+      },
+      { 
+        href: "/machine-health", 
+        label: "Machine Health", 
+        icon: <Heart className="h-4 w-4" />,
+        description: "Theo dõi sức khỏe máy và dự đoán bảo trì"
       },
     ],
   },

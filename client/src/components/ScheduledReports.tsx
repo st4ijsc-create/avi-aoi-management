@@ -18,7 +18,7 @@ import { DeleteConfirmDialog } from "./ConfirmDialog";
 type ScheduledReport = {
   id: number;
   name: string;
-  reportType: "NG_VISUAL" | "DAILY_SUMMARY" | "WEEKLY_SUMMARY" | "MONTHLY_SUMMARY" | "CUSTOM";
+  reportType: "NG_VISUAL" | "DAILY_SUMMARY" | "WEEKLY_SUMMARY" | "MONTHLY_SUMMARY" | "CUSTOM" | "OEE_REPORT" | "MACHINE_HEALTH";
   schedule: "DAILY" | "WEEKLY" | "MONTHLY";
   scheduleDayOfWeek?: number | null;
   scheduleDayOfMonth?: number | null;
@@ -49,7 +49,7 @@ export default function ScheduledReports() {
 
   const [form, setForm] = useState({
     name: "",
-    reportType: "NG_VISUAL" as "NG_VISUAL" | "DAILY_SUMMARY" | "WEEKLY_SUMMARY" | "MONTHLY_SUMMARY" | "CUSTOM",
+    reportType: "NG_VISUAL" as "NG_VISUAL" | "DAILY_SUMMARY" | "WEEKLY_SUMMARY" | "MONTHLY_SUMMARY" | "CUSTOM" | "OEE_REPORT" | "MACHINE_HEALTH",
     schedule: "DAILY" as "DAILY" | "WEEKLY" | "MONTHLY",
     scheduleDayOfWeek: undefined as number | undefined,
     scheduleDayOfMonth: undefined as number | undefined,
@@ -278,6 +278,8 @@ export default function ScheduledReports() {
     if (type === "WEEKLY_SUMMARY") return "Tổng hợp hàng tuần";
     if (type === "MONTHLY_SUMMARY") return "Tổng hợp hàng tháng";
     if (type === "CUSTOM") return "Tùy chỉnh";
+    if (type === "OEE_REPORT") return "Báo cáo OEE";
+    if (type === "MACHINE_HEALTH") return "Sức khỏe máy";
     return type;
   };
 
@@ -463,6 +465,8 @@ export default function ScheduledReports() {
                         <SelectItem value="WEEKLY_SUMMARY">Tổng hợp hàng tuần</SelectItem>
                         <SelectItem value="MONTHLY_SUMMARY">Tổng hợp hàng tháng</SelectItem>
                         <SelectItem value="CUSTOM">Tùy chỉnh</SelectItem>
+                        <SelectItem value="OEE_REPORT">Báo cáo OEE</SelectItem>
+                        <SelectItem value="MACHINE_HEALTH">Sức khỏe máy</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

@@ -40,7 +40,7 @@ interface EmailTemplateConfig {
 }
 
 export type ReportFrequency = 'daily' | 'weekly' | 'monthly';
-export type ReportType = 'statistics' | 'alerts' | 'comprehensive';
+export type ReportType = 'statistics' | 'alerts' | 'comprehensive' | 'oee' | 'machine_health';
 
 export interface ScheduledReport {
   id: number;
@@ -85,6 +85,72 @@ export interface ReportContent {
     machineName: string;
     ngCount: number;
     yieldRate: string;
+  }>;
+  generatedAt: Date;
+}
+
+export interface OEEReportContent {
+  title: string;
+  period: {
+    start: Date;
+    end: Date;
+  };
+  summary: {
+    totalMachines: number;
+    avgAvailability: string;
+    avgPerformance: string;
+    avgQuality: string;
+    avgOEE: string;
+    totalDowntime: number;
+  };
+  machineOEE: Array<{
+    machineId: number;
+    machineCode: string;
+    availability: number;
+    performance: number;
+    quality: number;
+    oee: number;
+    timestamp: Date;
+  }>;
+  downtimeByCategory: Record<string, number>;
+  machinesNeedingAttention: Array<{
+    machineId: number;
+    machineCode: string;
+    availability: number;
+    performance: number;
+    quality: number;
+    oee: number;
+    timestamp: Date;
+  }>;
+  generatedAt: Date;
+}
+
+export interface MachineHealthReportContent {
+  title: string;
+  period: {
+    start: Date;
+    end: Date;
+  };
+  summary: {
+    totalMachines: number;
+    healthyCount: number;
+    warningCount: number;
+    criticalCount: number;
+    avgHealthScore: string;
+  };
+  machineHealth: Array<{
+    machineId: number;
+    machineCode: string;
+    healthScore: number;
+    oee: number;
+    status: 'healthy' | 'warning' | 'critical';
+  }>;
+  machinesNeedingMaintenance: Array<{
+    machineId: number;
+    machineCode: string;
+    healthScore: number;
+    oee: number;
+    status: 'healthy' | 'warning' | 'critical';
   }>;
   generatedAt: Date;
 }
@@ -497,6 +563,390 @@ class ScheduledReportService {
     }
 
     return content;
+  }
+
+  /**
+   * Generate OEE Report Content
+   */
+  async generateOEEReportContent(report: ScheduledReport): Promise<OEEReportContent> {
+    const { start, end } = this.getReportPeriod(report.frequency);
+    
+    // Import OEE functions
+    const { getAllMachinesOEE, getMachineHealthScore, getDowntimeHistory } = await import('../_core/socket');
+    
+    // Get all OEE metrics
+    const oeeData = getAllMachinesOEE().map(metrics => ({
+      machineId: metrics.machineId,
+      machineCode: metrics.machineCode,
+      availability: metrics.availability,
+      performance: metrics.performance,
+      quality: metrics.quality,
+      oee: metrics.oee,
+      timestamp: metrics.timestamp,
+    }));
+    
+    // Calculate averages
+    const avgAvailability = oeeData.length > 0 
+      ? oeeData.reduce((sum, m) => sum + m.availability, 0) / oeeData.length 
+      : 0;
+    const avgPerformance = oeeData.length > 0 
+      ? oeeData.reduce((sum, m) => sum + m.performance, 0) / oeeData.length 
+      : 0;
+    const avgQuality = oeeData.length > 0 
+      ? oeeData.reduce((sum, m) => sum + m.quality, 0) / oeeData.length 
+      : 0;
+    const avgOEE = oeeData.length > 0 
+      ? oeeData.reduce((sum, m) => sum + m.oee, 0) / oeeData.length 
+      : 0;
+    
+    // Get downtime summary
+    const downtimeHistory = getDowntimeHistory();
+    const downtimeByCategory: Record<string, number> = {};
+    let totalDowntime = 0;
+    
+    downtimeHistory.forEach(d => {
+      if (d.duration) {
+        downtimeByCategory[d.category] = (downtimeByCategory[d.category] || 0) + d.duration;
+        totalDowntime += d.duration;
+      }
+    });
+    
+    // Get machines needing attention (OEE < 80%)
+    const machinesNeedingAttention = oeeData
+      .filter(m => m.oee < 80)
+      .sort((a, b) => a.oee - b.oee)
+      .slice(0, 5);
+    
+    return {
+      title: `Báo cáo OEE ${this.getReportPeriodLabel(report.frequency)}`,
+      period: { start, end },
+      summary: {
+        totalMachines: oeeData.length,
+        avgAvailability: avgAvailability.toFixed(2),
+        avgPerformance: avgPerformance.toFixed(2),
+        avgQuality: avgQuality.toFixed(2),
+        avgOEE: avgOEE.toFixed(2),
+        totalDowntime,
+      },
+      machineOEE: oeeData,
+      downtimeByCategory,
+      machinesNeedingAttention,
+      generatedAt: new Date(),
+    };
+  }
+  
+  /**
+   * Generate Machine Health Report Content
+   */
+  async generateMachineHealthReportContent(report: ScheduledReport): Promise<MachineHealthReportContent> {
+    const { start, end } = this.getReportPeriod(report.frequency);
+    
+    // Import health functions
+    const { getAllMachinesOEE, getMachineHealthScore } = await import('../_core/socket');
+    
+    // Get all OEE metrics and calculate health scores
+    const allOEE = getAllMachinesOEE();
+    const healthData: Array<{
+      machineId: number;
+      machineCode: string;
+      healthScore: number;
+      oee: number;
+      status: 'healthy' | 'warning' | 'critical';
+    }> = [];
+    
+    for (const metrics of allOEE) {
+      const health = getMachineHealthScore(metrics.machineId);
+      const score = health?.score || metrics.oee * 0.8 + metrics.availability * 0.1 + metrics.quality * 0.1;
+      
+      healthData.push({
+        machineId: metrics.machineId,
+        machineCode: metrics.machineCode,
+        healthScore: score,
+        oee: metrics.oee,
+        status: score >= 80 ? 'healthy' : score >= 60 ? 'warning' : 'critical',
+      });
+    }
+    
+    // Count by status
+    const healthyCount = healthData.filter(m => m.status === 'healthy').length;
+    const warningCount = healthData.filter(m => m.status === 'warning').length;
+    const criticalCount = healthData.filter(m => m.status === 'critical').length;
+    
+    // Machines needing maintenance
+    const machinesNeedingMaintenance = healthData
+      .filter(m => m.status === 'critical' || m.status === 'warning')
+      .sort((a, b) => a.healthScore - b.healthScore);
+    
+    return {
+      title: `Báo cáo Sức khỏe Máy ${this.getReportPeriodLabel(report.frequency)}`,
+      period: { start, end },
+      summary: {
+        totalMachines: healthData.length,
+        healthyCount,
+        warningCount,
+        criticalCount,
+        avgHealthScore: healthData.length > 0 
+          ? (healthData.reduce((sum, m) => sum + m.healthScore, 0) / healthData.length).toFixed(2)
+          : '0',
+      },
+      machineHealth: healthData,
+      machinesNeedingMaintenance,
+      generatedAt: new Date(),
+    };
+  }
+  
+  /**
+   * Format OEE Report as HTML
+   */
+  async formatOEEReportHtml(content: OEEReportContent, templateConfig?: EmailTemplateConfig | null): Promise<string> {
+    if (!templateConfig) {
+      templateConfig = await db.getDefaultEmailTemplateConfig();
+    }
+    
+    const primaryColor = templateConfig?.primaryColor || '#2563eb';
+    const secondaryColor = templateConfig?.secondaryColor || '#1e40af';
+    const backgroundColor = templateConfig?.backgroundColor || '#f0f9ff';
+    const companyName = templateConfig?.companyName || 'AVI/AOI Factory Management System';
+    const logoUrl = templateConfig?.logoUrl;
+    const footerText = templateConfig?.footerText || 'Báo cáo được tạo tự động bởi hệ thống';
+    
+    const formatDate = (date: Date) => date.toLocaleDateString('vi-VN');
+    
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }
+    .header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid ${primaryColor}; }
+    .logo { max-height: 60px; margin-bottom: 10px; }
+    h1 { color: ${primaryColor}; }
+    h2 { color: ${secondaryColor}; margin-top: 30px; }
+    .summary { background: ${backgroundColor}; padding: 20px; border-radius: 8px; margin: 20px 0; }
+    .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
+    .stat-card { background: white; padding: 15px; border-radius: 6px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .stat-value { font-size: 24px; font-weight: bold; color: ${primaryColor}; }
+    .stat-label { font-size: 12px; color: #666; text-transform: uppercase; }
+    table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+    th, td { padding: 10px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+    th { background: ${backgroundColor}; font-weight: 600; color: ${secondaryColor}; }
+    .oee-high { color: #16a34a; }
+    .oee-medium { color: #ca8a04; }
+    .oee-low { color: #dc2626; }
+    .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #666; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    ${logoUrl ? `<img src="${logoUrl}" alt="${companyName}" class="logo" />` : ''}
+    <h1>${content.title}</h1>
+    <p>Giai đoạn: ${formatDate(content.period.start)} - ${formatDate(content.period.end)}</p>
+  </div>
+  
+  <h2>Tổng quan OEE</h2>
+  <div class="summary">
+    <div class="summary-grid">
+      <div class="stat-card">
+        <div class="stat-value">${content.summary.avgOEE}%</div>
+        <div class="stat-label">OEE Trung bình</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${content.summary.avgAvailability}%</div>
+        <div class="stat-label">Availability</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${content.summary.avgPerformance}%</div>
+        <div class="stat-label">Performance</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${content.summary.avgQuality}%</div>
+        <div class="stat-label">Quality</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${content.summary.totalMachines}</div>
+        <div class="stat-label">Tổng số máy</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${content.summary.totalDowntime} phút</div>
+        <div class="stat-label">Tổng Downtime</div>
+      </div>
+    </div>
+  </div>
+  
+  ${content.machinesNeedingAttention.length > 0 ? `
+  <h2>Máy cần chú ý (OEE < 80%)</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Máy</th>
+        <th>OEE</th>
+        <th>Availability</th>
+        <th>Performance</th>
+        <th>Quality</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${content.machinesNeedingAttention.map(m => `
+      <tr>
+        <td>${m.machineCode}</td>
+        <td class="${m.oee >= 70 ? 'oee-medium' : 'oee-low'}">${m.oee.toFixed(1)}%</td>
+        <td>${m.availability.toFixed(1)}%</td>
+        <td>${m.performance.toFixed(1)}%</td>
+        <td>${m.quality.toFixed(1)}%</td>
+      </tr>
+      `).join('')}
+    </tbody>
+  </table>
+  ` : ''}
+  
+  <h2>Thống kê Downtime theo loại</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Loại</th>
+        <th>Thời gian (phút)</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${Object.entries(content.downtimeByCategory).map(([category, duration]) => `
+      <tr>
+        <td>${category === 'planned' ? 'Kế hoạch' : 
+             category === 'unplanned' ? 'Ngoài kế hoạch' :
+             category === 'breakdown' ? 'Hỏng hóc' :
+             category === 'changeover' ? 'Đổi sản phẩm' :
+             category === 'maintenance' ? 'Bảo trì' : 'Khác'}</td>
+        <td>${duration}</td>
+      </tr>
+      `).join('')}
+    </tbody>
+  </table>
+  
+  <div class="footer">
+    <p>${footerText}</p>
+    <p>Thời gian tạo: ${content.generatedAt.toLocaleString('vi-VN')}</p>
+  </div>
+</body>
+</html>
+    `;
+  }
+  
+  /**
+   * Format Machine Health Report as HTML
+   */
+  async formatMachineHealthReportHtml(content: MachineHealthReportContent, templateConfig?: EmailTemplateConfig | null): Promise<string> {
+    if (!templateConfig) {
+      templateConfig = await db.getDefaultEmailTemplateConfig();
+    }
+    
+    const primaryColor = templateConfig?.primaryColor || '#2563eb';
+    const secondaryColor = templateConfig?.secondaryColor || '#1e40af';
+    const backgroundColor = templateConfig?.backgroundColor || '#f0f9ff';
+    const companyName = templateConfig?.companyName || 'AVI/AOI Factory Management System';
+    const logoUrl = templateConfig?.logoUrl;
+    const footerText = templateConfig?.footerText || 'Báo cáo được tạo tự động bởi hệ thống';
+    
+    const formatDate = (date: Date) => date.toLocaleDateString('vi-VN');
+    
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }
+    .header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid ${primaryColor}; }
+    .logo { max-height: 60px; margin-bottom: 10px; }
+    h1 { color: ${primaryColor}; }
+    h2 { color: ${secondaryColor}; margin-top: 30px; }
+    .summary { background: ${backgroundColor}; padding: 20px; border-radius: 8px; margin: 20px 0; }
+    .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
+    .stat-card { background: white; padding: 15px; border-radius: 6px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .stat-value { font-size: 24px; font-weight: bold; }
+    .stat-value.healthy { color: #16a34a; }
+    .stat-value.warning { color: #ca8a04; }
+    .stat-value.critical { color: #dc2626; }
+    .stat-label { font-size: 12px; color: #666; text-transform: uppercase; }
+    table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+    th, td { padding: 10px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+    th { background: ${backgroundColor}; font-weight: 600; color: ${secondaryColor}; }
+    .status-healthy { color: #16a34a; font-weight: bold; }
+    .status-warning { color: #ca8a04; font-weight: bold; }
+    .status-critical { color: #dc2626; font-weight: bold; }
+    .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #666; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    ${logoUrl ? `<img src="${logoUrl}" alt="${companyName}" class="logo" />` : ''}
+    <h1>${content.title}</h1>
+    <p>Giai đoạn: ${formatDate(content.period.start)} - ${formatDate(content.period.end)}</p>
+  </div>
+  
+  <h2>Tổng quan Sức khỏe Máy</h2>
+  <div class="summary">
+    <div class="summary-grid">
+      <div class="stat-card">
+        <div class="stat-value">${content.summary.avgHealthScore}%</div>
+        <div class="stat-label">Health Score TB</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value healthy">${content.summary.healthyCount}</div>
+        <div class="stat-label">Khỏe mạnh</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value warning">${content.summary.warningCount}</div>
+        <div class="stat-label">Cần chú ý</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value critical">${content.summary.criticalCount}</div>
+        <div class="stat-label">Cần bảo trì</div>
+      </div>
+    </div>
+  </div>
+  
+  ${content.machinesNeedingMaintenance.length > 0 ? `
+  <h2>Máy cần bảo trì</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Máy</th>
+        <th>Health Score</th>
+        <th>OEE</th>
+        <th>Trạng thái</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${content.machinesNeedingMaintenance.map(m => `
+      <tr>
+        <td>${m.machineCode}</td>
+        <td>${m.healthScore.toFixed(1)}%</td>
+        <td>${m.oee.toFixed(1)}%</td>
+        <td class="status-${m.status}">${m.status === 'healthy' ? 'Khỏe mạnh' : m.status === 'warning' ? 'Cần chú ý' : 'Cần bảo trì'}</td>
+      </tr>
+      `).join('')}
+    </tbody>
+  </table>
+  ` : `
+  <p style="text-align: center; color: #16a34a; font-weight: bold;">Tất cả máy đều hoạt động tốt!</p>
+  `}
+  
+  <div class="footer">
+    <p>${footerText}</p>
+    <p>Thời gian tạo: ${content.generatedAt.toLocaleString('vi-VN')}</p>
+  </div>
+</body>
+</html>
+    `;
+  }
+  
+  private getReportPeriodLabel(frequency: ReportFrequency): string {
+    const periodMap = {
+      daily: 'Hàng ngày',
+      weekly: 'Hàng tuần',
+      monthly: 'Hàng tháng',
+    };
+    return periodMap[frequency];
   }
 
   /**

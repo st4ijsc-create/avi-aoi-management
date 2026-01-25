@@ -4090,7 +4090,7 @@ const scheduledReportRouter = router({
     .input(z.object({
       name: z.string().min(1).max(255),
       description: z.string().optional(),
-      reportType: z.enum(["NG_VISUAL", "DAILY_SUMMARY", "WEEKLY_SUMMARY", "MONTHLY_SUMMARY", "CUSTOM"]).default("NG_VISUAL"),
+      reportType: z.enum(["NG_VISUAL", "DAILY_SUMMARY", "WEEKLY_SUMMARY", "MONTHLY_SUMMARY", "CUSTOM", "OEE_REPORT", "MACHINE_HEALTH"]).default("NG_VISUAL"),
       schedule: z.enum(["DAILY", "WEEKLY", "MONTHLY"]).default("DAILY"),
       scheduleTime: z.string().default("08:00"),
       scheduleDayOfWeek: z.number().min(0).max(6).optional(),
@@ -4138,7 +4138,7 @@ const scheduledReportRouter = router({
       id: z.number(),
       name: z.string().min(1).max(255).optional(),
       description: z.string().optional(),
-      reportType: z.enum(["NG_VISUAL", "DAILY_SUMMARY", "WEEKLY_SUMMARY", "MONTHLY_SUMMARY", "CUSTOM"]).optional(),
+      reportType: z.enum(["NG_VISUAL", "DAILY_SUMMARY", "WEEKLY_SUMMARY", "MONTHLY_SUMMARY", "CUSTOM", "OEE_REPORT", "MACHINE_HEALTH"]).optional(),
       schedule: z.enum(["DAILY", "WEEKLY", "MONTHLY"]).optional(),
       scheduleTime: z.string().optional(),
       scheduleDayOfWeek: z.number().min(0).max(6).optional(),

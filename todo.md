@@ -3483,6 +3483,31 @@ Menu structure mới:
 ### 5. Historical Trending & Reports
 - [x] OEE trend chart (daily/weekly/monthly) - Already in OEEDashboard
 - [x] Downtime trend analysis - Already in OEEDashboard
-- [ ] Machine health history chart (can add later)
-- [ ] Export OEE reports to CSV/Excel (can add later)
-- [ ] Scheduled OEE reports via email (can add later)
+- [x] Machine health history chart (MachineHealthMonitoring.tsx)
+- [x] Export OEE reports to CSV/Excel (OEEDashboard export buttons)
+- [x] Scheduled OEE reports via email (OEE_REPORT, MACHINE_HEALTH types)
+
+
+## Phase 138: OEE Reports Export, Machine Health Monitoring & Scheduled Reports
+
+### 1. OEE Historical Reports Export
+- [x] Add Export CSV button in OEE Dashboard
+- [x] Add Export Excel button in OEE Dashboard
+- [x] Export OEE data with availability, performance, quality trends
+- [x] Include date range filter in export
+- [x] Export downtime data by category
+
+### 2. Machine Health Monitoring Page
+- [x] Create MachineHealthMonitoring.tsx page
+- [x] Health score trend chart over time
+- [x] Drill-down into health factors (OEE, uptime, error rate, cycle time variance)
+- [x] Machine comparison view
+- [x] Health alerts and recommendations
+- [x] Add route and navigation menu item
+
+### 3. Scheduled OEE Reports
+- [x] Add OEE report type to scheduled reports (OEE_REPORT, MACHINE_HEALTH)
+- [x] Configure report frequency (daily/weekly/monthly)
+- [x] Include OEE metrics in email report
+- [x] Include downtime summary in email report
+- [x] Include machine health summary in email report

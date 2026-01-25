@@ -43,6 +43,7 @@ import TemplateMarketplace from "./pages/TemplateMarketplace";
 import OEEDashboard from "./pages/OEEDashboard";
 import MQTTReplay from "./pages/MQTTReplay";
 import OEETargetSettings from "./pages/OEETargetSettings";
+import MachineHealthMonitoring from "./pages/MachineHealthMonitoring";
 
 function Router() {
   return (
@@ -87,6 +88,7 @@ function Router() {
       <Route path="/oee-dashboard" component={OEEDashboard} />
       <Route path="/mqtt-replay" component={MQTTReplay} />
       <Route path="/oee-target-settings" component={OEETargetSettings} />
+      <Route path="/machine-health" component={MachineHealthMonitoring} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

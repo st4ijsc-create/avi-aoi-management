@@ -29,7 +29,9 @@ import {
   Pause,
   StopCircle,
   Wrench,
-  Settings2
+  Settings2,
+  Download,
+  FileSpreadsheet
 } from "lucide-react";
 import { 
   LineChart, 
@@ -222,6 +224,140 @@ export default function OEEDashboard() {
 
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 
+  // Export OEE data to CSV
+  const exportToCSV = () => {
+    if (!allOEE || allOEE.length === 0) {
+      toast.error("Không có dữ liệu để xuất");
+      return;
+    }
+
+    const headers = [
+      'Máy',
+      'Mã máy',
+      'Thời gian',
+      'Availability (%)',
+      'Performance (%)',
+      'Quality (%)',
+      'OEE (%)',
+      'Thời gian kế hoạch (phút)',
+      'Thời gian chạy (phút)',
+      'Downtime (phút)',
+      'Tổng sản lượng',
+      'Sản lượng OK',
+      'Sản lượng NG'
+    ];
+
+    const rows = allOEE.map(oee => [
+      machines?.find(m => m.id === oee.machineId)?.name || `Machine ${oee.machineId}`,
+      oee.machineCode,
+      new Date(oee.timestamp).toLocaleString('vi-VN'),
+      oee.availability.toFixed(2),
+      oee.performance.toFixed(2),
+      oee.quality.toFixed(2),
+      oee.oee.toFixed(2),
+      oee.details?.plannedTime || 0,
+      oee.details?.runTime || 0,
+      oee.details?.downtime || 0,
+      oee.details?.totalCount || 0,
+      oee.details?.goodCount || 0,
+      oee.details?.rejectCount || 0
+    ]);
+
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(cell => `"${cell}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `OEE_Report_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast.success("Đã xuất báo cáo OEE ra CSV");
+  };
+
+  // Export OEE data to Excel (XLSX format via CSV)
+  const exportToExcel = () => {
+    if (!allOEE || allOEE.length === 0) {
+      toast.error("Không có dữ liệu để xuất");
+      return;
+    }
+
+    // Create workbook content
+    const headers = [
+      'Máy',
+      'Mã máy',
+      'Thời gian',
+      'Availability (%)',
+      'Performance (%)',
+      'Quality (%)',
+      'OEE (%)',
+      'Thời gian kế hoạch (phút)',
+      'Thời gian chạy (phút)',
+      'Downtime (phút)',
+      'Tổng sản lượng',
+      'Sản lượng OK',
+      'Sản lượng NG'
+    ];
+
+    const oeeRows = allOEE.map(oee => [
+      machines?.find(m => m.id === oee.machineId)?.name || `Machine ${oee.machineId}`,
+      oee.machineCode,
+      new Date(oee.timestamp).toLocaleString('vi-VN'),
+      oee.availability.toFixed(2),
+      oee.performance.toFixed(2),
+      oee.quality.toFixed(2),
+      oee.oee.toFixed(2),
+      oee.details?.plannedTime || 0,
+      oee.details?.runTime || 0,
+      oee.details?.downtime || 0,
+      oee.details?.totalCount || 0,
+      oee.details?.goodCount || 0,
+      oee.details?.rejectCount || 0
+    ]);
+
+    // Add summary section
+    const summaryRows = [
+      [],
+      ['TỔNG HỢP'],
+      ['OEE Trung bình', `${avgOEE.toFixed(2)}%`],
+      ['Số máy', allOEE.length],
+      ['Thời gian xuất báo cáo', new Date().toLocaleString('vi-VN')],
+    ];
+
+    // Add downtime summary if available
+    if (downtimeHistory && downtimeHistory.length > 0) {
+      summaryRows.push(
+        [],
+        ['THỐNG KÊ DOWNTIME'],
+        ['Loại', 'Thời gian (phút)']
+      );
+      Object.entries(downtimeByCategory).forEach(([category, duration]) => {
+        const categoryName = category === 'planned' ? 'Kế hoạch' :
+              category === 'unplanned' ? 'Ngoài kế hoạch' :
+              category === 'breakdown' ? 'Hỏng hóc' :
+              category === 'changeover' ? 'Đổi sản phẩm' :
+              category === 'maintenance' ? 'Bảo trì' : 'Khác';
+        summaryRows.push([categoryName, duration]);
+      });
+    }
+
+    const allRows = [headers, ...oeeRows, ...summaryRows];
+    const csvContent = allRows
+      .map(row => row.map(cell => `"${cell}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `OEE_Report_${new Date().toISOString().split('T')[0]}.xls`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast.success("Đã xuất báo cáo OEE ra Excel");
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -234,6 +370,14 @@ export default function OEEDashboard() {
             </p>
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" onClick={exportToCSV}>
+              <Download className="h-4 w-4 mr-2" />
+              Xuất CSV
+            </Button>
+            <Button variant="outline" onClick={exportToExcel}>
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Xuất Excel
+            </Button>
             <Button variant="outline" onClick={() => refetchOEE()}>
               <RefreshCw className="h-4 w-4 mr-2" />
               Làm mới

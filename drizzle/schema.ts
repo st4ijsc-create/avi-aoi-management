@@ -903,7 +903,7 @@ export const scheduledReports = mysqlTable("scheduled_reports", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
-  reportType: mysqlEnum("reportType", ["NG_VISUAL", "DAILY_SUMMARY", "WEEKLY_SUMMARY", "MONTHLY_SUMMARY", "CUSTOM"]).default("NG_VISUAL").notNull(),
+  reportType: mysqlEnum("reportType", ["NG_VISUAL", "DAILY_SUMMARY", "WEEKLY_SUMMARY", "MONTHLY_SUMMARY", "CUSTOM", "OEE_REPORT", "MACHINE_HEALTH"]).default("NG_VISUAL").notNull(),
   schedule: mysqlEnum("schedule", ["DAILY", "WEEKLY", "MONTHLY"]).default("DAILY").notNull(),
   scheduleTime: varchar("scheduleTime", { length: 10 }).default("08:00").notNull(), // HH:mm format
   scheduleDayOfWeek: int("scheduleDayOfWeek"), // 0-6 for weekly (0=Sunday)
