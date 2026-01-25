@@ -3401,3 +3401,50 @@ Menu structure mới:
 - [x] API applyScheduleSuggestion
 - [ ] Minimize changeover time (có thể thêm sau)
 - [ ] What-if scenario analysis UI (có thể thêm sau)
+
+
+## Phase 136: MQTT & Machine Performance Enhancements
+
+### 1. MQTT WebSocket Realtime Updates
+- [x] WebSocket server cho MQTT events (Socket.io đã có sẵn)
+- [x] Client hook useMqttRealtime (sử dụng socket.io-client)
+- [x] Realtime updates cho Dashboard widgets
+- [x] Connection status indicator
+
+### 2. Machine Auto-discovery từ MQTT Topics
+- [x] Parse machine info từ MQTT topic structure
+- [x] Auto-register machines khi nhận message mới
+- [x] UI hiển thị discovered machines (MQTTReplay.tsx)
+- [ ] Confirm và add vào hệ thống (button placeholder)
+
+### 3. OEE Calculation Realtime
+- [x] Availability calculation (uptime/planned time)
+- [x] Performance calculation (actual/theoretical output)
+- [x] Quality calculation (good/total output)
+- [x] OEE dashboard widget (OEEDashboard.tsx)
+- [x] OEE trending chart (bar chart comparison)
+
+### 4. Downtime Tracking & Categorization
+- [x] Downtime events schema (in-memory store)
+- [x] Downtime categories (planned, unplanned, breakdown, changeover, maintenance, other)
+- [x] Manual downtime entry UI (OEEDashboard.tsx)
+- [ ] Auto-detect downtime từ machine status
+- [x] Downtime reports (pie chart by category)
+
+### 5. Predictive Maintenance Alerts
+- [x] Machine health scoring algorithm (weighted factors)
+- [x] Maintenance prediction based on patterns
+- [x] Alert rules cho maintenance (emit alerts when health < 50)
+- [x] Maintenance schedule suggestions
+
+### 6. Machine Performance Benchmarking
+- [x] Performance metrics per machine
+- [x] Compare machines trong cùng line
+- [x] Benchmark reports (API calculateLineBenchmarks)
+- [x] Performance ranking (by OEE)
+
+### 7. MQTT Message Replay
+- [x] Message history storage (in-memory, last 1000 messages)
+- [x] Replay UI với timeline (MQTTReplay.tsx)
+- [x] Filter by topic, time range
+- [x] Export messages for debugging (JSON export)

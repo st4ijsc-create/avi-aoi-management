@@ -40,6 +40,8 @@ import UserGuide from "./pages/UserGuide";
 import DashboardTemplates from "./pages/DashboardTemplates";
 import BackupRestore from "./pages/BackupRestore";
 import TemplateMarketplace from "./pages/TemplateMarketplace";
+import OEEDashboard from "./pages/OEEDashboard";
+import MQTTReplay from "./pages/MQTTReplay";
 
 function Router() {
   return (
@@ -81,6 +83,8 @@ function Router() {
       <Route path="/dashboard-templates" component={DashboardTemplates} />
       <Route path="/backup-restore" component={BackupRestore} />
       <Route path="/template-marketplace" component={TemplateMarketplace} />
+      <Route path="/oee-dashboard" component={OEEDashboard} />
+      <Route path="/mqtt-replay" component={MQTTReplay} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

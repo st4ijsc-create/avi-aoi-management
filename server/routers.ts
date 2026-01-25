@@ -3418,6 +3418,153 @@ const mqttClientRouter = router({
     .query(async ({ input }) => {
       return db.getMqttThroughputHistory(input?.minutes || 60);
     }),
+
+  // ============ MQTT MESSAGE REPLAY ============
+  messageHistory: protectedProcedure
+    .input(z.object({
+      topic: z.string().optional(),
+      machineCode: z.string().optional(),
+      startTime: z.date().optional(),
+      endTime: z.date().optional(),
+      limit: z.number().default(100),
+    }))
+    .query(async ({ input }) => {
+      const { getMqttMessageHistory } = await import('./_core/socket');
+      return getMqttMessageHistory(input);
+    }),
+
+  // ============ MACHINE AUTO-DISCOVERY ============
+  discoveredMachines: protectedProcedure.query(async () => {
+    const { getDiscoveredMachines } = await import('./_core/socket');
+    return getDiscoveredMachines();
+  }),
+
+  // ============ OEE CALCULATION ============
+  calculateOEE: protectedProcedure
+    .input(z.object({
+      machineId: z.number(),
+      machineCode: z.string(),
+      plannedTime: z.number(), // minutes
+      runTime: z.number(), // minutes
+      idealCycleTime: z.number(), // seconds per unit
+      totalCount: z.number(),
+      goodCount: z.number(),
+    }))
+    .mutation(async ({ input }) => {
+      const { calculateOEE } = await import('./_core/socket');
+      return calculateOEE(input.machineId, input.machineCode, {
+        plannedTime: input.plannedTime,
+        runTime: input.runTime,
+        idealCycleTime: input.idealCycleTime,
+        totalCount: input.totalCount,
+        goodCount: input.goodCount,
+      });
+    }),
+
+  getMachineOEE: protectedProcedure
+    .input(z.object({ machineId: z.number() }))
+    .query(async ({ input }) => {
+      const { getMachineOEE } = await import('./_core/socket');
+      return getMachineOEE(input.machineId);
+    }),
+
+  getAllOEE: protectedProcedure.query(async () => {
+    const { getAllMachinesOEE } = await import('./_core/socket');
+    return getAllMachinesOEE();
+  }),
+
+  // ============ DOWNTIME TRACKING ============
+  startDowntime: protectedProcedure
+    .input(z.object({
+      machineId: z.number(),
+      machineCode: z.string(),
+      category: z.enum(['planned', 'unplanned', 'breakdown', 'changeover', 'maintenance', 'other']),
+      reason: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { startDowntime } = await import('./_core/socket');
+      return startDowntime(input.machineId, input.machineCode, input.category, input.reason, ctx.user?.name ?? undefined);
+    }),
+
+  endDowntime: protectedProcedure
+    .input(z.object({
+      machineId: z.number(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { endDowntime } = await import('./_core/socket');
+      return endDowntime(input.machineId, input.notes);
+    }),
+
+  getActiveDowntime: protectedProcedure
+    .input(z.object({ machineId: z.number() }))
+    .query(async ({ input }) => {
+      const { getActiveDowntime } = await import('./_core/socket');
+      return getActiveDowntime(input.machineId);
+    }),
+
+  getDowntimeHistory: protectedProcedure
+    .input(z.object({
+      machineId: z.number().optional(),
+      category: z.enum(['planned', 'unplanned', 'breakdown', 'changeover', 'maintenance', 'other']).optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }))
+    .query(async ({ input }) => {
+      const { getDowntimeHistory } = await import('./_core/socket');
+      return getDowntimeHistory(input);
+    }),
+
+  // ============ PREDICTIVE MAINTENANCE ============
+  calculateMachineHealth: protectedProcedure
+    .input(z.object({
+      machineId: z.number(),
+      machineCode: z.string(),
+      oee: z.number().optional(),
+      uptime: z.number().optional(),
+      errorRate: z.number().optional(),
+      cycleTimeVariance: z.number().optional(),
+      downtimeFrequency: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { calculateMachineHealth } = await import('./_core/socket');
+      return calculateMachineHealth(input.machineId, input.machineCode, {
+        oee: input.oee,
+        uptime: input.uptime,
+        errorRate: input.errorRate,
+        cycleTimeVariance: input.cycleTimeVariance,
+        downtimeFrequency: input.downtimeFrequency,
+      });
+    }),
+
+  getMachineHealth: protectedProcedure
+    .input(z.object({ machineId: z.number() }))
+    .query(async ({ input }) => {
+      const { getMachineHealthScore } = await import('./_core/socket');
+      return getMachineHealthScore(input.machineId);
+    }),
+
+  // ============ MACHINE BENCHMARKING ============
+  calculateBenchmarks: protectedProcedure
+    .input(z.object({
+      machines: z.array(z.object({
+        machineId: z.number(),
+        machineCode: z.string(),
+        lineId: z.number(),
+        oee: z.number(),
+        yield: z.number(),
+        cycleTime: z.number(),
+        output: z.number(),
+        downtime: z.number(),
+        errors: z.number(),
+      })),
+      startDate: z.date(),
+      endDate: z.date(),
+    }))
+    .mutation(async ({ input }) => {
+      const { calculateLineBenchmarks } = await import('./_core/socket');
+      return calculateLineBenchmarks(input.machines, { start: input.startDate, end: input.endDate });
+    }),
 });
 
 // MQTT Alert Rules Router

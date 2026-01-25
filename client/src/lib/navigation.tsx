@@ -37,7 +37,9 @@ import {
   Wrench,
   LayoutTemplate,
   Archive,
-  Store
+  Store,
+  Timer,
+  Play
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -142,6 +144,18 @@ export const navGroups: NavGroup[] = [
         label: "Quy tắc cảnh báo", 
         icon: <AlertTriangle className="h-4 w-4" />,
         description: "Cấu hình quy tắc cảnh báo tự động"
+      },
+      { 
+        href: "/oee-dashboard", 
+        label: "OEE Dashboard", 
+        icon: <Timer className="h-4 w-4" />,
+        description: "Theo dõi hiệu suất thiết bị tổng thể"
+      },
+      { 
+        href: "/mqtt-replay", 
+        label: "MQTT Replay", 
+        icon: <Play className="h-4 w-4" />,
+        description: "Phát lại và debug tin nhắn MQTT"
       },
     ],
   },

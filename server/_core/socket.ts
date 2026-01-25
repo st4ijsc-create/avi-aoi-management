@@ -483,3 +483,486 @@ export function emitNGAlert(
     message: `Sản phẩm NG: ${serialNumber} tại máy ${machineName} (${machineCode})`,
   });
 }
+
+
+// ============ MQTT REALTIME EVENTS ============
+
+export interface MqttMessageEvent {
+  topic: string;
+  payload: any;
+  timestamp: Date;
+  machineCode?: string;
+}
+
+// Store recent MQTT messages for replay (last 1000 messages)
+const mqttMessageHistory: MqttMessageEvent[] = [];
+const MAX_MESSAGE_HISTORY = 1000;
+
+// Emit MQTT message to connected clients
+export function emitMqttMessage(event: MqttMessageEvent): void {
+  if (!io) return;
+  
+  // Store in history for replay
+  mqttMessageHistory.push(event);
+  if (mqttMessageHistory.length > MAX_MESSAGE_HISTORY) {
+    mqttMessageHistory.shift();
+  }
+  
+  // Emit to global room
+  io.to("global").emit("mqtt:message", event);
+  
+  // If machine code is known, emit to machine-specific room
+  if (event.machineCode) {
+    io.to(`machine:${event.machineCode}`).emit("mqtt:message", event);
+  }
+}
+
+// Get MQTT message history for replay
+export function getMqttMessageHistory(options?: {
+  topic?: string;
+  machineCode?: string;
+  startTime?: Date;
+  endTime?: Date;
+  limit?: number;
+}): MqttMessageEvent[] {
+  let filtered = [...mqttMessageHistory];
+  
+  if (options?.topic) {
+    filtered = filtered.filter(m => m.topic.includes(options.topic!));
+  }
+  if (options?.machineCode) {
+    filtered = filtered.filter(m => m.machineCode === options.machineCode);
+  }
+  if (options?.startTime) {
+    filtered = filtered.filter(m => m.timestamp >= options.startTime!);
+  }
+  if (options?.endTime) {
+    filtered = filtered.filter(m => m.timestamp <= options.endTime!);
+  }
+  
+  const limit = options?.limit || 100;
+  return filtered.slice(-limit);
+}
+
+// ============ MACHINE AUTO-DISCOVERY ============
+
+export interface DiscoveredMachine {
+  machineCode: string;
+  topic: string;
+  firstSeen: Date;
+  lastSeen: Date;
+  messageCount: number;
+  samplePayload?: any;
+}
+
+const discoveredMachines: Map<string, DiscoveredMachine> = new Map();
+
+// Parse machine code from MQTT topic
+export function parseMachineFromTopic(topic: string): string | null {
+  // Common patterns: avi/machine/{code}/data, aoi/{code}/inspection, {code}/status
+  const patterns = [
+    /^avi\/machine\/([^\/]+)/i,
+    /^aoi\/([^\/]+)/i,
+    /^machine\/([^\/]+)/i,
+    /^([A-Z]{2,4}\d{3,})/i, // e.g., AVI001, AOI123
+  ];
+  
+  for (const pattern of patterns) {
+    const match = topic.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+// Auto-discover machine from MQTT message
+export function autoDiscoverMachine(topic: string, payload: any): DiscoveredMachine | null {
+  const machineCode = parseMachineFromTopic(topic);
+  if (!machineCode) return null;
+  
+  const existing = discoveredMachines.get(machineCode);
+  if (existing) {
+    existing.lastSeen = new Date();
+    existing.messageCount++;
+    discoveredMachines.set(machineCode, existing);
+    return existing;
+  }
+  
+  const discovered: DiscoveredMachine = {
+    machineCode,
+    topic,
+    firstSeen: new Date(),
+    lastSeen: new Date(),
+    messageCount: 1,
+    samplePayload: payload,
+  };
+  discoveredMachines.set(machineCode, discovered);
+  
+  // Notify admin about new discovered machine
+  if (io) {
+    io.to("admin").emit("machine:discovered", discovered);
+  }
+  
+  return discovered;
+}
+
+// Get all discovered machines
+export function getDiscoveredMachines(): DiscoveredMachine[] {
+  return Array.from(discoveredMachines.values());
+}
+
+// ============ OEE CALCULATION ============
+
+export interface OEEMetrics {
+  machineId: number;
+  machineCode: string;
+  timestamp: Date;
+  availability: number; // (Run Time / Planned Production Time) * 100
+  performance: number;  // (Ideal Cycle Time × Total Count / Run Time) * 100
+  quality: number;      // (Good Count / Total Count) * 100
+  oee: number;          // (Availability × Performance × Quality) / 10000
+  details: {
+    plannedTime: number;     // minutes
+    runTime: number;         // minutes
+    downtime: number;        // minutes
+    idealCycleTime: number;  // seconds per unit
+    totalCount: number;
+    goodCount: number;
+    rejectCount: number;
+  };
+}
+
+// Store OEE data per machine
+const machineOEEData: Map<number, OEEMetrics> = new Map();
+
+// Calculate OEE for a machine
+export function calculateOEE(
+  machineId: number,
+  machineCode: string,
+  data: {
+    plannedTime: number;     // minutes
+    runTime: number;         // minutes
+    idealCycleTime: number;  // seconds per unit
+    totalCount: number;
+    goodCount: number;
+  }
+): OEEMetrics {
+  const { plannedTime, runTime, idealCycleTime, totalCount, goodCount } = data;
+  
+  // Availability = Run Time / Planned Production Time
+  const availability = plannedTime > 0 ? (runTime / plannedTime) * 100 : 0;
+  
+  // Performance = (Ideal Cycle Time × Total Count) / Run Time
+  const runTimeSeconds = runTime * 60;
+  const performance = runTimeSeconds > 0 
+    ? ((idealCycleTime * totalCount) / runTimeSeconds) * 100 
+    : 0;
+  
+  // Quality = Good Count / Total Count
+  const quality = totalCount > 0 ? (goodCount / totalCount) * 100 : 0;
+  
+  // OEE = Availability × Performance × Quality
+  const oee = (availability * performance * quality) / 10000;
+  
+  const metrics: OEEMetrics = {
+    machineId,
+    machineCode,
+    timestamp: new Date(),
+    availability: Math.min(100, Math.max(0, availability)),
+    performance: Math.min(100, Math.max(0, performance)),
+    quality: Math.min(100, Math.max(0, quality)),
+    oee: Math.min(100, Math.max(0, oee)),
+    details: {
+      plannedTime,
+      runTime,
+      downtime: plannedTime - runTime,
+      idealCycleTime,
+      totalCount,
+      goodCount,
+      rejectCount: totalCount - goodCount,
+    },
+  };
+  
+  machineOEEData.set(machineId, metrics);
+  
+  // Emit OEE update to clients
+  if (io) {
+    io.to("global").emit("oee:update", metrics);
+    io.to(`machine:${machineId}`).emit("oee:update", metrics);
+  }
+  
+  return metrics;
+}
+
+// Get OEE for a machine
+export function getMachineOEE(machineId: number): OEEMetrics | undefined {
+  return machineOEEData.get(machineId);
+}
+
+// Get all machines OEE
+export function getAllMachinesOEE(): OEEMetrics[] {
+  return Array.from(machineOEEData.values());
+}
+
+// ============ DOWNTIME TRACKING ============
+
+export interface DowntimeEvent {
+  id: string;
+  machineId: number;
+  machineCode: string;
+  startTime: Date;
+  endTime?: Date;
+  duration?: number; // minutes
+  category: 'planned' | 'unplanned' | 'breakdown' | 'changeover' | 'maintenance' | 'other';
+  reason?: string;
+  notes?: string;
+  reportedBy?: string;
+}
+
+const activeDowntimes: Map<number, DowntimeEvent> = new Map();
+const downtimeHistory: DowntimeEvent[] = [];
+
+// Start downtime tracking
+export function startDowntime(
+  machineId: number,
+  machineCode: string,
+  category: DowntimeEvent['category'],
+  reason?: string,
+  reportedBy?: string
+): DowntimeEvent {
+  const event: DowntimeEvent = {
+    id: `DT-${Date.now()}-${machineId}`,
+    machineId,
+    machineCode,
+    startTime: new Date(),
+    category,
+    reason,
+    reportedBy,
+  };
+  
+  activeDowntimes.set(machineId, event);
+  
+  // Emit downtime start event
+  if (io) {
+    io.to("global").emit("downtime:start", event);
+    io.to(`machine:${machineId}`).emit("downtime:start", event);
+  }
+  
+  return event;
+}
+
+// End downtime tracking
+export function endDowntime(machineId: number, notes?: string): DowntimeEvent | null {
+  const event = activeDowntimes.get(machineId);
+  if (!event) return null;
+  
+  event.endTime = new Date();
+  event.duration = Math.round((event.endTime.getTime() - event.startTime.getTime()) / 60000);
+  event.notes = notes;
+  
+  activeDowntimes.delete(machineId);
+  downtimeHistory.push(event);
+  
+  // Keep only last 1000 events
+  if (downtimeHistory.length > 1000) {
+    downtimeHistory.shift();
+  }
+  
+  // Emit downtime end event
+  if (io) {
+    io.to("global").emit("downtime:end", event);
+    io.to(`machine:${machineId}`).emit("downtime:end", event);
+  }
+  
+  return event;
+}
+
+// Get active downtime for a machine
+export function getActiveDowntime(machineId: number): DowntimeEvent | undefined {
+  return activeDowntimes.get(machineId);
+}
+
+// Get downtime history
+export function getDowntimeHistory(options?: {
+  machineId?: number;
+  category?: DowntimeEvent['category'];
+  startDate?: Date;
+  endDate?: Date;
+}): DowntimeEvent[] {
+  let filtered = [...downtimeHistory];
+  
+  if (options?.machineId) {
+    filtered = filtered.filter(d => d.machineId === options.machineId);
+  }
+  if (options?.category) {
+    filtered = filtered.filter(d => d.category === options.category);
+  }
+  if (options?.startDate) {
+    filtered = filtered.filter(d => d.startTime >= options.startDate!);
+  }
+  if (options?.endDate) {
+    filtered = filtered.filter(d => d.startTime <= options.endDate!);
+  }
+  
+  return filtered;
+}
+
+// ============ PREDICTIVE MAINTENANCE ============
+
+export interface MaintenanceAlert {
+  machineId: number;
+  machineCode: string;
+  alertType: 'warning' | 'critical';
+  metric: string;
+  currentValue: number;
+  threshold: number;
+  prediction: string;
+  suggestedAction: string;
+  timestamp: Date;
+}
+
+// Machine health scores
+const machineHealthScores: Map<number, {
+  score: number;
+  factors: { name: string; score: number; weight: number }[];
+  lastUpdated: Date;
+}> = new Map();
+
+// Calculate machine health score
+export function calculateMachineHealth(
+  machineId: number,
+  machineCode: string,
+  metrics: {
+    oee?: number;
+    uptime?: number;        // percentage
+    errorRate?: number;     // errors per hour
+    cycleTimeVariance?: number; // percentage deviation from ideal
+    downtimeFrequency?: number; // events per day
+  }
+): number {
+  const factors: { name: string; score: number; weight: number }[] = [];
+  
+  // OEE factor (weight: 30%)
+  if (metrics.oee !== undefined) {
+    factors.push({ name: 'OEE', score: metrics.oee, weight: 0.3 });
+  }
+  
+  // Uptime factor (weight: 25%)
+  if (metrics.uptime !== undefined) {
+    factors.push({ name: 'Uptime', score: metrics.uptime, weight: 0.25 });
+  }
+  
+  // Error rate factor (weight: 20%) - lower is better
+  if (metrics.errorRate !== undefined) {
+    const errorScore = Math.max(0, 100 - metrics.errorRate * 10);
+    factors.push({ name: 'Error Rate', score: errorScore, weight: 0.2 });
+  }
+  
+  // Cycle time variance factor (weight: 15%) - lower is better
+  if (metrics.cycleTimeVariance !== undefined) {
+    const varianceScore = Math.max(0, 100 - metrics.cycleTimeVariance);
+    factors.push({ name: 'Cycle Time Stability', score: varianceScore, weight: 0.15 });
+  }
+  
+  // Downtime frequency factor (weight: 10%) - lower is better
+  if (metrics.downtimeFrequency !== undefined) {
+    const downtimeScore = Math.max(0, 100 - metrics.downtimeFrequency * 20);
+    factors.push({ name: 'Downtime Frequency', score: downtimeScore, weight: 0.1 });
+  }
+  
+  // Calculate weighted average
+  const totalWeight = factors.reduce((sum, f) => sum + f.weight, 0);
+  const weightedSum = factors.reduce((sum, f) => sum + f.score * f.weight, 0);
+  const healthScore = totalWeight > 0 ? weightedSum / totalWeight : 0;
+  
+  machineHealthScores.set(machineId, {
+    score: healthScore,
+    factors,
+    lastUpdated: new Date(),
+  });
+  
+  // Generate alerts if health is low
+  if (healthScore < 50) {
+    const alert: MaintenanceAlert = {
+      machineId,
+      machineCode,
+      alertType: healthScore < 30 ? 'critical' : 'warning',
+      metric: 'Health Score',
+      currentValue: healthScore,
+      threshold: 50,
+      prediction: healthScore < 30 
+        ? 'Máy có nguy cơ hỏng hóc cao trong 24-48 giờ tới'
+        : 'Hiệu suất máy đang giảm, cần kiểm tra trong tuần này',
+      suggestedAction: healthScore < 30
+        ? 'Lên lịch bảo trì khẩn cấp ngay lập tức'
+        : 'Kiểm tra và bảo dưỡng định kỳ',
+      timestamp: new Date(),
+    };
+    
+    if (io) {
+      io.to("global").emit("maintenance:alert", alert);
+      io.to(`machine:${machineId}`).emit("maintenance:alert", alert);
+    }
+  }
+  
+  return healthScore;
+}
+
+// Get machine health score
+export function getMachineHealthScore(machineId: number) {
+  return machineHealthScores.get(machineId);
+}
+
+// ============ MACHINE BENCHMARKING ============
+
+export interface MachineBenchmark {
+  machineId: number;
+  machineCode: string;
+  lineId?: number;
+  metrics: {
+    avgOEE: number;
+    avgYield: number;
+    avgCycleTime: number;
+    totalOutput: number;
+    totalDowntime: number;
+    errorCount: number;
+  };
+  rank: number;
+  percentile: number;
+  period: { start: Date; end: Date };
+}
+
+// Calculate benchmarks for machines in a line
+export function calculateLineBenchmarks(
+  machines: Array<{
+    machineId: number;
+    machineCode: string;
+    lineId: number;
+    oee: number;
+    yield: number;
+    cycleTime: number;
+    output: number;
+    downtime: number;
+    errors: number;
+  }>,
+  period: { start: Date; end: Date }
+): MachineBenchmark[] {
+  // Sort by OEE for ranking
+  const sorted = [...machines].sort((a, b) => b.oee - a.oee);
+  
+  return sorted.map((m, index) => ({
+    machineId: m.machineId,
+    machineCode: m.machineCode,
+    lineId: m.lineId,
+    metrics: {
+      avgOEE: m.oee,
+      avgYield: m.yield,
+      avgCycleTime: m.cycleTime,
+      totalOutput: m.output,
+      totalDowntime: m.downtime,
+      errorCount: m.errors,
+    },
+    rank: index + 1,
+    percentile: ((sorted.length - index) / sorted.length) * 100,
+    period,
+  }));
+}
