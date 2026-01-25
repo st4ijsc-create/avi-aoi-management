@@ -3533,3 +3533,31 @@ Menu structure mới:
 - [ ] Bulk import/export data (CSV/Excel)
 - [ ] Video tutorials
 - [ ] User training materials
+
+
+## Phase 140: Process Drag-Drop, Dashboard Drill-Down, Bulk Import/Export
+
+### 1. Process Drag-Drop
+- [x] Cài đặt @dnd-kit/core và @dnd-kit/sortable (đã có sẵn)
+- [x] Tạo ProcessDragDrop component (SortableProcessItem)
+- [x] Thêm API updateProcessOrder (reorderMutation)
+- [x] Tích hợp vào ProcessManagement page
+- [x] Lưu thứ tự vào database
+
+### 2. Dashboard Drill-Down
+- [x] Thêm click handlers vào charts
+- [x] Tạo drill-down navigation state (DrillDownDashboard.tsx)
+- [x] Filter data theo level (Corporate → Factory → Line → Machine)
+- [x] Breadcrumb navigation để quay lại level trước
+- [x] Hiển thị chi tiết khi click vào machine
+
+### 3. Bulk Import/Export
+- [x] Tạo BulkImportExport component (ImportExport.tsx)
+- [x] API export machines to CSV/Excel
+- [x] API export products to CSV/Excel
+- [x] API export measurement points to CSV/Excel
+- [x] API import machines from CSV/Excel
+- [x] API import products from CSV/Excel
+- [x] API import measurement points from CSV/Excel
+- [x] Validation và error handling
+- [x] Template download cho import

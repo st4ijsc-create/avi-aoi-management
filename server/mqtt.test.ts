@@ -280,7 +280,7 @@ describe("Alert Evaluation Service", () => {
       const results = await evaluateAllAlertRules();
       
       expect(Array.isArray(results)).toBe(true);
-    }, 30000); // Increased timeout for Redis connection and cache warming
+    }, 60000); // Increased timeout for Redis connection and cache warming
   });
 
   describe("alert rule CRUD", () => {

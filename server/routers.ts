@@ -4857,6 +4857,94 @@ const importRouter = router({
       
       return results;
     }),
+
+  importProducts: adminProcedure
+    .input(z.object({
+      data: z.array(z.object({
+        code: z.string(),
+        name: z.string(),
+        description: z.string().optional(),
+        category: z.string().optional(),
+        version: z.string().optional(),
+        isActive: z.boolean().optional(),
+      })),
+    }))
+    .mutation(async ({ input }) => {
+      const results = { success: 0, failed: 0, errors: [] as string[] };
+      
+      for (const item of input.data) {
+        try {
+          // Check if product code already exists
+          const existing = await db.getProductModelByCode(item.code);
+          if (existing) {
+            throw new Error('Product code already exists');
+          }
+          
+          await db.createProductModel({
+            code: item.code,
+            name: item.name,
+            description: item.description,
+            category: item.category,
+            isActive: item.isActive ?? true,
+          });
+          results.success++;
+        } catch (error: any) {
+          results.failed++;
+          results.errors.push(`${item.code}: ${error.message}`);
+        }
+      }
+      
+      return results;
+    }),
+
+  importMeasurementPoints: adminProcedure
+    .input(z.object({
+      data: z.array(z.object({
+        productModelCode: z.string(),
+        code: z.string(),
+        name: z.string(),
+        measurementType: z.enum(['DIMENSION', 'VISUAL', 'ELECTRICAL', 'POSITION', 'COLOR', 'SURFACE', 'OTHER']),
+        unit: z.string().optional(),
+        nominalValue: z.number().optional(),
+        upperLimit: z.number().optional(),
+        lowerLimit: z.number().optional(),
+        isActive: z.boolean().optional(),
+      })),
+    }))
+    .mutation(async ({ input }) => {
+      const results = { success: 0, failed: 0, errors: [] as string[] };
+      
+      for (const item of input.data) {
+        try {
+          // Lookup product model by code
+          const productModel = await db.getProductModelByCode(item.productModelCode);
+          if (!productModel) {
+            throw new Error(`Product model ${item.productModelCode} not found`);
+          }
+          
+          await db.createMeasurementPointDef({
+            productModelId: productModel.id,
+            code: item.code,
+            name: item.name,
+            measurementType: item.measurementType,
+            unit: item.unit,
+            nominalValue: item.nominalValue?.toString(),
+            upperLimit: item.upperLimit?.toString(),
+            lowerLimit: item.lowerLimit?.toString(),
+            isActive: item.isActive ?? true,
+            positionX: 0,
+            positionY: 0,
+            radius: 20,
+          });
+          results.success++;
+        } catch (error: any) {
+          results.failed++;
+          results.errors.push(`${item.code}: ${error.message}`);
+        }
+      }
+      
+      return results;
+    }),
 });
 
 const exportRouter = router({
@@ -5185,6 +5273,171 @@ const exportRouter = router({
         
         return { url, filename, format: 'html' };
       }
+    }),
+
+  exportProducts: protectedProcedure
+    .mutation(async () => {
+      const XLSX = await import('xlsx');
+      
+      const products = await db.getProductModels();
+      
+      const data = products.map((p: any) => ({
+        'Code': p.code,
+        'Name': p.name,
+        'Description': p.description || '',
+        'Category': p.category || '',
+        'Version': p.version || '',
+        'Is Active': p.isActive ? 'Yes' : 'No',
+        'Created At': new Date(p.createdAt).toLocaleString('vi-VN'),
+      }));
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, ws, 'Products');
+
+      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      
+      const { storagePut } = await import('./storage');
+      const filename = `products_${Date.now()}.xlsx`;
+      const { url } = await storagePut(`exports/${filename}`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      
+      return { url, filename, count: data.length };
+    }),
+
+  exportMachines: protectedProcedure
+    .mutation(async () => {
+      const XLSX = await import('xlsx');
+      
+      const machines = await db.getMachines();
+      const stations = await db.getStations();
+      
+      const data = machines.map((m: any) => {
+        const station = stations.find(s => s.id === m.stationId);
+        return {
+          'Code': m.code,
+          'Name': m.name,
+          'Station Code': station?.code || '',
+          'Machine Type': m.machineType,
+          'Model': m.model || '',
+          'Manufacturer': m.manufacturer || '',
+          'Is Active': m.isActive ? 'Yes' : 'No',
+          'Created At': new Date(m.createdAt).toLocaleString('vi-VN'),
+        };
+      });
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, ws, 'Machines');
+
+      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      
+      const { storagePut } = await import('./storage');
+      const filename = `machines_${Date.now()}.xlsx`;
+      const { url } = await storagePut(`exports/${filename}`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      
+      return { url, filename, count: data.length };
+    }),
+
+  exportMeasurementPoints: protectedProcedure
+    .input(z.object({
+      productModelId: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const XLSX = await import('xlsx');
+      
+      const measurementPoints = input.productModelId 
+        ? await db.getMeasurementPointDefsByProductModel(input.productModelId)
+        : [];
+      const products = await db.getProductModels();
+      
+      const data = measurementPoints.map((mp: any) => {
+        const product = products.find(p => p.id === mp.productModelId);
+        return {
+          'Product Code': product?.code || '',
+          'Code': mp.code,
+          'Name': mp.name,
+          'Measurement Type': mp.measurementType,
+          'Unit': mp.unit || '',
+          'Nominal Value': mp.nominalValue || '',
+          'Upper Limit': mp.upperLimit || '',
+          'Lower Limit': mp.lowerLimit || '',
+          'Is Active': mp.isActive ? 'Yes' : 'No',
+        };
+      });
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, ws, 'Measurement Points');
+
+      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      
+      const { storagePut } = await import('./storage');
+      const filename = `measurement_points_${Date.now()}.xlsx`;
+      const { url } = await storagePut(`exports/${filename}`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      
+      return { url, filename, count: data.length };
+    }),
+
+  exportFactories: protectedProcedure
+    .mutation(async () => {
+      const XLSX = await import('xlsx');
+      
+      const factories = await db.getFactories();
+      
+      const data = factories.map((f: any) => ({
+        'Code': f.code,
+        'Name': f.name,
+        'Description': f.description || '',
+        'Address': f.address || '',
+        'Region': f.region || '',
+        'Country': f.country || '',
+        'Is Active': f.isActive ? 'Yes' : 'No',
+        'Created At': new Date(f.createdAt).toLocaleString('vi-VN'),
+      }));
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, ws, 'Factories');
+
+      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      
+      const { storagePut } = await import('./storage');
+      const filename = `factories_${Date.now()}.xlsx`;
+      const { url } = await storagePut(`exports/${filename}`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      
+      return { url, filename, count: data.length };
+    }),
+
+  exportWorkshops: protectedProcedure
+    .mutation(async () => {
+      const XLSX = await import('xlsx');
+      
+      const workshops = await db.getWorkshops();
+      const factories = await db.getFactories();
+      
+      const data = workshops.map((w: any) => {
+        const factory = factories.find(f => f.id === w.factoryId);
+        return {
+          'Factory Code': factory?.code || '',
+          'Code': w.code,
+          'Name': w.name,
+          'Description': w.description || '',
+          'Is Active': w.isActive ? 'Yes' : 'No',
+          'Created At': new Date(w.createdAt).toLocaleString('vi-VN'),
+        };
+      });
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, ws, 'Workshops');
+
+      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      
+      const { storagePut } = await import('./storage');
+      const filename = `workshops_${Date.now()}.xlsx`;
+      const { url } = await storagePut(`exports/${filename}`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      
+      return { url, filename, count: data.length };
     }),
 });
 
@@ -5976,6 +6229,194 @@ const productCategoryRouter = router({
     }),
 });
 
+// Drill-down Dashboard Router
+const drillDownRouter = router({
+  // Get stats by corporate
+  corporateStats: protectedProcedure
+    .query(async ({ ctx }) => {
+      // Get inspections grouped by corporate code
+      const { data: inspections } = await db.getProductInspections({ 
+        limit: 50000,
+        userId: ctx.user.id,
+        userRole: ctx.user.role as 'admin' | 'user',
+      });
+      
+      // Group by corporate code
+      const corporateMap = new Map<string, { total: number; ok: number; ng: number; ntf: number }>();
+      
+      for (const inspection of inspections) {
+        const corpCode = inspection.corporateCode || 'Unknown';
+        
+        if (!corporateMap.has(corpCode)) {
+          corporateMap.set(corpCode, { total: 0, ok: 0, ng: 0, ntf: 0 });
+        }
+        
+        const stats = corporateMap.get(corpCode)!;
+        stats.total++;
+        if (inspection.overallResult === 'OK') stats.ok++;
+        else if (inspection.overallResult === 'NG') stats.ng++;
+        else if (inspection.overallResult === 'NTF') stats.ntf++;
+      }
+      
+      return Array.from(corporateMap.entries()).map(([code, stats]) => ({
+        code,
+        name: code,
+        total: stats.total,
+        ok: stats.ok,
+        ng: stats.ng,
+        ntf: stats.ntf,
+        yieldRate: stats.total > 0 ? (stats.ok / stats.total) * 100 : 0,
+      })).sort((a, b) => b.total - a.total);
+    }),
+
+  // Get factories by corporate
+  factoriesByCorporate: protectedProcedure
+    .input(z.object({ corporateCode: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const allFactories = await db.getFactories();
+      const { data: inspections } = await db.getProductInspections({ 
+        corporateCode: input.corporateCode,
+        limit: 50000,
+        userId: ctx.user.id,
+        userRole: ctx.user.role as 'admin' | 'user',
+      });
+      
+      // Group inspections by factory code
+      const factoryStatsMap = new Map<string, { total: number; ok: number; ng: number; ntf: number }>();
+      
+      for (const inspection of inspections) {
+        const factoryCode = inspection.factoryCode || 'Unknown';
+        
+        if (!factoryStatsMap.has(factoryCode)) {
+          factoryStatsMap.set(factoryCode, { total: 0, ok: 0, ng: 0, ntf: 0 });
+        }
+        
+        const stats = factoryStatsMap.get(factoryCode)!;
+        stats.total++;
+        if (inspection.overallResult === 'OK') stats.ok++;
+        else if (inspection.overallResult === 'NG') stats.ng++;
+        else if (inspection.overallResult === 'NTF') stats.ntf++;
+      }
+      
+      // Map to factories
+      return allFactories
+        .filter(f => factoryStatsMap.has(f.code))
+        .map(factory => {
+          const stats = factoryStatsMap.get(factory.code) || { total: 0, ok: 0, ng: 0, ntf: 0 };
+          return {
+            id: factory.id,
+            code: factory.code,
+            name: factory.name,
+            total: stats.total,
+            ok: stats.ok,
+            ng: stats.ng,
+            ntf: stats.ntf,
+            yieldRate: stats.total > 0 ? (stats.ok / stats.total) * 100 : 0,
+          };
+        })
+        .sort((a, b) => b.total - a.total);
+    }),
+
+  // Get lines by factory
+  linesByFactory: protectedProcedure
+    .input(z.object({ factoryId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const allLines = await db.getProductionLines();
+      const factory = await db.getFactoryById(input.factoryId);
+      if (!factory) return [];
+      
+      // Get workshops for this factory
+      const allWorkshops = await db.getWorkshops();
+      const factoryWorkshops = allWorkshops.filter(w => w.factoryId === input.factoryId);
+      const workshopIds = factoryWorkshops.map(w => w.id);
+      
+      const { data: inspections } = await db.getProductInspections({ 
+        factoryCode: factory.code,
+        limit: 50000,
+        userId: ctx.user.id,
+        userRole: ctx.user.role as 'admin' | 'user',
+      });
+      
+      // Get lines for this factory (via workshops)
+      const factoryLines = allLines.filter(l => workshopIds.includes(l.workshopId));
+      
+      // Group inspections by machine, then map to lines
+      const allMachines = await db.getMachines();
+      const allStations = await db.getStations();
+      
+      return factoryLines.map(line => {
+        // Get stations for this line
+        const lineStations = allStations.filter(s => s.lineId === line.id);
+        const stationIds = lineStations.map(s => s.id);
+        
+        // Get machines for these stations
+        const lineMachineIds = allMachines.filter(m => stationIds.includes(m.stationId)).map(m => m.id);
+        const lineInspections = inspections.filter(i => lineMachineIds.includes(i.machineId));
+        
+        const total = lineInspections.length;
+        const ok = lineInspections.filter(i => i.overallResult === 'OK').length;
+        const ng = lineInspections.filter(i => i.overallResult === 'NG').length;
+        const ntf = lineInspections.filter(i => i.overallResult === 'NTF').length;
+        
+        return {
+          id: line.id,
+          code: line.code,
+          name: line.name,
+          total,
+          ok,
+          ng,
+          ntf,
+          yieldRate: total > 0 ? (ok / total) * 100 : 0,
+        };
+      }).sort((a, b) => b.total - a.total);
+    }),
+
+  // Get machines by line
+  machinesByLine: protectedProcedure
+    .input(z.object({ lineId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const allMachines = await db.getMachines();
+      const allStations = await db.getStations();
+      
+      // Get stations for this line
+      const lineStations = allStations.filter(s => s.lineId === input.lineId);
+      const lineStationIds = lineStations.map(s => s.id);
+      
+      // Get machines for these stations
+      const lineMachines = allMachines.filter(m => lineStationIds.includes(m.stationId));
+      
+      // Get inspections for these machines
+      const machineIds = lineMachines.map(m => m.id);
+      
+      const results = await Promise.all(lineMachines.map(async (machine) => {
+        const { data: machineInspections } = await db.getProductInspections({ 
+          machineId: machine.id,
+          limit: 10000,
+          userId: ctx.user.id,
+          userRole: ctx.user.role as 'admin' | 'user',
+        });
+        
+        const total = machineInspections.length;
+        const ok = machineInspections.filter(i => i.overallResult === 'OK').length;
+        const ng = machineInspections.filter(i => i.overallResult === 'NG').length;
+        const ntf = machineInspections.filter(i => i.overallResult === 'NTF').length;
+        
+        return {
+          id: machine.id,
+          code: machine.code,
+          name: machine.name,
+          total,
+          ok,
+          ng,
+          ntf,
+          yieldRate: total > 0 ? (ok / total) * 100 : 0,
+        };
+      }));
+      
+      return results.sort((a, b) => b.total - a.total);
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -6064,6 +6505,7 @@ export const appRouter = router({
   session: sessionRouter,
   productCategory: productCategoryRouter,
   oee: oeeRouter,
+  drillDown: drillDownRouter,
 });
 
 export type AppRouter = typeof appRouter;

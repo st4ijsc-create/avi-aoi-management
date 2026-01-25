@@ -91,6 +91,12 @@ export const navGroups: NavGroup[] = [
         description: "Tổng quan số liệu và biểu đồ"
       },
       { 
+        href: "/drill-down", 
+        label: "Drill-Down", 
+        icon: <TrendingUp className="h-4 w-4" />,
+        description: "Phân tích chi tiết từ Corporate đến Machine"
+      },
+      { 
         href: "/dashboard-templates", 
         label: "Dashboard Templates", 
         icon: <LayoutTemplate className="h-4 w-4" />,

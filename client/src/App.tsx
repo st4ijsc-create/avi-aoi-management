@@ -44,6 +44,7 @@ import OEEDashboard from "./pages/OEEDashboard";
 import MQTTReplay from "./pages/MQTTReplay";
 import OEETargetSettings from "./pages/OEETargetSettings";
 import MachineHealthMonitoring from "./pages/MachineHealthMonitoring";
+import DrillDownDashboard from "./pages/DrillDownDashboard";
 
 function Router() {
   return (
@@ -89,6 +90,7 @@ function Router() {
       <Route path="/mqtt-replay" component={MQTTReplay} />
       <Route path="/oee-target-settings" component={OEETargetSettings} />
       <Route path="/machine-health" component={MachineHealthMonitoring} />
+      <Route path="/drill-down" component={DrillDownDashboard} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
