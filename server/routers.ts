@@ -11,6 +11,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
 import * as db from "./db";
+import { getDb } from "./db";
+import { sql } from "drizzle-orm";
 import { storagePut } from "./storage";
 import { invokeLLM } from "./_core/llm";
 import { statsCache, CACHE_KEYS, CACHE_TTL } from "./_core/cache";
@@ -6531,6 +6533,112 @@ const drillDownRouter = router({
     }),
 });
 
+// Image Annotation Router
+const annotationRouter = router({
+  // Save annotations for an image
+  save: protectedProcedure
+    .input(z.object({
+      inspectionId: z.number().optional(),
+      measurementResultId: z.number().optional(),
+      imageUrl: z.string(),
+      annotations: z.array(z.object({
+        id: z.string(),
+        type: z.enum(['rectangle', 'circle', 'arrow', 'freehand', 'text']),
+        points: z.array(z.object({ x: z.number(), y: z.number() })),
+        color: z.string(),
+        lineWidth: z.number(),
+        text: z.string().optional(),
+        fontSize: z.number().optional(),
+      })),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      // Check if annotation exists for this image
+      const existing = await db.execute(
+        sql`SELECT id FROM image_annotations WHERE image_url = ${input.imageUrl} AND created_by = ${ctx.user.id} LIMIT 1`
+      ) as any;
+      
+      if (existing.rows?.length > 0) {
+        // Update existing
+        await db.execute(
+          sql`UPDATE image_annotations SET annotations = ${JSON.stringify(input.annotations)}, updated_at = NOW() WHERE id = ${existing.rows[0].id}`
+        );
+        return { success: true, id: existing.rows[0].id };
+      } else {
+        // Create new
+        const result = await db.execute(
+          sql`INSERT INTO image_annotations (inspection_id, measurement_result_id, image_url, annotations, created_by) VALUES (${input.inspectionId || null}, ${input.measurementResultId || null}, ${input.imageUrl}, ${JSON.stringify(input.annotations)}, ${ctx.user.id})`
+        );
+        return { success: true, id: (result as any).insertId };
+      }
+    }),
+
+  // Get annotations for an image
+  getByImage: protectedProcedure
+    .input(z.object({ imageUrl: z.string() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      const result = await db.execute(
+        sql`SELECT * FROM image_annotations WHERE image_url = ${input.imageUrl} ORDER BY updated_at DESC LIMIT 1`
+      ) as any;
+      if (!result.rows?.length) return null;
+      const row = result.rows[0];
+      return {
+        id: row.id,
+        inspectionId: row.inspection_id,
+        measurementResultId: row.measurement_result_id,
+        imageUrl: row.image_url,
+        annotations: typeof row.annotations === 'string' ? JSON.parse(row.annotations) : row.annotations,
+        createdBy: row.created_by,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      };
+    }),
+
+  // Get all annotations for an inspection
+  getByInspection: protectedProcedure
+    .input(z.object({ inspectionId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      const result = await db.execute(
+        sql`SELECT * FROM image_annotations WHERE inspection_id = ${input.inspectionId} ORDER BY created_at DESC`
+      ) as any;
+      return (result.rows || []).map((row: any) => ({
+        id: row.id,
+        inspectionId: row.inspection_id,
+        measurementResultId: row.measurement_result_id,
+        imageUrl: row.image_url,
+        annotations: typeof row.annotations === 'string' ? JSON.parse(row.annotations) : row.annotations,
+        createdBy: row.created_by,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    }),
+
+  // Delete annotations
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      // Check ownership
+      const existing = await db.execute(
+        sql`SELECT created_by FROM image_annotations WHERE id = ${input.id}`
+      ) as any;
+      if (!existing.rows?.length) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Annotation not found' });
+      }
+      if (existing.rows[0].created_by !== ctx.user.id && ctx.user.role !== 'admin') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized to delete this annotation' });
+      }
+      await db.execute(sql`DELETE FROM image_annotations WHERE id = ${input.id}`);
+      return { success: true };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -6620,6 +6728,7 @@ export const appRouter = router({
   productCategory: productCategoryRouter,
   oee: oeeRouter,
   drillDown: drillDownRouter,
+  annotation: annotationRouter,
 });
 
 export type AppRouter = typeof appRouter;

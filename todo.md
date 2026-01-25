@@ -3609,3 +3609,33 @@ Menu structure mới:
 - [x] Tích hợp vào InspectionDetail page (thông qua History)
 - [x] API endpoint để lấy images theo inspection (sử dụng inspection.search)
 - [x] Lazy loading cho large galleries (ImageWithLoader component)
+
+
+## Phase 143: Image Annotation, Batch Export, Side-by-Side Comparison
+
+### 1. Image Annotation
+- [x] Tạo ImageAnnotation component với canvas overlay
+- [x] Drawing tools: rectangle, circle, arrow, freehand, text
+- [x] Color picker và line width options
+- [x] Undo/Redo functionality
+- [x] Save annotations to database (image_annotations table)
+- [x] Load và hiển thị existing annotations
+- [x] Delete annotation functionality
+- [x] Keyboard shortcuts (Ctrl+Z undo, Ctrl+Y redo, Ctrl+S save)
+
+### 2. Batch Image Export
+- [x] Checkbox selection cho multiple images trong gallery
+- [x] Select All / Deselect All buttons
+- [x] Export to ZIP với original images (jszip)
+- [x] Export to PDF report với image thumbnails và details (jspdf)
+- [x] Progress indicator cho export process
+- [x] Download trigger sau khi export hoàn thành
+
+### 3. Image Comparison Side-by-Side
+- [x] Tạo ImageComparison component
+- [x] Chọn 2 ảnh để so sánh (reference vs actual)
+- [x] Synchronized zoom và pan
+- [x] Overlay mode (chồng 2 ảnh với opacity slider)
+- [x] Slider mode (đường kẻ chia 2 ảnh)
+- [x] Swap images button (S key)
+- [x] Keyboard shortcuts cho navigation (1/2/3 modes, +/-, arrows)
