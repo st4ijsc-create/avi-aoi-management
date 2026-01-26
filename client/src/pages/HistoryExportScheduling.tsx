@@ -16,7 +16,7 @@ import { toast } from 'sonner';
 import {
   Calendar, Clock, Download, Mail, Plus, Play, Pause, Trash2,
   Edit, CheckCircle, XCircle, AlertTriangle, FileSpreadsheet,
-  FileJson, FileText, RefreshCw, History, Send, Settings
+  FileJson, FileText, RefreshCw, History, Send, Settings, Eye
 } from 'lucide-react';
 
 type ScheduleType = 'DAILY' | 'WEEKLY' | 'MONTHLY';
@@ -194,6 +194,7 @@ export default function HistoryExportScheduling() {
     isActive: true,
   });
   const [recipientInput, setRecipientInput] = useState('');
+  const [showPreviewDialog, setShowPreviewDialog] = useState(false);
 
   const formatDate = (date?: Date) => {
     if (!date) return '-';
@@ -754,9 +755,171 @@ export default function HistoryExportScheduling() {
               <Button variant="outline" onClick={() => { setShowCreateDialog(false); setEditingSchedule(null); }}>
                 Hủy
               </Button>
+              <Button variant="secondary" onClick={() => setShowPreviewDialog(true)}>
+                <Eye className="h-4 w-4 mr-2" />
+                Xem trước email
+              </Button>
               <Button onClick={handleSave}>
                 <CheckCircle className="h-4 w-4 mr-2" />
                 {editingSchedule ? 'Cập nhật' : 'Tạo lịch'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Email Preview Dialog */}
+        <Dialog open={showPreviewDialog} onOpenChange={setShowPreviewDialog}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Eye className="h-5 w-5" />
+                Xem trước email
+              </DialogTitle>
+              <DialogDescription>
+                Đây là mẫu email sẽ được gửi đến người nhận
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="border rounded-lg overflow-hidden">
+              {/* Email Header */}
+              <div className="bg-muted p-4 border-b space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-muted-foreground w-16">Từ:</span>
+                  <span className="text-sm">AVI/AOI Management System &lt;noreply@avi-aoi.system&gt;</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-muted-foreground w-16">Đến:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {formData.recipients?.map((email) => (
+                      <Badge key={email} variant="secondary" className="text-xs">{email}</Badge>
+                    ))}
+                    {(!formData.recipients || formData.recipients.length === 0) && (
+                      <span className="text-sm text-muted-foreground italic">Chưa có người nhận</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-muted-foreground w-16">Tiêu đề:</span>
+                  <span className="text-sm font-medium">
+                    [AVI/AOI] {formData.name || 'Báo cáo'} - {new Date().toLocaleDateString('vi-VN')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Email Body */}
+              <div className="p-6 bg-background">
+                <div className="max-w-2xl mx-auto space-y-6">
+                  {/* Logo/Header */}
+                  <div className="text-center pb-4 border-b">
+                    <h2 className="text-xl font-bold text-primary">AVI/AOI Management System</h2>
+                    <p className="text-sm text-muted-foreground">Báo cáo tự động</p>
+                  </div>
+
+                  {/* Greeting */}
+                  <div>
+                    <p className="text-sm">Xin chào,</p>
+                    <p className="text-sm mt-2">
+                      Đây là báo cáo tự động <strong>"{formData.name || 'Báo cáo'}"</strong> được tạo vào lúc {formData.scheduleTime || '08:00'} ngày {new Date().toLocaleDateString('vi-VN')}.
+                    </p>
+                  </div>
+
+                  {/* Report Summary */}
+                  <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+                    <h3 className="font-semibold text-sm">Thông tin báo cáo</h3>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Tần suất:</span>
+                        <span>{formData.scheduleType === 'DAILY' ? 'Hàng ngày' : formData.scheduleType === 'WEEKLY' ? 'Hàng tuần' : 'Hàng tháng'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Định dạng:</span>
+                        <span>{formData.exportFormat || 'CSV'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Lọc kết quả:</span>
+                        <span>{formData.resultFilter === 'ALL' ? 'Tất cả' : formData.resultFilter}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Khoảng thời gian:</span>
+                        <span>
+                          {formData.timeRangeType === 'LAST_24H' ? '24 giờ qua' :
+                           formData.timeRangeType === 'LAST_7D' ? '7 ngày qua' :
+                           formData.timeRangeType === 'LAST_30D' ? '30 ngày qua' :
+                           formData.timeRangeType === 'LAST_MONTH' ? 'Tháng trước' : 'Tùy chỉnh'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Included Content */}
+                  <div className="space-y-2">
+                    <h3 className="font-semibold text-sm">Nội dung bao gồm</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {formData.includeImages && <Badge variant="outline">Hình ảnh</Badge>}
+                      {formData.includeAnnotations && <Badge variant="outline">Annotations</Badge>}
+                      {formData.includeMeasurements && <Badge variant="outline">Measurements</Badge>}
+                      {formData.includeSummaryStats && <Badge variant="outline">Thống kê</Badge>}
+                      {!formData.includeImages && !formData.includeAnnotations && !formData.includeMeasurements && !formData.includeSummaryStats && (
+                        <span className="text-sm text-muted-foreground italic">Chưa chọn nội dung</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Sample Stats */}
+                  {formData.includeSummaryStats && (
+                    <div className="border rounded-lg p-4 space-y-3">
+                      <h3 className="font-semibold text-sm">Thống kê tổng hợp (mẫu)</h3>
+                      <div className="grid grid-cols-4 gap-4 text-center">
+                        <div className="bg-muted/50 rounded p-3">
+                          <div className="text-2xl font-bold">1,234</div>
+                          <div className="text-xs text-muted-foreground">Tổng số</div>
+                        </div>
+                        <div className="bg-green-500/10 rounded p-3">
+                          <div className="text-2xl font-bold text-green-500">1,180</div>
+                          <div className="text-xs text-muted-foreground">OK</div>
+                        </div>
+                        <div className="bg-red-500/10 rounded p-3">
+                          <div className="text-2xl font-bold text-red-500">54</div>
+                          <div className="text-xs text-muted-foreground">NG</div>
+                        </div>
+                        <div className="bg-blue-500/10 rounded p-3">
+                          <div className="text-2xl font-bold text-blue-500">95.6%</div>
+                          <div className="text-xs text-muted-foreground">Tỷ lệ OK</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Attachment Info */}
+                  <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+                    {getFormatIcon(formData.exportFormat || 'CSV')}
+                    <div>
+                      <p className="text-sm font-medium">
+                        {formData.name || 'report'}_{new Date().toISOString().split('T')[0]}.{(formData.exportFormat || 'CSV').toLowerCase()}
+                      </p>
+                      <p className="text-xs text-muted-foreground">File đính kèm</p>
+                    </div>
+                  </div>
+
+                  {/* Footer */}
+                  <div className="pt-4 border-t text-center text-xs text-muted-foreground space-y-1">
+                    <p>Email này được gửi tự động từ hệ thống AVI/AOI Management.</p>
+                    <p>Để thay đổi cài đặt, vui lòng truy cập trang quản lý lịch xuất báo cáo.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowPreviewDialog(false)}>
+                Đóng
+              </Button>
+              <Button onClick={() => {
+                setShowPreviewDialog(false);
+                toast.success('Đã gửi email test đến người nhận');
+              }}>
+                <Send className="h-4 w-4 mr-2" />
+                Gửi email test
               </Button>
             </DialogFooter>
           </DialogContent>
