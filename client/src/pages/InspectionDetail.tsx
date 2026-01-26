@@ -30,6 +30,7 @@ import { navItems } from "@/lib/navigation";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useParams, Link } from "wouter";
 import { format } from "date-fns";
+import { AISuggestionsPanel } from "@/components/AISuggestionsPanel";
 
 interface MeasurementPoint {
   id: number;
@@ -603,6 +604,14 @@ export default function InspectionDetail() {
               </ScrollArea>
             </CardContent>
           </Card>
+        </div>
+
+        {/* Row 3: AI Suggestions Panel */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <AISuggestionsPanel 
+            inspectionId={inspectionId} 
+            onFeedbackSubmitted={() => refetch()}
+          />
         </div>
       </div>
 

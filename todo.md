@@ -4266,3 +4266,32 @@ Menu structure mới:
 - [x] Tạo training batch export (createTrainingBatch, exportTrainingBatch)
 - [x] Tạo dashboard stats (getDashboardStats)
 - [x] Tạo unit tests (aiFeedback.test.ts - 11 tests)
+
+
+## Phase 164: UI Components cho Annotation Comparison, Heatmap, AI Suggestions (26/01/2026)
+
+### 1. UI Annotation Comparison
+- [x] Tạo trang AnnotationComparison.tsx (đã có sẵn - 746 lines)
+- [x] Side-by-side view so sánh 2 inspections
+- [x] Highlight differences (matching, different, only in 1/2)
+- [x] Overlay mode với opacity slider
+- [x] Filter theo serial, product model, machine, date range
+- [x] Annotation diff summary
+
+### 2. Heatmap Visualization Component
+- [x] Tạo HeatmapCanvas component với Canvas API (đã có sẵn - 798 lines)
+- [x] Render heatmap grid với color gradient (green->yellow->orange->red)
+- [x] Machine markers với tooltips và click to detail
+- [x] Zoom controls
+- [x] Machine overlay layer với defect count
+- [x] Upload custom layout image
+- [x] Auto-refresh với configurable interval
+- [x] Real-time defect notifications
+
+### 3. AI Suggestions trong Inspection Detail
+- [x] Tạo AISuggestionsPanel component (AISuggestionsPanel.tsx)
+- [x] Hiển thị suggestions với confidence scores
+- [x] Feedback form (CORRECT/INCORRECT/PARTIAL/UNSURE)
+- [x] Error category selection (6 loại)
+- [x] Correction notes input
+- [x] Tích hợp vào InspectionDetail.tsx
