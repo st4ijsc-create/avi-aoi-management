@@ -351,6 +351,13 @@
       "when": 1769400009509,
       "tag": "0049_outgoing_daimon_hellstrom",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "5",
+      "when": 1769438666096,
+      "tag": "0050_futuristic_cassandra_nova",
+      "breakpoints": true
     }
   ]
 }

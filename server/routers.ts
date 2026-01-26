@@ -6,6 +6,9 @@ import { processRouter } from "./routers/processRouter";
 import { spcAnalysisRouter } from "./routers/spcAnalysisRouter";
 import { twoFactorRouter } from "./routers/twoFactorRouter";
 import { sessionRouter } from "./routers/sessionRouter";
+import { annotationComparisonRouter } from "./routers/annotationComparisonRouter";
+import { defectHeatmapRouter } from "./routers/defectHeatmapRouter";
+import { aiFeedbackRouter } from "./routers/aiFeedbackRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -8734,6 +8737,9 @@ export const appRouter = router({
   rootCause: rootCauseRouter,
   annotationHistory: annotationHistoryRouter,
   predictiveAlert: predictiveAlertRouter,
+  annotationComparison: annotationComparisonRouter,
+  defectHeatmap: defectHeatmapRouter,
+  aiFeedback: aiFeedbackRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -2240,3 +2240,281 @@ export const historyExportLogs = mysqlTable("history_export_logs", {
 
 export type HistoryExportLog = typeof historyExportLogs.$inferSelect;
 export type InsertHistoryExportLog = typeof historyExportLogs.$inferInsert;
+
+
+// ============ PHASE 163: ANNOTATION COMPARISON, DEFECT HEATMAP, AI FEEDBACK ============
+
+/**
+ * Annotation Comparison Sessions - Phiên so sánh annotations
+ */
+export const annotationComparisonSessions = mysqlTable("annotation_comparison_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  // Scope
+  productModelId: int("productModelId"),
+  serialNumber: varchar("serialNumber", { length: 100 }),
+  machineId: int("machineId"),
+  // Inspections to compare
+  inspectionIds: json("inspectionIds").$type<number[]>().notNull(),
+  // Comparison result
+  comparisonResult: json("comparisonResult").$type<{
+    totalAnnotations: number;
+    matchingAnnotations: number;
+    newAnnotations: number;
+    removedAnnotations: number;
+    modifiedAnnotations: number;
+    matchPercentage: number;
+    patterns: Array<{
+      type: string;
+      description: string;
+      affectedPoints: number[];
+    }>;
+    timeline: Array<{
+      inspectionId: number;
+      timestamp: string;
+      annotationCount: number;
+      changes: string[];
+    }>;
+  }>(),
+  // Pattern detection
+  detectedPatterns: json("detectedPatterns").$type<Array<{
+    id: string;
+    name: string;
+    type: "recurring" | "progressive" | "intermittent" | "new";
+    severity: "critical" | "warning" | "info";
+    description: string;
+    affectedArea: { x: number; y: number; width: number; height: number };
+    frequency: number;
+    firstSeen: string;
+    lastSeen: string;
+    recommendations: string[];
+  }>>(),
+  // Status
+  status: mysqlEnum("status", ["PENDING", "PROCESSING", "COMPLETED", "FAILED"]).default("PENDING").notNull(),
+  errorMessage: text("errorMessage"),
+  // Metadata
+  createdBy: int("createdBy").notNull(),
+  createdByName: varchar("createdByName", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_comparison_product").on(table.productModelId),
+  index("idx_comparison_serial").on(table.serialNumber),
+  index("idx_comparison_machine").on(table.machineId),
+  index("idx_comparison_status").on(table.status),
+  index("idx_comparison_created").on(table.createdAt),
+]);
+
+export type AnnotationComparisonSession = typeof annotationComparisonSessions.$inferSelect;
+export type InsertAnnotationComparisonSession = typeof annotationComparisonSessions.$inferInsert;
+
+/**
+ * Defect Heatmap Data - Dữ liệu heatmap defects
+ */
+export const defectHeatmapData = mysqlTable("defect_heatmap_data", {
+  id: int("id").autoincrement().primaryKey(),
+  // Scope
+  factoryId: int("factoryId"),
+  workshopId: int("workshopId"),
+  lineId: int("lineId"),
+  stationId: int("stationId"),
+  machineId: int("machineId"),
+  productModelId: int("productModelId"),
+  // Time period
+  periodType: mysqlEnum("periodType", ["HOURLY", "DAILY", "WEEKLY", "MONTHLY"]).notNull(),
+  periodStart: timestamp("periodStart").notNull(),
+  periodEnd: timestamp("periodEnd").notNull(),
+  // Heatmap grid
+  gridWidth: int("gridWidth").notNull(),
+  gridHeight: int("gridHeight").notNull(),
+  heatmapGrid: json("heatmapGrid").$type<number[][]>().notNull(),
+  // Statistics
+  totalDefects: int("totalDefects").default(0).notNull(),
+  maxDefectsInCell: int("maxDefectsInCell").default(0).notNull(),
+  // Hotspots
+  hotspots: json("hotspots").$type<Array<{
+    x: number;
+    y: number;
+    defectCount: number;
+    defectTypes: Array<{ type: string; count: number }>;
+    percentage: number;
+  }>>(),
+  // Top locations
+  topLocations: json("topLocations").$type<Array<{
+    gridX: number;
+    gridY: number;
+    realX: number;
+    realY: number;
+    defectCount: number;
+    defectTypes: string[];
+    trend: "increasing" | "decreasing" | "stable";
+  }>>(),
+  // Metadata
+  generatedAt: timestamp("generatedAt").defaultNow().notNull(),
+  processingTimeMs: int("processingTimeMs"),
+}, (table) => [
+  index("idx_heatmap_factory").on(table.factoryId),
+  index("idx_heatmap_machine").on(table.machineId),
+  index("idx_heatmap_product").on(table.productModelId),
+  index("idx_heatmap_period").on(table.periodType),
+  index("idx_heatmap_generated").on(table.generatedAt),
+]);
+
+export type DefectHeatmapData = typeof defectHeatmapData.$inferSelect;
+export type InsertDefectHeatmapData = typeof defectHeatmapData.$inferInsert;
+
+/**
+ * AI Suggestions - Gợi ý từ AI
+ */
+export const aiSuggestions = mysqlTable("ai_suggestions", {
+  id: int("id").autoincrement().primaryKey(),
+  // Context
+  inspectionId: int("inspectionId").notNull(),
+  measurementResultId: int("measurementResultId"),
+  // Suggestion
+  suggestionType: mysqlEnum("suggestionType", [
+    "DEFECT_CLASSIFICATION",
+    "ROOT_CAUSE",
+    "CORRECTIVE_ACTION",
+    "QUALITY_PREDICTION",
+    "PROCESS_OPTIMIZATION"
+  ]).notNull(),
+  suggestion: text("suggestion").notNull(),
+  confidence: decimal("confidence", { precision: 5, scale: 4 }).notNull(),
+  reasoning: text("reasoning"),
+  // Alternatives
+  alternatives: json("alternatives").$type<Array<{
+    suggestion: string;
+    confidence: number;
+  }>>(),
+  // Model info
+  modelVersion: varchar("modelVersion", { length: 50 }).notNull(),
+  modelName: varchar("modelName", { length: 100 }).notNull(),
+  // Status
+  status: mysqlEnum("status", ["PENDING", "ACCEPTED", "REJECTED", "REVIEWED"]).default("PENDING").notNull(),
+  // Metadata
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_suggestion_inspection").on(table.inspectionId),
+  index("idx_ai_suggestion_type").on(table.suggestionType),
+  index("idx_ai_suggestion_status").on(table.status),
+  index("idx_ai_suggestion_model").on(table.modelName, table.modelVersion),
+]);
+
+export type AiSuggestion = typeof aiSuggestions.$inferSelect;
+export type InsertAiSuggestion = typeof aiSuggestions.$inferInsert;
+
+/**
+ * AI Feedback - Phản hồi của user cho AI suggestions
+ */
+export const aiFeedback = mysqlTable("ai_feedback", {
+  id: int("id").autoincrement().primaryKey(),
+  suggestionId: int("suggestionId").notNull(),
+  // Feedback
+  feedbackType: mysqlEnum("feedbackType", ["CORRECT", "INCORRECT", "PARTIAL", "UNSURE"]).notNull(),
+  accuracy: int("accuracy"), // 0-100
+  correctedValue: text("correctedValue"),
+  correctionNotes: text("correctionNotes"),
+  // Error categorization
+  errorCategory: mysqlEnum("errorCategory", [
+    "FALSE_POSITIVE",
+    "FALSE_NEGATIVE",
+    "MISCLASSIFICATION",
+    "WRONG_LOCATION",
+    "WRONG_SEVERITY",
+    "OTHER"
+  ]),
+  // Training data
+  includedInTraining: boolean("includedInTraining").default(false).notNull(),
+  trainingBatchId: varchar("trainingBatchId", { length: 100 }),
+  // Metadata
+  feedbackBy: int("feedbackBy").notNull(),
+  feedbackByName: varchar("feedbackByName", { length: 255 }),
+  feedbackAt: timestamp("feedbackAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_feedback_suggestion").on(table.suggestionId),
+  index("idx_ai_feedback_type").on(table.feedbackType),
+  index("idx_ai_feedback_training").on(table.includedInTraining),
+  index("idx_ai_feedback_batch").on(table.trainingBatchId),
+]);
+
+export type AiFeedback = typeof aiFeedback.$inferSelect;
+export type InsertAiFeedback = typeof aiFeedback.$inferInsert;
+
+/**
+ * AI Model Metrics - Metrics cho AI models
+ */
+export const aiModelMetrics = mysqlTable("ai_model_metrics", {
+  id: int("id").autoincrement().primaryKey(),
+  modelName: varchar("modelName", { length: 100 }).notNull(),
+  modelVersion: varchar("modelVersion", { length: 50 }).notNull(),
+  // Time period
+  periodStart: timestamp("periodStart").notNull(),
+  periodEnd: timestamp("periodEnd").notNull(),
+  // Metrics
+  totalSuggestions: int("totalSuggestions").default(0).notNull(),
+  reviewedSuggestions: int("reviewedSuggestions").default(0).notNull(),
+  correctCount: int("correctCount").default(0).notNull(),
+  incorrectCount: int("incorrectCount").default(0).notNull(),
+  partialCount: int("partialCount").default(0).notNull(),
+  accuracy: decimal("accuracy", { precision: 5, scale: 4 }),
+  // Breakdown by type
+  metricsByType: json("metricsByType").$type<Array<{
+    suggestionType: string;
+    total: number;
+    correct: number;
+    incorrect: number;
+    accuracy: number;
+  }>>(),
+  // Error breakdown
+  errorBreakdown: json("errorBreakdown").$type<Array<{
+    category: string;
+    count: number;
+    percentage: number;
+  }>>(),
+  // Trend
+  accuracyTrend: mysqlEnum("accuracyTrend", ["IMPROVING", "DECLINING", "STABLE"]).default("STABLE"),
+  // Metadata
+  generatedAt: timestamp("generatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_metrics_model").on(table.modelName, table.modelVersion),
+  index("idx_ai_metrics_period").on(table.periodStart, table.periodEnd),
+]);
+
+export type AiModelMetrics = typeof aiModelMetrics.$inferSelect;
+export type InsertAiModelMetrics = typeof aiModelMetrics.$inferInsert;
+
+/**
+ * AI Training Batches - Batches cho training AI
+ */
+export const aiTrainingBatches = mysqlTable("ai_training_batches", {
+  id: int("id").autoincrement().primaryKey(),
+  batchId: varchar("batchId", { length: 100 }).notNull().unique(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  // Content
+  feedbackCount: int("feedbackCount").default(0).notNull(),
+  correctSamples: int("correctSamples").default(0).notNull(),
+  incorrectSamples: int("incorrectSamples").default(0).notNull(),
+  // Export
+  exportFormat: mysqlEnum("exportFormat", ["JSON", "CSV", "JSONL", "PARQUET"]).default("JSONL").notNull(),
+  exportUrl: text("exportUrl"),
+  // Status
+  status: mysqlEnum("status", ["PENDING", "PROCESSING", "COMPLETED", "FAILED", "UPLOADED"]).default("PENDING").notNull(),
+  // Target model
+  targetModelName: varchar("targetModelName", { length: 100 }),
+  targetModelVersion: varchar("targetModelVersion", { length: 50 }),
+  // Metadata
+  createdBy: int("createdBy").notNull(),
+  createdByName: varchar("createdByName", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+}, (table) => [
+  index("idx_training_batch_id").on(table.batchId),
+  index("idx_training_batch_status").on(table.status),
+  index("idx_training_batch_created").on(table.createdAt),
+]);
+
+export type AiTrainingBatch = typeof aiTrainingBatches.$inferSelect;
+export type InsertAiTrainingBatch = typeof aiTrainingBatches.$inferInsert;

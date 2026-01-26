@@ -1,0 +1,546 @@
+/**
+ * AI Feedback Router - User feedback cho AI suggestions để cải thiện model
+ */
+import { z } from "zod";
+import { TRPCError } from "@trpc/server";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
+import { 
+  aiSuggestions, 
+  aiFeedback, 
+  aiModelMetrics,
+  aiTrainingBatches
+} from "../../drizzle/schema";
+import { eq, and, gte, lte, desc, sql, inArray } from "drizzle-orm";
+import { randomUUID } from "crypto";
+
+export const aiFeedbackRouter = router({
+  // ============= AI Suggestions =============
+  
+  // Create AI suggestion
+  createSuggestion: protectedProcedure
+    .input(z.object({
+      inspectionId: z.number(),
+      measurementResultId: z.number().optional(),
+      suggestionType: z.enum([
+        "DEFECT_CLASSIFICATION",
+        "ROOT_CAUSE",
+        "CORRECTIVE_ACTION",
+        "QUALITY_PREDICTION",
+        "PROCESS_OPTIMIZATION"
+      ]),
+      suggestion: z.string(),
+      confidence: z.number().min(0).max(1),
+      reasoning: z.string().optional(),
+      alternatives: z.array(z.object({
+        suggestion: z.string(),
+        confidence: z.number(),
+      })).optional(),
+      modelVersion: z.string().optional(),
+      modelName: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+
+      const [result] = await db.insert(aiSuggestions).values({
+        inspectionId: input.inspectionId,
+        measurementResultId: input.measurementResultId,
+        suggestionType: input.suggestionType,
+        suggestion: input.suggestion,
+        confidence: String(input.confidence),
+        reasoning: input.reasoning,
+        alternatives: input.alternatives,
+        modelVersion: input.modelVersion || "1.0.0",
+        modelName: input.modelName || "default",
+        status: "PENDING",
+      });
+
+      return { id: result.insertId };
+    }),
+
+  // Get suggestions by inspection
+  getSuggestionsByInspection: protectedProcedure
+    .input(z.object({ inspectionId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+
+      return db
+        .select()
+        .from(aiSuggestions)
+        .where(eq(aiSuggestions.inspectionId, input.inspectionId))
+        .orderBy(desc(aiSuggestions.createdAt));
+    }),
+
+  // Get pending suggestions
+  getPendingSuggestions: protectedProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(100).default(20),
+      offset: z.number().min(0).default(0),
+      suggestionType: z.enum([
+        "DEFECT_CLASSIFICATION",
+        "ROOT_CAUSE",
+        "CORRECTIVE_ACTION",
+        "QUALITY_PREDICTION",
+        "PROCESS_OPTIMIZATION"
+      ]).optional(),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { suggestions: [], total: 0 };
+
+      const conditions = [eq(aiSuggestions.status, "PENDING")];
+      if (input.suggestionType) {
+        conditions.push(eq(aiSuggestions.suggestionType, input.suggestionType));
+      }
+
+      const suggestions = await db
+        .select()
+        .from(aiSuggestions)
+        .where(and(...conditions))
+        .orderBy(desc(aiSuggestions.createdAt))
+        .limit(input.limit)
+        .offset(input.offset);
+
+      const [countResult] = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(aiSuggestions)
+        .where(and(...conditions));
+
+      return {
+        suggestions,
+        total: countResult?.count || 0,
+      };
+    }),
+
+  // ============= Feedback =============
+
+  // Submit feedback
+  submitFeedback: protectedProcedure
+    .input(z.object({
+      suggestionId: z.number(),
+      feedbackType: z.enum(["CORRECT", "INCORRECT", "PARTIAL", "UNSURE"]),
+      accuracy: z.number().min(0).max(100).optional(),
+      correctedValue: z.string().optional(),
+      correctionNotes: z.string().optional(),
+      errorCategory: z.enum([
+        "FALSE_POSITIVE",
+        "FALSE_NEGATIVE",
+        "MISCLASSIFICATION",
+        "WRONG_LOCATION",
+        "WRONG_SEVERITY",
+        "OTHER"
+      ]).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+
+      // Verify suggestion exists
+      const [suggestion] = await db
+        .select()
+        .from(aiSuggestions)
+        .where(eq(aiSuggestions.id, input.suggestionId));
+
+      if (!suggestion) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Suggestion không tồn tại" });
+      }
+
+      // Create feedback
+      const [result] = await db.insert(aiFeedback).values({
+        suggestionId: input.suggestionId,
+        feedbackType: input.feedbackType,
+        accuracy: input.accuracy,
+        correctedValue: input.correctedValue,
+        correctionNotes: input.correctionNotes,
+        errorCategory: input.errorCategory,
+        feedbackBy: ctx.user.id,
+        feedbackByName: ctx.user.name || ctx.user.username,
+      });
+
+      // Update suggestion status
+      const newStatus = input.feedbackType === "CORRECT" ? "ACCEPTED" 
+        : input.feedbackType === "INCORRECT" ? "REJECTED" 
+        : "REVIEWED";
+
+      await db
+        .update(aiSuggestions)
+        .set({ status: newStatus })
+        .where(eq(aiSuggestions.id, input.suggestionId));
+
+      return { id: result.insertId };
+    }),
+
+  // List feedback
+  listFeedback: protectedProcedure
+    .input(z.object({
+      feedbackType: z.enum(["CORRECT", "INCORRECT", "PARTIAL", "UNSURE"]).optional(),
+      errorCategory: z.enum([
+        "FALSE_POSITIVE",
+        "FALSE_NEGATIVE",
+        "MISCLASSIFICATION",
+        "WRONG_LOCATION",
+        "WRONG_SEVERITY",
+        "OTHER"
+      ]).optional(),
+      includedInTraining: z.boolean().optional(),
+      limit: z.number().min(1).max(100).default(20),
+      offset: z.number().min(0).default(0),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { feedback: [], total: 0 };
+
+      const conditions = [];
+      if (input.feedbackType) conditions.push(eq(aiFeedback.feedbackType, input.feedbackType));
+      if (input.errorCategory) conditions.push(eq(aiFeedback.errorCategory, input.errorCategory));
+      if (input.includedInTraining !== undefined) {
+        conditions.push(eq(aiFeedback.includedInTraining, input.includedInTraining));
+      }
+
+      const feedback = await db
+        .select()
+        .from(aiFeedback)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(aiFeedback.feedbackAt))
+        .limit(input.limit)
+        .offset(input.offset);
+
+      const [countResult] = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(aiFeedback)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      return {
+        feedback,
+        total: countResult?.count || 0,
+      };
+    }),
+
+  // ============= Model Metrics =============
+
+  // Get model metrics
+  getModelMetrics: protectedProcedure
+    .input(z.object({
+      modelName: z.string().optional(),
+      modelVersion: z.string().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+
+      const conditions = [];
+      if (input.modelName) conditions.push(eq(aiModelMetrics.modelName, input.modelName));
+      if (input.modelVersion) conditions.push(eq(aiModelMetrics.modelVersion, input.modelVersion));
+      if (input.startDate) conditions.push(gte(aiModelMetrics.periodStart, new Date(input.startDate)));
+      if (input.endDate) conditions.push(lte(aiModelMetrics.periodEnd, new Date(input.endDate)));
+
+      return db
+        .select()
+        .from(aiModelMetrics)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(aiModelMetrics.generatedAt));
+    }),
+
+  // Calculate metrics
+  calculateMetrics: protectedProcedure
+    .input(z.object({
+      modelName: z.string(),
+      modelVersion: z.string(),
+      startDate: z.string(),
+      endDate: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+
+      const periodStart = new Date(input.startDate);
+      const periodEnd = new Date(input.endDate);
+
+      // Get all suggestions for this model
+      const suggestions = await db
+        .select()
+        .from(aiSuggestions)
+        .where(and(
+          eq(aiSuggestions.modelName, input.modelName),
+          eq(aiSuggestions.modelVersion, input.modelVersion),
+          gte(aiSuggestions.createdAt, periodStart),
+          lte(aiSuggestions.createdAt, periodEnd),
+        ));
+
+      // Get feedback
+      const suggestionIds = suggestions.map(s => s.id);
+      const feedback = suggestionIds.length > 0 
+        ? await db
+            .select()
+            .from(aiFeedback)
+            .where(inArray(aiFeedback.suggestionId, suggestionIds))
+        : [];
+
+      // Calculate metrics
+      const totalSuggestions = suggestions.length;
+      const reviewedSuggestions = feedback.length;
+      const correctCount = feedback.filter(f => f.feedbackType === "CORRECT").length;
+      const incorrectCount = feedback.filter(f => f.feedbackType === "INCORRECT").length;
+      const partialCount = feedback.filter(f => f.feedbackType === "PARTIAL").length;
+
+      const accuracy = reviewedSuggestions > 0 ? correctCount / reviewedSuggestions : 0;
+
+      // Save metrics
+      const [result] = await db.insert(aiModelMetrics).values({
+        modelName: input.modelName,
+        modelVersion: input.modelVersion,
+        periodStart,
+        periodEnd,
+        totalSuggestions,
+        reviewedSuggestions,
+        correctCount,
+        incorrectCount,
+        partialCount,
+        accuracy: String(accuracy),
+        accuracyTrend: "STABLE",
+      });
+
+      return { 
+        id: result.insertId, 
+        accuracy, 
+        totalSuggestions, 
+        reviewedSuggestions 
+      };
+    }),
+
+  // ============= Training Batches =============
+
+  // Create training batch
+  createTrainingBatch: protectedProcedure
+    .input(z.object({
+      name: z.string(),
+      description: z.string().optional(),
+      feedbackIds: z.array(z.number()).optional(),
+      feedbackType: z.enum(["CORRECT", "INCORRECT", "PARTIAL", "UNSURE"]).optional(),
+      exportFormat: z.enum(["JSON", "CSV", "JSONL", "PARQUET"]).default("JSONL"),
+      targetModelName: z.string().optional(),
+      targetModelVersion: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+
+      const batchId = randomUUID();
+
+      // Get feedback to include
+      let feedbackToInclude;
+      if (input.feedbackIds && input.feedbackIds.length > 0) {
+        feedbackToInclude = await db
+          .select()
+          .from(aiFeedback)
+          .where(inArray(aiFeedback.id, input.feedbackIds));
+      } else if (input.feedbackType) {
+        feedbackToInclude = await db
+          .select()
+          .from(aiFeedback)
+          .where(and(
+            eq(aiFeedback.feedbackType, input.feedbackType),
+            eq(aiFeedback.includedInTraining, false),
+          ));
+      } else {
+        feedbackToInclude = await db
+          .select()
+          .from(aiFeedback)
+          .where(eq(aiFeedback.includedInTraining, false));
+      }
+
+      const correctSamples = feedbackToInclude.filter(f => f.feedbackType === "CORRECT").length;
+      const incorrectSamples = feedbackToInclude.filter(f => f.feedbackType === "INCORRECT").length;
+
+      // Create batch
+      const [result] = await db.insert(aiTrainingBatches).values({
+        batchId,
+        name: input.name,
+        description: input.description,
+        feedbackCount: feedbackToInclude.length,
+        correctSamples,
+        incorrectSamples,
+        exportFormat: input.exportFormat,
+        status: "PENDING",
+        targetModelName: input.targetModelName,
+        targetModelVersion: input.targetModelVersion,
+        createdBy: ctx.user.id,
+        createdByName: ctx.user.name || ctx.user.username,
+      });
+
+      // Mark feedback as included
+      if (feedbackToInclude.length > 0) {
+        const feedbackIds = feedbackToInclude.map(f => f.id);
+        await db
+          .update(aiFeedback)
+          .set({ 
+            includedInTraining: true,
+            trainingBatchId: batchId,
+          })
+          .where(inArray(aiFeedback.id, feedbackIds));
+      }
+
+      return { 
+        id: result.insertId, 
+        batchId, 
+        feedbackCount: feedbackToInclude.length 
+      };
+    }),
+
+  // List training batches
+  listTrainingBatches: protectedProcedure
+    .input(z.object({
+      status: z.enum(["PENDING", "PROCESSING", "COMPLETED", "FAILED", "UPLOADED"]).optional(),
+      limit: z.number().min(1).max(100).default(20),
+      offset: z.number().min(0).default(0),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { batches: [], total: 0 };
+
+      const conditions = [];
+      if (input.status) conditions.push(eq(aiTrainingBatches.status, input.status));
+
+      const batches = await db
+        .select()
+        .from(aiTrainingBatches)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(aiTrainingBatches.createdAt))
+        .limit(input.limit)
+        .offset(input.offset);
+
+      const [countResult] = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(aiTrainingBatches)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      return {
+        batches,
+        total: countResult?.count || 0,
+      };
+    }),
+
+  // Export training batch
+  exportTrainingBatch: protectedProcedure
+    .input(z.object({ batchId: z.string() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+
+      // Get batch
+      const [batch] = await db
+        .select()
+        .from(aiTrainingBatches)
+        .where(eq(aiTrainingBatches.batchId, input.batchId));
+
+      if (!batch) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Training batch không tồn tại" });
+      }
+
+      // Get feedback with suggestions
+      const feedback = await db
+        .select({
+          feedback: aiFeedback,
+          suggestion: aiSuggestions,
+        })
+        .from(aiFeedback)
+        .innerJoin(aiSuggestions, eq(aiFeedback.suggestionId, aiSuggestions.id))
+        .where(eq(aiFeedback.trainingBatchId, input.batchId));
+
+      // Format data
+      const exportData = feedback.map(({ feedback: fb, suggestion }) => ({
+        suggestionId: suggestion.id,
+        inspectionId: suggestion.inspectionId,
+        suggestionType: suggestion.suggestionType,
+        originalSuggestion: suggestion.suggestion,
+        confidence: suggestion.confidence,
+        feedbackType: fb.feedbackType,
+        correctedValue: fb.correctedValue,
+        errorCategory: fb.errorCategory,
+        accuracy: fb.accuracy,
+      }));
+
+      // Update batch status
+      await db
+        .update(aiTrainingBatches)
+        .set({ 
+          status: "COMPLETED",
+          completedAt: new Date(),
+        })
+        .where(eq(aiTrainingBatches.batchId, input.batchId));
+
+      return { 
+        data: exportData, 
+        format: batch.exportFormat,
+        count: exportData.length,
+      };
+    }),
+
+  // ============= Dashboard Stats =============
+
+  // Get dashboard stats
+  getDashboardStats: protectedProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return {
+        totalSuggestions: 0,
+        pendingReview: 0,
+        reviewedToday: 0,
+        accuracy: 0,
+        recentFeedback: [],
+      };
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Get counts
+      const [totalResult] = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(aiSuggestions);
+
+      const [pendingResult] = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(aiSuggestions)
+        .where(eq(aiSuggestions.status, "PENDING"));
+
+      const [todayResult] = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(aiFeedback)
+        .where(gte(aiFeedback.feedbackAt, today));
+
+      // Calculate accuracy
+      const [correctResult] = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(aiFeedback)
+        .where(eq(aiFeedback.feedbackType, "CORRECT"));
+
+      const [totalFeedbackResult] = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(aiFeedback);
+
+      const accuracy = totalFeedbackResult?.count && totalFeedbackResult.count > 0
+        ? ((correctResult?.count || 0) / totalFeedbackResult.count) * 100
+        : 0;
+
+      // Get recent feedback
+      const recentFeedback = await db
+        .select()
+        .from(aiFeedback)
+        .orderBy(desc(aiFeedback.feedbackAt))
+        .limit(10);
+
+      return {
+        totalSuggestions: totalResult?.count || 0,
+        pendingReview: pendingResult?.count || 0,
+        reviewedToday: todayResult?.count || 0,
+        accuracy,
+        recentFeedback,
+      };
+    }),
+});
+
+export type AiFeedbackRouter = typeof aiFeedbackRouter;

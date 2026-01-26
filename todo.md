@@ -4240,3 +4240,29 @@ Menu structure mới:
 - [x] Cho phép toggle daily summary on/off (receiveDailySummary)
 - [x] Cho phép toggle weekly summary on/off (receiveWeeklySummary)
 - [x] Lưu preferences vào AsyncStorage (mqttStore.ts)
+
+
+## Phase 163: Annotation Comparison, Defect Heatmap, AI Feedback (26/01/2026)
+
+### 1. Annotation Comparison Tool
+- [x] Tạo database schema cho comparison sessions (annotationComparisonSessions)
+- [x] Tạo router với CRUD operations (annotationComparisonRouter.ts)
+- [x] Implement so sánh annotations giữa các inspections
+- [x] Phát hiện defect patterns (detectPatterns)
+- [x] Tạo unit tests (annotationComparison.test.ts - 7 tests)
+
+### 2. Defect Heatmap Overlay
+- [x] Tạo database schema cho heatmap data (defectHeatmapData)
+- [x] Tạo router với generate và query operations (defectHeatmapRouter.ts)
+- [x] Implement heatmap grid generation
+- [x] Phát hiện hotspots (top 10 locations)
+- [x] Tạo machine overlay endpoint (getMachineOverlay)
+- [x] Tạo unit tests (defectHeatmap.test.ts - 10 tests)
+
+### 3. AI Training Feedback Loop
+- [x] Tạo database schema cho AI suggestions và feedback (aiSuggestions, aiFeedback, aiModelMetrics, aiTrainingBatches)
+- [x] Tạo router cho suggestions và feedback (aiFeedbackRouter.ts)
+- [x] Implement accuracy calculation (calculateMetrics)
+- [x] Tạo training batch export (createTrainingBatch, exportTrainingBatch)
+- [x] Tạo dashboard stats (getDashboardStats)
+- [x] Tạo unit tests (aiFeedback.test.ts - 11 tests)
