@@ -13,6 +13,8 @@ import {
   Smartphone, Server, TestTube2, Gauge, Timer, Zap, BarChart3
 } from "lucide-react";
 import { toast } from "sonner";
+import { alertSoundService } from "@/lib/alertSoundService";
+import { Volume2, VolumeX } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -46,9 +48,20 @@ export default function MqttDashboard() {
     refetchInterval: 60000, // Auto refresh every minute
   });
 
+  const [soundMuted, setSoundMuted] = useState(alertSoundService.isMuted());
+
+  const toggleSound = () => {
+    const newMuted = !soundMuted;
+    setSoundMuted(newMuted);
+    alertSoundService.setMuted(newMuted);
+    toast.info(newMuted ? 'Đã tắt âm thanh cảnh báo' : 'Đã bật âm thanh cảnh báo');
+  };
+
   const testNGAlertMutation = trpc.mqttClient.testNGAlert.useMutation({
     onSuccess: (data) => {
       toast.success(`NG Alert đã gửi: ${data.data.serialNumber}`);
+      // Play NG alert sound
+      alertSoundService.playNGAlert();
       refetchMessages();
       refetchRealtimeStats();
     },
@@ -145,6 +158,18 @@ export default function MqttDashboard() {
                 </Badge>
               )
             )}
+            <Button
+              variant={soundMuted ? "outline" : "secondary"}
+              size="sm"
+              onClick={toggleSound}
+              title={soundMuted ? 'Bật âm thanh cảnh báo' : 'Tắt âm thanh cảnh báo'}
+            >
+              {soundMuted ? (
+                <VolumeX className="w-4 h-4" />
+              ) : (
+                <Volume2 className="w-4 h-4" />
+              )}
+            </Button>
             <Button 
               variant="destructive" 
               size="sm" 

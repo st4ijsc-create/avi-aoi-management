@@ -54,6 +54,8 @@ import DefectHeatmapPage from "./pages/DefectHeatmapPage";
 import DefectPredictionPage from "./pages/DefectPredictionPage";
 import RootCauseAnalysisPage from "./pages/RootCauseAnalysisPage";
 import PredictiveAlertsPage from "./pages/PredictiveAlertsPage";
+import DashboardMarketplace from "./pages/DashboardMarketplace";
+import HistoryExportScheduling from "./pages/HistoryExportScheduling";
 
 function Router() {
   return (
@@ -109,6 +111,8 @@ function Router() {
       <Route path="/defect-prediction" component={DefectPredictionPage} />
       <Route path="/root-cause-analysis" component={RootCauseAnalysisPage} />
       <Route path="/predictive-alerts" component={PredictiveAlertsPage} />
+      <Route path="/dashboard-marketplace" component={DashboardMarketplace} />
+      <Route path="/history-export-scheduling" component={HistoryExportScheduling} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

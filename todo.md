@@ -3864,3 +3864,44 @@ Menu structure mới:
   - [x] Filter theo defect type
   - [x] Filter theo operator/shift
 - [x] Save search as report template
+
+
+## Phase 152: MQTT Alert Sound, Dashboard Marketplace, History Export Scheduling
+
+### 1. MQTT Alert Sound Notifications
+- [x] Tạo AlertSoundService với Web Audio API (beep, alarm, chime)
+- [x] Thêm AlertSoundSettings component (enable/disable, volume, sound type)
+- [x] Tích hợp sound vào MqttDashboard với toggle on/off
+- [x] Các loại âm thanh: beep, alarm, chime, siren (cho các mức độ khác nhau)
+- [x] Mute/unmute toggle trong header
+- [x] Sound test button và volume slider trong settings
+- [x] Lưu settings vào localStorage
+
+### 2. Dashboard Template Marketplace
+- [x] Tạo DashboardMarketplace.tsx page với:
+  - [x] Featured templates section
+  - [x] Grid view các templates với preview
+  - [x] Search và filter theo category
+  - [x] Sort by popular, rating, newest
+  - [x] Template detail dialog với stats
+  - [x] Download template button
+  - [x] Publish own template dialog
+- [x] Rating và review display
+- [x] Widget icons preview
+- [x] Thêm route và menu item
+
+### 3. History Export Scheduling
+- [x] Tạo history_export_schedules table
+- [x] Tạo history_export_logs table
+- [x] Tạo HistoryExportScheduling.tsx page với:
+  - [x] Schedule list với CRUD
+  - [x] Create/edit schedule dialog
+  - [x] Frequency options (daily, weekly, monthly)
+  - [x] Email recipients configuration
+  - [x] Export format và filters
+  - [x] Include options (images, annotations, measurements, stats)
+  - [x] Run now button
+  - [x] Toggle active/inactive
+- [x] Export logs tab với status
+- [x] Stats cards (total, active, success, failed)
+- [x] Thêm route và menu item

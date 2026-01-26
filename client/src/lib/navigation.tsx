@@ -113,6 +113,11 @@ export const navGroups: NavGroup[] = [
         href: "/custom-dashboard", 
         label: "Dashboard Tùy chỉnh", 
         icon: <LayoutGrid className="h-4 w-4" />,
+      },
+      { 
+        href: "/dashboard-marketplace", 
+        label: "Marketplace Templates", 
+        icon: <Store className="h-4 w-4" />,
         description: "Tạo và quản lý dashboard tùy chỉnh với widgets"
       },
       { 
@@ -225,6 +230,12 @@ export const navGroups: NavGroup[] = [
         label: "Lịch sử kiểm tra", 
         icon: <History className="h-4 w-4" />,
         description: "Xem lịch sử kết quả kiểm tra"
+      },
+      { 
+        href: "/history-export-scheduling", 
+        label: "Lịch xuất báo cáo", 
+        icon: <Calendar className="h-4 w-4" />,
+        description: "Tự động xuất báo cáo theo lịch"
       },
     ],
   },

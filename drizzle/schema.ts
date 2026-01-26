@@ -2155,3 +2155,88 @@ export const rootCauseAnalysis = mysqlTable("root_cause_analysis", {
 
 export type RootCauseAnalysis = typeof rootCauseAnalysis.$inferSelect;
 export type InsertRootCauseAnalysis = typeof rootCauseAnalysis.$inferInsert;
+
+
+// ============= History Export Scheduling =============
+
+/**
+ * History Export Schedules - Lịch tự động xuất báo cáo lịch sử
+ */
+export const historyExportSchedules = mysqlTable("history_export_schedules", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  // Schedule configuration
+  scheduleType: mysqlEnum("scheduleType", ["DAILY", "WEEKLY", "MONTHLY"]).default("DAILY").notNull(),
+  scheduleTime: varchar("scheduleTime", { length: 10 }).default("08:00").notNull(), // HH:mm format
+  scheduleDayOfWeek: int("scheduleDayOfWeek"), // 0-6 for weekly (0=Sunday)
+  scheduleDayOfMonth: int("scheduleDayOfMonth"), // 1-31 for monthly
+  // Export configuration
+  exportFormat: mysqlEnum("exportFormat", ["CSV", "JSON", "EXCEL", "PDF"]).default("CSV").notNull(),
+  // Filters
+  factoryId: int("factoryId"),
+  workshopId: int("workshopId"),
+  lineId: int("lineId"),
+  machineId: int("machineId"),
+  productModelId: int("productModelId"),
+  resultFilter: mysqlEnum("resultFilter", ["ALL", "OK", "NG", "NTF"]).default("ALL").notNull(),
+  // Time range for export
+  timeRangeType: mysqlEnum("timeRangeType", ["LAST_24H", "LAST_7D", "LAST_30D", "LAST_MONTH", "CUSTOM"]).default("LAST_24H").notNull(),
+  customDays: int("customDays"), // For custom time range
+  // Email recipients
+  recipients: json("recipients").$type<string[]>().notNull(),
+  // Include options
+  includeImages: boolean("includeImages").default(false).notNull(),
+  includeAnnotations: boolean("includeAnnotations").default(true).notNull(),
+  includeMeasurements: boolean("includeMeasurements").default(true).notNull(),
+  includeSummaryStats: boolean("includeSummaryStats").default(true).notNull(),
+  // Status
+  isActive: boolean("isActive").default(true).notNull(),
+  lastRunAt: timestamp("lastRunAt"),
+  lastRunStatus: mysqlEnum("lastRunStatus", ["SUCCESS", "FAILED", "PENDING"]).default("PENDING"),
+  lastRunError: text("lastRunError"),
+  nextRunAt: timestamp("nextRunAt"),
+  // Metadata
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_export_schedule_type").on(table.scheduleType),
+  index("idx_export_schedule_active").on(table.isActive),
+  index("idx_export_schedule_next").on(table.nextRunAt),
+  index("idx_export_schedule_creator").on(table.createdBy),
+]);
+
+export type HistoryExportSchedule = typeof historyExportSchedules.$inferSelect;
+export type InsertHistoryExportSchedule = typeof historyExportSchedules.$inferInsert;
+
+/**
+ * History Export Logs - Lịch sử chạy export
+ */
+export const historyExportLogs = mysqlTable("history_export_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  scheduleId: int("scheduleId").notNull(), // FK to historyExportSchedules
+  status: mysqlEnum("status", ["SUCCESS", "FAILED", "PENDING", "RUNNING"]).default("PENDING").notNull(),
+  // Export details
+  recordCount: int("recordCount").default(0).notNull(),
+  fileSize: int("fileSize").default(0).notNull(), // Bytes
+  fileUrl: text("fileUrl"), // URL to exported file
+  // Email delivery
+  recipientCount: int("recipientCount").default(0).notNull(),
+  deliveredCount: int("deliveredCount").default(0).notNull(),
+  failedCount: int("failedCount").default(0).notNull(),
+  // Error handling
+  errorMessage: text("errorMessage"),
+  // Timing
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+  processingTimeMs: int("processingTimeMs"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_export_log_schedule").on(table.scheduleId),
+  index("idx_export_log_status").on(table.status),
+  index("idx_export_log_started").on(table.startedAt),
+]);
+
+export type HistoryExportLog = typeof historyExportLogs.$inferSelect;
+export type InsertHistoryExportLog = typeof historyExportLogs.$inferInsert;
