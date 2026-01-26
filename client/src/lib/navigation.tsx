@@ -128,7 +128,49 @@ export const navGroups: NavGroup[] = [
   },
 
   // ============================================
-  // 2. GIÁM SÁT - Theo dõi real-time
+  // 2. QUẢN LÝ TẬP ĐOÀN - Dành cho quản lý cấp cao
+  // ============================================
+  {
+    id: "corporate",
+    label: "Quản lý Tập đoàn",
+    icon: <Building2 className="h-4 w-4" />,
+    description: "Dashboard và quản lý cấp tập đoàn",
+    defaultOpen: false,
+    requiredRole: 'admin',
+    items: [
+      { 
+        href: "/corporate-dashboard", 
+        label: "Dashboard Tập đoàn", 
+        icon: <Building2 className="h-4 w-4" />,
+        description: "Tổng quan hiệu suất toàn tập đoàn",
+        requiredRole: 'admin'
+      },
+      { 
+        href: "/corporations", 
+        label: "Quản lý Tập đoàn", 
+        icon: <Building2 className="h-4 w-4" />,
+        description: "Quản lý thông tin các tập đoàn",
+        requiredRole: 'admin'
+      },
+      { 
+        href: "/companies", 
+        label: "Quản lý Công ty", 
+        icon: <Factory className="h-4 w-4" />,
+        description: "Quản lý thông tin các công ty",
+        requiredRole: 'admin'
+      },
+      { 
+        href: "/factories", 
+        label: "Quản lý Nhà máy", 
+        icon: <Factory className="h-4 w-4" />,
+        description: "Quản lý thông tin các nhà máy",
+        requiredRole: 'admin'
+      },
+    ],
+  },
+
+  // ============================================
+  // 3. GIÁM SÁT - Theo dõi real-time
   // ============================================
   {
     id: "monitoring",

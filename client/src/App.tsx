@@ -56,6 +56,7 @@ import RootCauseAnalysisPage from "./pages/RootCauseAnalysisPage";
 import PredictiveAlertsPage from "./pages/PredictiveAlertsPage";
 import DashboardMarketplace from "./pages/DashboardMarketplace";
 import HistoryExportScheduling from "./pages/HistoryExportScheduling";
+import CorporateDashboard from "./pages/CorporateDashboard";
 
 function Router() {
   return (
@@ -72,6 +73,7 @@ function Router() {
       <Route path="/api-docs" component={ApiDocs} />
       <Route path="/products" component={ProductModels} />
       <Route path="/corporate-layout" component={CorporateLayout} />
+      <Route path="/corporate-dashboard" component={CorporateDashboard} />
       <Route path="/reports" component={Reports} />
       <Route path="/alerts" component={Alerts} />
       <Route path="/users" component={Users} />

@@ -1150,8 +1150,9 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Yield Alert Widget - Compact Realtime alerts */}
-        {yieldAlerts.length > 0 && (
+        {/* Yield Alert Widget + Machine Status Widget - Side by Side */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Yield Alert Widget - Compact Realtime alerts */}
           <Card className="glass-card">
             <CardContent className="p-3">
               <div className="flex items-center justify-between mb-2">
@@ -1172,39 +1173,87 @@ export default function Dashboard() {
                   </Button>
                 </Link>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {yieldAlerts.map((alert, index) => (
-                  <TooltipProvider key={index}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs cursor-pointer ${
-                          alert.level === 'critical' 
-                            ? 'bg-destructive/10 border border-destructive/30 text-destructive' 
-                            : 'bg-warning/10 border border-warning/30 text-warning'
-                        }`}>
-                          {alert.level === 'critical' 
-                            ? <XCircle className="h-3 w-3" />
-                            : <AlertTriangle className="h-3 w-3" />
-                          }
-                          <span className="font-medium">{alert.type}</span>
-                          <span>{alert.currentValue.toFixed(1)}%</span>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-xs">
-                        <p className="font-medium">{alert.message}</p>
-                        <p className="text-xs text-muted-foreground mt-1">Mục tiêu: {alert.target}% | Ngưỡng: {alert.threshold}%</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                ))}
+              {yieldAlerts.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {yieldAlerts.map((alert, index) => (
+                    <TooltipProvider key={index}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs cursor-pointer ${
+                            alert.level === 'critical' 
+                              ? 'bg-destructive/10 border border-destructive/30 text-destructive' 
+                              : 'bg-warning/10 border border-warning/30 text-warning'
+                          }`}>
+                            {alert.level === 'critical' 
+                              ? <XCircle className="h-3 w-3" />
+                              : <AlertTriangle className="h-3 w-3" />
+                            }
+                            <span className="font-medium">{alert.type}</span>
+                            <span>{alert.currentValue.toFixed(1)}%</span>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-xs">
+                          <p className="font-medium">{alert.message}</p>
+                          <p className="text-xs text-muted-foreground mt-1">Mục tiêu: {alert.target}% | Ngưỡng: {alert.threshold}%</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center justify-center py-4 text-muted-foreground text-sm">
+                  <CheckCircle2 className="h-4 w-4 mr-2 text-success" />
+                  Không có cảnh báo
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Machine Status Widget - Compact */}
+          <Card className="glass-card">
+            <CardContent className="p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="h-6 w-6 rounded-md flex items-center justify-center bg-primary/20">
+                    <Activity className="h-3.5 w-3.5 text-primary" />
+                  </div>
+                  <span className="text-sm font-medium">Trạng thái kết nối máy</span>
+                </div>
+                <Link href="/machine-status">
+                  <Button variant="ghost" size="sm" className="h-6 text-xs px-2">
+                    Chi tiết
+                  </Button>
+                </Link>
+              </div>
+              <div className="grid grid-cols-4 gap-2">
+                <div className="flex flex-col items-center p-2 rounded-lg bg-muted/30">
+                  <p className="text-lg font-bold">{machinesStats?.length || 0}</p>
+                  <p className="text-[10px] text-muted-foreground">Tổng</p>
+                </div>
+                <div className="flex flex-col items-center p-2 rounded-lg bg-emerald-500/10">
+                  <p className="text-lg font-bold text-emerald-500">{onlineMachines.size}</p>
+                  <p className="text-[10px] text-muted-foreground">Online</p>
+                </div>
+                <div className="flex flex-col items-center p-2 rounded-lg bg-red-500/10">
+                  <p className="text-lg font-bold text-red-500">
+                    {Math.max(0, (machinesStats?.length || 0) - onlineMachines.size)}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">Offline</p>
+                </div>
+                <div className="flex flex-col items-center p-2 rounded-lg bg-primary/10">
+                  <p className="text-lg font-bold">
+                    {machinesStats?.length ? Math.round((onlineMachines.size / machinesStats.length) * 100) : 0}%
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">Avail</p>
+                </div>
               </div>
             </CardContent>
           </Card>
-        )}
+        </div>
 
         {/* Tabs for Overview and Layout */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "overview" | "layout" | "ng-visual" | "corporate-stats")} className="w-full">
-          <TabsList className="grid w-full max-w-2xl grid-cols-4">
+          <TabsList className="grid w-full max-w-xl grid-cols-3">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
               Tổng quan
@@ -1212,10 +1261,6 @@ export default function Dashboard() {
             <TabsTrigger value="ng-visual" className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4" />
               NG Visual
-            </TabsTrigger>
-            <TabsTrigger value="corporate-stats" className="flex items-center gap-2">
-              <Factory className="h-4 w-4" />
-              Công ty/Nhà máy
             </TabsTrigger>
             <TabsTrigger value="layout" className="flex items-center gap-2">
               <LayoutGrid className="h-4 w-4" />
@@ -1933,75 +1978,8 @@ export default function Dashboard() {
             </div>
           </TabsContent>
 
-          {/* Corporate/Factory Stats Tab */}
-          <TabsContent value="corporate-stats" className="space-y-6 mt-6">
-            <CorporateFactoryStats />
-          </TabsContent>
-
           {/* Layout Tab */}
           <TabsContent value="layout" className="space-y-6 mt-6">
-            {/* Machine Status Widget - Moved to Layout Tab */}
-            <Card className="glass-card">
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Activity className="h-4 w-4 text-primary" />
-                    Trạng thái kết nối máy
-                  </CardTitle>
-                  <Link href="/machine-status">
-                    <Button variant="ghost" size="sm" className="text-xs">
-                      Xem chi tiết
-                      <ChevronRight className="h-3 w-3 ml-1" />
-                    </Button>
-                  </Link>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
-                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <Cpu className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold">{machinesStats?.length || 0}</p>
-                      <p className="text-xs text-muted-foreground">Tổng số máy</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/10">
-                    <div className="h-10 w-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
-                      <Wifi className="h-5 w-5 text-emerald-500" />
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-emerald-500">{onlineMachines.size}</p>
-                      <p className="text-xs text-muted-foreground">Online</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 p-3 rounded-lg bg-red-500/10">
-                    <div className="h-10 w-10 rounded-lg bg-red-500/20 flex items-center justify-center">
-                      <WifiOff className="h-5 w-5 text-red-500" />
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-red-500">
-                        {Math.max(0, (machinesStats?.length || 0) - onlineMachines.size)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">Offline</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
-                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <Activity className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold">
-                        {machinesStats?.length ? Math.round((onlineMachines.size / machinesStats.length) * 100) : 0}%
-                      </p>
-                      <p className="text-xs text-muted-foreground">Availability</p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
             <div className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">

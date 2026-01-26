@@ -4107,3 +4107,50 @@ Menu structure mới:
 - [x] Test sounds (preset và custom)
 - [x] Lưu settings vào localStorage
 - [x] Thêm vào Settings page và navigation menu
+
+
+## Phase 158: Dashboard Layout, Corporate Dashboard, Menu Fixes
+
+### 1. Chỉnh layout Dashboard
+- [ ] Chuyển "Trạng thái kết nối máy" lên cùng hàng với "Cảnh báo Yield"
+- [ ] Mỗi div chiếm 50% chiều rộng của hàng
+- [ ] Responsive cho mobile
+
+### 2. Tách tab Công ty/Nhà Máy
+- [ ] Tạo trang CorporateDashboard.tsx riêng
+- [ ] Di chuyển nội dung tab "Công ty/Nhà Máy" sang trang mới
+- [ ] Tạo category mới "Quản lý Tập đoàn" trong navigation
+- [ ] Thêm menu items: Dashboard Tập đoàn, Quản lý Công ty, Quản lý Nhà máy
+- [ ] Phân quyền cho quản lý cấp cao/giám đốc
+
+### 3. Rà soát và sửa lỗi menu
+- [ ] Kiểm tra tất cả các menu items trong navigation
+- [ ] Sửa lỗi các trang không truy cập được
+- [ ] Đảm bảo tất cả routes hoạt động
+
+
+## Phase 158: Dashboard Layout, Corporate Dashboard, Menu Fixes ✅
+
+### 1. Dashboard Layout ✅
+- [x] Chuyển "Trạng thái kết nối máy" lên cùng hàng với "Cảnh báo Yield" (50%-50%)
+- [x] Giữ nguyên cấu trúc 3 tabs: Tổng quan, NG Visual, Layout dây chuyền
+
+### 2. Tách tab "Công ty/Nhà Máy" ✅
+- [x] Tạo CorporateDashboard.tsx mới với:
+  - KPI cards: Tập đoàn, Công ty, Nhà máy, Dây chuyền, Máy móc, Nhân viên
+  - Yield TB, OEE TB
+  - 3 tabs: Tổng quan, So sánh, Chi tiết
+  - Biểu đồ xu hướng và sản lượng theo tháng
+- [x] Tạo category "Quản lý Tập đoàn" trong navigation:
+  - Dashboard Tập đoàn
+  - Quản lý Tập đoàn
+  - Quản lý Công ty
+  - Quản lý Nhà máy
+- [x] Thêm route /corporate-dashboard cho CorporateDashboard
+- [x] Xóa tab "Công ty/Nhà Máy" khỏi Dashboard chính
+
+### 3. Rà soát và sửa lỗi menu ✅
+- [x] Kiểm tra tất cả các menu chức năng - hoạt động tốt
+- [x] Kiểm tra trang Settings - hoạt động tốt
+- [x] Kiểm tra trang Reports - hoạt động tốt
+- [x] TypeScript: No errors
