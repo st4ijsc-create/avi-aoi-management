@@ -1,0 +1,623 @@
+/**
+ * MQTT Client Management Router
+ * Quản lý tập trung các MQTT Client profiles và assignments
+ */
+
+import { z } from "zod";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import { getDb } from "../db";
+import { 
+  mqttClientProfiles, 
+  mqttProfileAssignments, 
+  mqttConnectionLogs,
+  mqttTopicTemplates,
+  machines,
+  stations,
+  factories
+} from "../../drizzle/schema";
+import { eq, and, desc, sql, like, inArray } from "drizzle-orm";
+
+// Helper to get db with null check
+async function requireDb() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db;
+}
+
+// Input schemas
+const createProfileSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().optional(),
+  brokerUrl: z.string().min(1).max(500),
+  port: z.number().int().min(1).max(65535).default(1883),
+  protocol: z.enum(["mqtt", "mqtts", "ws", "wss"]).default("mqtt"),
+  username: z.string().max(255).optional(),
+  password: z.string().max(255).optional(),
+  clientIdPrefix: z.string().max(100).optional(),
+  useTls: z.boolean().default(false),
+  tlsCertPath: z.string().optional(),
+  tlsKeyPath: z.string().optional(),
+  tlsCaPath: z.string().optional(),
+  rejectUnauthorized: z.boolean().default(true),
+  keepAlive: z.number().int().min(0).default(60),
+  connectTimeout: z.number().int().min(1000).default(30000),
+  reconnectPeriod: z.number().int().min(1000).default(5000),
+  cleanSession: z.boolean().default(true),
+  defaultQos: z.enum(["0", "1", "2"]).default("1"),
+  subscribeTopics: z.array(z.string()).default([]),
+  publishTopics: z.array(z.string()).default([]),
+  messageRetain: z.boolean().default(false),
+  isDefault: z.boolean().default(false),
+});
+
+const updateProfileSchema = createProfileSchema.partial().extend({
+  id: z.number().int(),
+});
+
+const assignProfileSchema = z.object({
+  profileId: z.number().int(),
+  targetType: z.enum(["machine", "station", "factory"]),
+  targetId: z.number().int(),
+  overrideSettings: z.object({
+    subscribeTopics: z.array(z.string()).optional(),
+    publishTopics: z.array(z.string()).optional(),
+    qos: z.string().optional(),
+    clientIdSuffix: z.string().optional(),
+  }).optional(),
+});
+
+const createTemplateSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().optional(),
+  deviceType: z.enum(["avi", "aoi", "spi", "other"]),
+  inspectionResultTopic: z.string().max(500).optional(),
+  ngAlertTopic: z.string().max(500).optional(),
+  statusTopic: z.string().max(500).optional(),
+  commandTopic: z.string().max(500).optional(),
+  heartbeatTopic: z.string().max(500).optional(),
+  messageFormat: z.enum(["json", "xml", "csv", "binary"]).default("json"),
+  sampleMessages: z.object({
+    inspectionResult: z.any().optional(),
+    ngAlert: z.any().optional(),
+    status: z.any().optional(),
+  }).optional(),
+});
+
+export const mqttClientManagementRouter = router({
+  // ============= PROFILES =============
+  
+  // List all profiles
+  listProfiles: protectedProcedure
+    .input(z.object({
+      search: z.string().optional(),
+      isActive: z.boolean().optional(),
+      limit: z.number().int().min(1).max(100).default(50),
+      offset: z.number().int().min(0).default(0),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const { search, isActive, limit = 50, offset = 0 } = input || {};
+      
+      let query = db.select().from(mqttClientProfiles);
+      
+      const conditions = [];
+      if (search) {
+        conditions.push(like(mqttClientProfiles.name, `%${search}%`));
+      }
+      if (isActive !== undefined) {
+        conditions.push(eq(mqttClientProfiles.isActive, isActive));
+      }
+      
+      if (conditions.length > 0) {
+        query = query.where(and(...conditions)) as typeof query;
+      }
+      
+      const profiles = await query
+        .orderBy(desc(mqttClientProfiles.isDefault), desc(mqttClientProfiles.createdAt))
+        .limit(limit)
+        .offset(offset);
+      
+      // Get assignment counts for each profile
+      const profileIds = profiles.map((p: { id: number }) => p.id);
+      const assignmentCounts = profileIds.length > 0 
+        ? await db.select({
+            profileId: mqttProfileAssignments.profileId,
+            count: sql<number>`COUNT(*)`.as('count'),
+          })
+          .from(mqttProfileAssignments)
+          .where(and(
+            inArray(mqttProfileAssignments.profileId, profileIds),
+            eq(mqttProfileAssignments.isActive, true)
+          ))
+          .groupBy(mqttProfileAssignments.profileId)
+        : [];
+      
+      const countMap = new Map(assignmentCounts.map((a: { profileId: number; count: number }) => [a.profileId, Number(a.count)]));
+      
+      return profiles.map((p: { id: number }) => ({
+        ...p,
+        assignmentCount: countMap.get(p.id) || 0,
+      }));
+    }),
+
+  // Get single profile
+  getProfile: protectedProcedure
+    .input(z.object({ id: z.number().int() }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const [profile] = await db.select()
+        .from(mqttClientProfiles)
+        .where(eq(mqttClientProfiles.id, input.id))
+        .limit(1);
+      
+      if (!profile) {
+        throw new Error("Profile not found");
+      }
+      
+      // Get assignments
+      const assignments = await db.select()
+        .from(mqttProfileAssignments)
+        .where(and(
+          eq(mqttProfileAssignments.profileId, input.id),
+          eq(mqttProfileAssignments.isActive, true)
+        ));
+      
+      return { ...profile, assignments };
+    }),
+
+  // Create profile
+  createProfile: adminProcedure
+    .input(createProfileSchema)
+    .mutation(async ({ input, ctx }) => {
+      const db = await requireDb();
+      
+      // If setting as default, unset other defaults
+      if (input.isDefault) {
+        await db.update(mqttClientProfiles)
+          .set({ isDefault: false })
+          .where(eq(mqttClientProfiles.isDefault, true));
+      }
+      
+      const [result] = await db.insert(mqttClientProfiles).values({
+        ...input,
+        subscribeTopics: input.subscribeTopics,
+        publishTopics: input.publishTopics,
+        createdBy: ctx.user.id,
+      });
+      
+      return { id: result.insertId, success: true };
+    }),
+
+  // Update profile
+  updateProfile: adminProcedure
+    .input(updateProfileSchema)
+    .mutation(async ({ input }) => {
+      const db = await requireDb();
+      const { id, ...data } = input;
+      
+      // If setting as default, unset other defaults
+      if (data.isDefault) {
+        await db.update(mqttClientProfiles)
+          .set({ isDefault: false })
+          .where(and(
+            eq(mqttClientProfiles.isDefault, true),
+            sql`${mqttClientProfiles.id} != ${id}`
+          ));
+      }
+      
+      await db.update(mqttClientProfiles)
+        .set(data)
+        .where(eq(mqttClientProfiles.id, id));
+      
+      return { success: true };
+    }),
+
+  // Delete profile
+  deleteProfile: adminProcedure
+    .input(z.object({ id: z.number().int() }))
+    .mutation(async ({ input }) => {
+      const db = await requireDb();
+      
+      // Check if profile has active assignments
+      const [assignment] = await db.select()
+        .from(mqttProfileAssignments)
+        .where(and(
+          eq(mqttProfileAssignments.profileId, input.id),
+          eq(mqttProfileAssignments.isActive, true)
+        ))
+        .limit(1);
+      
+      if (assignment) {
+        throw new Error("Cannot delete profile with active assignments. Please remove all assignments first.");
+      }
+      
+      await db.delete(mqttClientProfiles)
+        .where(eq(mqttClientProfiles.id, input.id));
+      
+      return { success: true };
+    }),
+
+  // Duplicate profile
+  duplicateProfile: adminProcedure
+    .input(z.object({ id: z.number().int(), newName: z.string().min(1) }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await requireDb();
+      
+      const [original] = await db.select()
+        .from(mqttClientProfiles)
+        .where(eq(mqttClientProfiles.id, input.id))
+        .limit(1);
+      
+      if (!original) {
+        throw new Error("Profile not found");
+      }
+      
+      const { id, createdAt, updatedAt, ...profileData } = original;
+      
+      const [result] = await db.insert(mqttClientProfiles).values({
+        ...profileData,
+        name: input.newName,
+        isDefault: false,
+        createdBy: ctx.user.id,
+      });
+      
+      return { id: result.insertId, success: true };
+    }),
+
+  // ============= ASSIGNMENTS =============
+  
+  // Assign profile to target
+  assignProfile: adminProcedure
+    .input(assignProfileSchema)
+    .mutation(async ({ input, ctx }) => {
+      const db = await requireDb();
+      
+      // Check if assignment already exists
+      const [existing] = await db.select()
+        .from(mqttProfileAssignments)
+        .where(and(
+          eq(mqttProfileAssignments.targetType, input.targetType),
+          eq(mqttProfileAssignments.targetId, input.targetId),
+          eq(mqttProfileAssignments.isActive, true)
+        ))
+        .limit(1);
+      
+      if (existing) {
+        // Update existing assignment
+        await db.update(mqttProfileAssignments)
+          .set({
+            profileId: input.profileId,
+            overrideSettings: input.overrideSettings,
+          })
+          .where(eq(mqttProfileAssignments.id, existing.id));
+        
+        return { id: existing.id, success: true, updated: true };
+      }
+      
+      // Create new assignment
+      const [result] = await db.insert(mqttProfileAssignments).values({
+        profileId: input.profileId,
+        targetType: input.targetType,
+        targetId: input.targetId,
+        overrideSettings: input.overrideSettings,
+        assignedBy: ctx.user.id,
+      });
+      
+      return { id: result.insertId, success: true, updated: false };
+    }),
+
+  // Bulk assign profile to multiple targets
+  bulkAssignProfile: adminProcedure
+    .input(z.object({
+      profileId: z.number().int(),
+      targets: z.array(z.object({
+        targetType: z.enum(["machine", "station", "factory"]),
+        targetId: z.number().int(),
+      })),
+      overrideSettings: z.object({
+        subscribeTopics: z.array(z.string()).optional(),
+        publishTopics: z.array(z.string()).optional(),
+        qos: z.string().optional(),
+        clientIdSuffix: z.string().optional(),
+      }).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await requireDb();
+      
+      const results = [];
+      for (const target of input.targets) {
+        // Deactivate existing assignment
+        await db.update(mqttProfileAssignments)
+          .set({ isActive: false })
+          .where(and(
+            eq(mqttProfileAssignments.targetType, target.targetType),
+            eq(mqttProfileAssignments.targetId, target.targetId),
+            eq(mqttProfileAssignments.isActive, true)
+          ));
+        
+        // Create new assignment
+        const [result] = await db.insert(mqttProfileAssignments).values({
+          profileId: input.profileId,
+          targetType: target.targetType,
+          targetId: target.targetId,
+          overrideSettings: input.overrideSettings,
+          assignedBy: ctx.user.id,
+        });
+        
+        results.push({ targetType: target.targetType, targetId: target.targetId, assignmentId: result.insertId });
+      }
+      
+      return { success: true, assignments: results };
+    }),
+
+  // Remove assignment
+  removeAssignment: adminProcedure
+    .input(z.object({ id: z.number().int() }))
+    .mutation(async ({ input }) => {
+      const db = await requireDb();
+      
+      await db.update(mqttProfileAssignments)
+        .set({ isActive: false })
+        .where(eq(mqttProfileAssignments.id, input.id));
+      
+      return { success: true };
+    }),
+
+  // Get assignments for a target
+  getTargetAssignment: protectedProcedure
+    .input(z.object({
+      targetType: z.enum(["machine", "station", "factory"]),
+      targetId: z.number().int(),
+    }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      
+      const [assignment] = await db.select({
+        assignment: mqttProfileAssignments,
+        profile: mqttClientProfiles,
+      })
+        .from(mqttProfileAssignments)
+        .innerJoin(mqttClientProfiles, eq(mqttProfileAssignments.profileId, mqttClientProfiles.id))
+        .where(and(
+          eq(mqttProfileAssignments.targetType, input.targetType),
+          eq(mqttProfileAssignments.targetId, input.targetId),
+          eq(mqttProfileAssignments.isActive, true)
+        ))
+        .limit(1);
+      
+      return assignment || null;
+    }),
+
+  // List all assignments with details
+  listAssignments: protectedProcedure
+    .input(z.object({
+      profileId: z.number().int().optional(),
+      targetType: z.enum(["machine", "station", "factory"]).optional(),
+      limit: z.number().int().min(1).max(100).default(50),
+      offset: z.number().int().min(0).default(0),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const { profileId, targetType, limit = 50, offset = 0 } = input || {};
+      
+      let query = db.select({
+        assignment: mqttProfileAssignments,
+        profile: mqttClientProfiles,
+      })
+        .from(mqttProfileAssignments)
+        .innerJoin(mqttClientProfiles, eq(mqttProfileAssignments.profileId, mqttClientProfiles.id));
+      
+      const conditions = [eq(mqttProfileAssignments.isActive, true)];
+      if (profileId !== undefined) {
+        conditions.push(eq(mqttProfileAssignments.profileId, profileId));
+      }
+      if (targetType !== undefined) {
+        conditions.push(eq(mqttProfileAssignments.targetType, targetType));
+      }
+      
+      query = query.where(and(...conditions)) as typeof query;
+      
+      const assignments = await query
+        .orderBy(desc(mqttProfileAssignments.assignedAt))
+        .limit(limit)
+        .offset(offset);
+      
+      // Get target names
+      const result = await Promise.all(assignments.map(async (a: { assignment: typeof mqttProfileAssignments.$inferSelect; profile: typeof mqttClientProfiles.$inferSelect }) => {
+        let targetName = "";
+        if (a.assignment.targetType === "machine") {
+          const [machine] = await db.select({ name: machines.name })
+            .from(machines)
+            .where(eq(machines.id, a.assignment.targetId))
+            .limit(1);
+          targetName = machine?.name || `Machine #${a.assignment.targetId}`;
+        } else if (a.assignment.targetType === "station") {
+          const [station] = await db.select({ name: stations.name })
+            .from(stations)
+            .where(eq(stations.id, a.assignment.targetId))
+            .limit(1);
+          targetName = station?.name || `Station #${a.assignment.targetId}`;
+        } else if (a.assignment.targetType === "factory") {
+          const [factory] = await db.select({ name: factories.name })
+            .from(factories)
+            .where(eq(factories.id, a.assignment.targetId))
+            .limit(1);
+          targetName = factory?.name || `Factory #${a.assignment.targetId}`;
+        }
+        
+        return {
+          ...a.assignment,
+          profileName: a.profile.name,
+          targetName,
+        };
+      }));
+      
+      return result;
+    }),
+
+  // ============= CONNECTION LOGS =============
+  
+  // Log connection event
+  logConnectionEvent: protectedProcedure
+    .input(z.object({
+      profileId: z.number().int().optional(),
+      assignmentId: z.number().int().optional(),
+      clientId: z.string(),
+      brokerUrl: z.string(),
+      eventType: z.enum(["connect", "disconnect", "error", "reconnect"]),
+      eventMessage: z.string().optional(),
+      errorCode: z.string().optional(),
+      ipAddress: z.string().optional(),
+      userAgent: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await requireDb();
+      
+      await db.insert(mqttConnectionLogs).values(input);
+      
+      return { success: true };
+    }),
+
+  // Get connection logs
+  getConnectionLogs: protectedProcedure
+    .input(z.object({
+      profileId: z.number().int().optional(),
+      clientId: z.string().optional(),
+      eventType: z.enum(["connect", "disconnect", "error", "reconnect"]).optional(),
+      limit: z.number().int().min(1).max(500).default(100),
+      offset: z.number().int().min(0).default(0),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const { profileId, clientId, eventType, limit = 100, offset = 0 } = input || {};
+      
+      let query = db.select().from(mqttConnectionLogs);
+      
+      const conditions = [];
+      if (profileId !== undefined) {
+        conditions.push(eq(mqttConnectionLogs.profileId, profileId));
+      }
+      if (clientId !== undefined) {
+        conditions.push(eq(mqttConnectionLogs.clientId, clientId));
+      }
+      if (eventType !== undefined) {
+        conditions.push(eq(mqttConnectionLogs.eventType, eventType));
+      }
+      
+      if (conditions.length > 0) {
+        query = query.where(and(...conditions)) as typeof query;
+      }
+      
+      return await query
+        .orderBy(desc(mqttConnectionLogs.timestamp))
+        .limit(limit)
+        .offset(offset);
+    }),
+
+  // ============= TOPIC TEMPLATES =============
+  
+  // List templates
+  listTemplates: protectedProcedure
+    .input(z.object({
+      deviceType: z.enum(["avi", "aoi", "spi", "other"]).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      
+      let query = db.select().from(mqttTopicTemplates);
+      
+      if (input?.deviceType) {
+        query = query.where(eq(mqttTopicTemplates.deviceType, input.deviceType)) as typeof query;
+      }
+      
+      return await query.orderBy(mqttTopicTemplates.name);
+    }),
+
+  // Create template
+  createTemplate: adminProcedure
+    .input(createTemplateSchema)
+    .mutation(async ({ input }) => {
+      const db = await requireDb();
+      
+      const [result] = await db.insert(mqttTopicTemplates).values(input);
+      
+      return { id: result.insertId, success: true };
+    }),
+
+  // Update template
+  updateTemplate: adminProcedure
+    .input(createTemplateSchema.partial().extend({ id: z.number().int() }))
+    .mutation(async ({ input }) => {
+      const db = await requireDb();
+      const { id, ...data } = input;
+      
+      await db.update(mqttTopicTemplates)
+        .set(data)
+        .where(eq(mqttTopicTemplates.id, id));
+      
+      return { success: true };
+    }),
+
+  // Delete template
+  deleteTemplate: adminProcedure
+    .input(z.object({ id: z.number().int() }))
+    .mutation(async ({ input }) => {
+      const db = await requireDb();
+      
+      await db.delete(mqttTopicTemplates)
+        .where(eq(mqttTopicTemplates.id, input.id));
+      
+      return { success: true };
+    }),
+
+  // ============= DASHBOARD STATS =============
+  
+  getDashboardStats: protectedProcedure.query(async () => {
+    const db = await requireDb();
+    
+    // Count profiles
+    const [profileCount] = await db.select({
+      total: sql<number>`COUNT(*)`.as('total'),
+      active: sql<number>`SUM(CASE WHEN isActive = 1 THEN 1 ELSE 0 END)`.as('active'),
+    }).from(mqttClientProfiles);
+    
+    // Count assignments
+    const [assignmentCount] = await db.select({
+      total: sql<number>`COUNT(*)`.as('total'),
+      machines: sql<number>`SUM(CASE WHEN targetType = 'machine' AND isActive = 1 THEN 1 ELSE 0 END)`.as('machines'),
+      stations: sql<number>`SUM(CASE WHEN targetType = 'station' AND isActive = 1 THEN 1 ELSE 0 END)`.as('stations'),
+      factories: sql<number>`SUM(CASE WHEN targetType = 'factory' AND isActive = 1 THEN 1 ELSE 0 END)`.as('factories'),
+    }).from(mqttProfileAssignments);
+    
+    // Recent connection events
+    const recentLogs = await db.select()
+      .from(mqttConnectionLogs)
+      .orderBy(desc(mqttConnectionLogs.timestamp))
+      .limit(10);
+    
+    // Error count in last 24h
+    const [errorCount] = await db.select({
+      count: sql<number>`COUNT(*)`.as('count'),
+    })
+      .from(mqttConnectionLogs)
+      .where(and(
+        eq(mqttConnectionLogs.eventType, "error"),
+        sql`${mqttConnectionLogs.timestamp} > DATE_SUB(NOW(), INTERVAL 24 HOUR)`
+      ));
+    
+    return {
+      profiles: {
+        total: Number(profileCount?.total) || 0,
+        active: Number(profileCount?.active) || 0,
+      },
+      assignments: {
+        total: Number(assignmentCount?.total) || 0,
+        machines: Number(assignmentCount?.machines) || 0,
+        stations: Number(assignmentCount?.stations) || 0,
+        factories: Number(assignmentCount?.factories) || 0,
+      },
+      recentLogs,
+      errorsLast24h: Number(errorCount?.count) || 0,
+    };
+  }),
+});

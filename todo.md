@@ -4339,3 +4339,22 @@ Menu structure mới:
 - [x] Thêm tag selector với autocomplete (Command component)
 - [x] Hiển thị tags trên batch detail dialog
 - [x] Tích hợp vào AIPerformanceDashboard (Dialog khi click batch)
+
+
+## Phase 167: Mobile App Notification Test & MQTT Client Management
+
+### 1. Mobile App - Test Notification
+- [x] Thêm màn hình Test Notification trong Settings (SettingsScreen.tsx)
+- [x] Tạo button gửi test push notification (3 buttons: Local, Remote, NG Alert)
+- [x] Hiển thị trạng thái FCM token và permission
+- [x] Test local notification (expo-notifications)
+- [x] Test remote notification từ server
+
+### 2. Hệ thống quản lý tập trung MQTT Client
+- [x] Tạo database schema cho MQTT Client profiles (mqttClientProfiles, mqttProfileAssignments, mqttConnectionLogs, mqttTopicTemplates)
+- [x] Tạo API endpoints CRUD cho MQTT profiles (mqttClientManagementRouter.ts)
+- [x] Tạo UI quản lý MQTT profiles (MqttProfileManagement.tsx)
+- [x] Cho phép cài đặt thông số cho từng profile (broker, port, topics, QoS, TLS, keepAlive, etc.)
+- [x] Áp dụng profile cho nhiều máy/station/factory cùng lúc
+- [x] Tạo template profiles mặc định
+- [x] Thêm route /mqtt-profiles vào App.tsx

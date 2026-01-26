@@ -2573,3 +2573,171 @@ export const trainingBatchTagAssignments = mysqlTable("training_batch_tag_assign
 
 export type TrainingBatchTagAssignment = typeof trainingBatchTagAssignments.$inferSelect;
 export type InsertTrainingBatchTagAssignment = typeof trainingBatchTagAssignments.$inferInsert;
+
+
+// ============= MQTT Client Management =============
+
+/**
+ * MQTT Client Profiles - Cấu hình MQTT tập trung
+ */
+export const mqttClientProfiles = mysqlTable("mqtt_client_profiles", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  
+  // Broker Configuration
+  brokerUrl: varchar("brokerUrl", { length: 500 }).notNull(),
+  port: int("port").default(1883).notNull(),
+  protocol: mysqlEnum("protocol", ["mqtt", "mqtts", "ws", "wss"]).default("mqtt").notNull(),
+  
+  // Authentication
+  username: varchar("username", { length: 255 }),
+  password: varchar("password", { length: 255 }),
+  clientIdPrefix: varchar("clientIdPrefix", { length: 100 }),
+  
+  // TLS/SSL Settings
+  useTls: boolean("useTls").default(false).notNull(),
+  tlsCertPath: text("tlsCertPath"),
+  tlsKeyPath: text("tlsKeyPath"),
+  tlsCaPath: text("tlsCaPath"),
+  rejectUnauthorized: boolean("rejectUnauthorized").default(true).notNull(),
+  
+  // Connection Settings
+  keepAlive: int("keepAlive").default(60).notNull(), // seconds
+  connectTimeout: int("connectTimeout").default(30000).notNull(), // ms
+  reconnectPeriod: int("reconnectPeriod").default(5000).notNull(), // ms
+  cleanSession: boolean("cleanSession").default(true).notNull(),
+  
+  // QoS Settings
+  defaultQos: mysqlEnum("defaultQos", ["0", "1", "2"]).default("1").notNull(),
+  
+  // Topic Configuration (JSON array)
+  subscribeTopics: json("subscribeTopics").$type<string[]>().default([]),
+  publishTopics: json("publishTopics").$type<string[]>().default([]),
+  
+  // Message Settings
+  messageRetain: boolean("messageRetain").default(false).notNull(),
+  
+  // Status
+  isDefault: boolean("isDefault").default(false).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  
+  // Metadata
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_mqtt_profiles_name").on(table.name),
+  index("idx_mqtt_profiles_active").on(table.isActive),
+  index("idx_mqtt_profiles_default").on(table.isDefault),
+]);
+
+export type MqttClientProfile = typeof mqttClientProfiles.$inferSelect;
+export type InsertMqttClientProfile = typeof mqttClientProfiles.$inferInsert;
+
+/**
+ * MQTT Profile Assignments - Gán profile cho máy/station
+ */
+export const mqttProfileAssignments = mysqlTable("mqtt_profile_assignments", {
+  id: int("id").autoincrement().primaryKey(),
+  profileId: int("profileId").notNull(),
+  
+  // Target type: machine, station, or factory
+  targetType: mysqlEnum("targetType", ["machine", "station", "factory"]).notNull(),
+  targetId: int("targetId").notNull(),
+  
+  // Override settings (JSON - partial override of profile settings)
+  overrideSettings: json("overrideSettings").$type<{
+    subscribeTopics?: string[];
+    publishTopics?: string[];
+    qos?: string;
+    clientIdSuffix?: string;
+  }>(),
+  
+  // Status
+  isActive: boolean("isActive").default(true).notNull(),
+  
+  // Metadata
+  assignedBy: int("assignedBy"),
+  assignedAt: timestamp("assignedAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_mqtt_assignments_profile").on(table.profileId),
+  index("idx_mqtt_assignments_target").on(table.targetType, table.targetId),
+]);
+
+export type MqttProfileAssignment = typeof mqttProfileAssignments.$inferSelect;
+export type InsertMqttProfileAssignment = typeof mqttProfileAssignments.$inferInsert;
+
+/**
+ * MQTT Connection Logs - Lịch sử kết nối
+ */
+export const mqttConnectionLogs = mysqlTable("mqtt_connection_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  profileId: int("profileId"),
+  assignmentId: int("assignmentId"),
+  
+  // Connection Info
+  clientId: varchar("clientId", { length: 255 }).notNull(),
+  brokerUrl: varchar("brokerUrl", { length: 500 }).notNull(),
+  
+  // Event
+  eventType: mysqlEnum("eventType", ["connect", "disconnect", "error", "reconnect"]).notNull(),
+  eventMessage: text("eventMessage"),
+  errorCode: varchar("errorCode", { length: 50 }),
+  
+  // Metadata
+  ipAddress: varchar("ipAddress", { length: 45 }),
+  userAgent: text("userAgent"),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+}, (table) => [
+  index("idx_mqtt_logs_profile").on(table.profileId),
+  index("idx_mqtt_logs_client").on(table.clientId),
+  index("idx_mqtt_logs_event").on(table.eventType),
+  index("idx_mqtt_logs_timestamp").on(table.timestamp),
+]);
+
+export type MqttConnectionLog = typeof mqttConnectionLogs.$inferSelect;
+export type InsertMqttConnectionLog = typeof mqttConnectionLogs.$inferInsert;
+
+/**
+ * MQTT Topic Templates - Mẫu topic cho các loại thiết bị
+ */
+export const mqttTopicTemplates = mysqlTable("mqtt_topic_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  
+  // Device Type
+  deviceType: mysqlEnum("deviceType", ["avi", "aoi", "spi", "other"]).notNull(),
+  
+  // Topic Patterns (với placeholders: {factory}, {line}, {machine}, {serial})
+  inspectionResultTopic: varchar("inspectionResultTopic", { length: 500 }),
+  ngAlertTopic: varchar("ngAlertTopic", { length: 500 }),
+  statusTopic: varchar("statusTopic", { length: 500 }),
+  commandTopic: varchar("commandTopic", { length: 500 }),
+  heartbeatTopic: varchar("heartbeatTopic", { length: 500 }),
+  
+  // Message Format
+  messageFormat: mysqlEnum("messageFormat", ["json", "xml", "csv", "binary"]).default("json").notNull(),
+  
+  // Sample Messages (JSON)
+  sampleMessages: json("sampleMessages").$type<{
+    inspectionResult?: object;
+    ngAlert?: object;
+    status?: object;
+  }>(),
+  
+  // Status
+  isActive: boolean("isActive").default(true).notNull(),
+  
+  // Metadata
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_mqtt_templates_device").on(table.deviceType),
+  index("idx_mqtt_templates_active").on(table.isActive),
+]);
+
+export type MqttTopicTemplate = typeof mqttTopicTemplates.$inferSelect;
+export type InsertMqttTopicTemplate = typeof mqttTopicTemplates.$inferInsert;
