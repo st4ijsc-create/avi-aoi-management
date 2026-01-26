@@ -4295,3 +4295,29 @@ Menu structure mới:
 - [x] Error category selection (6 loại)
 - [x] Correction notes input
 - [x] Tích hợp vào InspectionDetail.tsx
+
+
+## Phase 165: Export PDF, Trend Analysis, AI Performance Dashboard (26/01/2026)
+
+### 1. Export PDF cho Annotation Comparison
+- [x] Tạo API endpoint generatePdfReport (annotationComparisonRouter.ts)
+- [x] Tạo report template với side-by-side data
+- [x] Thêm diff summary section
+- [x] Thêm pattern analysis section
+- [x] Thêm Export button vào UI (AnnotationComparison.tsx)
+
+### 2. Trend Analysis Chart
+- [x] Tạo API endpoint getTrendData (annotationComparisonRouter.ts)
+- [x] Tạo TrendAnalysisChart component (TrendAnalysisChart.tsx)
+- [x] Hiển thị defect count theo ngày/tuần/tháng
+- [x] Thêm filter theo machine, product model, date range
+- [x] Thêm pattern detection indicators (3 loại cảnh báo)
+- [x] Tích hợp vào DefectHeatmapPage với tabs
+
+### 3. AI Model Performance Dashboard
+- [x] Tạo trang AIPerformanceDashboard.tsx
+- [x] Hiển thị accuracy metrics (precision, recall, F1)
+- [x] Tạo confusion matrix visualization
+- [x] Hiển thị training batch history
+- [x] Hiển thị suggestions history với feedback status
+- [x] Thêm route /ai-performance vào App.tsx

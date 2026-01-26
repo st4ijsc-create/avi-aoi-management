@@ -57,6 +57,7 @@ import PredictiveAlertsPage from "./pages/PredictiveAlertsPage";
 import DashboardMarketplace from "./pages/DashboardMarketplace";
 import HistoryExportScheduling from "./pages/HistoryExportScheduling";
 import CorporateDashboard from "./pages/CorporateDashboard";
+import AIPerformanceDashboard from "./pages/AIPerformanceDashboard";
 
 function Router() {
   return (
@@ -115,6 +116,7 @@ function Router() {
       <Route path="/predictive-alerts" component={PredictiveAlertsPage} />
       <Route path="/dashboard-marketplace" component={DashboardMarketplace} />
       <Route path="/history-export-scheduling" component={HistoryExportScheduling} />
+      <Route path="/ai-performance" component={AIPerformanceDashboard} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

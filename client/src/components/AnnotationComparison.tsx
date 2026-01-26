@@ -32,7 +32,10 @@ import {
   AlertTriangle,
   Clock,
   Image as ImageIcon,
+  FileDown,
+  Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
@@ -125,6 +128,39 @@ export function AnnotationComparison() {
 
   const handleSearch = () => {
     refetch();
+  };
+
+  // Export PDF mutation
+  const exportPdfMutation = trpc.annotationComparison.generatePdfReport.useMutation({
+    onSuccess: (data) => {
+      // Create downloadable JSON report (can be converted to PDF on client)
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `comparison-report-${data.inspection1.serialNumber}-${data.inspection2.serialNumber}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Đã xuất báo cáo thành công');
+    },
+    onError: (error) => {
+      toast.error(`Lỗi xuất báo cáo: ${error.message}`);
+    },
+  });
+
+  const handleExportPdf = () => {
+    if (!leftItem || !rightItem) {
+      toast.error('Vui lòng chọn 2 inspections để so sánh');
+      return;
+    }
+    exportPdfMutation.mutate({
+      inspectionId1: leftItem.inspectionId,
+      inspectionId2: rightItem.inspectionId,
+      includeImages: true,
+      includePatterns: true,
+    });
   };
 
   const leftItem = selectedGroup?.inspections[leftIndex];

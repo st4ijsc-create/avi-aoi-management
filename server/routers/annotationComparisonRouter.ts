@@ -9,9 +9,11 @@ import {
   annotationComparisonSessions, 
   productInspections, 
   measurementResults,
-  annotationHistory 
+  annotationHistory,
+  machines,
+  productModels
 } from "../../drizzle/schema";
-import { eq, and, inArray, desc, sql } from "drizzle-orm";
+import { eq, and, inArray, desc, sql, between } from "drizzle-orm";
 
 export const annotationComparisonRouter = router({
   // Tạo phiên so sánh mới
@@ -248,48 +250,72 @@ export const annotationComparisonRouter = router({
         description: string;
         affectedArea: { x: number; y: number; width: number; height: number };
         frequency: number;
+        confidence: number;
         firstSeen: string;
         lastSeen: string;
         recommendations: string[];
       };
-      const patterns: PatternType[] = [];
 
-      Array.from(pointStats.entries()).forEach(([pointId, stats]) => {
+      const patterns: PatternType[] = [];
+      
+      pointStats.forEach((stats, pointId) => {
         const ngRate = stats.ng / stats.total;
         
         if (ngRate >= 0.8) {
           patterns.push({
             id: `recurring-${pointId}`,
-            name: `Recurring defect at point ${pointId}`,
+            name: `Recurring Defect at Point ${pointId}`,
             type: "recurring",
             severity: "critical",
-            description: `Point ${pointId} has ${(ngRate * 100).toFixed(1)}% NG rate across ${stats.total} inspections`,
+            description: `Point ${pointId} có tỷ lệ NG ${(ngRate * 100).toFixed(1)}% trong ${stats.total} lần kiểm tra`,
             affectedArea: { x: 0, y: 0, width: 100, height: 100 },
             frequency: stats.ng,
+            confidence: ngRate,
             firstSeen: new Date().toISOString(),
             lastSeen: new Date().toISOString(),
-            recommendations: ["Check measurement point calibration", "Review inspection criteria"],
+            recommendations: [
+              'Kiểm tra thiết bị kiểm tra tại điểm này',
+              'Đánh giá lại tiêu chuẩn kiểm tra',
+              'Xem xét quy trình sản xuất liên quan',
+            ],
           });
-        } else if (ngRate >= 0.5) {
+        } else if (ngRate >= 0.3 && ngRate < 0.8) {
           patterns.push({
             id: `intermittent-${pointId}`,
-            name: `Intermittent defect at point ${pointId}`,
+            name: `Intermittent Defect at Point ${pointId}`,
             type: "intermittent",
             severity: "warning",
-            description: `Point ${pointId} has ${(ngRate * 100).toFixed(1)}% NG rate`,
+            description: `Point ${pointId} có tỷ lệ NG ${(ngRate * 100).toFixed(1)}% - cần theo dõi`,
             affectedArea: { x: 0, y: 0, width: 100, height: 100 },
             frequency: stats.ng,
+            confidence: ngRate,
             firstSeen: new Date().toISOString(),
             lastSeen: new Date().toISOString(),
-            recommendations: ["Monitor this point closely", "Check for environmental factors"],
+            recommendations: [
+              'Theo dõi xu hướng trong các lần kiểm tra tiếp theo',
+              'Ghi nhận điều kiện môi trường khi xảy ra lỗi',
+            ],
           });
         }
       });
 
       // Update session with patterns
-      await db
-        .update(annotationComparisonSessions)
+      await db.update(annotationComparisonSessions)
         .set({
+          comparisonResult: {
+            totalAnnotations: results.length,
+            matchingAnnotations: 0,
+            newAnnotations: 0,
+            removedAnnotations: 0,
+            modifiedAnnotations: 0,
+            matchPercentage: 0,
+            patterns: patterns.map(p => ({
+              type: p.type,
+              description: p.description,
+              affectedPoints: [parseInt(p.id.split('-')[1]) || 0],
+            })),
+            timeline: [],
+          },
           detectedPatterns: patterns,
           status: "COMPLETED",
         })
@@ -298,48 +324,302 @@ export const annotationComparisonRouter = router({
       return { patterns };
     }),
 
-  // Xóa session
-  delete: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+  // Generate PDF Report for Annotation Comparison
+  generatePdfReport: protectedProcedure
+    .input(z.object({
+      inspectionId1: z.number(),
+      inspectionId2: z.number(),
+      includeImages: z.boolean().default(true),
+      includePatterns: z.boolean().default(true),
+    }))
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
 
-      await db
-        .delete(annotationComparisonSessions)
-        .where(eq(annotationComparisonSessions.id, input.id));
-      return { success: true };
+      // Get inspection details
+      const [inspection1, inspection2] = await Promise.all([
+        db.select({
+          inspection: productInspections,
+          machine: machines,
+          productModel: productModels,
+        })
+          .from(productInspections)
+          .leftJoin(machines, eq(productInspections.machineId, machines.id))
+          .leftJoin(productModels, eq(productInspections.productModelId, productModels.id))
+          .where(eq(productInspections.id, input.inspectionId1))
+          .then(r => r[0]),
+        db.select({
+          inspection: productInspections,
+          machine: machines,
+          productModel: productModels,
+        })
+          .from(productInspections)
+          .leftJoin(machines, eq(productInspections.machineId, machines.id))
+          .leftJoin(productModels, eq(productInspections.productModelId, productModels.id))
+          .where(eq(productInspections.id, input.inspectionId2))
+          .then(r => r[0]),
+      ]);
+
+      if (!inspection1 || !inspection2) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Inspection không tồn tại",
+        });
+      }
+
+      // Get measurement results
+      const [results1, results2] = await Promise.all([
+        db.select().from(measurementResults)
+          .where(eq(measurementResults.inspectionId, input.inspectionId1)),
+        db.select().from(measurementResults)
+          .where(eq(measurementResults.inspectionId, input.inspectionId2)),
+      ]);
+
+      // Calculate comparison stats
+      const comparison = {
+        matching: 0,
+        different: 0,
+        onlyIn1: 0,
+        onlyIn2: 0,
+        details: [] as Array<{
+          pointId: number;
+          result1: string | null;
+          result2: string | null;
+          value1: string | null;
+          value2: string | null;
+          status: 'matching' | 'different' | 'only1' | 'only2';
+        }>,
+      };
+
+      type MeasurementResultType = typeof results1[0];
+      const results2Map = new Map<number, MeasurementResultType>();
+      results2.forEach(r => results2Map.set(r.pointDefId, r));
+
+      for (const r1 of results1) {
+        const r2 = results2Map.get(r1.pointDefId);
+        if (r2) {
+          if (r1.result === r2.result) {
+            comparison.matching++;
+            comparison.details.push({
+              pointId: r1.pointDefId,
+              result1: r1.result,
+              result2: r2.result,
+              value1: r1.measuredValue,
+              value2: r2.measuredValue,
+              status: 'matching',
+            });
+          } else {
+            comparison.different++;
+            comparison.details.push({
+              pointId: r1.pointDefId,
+              result1: r1.result,
+              result2: r2.result,
+              value1: r1.measuredValue,
+              value2: r2.measuredValue,
+              status: 'different',
+            });
+          }
+          results2Map.delete(r1.pointDefId);
+        } else {
+          comparison.onlyIn1++;
+          comparison.details.push({
+            pointId: r1.pointDefId,
+            result1: r1.result,
+            result2: null,
+            value1: r1.measuredValue,
+            value2: null,
+            status: 'only1',
+          });
+        }
+      }
+
+      results2Map.forEach((r2, pointId) => {
+        comparison.onlyIn2++;
+        comparison.details.push({
+          pointId,
+          result1: null,
+          result2: r2.result,
+          value1: null,
+          value2: r2.measuredValue,
+          status: 'only2',
+        });
+      });
+
+      // Generate report data
+      const reportData = {
+        title: "Báo cáo so sánh Annotation",
+        generatedAt: new Date().toISOString(),
+        generatedBy: ctx.user.name || ctx.user.username,
+        inspection1: {
+          id: inspection1.inspection.id,
+          serialNumber: inspection1.inspection.serialNumber,
+          inspectionTime: inspection1.inspection.inspectionTime,
+          overallResult: inspection1.inspection.overallResult,
+          machineName: inspection1.machine?.name || 'N/A',
+          productModel: inspection1.productModel?.name || 'N/A',
+          totalPoints: results1.length,
+          okCount: results1.filter(r => r.result === 'OK').length,
+          ngCount: results1.filter(r => r.result === 'NG').length,
+        },
+        inspection2: {
+          id: inspection2.inspection.id,
+          serialNumber: inspection2.inspection.serialNumber,
+          inspectionTime: inspection2.inspection.inspectionTime,
+          overallResult: inspection2.inspection.overallResult,
+          machineName: inspection2.machine?.name || 'N/A',
+          productModel: inspection2.productModel?.name || 'N/A',
+          totalPoints: results2.length,
+          okCount: results2.filter(r => r.result === 'OK').length,
+          ngCount: results2.filter(r => r.result === 'NG').length,
+        },
+        comparison: {
+          matchingCount: comparison.matching,
+          differentCount: comparison.different,
+          onlyIn1Count: comparison.onlyIn1,
+          onlyIn2Count: comparison.onlyIn2,
+          matchPercentage: results1.length > 0 
+            ? ((comparison.matching / results1.length) * 100).toFixed(1) 
+            : '0',
+          details: comparison.details,
+        },
+        patterns: [] as Array<{
+          type: string;
+          severity: string;
+          description: string;
+          frequency: number;
+        }>,
+      };
+
+      // Detect patterns if requested
+      if (input.includePatterns) {
+        const pointStats = new Map<number, { ng: number; ok: number; total: number }>();
+        
+        [...results1, ...results2].forEach(result => {
+          const stats = pointStats.get(result.pointDefId) || { ng: 0, ok: 0, total: 0 };
+          stats.total++;
+          if (result.result === "NG") stats.ng++;
+          else if (result.result === "OK") stats.ok++;
+          pointStats.set(result.pointDefId, stats);
+        });
+
+        pointStats.forEach((stats, pointId) => {
+          const ngRate = stats.ng / stats.total;
+          
+          if (ngRate >= 0.8) {
+            reportData.patterns.push({
+              type: "Recurring Defect",
+              severity: "Critical",
+              description: `Point ${pointId} có tỷ lệ NG ${(ngRate * 100).toFixed(1)}%`,
+              frequency: stats.ng,
+            });
+          } else if (ngRate >= 0.3) {
+            reportData.patterns.push({
+              type: "Intermittent Defect",
+              severity: "Warning",
+              description: `Point ${pointId} có tỷ lệ NG ${(ngRate * 100).toFixed(1)}%`,
+              frequency: stats.ng,
+            });
+          }
+        });
+      }
+
+      return reportData;
     }),
 
-  // Lấy inspections theo serial number để so sánh
-  getInspectionsBySerial: protectedProcedure
+  // Get trend data for defects over time
+  getTrendData: protectedProcedure
     .input(z.object({
-      serialNumber: z.string(),
-      limit: z.number().min(1).max(50).default(20),
+      machineId: z.number().optional(),
+      productModelId: z.number().optional(),
+      dateFrom: z.string().optional(),
+      dateTo: z.string().optional(),
+      groupBy: z.enum(["day", "week", "month"]).default("day"),
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) return [];
+      if (!db) return { trends: [], summary: { totalInspections: 0, totalDefects: 0, avgDefectRate: 0 } };
 
-      const inspections = await db
-        .select()
+      const conditions = [];
+      
+      if (input.machineId) {
+        conditions.push(eq(productInspections.machineId, input.machineId));
+      }
+      if (input.productModelId) {
+        conditions.push(eq(productInspections.productModelId, input.productModelId));
+      }
+      if (input.dateFrom && input.dateTo) {
+        conditions.push(
+          between(
+            productInspections.inspectionTime, 
+            new Date(input.dateFrom), 
+            new Date(input.dateTo)
+          )
+        );
+      }
+
+      // Get date format based on groupBy
+      let dateFormat: string;
+      switch (input.groupBy) {
+        case "week":
+          dateFormat = "%Y-%u"; // Year-Week
+          break;
+        case "month":
+          dateFormat = "%Y-%m"; // Year-Month
+          break;
+        default:
+          dateFormat = "%Y-%m-%d"; // Year-Month-Day
+      }
+
+      const trendData = await db
+        .select({
+          period: sql<string>`DATE_FORMAT(${productInspections.inspectionTime}, ${dateFormat})`,
+          totalInspections: sql<number>`COUNT(*)`,
+          okCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'OK' THEN 1 ELSE 0 END)`,
+          ngCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NG' THEN 1 ELSE 0 END)`,
+          ntfCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NTF' THEN 1 ELSE 0 END)`,
+        })
         .from(productInspections)
-        .where(eq(productInspections.serialNumber, input.serialNumber))
-        .orderBy(desc(productInspections.inspectionTime))
-        .limit(input.limit);
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .groupBy(sql`DATE_FORMAT(${productInspections.inspectionTime}, ${dateFormat})`)
+        .orderBy(sql`DATE_FORMAT(${productInspections.inspectionTime}, ${dateFormat})`);
 
-      return inspections;
+      // Calculate summary
+      const summary = trendData.reduce((acc, item) => {
+        acc.totalInspections += item.totalInspections;
+        acc.totalDefects += item.ngCount;
+        return acc;
+      }, { totalInspections: 0, totalDefects: 0, avgDefectRate: 0 });
+
+      summary.avgDefectRate = summary.totalInspections > 0 
+        ? (summary.totalDefects / summary.totalInspections) * 100 
+        : 0;
+
+      return {
+        trends: trendData.map(item => ({
+          period: item.period,
+          totalInspections: item.totalInspections,
+          okCount: item.okCount,
+          ngCount: item.ngCount,
+          ntfCount: item.ntfCount,
+          defectRate: item.totalInspections > 0 
+            ? ((item.ngCount / item.totalInspections) * 100).toFixed(2) 
+            : '0',
+          yieldRate: item.totalInspections > 0 
+            ? (((item.okCount + item.ntfCount) / item.totalInspections) * 100).toFixed(2) 
+            : '0',
+        })),
+        summary,
+      };
     }),
 });
 
-// Background processing function
+// Helper function to process comparison asynchronously
 async function processComparison(sessionId: number, inspectionIds: number[]) {
-  try {
-    const db = await getDb();
-    if (!db) return;
+  const db = await getDb();
+  if (!db) return;
 
-    await db
-      .update(annotationComparisonSessions)
+  try {
+    await db.update(annotationComparisonSessions)
       .set({ status: "PROCESSING" })
       .where(eq(annotationComparisonSessions.id, sessionId));
 
@@ -349,65 +629,73 @@ async function processComparison(sessionId: number, inspectionIds: number[]) {
       .from(measurementResults)
       .where(inArray(measurementResults.inspectionId, inspectionIds));
 
-    // Group by inspection
-    type ResultType = typeof results[0];
-    const byInspection = new Map<number, ResultType[]>();
+    // Group by point and analyze
+    const pointAnalysis = new Map<number, Array<{ inspectionId: number; result: string | null; value: string | null }>>();
+    
     for (const result of results) {
-      const list = byInspection.get(result.inspectionId) || [];
-      list.push(result);
-      byInspection.set(result.inspectionId, list);
+      const existing = pointAnalysis.get(result.pointDefId) || [];
+      existing.push({
+        inspectionId: result.inspectionId,
+        result: result.result,
+        value: result.measuredValue,
+      });
+      pointAnalysis.set(result.pointDefId, existing);
     }
 
-    // Calculate comparison result
-    const totalAnnotations = results.length;
-    type TimelineType = {
-      inspectionId: number;
-      timestamp: string;
-      annotationCount: number;
-      changes: string[];
+    // Calculate comparison results
+    const comparisonResults = {
+      totalPoints: pointAnalysis.size,
+      consistentPoints: 0,
+      inconsistentPoints: 0,
+      pointDetails: [] as Array<{
+        pointId: number;
+        results: Array<{ inspectionId: number; result: string | null }>;
+        isConsistent: boolean;
+      }>,
     };
-    const timeline: TimelineType[] = [];
 
-    Array.from(byInspection.entries()).forEach(([inspectionId, inspResults]) => {
-      const ngCount = inspResults.filter(r => r.result === "NG").length;
-      timeline.push({
-        inspectionId,
-        timestamp: new Date().toISOString(),
-        annotationCount: inspResults.length,
-        changes: [`${ngCount} NG points detected`],
+    pointAnalysis.forEach((pointResults, pointId) => {
+      const uniqueResults = new Set(pointResults.map(r => r.result));
+      const isConsistent = uniqueResults.size === 1;
+      
+      if (isConsistent) {
+        comparisonResults.consistentPoints++;
+      } else {
+        comparisonResults.inconsistentPoints++;
+      }
+
+      comparisonResults.pointDetails.push({
+        pointId,
+        results: pointResults,
+        isConsistent,
       });
     });
 
-    // Update session
-    await db
-      .update(annotationComparisonSessions)
+    await db.update(annotationComparisonSessions)
       .set({
+        status: "COMPLETED",
         comparisonResult: {
-          totalAnnotations,
-          matchingAnnotations: 0,
+          totalAnnotations: comparisonResults.totalPoints,
+          matchingAnnotations: comparisonResults.consistentPoints,
           newAnnotations: 0,
           removedAnnotations: 0,
-          modifiedAnnotations: 0,
-          matchPercentage: 0,
+          modifiedAnnotations: comparisonResults.inconsistentPoints,
+          matchPercentage: comparisonResults.totalPoints > 0 
+            ? (comparisonResults.consistentPoints / comparisonResults.totalPoints) * 100 
+            : 0,
           patterns: [],
-          timeline,
+          timeline: comparisonResults.pointDetails.map((detail, idx) => ({
+            inspectionId: detail.results[0]?.inspectionId || 0,
+            timestamp: new Date().toISOString(),
+            annotationCount: detail.results.length,
+            changes: detail.isConsistent ? [] : ['Result changed'],
+          })),
         },
-        status: "COMPLETED",
       })
       .where(eq(annotationComparisonSessions.id, sessionId));
-
   } catch (error) {
-    const db = await getDb();
-    if (db) {
-      await db
-        .update(annotationComparisonSessions)
-        .set({
-          status: "FAILED",
-          errorMessage: error instanceof Error ? error.message : "Unknown error",
-        })
-        .where(eq(annotationComparisonSessions.id, sessionId));
-    }
+    await db.update(annotationComparisonSessions)
+      .set({ status: "FAILED" })
+      .where(eq(annotationComparisonSessions.id, sessionId));
   }
 }
-
-export type AnnotationComparisonRouter = typeof annotationComparisonRouter;
