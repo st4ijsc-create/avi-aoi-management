@@ -1970,3 +1970,180 @@ export const reportTemplates = mysqlTable("report_templates", {
 
 export type ReportTemplate = typeof reportTemplates.$inferSelect;
 export type InsertReportTemplate = typeof reportTemplates.$inferInsert;
+
+
+// ============= Annotation Version History =============
+
+/**
+ * Annotation History - Lịch sử thay đổi annotations
+ */
+export const annotationHistory = mysqlTable("annotation_history", {
+  id: int("id").autoincrement().primaryKey(),
+  annotationId: int("annotationId").notNull(), // FK to image_annotations
+  imageUrl: text("imageUrl").notNull(),
+  versionNumber: int("versionNumber").notNull(), // Auto-increment per annotation
+  annotations: json("annotations").$type<Array<{
+    id: string;
+    type: string;
+    x: number;
+    y: number;
+    width?: number;
+    height?: number;
+    radius?: number;
+    points?: Array<{x: number; y: number}>;
+    text?: string;
+    color: string;
+    strokeWidth?: number;
+  }>>().notNull(),
+  changeType: mysqlEnum("changeType", ["CREATE", "UPDATE", "DELETE", "ROLLBACK"]).notNull(),
+  changeSummary: text("changeSummary"), // Human-readable summary of changes
+  changedBy: int("changedBy").notNull(), // FK to users
+  changedByName: varchar("changedByName", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_annotation_history_annotation").on(table.annotationId),
+  index("idx_annotation_history_image").on(table.imageUrl),
+  index("idx_annotation_history_version").on(table.annotationId, table.versionNumber),
+  index("idx_annotation_history_created").on(table.createdAt),
+  index("idx_annotation_history_user").on(table.changedBy),
+]);
+
+export type AnnotationHistory = typeof annotationHistory.$inferSelect;
+export type InsertAnnotationHistory = typeof annotationHistory.$inferInsert;
+
+
+// ============= Predictive Maintenance Alerts =============
+
+/**
+ * Predictive Alerts - Cảnh báo dự đoán từ AI
+ */
+export const predictiveAlerts = mysqlTable("predictive_alerts", {
+  id: int("id").autoincrement().primaryKey(),
+  alertType: mysqlEnum("alertType", [
+    "DEFECT_SPIKE",      // Dự đoán defect rate tăng đột biến
+    "YIELD_DROP",        // Dự đoán yield rate giảm
+    "MACHINE_FAILURE",   // Dự đoán máy có thể hỏng
+    "QUALITY_DEGRADATION", // Dự đoán chất lượng giảm dần
+    "PATTERN_ANOMALY"    // Phát hiện pattern bất thường
+  ]).notNull(),
+  severity: mysqlEnum("severity", ["LOW", "MEDIUM", "HIGH", "CRITICAL"]).default("MEDIUM").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description").notNull(),
+  // Prediction details
+  predictedValue: decimal("predictedValue", { precision: 10, scale: 4 }), // Giá trị dự đoán
+  currentValue: decimal("currentValue", { precision: 10, scale: 4 }), // Giá trị hiện tại
+  threshold: decimal("threshold", { precision: 10, scale: 4 }), // Ngưỡng cảnh báo
+  confidenceScore: decimal("confidenceScore", { precision: 5, scale: 2 }), // Độ tin cậy (0-100)
+  predictedTimeframe: varchar("predictedTimeframe", { length: 50 }), // e.g., "next 24 hours", "within 7 days"
+  // Related entities
+  machineId: int("machineId"),
+  machineCode: varchar("machineCode", { length: 50 }),
+  productModelId: int("productModelId"),
+  productModelCode: varchar("productModelCode", { length: 50 }),
+  factoryId: int("factoryId"),
+  // AI analysis
+  aiAnalysis: json("aiAnalysis").$type<{
+    factors: Array<{name: string; contribution: number; description: string}>;
+    recommendations: string[];
+    dataPoints: number;
+    modelUsed: string;
+  }>(),
+  // Status
+  status: mysqlEnum("status", ["ACTIVE", "ACKNOWLEDGED", "RESOLVED", "DISMISSED", "EXPIRED"]).default("ACTIVE").notNull(),
+  acknowledgedBy: int("acknowledgedBy"),
+  acknowledgedAt: timestamp("acknowledgedAt"),
+  resolvedBy: int("resolvedBy"),
+  resolvedAt: timestamp("resolvedAt"),
+  resolutionNotes: text("resolutionNotes"),
+  // Notification
+  notificationSent: boolean("notificationSent").default(false).notNull(),
+  notificationSentAt: timestamp("notificationSentAt"),
+  // Timestamps
+  expiresAt: timestamp("expiresAt"), // Alert expiration
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_predictive_alerts_type").on(table.alertType),
+  index("idx_predictive_alerts_severity").on(table.severity),
+  index("idx_predictive_alerts_status").on(table.status),
+  index("idx_predictive_alerts_machine").on(table.machineId),
+  index("idx_predictive_alerts_product").on(table.productModelId),
+  index("idx_predictive_alerts_factory").on(table.factoryId),
+  index("idx_predictive_alerts_created").on(table.createdAt),
+  index("idx_predictive_alerts_expires").on(table.expiresAt),
+]);
+
+export type PredictiveAlert = typeof predictiveAlerts.$inferSelect;
+export type InsertPredictiveAlert = typeof predictiveAlerts.$inferInsert;
+
+
+// ============= Root Cause Analysis =============
+
+/**
+ * Root Cause Analysis Results - Kết quả phân tích nguyên nhân gốc rễ
+ */
+export const rootCauseAnalysis = mysqlTable("root_cause_analysis", {
+  id: int("id").autoincrement().primaryKey(),
+  analysisType: mysqlEnum("analysisType", [
+    "DEFECT_ANALYSIS",   // Phân tích defect
+    "YIELD_ANALYSIS",    // Phân tích yield
+    "QUALITY_ANALYSIS",  // Phân tích chất lượng
+    "MACHINE_ANALYSIS"   // Phân tích máy
+  ]).notNull(),
+  // Scope
+  machineId: int("machineId"),
+  machineCode: varchar("machineCode", { length: 50 }),
+  productModelId: int("productModelId"),
+  productModelCode: varchar("productModelCode", { length: 50 }),
+  factoryId: int("factoryId"),
+  // Time range analyzed
+  startDate: timestamp("startDate").notNull(),
+  endDate: timestamp("endDate").notNull(),
+  // Analysis results
+  dataPointsAnalyzed: int("dataPointsAnalyzed").notNull(),
+  correlationMatrix: json("correlationMatrix").$type<Array<{
+    factor1: string;
+    factor2: string;
+    correlation: number; // -1 to 1
+    significance: number; // p-value
+  }>>(),
+  topFactors: json("topFactors").$type<Array<{
+    factor: string;
+    contribution: number; // Percentage contribution
+    description: string;
+    trend: "increasing" | "decreasing" | "stable";
+  }>>().notNull(),
+  // AI insights
+  aiInsights: json("aiInsights").$type<{
+    summary: string;
+    rootCauses: Array<{cause: string; probability: number; evidence: string}>;
+    recommendations: Array<{action: string; priority: "high" | "medium" | "low"; expectedImpact: string}>;
+    preventiveMeasures: string[];
+  }>(),
+  // Pareto analysis
+  paretoData: json("paretoData").$type<Array<{
+    category: string;
+    count: number;
+    percentage: number;
+    cumulativePercentage: number;
+  }>>(),
+  // Status
+  status: mysqlEnum("status", ["COMPLETED", "IN_PROGRESS", "FAILED"]).default("COMPLETED").notNull(),
+  errorMessage: text("errorMessage"),
+  // Metadata
+  requestedBy: int("requestedBy").notNull(),
+  requestedByName: varchar("requestedByName", { length: 255 }),
+  processingTime: int("processingTime"), // Milliseconds
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_rca_type").on(table.analysisType),
+  index("idx_rca_machine").on(table.machineId),
+  index("idx_rca_product").on(table.productModelId),
+  index("idx_rca_factory").on(table.factoryId),
+  index("idx_rca_status").on(table.status),
+  index("idx_rca_created").on(table.createdAt),
+  index("idx_rca_date_range").on(table.startDate, table.endDate),
+]);
+
+export type RootCauseAnalysis = typeof rootCauseAnalysis.$inferSelect;
+export type InsertRootCauseAnalysis = typeof rootCauseAnalysis.$inferInsert;

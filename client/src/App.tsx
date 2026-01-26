@@ -49,6 +49,8 @@ import AnnotationStatistics from "./pages/AnnotationStatistics";
 import AnnotationComparisonPage from "./pages/AnnotationComparisonPage";
 import DefectHeatmapPage from "./pages/DefectHeatmapPage";
 import DefectPredictionPage from "./pages/DefectPredictionPage";
+import RootCauseAnalysisPage from "./pages/RootCauseAnalysisPage";
+import PredictiveAlertsPage from "./pages/PredictiveAlertsPage";
 
 function Router() {
   return (
@@ -99,6 +101,8 @@ function Router() {
       <Route path="/annotation-comparison" component={AnnotationComparisonPage} />
       <Route path="/defect-heatmap" component={DefectHeatmapPage} />
       <Route path="/defect-prediction" component={DefectPredictionPage} />
+      <Route path="/root-cause-analysis" component={RootCauseAnalysisPage} />
+      <Route path="/predictive-alerts" component={PredictiveAlertsPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

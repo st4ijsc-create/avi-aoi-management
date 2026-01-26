@@ -45,6 +45,7 @@ import {
   GitCompare,
   Map,
   Sparkles,
+  Search,
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -302,6 +303,18 @@ export const navGroups: NavGroup[] = [
         label: "Dự đoán Defects", 
         icon: <Sparkles className="h-4 w-4" />,
         description: "AI dự đoán xu hướng defects trong tương lai"
+      },
+      { 
+        href: "/root-cause-analysis", 
+        label: "Phân tích Nguyên nhân", 
+        icon: <Search className="h-4 w-4" />,
+        description: "AI phân tích nguyên nhân gốc rễ của defects"
+      },
+      { 
+        href: "/predictive-alerts", 
+        label: "Cảnh báo Dự đoán", 
+        icon: <Bell className="h-4 w-4" />,
+        description: "AI tự động cảnh báo vấn đề tiềm ẩn"
       },
     ],
   },

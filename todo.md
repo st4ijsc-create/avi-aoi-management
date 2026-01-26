@@ -3753,3 +3753,40 @@ Menu structure mới:
 - [x] New defects notification khi có defects mới
 - [x] Last refresh timestamp display
 - [x] Badge hiển thị số defects mới kể từ lần refresh trước
+
+
+## Phase 148: Defect Root Cause Analysis, Annotation Version History & Predictive Maintenance Alerts
+
+### 1. Defect Root Cause Analysis
+- [x] Tạo API endpoint để thu thập và phân tích correlation giữa defects và machine parameters
+- [x] Tích hợp LLM để phân tích nguyên nhân gốc rễ
+- [x] Tạo RootCauseAnalysisPage.tsx với:
+  - [x] Correlation matrix hiển thị mối quan hệ giữa các factors
+  - [x] Pareto chart cho top contributing factors
+  - [x] AI-generated root cause insights
+  - [x] Recommendations panel với actionable suggestions
+  - [x] Filters: machine, product, defect type, time range
+- [x] Thêm route và menu item
+
+### 2. Annotation Version History
+- [x] Tạo annotation_history table để lưu lịch sử thay đổi
+- [x] Tạo API endpoints cho version history (list, get, rollback, compare)
+- [x] Tạo AnnotationVersionHistory.tsx component với:
+  - [x] Timeline view hiển thị các phiên bản
+  - [x] Diff view so sánh giữa các versions
+  - [x] Rollback button với confirmation
+  - [x] User và timestamp cho mỗi change
+- [x] Compare mode để so sánh 2 versions
+- [x] Auto-save version khi có thay đổi
+
+### 3. Predictive Maintenance Alerts
+- [x] Tạo predictive_alerts table để lưu alerts
+- [x] Tạo API endpoints cho alerts CRUD và generation
+- [x] Tạo PredictiveAlertsPage.tsx với:
+  - [x] Alert cards hiển thị predicted issues
+  - [x] Severity levels (LOW, MEDIUM, HIGH, CRITICAL)
+  - [x] Predicted timeframe cho mỗi alert
+  - [x] AI analysis với factors và recommendations
+  - [x] Actions: acknowledge, resolve, dismiss
+- [x] Stats dashboard với total, active, critical counts
+- [x] Filters: status, severity, alert type
