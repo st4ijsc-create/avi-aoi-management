@@ -4218,3 +4218,25 @@ Menu structure mới:
 - [x] Gửi push notification khi có NG alert (tích hợp với mqttService)
 - [x] Hỗ trợ background notifications (FCM HTTP v1 API)
 - [x] Tài liệu cấu hình (FIREBASE_PUSH_NOTIFICATIONS.md)
+
+
+## Phase 162: Firebase Configuration, E2E Testing, Notification Preferences
+
+### 1. Cấu hình Firebase thật
+- [x] Tạo hướng dẫn step-by-step tạo Firebase project (FIREBASE_SETUP_GUIDE.md)
+- [x] Tạo script tự động encode service account JSON (scripts/encode-firebase-credentials.js)
+- [x] Cập nhật tài liệu với examples và troubleshooting
+- [x] Test endpoint fcm.testConnection đã có sẵn
+
+### 2. Test End-to-End với thiết bị thật
+- [x] Tạo hướng dẫn build APK preview (E2E_TESTING_GUIDE.md)
+- [x] Tạo checklist test E2E (20+ test cases)
+- [x] Tạo script test MQTT + FCM integration
+- [x] Tạo troubleshooting guide
+
+### 3. Notification Preferences
+- [x] Thêm notification settings vào mobile app (SettingsScreen.tsx đã có sẵn)
+- [x] Cho phép toggle NG alerts on/off (receiveNGAlerts)
+- [x] Cho phép toggle daily summary on/off (receiveDailySummary)
+- [x] Cho phép toggle weekly summary on/off (receiveWeeklySummary)
+- [x] Lưu preferences vào AsyncStorage (mqttStore.ts)
