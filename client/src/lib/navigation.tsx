@@ -46,6 +46,8 @@ import {
   Map,
   Sparkles,
   Search,
+  MessageSquare,
+  LayoutDashboard,
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -101,11 +103,17 @@ export const navGroups: NavGroup[] = [
         icon: <TrendingUp className="h-4 w-4" />,
         description: "Phân tích chi tiết từ Corporate đến Machine"
       },
-      { 
+{ 
         href: "/dashboard-templates", 
-        label: "Dashboard Templates", 
-        icon: <LayoutTemplate className="h-4 w-4" />,
-        description: "Quản lý và áp dụng templates dashboard"
+        label: "Mẫu Dashboard", 
+        icon: <LayoutDashboard className="h-4 w-4" />,
+        description: "Quản lý các mẫu dashboard"
+      },
+      { 
+        href: "/custom-dashboard", 
+        label: "Dashboard Tùy chỉnh", 
+        icon: <LayoutGrid className="h-4 w-4" />,
+        description: "Tạo và quản lý dashboard tùy chỉnh với widgets"
       },
       { 
         href: "/backup-restore", 
@@ -156,6 +164,18 @@ export const navGroups: NavGroup[] = [
         label: "Quy tắc cảnh báo", 
         icon: <AlertTriangle className="h-4 w-4" />,
         description: "Cấu hình quy tắc cảnh báo tự động"
+      },
+      { 
+        href: "/mqtt-clients", 
+        label: "Quản lý Client", 
+        icon: <Wifi className="h-4 w-4" />,
+        description: "Quản lý MQTT clients và hiển thị lỗi theo công trạm"
+      },
+      { 
+        href: "/mqtt-topics", 
+        label: "Topics & Messages", 
+        icon: <MessageSquare className="h-4 w-4" />,
+        description: "Quản lý topics và xem lịch sử messages"
       },
       { 
         href: "/oee-dashboard", 

@@ -7181,3 +7181,265 @@ export async function applyScheduleSuggestion(suggestion: ScheduleOptimizationRe
     })
     .where(eq(productionOrders.id, suggestion.orderId));
 }
+
+
+// ============ MQTT CLIENT CREATE ============
+export async function createMqttClient(data: {
+  deviceId: string;
+  deviceName: string;
+  deviceType?: string;
+  stationId?: number;
+  processId?: number;
+  mappingType?: 'AUTO' | 'MANUAL';
+  receiveNGAlerts?: boolean;
+  receiveDailySummary?: boolean;
+  receiveWeeklySummary?: boolean;
+  approvalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  approvedBy?: number;
+  approvedAt?: Date;
+  connectionStatus?: 'ONLINE' | 'OFFLINE' | 'DISCONNECTED';
+  isActive?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Generate a unique clientId from deviceId
+  const clientId = `client_${data.deviceId}_${Date.now()}`;
+  
+  const result = await db.insert(mqttClients).values({
+    clientId,
+    deviceId: data.deviceId,
+    deviceName: data.deviceName,
+    stationId: data.stationId || null,
+    processId: data.processId || null,
+    mappingType: data.mappingType || 'MANUAL',
+    receiveNGAlerts: data.receiveNGAlerts ?? true,
+    receiveDailySummary: data.receiveDailySummary ?? true,
+    receiveWeeklySummary: data.receiveWeeklySummary ?? true,
+    approvalStatus: data.approvalStatus || 'PENDING',
+    approvedBy: data.approvedBy || null,
+    approvedAt: data.approvedAt || null,
+    connectionStatus: data.connectionStatus || 'OFFLINE',
+    isActive: data.isActive ?? true,
+  });
+  
+  return { id: Number(result[0].insertId) };
+}
+
+// ============ MQTT CLIENT CONNECTION HISTORY ============
+export async function getMqttClientConnectionHistory(clientId: number, limit: number = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  // Get from mqtt_message_logs where targetClientId matches
+  const results = await db.select({
+    id: mqttMessageLogs.id,
+    messageType: mqttMessageLogs.messageType,
+    status: mqttMessageLogs.deliveryStatus,
+    createdAt: mqttMessageLogs.createdAt,
+    payload: mqttMessageLogs.payload,
+  })
+    .from(mqttMessageLogs)
+    .where(eq(mqttMessageLogs.targetClientId, clientId))
+    .orderBy(desc(mqttMessageLogs.createdAt))
+    .limit(limit);
+  
+  return results;
+}
+
+// ============ MQTT CLIENT HEALTH ============
+export async function getMqttClientHealth(clientId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const client = await getMqttClientById(clientId);
+  if (!client) return null;
+  
+  // Get message stats for last 24 hours
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  
+  const messageStats = await db.select({
+    total: sql<number>`COUNT(*)`,
+    delivered: sql<number>`SUM(CASE WHEN ${mqttMessageLogs.deliveryStatus} = 'DELIVERED' THEN 1 ELSE 0 END)`,
+    failed: sql<number>`SUM(CASE WHEN ${mqttMessageLogs.deliveryStatus} = 'FAILED' THEN 1 ELSE 0 END)`,
+    pending: sql<number>`SUM(CASE WHEN ${mqttMessageLogs.deliveryStatus} = 'PENDING' THEN 1 ELSE 0 END)`,
+  })
+    .from(mqttMessageLogs)
+    .where(and(
+      eq(mqttMessageLogs.targetClientId, clientId),
+      gte(mqttMessageLogs.createdAt, oneDayAgo)
+    ));
+  
+  const stats = messageStats[0] || { total: 0, delivered: 0, failed: 0, pending: 0 };
+  
+  // Calculate uptime (simplified - based on last heartbeat)
+  const lastSeenMs = client.lastHeartbeat ? new Date(client.lastHeartbeat).getTime() : 0;
+  const uptimeMs = client.connectionStatus === 'ONLINE' ? Date.now() - lastSeenMs : 0;
+  
+  return {
+    clientId,
+    deviceName: client.deviceName,
+    connectionStatus: client.connectionStatus,
+    lastSeen: client.lastHeartbeat,
+    uptimeMs,
+    messageStats: {
+      total: Number(stats.total),
+      delivered: Number(stats.delivered),
+      failed: Number(stats.failed),
+      pending: Number(stats.pending),
+      successRate: Number(stats.total) > 0 
+        ? Math.round((Number(stats.delivered) / Number(stats.total)) * 100) 
+        : 100,
+    },
+    healthScore: calculateClientHealthScore(client, stats),
+  };
+}
+
+function calculateClientHealthScore(client: any, stats: any): number {
+  let score = 100;
+  
+  // Connection status
+  if (client.connectionStatus === 'OFFLINE') score -= 30;
+  if (client.connectionStatus === 'DISCONNECTED') score -= 50;
+  
+  // Message success rate
+  const successRate = Number(stats.total) > 0 
+    ? Number(stats.delivered) / Number(stats.total) 
+    : 1;
+  score -= (1 - successRate) * 40;
+  
+  // Last seen (if offline for too long)
+  if (client.lastHeartbeat) {
+    const hoursSinceLastSeen = (Date.now() - new Date(client.lastHeartbeat).getTime()) / (1000 * 60 * 60);
+    if (hoursSinceLastSeen > 24) score -= 20;
+    else if (hoursSinceLastSeen > 1) score -= 10;
+  }
+  
+  return Math.max(0, Math.round(score));
+}
+
+export async function getAllMqttClientsHealth() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const clients = await getMqttClients();
+  const healthData = await Promise.all(
+    clients.map(client => getMqttClientHealth(client.id))
+  );
+  
+  return healthData.filter(h => h !== null);
+}
+
+// ============ WORKSTATION ERRORS ============
+export async function getWorkstationErrors(filters: {
+  stationId?: number;
+  machineId?: number;
+  limit?: number;
+  includeResolved?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const conditions = [];
+  
+  // Get NG inspections as "errors"
+  conditions.push(eq(productInspections.overallResult, 'NG'));
+  
+  if (filters.stationId) {
+    // Get machines for this station
+    const stationMachines = await db.select({ id: machines.id })
+      .from(machines)
+      .where(eq(machines.stationId, filters.stationId));
+    
+    if (stationMachines.length > 0) {
+      const machineIds = stationMachines.map(m => m.id);
+      conditions.push(sql`${productInspections.machineId} IN (${machineIds.join(',')})`);
+    }
+  }
+  
+  if (filters.machineId) {
+    conditions.push(eq(productInspections.machineId, filters.machineId));
+  }
+  
+  if (!filters.includeResolved) {
+    // Only show recent errors (last 24 hours)
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    conditions.push(gte(productInspections.inspectionTime, oneDayAgo));
+  }
+  
+  const results = await db.select({
+    id: productInspections.id,
+    serialNumber: productInspections.serialNumber,
+    machineId: productInspections.machineId,
+    overallResult: productInspections.overallResult,
+    inspectionTime: productInspections.inspectionTime,
+    productModel: productInspections.productModel,
+    factoryCode: productInspections.factoryCode,
+  })
+    .from(productInspections)
+    .where(and(...conditions))
+    .orderBy(desc(productInspections.inspectionTime))
+    .limit(filters.limit || 50);
+  
+  return results;
+}
+
+export async function getWorkstationErrorSummary(filters: {
+  stationId?: number;
+  startDate?: Date;
+  endDate?: Date;
+}) {
+  const db = await getDb();
+  if (!db) return { total: 0, byMachine: [], byHour: [], byDefectType: [] };
+  
+  const conditions = [eq(productInspections.overallResult, 'NG')];
+  
+  if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+  
+  if (filters.stationId) {
+    const stationMachines = await db.select({ id: machines.id })
+      .from(machines)
+      .where(eq(machines.stationId, filters.stationId));
+    
+    if (stationMachines.length > 0) {
+      const machineIds = stationMachines.map(m => m.id);
+      conditions.push(sql`${productInspections.machineId} IN (${machineIds.join(',')})`);
+    }
+  }
+  
+  // Total count
+  const totalResult = await db.select({
+    count: sql<number>`COUNT(*)`,
+  })
+    .from(productInspections)
+    .where(and(...conditions));
+  
+  // By machine
+  const byMachine = await db.select({
+    machineId: productInspections.machineId,
+    count: sql<number>`COUNT(*)`,
+  })
+    .from(productInspections)
+    .where(and(...conditions))
+    .groupBy(productInspections.machineId)
+    .orderBy(desc(sql`COUNT(*)`))
+    .limit(10);
+  
+  // By hour (last 24 hours)
+  const byHour = await db.select({
+    hour: sql<string>`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%m-%d %H:00')`,
+    count: sql<number>`COUNT(*)`,
+  })
+    .from(productInspections)
+    .where(and(...conditions))
+    .groupBy(sql`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%m-%d %H:00')`)
+    .orderBy(sql`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%m-%d %H:00')`);
+  
+  return {
+    total: Number(totalResult[0]?.count || 0),
+    byMachine: byMachine.map(m => ({ machineId: m.machineId, count: Number(m.count) })),
+    byHour: byHour.map(h => ({ hour: h.hour, count: Number(h.count) })),
+    byDefectType: [], // Would need measurement results join
+  };
+}

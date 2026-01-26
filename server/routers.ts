@@ -1006,6 +1006,114 @@ Respond in JSON format:
       }
     }),
 
+  // Batch operations for history
+  batchAcknowledge: protectedProcedure
+    .input(z.object({
+      ids: z.array(z.string()),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { productInspections } = await import("../drizzle/schema");
+      const { inArray } = await import("drizzle-orm");
+      const dbInstance = await db.getDb();
+      
+      if (!dbInstance) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      }
+
+      // Update acknowledged status for all selected inspections
+      await dbInstance.update(productInspections).set({
+        acknowledgedBy: ctx.user.id,
+        acknowledgedAt: new Date(),
+      }).where(inArray(productInspections.id, input.ids.map(id => parseInt(id))));
+
+      return { success: true, count: input.ids.length };
+    }),
+
+  batchAddNote: protectedProcedure
+    .input(z.object({
+      ids: z.array(z.string()),
+      note: z.string().min(1),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { productInspections } = await import("../drizzle/schema");
+      const { inArray } = await import("drizzle-orm");
+      const dbInstance = await db.getDb();
+      
+      if (!dbInstance) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      }
+
+      const timestamp = new Date().toISOString();
+      const noteEntry = `[${timestamp}] ${ctx.user.name}: ${input.note}`;
+
+      // For each inspection, append the note
+      for (const id of input.ids) {
+        const inspection = await db.getProductInspectionById(parseInt(id));
+        if (inspection) {
+          const existingNotes = inspection.notes || '';
+          const newNotes = existingNotes ? `${existingNotes}\n${noteEntry}` : noteEntry;
+          await dbInstance.update(productInspections).set({
+            notes: newNotes,
+          }).where(inArray(productInspections.id, [parseInt(id)]));
+        }
+      }
+
+      return { success: true, count: input.ids.length };
+    }),
+
+  batchAddTag: protectedProcedure
+    .input(z.object({
+      ids: z.array(z.string()),
+      tag: z.string().min(1),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { productInspections } = await import("../drizzle/schema");
+      const { inArray } = await import("drizzle-orm");
+      const dbInstance = await db.getDb();
+      
+      if (!dbInstance) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      }
+
+      // For each inspection, add the tag
+      for (const id of input.ids) {
+        const inspection = await db.getProductInspectionById(parseInt(id));
+        if (inspection) {
+          const existingTags = inspection.tags ? JSON.parse(inspection.tags) : [];
+          if (!existingTags.includes(input.tag)) {
+            existingTags.push(input.tag);
+            await dbInstance.update(productInspections).set({
+              tags: JSON.stringify(existingTags),
+            }).where(inArray(productInspections.id, [parseInt(id)]));
+          }
+        }
+      }
+
+      return { success: true, count: input.ids.length };
+    }),
+
+  batchArchive: protectedProcedure
+    .input(z.object({
+      ids: z.array(z.string()),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { productInspections } = await import("../drizzle/schema");
+      const { inArray } = await import("drizzle-orm");
+      const dbInstance = await db.getDb();
+      
+      if (!dbInstance) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      }
+
+      await dbInstance.update(productInspections).set({
+        isArchived: true,
+        archivedAt: new Date(),
+        archivedBy: ctx.user.id,
+      }).where(inArray(productInspections.id, input.ids.map(id => parseInt(id))));
+
+      return { success: true, count: input.ids.length };
+    }),
+
   correctResult: protectedProcedure
     .input(z.object({
       id: z.number(),
@@ -3544,6 +3652,73 @@ const mqttClientRouter = router({
     .query(async ({ input }) => {
       const { getMachineHealthScore } = await import('./_core/socket');
       return getMachineHealthScore(input.machineId);
+    }),
+
+  // ============ MQTT CLIENT MANUAL CREATE ============
+  create: adminProcedure
+    .input(z.object({
+      deviceId: z.string(),
+      deviceName: z.string(),
+      deviceType: z.string().optional(),
+      stationId: z.number().optional(),
+      processId: z.number().optional(),
+      mappingType: z.enum(['AUTO', 'MANUAL']).default('MANUAL'),
+      receiveNGAlerts: z.boolean().default(true),
+      receiveDailySummary: z.boolean().default(true),
+      receiveWeeklySummary: z.boolean().default(true),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return db.createMqttClient({
+        ...input,
+        approvalStatus: 'APPROVED',
+        approvedBy: ctx.user.id,
+        approvedAt: new Date(),
+        connectionStatus: 'OFFLINE',
+        isActive: true,
+      });
+    }),
+
+  // ============ CLIENT CONNECTION HISTORY ============
+  connectionHistory: protectedProcedure
+    .input(z.object({
+      clientId: z.number(),
+      limit: z.number().default(50),
+    }))
+    .query(async ({ input }) => {
+      return db.getMqttClientConnectionHistory(input.clientId, input.limit);
+    }),
+
+  // ============ CLIENT HEALTH DASHBOARD ============
+  clientHealth: protectedProcedure
+    .input(z.object({ clientId: z.number() }))
+    .query(async ({ input }) => {
+      return db.getMqttClientHealth(input.clientId);
+    }),
+
+  allClientsHealth: protectedProcedure.query(async () => {
+    return db.getAllMqttClientsHealth();
+  }),
+
+  // ============ WORKSTATION ERROR DISPLAY ============
+  workstationErrors: protectedProcedure
+    .input(z.object({
+      stationId: z.number().optional(),
+      machineId: z.number().optional(),
+      limit: z.number().default(50),
+      includeResolved: z.boolean().default(false),
+    }))
+    .query(async ({ input }) => {
+      return db.getWorkstationErrors(input);
+    }),
+
+  workstationErrorSummary: protectedProcedure
+    .input(z.object({
+      stationId: z.number().optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }))
+    .query(async ({ input }) => {
+      return db.getWorkstationErrorSummary(input);
     }),
 
   // ============ MACHINE BENCHMARKING ============

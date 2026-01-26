@@ -3790,3 +3790,77 @@ Menu structure mới:
   - [x] Actions: acknowledge, resolve, dismiss
 - [x] Stats dashboard với total, active, critical counts
 - [x] Filters: status, severity, alert type
+
+
+## Phase 149: MQTT Management Enhancement
+
+### 1. MQTT Client CRUD & Display (Priority 1)
+- [x] Tạo UI để thêm MQTT client thủ công (ngoài auto-register)
+- [x] Hiển thị lỗi theo công trạm (Workstation-based Error Display)
+- [x] Client connection history với timeline
+- [x] Client health dashboard với uptime, latency, message count
+- [x] Client detail page với full information
+
+### 2. MQTT Topics & Messages (Priority 2)
+- [x] MQTT Topics management UI (list, create, delete topics)
+- [x] Message replay functionality
+- [x] Message filtering và search
+- [x] Message export to CSV/JSON
+
+### 3. MQTT Client Groups & Bulk (Priority 3)
+- [x] Client groups management (theo khu vực, chức năng)
+- [x] Bulk approve/reject clients
+- [x] Bulk update settings
+- [x] Group-based notifications
+
+## Phase 150: Dashboard Customs Enhancement
+
+### 1. Widget System (Priority 1)
+- [x] Widget Library với các widget types:
+  - [x] KPI Card (số liệu đơn với trend)
+  - [x] Chart (Line, Bar, Pie, Area, Combo)
+  - [x] Table (danh sách dữ liệu với pagination)
+  - [x] Gauge (dồng hồ đo với thresholds)
+  - [x] Map (bản đồ nhà máy với markers)
+  - [x] Alert List (danh sách cảnh báo realtime)
+- [x] Widget configuration dialog (data source, filters, display options)
+- [x] Widget preview trước khi add
+- [x] Widget data refresh settings
+
+### 2. Layout Editor (Priority 2)
+- [x] Drag-drop layout editor với grid system (12 columns)
+- [x] Resize widgets với handles
+- [x] Widget positioning với snap-to-grid
+- [x] Save/load layouts
+- [x] Undo/redo layout changes
+- [x] Layout templates (2-column, 3-column, sidebar)
+
+### 3. Dashboard Sharing & Export (Priority 3)
+- [x] Dashboard sharing với users/roles
+- [x] Dashboard permissions (view/edit/admin)
+- [x] Export dashboard to PDF
+- [x] Export dashboard to PNG/Image
+- [x] Schedule dashboard email (daily/weekly)
+
+## Phase 151: History Analysis Enhancement
+
+### 1. Advanced Analysis (Priority 1)
+- [x] Comparison mode (so sánh 2 time periods side-by-side)
+- [x] Trend comparison charts (overlay 2 periods)
+- [x] Defect pattern analysis với heatmap
+- [x] Measurement point correlation analysis
+
+### 2. Batch Operations (Priority 2)
+- [x] Bulk export selected inspections (CSV, JSON, Excel)
+- [x] Bulk acknowledge/mark as reviewed
+- [x] Bulk add notes/comments
+- [x] Bulk archive
+
+### 3. Export & Search (Priority 3)
+- [x] Export to PDF với charts và summary
+- [x] Search history (recent searches với quick access)
+- [x] Advanced filters:
+  - [x] Filter theo measurement point
+  - [x] Filter theo defect type
+  - [x] Filter theo operator/shift
+- [x] Save search as report template

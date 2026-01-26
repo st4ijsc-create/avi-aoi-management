@@ -28,6 +28,9 @@ import { ProductComparison } from "./pages/ProductComparison";
 import Setup from "./pages/Setup";
 import MqttDashboard from "./pages/MqttDashboard";
 import MqttAlertRules from "./pages/MqttAlertRules";
+import MqttClientManagement from "./pages/MqttClientManagement";
+import MqttTopicsMessages from "./pages/MqttTopicsMessages";
+import CustomDashboard from "./pages/CustomDashboard";
 import SystemConfiguration from "./pages/SystemConfiguration";
 import ImportExport from "./pages/ImportExport";
 import UserAssignments from "./pages/UserAssignments";
@@ -80,6 +83,9 @@ function Router() {
       <Route path="/product-comparison" component={ProductComparison} />
       <Route path="/mqtt-dashboard" component={MqttDashboard} />
       <Route path="/mqtt-alerts" component={MqttAlertRules} />
+      <Route path="/mqtt-clients" component={MqttClientManagement} />
+      <Route path="/mqtt-topics" component={MqttTopicsMessages} />
+      <Route path="/custom-dashboard" component={CustomDashboard} />
       <Route path="/system-config" component={SystemConfiguration} />
       <Route path="/import-export" component={ImportExport} />
       <Route path="/user-assignments" component={UserAssignments} />

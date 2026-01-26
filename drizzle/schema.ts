@@ -248,6 +248,14 @@ export const productInspections = mysqlTable("product_inspections", {
   ntfReason: text("ntfReason"),
   inspectionTime: timestamp("inspectionTime").notNull(),
   cycleTime: decimal("cycleTime", { precision: 10, scale: 2 }),
+  // Batch operations fields
+  notes: text("notes"),
+  tags: text("tags"), // JSON array of tags
+  acknowledgedBy: int("acknowledgedBy"),
+  acknowledgedAt: timestamp("acknowledgedAt"),
+  isArchived: boolean("isArchived").default(false),
+  archivedAt: timestamp("archivedAt"),
+  archivedBy: int("archivedBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => [
