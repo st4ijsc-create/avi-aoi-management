@@ -319,14 +319,14 @@ export function DefectHeatmap() {
             <div className="space-y-2">
               <Label>Máy</Label>
               <Select
-                value={machineId?.toString() || ''}
-                onValueChange={(v) => setMachineId(v ? parseInt(v) : undefined)}
+                value={machineId?.toString() || 'all'}
+                onValueChange={(v) => setMachineId(v && v !== 'all' ? parseInt(v) : undefined)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Tất cả máy" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Tất cả</SelectItem>
+                  <SelectItem value="all">Tất cả</SelectItem>
                   {machines?.map((m: any) => (
                     <SelectItem key={m.id} value={m.id.toString()}>
                       {m.name}
@@ -339,14 +339,14 @@ export function DefectHeatmap() {
             <div className="space-y-2">
               <Label>Model sản phẩm</Label>
               <Select
-                value={productModelId?.toString() || ''}
-                onValueChange={(v) => setProductModelId(v ? parseInt(v) : undefined)}
+                value={productModelId?.toString() || 'all'}
+                onValueChange={(v) => setProductModelId(v && v !== 'all' ? parseInt(v) : undefined)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Tất cả model" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Tất cả</SelectItem>
+                  <SelectItem value="all">Tất cả</SelectItem>
                   {productModels?.map((pm: any) => (
                     <SelectItem key={pm.id} value={pm.id.toString()}>
                       {pm.name}
@@ -359,14 +359,14 @@ export function DefectHeatmap() {
             <div className="space-y-2">
               <Label>Loại annotation</Label>
               <Select
-                value={annotationType || ''}
-                onValueChange={(v) => setAnnotationType(v || undefined)}
+                value={annotationType || 'all'}
+                onValueChange={(v) => setAnnotationType(v && v !== 'all' ? v : undefined)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Tất cả loại" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Tất cả</SelectItem>
+                  <SelectItem value="all">Tất cả</SelectItem>
                   {Object.entries(annotationTypeLabels).map(([type, label]) => (
                     <SelectItem key={type} value={type}>
                       {label}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -220,12 +220,12 @@ export default function MQTTReplay() {
                       onChange={(e) => setFilterTopic(e.target.value)}
                       className="w-48"
                     />
-                    <Select value={filterMachine} onValueChange={setFilterMachine}>
+                    <Select value={filterMachine || 'all'} onValueChange={(v) => setFilterMachine(v === 'all' ? '' : v)}>
                       <SelectTrigger className="w-40">
                         <SelectValue placeholder="All machines" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">All machines</SelectItem>
+                        <SelectItem value="all">All machines</SelectItem>
                         {machines?.map((m) => (
                           <SelectItem key={m.id} value={m.code}>
                             {m.code}
@@ -348,12 +348,12 @@ export default function MQTTReplay() {
                     onChange={(e) => setFilterTopic(e.target.value)}
                     className="w-64"
                   />
-                  <Select value={filterMachine} onValueChange={setFilterMachine}>
+                  <Select value={filterMachine || 'all'} onValueChange={(v) => setFilterMachine(v === 'all' ? '' : v)}>
                     <SelectTrigger className="w-40">
                       <SelectValue placeholder="All machines" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All machines</SelectItem>
+                      <SelectItem value="all">All machines</SelectItem>
                       {machines?.map((m) => (
                         <SelectItem key={m.id} value={m.code}>
                           {m.code}

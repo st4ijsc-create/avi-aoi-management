@@ -7394,29 +7394,29 @@ Respond in JSON format with an array of findings.`
           ia.id,
           ia.annotations,
           ia.inspection_id,
-          i.machine_id,
-          i.product_model_id,
-          i.inspection_time,
+          i.machineId,
+          i.productModelId,
+          i.inspectionTime,
           m.name as machine_name,
-          m.position_x,
-          m.position_y,
+          m.positionX,
+          m.positionY,
           pm.name as product_model_name,
-          mr.measurement_point_id,
+          mr.measurementPointId,
           mp.name as measurement_point_name
         FROM image_annotations ia
-        JOIN inspections i ON ia.inspection_id = i.id
-        LEFT JOIN machines m ON i.machine_id = m.id
-        LEFT JOIN product_models pm ON i.product_model_id = pm.id
-        LEFT JOIN measurement_results mr ON mr.inspection_id = i.id AND mr.image_url = ia.image_url
-        LEFT JOIN measurement_points mp ON mr.measurement_point_id = mp.id
+        JOIN product_inspections i ON ia.inspectionId = i.id
+        LEFT JOIN machines m ON i.machineId = m.id
+        LEFT JOIN product_models pm ON i.productModelId = pm.id
+        LEFT JOIN measurement_results mr ON mr.inspectionId = i.id AND mr.imageUrl = ia.imageUrl
+        LEFT JOIN measurement_points mp ON mr.measurementPointId = mp.id
         WHERE ia.annotations IS NOT NULL
       `;
       
       const conditions: string[] = [];
-      if (input.machineId) conditions.push(`i.machine_id = ${input.machineId}`);
-      if (input.productModelId) conditions.push(`i.product_model_id = ${input.productModelId}`);
-      if (input.dateFrom) conditions.push(`i.inspection_time >= '${input.dateFrom}'`);
-      if (input.dateTo) conditions.push(`i.inspection_time <= '${input.dateTo}'`);
+      if (input.machineId) conditions.push(`i.machineId = ${input.machineId}`);
+      if (input.productModelId) conditions.push(`i.productModelId = ${input.productModelId}`);
+      if (input.dateFrom) conditions.push(`i.inspectionTime >= '${input.dateFrom}'`);
+      if (input.dateTo) conditions.push(`i.inspectionTime <= '${input.dateTo}'`);
       
       if (conditions.length > 0) {
         query += ' AND ' + conditions.join(' AND ');
@@ -7545,37 +7545,37 @@ Respond in JSON format with an array of findings.`
       // Get historical defect data grouped by date
       let query = `
         SELECT 
-          DATE(i.inspection_time) as date,
+          DATE(i.inspectionTime) as date,
           COUNT(ia.id) as defect_count,
-          i.machine_id,
+          i.machineId,
           m.name as machine_name,
-          i.product_model_id,
+          i.productModelId,
           pm.name as product_model_name
         FROM image_annotations ia
-        JOIN inspections i ON ia.inspection_id = i.id
-        LEFT JOIN machines m ON i.machine_id = m.id
-        LEFT JOIN product_models pm ON i.product_model_id = pm.id
+        JOIN product_inspections i ON ia.inspectionId = i.id
+        LEFT JOIN machines m ON i.machineId = m.id
+        LEFT JOIN product_models pm ON i.productModelId = pm.id
         WHERE ia.annotations IS NOT NULL
-          AND i.inspection_time >= DATE_SUB(NOW(), INTERVAL ${input.days} DAY)
+          AND i.inspectionTime >= DATE_SUB(NOW(), INTERVAL ${input.days} DAY)
       `;
       
       const conditions: string[] = [];
-      if (input.machineId) conditions.push(`i.machine_id = ${input.machineId}`);
-      if (input.productModelId) conditions.push(`i.product_model_id = ${input.productModelId}`);
+      if (input.machineId) conditions.push(`i.machineId = ${input.machineId}`);
+      if (input.productModelId) conditions.push(`i.productModelId = ${input.productModelId}`);
       
       if (conditions.length > 0) {
         query += ' AND ' + conditions.join(' AND ');
       }
       
-      query += ' GROUP BY DATE(i.inspection_time), i.machine_id, i.product_model_id ORDER BY date ASC';
+      query += ' GROUP BY DATE(i.inspectionTime), i.machineId, i.productModelId ORDER BY date ASC';
       
       const result = await db.execute(sql.raw(query)) as any;
       const historicalData = (result.rows || []).map((row: any) => ({
         date: row.date,
         defectCount: Number(row.defect_count),
-        machineId: row.machine_id,
+        machineId: row.machineId,
         machineName: row.machine_name,
-        productModelId: row.product_model_id,
+        productModelId: row.productModelId,
         productModelName: row.product_model_name,
       }));
       
@@ -7672,37 +7672,37 @@ Respond in JSON format with an array of findings.`
       let query = `
         SELECT 
           ia.id,
-          ia.image_url,
+          ia.imageUrl,
           ia.annotations,
-          ia.inspection_id,
-          i.serial_number,
-          i.inspection_time,
-          i.machine_id,
+          ia.inspectionId,
+          i.serialNumber,
+          i.inspectionTime,
+          i.machineId,
           m.name as machine_name,
-          i.product_model_id,
+          i.productModelId,
           pm.name as product_model_name,
-          mr.measurement_point_id,
+          mr.measurementPointId,
           mp.name as measurement_point_name
         FROM image_annotations ia
-        JOIN inspections i ON ia.inspection_id = i.id
-        LEFT JOIN machines m ON i.machine_id = m.id
-        LEFT JOIN product_models pm ON i.product_model_id = pm.id
-        LEFT JOIN measurement_results mr ON mr.inspection_id = i.id AND mr.image_url = ia.image_url
-        LEFT JOIN measurement_points mp ON mr.measurement_point_id = mp.id
+        JOIN product_inspections i ON ia.inspectionId = i.id
+        LEFT JOIN machines m ON i.machineId = m.id
+        LEFT JOIN product_models pm ON i.productModelId = pm.id
+        LEFT JOIN measurement_results mr ON mr.inspectionId = i.id AND mr.imageUrl = ia.imageUrl
+        LEFT JOIN measurement_points mp ON mr.measurementPointId = mp.id
         WHERE ia.annotations IS NOT NULL
       `;
       
       const conditions: string[] = [];
-      if (input.machineId) conditions.push(`i.machine_id = ${input.machineId}`);
-      if (input.productModelId) conditions.push(`i.product_model_id = ${input.productModelId}`);
-      if (input.dateFrom) conditions.push(`i.inspection_time >= '${input.dateFrom}'`);
-      if (input.dateTo) conditions.push(`i.inspection_time <= '${input.dateTo}'`);
+      if (input.machineId) conditions.push(`i.machineId = ${input.machineId}`);
+      if (input.productModelId) conditions.push(`i.productModelId = ${input.productModelId}`);
+      if (input.dateFrom) conditions.push(`i.inspectionTime >= '${input.dateFrom}'`);
+      if (input.dateTo) conditions.push(`i.inspectionTime <= '${input.dateTo}'`);
       
       if (conditions.length > 0) {
         query += ' AND ' + conditions.join(' AND ');
       }
       
-      query += ' ORDER BY i.inspection_time DESC LIMIT 10000';
+      query += ' ORDER BY i.inspectionTime DESC LIMIT 10000';
       
       const result = await db.execute(sql.raw(query)) as any;
       const rows = result.rows || [];
@@ -7712,15 +7712,15 @@ Respond in JSON format with an array of findings.`
           const annotations = typeof row.annotations === 'string' ? JSON.parse(row.annotations) : row.annotations;
           return {
             id: row.id,
-            imageUrl: row.image_url,
-            inspectionId: row.inspection_id,
-            serialNumber: row.serial_number,
-            inspectionTime: row.inspection_time,
-            machineId: row.machine_id,
+            imageUrl: row.imageUrl,
+            inspectionId: row.inspectionId,
+            serialNumber: row.serialNumber,
+            inspectionTime: row.inspectionTime,
+            machineId: row.machineId,
             machineName: row.machine_name,
-            productModelId: row.product_model_id,
+            productModelId: row.productModelId,
             productModelName: row.product_model_name,
-            measurementPointId: row.measurement_point_id,
+            measurementPointId: row.measurementPointId,
             measurementPointName: row.measurement_point_name,
             annotations: annotations,
           };
@@ -7742,13 +7742,13 @@ Respond in JSON format with an array of findings.`
           for (const ann of annotations || []) {
             csvRows.push([
               row.id,
-              `"${row.image_url || ''}"`,
-              row.inspection_id,
-              `"${row.serial_number || ''}"`,
-              row.inspection_time,
-              row.machine_id || '',
+              `"${row.imageUrl || ''}"`,
+              row.inspectionId,
+              `"${row.serialNumber || ''}"`,
+              row.inspectionTime,
+              row.machineId || '',
               `"${row.machine_name || ''}"`,
-              row.product_model_id || '',
+              row.productModelId || '',
               `"${row.product_model_name || ''}"`,
               `"${row.measurement_point_name || ''}"`,
               ann.type || '',

@@ -3937,3 +3937,38 @@ Menu structure mới:
 - Annotations: 9.4/10
 - AI/Predictive: 9.0/10
 - **Điểm tổng thể: 9.2/10**
+
+
+## Phase 155: Sửa lỗi Dashboard, Defect Heatmap, Defect Prediction, MQTT Replay, Custom Dashboard ✅
+
+### 1. Dashboard (Tổng quát) ✅
+- [x] Kiểm tra và xác nhận hoạt động tốt
+- [x] KPI cards, filters, tabs đều hiển thị đúng
+
+### 2. Bản đồ nhiệt Defects ✅
+- [x] Sửa lỗi SQL (tên bảng product_inspections, tên cột camelCase)
+- [x] Sửa lỗi SelectItem value rỗng -> "all"
+- [x] Thêm import React hooks
+- [x] Kiểm tra hiển thị - hoạt động tốt
+
+### 3. Dự đoán Defects ✅
+- [x] Sửa lỗi import useState, useMemo
+- [x] Sửa lỗi SelectItem value rỗng -> "all"
+- [x] Thêm error boundary và lazy loading
+- [x] Kiểm tra hiển thị - hoạt động tốt
+
+### 4. MQTT Replay ✅
+- [x] Sửa lỗi import React hooks (useState, useEffect, useRef, useMemo)
+- [x] Sửa lỗi SelectItem value rỗng -> "all"
+- [x] Kiểm tra hiển thị - hoạt động tốt (Live Stream, History, Auto-Discovery)
+
+### 5. Custom Dashboard ✅
+- [x] Kiểm tra chức năng chỉnh sửa - hoạt động tốt
+- [x] Kiểm tra thêm/xóa widgets - hoạt động tốt
+- [x] Kiểm tra lưu layout - hoạt động tốt
+- [x] Có thể kéo thả, thay đổi kích thước widgets
+
+**Tổng kết Phase 155:**
+- Tất cả 5 trang đã được sửa lỗi và hoạt động bình thường
+- Lỗi chính: SelectItem value rỗng (phải dùng "all" thay vì "")
+- Lỗi SQL: Tên bảng và cột không khớp với schema
