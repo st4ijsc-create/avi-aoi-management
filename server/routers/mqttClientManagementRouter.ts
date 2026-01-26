@@ -48,6 +48,11 @@ const createProfileSchema = z.object({
   publishTopics: z.array(z.string()).default([]),
   messageRetain: z.boolean().default(false),
   isDefault: z.boolean().default(false),
+  // Auto-Reconnect Configuration
+  autoReconnect: z.boolean().default(true),
+  maxReconnectAttempts: z.number().int().min(0).default(10),
+  reconnectBackoffMultiplier: z.string().default("1.5"),
+  maxReconnectDelay: z.number().int().min(1000).default(60000),
 });
 
 const updateProfileSchema = createProfileSchema.partial().extend({
@@ -862,6 +867,199 @@ export const mqttClientManagementRouter = router({
         profiles: healthData,
         lastUpdated: new Date().toISOString(),
       };
+    }),
+
+  // ============= BULK ASSIGNMENT =============
+  
+  // Bulk assign profile to multiple targets
+  bulkAssign: adminProcedure
+    .input(z.object({
+      profileId: z.number().int(),
+      targets: z.array(z.object({
+        targetType: z.enum(["machine", "station", "factory"]),
+        targetId: z.number().int(),
+      })),
+      overrideSettings: z.object({
+        subscribeTopics: z.array(z.string()).optional(),
+        publishTopics: z.array(z.string()).optional(),
+        qos: z.enum(["0", "1", "2"]).optional(),
+        clientIdSuffix: z.string().optional(),
+      }).optional(),
+      replaceExisting: z.boolean().default(false), // If true, deactivate existing assignments
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const { profileId, targets, overrideSettings, replaceExisting } = input;
+      
+      // Verify profile exists
+      const [profile] = await db.select()
+        .from(mqttClientProfiles)
+        .where(eq(mqttClientProfiles.id, profileId))
+        .limit(1);
+      
+      if (!profile) {
+        throw new Error("Profile not found");
+      }
+      
+      const results = {
+        success: 0,
+        skipped: 0,
+        errors: [] as string[],
+      };
+      
+      for (const target of targets) {
+        try {
+          // Check if assignment already exists
+          const [existing] = await db.select()
+            .from(mqttProfileAssignments)
+            .where(and(
+              eq(mqttProfileAssignments.targetType, target.targetType),
+              eq(mqttProfileAssignments.targetId, target.targetId),
+              eq(mqttProfileAssignments.isActive, true)
+            ))
+            .limit(1);
+          
+          if (existing) {
+            if (replaceExisting) {
+              // Deactivate existing assignment
+              await db.update(mqttProfileAssignments)
+                .set({ isActive: false })
+                .where(eq(mqttProfileAssignments.id, existing.id));
+            } else {
+              results.skipped++;
+              continue;
+            }
+          }
+          
+          // Create new assignment
+          await db.insert(mqttProfileAssignments).values({
+            profileId,
+            targetType: target.targetType,
+            targetId: target.targetId,
+            overrideSettings: overrideSettings || null,
+            assignedBy: ctx.user?.id,
+            isActive: true,
+          });
+          
+          results.success++;
+        } catch (error: any) {
+          results.errors.push(`Failed to assign ${target.targetType} ${target.targetId}: ${error.message}`);
+        }
+      }
+      
+      return results;
+    }),
+
+  // Get available targets for bulk assignment
+  getAvailableTargets: protectedProcedure
+    .input(z.object({
+      targetType: z.enum(["machine", "station", "factory"]),
+      search: z.string().optional(),
+      excludeAssigned: z.boolean().default(false),
+      profileId: z.number().int().optional(),
+    }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const { targetType, search, excludeAssigned, profileId } = input;
+      
+      let targets: { id: number; name: string; code?: string; hasAssignment: boolean }[] = [];
+      
+      if (targetType === "machine") {
+        const machineList = await db.select({
+          id: machines.id,
+          name: machines.name,
+          code: machines.code,
+        }).from(machines).where(eq(machines.isActive, true));
+        
+        // Check assignments
+        const assignedIds = await db.select({ targetId: mqttProfileAssignments.targetId })
+          .from(mqttProfileAssignments)
+          .where(and(
+            eq(mqttProfileAssignments.targetType, "machine"),
+            eq(mqttProfileAssignments.isActive, true)
+          ));
+        const assignedSet = new Set(assignedIds.map(a => a.targetId));
+        
+        targets = machineList.map(m => ({
+          id: m.id,
+          name: m.name,
+          code: m.code || undefined,
+          hasAssignment: assignedSet.has(m.id),
+        }));
+      } else if (targetType === "station") {
+        const stationList = await db.select({
+          id: stations.id,
+          name: stations.name,
+          code: stations.code,
+        }).from(stations).where(eq(stations.isActive, true));
+        
+        const assignedIds = await db.select({ targetId: mqttProfileAssignments.targetId })
+          .from(mqttProfileAssignments)
+          .where(and(
+            eq(mqttProfileAssignments.targetType, "station"),
+            eq(mqttProfileAssignments.isActive, true)
+          ));
+        const assignedSet = new Set(assignedIds.map(a => a.targetId));
+        
+        targets = stationList.map(s => ({
+          id: s.id,
+          name: s.name,
+          code: s.code || undefined,
+          hasAssignment: assignedSet.has(s.id),
+        }));
+      } else {
+        const factoryList = await db.select({
+          id: factories.id,
+          name: factories.name,
+          code: factories.code,
+        }).from(factories).where(eq(factories.isActive, true));
+        
+        const assignedIds = await db.select({ targetId: mqttProfileAssignments.targetId })
+          .from(mqttProfileAssignments)
+          .where(and(
+            eq(mqttProfileAssignments.targetType, "factory"),
+            eq(mqttProfileAssignments.isActive, true)
+          ));
+        const assignedSet = new Set(assignedIds.map(a => a.targetId));
+        
+        targets = factoryList.map(f => ({
+          id: f.id,
+          name: f.name,
+          code: f.code || undefined,
+          hasAssignment: assignedSet.has(f.id),
+        }));
+      }
+      
+      // Filter by search
+      if (search) {
+        const searchLower = search.toLowerCase();
+        targets = targets.filter(t => 
+          t.name.toLowerCase().includes(searchLower) || 
+          (t.code && t.code.toLowerCase().includes(searchLower))
+        );
+      }
+      
+      // Exclude already assigned
+      if (excludeAssigned) {
+        targets = targets.filter(t => !t.hasAssignment);
+      }
+      
+      return targets;
+    }),
+
+  // Bulk remove assignments
+  bulkRemoveAssignments: adminProcedure
+    .input(z.object({
+      assignmentIds: z.array(z.number().int()),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await requireDb();
+      
+      await db.update(mqttProfileAssignments)
+        .set({ isActive: false })
+        .where(inArray(mqttProfileAssignments.id, input.assignmentIds));
+      
+      return { success: true, removed: input.assignmentIds.length };
     }),
 
   // ============= DASHBOARD STATS =============

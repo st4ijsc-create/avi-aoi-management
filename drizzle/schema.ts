@@ -2608,6 +2608,12 @@ export const mqttClientProfiles = mysqlTable("mqtt_client_profiles", {
   reconnectPeriod: int("reconnectPeriod").default(5000).notNull(), // ms
   cleanSession: boolean("cleanSession").default(true).notNull(),
   
+  // Auto-Reconnect Settings
+  maxReconnectAttempts: int("maxReconnectAttempts").default(10).notNull(), // 0 = unlimited
+  reconnectBackoffMultiplier: decimal("reconnectBackoffMultiplier", { precision: 3, scale: 1 }).default("1.5").notNull(), // Exponential backoff
+  maxReconnectDelay: int("maxReconnectDelay").default(60000).notNull(), // Max delay between reconnects (ms)
+  autoReconnect: boolean("autoReconnect").default(true).notNull(), // Enable/disable auto-reconnect
+  
   // QoS Settings
   defaultQos: mysqlEnum("defaultQos", ["0", "1", "2"]).default("1").notNull(),
   

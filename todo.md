@@ -4378,3 +4378,33 @@ Menu structure mới:
 ### 3. Sidebar Navigation
 - [x] Thêm menu item "MQTT Profiles" vào sidebar (navigation.tsx)
 - [x] Đặt trong nhóm Giám sát (Monitoring) cùng các MQTT khác
+
+
+## Phase 169: Bulk Assignment, Auto-Reconnect, Fix Annotation Comparison
+
+### 1. Bulk Assignment cho MQTT Profiles
+- [x] Thêm API endpoint bulkAssign cho gán profile cho nhiều targets
+- [x] Thêm API endpoint getAvailableTargets để lấy danh sách targets
+- [x] Thêm API endpoint bulkRemoveAssignments để xóa nhiều assignments
+- [x] Thêm UI dialog chọn nhiều machines/stations cùng lúc (Bulk Assign Dialog)
+- [x] Hiển thị preview trước khi gán
+- [x] Thêm button Bulk Assign vào profile card
+
+### 2. Auto-Reconnect Configuration
+- [x] Thêm fields maxReconnectAttempts, reconnectBackoffMultiplier, maxReconnectDelay, autoReconnect vào schema
+- [x] Cập nhật database với các columns mới
+- [x] Thêm Auto-Reconnect Configuration section vào form UI
+- [x] Cập nhật formData, resetForm, openEditDialog với các fields mới
+- [x] Thêm UI form cấu hình reconnect trong profile edit
+- [x] Hiển thị reconnect settings trong profile detail
+
+### 3. Fix lỗi So sánh Annotation
+- [x] Kiểm tra và xác định lỗi hiện tại (lỗi SelectItem với value rỗng)
+- [x] Sửa lỗi trong component AnnotationComparison.tsx (thay value="" thành value="all")
+- [x] Test lại chức năng - trang hoạt động bình thường
+
+### 4. Unit Tests
+- [x] Viết unit tests cho MQTT Profile Management (mqttProfileManagement.test.ts)
+- [x] Test Auto-Reconnect Configuration schema và logic
+- [x] Test Bulk Assignment input validation
+- [x] Test Available Targets query

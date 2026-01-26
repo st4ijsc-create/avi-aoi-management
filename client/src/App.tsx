@@ -59,6 +59,7 @@ import DashboardMarketplace from "./pages/DashboardMarketplace";
 import HistoryExportScheduling from "./pages/HistoryExportScheduling";
 import CorporateDashboard from "./pages/CorporateDashboard";
 import AIPerformanceDashboard from "./pages/AIPerformanceDashboard";
+import TestAnnotationPage from "./pages/TestAnnotationPage";
 
 function Router() {
   return (
@@ -119,6 +120,7 @@ function Router() {
       <Route path="/dashboard-marketplace" component={DashboardMarketplace} />
       <Route path="/history-export-scheduling" component={HistoryExportScheduling} />
       <Route path="/ai-performance" component={AIPerformanceDashboard} />
+      <Route path="/test-annotation" component={TestAnnotationPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

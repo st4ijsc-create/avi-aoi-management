@@ -147,6 +147,42 @@ export default function MqttProfileManagement() {
     },
   });
 
+  // Bulk Assignment
+  const [showBulkAssignDialog, setShowBulkAssignDialog] = useState(false);
+  const [bulkAssignTargetType, setBulkAssignTargetType] = useState<"machine" | "station" | "factory">("machine");
+  const [selectedTargets, setSelectedTargets] = useState<number[]>([]);
+  const [bulkReplaceExisting, setBulkReplaceExisting] = useState(false);
+
+  const { data: availableTargets } = trpc.mqttClientManagement.getAvailableTargets.useQuery(
+    { targetType: bulkAssignTargetType, excludeAssigned: !bulkReplaceExisting },
+    { enabled: showBulkAssignDialog }
+  );
+
+  const bulkAssign = trpc.mqttClientManagement.bulkAssign.useMutation({
+    onSuccess: (result) => {
+      toast.success(`Bulk assign hoàn tất: ${result.success} thành công, ${result.skipped} bỏ qua`);
+      if (result.errors.length > 0) {
+        result.errors.forEach(err => toast.error(err));
+      }
+      refetchAssignments();
+      refetchStats();
+      setShowBulkAssignDialog(false);
+      setSelectedTargets([]);
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const handleBulkAssign = () => {
+    if (!selectedProfileForAssign || selectedTargets.length === 0) return;
+    bulkAssign.mutate({
+      profileId: selectedProfileForAssign,
+      targets: selectedTargets.map(id => ({ targetType: bulkAssignTargetType, targetId: id })),
+      replaceExisting: bulkReplaceExisting,
+    });
+  };
+
   // Form state for create/edit profile
   const [formData, setFormData] = useState({
     name: "",
@@ -167,6 +203,11 @@ export default function MqttProfileManagement() {
     publishTopics: [] as string[],
     messageRetain: false,
     isDefault: false,
+    // Auto-Reconnect Settings
+    autoReconnect: true,
+    maxReconnectAttempts: 10,
+    reconnectBackoffMultiplier: "1.5",
+    maxReconnectDelay: 60000,
   });
 
   const [assignFormData, setAssignFormData] = useState({
@@ -194,6 +235,10 @@ export default function MqttProfileManagement() {
       publishTopics: [],
       messageRetain: false,
       isDefault: false,
+      autoReconnect: true,
+      maxReconnectAttempts: 10,
+      reconnectBackoffMultiplier: "1.5",
+      maxReconnectDelay: 60000,
     });
   };
 
@@ -238,6 +283,10 @@ export default function MqttProfileManagement() {
       publishTopics: profile.publishTopics || [],
       messageRetain: profile.messageRetain,
       isDefault: profile.isDefault,
+      autoReconnect: profile.autoReconnect ?? true,
+      maxReconnectAttempts: profile.maxReconnectAttempts ?? 10,
+      reconnectBackoffMultiplier: String(profile.reconnectBackoffMultiplier ?? "1.5"),
+      maxReconnectDelay: profile.maxReconnectDelay ?? 60000,
     });
   };
 
@@ -471,12 +520,24 @@ export default function MqttProfileManagement() {
                         <Button 
                           variant="ghost" 
                           size="sm"
+                          title="Gán cho 1 target"
                           onClick={() => {
                             setSelectedProfileForAssign(profile.id);
                             setShowAssignDialog(true);
                           }}
                         >
                           <Link2 className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          title="Gán cho nhiều targets"
+                          onClick={() => {
+                            setSelectedProfileForAssign(profile.id);
+                            setShowBulkAssignDialog(true);
+                          }}
+                        >
+                          <Server className="h-4 w-4" />
                         </Button>
                         <Button 
                           variant="ghost" 
@@ -837,6 +898,62 @@ export default function MqttProfileManagement() {
                 </div>
               </div>
 
+              {/* Auto-Reconnect Settings */}
+              <div className="space-y-4">
+                <h4 className="font-medium flex items-center gap-2">
+                  <RefreshCw className="h-4 w-4" />
+                  Auto-Reconnect Configuration
+                </h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={formData.autoReconnect}
+                      onCheckedChange={(v) => setFormData({ ...formData, autoReconnect: v })}
+                    />
+                    <Label>Enable Auto-Reconnect</Label>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="maxReconnectAttempts">Max Reconnect Attempts (0 = unlimited)</Label>
+                    <Input
+                      id="maxReconnectAttempts"
+                      type="number"
+                      min={0}
+                      value={formData.maxReconnectAttempts}
+                      onChange={(e) => setFormData({ ...formData, maxReconnectAttempts: parseInt(e.target.value) || 0 })}
+                      disabled={!formData.autoReconnect}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="reconnectBackoffMultiplier">Backoff Multiplier</Label>
+                    <Input
+                      id="reconnectBackoffMultiplier"
+                      type="number"
+                      step="0.1"
+                      min={1}
+                      max={5}
+                      value={formData.reconnectBackoffMultiplier}
+                      onChange={(e) => setFormData({ ...formData, reconnectBackoffMultiplier: e.target.value })}
+                      disabled={!formData.autoReconnect}
+                    />
+                    <p className="text-xs text-muted-foreground">Delay tăng theo hệ số này sau mỗi lần thử lại</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="maxReconnectDelay">Max Reconnect Delay (ms)</Label>
+                    <Input
+                      id="maxReconnectDelay"
+                      type="number"
+                      min={1000}
+                      value={formData.maxReconnectDelay}
+                      onChange={(e) => setFormData({ ...formData, maxReconnectDelay: parseInt(e.target.value) || 60000 })}
+                      disabled={!formData.autoReconnect}
+                    />
+                    <p className="text-xs text-muted-foreground">Delay tối đa giữa các lần reconnect</p>
+                  </div>
+                </div>
+              </div>
+
               {/* QoS and Options */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -1065,6 +1182,126 @@ export default function MqttProfileManagement() {
                 disabled={!importFile || importProfiles.isPending}
               >
                 {importProfiles.isPending ? 'Importing...' : 'Import'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Bulk Assign Dialog */}
+        <Dialog open={showBulkAssignDialog} onOpenChange={setShowBulkAssignDialog}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Gán Profile cho nhiều Targets</DialogTitle>
+              <DialogDescription>
+                Chọn nhiều machines/stations/factories để gán profile cùng lúc
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label>Loại Target</Label>
+                <Select
+                  value={bulkAssignTargetType}
+                  onValueChange={(v: any) => {
+                    setBulkAssignTargetType(v);
+                    setSelectedTargets([]);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="machine">Machine</SelectItem>
+                    <SelectItem value="station">Station</SelectItem>
+                    <SelectItem value="factory">Factory</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={bulkReplaceExisting}
+                  onCheckedChange={setBulkReplaceExisting}
+                />
+                <Label>Thay thế assignments hiện có</Label>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Chọn Targets ({selectedTargets.length} đã chọn)</Label>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedTargets(availableTargets?.map(t => t.id) || [])}
+                    >
+                      Chọn tất cả
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedTargets([])}
+                    >
+                      Bỏ chọn
+                    </Button>
+                  </div>
+                </div>
+                <div className="border rounded-md max-h-60 overflow-y-auto">
+                  {availableTargets?.map((target) => (
+                    <div
+                      key={target.id}
+                      className={`flex items-center gap-2 p-2 hover:bg-muted cursor-pointer ${
+                        selectedTargets.includes(target.id) ? 'bg-primary/10' : ''
+                      }`}
+                      onClick={() => {
+                        if (selectedTargets.includes(target.id)) {
+                          setSelectedTargets(selectedTargets.filter(id => id !== target.id));
+                        } else {
+                          setSelectedTargets([...selectedTargets, target.id]);
+                        }
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedTargets.includes(target.id)}
+                        onChange={() => {}}
+                        className="h-4 w-4"
+                      />
+                      <span className="flex-1">{target.name}</span>
+                      {target.code && <Badge variant="outline">{target.code}</Badge>}
+                      {target.hasAssignment && <Badge variant="secondary">Đã gán</Badge>}
+                    </div>
+                  ))}
+                  {(!availableTargets || availableTargets.length === 0) && (
+                    <div className="p-4 text-center text-muted-foreground">
+                      Không có target nào khả dụng
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {selectedTargets.length > 0 && (
+                <div className="bg-muted p-3 rounded-md">
+                  <p className="text-sm"><strong>Preview:</strong> Sẽ gán profile cho {selectedTargets.length} {bulkAssignTargetType}(s)</p>
+                  {bulkReplaceExisting && (
+                    <p className="text-sm text-orange-600">Các assignments hiện có sẽ bị thay thế</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setShowBulkAssignDialog(false);
+                setSelectedTargets([]);
+              }}>
+                Hủy
+              </Button>
+              <Button 
+                onClick={handleBulkAssign}
+                disabled={selectedTargets.length === 0 || bulkAssign.isPending}
+              >
+                {bulkAssign.isPending ? 'Đang gán...' : `Gán ${selectedTargets.length} targets`}
               </Button>
             </DialogFooter>
           </DialogContent>
