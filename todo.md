@@ -4198,3 +4198,23 @@ Menu structure mới:
 - [x] Tạo DashboardScreen với KPI cards (Output, FPY, Yield, OK/NG/NTF)
 - [x] Tạo AlertsScreen với danh sách cảnh báo và filter
 - [x] Cập nhật navigation với 4 tabs (Dashboard, Home, Alerts, Settings)
+
+
+## Phase 161: MQTT Testing, Mobile APK Build, Push Notifications
+
+### 1. Test MQTT với máy thật
+- [x] Cài đặt Mosquitto broker trên sandbox (port 1884)
+- [x] Tạo Python script mô phỏng máy AVI/AOI (scripts/mqtt_simulator.py)
+- [x] Test gửi dữ liệu inspection và NG alerts (10 inspections, 5 NG)
+- [x] Xác nhận luồng real-time hoạt động
+
+### 2. Build Mobile APK
+- [x] Cấu hình EAS build cho Android (eas.json)
+- [x] Tạo eas.json với profile preview/development/production
+- [x] Hướng dẫn build APK (BUILD_GUIDE.md)
+
+### 3. Push Notification Server (Firebase)
+- [x] Tạo server-side FCM integration (fcmService.ts đã có sẵn)
+- [x] Gửi push notification khi có NG alert (tích hợp với mqttService)
+- [x] Hỗ trợ background notifications (FCM HTTP v1 API)
+- [x] Tài liệu cấu hình (FIREBASE_PUSH_NOTIFICATIONS.md)
