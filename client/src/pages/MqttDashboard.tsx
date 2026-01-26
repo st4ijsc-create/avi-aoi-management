@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { alertSoundService } from "@/lib/alertSoundService";
-import { Volume2, VolumeX } from "lucide-react";
+import { Volume2, VolumeX, Radio } from "lucide-react";
+import { io, Socket } from "socket.io-client";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   LineChart,
   Line,
@@ -35,6 +38,71 @@ const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#6366f1'];
 
 export default function MqttDashboard() {
   const [trendDays, setTrendDays] = useState(7);
+  
+  // WebSocket real-time state
+  const [wsEnabled, setWsEnabled] = useState(() => {
+    const saved = localStorage.getItem('mqtt-ws-enabled');
+    return saved === 'true'; // Default: off
+  });
+  const [wsConnected, setWsConnected] = useState(false);
+  const socketRef = useRef<Socket | null>(null);
+  
+  // WebSocket connection effect
+  useEffect(() => {
+    if (!wsEnabled) {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+        setWsConnected(false);
+      }
+      return;
+    }
+    
+    // Connect to WebSocket
+    const socket = io(window.location.origin, {
+      path: '/socket.io',
+      transports: ['websocket', 'polling'],
+    });
+    
+    socket.on('connect', () => {
+      setWsConnected(true);
+      toast.success('WebSocket connected');
+    });
+    
+    socket.on('disconnect', () => {
+      setWsConnected(false);
+    });
+    
+    socket.on('mqtt:message', (data: any) => {
+      // Refresh data on new message
+      refetchMessages();
+      refetchRealtimeStats();
+      
+      // Play sound if NG alert
+      if (data.type === 'NG_ALERT') {
+        alertSoundService.playNGAlert();
+      }
+    });
+    
+    socket.on('mqtt:stats', () => {
+      refetchStats();
+    });
+    
+    socketRef.current = socket;
+    
+    return () => {
+      socket.disconnect();
+    };
+  }, [wsEnabled]);
+  
+  // Save WebSocket preference
+  const toggleWebSocket = (enabled: boolean) => {
+    setWsEnabled(enabled);
+    localStorage.setItem('mqtt-ws-enabled', String(enabled));
+    if (!enabled) {
+      toast.info('WebSocket disabled, using polling');
+    }
+  };
   
   const { data: stats, isLoading: statsLoading, refetch: refetchStats } = trpc.mqttClient.dashboardStats.useQuery();
   const { data: trend, isLoading: trendLoading } = trpc.mqttClient.messageTrend.useQuery({ days: trendDays });
@@ -158,6 +226,19 @@ export default function MqttDashboard() {
                 </Badge>
               )
             )}
+            {/* WebSocket Toggle */}
+            <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/50">
+              <Radio className={`w-4 h-4 ${wsConnected ? 'text-green-500' : 'text-muted-foreground'}`} />
+              <Label htmlFor="ws-toggle" className="text-xs cursor-pointer">
+                {wsConnected ? 'WS: On' : 'WS: Off'}
+              </Label>
+              <Switch
+                id="ws-toggle"
+                checked={wsEnabled}
+                onCheckedChange={toggleWebSocket}
+                className="scale-75"
+              />
+            </div>
             <Button
               variant={soundMuted ? "outline" : "secondary"}
               size="sm"

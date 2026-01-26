@@ -1,4 +1,4 @@
-import {
+import { 
   BarChart3, 
   History, 
   LayoutGrid, 
@@ -73,29 +73,32 @@ export interface NavGroup {
 /**
  * Navigation structure organized by functional categories:
  * 
- * 1. Tổng quan (Overview) - Dashboard, real-time monitoring
- * 2. Giám sát (Monitoring) - Machine status, alerts, MQTT
- * 3. Sản xuất (Production) - Orders, inspection history, reports
- * 4. Quản lý dữ liệu (Data Management) - Products, mappings, layout
- * 5. Thống kê & Báo cáo (Analytics) - Statistics, scheduled reports
- * 6. Quản trị hệ thống (Administration) - Users, settings, API
+ * 1. Dashboard - Bảng điều khiển chính và tùy chỉnh
+ * 2. Giám sát - Theo dõi máy, MQTT, OEE
+ * 3. Cảnh báo - Quản lý cảnh báo và quy tắc
+ * 4. Sản xuất - Lệnh sản xuất, lịch sử kiểm tra
+ * 5. Phân tích - Thống kê, báo cáo, AI
+ * 6. Dữ liệu - Quản lý master data
+ * 7. Quy trình - Công đoạn, công trạm
+ * 8. Cài đặt - Cấu hình hệ thống
+ * 9. Quản trị - Admin only
  */
 export const navGroups: NavGroup[] = [
   // ============================================
-  // 1. TỔNG QUAN - Dashboard chính và tổng quan
+  // 1. DASHBOARD - Bảng điều khiển chính
   // ============================================
   {
-    id: "overview",
-    label: "Tổng quan",
+    id: "dashboard",
+    label: "Dashboard",
     icon: <Gauge className="h-4 w-4" />,
-    description: "Dashboard và tổng quan hệ thống",
+    description: "Bảng điều khiển và tổng quan",
     defaultOpen: true,
     items: [
       { 
         href: "/dashboard", 
-        label: "Dashboard", 
+        label: "Tổng quan", 
         icon: <BarChart3 className="h-4 w-4" />,
-        description: "Tổng quan số liệu và biểu đồ"
+        description: "Dashboard chính với KPI và biểu đồ"
       },
       { 
         href: "/drill-down", 
@@ -103,35 +106,23 @@ export const navGroups: NavGroup[] = [
         icon: <TrendingUp className="h-4 w-4" />,
         description: "Phân tích chi tiết từ Corporate đến Machine"
       },
-{ 
+      { 
+        href: "/custom-dashboard", 
+        label: "Dashboard Tùy chỉnh", 
+        icon: <LayoutGrid className="h-4 w-4" />,
+        description: "Tạo dashboard với widgets tùy chọn"
+      },
+      { 
         href: "/dashboard-templates", 
         label: "Mẫu Dashboard", 
         icon: <LayoutDashboard className="h-4 w-4" />,
         description: "Quản lý các mẫu dashboard"
       },
       { 
-        href: "/custom-dashboard", 
-        label: "Dashboard Tùy chỉnh", 
-        icon: <LayoutGrid className="h-4 w-4" />,
-      },
-      { 
         href: "/dashboard-marketplace", 
-        label: "Marketplace Templates", 
+        label: "Marketplace", 
         icon: <Store className="h-4 w-4" />,
-        description: "Tạo và quản lý dashboard tùy chỉnh với widgets"
-      },
-      { 
-        href: "/backup-restore", 
-        label: "Backup & Restore", 
-        icon: <Archive className="h-4 w-4" />,
-        description: "Sao lưu và khôi phục cấu hình hệ thống",
-        requiredRole: "admin"
-      },
-      { 
-        href: "/template-marketplace", 
-        label: "Template Marketplace", 
-        icon: <Store className="h-4 w-4" />,
-        description: "Chia sẻ và tải templates từ cộng đồng"
+        description: "Tải và chia sẻ templates"
       },
     ],
   },
@@ -143,7 +134,7 @@ export const navGroups: NavGroup[] = [
     id: "monitoring",
     label: "Giám sát",
     icon: <Activity className="h-4 w-4" />,
-    description: "Theo dõi trạng thái máy và cảnh báo",
+    description: "Theo dõi trạng thái máy và MQTT",
     defaultOpen: true,
     items: [
       { 
@@ -153,46 +144,22 @@ export const navGroups: NavGroup[] = [
         description: "Theo dõi trạng thái hoạt động của máy"
       },
       { 
-        href: "/alerts", 
-        label: "Cảnh báo", 
-        icon: <Bell className="h-4 w-4" />,
-        description: "Xem và quản lý cảnh báo hệ thống"
-      },
-      { 
         href: "/mqtt-dashboard", 
         label: "MQTT Monitor", 
         icon: <Radio className="h-4 w-4" />,
         description: "Giám sát kết nối MQTT real-time"
       },
       { 
-        href: "/mqtt-alerts", 
-        label: "Quy tắc cảnh báo", 
-        icon: <AlertTriangle className="h-4 w-4" />,
-        description: "Cấu hình quy tắc cảnh báo tự động"
-      },
-      { 
         href: "/mqtt-clients", 
-        label: "Quản lý Client", 
+        label: "MQTT Clients", 
         icon: <Wifi className="h-4 w-4" />,
-        description: "Quản lý MQTT clients và hiển thị lỗi theo công trạm"
+        description: "Quản lý MQTT clients"
       },
       { 
         href: "/mqtt-topics", 
         label: "Topics & Messages", 
         icon: <MessageSquare className="h-4 w-4" />,
-        description: "Quản lý topics và xem lịch sử messages"
-      },
-      { 
-        href: "/oee-dashboard", 
-        label: "OEE Dashboard", 
-        icon: <Timer className="h-4 w-4" />,
-        description: "Theo dõi hiệu suất thiết bị tổng thể"
-      },
-      { 
-        href: "/oee-target-settings", 
-        label: "OEE Target Settings", 
-        icon: <Target className="h-4 w-4" />,
-        description: "Cài đặt mục tiêu OEE cho máy và dây chuyền"
+        description: "Quản lý topics và xem messages"
       },
       { 
         href: "/mqtt-replay", 
@@ -201,16 +168,59 @@ export const navGroups: NavGroup[] = [
         description: "Phát lại và debug tin nhắn MQTT"
       },
       { 
+        href: "/oee-dashboard", 
+        label: "OEE Dashboard", 
+        icon: <Timer className="h-4 w-4" />,
+        description: "Hiệu suất thiết bị tổng thể"
+      },
+      { 
         href: "/machine-health", 
         label: "Machine Health", 
         icon: <Heart className="h-4 w-4" />,
-        description: "Theo dõi sức khỏe máy và dự đoán bảo trì"
+        description: "Theo dõi sức khỏe máy"
       },
     ],
   },
 
   // ============================================
-  // 3. SẢN XUẤT - Quản lý quy trình sản xuất
+  // 3. CẢNH BÁO - Quản lý cảnh báo
+  // ============================================
+  {
+    id: "alerts",
+    label: "Cảnh báo",
+    icon: <Bell className="h-4 w-4" />,
+    description: "Quản lý cảnh báo và quy tắc",
+    defaultOpen: false,
+    items: [
+      { 
+        href: "/alerts", 
+        label: "Danh sách cảnh báo", 
+        icon: <Bell className="h-4 w-4" />,
+        description: "Xem và quản lý cảnh báo hệ thống"
+      },
+      { 
+        href: "/mqtt-alerts", 
+        label: "Quy tắc cảnh báo", 
+        icon: <AlertTriangle className="h-4 w-4" />,
+        description: "Cấu hình quy tắc cảnh báo tự động"
+      },
+      { 
+        href: "/predictive-alerts", 
+        label: "Cảnh báo Dự đoán", 
+        icon: <Sparkles className="h-4 w-4" />,
+        description: "AI tự động cảnh báo vấn đề tiềm ẩn"
+      },
+      { 
+        href: "/oee-target-settings", 
+        label: "Mục tiêu OEE", 
+        icon: <Target className="h-4 w-4" />,
+        description: "Cài đặt mục tiêu OEE"
+      },
+    ],
+  },
+
+  // ============================================
+  // 4. SẢN XUẤT - Quản lý quy trình sản xuất
   // ============================================
   {
     id: "production",
@@ -241,7 +251,74 @@ export const navGroups: NavGroup[] = [
   },
 
   // ============================================
-  // 4. QUẢN LÝ DỮ LIỆU - Master data
+  // 5. PHÂN TÍCH - Thống kê và báo cáo
+  // ============================================
+  {
+    id: "analytics",
+    label: "Phân tích",
+    icon: <LineChart className="h-4 w-4" />,
+    description: "Báo cáo và phân tích dữ liệu",
+    defaultOpen: false,
+    items: [
+      { 
+        href: "/reports", 
+        label: "Báo cáo", 
+        icon: <FileBarChart className="h-4 w-4" />,
+        description: "Xem và xuất báo cáo"
+      },
+      { 
+        href: "/scheduled-reports", 
+        label: "Báo cáo định kỳ", 
+        icon: <Calendar className="h-4 w-4" />,
+        description: "Cấu hình báo cáo tự động"
+      },
+      { 
+        href: "/category-analytics", 
+        label: "Phân tích Category", 
+        icon: <PieChart className="h-4 w-4" />,
+        description: "Phân tích sản lượng/yield theo category"
+      },
+      { 
+        href: "/spc-analysis", 
+        label: "SPC / AI Analysis", 
+        icon: <Brain className="h-4 w-4" />,
+        description: "Phân tích SPC và AI dự đoán"
+      },
+      { 
+        href: "/annotation-statistics", 
+        label: "Thống kê Annotation", 
+        icon: <Tags className="h-4 w-4" />,
+        description: "Phân tích xu hướng annotation"
+      },
+      { 
+        href: "/annotation-comparison", 
+        label: "So sánh Annotation", 
+        icon: <GitCompare className="h-4 w-4" />,
+        description: "So sánh annotations giữa các lần kiểm tra"
+      },
+      { 
+        href: "/defect-heatmap", 
+        label: "Bản đồ nhiệt Defects", 
+        icon: <Map className="h-4 w-4" />,
+        description: "Hiển thị mật độ defects trên layout"
+      },
+      { 
+        href: "/defect-prediction", 
+        label: "Dự đoán Defects", 
+        icon: <Sparkles className="h-4 w-4" />,
+        description: "AI dự đoán xu hướng defects"
+      },
+      { 
+        href: "/root-cause-analysis", 
+        label: "Phân tích Nguyên nhân", 
+        icon: <Search className="h-4 w-4" />,
+        description: "AI phân tích nguyên nhân gốc rễ"
+      },
+    ],
+  },
+
+  // ============================================
+  // 6. DỮ LIỆU - Quản lý master data
   // ============================================
   {
     id: "data-management",
@@ -278,80 +355,7 @@ export const navGroups: NavGroup[] = [
   },
 
   // ============================================
-  // 5. THỐNG KÊ & BÁO CÁO - Analytics
-  // ============================================
-  {
-    id: "analytics",
-    label: "Thống kê",
-    icon: <LineChart className="h-4 w-4" />,
-    description: "Báo cáo và phân tích dữ liệu",
-    defaultOpen: false,
-    items: [
-      { 
-        href: "/reports", 
-        label: "Báo cáo", 
-        icon: <FileBarChart className="h-4 w-4" />,
-        description: "Xem và xuất báo cáo"
-      },
-      { 
-        href: "/category-analytics", 
-        label: "Phân tích Category", 
-        icon: <PieChart className="h-4 w-4" />,
-        description: "Phân tích sản lượng/yield theo category"
-      },
-      { 
-        href: "/scheduled-reports", 
-        label: "Báo cáo định kỳ", 
-        icon: <Calendar className="h-4 w-4" />,
-        description: "Cấu hình báo cáo tự động"
-      },
-      { 
-        href: "/spc-analysis", 
-        label: "SPC / AI Analysis", 
-        icon: <Brain className="h-4 w-4" />,
-        description: "Phân tích SPC và AI dự đoán"
-      },
-      { 
-        href: "/annotation-statistics", 
-        label: "Thống kê Annotation", 
-        icon: <Tags className="h-4 w-4" />,
-        description: "Phân tích xu hướng annotation theo máy, sản phẩm"
-      },
-      { 
-        href: "/annotation-comparison", 
-        label: "So sánh Annotation", 
-        icon: <GitCompare className="h-4 w-4" />,
-        description: "So sánh annotations giữa các lần kiểm tra"
-      },
-      { 
-        href: "/defect-heatmap", 
-        label: "Bản đồ nhiệt Defects", 
-        icon: <Map className="h-4 w-4" />,
-        description: "Hiển thị mật độ defects trên layout nhà máy"
-      },
-      { 
-        href: "/defect-prediction", 
-        label: "Dự đoán Defects", 
-        icon: <Sparkles className="h-4 w-4" />,
-        description: "AI dự đoán xu hướng defects trong tương lai"
-      },
-      { 
-        href: "/root-cause-analysis", 
-        label: "Phân tích Nguyên nhân", 
-        icon: <Search className="h-4 w-4" />,
-        description: "AI phân tích nguyên nhân gốc rễ của defects"
-      },
-      { 
-        href: "/predictive-alerts", 
-        label: "Cảnh báo Dự đoán", 
-        icon: <Bell className="h-4 w-4" />,
-        description: "AI tự động cảnh báo vấn đề tiềm ẩn"
-      },
-    ],
-  },
-
-  // ============================================
-  // 5.5. QUẢN LÝ QUY TRÌNH - Process Management
+  // 7. QUY TRÌNH - Process Management
   // ============================================
   {
     id: "process-management",
@@ -379,7 +383,47 @@ export const navGroups: NavGroup[] = [
   },
 
   // ============================================
-  // 6. QUẢN TRỊ HỆ THỐNG - Admin only
+  // 8. CÀI ĐẶT - Cấu hình hệ thống
+  // ============================================
+  {
+    id: "settings",
+    label: "Cài đặt",
+    icon: <Settings className="h-4 w-4" />,
+    description: "Cấu hình hệ thống",
+    defaultOpen: false,
+    items: [
+      { 
+        href: "/settings", 
+        label: "Cài đặt chung", 
+        icon: <Cog className="h-4 w-4" />,
+        description: "Cài đặt SMTP, cache, template"
+      },
+      { 
+        href: "/system-config", 
+        label: "Cấu hình hệ thống", 
+        icon: <Server className="h-4 w-4" />,
+        description: "Cấu hình tham số hệ thống",
+        requiredRole: 'admin'
+      },
+      { 
+        href: "/backup-restore", 
+        label: "Backup & Restore", 
+        icon: <Archive className="h-4 w-4" />,
+        description: "Sao lưu và khôi phục cấu hình",
+        requiredRole: "admin"
+      },
+      { 
+        href: "/import-export", 
+        label: "Import/Export", 
+        icon: <Upload className="h-4 w-4" />,
+        description: "Nhập/xuất dữ liệu hàng loạt",
+        requiredRole: 'admin'
+      },
+    ],
+  },
+
+  // ============================================
+  // 9. QUẢN TRỊ - Admin only
   // ============================================
   {
     id: "admin",
@@ -401,27 +445,6 @@ export const navGroups: NavGroup[] = [
         label: "Phân quyền", 
         icon: <UserCog className="h-4 w-4" />,
         description: "Gán quyền truy cập nhà máy",
-        requiredRole: 'admin'
-      },
-      { 
-        href: "/import-export", 
-        label: "Import/Export", 
-        icon: <Upload className="h-4 w-4" />,
-        description: "Nhập/xuất dữ liệu hàng loạt",
-        requiredRole: 'admin'
-      },
-      { 
-        href: "/system-config", 
-        label: "Cấu hình hệ thống", 
-        icon: <Cog className="h-4 w-4" />,
-        description: "Cấu hình tham số hệ thống",
-        requiredRole: 'admin'
-      },
-      { 
-        href: "/settings", 
-        label: "Cài đặt", 
-        icon: <Settings className="h-4 w-4" />,
-        description: "Cài đặt SMTP, cache, template",
         requiredRole: 'admin'
       },
       { 
@@ -498,25 +521,22 @@ export function hasAccessToItem(href: string, userRole?: string): boolean {
  */
 export function getFilteredNavGroups(userRole?: string): NavGroup[] {
   return navGroups
-    .filter(group => hasAccessToGroup(group.id, userRole))
+    .filter(group => {
+      // Filter out groups that require admin role if user is not admin
+      if (group.requiredRole === 'admin' && userRole !== 'admin') {
+        return false;
+      }
+      return true;
+    })
     .map(group => ({
       ...group,
-      items: group.items.filter(item => 
-        !item.requiredRole || item.requiredRole === userRole || userRole === 'admin'
-      )
+      items: group.items.filter(item => {
+        // Filter out items that require admin role if user is not admin
+        if (item.requiredRole === 'admin' && userRole !== 'admin') {
+          return false;
+        }
+        return true;
+      }),
     }))
-    .filter(group => group.items.length > 0);
-}
-
-/**
- * Get navigation groups for a specific module/system
- * This supports the two-tiered navigation structure
- * @param moduleId - The module ID (e.g., 'spc', 'aoi', 'admin')
- * @param userRole - The user's role
- * @returns Navigation groups for the module
- */
-export function getModuleNavGroups(moduleId: string, userRole?: string): NavGroup[] {
-  // For now, return all groups filtered by role
-  // In future, can filter by module
-  return getFilteredNavGroups(userRole);
+    .filter(group => group.items.length > 0); // Remove empty groups
 }

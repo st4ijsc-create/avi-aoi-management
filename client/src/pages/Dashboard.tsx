@@ -1042,6 +1042,114 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Summary Stats Cards with Trends - Moved to top */}
+        {statsLoading ? (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <StatsCardSkeleton key={i} />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>Total Output</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="text-2xl font-bold">
+                        {statsLoading ? "..." : stats?.total?.toLocaleString() || 0}
+                      </p>
+                      <TrendIndicator value={trends?.output} suffix="%" />
+                    </div>
+                    <Sparkline data={sparklineData} dataKey="output" color={cardStyleProps.accentColor} />
+                  </div>
+                  <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${cardStyleProps.accentColor}20` }}>
+                    <Box className="h-5 w-5" style={{ color: cardStyleProps.accentColor }} />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>FPY</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="text-2xl font-bold text-success">
+                        {statsLoading ? "..." : `${stats?.yieldRate?.toFixed(1) || 0}%`}
+                      </p>
+                      <TrendIndicator value={trends?.fpy} suffix="pp" />
+                    </div>
+                    <Sparkline data={sparklineData} dataKey="fpy" color="oklch(0.72 0.17 145)" />
+                  </div>
+                  <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
+                    <Target className="h-5 w-5 text-success" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>OK</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="text-2xl font-bold text-success">
+                        {statsLoading ? "..." : stats?.ok?.toLocaleString() || 0}
+                      </p>
+                      <TrendIndicator value={trends?.ok} />
+                    </div>
+                  </div>
+                  <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
+                    <CheckCircle2 className="h-5 w-5 text-success" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>NG</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="text-2xl font-bold text-destructive">
+                        {statsLoading ? "..." : stats?.ng?.toLocaleString() || 0}
+                      </p>
+                      <TrendIndicator value={trends?.ng} />
+                    </div>
+                  </div>
+                  <div className="h-10 w-10 rounded-lg bg-destructive/10 flex items-center justify-center">
+                    <XCircle className="h-5 w-5 text-destructive" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>NTF</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="text-2xl font-bold text-warning">
+                        {statsLoading ? "..." : stats?.ntf?.toLocaleString() || 0}
+                      </p>
+                      <TrendIndicator value={trends?.ntf} />
+                    </div>
+                  </div>
+                  <div className="h-10 w-10 rounded-lg bg-warning/10 flex items-center justify-center">
+                    <AlertTriangle className="h-5 w-5 text-warning" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
         {/* Yield Alert Widget - Compact Realtime alerts */}
         {yieldAlerts.length > 0 && (
           <Card className="glass-card">
@@ -1094,68 +1202,6 @@ export default function Dashboard() {
           </Card>
         )}
 
-        {/* Machine Status Widget - Fixed at top */}
-        <Card className="glass-card">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Activity className="h-4 w-4 text-primary" />
-                Trạng thái kết nối máy
-              </CardTitle>
-              <Link href="/machine-status">
-                <Button variant="ghost" size="sm" className="text-xs">
-                  Xem chi tiết
-                  <ChevronRight className="h-3 w-3 ml-1" />
-                </Button>
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
-                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Cpu className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{machinesStats?.length || 0}</p>
-                  <p className="text-xs text-muted-foreground">Tổng số máy</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/10">
-                <div className="h-10 w-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
-                  <Wifi className="h-5 w-5 text-emerald-500" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-emerald-500">{onlineMachines.size}</p>
-                  <p className="text-xs text-muted-foreground">Online</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-red-500/10">
-                <div className="h-10 w-10 rounded-lg bg-red-500/20 flex items-center justify-center">
-                  <WifiOff className="h-5 w-5 text-red-500" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-red-500">
-                    {Math.max(0, (machinesStats?.length || 0) - onlineMachines.size)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Offline</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
-                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Activity className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">
-                    {machinesStats?.length ? Math.round((onlineMachines.size / machinesStats.length) * 100) : 0}%
-                  </p>
-                  <p className="text-xs text-muted-foreground">Availability</p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Tabs for Overview and Layout */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "overview" | "layout" | "ng-visual" | "corporate-stats")} className="w-full">
           <TabsList className="grid w-full max-w-2xl grid-cols-4">
@@ -1179,114 +1225,6 @@ export default function Dashboard() {
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-6 mt-6">
-            {/* Summary Stats Cards with Trends */}
-            {statsLoading ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <StatsCardSkeleton key={i} />
-                ))}
-              </div>
-            ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>Total Output</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-2xl font-bold">
-                      {statsLoading ? "..." : stats?.total?.toLocaleString() || 0}
-                    </p>
-                    <TrendIndicator value={trends?.output} suffix="%" />
-                  </div>
-                  <Sparkline data={sparklineData} dataKey="output" color={cardStyleProps.accentColor} />
-                </div>
-                <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${cardStyleProps.accentColor}20` }}>
-                  <Box className="h-5 w-5" style={{ color: cardStyleProps.accentColor }} />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>FPY</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-2xl font-bold text-success">
-                      {statsLoading ? "..." : `${stats?.yieldRate?.toFixed(1) || 0}%`}
-                    </p>
-                    <TrendIndicator value={trends?.fpy} suffix="pp" />
-                  </div>
-                  <Sparkline data={sparklineData} dataKey="fpy" color="oklch(0.72 0.17 145)" />
-                </div>
-                <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
-                  <Target className="h-5 w-5 text-success" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>OK</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-2xl font-bold text-success">
-                      {statsLoading ? "..." : stats?.ok?.toLocaleString() || 0}
-                    </p>
-                    <TrendIndicator value={trends?.ok} />
-                  </div>
-                </div>
-                <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
-                  <CheckCircle2 className="h-5 w-5 text-success" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>NG</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-2xl font-bold text-destructive">
-                      {statsLoading ? "..." : stats?.ng?.toLocaleString() || 0}
-                    </p>
-                    <TrendIndicator value={trends?.ng} />
-                  </div>
-                </div>
-                <div className="h-10 w-10 rounded-lg bg-destructive/10 flex items-center justify-center">
-                  <XCircle className="h-5 w-5 text-destructive" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>NTF</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-2xl font-bold text-warning">
-                      {statsLoading ? "..." : stats?.ntf?.toLocaleString() || 0}
-                    </p>
-                    <TrendIndicator value={trends?.ntf} />
-                  </div>
-                </div>
-                <div className="h-10 w-10 rounded-lg bg-warning/10 flex items-center justify-center">
-                  <AlertTriangle className="h-5 w-5 text-warning" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-            </div>
-            )}
-
             {/* MQTT Alert Widget */}
             <MqttAlertWidget />
 
@@ -2002,6 +1940,68 @@ export default function Dashboard() {
 
           {/* Layout Tab */}
           <TabsContent value="layout" className="space-y-6 mt-6">
+            {/* Machine Status Widget - Moved to Layout Tab */}
+            <Card className="glass-card">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Activity className="h-4 w-4 text-primary" />
+                    Trạng thái kết nối máy
+                  </CardTitle>
+                  <Link href="/machine-status">
+                    <Button variant="ghost" size="sm" className="text-xs">
+                      Xem chi tiết
+                      <ChevronRight className="h-3 w-3 ml-1" />
+                    </Button>
+                  </Link>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
+                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <Cpu className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold">{machinesStats?.length || 0}</p>
+                      <p className="text-xs text-muted-foreground">Tổng số máy</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/10">
+                    <div className="h-10 w-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                      <Wifi className="h-5 w-5 text-emerald-500" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-emerald-500">{onlineMachines.size}</p>
+                      <p className="text-xs text-muted-foreground">Online</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-red-500/10">
+                    <div className="h-10 w-10 rounded-lg bg-red-500/20 flex items-center justify-center">
+                      <WifiOff className="h-5 w-5 text-red-500" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-red-500">
+                        {Math.max(0, (machinesStats?.length || 0) - onlineMachines.size)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">Offline</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
+                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <Activity className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold">
+                        {machinesStats?.length ? Math.round((onlineMachines.size / machinesStats.length) * 100) : 0}%
+                      </p>
+                      <p className="text-xs text-muted-foreground">Availability</p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             <div className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">

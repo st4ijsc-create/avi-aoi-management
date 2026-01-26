@@ -4002,3 +4002,60 @@ Menu structure mới:
 - [x] Machine Health: Theo dõi sức khỏe máy và bảo trì dự phòng
 - [x] Downtime Tracking: Ghi nhận và phân loại downtime
 - [x] Export OEE: Xuất báo cáo OEE ra CSV/Excel
+
+
+## Phase 154: Dashboard Layout, WebSocket, Menu Reorganization, Bug Fixes
+
+### 1. Dashboard Layout Reorganization
+- [ ] Di chuyển KPI cards (Total Output, FPY, OK, NG, NTF) lên trên cùng của Dashboard
+- [ ] Di chuyển Trạng thái kết nối máy vào Tab "Layout Dây chuyền"
+- [ ] Sắp xếp lại cấu trúc tabs trong Dashboard
+
+### 2. WebSocket Real-time Updates
+- [ ] Cài đặt socket.io-client (đã có)
+- [ ] Tạo WebSocket hook cho MQTT Dashboard
+- [ ] Toggle on/off WebSocket (default: off)
+- [ ] Fallback về polling khi WebSocket tắt
+
+### 3. Menu Reorganization
+- [ ] Sắp xếp lại categories theo chức năng
+- [ ] Nhóm các menu items hợp lý
+- [ ] Cập nhật navigation.tsx
+
+### 4. Bug Fixes
+- [ ] Rà soát các trang bị lỗi khi truy cập
+- [ ] Sửa lỗi mất sidebar
+- [ ] Kiểm tra trang Settings và các sub-pages
+
+
+
+## Phase 154: Dashboard Layout, WebSocket, Menu Reorganization (Redo) ✅
+
+### 1. Dashboard Layout Reorganization ✅
+- [x] Di chuyển KPI cards (Total Output, FPY, OK, NG, NTF) lên trên cùng (trước tabs)
+- [x] Di chuyển Trạng thái kết nối máy vào Tab "Layout Dây chuyền"
+- [x] Giữ nguyên cấu trúc tabs
+
+### 2. WebSocket Real-time Updates ✅
+- [x] Thêm WebSocket hook vào MqttDashboard (socket.io-client)
+- [x] Toggle on/off WebSocket (default: off, lưu vào localStorage)
+- [x] Fallback về polling khi WebSocket tắt
+- [x] Hiển thị trạng thái kết nối WebSocket (WS: On/Off)
+
+### 3. Menu Reorganization ✅
+- [x] Sắp xếp lại 9 categories theo chức năng:
+  - Dashboard (Tổng quan, Drill-Down, Tùy chỉnh, Mẫu, Marketplace)
+  - Giám sát (Trạng thái máy, MQTT, OEE, Health)
+  - Cảnh báo (Danh sách, Quy tắc, Dự đoán, Mục tiêu OEE)
+  - Sản xuất (Lệnh, Lịch sử, Lịch xuất)
+  - Phân tích (Báo cáo, SPC/AI, Annotations, Heatmap, Prediction)
+  - Dữ liệu (Sản phẩm, Gán, Layout, Tập đoàn)
+  - Quy trình (Công đoạn, Công trạm)
+  - Cài đặt (Chung, Hệ thống, Backup, Import/Export)
+  - Quản trị (Người dùng, Phân quyền, API Docs, Hướng dẫn)
+- [x] Cập nhật navigation.tsx
+
+### 4. Rà soát và sửa lỗi ✅
+- [x] Kiểm tra tất cả các trang có sidebar
+- [x] Dashboard hoạt động tốt
+- [x] TypeScript: No errors
