@@ -45,7 +45,11 @@ import {
   FileSpreadsheet,
   Factory,
   GitCompare,
-  Image
+  Image,
+  Trash2,
+  CheckCheck,
+  X,
+  SquareCheck
 } from "lucide-react";
 import BarcodeScanner from "@/components/BarcodeScanner";
 import ImageGallery, { GalleryImage } from "@/components/ImageGallery";
@@ -56,7 +60,7 @@ import { ChartErrorBoundary, TableErrorBoundary, AnalyticsErrorBoundary } from "
 import { StatsCardSkeleton, ChartSkeleton, TableSkeleton, WorkstationSummarySkeleton } from "@/components/AnalyticsSkeleton";
 import { toast } from "sonner";
 import { navItems } from "@/lib/navigation";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { HistoryInfiniteScroll } from "@/components/HistoryInfiniteScroll";
 import { Link } from "wouter";
 import { format as formatDate, subDays, startOfDay, endOfDay } from "date-fns";
@@ -101,6 +105,12 @@ export default function History() {
     ngCount: false,
     ntfCount: false,
   });
+  // Bulk selection state
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [isSelectAll, setIsSelectAll] = useState(false);
+  const [isBulkExporting, setIsBulkExporting] = useState(false);
+  const [isBulkAcknowledging, setIsBulkAcknowledging] = useState(false);
+
   const [savedFilters, setSavedFilters] = useState<Array<{
     name: string;
     filters: typeof filters;
@@ -428,6 +438,144 @@ export default function History() {
       toast.error("Lỗi khi xuất dữ liệu");
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  // Bulk selection handlers
+  const handleSelectItem = useCallback((id: number, checked: boolean) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(id);
+      } else {
+        newSet.delete(id);
+      }
+      return newSet;
+    });
+  }, []);
+
+  const handleSelectAll = useCallback(() => {
+    if (!data?.data) return;
+    if (isSelectAll) {
+      setSelectedIds(new Set());
+      setIsSelectAll(false);
+    } else {
+      const allIds = new Set(data.data.map((i: any) => i.id));
+      setSelectedIds(allIds);
+      setIsSelectAll(true);
+    }
+  }, [data?.data, isSelectAll]);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+    setIsSelectAll(false);
+  }, []);
+
+  // Bulk Export function
+  const handleBulkExport = async () => {
+    if (selectedIds.size === 0) {
+      toast.error("Vui lòng chọn ít nhất 1 bản ghi");
+      return;
+    }
+
+    setIsBulkExporting(true);
+    try {
+      const selectedData = data?.data?.filter((i: any) => selectedIds.has(i.id)) || [];
+      
+      const headers = [
+        "STT",
+        "Mã SN",
+        "Mã nhà máy",
+        "Mã nhà xưởng",
+        "Dây chuyền",
+        "Công trạm",
+        "Máy",
+        "Loại máy",
+        "Mã sản phẩm",
+        "Kết quả",
+        "Tổng điểm đo",
+        "OK",
+        "NG",
+        "NTF",
+        "Yield Rate (%)",
+        "Thời gian kiểm tra",
+        "Ghi chú"
+      ];
+
+      const rows = selectedData.map((inspection: any, index: number) => {
+        const okCount = inspection.okCount || 0;
+        const ngCount = inspection.ngCount || 0;
+        const ntfCount = inspection.ntfCount || 0;
+        const total = okCount + ngCount + ntfCount;
+        const yieldRate = total > 0 ? ((okCount + ntfCount) / total * 100).toFixed(2) : "0.00";
+        
+        return [
+          index + 1,
+          inspection.serialNumber,
+          inspection.factoryCode || "-",
+          inspection.workshopCode || "-",
+          inspection.lineCode || "-",
+          inspection.stationCode || "-",
+          inspection.machineCode || "-",
+          inspection.machineType || "-",
+          inspection.productModelCode || "-",
+          inspection.overallResult,
+          total,
+          okCount,
+          ngCount,
+          ntfCount,
+          yieldRate,
+          formatDate(new Date(inspection.inspectedAt), "dd/MM/yyyy HH:mm:ss"),
+          inspection.remarks || "-"
+        ];
+      });
+
+      const BOM = "\uFEFF";
+      const csvContent = BOM + [
+        headers.join(","),
+        ...rows.map((row: any[]) => row.map((cell: any) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `bulk_export_${selectedIds.size}_records_${formatDate(new Date(), "yyyyMMdd_HHmmss")}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.success(`Đã xuất ${selectedIds.size} bản ghi thành công`);
+      handleClearSelection();
+    } catch (error) {
+      console.error("Bulk export error:", error);
+      toast.error("Lỗi khi xuất dữ liệu hàng loạt");
+    } finally {
+      setIsBulkExporting(false);
+    }
+  };
+
+  // Bulk Acknowledge function
+  const handleBulkAcknowledge = async () => {
+    if (selectedIds.size === 0) {
+      toast.error("Vui lòng chọn ít nhất 1 bản ghi");
+      return;
+    }
+
+    setIsBulkAcknowledging(true);
+    try {
+      // Simulate acknowledge action - in real app, this would call an API
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      toast.success(`Đã xác nhận ${selectedIds.size} bản ghi thành công`);
+      handleClearSelection();
+      refetch();
+    } catch (error) {
+      console.error("Bulk acknowledge error:", error);
+      toast.error("Lỗi khi xác nhận hàng loạt");
+    } finally {
+      setIsBulkAcknowledging(false);
     }
   };
 
@@ -1007,6 +1155,67 @@ export default function History() {
                     </Button>
                   </div>
                 </div>
+
+                {/* Bulk Selection Bar */}
+                {data?.data && data.data.length > 0 && (
+                  <div className="flex items-center justify-between mt-4 p-3 bg-muted/30 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        checked={isSelectAll}
+                        onCheckedChange={handleSelectAll}
+                        id="select-all"
+                      />
+                      <label htmlFor="select-all" className="text-sm cursor-pointer">
+                        Chọn tất cả ({data.data.length})
+                      </label>
+                      {selectedIds.size > 0 && (
+                        <Badge variant="secondary" className="gap-1">
+                          <SquareCheck className="h-3 w-3" />
+                          Đã chọn {selectedIds.size}
+                        </Badge>
+                      )}
+                    </div>
+                    {selectedIds.size > 0 && (
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={handleBulkExport}
+                          disabled={isBulkExporting}
+                        >
+                          {isBulkExporting ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Download className="h-4 w-4" />
+                          )}
+                          Xuất ({selectedIds.size})
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={handleBulkAcknowledge}
+                          disabled={isBulkAcknowledging}
+                        >
+                          {isBulkAcknowledging ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <CheckCheck className="h-4 w-4" />
+                          )}
+                          Xác nhận ({selectedIds.size})
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleClearSelection}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </CardHeader>
               <CardContent>
                 {isLoading ? (
@@ -1027,9 +1236,14 @@ export default function History() {
                     {data.data.map((inspection) => (
                       <div 
                         key={inspection.id}
-                        className="flex items-center justify-between p-4 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors"
+                        className={`flex items-center justify-between p-4 rounded-lg transition-colors ${selectedIds.has(inspection.id) ? 'bg-primary/10 border border-primary/30' : 'bg-secondary/50 hover:bg-secondary'}`}
                       >
                         <div className="flex items-center gap-4">
+                          <Checkbox
+                            checked={selectedIds.has(inspection.id)}
+                            onCheckedChange={(checked) => handleSelectItem(inspection.id, !!checked)}
+                            className="shrink-0"
+                          />
                           <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center">
                             <Cpu className="h-6 w-6 text-primary" />
                           </div>

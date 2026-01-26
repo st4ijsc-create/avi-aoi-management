@@ -360,16 +360,16 @@ export default function OEEDashboard() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6 mobile-safe-bottom">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
           <div>
-            <h1 className="text-2xl font-bold">OEE Dashboard</h1>
-            <p className="text-muted-foreground">
+            <h1 className="text-xl sm:text-2xl font-bold">OEE Dashboard</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">
               Theo dõi hiệu suất thiết bị tổng thể (Overall Equipment Effectiveness)
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={exportToCSV}>
               <Download className="h-4 w-4 mr-2" />
               Xuất CSV
@@ -496,16 +496,17 @@ export default function OEEDashboard() {
         </div>
 
         {/* Overview Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Gauge className="h-4 w-4 text-blue-500" />
-                OEE Trung bình
+            <CardHeader className="p-3 sm:p-4 pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
+                <Gauge className="h-3 w-3 sm:h-4 sm:w-4 text-blue-500" />
+                <span className="hidden sm:inline">OEE Trung bình</span>
+                <span className="sm:hidden">OEE TB</span>
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{avgOEE.toFixed(1)}%</div>
+            <CardContent className="p-3 sm:p-4 pt-0">
+              <div className="text-2xl sm:text-3xl font-bold">{avgOEE.toFixed(1)}%</div>
               <Progress value={avgOEE} className="mt-2" />
               <p className="text-xs text-muted-foreground mt-1">
                 {avgOEE >= 85 ? "World Class" : avgOEE >= 60 ? "Typical" : "Cần cải thiện"}
@@ -514,14 +515,15 @@ export default function OEEDashboard() {
           </Card>
 
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Activity className="h-4 w-4 text-green-500" />
-                Máy đang theo dõi
+            <CardHeader className="p-3 sm:p-4 pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
+                <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-green-500" />
+                <span className="hidden sm:inline">Máy đang theo dõi</span>
+                <span className="sm:hidden">Máy</span>
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{allOEE?.length || 0}</div>
+            <CardContent className="p-3 sm:p-4 pt-0">
+              <div className="text-2xl sm:text-3xl font-bold">{allOEE?.length || 0}</div>
               <p className="text-xs text-muted-foreground mt-1">
                 / {machines?.length || 0} tổng số máy
               </p>
@@ -529,14 +531,15 @@ export default function OEEDashboard() {
           </Card>
 
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Clock className="h-4 w-4 text-orange-500" />
-                Downtime hôm nay
+            <CardHeader className="p-3 sm:p-4 pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
+                <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-orange-500" />
+                <span className="hidden sm:inline">Downtime hôm nay</span>
+                <span className="sm:hidden">Downtime</span>
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">
+            <CardContent className="p-3 sm:p-4 pt-0">
+              <div className="text-2xl sm:text-3xl font-bold">
                 {Object.values(downtimeByCategory).reduce((a, b) => a + b, 0)} phút
               </div>
               <p className="text-xs text-muted-foreground mt-1">
@@ -546,14 +549,14 @@ export default function OEEDashboard() {
           </Card>
 
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-red-500" />
+            <CardHeader className="p-3 sm:p-4 pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
+                <AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-red-500" />
                 Cảnh báo
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">
+            <CardContent className="p-3 sm:p-4 pt-0">
+              <div className="text-2xl sm:text-3xl font-bold">
                 {allOEE?.filter(m => m.oee < 60).length || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">

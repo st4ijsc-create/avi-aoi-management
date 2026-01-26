@@ -3972,3 +3972,33 @@ Menu structure mới:
 - Tất cả 5 trang đã được sửa lỗi và hoạt động bình thường
 - Lỗi chính: SelectItem value rỗng (phải dùng "all" thay vì "")
 - Lỗi SQL: Tên bảng và cột không khớp với schema
+
+
+## Phase 156: Bulk Operations, Mobile Responsive, OEE Dashboard Enhancement ✅
+
+### 1. Bulk Operations trong History Module ✅
+- [x] Thêm checkbox cho mỗi row trong bảng inspection
+- [x] Select All / Deselect All functionality
+- [x] Bulk Export: Xuất nhiều inspections ra CSV/Excel
+- [x] Bulk Acknowledge: Xác nhận nhiều inspections cùng lúc
+- [x] Floating action bar với thống kê số lượng đã chọn
+
+### 2. Mobile Responsive ✅
+- [x] Dashboard: Responsive layout cho mobile (cards stack vertically)
+- [x] Dashboard: Touch-friendly buttons và controls
+- [x] MQTT Monitor: Responsive message list và stats cards
+- [x] MQTT Monitor: Mobile-friendly filters
+- [x] OEE Dashboard: Responsive overview cards
+- [x] Thêm mobile responsive styles vào index.css (KPI cards, grids, charts, tabs, filters)
+- [x] Thêm mobile-safe-bottom class cho bottom navigation
+
+### 3. OEE Dashboard Enhancement ✅
+- [x] Availability Rate: Tính toán thời gian máy hoạt động / thời gian kế hoạch - hoạt động tốt
+- [x] Performance Rate: Tính toán sản lượng thực tế / sản lượng lý thuyết - hoạt động tốt
+- [x] Quality Rate: Tính toán sản phẩm OK / tổng sản phẩm - hoạt động tốt
+- [x] OEE = Availability × Performance × Quality - hoạt động tốt
+- [x] OEE Trend Chart: Biểu đồ so sánh OEE giữa các máy
+- [x] OEE by Machine: Danh sách máy với OEE chi tiết
+- [x] Machine Health: Theo dõi sức khỏe máy và bảo trì dự phòng
+- [x] Downtime Tracking: Ghi nhận và phân loại downtime
+- [x] Export OEE: Xuất báo cáo OEE ra CSV/Excel

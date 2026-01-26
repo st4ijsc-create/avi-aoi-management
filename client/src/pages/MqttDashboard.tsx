@@ -126,14 +126,14 @@ export default function MqttDashboard() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6 mobile-safe-bottom">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
           <div>
-            <h1 className="text-2xl font-bold">MQTT Dashboard</h1>
-            <p className="text-muted-foreground">Giám sát kết nối và tin nhắn MQTT realtime</p>
+            <h1 className="text-xl sm:text-2xl font-bold">MQTT Dashboard</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">Giám sát kết nối và tin nhắn MQTT realtime</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {mqttStatus?.enabled ? (
               <Badge className="bg-green-500/20 text-green-400 border-green-500/30 px-3 py-1">
                 <Server className="w-4 h-4 mr-2" />
@@ -187,17 +187,18 @@ export default function MqttDashboard() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
           {/* Connected Clients */}
           <Card className="bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border-emerald-500/20">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Wifi className="w-4 h-4 text-emerald-400" />
-                Clients Online
+            <CardHeader className="p-3 sm:p-4 pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
+                <Wifi className="w-3 h-3 sm:w-4 sm:h-4 text-emerald-400" />
+                <span className="hidden sm:inline">Clients Online</span>
+                <span className="sm:hidden">Online</span>
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-emerald-400">
+            <CardContent className="p-3 sm:p-4 pt-0">
+              <div className="text-2xl sm:text-3xl font-bold text-emerald-400">
                 {statsLoading ? '-' : stats?.clients.online || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
@@ -208,14 +209,15 @@ export default function MqttDashboard() {
 
           {/* Offline Clients */}
           <Card className="bg-gradient-to-br from-amber-500/10 to-amber-600/5 border-amber-500/20">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <WifiOff className="w-4 h-4 text-amber-400" />
-                Clients Offline
+            <CardHeader className="p-3 sm:p-4 pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
+                <WifiOff className="w-3 h-3 sm:w-4 sm:h-4 text-amber-400" />
+                <span className="hidden sm:inline">Clients Offline</span>
+                <span className="sm:hidden">Offline</span>
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-amber-400">
+            <CardContent className="p-3 sm:p-4 pt-0">
+              <div className="text-2xl sm:text-3xl font-bold text-amber-400">
                 {statsLoading ? '-' : stats?.clients.offline || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
@@ -226,14 +228,15 @@ export default function MqttDashboard() {
 
           {/* Messages Today */}
           <Card className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border-blue-500/20">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <MessageSquare className="w-4 h-4 text-blue-400" />
-                Tin nhắn hôm nay
+            <CardHeader className="p-3 sm:p-4 pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
+                <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4 text-blue-400" />
+                <span className="hidden sm:inline">Tin nhắn hôm nay</span>
+                <span className="sm:hidden">Tin nhắn</span>
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-blue-400">
+            <CardContent className="p-3 sm:p-4 pt-0">
+              <div className="text-2xl sm:text-3xl font-bold text-blue-400">
                 {statsLoading ? '-' : stats?.messages.total || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
@@ -244,14 +247,15 @@ export default function MqttDashboard() {
 
           {/* Delivery Rate */}
           <Card className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 border-purple-500/20">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Send className="w-4 h-4 text-purple-400" />
-                Tỷ lệ gửi thành công
+            <CardHeader className="p-3 sm:p-4 pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
+                <Send className="w-3 h-3 sm:w-4 sm:h-4 text-purple-400" />
+                <span className="hidden sm:inline">Tỷ lệ gửi thành công</span>
+                <span className="sm:hidden">Tỷ lệ</span>
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-purple-400">
+            <CardContent className="p-3 sm:p-4 pt-0">
+              <div className="text-2xl sm:text-3xl font-bold text-purple-400">
                 {statsLoading ? '-' : `${stats?.messages.deliveryRate || 0}%`}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
@@ -262,7 +266,7 @@ export default function MqttDashboard() {
         </div>
 
         {/* Realtime Monitoring Section */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
           {/* Throughput - Last Minute */}
           <Card className="bg-gradient-to-br from-cyan-500/10 to-cyan-600/5 border-cyan-500/20">
             <CardHeader className="pb-2">

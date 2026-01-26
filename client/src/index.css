@@ -361,3 +361,143 @@
     padding-right: 1rem;
   }
 }
+
+/* Mobile Dashboard specific styles */
+@layer components {
+  /* KPI Card mobile optimization */
+  .kpi-card-mobile {
+    @apply p-2 sm:p-3 md:p-4;
+  }
+  
+  .kpi-card-mobile .kpi-value {
+    @apply text-lg sm:text-xl md:text-2xl font-bold;
+  }
+  
+  .kpi-card-mobile .kpi-label {
+    @apply text-[10px] sm:text-xs uppercase tracking-wide;
+  }
+  
+  .kpi-card-mobile .kpi-icon {
+    @apply h-8 w-8 sm:h-10 sm:w-10 rounded-lg flex items-center justify-center;
+  }
+  
+  .kpi-card-mobile .kpi-icon svg {
+    @apply h-4 w-4 sm:h-5 sm:w-5;
+  }
+  
+  /* Dashboard grid mobile optimization */
+  .dashboard-kpi-grid {
+    @apply grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-3 md:gap-4;
+  }
+  
+  .dashboard-chart-grid {
+    @apply grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-6;
+  }
+  
+  .dashboard-machine-grid {
+    @apply grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3;
+  }
+  
+  /* MQTT Dashboard mobile optimization */
+  .mqtt-message-card {
+    @apply p-2 sm:p-3 text-xs sm:text-sm;
+  }
+  
+  .mqtt-topic-badge {
+    @apply text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5;
+  }
+  
+  .mqtt-timestamp {
+    @apply text-[10px] sm:text-xs text-muted-foreground;
+  }
+  
+  /* Mobile filter bar */
+  .mobile-filter-bar {
+    @apply flex flex-wrap gap-2 overflow-x-auto pb-2 -mx-2 px-2 sm:mx-0 sm:px-0;
+  }
+  
+  .mobile-filter-bar > * {
+    @apply shrink-0;
+  }
+  
+  /* Mobile tabs */
+  .mobile-tabs {
+    @apply overflow-x-auto -mx-2 px-2 sm:mx-0 sm:px-0;
+  }
+  
+  .mobile-tabs [role="tablist"] {
+    @apply inline-flex min-w-full sm:min-w-0;
+  }
+  
+  .mobile-tabs [role="tab"] {
+    @apply text-xs sm:text-sm px-2 sm:px-4;
+  }
+  
+  /* Mobile chart container */
+  .mobile-chart {
+    @apply h-[200px] sm:h-[250px] md:h-[300px];
+  }
+  
+  /* Mobile sidebar toggle */
+  .mobile-sidebar-toggle {
+    @apply fixed bottom-4 right-4 z-50 h-12 w-12 rounded-full shadow-lg md:hidden;
+  }
+  
+  /* Mobile bottom navigation */
+  .mobile-bottom-nav {
+    @apply fixed bottom-0 left-0 right-0 bg-card border-t border-border p-2 flex justify-around md:hidden z-40;
+  }
+  
+  .mobile-bottom-nav-item {
+    @apply flex flex-col items-center gap-1 p-2 rounded-lg;
+  }
+  
+  .mobile-bottom-nav-item.active {
+    @apply bg-primary/10 text-primary;
+  }
+  
+  .mobile-bottom-nav-item svg {
+    @apply h-5 w-5;
+  }
+  
+  .mobile-bottom-nav-item span {
+    @apply text-[10px];
+  }
+  
+  /* Safe area for mobile bottom nav */
+  .mobile-safe-bottom {
+    @apply pb-20 md:pb-0;
+  }
+}
+
+/* Mobile-specific media queries */
+@media (max-width: 640px) {
+  /* Reduce chart heights on small screens */
+  .recharts-wrapper {
+    max-height: 200px !important;
+  }
+  
+  /* Compact card headers */
+  .card-header {
+    padding: 0.75rem !important;
+  }
+  
+  /* Smaller fonts in tables */
+  table {
+    font-size: 0.75rem;
+  }
+  
+  th, td {
+    padding: 0.5rem 0.25rem !important;
+  }
+  
+  /* Stack buttons vertically */
+  .button-group-mobile {
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  .button-group-mobile > button {
+    width: 100%;
+  }
+}
