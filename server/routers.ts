@@ -9,6 +9,7 @@ import { sessionRouter } from "./routers/sessionRouter";
 import { annotationComparisonRouter } from "./routers/annotationComparisonRouter";
 import { defectHeatmapRouter } from "./routers/defectHeatmapRouter";
 import { aiFeedbackRouter } from "./routers/aiFeedbackRouter";
+import { trainingBatchCommentsRouter } from "./routers/trainingBatchCommentsRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -8740,6 +8741,7 @@ export const appRouter = router({
   annotationComparison: annotationComparisonRouter,
   defectHeatmap: defectHeatmapRouter,
   aiFeedback: aiFeedbackRouter,
+  trainingBatchComments: trainingBatchCommentsRouter,
 });
 
 export type AppRouter = typeof appRouter;

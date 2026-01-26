@@ -2518,3 +2518,58 @@ export const aiTrainingBatches = mysqlTable("ai_training_batches", {
 
 export type AiTrainingBatch = typeof aiTrainingBatches.$inferSelect;
 export type InsertAiTrainingBatch = typeof aiTrainingBatches.$inferInsert;
+
+
+/**
+ * Training Batch Comments - Nhận xét cho từng lô đào tạo AI
+ */
+export const trainingBatchComments = mysqlTable("training_batch_comments", {
+  id: int("id").autoincrement().primaryKey(),
+  batchId: varchar("batchId", { length: 100 }).notNull(),
+  userId: int("userId").notNull(),
+  userName: varchar("userName", { length: 255 }),
+  content: text("content").notNull(),
+  parentId: int("parentId"), // For nested comments/replies
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_batch_comment_batch").on(table.batchId),
+  index("idx_batch_comment_user").on(table.userId),
+  index("idx_batch_comment_parent").on(table.parentId),
+]);
+
+export type TrainingBatchComment = typeof trainingBatchComments.$inferSelect;
+export type InsertTrainingBatchComment = typeof trainingBatchComments.$inferInsert;
+
+/**
+ * Training Batch Tags - Thẻ cho phân loại lô đào tạo
+ */
+export const trainingBatchTags = mysqlTable("training_batch_tags", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull().unique(),
+  color: varchar("color", { length: 20 }).default("#3b82f6").notNull(), // Hex color
+  description: text("description"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_batch_tag_name").on(table.name),
+]);
+
+export type TrainingBatchTag = typeof trainingBatchTags.$inferSelect;
+export type InsertTrainingBatchTag = typeof trainingBatchTags.$inferInsert;
+
+/**
+ * Training Batch Tag Assignments - Gán thẻ cho lô đào tạo
+ */
+export const trainingBatchTagAssignments = mysqlTable("training_batch_tag_assignments", {
+  id: int("id").autoincrement().primaryKey(),
+  batchId: varchar("batchId", { length: 100 }).notNull(),
+  tagId: int("tagId").notNull(),
+  assignedBy: int("assignedBy").notNull(),
+  assignedAt: timestamp("assignedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_batch_tag_assign_batch").on(table.batchId),
+  index("idx_batch_tag_assign_tag").on(table.tagId),
+]);
+
+export type TrainingBatchTagAssignment = typeof trainingBatchTagAssignments.$inferSelect;
+export type InsertTrainingBatchTagAssignment = typeof trainingBatchTagAssignments.$inferInsert;

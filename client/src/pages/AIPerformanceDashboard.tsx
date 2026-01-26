@@ -31,6 +31,8 @@ import {
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
+import { BatchCommentsSection } from '@/components/BatchCommentsSection';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 export default function AIPerformanceDashboard() {
   const [selectedModelVersion, setSelectedModelVersion] = useState<string>('all');
@@ -474,30 +476,88 @@ export default function AIPerformanceDashboard() {
                   <ScrollArea className="h-[400px]">
                     <div className="space-y-2">
                       {trainingBatches.batches.map((batch) => (
-                        <div
-                          key={batch.id}
-                          className="p-4 rounded-lg border hover:bg-muted/50 transition-colors"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="p-2 rounded-lg bg-primary/10">
-                                <Database className="h-4 w-4 text-primary" />
-                              </div>
-                              <div>
-                                <div className="font-medium">{batch.name}</div>
-                                <div className="text-sm text-muted-foreground">
-                                  {batch.feedbackCount} samples • {batch.exportFormat}
+                        <Dialog key={batch.id}>
+                          <DialogTrigger asChild>
+                            <div
+                              className="p-4 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <div className="p-2 rounded-lg bg-primary/10">
+                                    <Database className="h-4 w-4 text-primary" />
+                                  </div>
+                                  <div>
+                                    <div className="font-medium">{batch.name}</div>
+                                    <div className="text-sm text-muted-foreground">
+                                      {batch.feedbackCount} samples • {batch.exportFormat}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  {getStatusBadge(batch.status)}
+                                  <span className="text-sm text-muted-foreground">
+                                    {format(new Date(batch.createdAt), 'dd/MM/yyyy HH:mm', { locale: vi })}
+                                  </span>
                                 </div>
                               </div>
                             </div>
-                            <div className="flex items-center gap-3">
-                              {getStatusBadge(batch.status)}
-                              <span className="text-sm text-muted-foreground">
-                                {format(new Date(batch.createdAt), 'dd/MM/yyyy HH:mm', { locale: vi })}
-                              </span>
+                          </DialogTrigger>
+                          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                            <DialogHeader>
+                              <DialogTitle className="flex items-center gap-2">
+                                <Database className="h-5 w-5" />
+                                {batch.name}
+                              </DialogTitle>
+                            </DialogHeader>
+                            <div className="space-y-4">
+                              {/* Batch Info */}
+                              <div className="grid grid-cols-2 gap-4 p-4 rounded-lg bg-muted/50">
+                                <div>
+                                  <div className="text-sm text-muted-foreground">Batch ID</div>
+                                  <div className="font-mono text-sm">{batch.batchId}</div>
+                                </div>
+                                <div>
+                                  <div className="text-sm text-muted-foreground">Trạng thái</div>
+                                  <div>{getStatusBadge(batch.status)}</div>
+                                </div>
+                                <div>
+                                  <div className="text-sm text-muted-foreground">Số mẫu</div>
+                                  <div className="font-medium">{batch.feedbackCount}</div>
+                                </div>
+                                <div>
+                                  <div className="text-sm text-muted-foreground">Định dạng</div>
+                                  <div className="font-medium">{batch.exportFormat}</div>
+                                </div>
+                                <div>
+                                  <div className="text-sm text-muted-foreground">Mẫu đúng</div>
+                                  <div className="font-medium text-green-600">{batch.correctSamples}</div>
+                                </div>
+                                <div>
+                                  <div className="text-sm text-muted-foreground">Mẫu sai</div>
+                                  <div className="font-medium text-red-600">{batch.incorrectSamples}</div>
+                                </div>
+                                <div className="col-span-2">
+                                  <div className="text-sm text-muted-foreground">Ngày tạo</div>
+                                  <div className="font-medium">
+                                    {format(new Date(batch.createdAt), 'dd/MM/yyyy HH:mm:ss', { locale: vi })}
+                                  </div>
+                                </div>
+                                {batch.description && (
+                                  <div className="col-span-2">
+                                    <div className="text-sm text-muted-foreground">Mô tả</div>
+                                    <div className="text-sm">{batch.description}</div>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {/* Comments & Tags Section */}
+                              <BatchCommentsSection 
+                                batchId={batch.batchId} 
+                                batchName={batch.name}
+                              />
                             </div>
-                          </div>
-                        </div>
+                          </DialogContent>
+                        </Dialog>
                       ))}
                     </div>
                   </ScrollArea>

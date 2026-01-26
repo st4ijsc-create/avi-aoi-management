@@ -4321,3 +4321,21 @@ Menu structure mới:
 - [x] Hiển thị training batch history
 - [x] Hiển thị suggestions history với feedback status
 - [x] Thêm route /ai-performance vào App.tsx
+
+## Phase 166: Training Batch Comments & Tags
+
+### 1. Database Schema
+- [x] Thêm table trainingBatchComments cho nhận xét
+- [x] Thêm table trainingBatchTags cho thẻ
+- [x] Thêm relation table trainingBatchTagAssignments
+
+### 2. API Endpoints
+- [x] CRUD endpoints cho comments (add, list, update, delete)
+- [x] CRUD endpoints cho tags (create, list, update, delete)
+- [x] Endpoints gắn/bỏ thẻ cho batch (assignTag, removeTag, getBatchTags)
+
+### 3. UI Integration
+- [x] Thêm comment section vào batch detail (BatchCommentsSection.tsx)
+- [x] Thêm tag selector với autocomplete (Command component)
+- [x] Hiển thị tags trên batch detail dialog
+- [x] Tích hợp vào AIPerformanceDashboard (Dialog khi click batch)
