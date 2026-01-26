@@ -399,6 +399,12 @@ export const navGroups: NavGroup[] = [
         description: "Cài đặt SMTP, cache, template"
       },
       { 
+        href: "/settings?tab=notification-sounds", 
+        label: "Âm thanh thông báo", 
+        icon: <Bell className="h-4 w-4" />,
+        description: "Tùy chỉnh âm thanh cho từng loại cảnh báo"
+      },
+      { 
         href: "/system-config", 
         label: "Cấu hình hệ thống", 
         icon: <Server className="h-4 w-4" />,

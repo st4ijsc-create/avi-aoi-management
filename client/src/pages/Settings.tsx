@@ -57,6 +57,7 @@ import { EmailTemplateEditor } from "@/components/EmailTemplateEditor";
 import UserAssignments from "@/components/UserAssignments";
 import WorkstationManagement from "@/components/WorkstationManagement";
 import { ProductCategoryManagement } from "@/components/ProductCategoryManagement";
+import NotificationSoundCustomization from "@/components/NotificationSoundCustomization";
 import { useState } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
@@ -1944,6 +1945,11 @@ export default function Settings() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Notification Sounds Tab */}
+          <TabsContent value="notification-sounds">
+            <NotificationSoundCustomization />
           </TabsContent>
 
           {/* Alerts Tab */}

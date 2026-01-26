@@ -4059,3 +4059,51 @@ Menu structure mới:
 - [x] Kiểm tra tất cả các trang có sidebar
 - [x] Dashboard hoạt động tốt
 - [x] TypeScript: No errors
+
+
+## Phase 157: Dashboard Drag & Drop, Notification Sound Customization
+
+### 1. Dashboard Widgets Drag & Drop
+- [ ] Cài đặt thư viện drag-and-drop (react-grid-layout hoặc dnd-kit)
+- [ ] Tạo DraggableDashboard component
+- [ ] Cho phép kéo thả sắp xếp lại các widgets
+- [ ] Lưu layout vào localStorage
+- [ ] Nút Reset về layout mặc định
+- [ ] Responsive layout cho mobile
+
+### 2. Notification Sound Customization
+- [ ] Tạo SoundSettings component
+- [ ] Cho phép chọn âm thanh khác nhau cho từng loại alert:
+  - NG Alert
+  - Yield Warning
+  - System Notification
+  - MQTT Message
+- [ ] Preview âm thanh trước khi chọn
+- [ ] Lưu settings vào localStorage
+- [ ] Tích hợp với alertSoundService
+
+
+## Phase 157: Dashboard Drag & Drop, Notification Sound Customization ✅
+
+### 1. Dashboard Widgets Drag & Drop ✅
+- [x] Cài đặt react-grid-layout v2
+- [x] Tạo DraggableDashboardWidgets component
+- [x] Cho phép kéo thả sắp xếp widgets
+- [x] Lưu layout vào localStorage
+- [x] Reset layout về mặc định
+- [x] Lock/unlock layout
+- [x] Thêm/ẩn widgets (10 widget types: KPI, Chart, Table, Status, Gauge, Progress, Alert, Custom, Map, Calendar)
+
+### 2. Notification Sound Customization ✅
+- [x] Tạo NotificationSoundCustomization component
+- [x] Chọn âm thanh khác nhau cho 6 loại alert:
+  - NG Detection
+  - Yield Warning
+  - Yield Critical
+  - Machine Offline
+  - MQTT Disconnect
+  - System Alert
+- [x] Upload custom sounds (max 10, max 1MB, MP3/WAV/OGG)
+- [x] Test sounds (preset và custom)
+- [x] Lưu settings vào localStorage
+- [x] Thêm vào Settings page và navigation menu
