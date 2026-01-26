@@ -4358,3 +4358,23 @@ Menu structure mới:
 - [x] Áp dụng profile cho nhiều máy/station/factory cùng lúc
 - [x] Tạo template profiles mặc định
 - [x] Thêm route /mqtt-profiles vào App.tsx
+
+
+## Phase 168: MQTT Profile Import/Export, Health Monitor & Sidebar Link
+
+### 1. MQTT Profile Import/Export
+- [x] Thêm API endpoint exportProfiles (JSON format)
+- [x] Thêm API endpoint importProfiles (validate và import)
+- [x] Thêm Export button trong UI
+- [x] Thêm Import dialog với file upload
+- [x] Validate imported data trước khi lưu
+
+### 2. Connection Health Monitor
+- [x] Tạo API endpoint getConnectionHealth
+- [x] Hiển thị real-time connection status (Health Monitor card)
+- [x] Thêm auto-reconnect alerts (trong getConnectionHealth)
+- [x] Tạo health dashboard widget (Connection Health Overview)
+
+### 3. Sidebar Navigation
+- [x] Thêm menu item "MQTT Profiles" vào sidebar (navigation.tsx)
+- [x] Đặt trong nhóm Giám sát (Monitoring) cùng các MQTT khác

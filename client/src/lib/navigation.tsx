@@ -210,6 +210,12 @@ export const navGroups: NavGroup[] = [
         description: "Phát lại và debug tin nhắn MQTT"
       },
       { 
+        href: "/mqtt-profiles", 
+        label: "MQTT Profiles", 
+        icon: <Server className="h-4 w-4" />,
+        description: "Quản lý tập trung cấu hình MQTT"
+      },
+      { 
         href: "/oee-dashboard", 
         label: "OEE Dashboard", 
         icon: <Timer className="h-4 w-4" />,

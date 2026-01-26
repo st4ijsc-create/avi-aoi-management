@@ -30,7 +30,12 @@ import {
   AlertCircle,
   RefreshCw,
   FileJson,
-  Settings2
+  Settings2,
+  Download,
+  Upload,
+  Heart,
+  Wifi,
+  WifiOff
 } from "lucide-react";
 
 export default function MqttProfileManagement() {
@@ -39,6 +44,9 @@ export default function MqttProfileManagement() {
   const [editingProfile, setEditingProfile] = useState<any>(null);
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [selectedProfileForAssign, setSelectedProfileForAssign] = useState<number | null>(null);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importOptions, setImportOptions] = useState({ overwriteExisting: false, skipDuplicates: true });
 
   // Queries
   const { data: profiles, refetch: refetchProfiles } = trpc.mqttClientManagement.listProfiles.useQuery();
@@ -49,6 +57,11 @@ export default function MqttProfileManagement() {
   const { data: machinesList } = trpc.machine.list.useQuery();
   const { data: stationsList } = trpc.station.list.useQuery();
   const { data: factoriesList } = trpc.factory.list.useQuery();
+  const { data: connectionHealth, refetch: refetchHealth } = trpc.mqttClientManagement.getConnectionHealth.useQuery();
+  const { data: exportData, refetch: refetchExport } = trpc.mqttClientManagement.exportProfiles.useQuery(
+    { includeAssignments: true, includeTemplates: true },
+    { enabled: false }
+  );
 
   // Mutations
   const createProfile = trpc.mqttClientManagement.createProfile.useMutation({
@@ -101,6 +114,22 @@ export default function MqttProfileManagement() {
       refetchAssignments();
       refetchStats();
       setShowAssignDialog(false);
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const importProfiles = trpc.mqttClientManagement.importProfiles.useMutation({
+    onSuccess: (result) => {
+      toast.success(`Import hoàn tất: ${result.profilesImported} imported, ${result.profilesUpdated} updated, ${result.profilesSkipped} skipped`);
+      if (result.errors.length > 0) {
+        result.errors.forEach(err => toast.error(err));
+      }
+      refetchProfiles();
+      refetchStats();
+      setShowImportDialog(false);
+      setImportFile(null);
     },
     onError: (error) => {
       toast.error(error.message);
@@ -236,11 +265,114 @@ export default function MqttProfileManagement() {
               Cấu hình tập trung các MQTT profiles và gán cho máy/station/factory
             </p>
           </div>
-          <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
-            <Plus className="h-4 w-4 mr-2" />
-            Tạo Profile mới
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={async () => {
+              const result = await refetchExport();
+              if (result.data) {
+                const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `mqtt-profiles-${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                toast.success('Đã xuất profiles thành công');
+              }
+            }}>
+              <Download className="h-4 w-4 mr-2" />
+              Export
+            </Button>
+            <Button variant="outline" onClick={() => setShowImportDialog(true)}>
+              <Upload className="h-4 w-4 mr-2" />
+              Import
+            </Button>
+            <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
+              <Plus className="h-4 w-4 mr-2" />
+              Tạo Profile mới
+            </Button>
+          </div>
         </div>
+
+        {/* Connection Health Overview */}
+        {connectionHealth && (
+          <Card className={`border-l-4 ${
+            connectionHealth.overall.status === 'healthy' ? 'border-l-green-500' :
+            connectionHealth.overall.status === 'warning' ? 'border-l-yellow-500' :
+            connectionHealth.overall.status === 'error' ? 'border-l-red-500' : 'border-l-gray-500'
+          }`}>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Heart className="h-5 w-5" />
+                  Connection Health Monitor
+                </CardTitle>
+                <Button variant="ghost" size="sm" onClick={() => refetchHealth()}>
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold">{connectionHealth.overall.totalProfiles}</div>
+                  <p className="text-xs text-muted-foreground">Total Profiles</p>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-500 flex items-center justify-center gap-1">
+                    <Wifi className="h-4 w-4" />
+                    {connectionHealth.overall.healthy}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Healthy</p>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-yellow-500">{connectionHealth.overall.warning}</div>
+                  <p className="text-xs text-muted-foreground">Warning</p>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-red-500 flex items-center justify-center gap-1">
+                    <WifiOff className="h-4 w-4" />
+                    {connectionHealth.overall.error}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Error</p>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-gray-500">{connectionHealth.overall.unknown}</div>
+                  <p className="text-xs text-muted-foreground">Unknown</p>
+                </div>
+              </div>
+              {/* Profile Health Details */}
+              {connectionHealth.profiles.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <p className="text-sm font-medium">Chi tiết kết nối:</p>
+                  <div className="grid gap-2">
+                    {connectionHealth.profiles.map((profile) => (
+                      <div key={profile.profileId} className="flex items-center justify-between p-2 bg-muted/50 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          {profile.status === 'healthy' && <CheckCircle2 className="h-4 w-4 text-green-500" />}
+                          {profile.status === 'warning' && <AlertCircle className="h-4 w-4 text-yellow-500" />}
+                          {profile.status === 'error' && <XCircle className="h-4 w-4 text-red-500" />}
+                          {profile.status === 'unknown' && <Activity className="h-4 w-4 text-gray-500" />}
+                          <span className="font-medium">{profile.profileName}</span>
+                          <span className="text-xs text-muted-foreground">({profile.brokerUrl}:{profile.port})</span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <Badge variant="outline">{profile.assignmentCount} assignments</Badge>
+                          <span className="text-sm">{profile.statusMessage}</span>
+                          {profile.errorsLastHour > 0 && (
+                            <Badge variant="destructive">{profile.errorsLastHour} errors/h</Badge>
+                          )}
+                          {profile.reconnectsLastHour > 0 && (
+                            <Badge variant="secondary">{profile.reconnectsLastHour} reconnects/h</Badge>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -864,6 +996,75 @@ export default function MqttProfileManagement() {
                 disabled={!assignFormData.targetId}
               >
                 Gán Profile
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Import Dialog */}
+        <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Import MQTT Profiles</DialogTitle>
+              <DialogDescription>
+                Chọn file JSON đã export trước đó để import profiles
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label>File JSON</Label>
+                <Input
+                  type="file"
+                  accept=".json"
+                  onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                />
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={importOptions.overwriteExisting}
+                    onCheckedChange={(v) => setImportOptions({ ...importOptions, overwriteExisting: v })}
+                  />
+                  <Label>Ghi đè profiles trùng tên</Label>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={importOptions.skipDuplicates}
+                  onCheckedChange={(v) => setImportOptions({ ...importOptions, skipDuplicates: v })}
+                />
+                <Label>Bỏ qua profiles trùng tên (nếu không ghi đè)</Label>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setShowImportDialog(false);
+                setImportFile(null);
+              }}>
+                Hủy
+              </Button>
+              <Button 
+                onClick={async () => {
+                  if (!importFile) return;
+                  try {
+                    const text = await importFile.text();
+                    const data = JSON.parse(text);
+                    importProfiles.mutate({
+                      data,
+                      overwriteExisting: importOptions.overwriteExisting,
+                      skipDuplicates: importOptions.skipDuplicates,
+                    });
+                  } catch (error) {
+                    toast.error('File JSON không hợp lệ');
+                  }
+                }}
+                disabled={!importFile || importProfiles.isPending}
+              >
+                {importProfiles.isPending ? 'Importing...' : 'Import'}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -570,6 +570,300 @@ export const mqttClientManagementRouter = router({
       return { success: true };
     }),
 
+  // ============= IMPORT/EXPORT =============
+  
+  // Export profiles to JSON
+  exportProfiles: protectedProcedure
+    .input(z.object({
+      profileIds: z.array(z.number().int()).optional(), // If not provided, export all
+      includeAssignments: z.boolean().default(false),
+      includeTemplates: z.boolean().default(false),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const { profileIds, includeAssignments = false, includeTemplates = false } = input || {};
+      
+      // Get profiles
+      let profilesQuery = db.select().from(mqttClientProfiles).where(eq(mqttClientProfiles.isActive, true));
+      if (profileIds && profileIds.length > 0) {
+        profilesQuery = db.select().from(mqttClientProfiles).where(inArray(mqttClientProfiles.id, profileIds));
+      }
+      const profiles = await profilesQuery;
+      
+      // Prepare export data
+      const exportData: {
+        version: string;
+        exportedAt: string;
+        profiles: any[];
+        assignments?: any[];
+        templates?: any[];
+      } = {
+        version: "1.0",
+        exportedAt: new Date().toISOString(),
+        profiles: profiles.map(p => {
+          const { id, createdAt, updatedAt, ...rest } = p;
+          return rest;
+        }),
+      };
+      
+      // Include assignments if requested
+      if (includeAssignments) {
+        const assignments = await db.select()
+          .from(mqttProfileAssignments)
+          .where(eq(mqttProfileAssignments.isActive, true));
+        exportData.assignments = assignments.map(a => ({
+          ...a,
+          id: undefined,
+          assignedAt: undefined,
+        }));
+      }
+      
+      // Include templates if requested
+      if (includeTemplates) {
+        const templates = await db.select().from(mqttTopicTemplates);
+        exportData.templates = templates.map(t => ({
+          ...t,
+          id: undefined,
+          createdAt: undefined,
+        }));
+      }
+      
+      return exportData;
+    }),
+
+  // Import profiles from JSON
+  importProfiles: adminProcedure
+    .input(z.object({
+      data: z.object({
+        version: z.string(),
+        profiles: z.array(z.object({
+          name: z.string(),
+          description: z.string().optional().nullable(),
+          brokerUrl: z.string(),
+          port: z.number().int(),
+          protocol: z.enum(["mqtt", "mqtts", "ws", "wss"]),
+          username: z.string().optional().nullable(),
+          password: z.string().optional().nullable(),
+          clientIdPrefix: z.string().optional().nullable(),
+          useTls: z.boolean(),
+          keepAlive: z.number().int(),
+          connectTimeout: z.number().int(),
+          reconnectPeriod: z.number().int(),
+          cleanSession: z.boolean(),
+          defaultQos: z.enum(["0", "1", "2"]),
+          subscribeTopics: z.any(),
+          publishTopics: z.any(),
+          messageRetain: z.boolean(),
+          isDefault: z.boolean(),
+        })),
+        assignments: z.array(z.any()).optional(),
+        templates: z.array(z.any()).optional(),
+      }),
+      overwriteExisting: z.boolean().default(false),
+      skipDuplicates: z.boolean().default(true),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await requireDb();
+      const { data, overwriteExisting, skipDuplicates } = input;
+      
+      const results = {
+        profilesImported: 0,
+        profilesSkipped: 0,
+        profilesUpdated: 0,
+        templatesImported: 0,
+        errors: [] as string[],
+      };
+      
+      // Import profiles
+      for (const profile of data.profiles) {
+        try {
+          // Check if profile with same name exists
+          const [existing] = await db.select()
+            .from(mqttClientProfiles)
+            .where(eq(mqttClientProfiles.name, profile.name))
+            .limit(1);
+          
+          if (existing) {
+            if (overwriteExisting) {
+              await db.update(mqttClientProfiles)
+                .set({
+                  ...profile,
+                  updatedAt: new Date(),
+                })
+                .where(eq(mqttClientProfiles.id, existing.id));
+              results.profilesUpdated++;
+            } else if (skipDuplicates) {
+              results.profilesSkipped++;
+            } else {
+              results.errors.push(`Profile "${profile.name}" already exists`);
+            }
+          } else {
+            await db.insert(mqttClientProfiles).values({
+              ...profile,
+              isActive: true,
+            });
+            results.profilesImported++;
+          }
+        } catch (error: any) {
+          results.errors.push(`Failed to import profile "${profile.name}": ${error.message}`);
+        }
+      }
+      
+      // Import templates if provided
+      if (data.templates) {
+        for (const template of data.templates) {
+          try {
+            const [existing] = await db.select()
+              .from(mqttTopicTemplates)
+              .where(eq(mqttTopicTemplates.name, template.name))
+              .limit(1);
+            
+            if (!existing) {
+              await db.insert(mqttTopicTemplates).values(template);
+              results.templatesImported++;
+            }
+          } catch (error: any) {
+            results.errors.push(`Failed to import template "${template.name}": ${error.message}`);
+          }
+        }
+      }
+      
+      return results;
+    }),
+
+  // ============= CONNECTION HEALTH MONITOR =============
+  
+  // Get connection health status for all active profiles
+  getConnectionHealth: protectedProcedure
+    .input(z.object({
+      profileId: z.number().int().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const { profileId } = input || {};
+      
+      // Get all active profiles with their assignments
+      let profilesQuery = db.select({
+        profile: mqttClientProfiles,
+        assignmentCount: sql<number>`(
+          SELECT COUNT(*) FROM mqtt_profile_assignments 
+          WHERE profileId = ${mqttClientProfiles.id} AND isActive = 1
+        )`.as('assignmentCount'),
+      }).from(mqttClientProfiles).where(eq(mqttClientProfiles.isActive, true));
+      
+      if (profileId) {
+        profilesQuery = db.select({
+          profile: mqttClientProfiles,
+          assignmentCount: sql<number>`(
+            SELECT COUNT(*) FROM mqtt_profile_assignments 
+            WHERE profileId = ${mqttClientProfiles.id} AND isActive = 1
+          )`.as('assignmentCount'),
+        }).from(mqttClientProfiles).where(eq(mqttClientProfiles.id, profileId));
+      }
+      
+      const profiles = await profilesQuery;
+      
+      // Get recent connection events for each profile
+      const healthData = await Promise.all(profiles.map(async ({ profile, assignmentCount }) => {
+        // Get last connection event
+        const [lastEvent] = await db.select()
+          .from(mqttConnectionLogs)
+          .where(eq(mqttConnectionLogs.profileId, profile.id))
+          .orderBy(desc(mqttConnectionLogs.timestamp))
+          .limit(1);
+        
+        // Get error count in last hour
+        const [errorCount] = await db.select({
+          count: sql<number>`COUNT(*)`.as('count'),
+        })
+          .from(mqttConnectionLogs)
+          .where(and(
+            eq(mqttConnectionLogs.profileId, profile.id),
+            eq(mqttConnectionLogs.eventType, "error"),
+            sql`${mqttConnectionLogs.timestamp} > DATE_SUB(NOW(), INTERVAL 1 HOUR)`
+          ));
+        
+        // Get reconnect count in last hour
+        const [reconnectCount] = await db.select({
+          count: sql<number>`COUNT(*)`.as('count'),
+        })
+          .from(mqttConnectionLogs)
+          .where(and(
+            eq(mqttConnectionLogs.profileId, profile.id),
+            eq(mqttConnectionLogs.eventType, "reconnect"),
+            sql`${mqttConnectionLogs.timestamp} > DATE_SUB(NOW(), INTERVAL 1 HOUR)`
+          ));
+        
+        // Determine health status
+        let status: "healthy" | "warning" | "error" | "unknown" = "unknown";
+        let statusMessage = "No connection data";
+        
+        if (lastEvent) {
+          const errorsLastHour = Number(errorCount?.count) || 0;
+          const reconnectsLastHour = Number(reconnectCount?.count) || 0;
+          
+          if (lastEvent.eventType === "connect") {
+            if (errorsLastHour === 0 && reconnectsLastHour < 3) {
+              status = "healthy";
+              statusMessage = "Connected and stable";
+            } else if (reconnectsLastHour >= 3) {
+              status = "warning";
+              statusMessage = `${reconnectsLastHour} reconnections in last hour`;
+            } else {
+              status = "warning";
+              statusMessage = `${errorsLastHour} errors in last hour`;
+            }
+          } else if (lastEvent.eventType === "disconnect") {
+            status = "error";
+            statusMessage = "Disconnected";
+          } else if (lastEvent.eventType === "error") {
+            status = "error";
+            statusMessage = lastEvent.eventMessage || "Connection error";
+          } else if (lastEvent.eventType === "reconnect") {
+            status = "warning";
+            statusMessage = "Recently reconnected";
+          }
+        }
+        
+        return {
+          profileId: profile.id,
+          profileName: profile.name,
+          brokerUrl: profile.brokerUrl,
+          port: profile.port,
+          assignmentCount: Number(assignmentCount) || 0,
+          status,
+          statusMessage,
+          lastEvent: lastEvent ? {
+            type: lastEvent.eventType,
+            message: lastEvent.eventMessage,
+            timestamp: lastEvent.timestamp,
+            clientId: lastEvent.clientId,
+          } : null,
+          errorsLastHour: Number(errorCount?.count) || 0,
+          reconnectsLastHour: Number(reconnectCount?.count) || 0,
+        };
+      }));
+      
+      // Calculate overall health
+      const totalProfiles = healthData.length;
+      const healthyCount = healthData.filter(h => h.status === "healthy").length;
+      const warningCount = healthData.filter(h => h.status === "warning").length;
+      const errorCount = healthData.filter(h => h.status === "error").length;
+      
+      return {
+        overall: {
+          status: errorCount > 0 ? "error" : warningCount > 0 ? "warning" : healthyCount > 0 ? "healthy" : "unknown",
+          totalProfiles,
+          healthy: healthyCount,
+          warning: warningCount,
+          error: errorCount,
+          unknown: totalProfiles - healthyCount - warningCount - errorCount,
+        },
+        profiles: healthData,
+        lastUpdated: new Date().toISOString(),
+      };
+    }),
+
   // ============= DASHBOARD STATS =============
   
   getDashboardStats: protectedProcedure.query(async () => {
