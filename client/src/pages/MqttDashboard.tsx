@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,15 +6,19 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { 
   Wifi, WifiOff, Users, MessageSquare, CheckCircle, XCircle, Clock, 
   RefreshCw, Activity, Bell, TrendingUp, Send, AlertTriangle,
-  Smartphone, Server, TestTube2, Gauge, Timer, Zap, BarChart3
+  Smartphone, Server, TestTube2, Gauge, Timer, Zap, BarChart3,
+  Radio, Pause, Play
 } from "lucide-react";
 import { toast } from "sonner";
 import { alertSoundService } from "@/lib/alertSoundService";
 import { Volume2, VolumeX } from "lucide-react";
+import { io, Socket } from "socket.io-client";
 import {
   LineChart,
   Line,
@@ -33,20 +37,161 @@ import {
 
 const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#6366f1'];
 
+// WebSocket message types
+interface MqttRealtimeStats {
+  throughput: {
+    lastMinute: number;
+    last5Minutes: number;
+  };
+  latency: {
+    avgMs: number;
+    p95Ms: number;
+  };
+  externalBroker: {
+    enabled: boolean;
+    connected: boolean;
+    broker: string;
+    useTLS: boolean;
+  };
+}
+
+interface MqttMessage {
+  id: number;
+  messageType: string;
+  topic: string;
+  deliveryStatus: string;
+  stationId: number | null;
+  inspectionId: number | null;
+  createdAt: Date | string;
+}
+
 export default function MqttDashboard() {
   const [trendDays, setTrendDays] = useState(7);
+  const [wsConnected, setWsConnected] = useState(false);
+  const [useWebSocket, setUseWebSocket] = useState(() => {
+    const saved = localStorage.getItem('mqtt_dashboard_use_websocket');
+    return saved === 'true';
+  });
+  const [isPaused, setIsPaused] = useState(false);
   
-  const { data: stats, isLoading: statsLoading, refetch: refetchStats } = trpc.mqttClient.dashboardStats.useQuery();
+  // WebSocket state
+  const socketRef = useRef<Socket | null>(null);
+  const [wsRealtimeStats, setWsRealtimeStats] = useState<MqttRealtimeStats | null>(null);
+  const [wsRecentMessages, setWsRecentMessages] = useState<MqttMessage[]>([]);
+  const [wsOnlineClients, setWsOnlineClients] = useState<Set<string>>(new Set());
+  const [wsThroughputHistory, setWsThroughputHistory] = useState<any[]>([]);
+  
+  // Save WebSocket preference
+  useEffect(() => {
+    localStorage.setItem('mqtt_dashboard_use_websocket', String(useWebSocket));
+  }, [useWebSocket]);
+
+  // tRPC queries (used when WebSocket is disabled)
+  const { data: stats, isLoading: statsLoading, refetch: refetchStats } = trpc.mqttClient.dashboardStats.useQuery(undefined, {
+    enabled: !useWebSocket,
+    refetchInterval: useWebSocket ? false : 30000,
+  });
   const { data: trend, isLoading: trendLoading } = trpc.mqttClient.messageTrend.useQuery({ days: trendDays });
-  const { data: recentMessages, isLoading: messagesLoading, refetch: refetchMessages } = trpc.mqttClient.recentMessages.useQuery({ limit: 20 });
-  const { data: clients } = trpc.mqttClient.list.useQuery({});
+  const { data: recentMessages, isLoading: messagesLoading, refetch: refetchMessages } = trpc.mqttClient.recentMessages.useQuery({ limit: 20 }, {
+    enabled: !useWebSocket,
+    refetchInterval: useWebSocket ? false : 10000,
+  });
+  const { data: clients, refetch: refetchClients } = trpc.mqttClient.list.useQuery({});
   const { data: mqttStatus } = trpc.mqttClient.status.useQuery();
   const { data: realtimeStats, refetch: refetchRealtimeStats } = trpc.mqttClient.realtimeStats.useQuery(undefined, {
-    refetchInterval: 10000, // Auto refresh every 10 seconds
+    enabled: !useWebSocket,
+    refetchInterval: useWebSocket ? false : 10000,
   });
   const { data: throughputHistory, refetch: refetchThroughputHistory } = trpc.mqttClient.throughputHistory.useQuery({ minutes: 60 }, {
-    refetchInterval: 60000, // Auto refresh every minute
+    enabled: !useWebSocket,
+    refetchInterval: useWebSocket ? false : 60000,
   });
+
+  // WebSocket connection
+  useEffect(() => {
+    if (!useWebSocket) {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+        setWsConnected(false);
+      }
+      return;
+    }
+
+    const socket = io(window.location.origin, {
+      path: '/api/socket.io',
+      transports: ['polling'],
+    });
+
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      console.log('[MqttDashboard] WebSocket connected');
+      setWsConnected(true);
+      toast.success('WebSocket đã kết nối');
+      
+      // Subscribe to MQTT updates
+      socket.emit('mqtt:subscribe');
+    });
+
+    socket.on('disconnect', () => {
+      console.log('[MqttDashboard] WebSocket disconnected');
+      setWsConnected(false);
+    });
+
+    // Handle realtime stats updates
+    socket.on('mqtt:stats', (data: MqttRealtimeStats) => {
+      if (!isPaused) {
+        setWsRealtimeStats(data);
+      }
+    });
+
+    // Handle new messages
+    socket.on('mqtt:new_message', (message: MqttMessage) => {
+      if (!isPaused) {
+        setWsRecentMessages(prev => {
+          const updated = [message, ...prev].slice(0, 20);
+          return updated;
+        });
+        
+        // Play sound for NG alerts
+        if (message.messageType === 'NG_ALERT') {
+          alertSoundService.playNGAlert();
+        }
+      }
+    });
+
+    // Handle client status changes
+    socket.on('mqtt:client_status', (data: { clientId: string; status: 'online' | 'offline' }) => {
+      if (!isPaused) {
+        setWsOnlineClients(prev => {
+          const newSet = new Set(prev);
+          if (data.status === 'online') {
+            newSet.add(data.clientId);
+          } else {
+            newSet.delete(data.clientId);
+          }
+          return newSet;
+        });
+        refetchClients();
+      }
+    });
+
+    // Handle throughput history updates
+    socket.on('mqtt:throughput_update', (data: any) => {
+      if (!isPaused) {
+        setWsThroughputHistory(prev => {
+          const updated = [...prev, data].slice(-60);
+          return updated;
+        });
+      }
+    });
+
+    return () => {
+      socket.emit('mqtt:unsubscribe');
+      socket.disconnect();
+    };
+  }, [useWebSocket, isPaused, refetchClients]);
 
   const [soundMuted, setSoundMuted] = useState(alertSoundService.isMuted());
 
@@ -60,10 +205,11 @@ export default function MqttDashboard() {
   const testNGAlertMutation = trpc.mqttClient.testNGAlert.useMutation({
     onSuccess: (data) => {
       toast.success(`NG Alert đã gửi: ${data.data.serialNumber}`);
-      // Play NG alert sound
       alertSoundService.playNGAlert();
-      refetchMessages();
-      refetchRealtimeStats();
+      if (!useWebSocket) {
+        refetchMessages();
+        refetchRealtimeStats();
+      }
     },
     onError: (error) => {
       toast.error(`Lỗi: ${error.message}`);
@@ -84,6 +230,8 @@ export default function MqttDashboard() {
     refetchMessages();
     refetchRealtimeStats();
     refetchThroughputHistory();
+    refetchClients();
+    toast.success('Đã làm mới dữ liệu');
   };
 
   const formatDate = (date: Date | string | null) => {
@@ -124,16 +272,62 @@ export default function MqttDashboard() {
     { name: 'Weekly Summary', value: stats.breakdown.weeklySummaries, color: '#8b5cf6' },
   ].filter(d => d.value > 0) : [];
 
+  // Use WebSocket data or tRPC data based on preference
+  const displayRealtimeStats = useWebSocket ? wsRealtimeStats : realtimeStats;
+  const displayRecentMessages = useWebSocket ? wsRecentMessages : recentMessages;
+  const displayThroughputHistory = useWebSocket && wsThroughputHistory.length > 0 ? wsThroughputHistory : throughputHistory;
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">MQTT Dashboard</h1>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              MQTT Dashboard
+              {useWebSocket && (
+                <Badge className={wsConnected ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}>
+                  <Radio className="w-3 h-3 mr-1" />
+                  {wsConnected ? 'Live' : 'Disconnected'}
+                </Badge>
+              )}
+            </h1>
             <p className="text-muted-foreground">Giám sát kết nối và tin nhắn MQTT realtime</p>
           </div>
           <div className="flex items-center gap-3">
+            {/* WebSocket Toggle */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg">
+              <Switch
+                id="websocket-mode"
+                checked={useWebSocket}
+                onCheckedChange={setUseWebSocket}
+              />
+              <Label htmlFor="websocket-mode" className="text-sm cursor-pointer">
+                WebSocket {useWebSocket ? 'ON' : 'OFF'}
+              </Label>
+            </div>
+            
+            {/* Pause/Resume for WebSocket */}
+            {useWebSocket && (
+              <Button
+                variant={isPaused ? "default" : "outline"}
+                size="sm"
+                onClick={() => setIsPaused(!isPaused)}
+              >
+                {isPaused ? (
+                  <>
+                    <Play className="w-4 h-4 mr-2" />
+                    Resume
+                  </>
+                ) : (
+                  <>
+                    <Pause className="w-4 h-4 mr-2" />
+                    Pause
+                  </>
+                )}
+              </Button>
+            )}
+            
             {mqttStatus?.enabled ? (
               <Badge className="bg-green-500/20 text-green-400 border-green-500/30 px-3 py-1">
                 <Server className="w-4 h-4 mr-2" />
@@ -198,10 +392,10 @@ export default function MqttDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-emerald-400">
-                {statsLoading ? '-' : stats?.clients.online || 0}
+                {useWebSocket ? wsOnlineClients.size : (statsLoading ? '-' : stats?.clients.online || 0)}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                / {stats?.clients.total || 0} tổng clients
+                / {stats?.clients.total || clients?.length || 0} tổng clients
               </p>
             </CardContent>
           </Card>
@@ -216,7 +410,10 @@ export default function MqttDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-amber-400">
-                {statsLoading ? '-' : stats?.clients.offline || 0}
+                {useWebSocket 
+                  ? Math.max(0, (clients?.length || 0) - wsOnlineClients.size)
+                  : (statsLoading ? '-' : stats?.clients.offline || 0)
+                }
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 {stats?.clients.pendingApproval || 0} chờ phê duyệt
@@ -269,11 +466,14 @@ export default function MqttDashboard() {
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                 <Zap className="w-4 h-4 text-cyan-400" />
                 Throughput (1 phút)
+                {useWebSocket && wsConnected && !isPaused && (
+                  <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-cyan-400">
-                {realtimeStats?.throughput.lastMinute || 0}
+                {displayRealtimeStats?.throughput.lastMinute || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 msg/phút
@@ -291,7 +491,7 @@ export default function MqttDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-indigo-400">
-                {realtimeStats?.throughput.last5Minutes || 0}
+                {displayRealtimeStats?.throughput.last5Minutes || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 avg msg/phút
@@ -309,10 +509,10 @@ export default function MqttDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-rose-400">
-                {realtimeStats?.latency.avgMs || 0}
+                {displayRealtimeStats?.latency.avgMs || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                ms (P95: {realtimeStats?.latency.p95Ms || 0}ms)
+                ms (P95: {displayRealtimeStats?.latency.p95Ms || 0}ms)
               </p>
             </CardContent>
           </Card>
@@ -327,11 +527,11 @@ export default function MqttDashboard() {
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
-                {realtimeStats?.externalBroker.connected ? (
+                {displayRealtimeStats?.externalBroker.connected ? (
                   <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
                     <CheckCircle className="w-3 h-3 mr-1" /> Connected
                   </Badge>
-                ) : realtimeStats?.externalBroker.enabled ? (
+                ) : displayRealtimeStats?.externalBroker.enabled ? (
                   <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
                     <Clock className="w-3 h-3 mr-1" /> Connecting...
                   </Badge>
@@ -342,8 +542,8 @@ export default function MqttDashboard() {
                 )}
               </div>
               <p className="text-xs text-muted-foreground mt-2 truncate">
-                {realtimeStats?.externalBroker.broker || 'N/A'}
-                {realtimeStats?.externalBroker.useTLS && (
+                {displayRealtimeStats?.externalBroker.broker || 'N/A'}
+                {displayRealtimeStats?.externalBroker.useTLS && (
                   <Badge variant="outline" className="ml-2 text-xs">TLS</Badge>
                 )}
               </p>
@@ -359,6 +559,12 @@ export default function MqttDashboard() {
                 <CardTitle className="flex items-center gap-2">
                   <Activity className="w-5 h-5 text-cyan-400" />
                   Throughput Realtime
+                  {useWebSocket && wsConnected && !isPaused && (
+                    <Badge variant="outline" className="text-xs">
+                      <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse mr-1" />
+                      Live
+                    </Badge>
+                  )}
                 </CardTitle>
                 <CardDescription>Số lượng message trong 1 giờ qua (theo phút)</CardDescription>
               </div>
@@ -366,13 +572,13 @@ export default function MqttDashboard() {
           </CardHeader>
           <CardContent>
             <div className="h-[250px]">
-              {!throughputHistory || throughputHistory.length === 0 ? (
+              {!displayThroughputHistory || displayThroughputHistory.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-muted-foreground">
                   Chưa có dữ liệu
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={throughputHistory}>
+                  <LineChart data={displayThroughputHistory}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                     <XAxis 
                       dataKey="time" 
@@ -531,6 +737,9 @@ export default function MqttDashboard() {
             <TabsTrigger value="messages" className="flex items-center gap-2">
               <MessageSquare className="w-4 h-4" />
               Recent Messages
+              {useWebSocket && wsConnected && !isPaused && (
+                <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+              )}
             </TabsTrigger>
           </TabsList>
 
@@ -562,59 +771,64 @@ export default function MqttDashboard() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      clients?.map((client) => (
-                        <TableRow key={client.id}>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Smartphone className="w-4 h-4 text-muted-foreground" />
-                              <div>
-                                <div className="font-medium">{client.deviceName || 'Unknown'}</div>
-                                <div className="text-xs text-muted-foreground">{client.deviceModel}</div>
+                      clients?.map((client) => {
+                        const isOnline = useWebSocket 
+                          ? wsOnlineClients.has(client.deviceId)
+                          : client.connectionStatus === 'ONLINE';
+                        return (
+                          <TableRow key={client.id}>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Smartphone className="w-4 h-4 text-muted-foreground" />
+                                <div>
+                                  <div className="font-medium">{client.deviceName || 'Unknown'}</div>
+                                  <div className="text-xs text-muted-foreground">{client.deviceModel}</div>
+                                </div>
                               </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">{client.deviceId}</TableCell>
-                          <TableCell>
-                            {client.connectionStatus === 'ONLINE' ? (
-                              <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-                                <Wifi className="w-3 h-3 mr-1" /> Online
-                              </Badge>
-                            ) : (
-                              <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">
-                                <WifiOff className="w-3 h-3 mr-1" /> Offline
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {client.approvalStatus === 'APPROVED' ? (
-                              <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-                                <CheckCircle className="w-3 h-3 mr-1" /> Approved
-                              </Badge>
-                            ) : client.approvalStatus === 'PENDING' ? (
-                              <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
-                                <Clock className="w-3 h-3 mr-1" /> Pending
-                              </Badge>
-                            ) : (
-                              <Badge className="bg-red-500/20 text-red-400 border-red-500/30">
-                                <XCircle className="w-3 h-3 mr-1" /> Rejected
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell>{client.stationId || '-'}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {formatDate(client.lastConnectedAt)}
-                          </TableCell>
-                          <TableCell>
-                            {client.fcmToken ? (
-                              <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
-                                <Bell className="w-3 h-3 mr-1" /> Có
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-muted-foreground">Không</Badge>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))
+                            </TableCell>
+                            <TableCell className="font-mono text-xs">{client.deviceId}</TableCell>
+                            <TableCell>
+                              {isOnline ? (
+                                <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                                  <Wifi className="w-3 h-3 mr-1" /> Online
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">
+                                  <WifiOff className="w-3 h-3 mr-1" /> Offline
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {client.approvalStatus === 'APPROVED' ? (
+                                <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                                  <CheckCircle className="w-3 h-3 mr-1" /> Approved
+                                </Badge>
+                              ) : client.approvalStatus === 'PENDING' ? (
+                                <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
+                                  <Clock className="w-3 h-3 mr-1" /> Pending
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-red-500/20 text-red-400 border-red-500/30">
+                                  <XCircle className="w-3 h-3 mr-1" /> Rejected
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>{client.stationId || '-'}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {formatDate(client.lastConnectedAt)}
+                            </TableCell>
+                            <TableCell>
+                              {client.fcmToken ? (
+                                <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
+                                  <Bell className="w-3 h-3 mr-1" /> Có
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-muted-foreground">Không</Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
@@ -626,7 +840,15 @@ export default function MqttDashboard() {
           <TabsContent value="messages">
             <Card>
               <CardHeader>
-                <CardTitle>Tin nhắn gần đây</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  Tin nhắn gần đây
+                  {useWebSocket && wsConnected && !isPaused && (
+                    <Badge variant="outline" className="text-xs">
+                      <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse mr-1" />
+                      Live Updates
+                    </Badge>
+                  )}
+                </CardTitle>
                 <CardDescription>20 tin nhắn mới nhất</CardDescription>
               </CardHeader>
               <CardContent>
@@ -642,21 +864,21 @@ export default function MqttDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {messagesLoading ? (
+                    {messagesLoading && !useWebSocket ? (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                           Đang tải...
                         </TableCell>
                       </TableRow>
-                    ) : recentMessages?.length === 0 ? (
+                    ) : (!displayRecentMessages || displayRecentMessages.length === 0) ? (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                           Chưa có tin nhắn nào
                         </TableCell>
                       </TableRow>
                     ) : (
-                      recentMessages?.map((msg) => (
-                        <TableRow key={msg.id}>
+                      displayRecentMessages?.map((msg) => (
+                        <TableRow key={msg.id} className="animate-in fade-in duration-300">
                           <TableCell>{getMessageTypeBadge(msg.messageType)}</TableCell>
                           <TableCell className="font-mono text-xs max-w-[200px] truncate">
                             {msg.topic}

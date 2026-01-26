@@ -328,362 +328,162 @@ export default function Dashboard() {
 
   // Calculate comparison dates for NG Visual (current period vs previous period)
   const ngComparisonDates = useMemo(() => {
-    const now = new Date();
-    let currentStartDate = new Date();
-    let previousStartDate = new Date();
-    let previousEndDate = new Date();
+    const periodLength = ngTimeFilter === 'day' ? 1 : ngTimeFilter === 'week' ? 7 : 30;
+    const currentEnd = new Date();
+    const currentStart = new Date();
+    currentStart.setDate(currentEnd.getDate() - periodLength);
     
-    switch (ngTimeFilter) {
-      case "day":
-        // Today vs Yesterday
-        currentStartDate.setHours(0, 0, 0, 0);
-        previousStartDate = new Date(now);
-        previousStartDate.setDate(now.getDate() - 1);
-        previousStartDate.setHours(0, 0, 0, 0);
-        previousEndDate = new Date(previousStartDate);
-        previousEndDate.setHours(23, 59, 59, 999);
-        break;
-      case "week":
-        // This week vs Last week
-        currentStartDate.setDate(now.getDate() - 7);
-        previousStartDate = new Date(now);
-        previousStartDate.setDate(now.getDate() - 14);
-        previousEndDate = new Date(now);
-        previousEndDate.setDate(now.getDate() - 7);
-        break;
-      case "month":
-        // This month vs Last month
-        currentStartDate.setMonth(now.getMonth() - 1);
-        previousStartDate = new Date(now);
-        previousStartDate.setMonth(now.getMonth() - 2);
-        previousEndDate = new Date(now);
-        previousEndDate.setMonth(now.getMonth() - 1);
-        break;
-      default:
-        currentStartDate.setDate(now.getDate() - 7);
-        previousStartDate = new Date(now);
-        previousStartDate.setDate(now.getDate() - 14);
-        previousEndDate = new Date(now);
-        previousEndDate.setDate(now.getDate() - 7);
-    }
+    const previousEnd = new Date(currentStart);
+    const previousStart = new Date();
+    previousStart.setDate(previousEnd.getDate() - periodLength);
     
     return {
-      currentStartDate,
-      currentEndDate: now,
-      previousStartDate,
-      previousEndDate,
+      current: { startDate: currentStart, endDate: currentEnd },
+      previous: { startDate: previousStart, endDate: previousEnd },
     };
   }, [ngTimeFilter]);
 
-  // Fetch stats with comparison
-  const { data: statsWithComparison, isLoading: statsLoading, refetch: refetchStats } = trpc.dashboard.getStatsWithComparison.useQuery({
-    factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
-    startDate: dateRange.startDate,
-    endDate: dateRange.endDate,
-  }, {
-    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
-  });
-
-  // Fetch all machines stats
-  const { data: machinesStats, isLoading: machinesLoading, refetch: refetchMachines } = trpc.dashboard.getAllMachinesStats.useQuery({
-    startDate: dateRange.startDate,
-    endDate: dateRange.endDate,
-  }, {
-    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
-  });
-
-  // Fetch shift stats
-  const { data: shiftStats } = trpc.dashboard.getShiftStats.useQuery({
-    factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
-    startDate: dateRange.startDate,
-    endDate: dateRange.endDate,
-  }, {
-    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
-  });
-
-  // Fetch top/bottom machines
-  const { data: topBottomMachines } = trpc.dashboard.getTopBottomMachines.useQuery({
-    startDate: dateRange.startDate,
-    endDate: dateRange.endDate,
-    limit: 5,
-  }, {
-    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
-  });
-
-  // Fetch active alerts count
-  const { data: activeAlertsCount } = trpc.dashboard.getActiveAlertsCount.useQuery(undefined, {
-    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
-  });
-
-  // Fetch daily stats for sparklines
-  const { data: dailyStats } = trpc.dashboard.getDailyStats.useQuery({
-    factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
-    days: 7,
-  });
-
-  // Fetch hourly stats for timeline chart
-  const { data: hourlyStats } = trpc.dashboard.getHourlyStats.useQuery({
-    factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
-    hours: 24,
-  }, {
-    refetchInterval: isAutoRefreshing && autoRefreshInterval !== "0" ? parseInt(autoRefreshInterval) * 1000 : false,
-  });
-
-  // Fetch yield alert thresholds for realtime alerts
-  const { data: yieldThresholds } = trpc.yieldThreshold.list.useQuery();
-
-  // Fetch factories, workshops, lines for filters
+  // Queries
   const { data: factories } = trpc.factory.list.useQuery();
   const { data: workshops } = trpc.workshop.list.useQuery();
   const { data: lines } = trpc.line.list.useQuery();
-
-  // Fetch line product assignments and production orders for line info
+  const { data: productModels } = trpc.productModel.list.useQuery({ limit: 100 });
+  const { data: productionOrders } = trpc.productionOrder.list.useQuery({});
   const { data: lineProductAssignments } = trpc.lineProductAssignment.list.useQuery();
-  const { data: productionOrders } = trpc.productionOrder.list.useQuery();
-  const { data: productModels } = trpc.productModel.list.useQuery();
+  const { data: yieldThresholds } = trpc.yieldThreshold.list.useQuery();
+  const { data: activeAlertsCount } = trpc.dashboard.getActiveAlertsCount.useQuery();
+  const { data: allWorkstations } = trpc.workstation.list.useQuery();
 
-  // Fetch recent inspections for selected machine
-  const { data: recentInspections } = trpc.inspection.list.useQuery({
+  // Stats queries with comparison
+  const { data: statsWithComparison, isLoading: statsLoading, refetch: refetchStats } = trpc.dashboard.getStatsWithComparison.useQuery({
+    factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
+    workshopId: selectedWorkshop !== "all" ? parseInt(selectedWorkshop) : undefined,
+    startDate: dateRange.startDate,
+    endDate: dateRange.endDate,
+  });
+
+  // Machines stats
+  const { data: machinesStats, isLoading: machinesLoading, refetch: refetchMachines } = trpc.dashboard.getAllMachinesStats.useQuery({
+    startDate: dateRange.startDate,
+    endDate: dateRange.endDate,
+  });
+
+  // Shift stats
+  const { data: shiftStats, refetch: refetchShiftStats } = trpc.dashboard.getShiftStats.useQuery({
+    factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
+    startDate: dateRange.startDate,
+    endDate: dateRange.endDate,
+  });
+
+  // Top/Bottom machines
+  const { data: topBottomMachines, refetch: refetchTopBottom } = trpc.dashboard.getTopBottomMachines.useQuery({
+    startDate: dateRange.startDate,
+    endDate: dateRange.endDate,
+    limit: 5,
+  });
+
+  // Hourly stats
+  const { data: hourlyStats, refetch: refetchHourly } = trpc.dashboard.getHourlyStats.useQuery({
+    factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
+    workshopId: selectedWorkshop !== "all" ? parseInt(selectedWorkshop) : undefined,
+    lineId: selectedLine !== "all" ? parseInt(selectedLine) : undefined,
     machineId: selectedMachine?.id,
-    limit: 20,
-  }, {
-    enabled: !!selectedMachine,
+    hours: 24,
   });
 
-  // Fetch workstation summary for top defects (overview tab)
-  const { data: workstationSummary } = trpc.workstation.summary.useQuery({
+  // Daily stats for sparklines
+  const { data: dailyStats, refetch: refetchDaily } = trpc.dashboard.getDailyStats.useQuery({
+    factoryId: selectedFactory !== "all" ? parseInt(selectedFactory) : undefined,
+    workshopId: selectedWorkshop !== "all" ? parseInt(selectedWorkshop) : undefined,
+    days: 7,
+  });
+
+  // Workstation summary
+  const { data: workstationSummary, refetch: refetchWorkstation } = trpc.workstation.summary.useQuery({
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
   });
 
-  // Fetch top NG measurement points (overview tab)
-  const { data: topNGPoints } = trpc.workstation.topNGMeasurementPoints.useQuery({
-    startDate: dateRange.startDate,
-    endDate: dateRange.endDate,
-    limit: 15,
-  });
-
-  // Fetch workstation summary for NG Visual tab (with separate time filter)
-  const { data: ngWorkstationSummary, isLoading: ngWorkstationLoading } = trpc.workstation.summary.useQuery({
+  // NG Visual queries
+  const { data: ngWorkstationSummary, isLoading: ngWorkstationLoading, refetch: refetchNGWorkstation } = trpc.workstation.summary.useQuery({
     startDate: ngDateRange.startDate,
     endDate: ngDateRange.endDate,
   });
 
-  // Fetch top NG measurement points for NG Visual tab
-  const { data: ngTopNGPoints, isLoading: ngTopNGLoading } = trpc.workstation.topNGMeasurementPoints.useQuery({
+  const { data: ngTopNGPoints, isLoading: ngTopNGLoading, refetch: refetchNGTopPoints } = trpc.workstation.topNGMeasurementPoints.useQuery({
     startDate: ngDateRange.startDate,
     endDate: ngDateRange.endDate,
-    limit: 20,
+    limit: 50,
   });
 
-  // Fetch measurement points for selected workstation drilldown
+  const { data: ngTrendData, isLoading: ngTrendLoading, refetch: refetchNGTrend } = trpc.workstation.ngTrend.useQuery({
+    workstationId: trendFilterWorkstationId,
+    measurementPointDefId: trendFilterMeasurementPointId,
+    startDate: ngDateRange.startDate,
+    endDate: ngDateRange.endDate,
+  });
+
+  // Drilldown query for selected workstation
   const { data: drilldownMeasurementPoints, isLoading: drilldownLoading } = trpc.workstation.measurementPointsByWorkstation.useQuery({
     workstationId: selectedWorkstationForDrilldown?.id || 0,
     startDate: ngDateRange.startDate,
     endDate: ngDateRange.endDate,
   }, {
-    enabled: !!selectedWorkstationForDrilldown,
+    enabled: !!selectedWorkstationForDrilldown?.id,
   });
 
-  // Fetch NG trend data for chart
-  const { data: ngTrendData, isLoading: ngTrendLoading } = trpc.workstation.ngTrend.useQuery({
-    startDate: ngDateRange.startDate,
-    endDate: ngDateRange.endDate,
-    workstationId: trendFilterWorkstationId,
-    measurementPointDefId: trendFilterMeasurementPointId,
+  // Recent inspections for machine detail
+  const { data: recentInspections } = trpc.inspection.list.useQuery({
+    machineId: selectedMachine?.id,
+    limit: 10,
+  }, {
+    enabled: !!selectedMachine?.id,
   });
 
-  // Fetch NG comparison data
-  const { data: ngComparisonData, isLoading: ngComparisonLoading } = trpc.workstation.ngComparison.useQuery(ngComparisonDates);
-
-  // Fetch all workstations for filter dropdown
-  const { data: allWorkstations } = trpc.workstation.list.useQuery();
-
-  // Fetch all measurement points for filter dropdown (we'll filter by workstation in UI)
-  const { data: allMeasurementPoints } = trpc.measurementPoint.listByProductModel.useQuery(
-    { productModelId: 0 }, // Get all measurement points
-    { enabled: false } // Disable for now, will use ngTopNGPoints data
-  );
-
-  // Update last refresh time
-  useEffect(() => {
-    if (statsWithComparison) {
-      setLastRefreshTime(new Date());
-    }
-  }, [statsWithComparison]);
-
-  // Manual refresh
+  // Refresh all data
   const handleRefresh = useCallback(() => {
     refetchStats();
     refetchMachines();
+    refetchShiftStats();
+    refetchTopBottom();
+    refetchHourly();
+    refetchDaily();
+    refetchWorkstation();
+    refetchNGWorkstation();
+    refetchNGTopPoints();
+    refetchNGTrend();
     setLastRefreshTime(new Date());
-  }, [refetchStats, refetchMachines]);
+    toast.success("Đã cập nhật dữ liệu");
+  }, [refetchStats, refetchMachines, refetchShiftStats, refetchTopBottom, refetchHourly, refetchDaily, refetchWorkstation, refetchNGWorkstation, refetchNGTopPoints, refetchNGTrend]);
 
-  // Export NG Visual as PDF
-  const handleExportPDF = useCallback(async () => {
-    setExportingPDF(true);
-    try {
-      // Prepare data for PDF
-      const workstationData = ngWorkstationSummary ? (ngWorkstationSummary as any[]).map((ws: any) => ({
-        code: ws.workstationCode || '',
-        name: ws.workstationName || 'Unknown',
-        total: ws.totalInspections || 0,
-        ng: ws.ngCount || 0,
-        ngRate: ws.totalInspections > 0 ? ((ws.ngCount || 0) / ws.totalInspections * 100).toFixed(1) : '0.0',
-      })) : [];
+  // Auto-refresh effect
+  useEffect(() => {
+    if (!isAutoRefreshing || autoRefreshInterval === "0") return;
+    
+    const interval = setInterval(() => {
+      handleRefresh();
+    }, parseInt(autoRefreshInterval) * 1000);
 
-      const measurementPointData = ngTopNGPoints ? (ngTopNGPoints as any[]).map((mp: any) => ({
-        code: mp.measurementPointCode || '',
-        name: mp.measurementPointName || 'Unknown',
-        workstation: mp.workstationName || 'N/A',
-        total: mp.totalCount || 0,
-        ng: mp.ngCount || 0,
-        ngRate: mp.totalCount > 0 ? ((mp.ngCount || 0) / mp.totalCount * 100).toFixed(1) : '0.0',
-      })) : [];
-
-      const timeRangeLabel = ngTimeFilter === "day" ? "Hôm nay" : ngTimeFilter === "week" ? "7 ngày qua" : "30 ngày qua";
-      const exportDate = new Date().toLocaleString('vi-VN');
-
-      // Create HTML content for PDF
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>Báo cáo NG Visual - ${timeRangeLabel}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
-            h1 { color: #1e40af; border-bottom: 2px solid #1e40af; padding-bottom: 10px; }
-            h2 { color: #374151; margin-top: 30px; }
-            .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-            .meta { color: #6b7280; font-size: 14px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-            th, td { border: 1px solid #e5e7eb; padding: 10px; text-align: left; }
-            th { background-color: #f3f4f6; font-weight: 600; }
-            .ng-good { color: #16a34a; }
-            .ng-warning { color: #ca8a04; }
-            .ng-danger { color: #dc2626; }
-            .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>Báo cáo NG Visual</h1>
-            <div class="meta">
-              <p>Khoảng thời gian: <strong>${timeRangeLabel}</strong></p>
-              <p>Ngày xuất: ${exportDate}</p>
-            </div>
-          </div>
-
-          <h2>Tỉ lệ NG theo Công trạm</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Mã</th>
-                <th>Tên công trạm</th>
-                <th>Tổng kiểm tra</th>
-                <th>Số NG</th>
-                <th>Tỉ lệ NG (%)</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${workstationData.map((ws: any) => {
-                const ngClass = parseFloat(ws.ngRate) <= 2 ? 'ng-good' : parseFloat(ws.ngRate) <= 5 ? 'ng-warning' : 'ng-danger';
-                return `<tr>
-                  <td>${ws.code}</td>
-                  <td>${ws.name}</td>
-                  <td>${ws.total}</td>
-                  <td>${ws.ng}</td>
-                  <td class="${ngClass}"><strong>${ws.ngRate}%</strong></td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
-
-          <h2>Top Điểm đo có tỉ lệ NG cao</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Mã</th>
-                <th>Tên điểm đo</th>
-                <th>Công trạm</th>
-                <th>Tổng kiểm tra</th>
-                <th>Số NG</th>
-                <th>Tỉ lệ NG (%)</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${measurementPointData.map((mp: any) => {
-                const ngClass = parseFloat(mp.ngRate) <= 2 ? 'ng-good' : parseFloat(mp.ngRate) <= 5 ? 'ng-warning' : 'ng-danger';
-                return `<tr>
-                  <td>${mp.code}</td>
-                  <td>${mp.name}</td>
-                  <td>${mp.workstation}</td>
-                  <td>${mp.total}</td>
-                  <td>${mp.ng}</td>
-                  <td class="${ngClass}"><strong>${mp.ngRate}%</strong></td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
-
-          <div class="footer">
-            <p>Báo cáo được tạo tự động bởi hệ thống AVI/AOI Management</p>
-          </div>
-        </body>
-        </html>
-      `;
-
-      // Create blob and download
-      const blob = new Blob([htmlContent], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `ng-visual-report-${ngTimeFilter}-${new Date().toISOString().split('T')[0]}.html`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      toast.success("Xuất báo cáo thành công!", {
-        description: "File HTML đã được tải xuống. Bạn có thể mở và in thành PDF.",
-      });
-    } catch (error) {
-      console.error('Export PDF error:', error);
-      toast.error("Lỗi xuất báo cáo", {
-        description: "Không thể tạo file báo cáo. Vui lòng thử lại.",
-      });
-    } finally {
-      setExportingPDF(false);
-    }
-  }, [ngWorkstationSummary, ngTopNGPoints, ngTimeFilter]);
+    return () => clearInterval(interval);
+  }, [isAutoRefreshing, autoRefreshInterval, handleRefresh]);
 
   // Filter workshops by selected factory
   const filteredWorkshops = useMemo(() => {
-    if (!workshops || selectedFactory === "all") return workshops || [];
-    return workshops.filter(w => w.factoryId === parseInt(selectedFactory));
+    if (selectedFactory === "all") return workshops;
+    return workshops?.filter(w => w.factoryId === parseInt(selectedFactory));
   }, [workshops, selectedFactory]);
 
   // Filter lines by selected workshop
   const filteredLines = useMemo(() => {
-    if (!lines || selectedWorkshop === "all") return lines || [];
-    return lines.filter(l => l.workshopId === parseInt(selectedWorkshop));
+    if (selectedWorkshop === "all") return lines;
+    return lines?.filter(l => l.workshopId === parseInt(selectedWorkshop));
   }, [lines, selectedWorkshop]);
 
-  // Group machines by production line
+  // Group machines by line
   const machinesByLine = useMemo(() => {
     if (!machinesStats) return new Map<string, MachineStats[]>();
     
-    type MachineWithHierarchy = {
-      machine: { id: number; code: string; name: string };
-      station: { id: number; name: string; lineId: number } | null;
-      line: { id: number; name: string; workshopId: number } | null;
-      workshop: { id: number; name: string; factoryId: number } | null;
-      factory: { id: number; name: string } | null;
-      stats: { total: number; ok: number; ng: number; ntf: number; yieldRate: number };
-    };
-    
-    const machines = (machinesStats as MachineWithHierarchy[]).map(m => ({
+    const machines: MachineStats[] = (machinesStats as any[]).map(m => ({
       id: m.machine.id,
       name: m.machine.name,
       code: m.machine.code,
@@ -693,13 +493,15 @@ export default function Dashboard() {
       ntf: m.stats.ntf,
       yieldRate: m.stats.yieldRate,
       lineId: m.line?.id,
-      lineName: m.line?.name || 'Chưa phân loại',
+      lineName: m.line?.name,
       stationId: m.station?.id,
       stationName: m.station?.name,
       workshopId: m.workshop?.id,
       workshopName: m.workshop?.name,
       factoryId: m.factory?.id,
       factoryName: m.factory?.name,
+      image2DUrl: m.machine.image2DUrl,
+      image3DUrl: m.machine.image3DUrl,
     }));
     const grouped = new Map<string, MachineStats[]>();
     
@@ -874,6 +676,182 @@ export default function Dashboard() {
     }));
   }, [dailyStats]);
 
+  // Machine Status Widget Component (reusable)
+  const MachineStatusWidget = () => (
+    <Card className="glass-card">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Activity className="h-4 w-4 text-primary" />
+            Trạng thái kết nối máy
+          </CardTitle>
+          <Link href="/machine-status">
+            <Button variant="ghost" size="sm" className="text-xs">
+              Xem chi tiết
+              <ChevronRight className="h-3 w-3 ml-1" />
+            </Button>
+          </Link>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
+            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Cpu className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{machinesStats?.length || 0}</p>
+              <p className="text-xs text-muted-foreground">Tổng số máy</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/10">
+            <div className="h-10 w-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+              <Wifi className="h-5 w-5 text-emerald-500" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-emerald-500">{onlineMachines.size}</p>
+              <p className="text-xs text-muted-foreground">Online</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-red-500/10">
+            <div className="h-10 w-10 rounded-lg bg-red-500/20 flex items-center justify-center">
+              <WifiOff className="h-5 w-5 text-red-500" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-red-500">
+                {Math.max(0, (machinesStats?.length || 0) - onlineMachines.size)}
+              </p>
+              <p className="text-xs text-muted-foreground">Offline</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
+            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Activity className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">
+                {machinesStats?.length ? Math.round((onlineMachines.size / machinesStats.length) * 100) : 0}%
+              </p>
+              <p className="text-xs text-muted-foreground">Availability</p>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  // KPI Stats Cards Component (reusable)
+  const KPIStatsCards = () => (
+    <>
+      {statsLoading ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <StatsCardSkeleton key={i} />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+            <CardContent className="pt-4">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>Total Output</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-2xl font-bold">
+                      {statsLoading ? "..." : stats?.total?.toLocaleString() || 0}
+                    </p>
+                    <TrendIndicator value={trends?.output} suffix="%" />
+                  </div>
+                  <Sparkline data={sparklineData} dataKey="output" color={cardStyleProps.accentColor} />
+                </div>
+                <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${cardStyleProps.accentColor}20` }}>
+                  <Box className="h-5 w-5" style={{ color: cardStyleProps.accentColor }} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+            <CardContent className="pt-4">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>FPY</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-2xl font-bold text-success">
+                      {statsLoading ? "..." : `${stats?.yieldRate?.toFixed(1) || 0}%`}
+                    </p>
+                    <TrendIndicator value={trends?.fpy} suffix="pp" />
+                  </div>
+                  <Sparkline data={sparklineData} dataKey="fpy" color="oklch(0.72 0.17 145)" />
+                </div>
+                <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
+                  <Target className="h-5 w-5 text-success" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+            <CardContent className="pt-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>OK</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-2xl font-bold text-success">
+                      {statsLoading ? "..." : stats?.ok?.toLocaleString() || 0}
+                    </p>
+                    <TrendIndicator value={trends?.ok} />
+                  </div>
+                </div>
+                <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
+                  <CheckCircle2 className="h-5 w-5 text-success" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+            <CardContent className="pt-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>NG</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-2xl font-bold text-destructive">
+                      {statsLoading ? "..." : stats?.ng?.toLocaleString() || 0}
+                    </p>
+                    <TrendIndicator value={trends?.ng} />
+                  </div>
+                </div>
+                <div className="h-10 w-10 rounded-lg bg-destructive/10 flex items-center justify-center">
+                  <XCircle className="h-5 w-5 text-destructive" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+            <CardContent className="pt-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>NTF</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-2xl font-bold text-warning">
+                      {statsLoading ? "..." : stats?.ntf?.toLocaleString() || 0}
+                    </p>
+                    <TrendIndicator value={trends?.ntf} />
+                  </div>
+                </div>
+                <div className="h-10 w-10 rounded-lg bg-warning/10 flex items-center justify-center">
+                  <AlertTriangle className="h-5 w-5 text-warning" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <DashboardLayout 
       title="Dashboard" 
@@ -998,23 +976,26 @@ export default function Dashboard() {
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-9 w-9"
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
                       onClick={() => setIsAutoRefreshing(!isAutoRefreshing)}
                     >
-                      {isAutoRefreshing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                      {isAutoRefreshing ? (
+                        <Pause className="h-3.5 w-3.5 text-success" />
+                      ) : (
+                        <Play className="h-3.5 w-3.5 text-muted-foreground" />
+                      )}
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {isAutoRefreshing ? 'Tạm dừng auto-refresh' : 'Bật auto-refresh'}
+                    {isAutoRefreshing ? "Tạm dừng tự động làm mới" : "Bật tự động làm mới"}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-              
               <Select value={autoRefreshInterval} onValueChange={setAutoRefreshInterval}>
-                <SelectTrigger className="w-[90px] border-0">
+                <SelectTrigger className="w-[80px] border-0 h-8">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1027,7 +1008,6 @@ export default function Dashboard() {
               </Select>
             </div>
 
-            {/* Refresh button - hidden on mobile (shown in quick actions) */}
             <Button variant="outline" size="icon" onClick={handleRefresh} className="hidden sm:flex shrink-0">
               <RefreshCw className="h-4 w-4" />
             </Button>
@@ -1041,6 +1021,9 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* KPI Stats Cards - MOVED TO TOP (before Yield Alerts) */}
+        <KPIStatsCards />
 
         {/* Yield Alert Widget - Compact Realtime alerts */}
         {yieldAlerts.length > 0 && (
@@ -1094,68 +1077,6 @@ export default function Dashboard() {
           </Card>
         )}
 
-        {/* Machine Status Widget - Fixed at top */}
-        <Card className="glass-card">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Activity className="h-4 w-4 text-primary" />
-                Trạng thái kết nối máy
-              </CardTitle>
-              <Link href="/machine-status">
-                <Button variant="ghost" size="sm" className="text-xs">
-                  Xem chi tiết
-                  <ChevronRight className="h-3 w-3 ml-1" />
-                </Button>
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
-                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Cpu className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{machinesStats?.length || 0}</p>
-                  <p className="text-xs text-muted-foreground">Tổng số máy</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/10">
-                <div className="h-10 w-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
-                  <Wifi className="h-5 w-5 text-emerald-500" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-emerald-500">{onlineMachines.size}</p>
-                  <p className="text-xs text-muted-foreground">Online</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-red-500/10">
-                <div className="h-10 w-10 rounded-lg bg-red-500/20 flex items-center justify-center">
-                  <WifiOff className="h-5 w-5 text-red-500" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-red-500">
-                    {Math.max(0, (machinesStats?.length || 0) - onlineMachines.size)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Offline</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
-                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Activity className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">
-                    {machinesStats?.length ? Math.round((onlineMachines.size / machinesStats.length) * 100) : 0}%
-                  </p>
-                  <p className="text-xs text-muted-foreground">Availability</p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Tabs for Overview and Layout */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "overview" | "layout" | "ng-visual" | "corporate-stats")} className="w-full">
           <TabsList className="grid w-full max-w-2xl grid-cols-4">
@@ -1179,448 +1100,333 @@ export default function Dashboard() {
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-6 mt-6">
-            {/* Summary Stats Cards with Trends */}
-            {statsLoading ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <StatsCardSkeleton key={i} />
-                ))}
-              </div>
-            ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>Total Output</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-2xl font-bold">
-                      {statsLoading ? "..." : stats?.total?.toLocaleString() || 0}
-                    </p>
-                    <TrendIndicator value={trends?.output} suffix="%" />
-                  </div>
-                  <Sparkline data={sparklineData} dataKey="output" color={cardStyleProps.accentColor} />
-                </div>
-                <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${cardStyleProps.accentColor}20` }}>
-                  <Box className="h-5 w-5" style={{ color: cardStyleProps.accentColor }} />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>FPY</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-2xl font-bold text-success">
-                      {statsLoading ? "..." : `${stats?.yieldRate?.toFixed(1) || 0}%`}
-                    </p>
-                    <TrendIndicator value={trends?.fpy} suffix="pp" />
-                  </div>
-                  <Sparkline data={sparklineData} dataKey="fpy" color="oklch(0.72 0.17 145)" />
-                </div>
-                <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
-                  <Target className="h-5 w-5 text-success" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>OK</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-2xl font-bold text-success">
-                      {statsLoading ? "..." : stats?.ok?.toLocaleString() || 0}
-                    </p>
-                    <TrendIndicator value={trends?.ok} />
-                  </div>
-                </div>
-                <div className="h-10 w-10 rounded-lg bg-success/10 flex items-center justify-center">
-                  <CheckCircle2 className="h-5 w-5 text-success" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>NG</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-2xl font-bold text-destructive">
-                      {statsLoading ? "..." : stats?.ng?.toLocaleString() || 0}
-                    </p>
-                    <TrendIndicator value={trends?.ng} />
-                  </div>
-                </div>
-                <div className="h-10 w-10 rounded-lg bg-destructive/10 flex items-center justify-center">
-                  <XCircle className="h-5 w-5 text-destructive" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>NTF</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-2xl font-bold text-warning">
-                      {statsLoading ? "..." : stats?.ntf?.toLocaleString() || 0}
-                    </p>
-                    <TrendIndicator value={trends?.ntf} />
-                  </div>
-                </div>
-                <div className="h-10 w-10 rounded-lg bg-warning/10 flex items-center justify-center">
-                  <AlertTriangle className="h-5 w-5 text-warning" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-            </div>
-            )}
-
             {/* MQTT Alert Widget */}
             <MqttAlertWidget />
 
             {/* Shift Stats & Top/Bottom Machines */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Shift Statistics */}
-          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Clock className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />
-                Thống kê theo ca
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {(shiftStats as ShiftStats[] | undefined)?.map((shift) => {
-                  const ShiftIcon = shift.shift === 'morning' ? Sunrise : shift.shift === 'afternoon' ? Sun : Moon;
-                  return (
-                    <div key={shift.shift} className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
-                      <div className="flex items-center gap-2">
-                        <ShiftIcon className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm">{shift.shiftName}</span>
-                      </div>
-                      <div className="flex items-center gap-4 text-sm">
-                        <span className="text-muted-foreground">{shift.total} sp</span>
-                        <span className={shift.fpy >= 95 ? 'text-success' : shift.fpy >= 85 ? 'text-warning' : 'text-destructive'}>
-                          {shift.fpy}%
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-                {(!shiftStats || (shiftStats as ShiftStats[]).length === 0) && (
-                  <p className="text-sm text-muted-foreground text-center py-4">Chưa có dữ liệu</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Top Performing Machines */}
-          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Award className="h-4 w-4 text-success" />
-                Top 5 máy tốt nhất
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {(topBottomMachines as { top: any[]; bottom: any[] } | undefined)?.top?.map((machine, index) => (
-                  <div key={machine.id} className="flex items-center justify-between p-2 rounded-lg bg-success/5 border border-success/20">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-success w-5">#{index + 1}</span>
-                      <span className="text-sm truncate max-w-[120px]">{machine.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">{machine.total} sp</span>
-                      <Badge variant="outline" className="text-success border-success/50">
-                        {machine.fpy}%
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-                {(!topBottomMachines || (topBottomMachines as { top: any[] }).top?.length === 0) && (
-                  <p className="text-sm text-muted-foreground text-center py-4">Chưa có dữ liệu</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Bottom Performing Machines */}
-          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <ThumbsDown className="h-4 w-4 text-destructive" />
-                Top 5 máy cần cải thiện
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {(topBottomMachines as { top: any[]; bottom: any[] } | undefined)?.bottom?.map((machine, index) => (
-                  <div key={machine.id} className="flex items-center justify-between p-2 rounded-lg bg-destructive/5 border border-destructive/20">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-destructive w-5">#{index + 1}</span>
-                      <span className="text-sm truncate max-w-[120px]">{machine.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">{machine.total} sp</span>
-                      <Badge variant="outline" className="text-destructive border-destructive/50">
-                        {machine.fpy}%
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-                {(!topBottomMachines || (topBottomMachines as { bottom: any[] }).bottom?.length === 0) && (
-                  <p className="text-sm text-muted-foreground text-center py-4">Chưa có dữ liệu</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Timeline Chart - Full Width */}
-        <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Activity className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />
-              Biểu đồ theo thời gian (24 giờ qua)
-            </CardTitle>
-            <CardDescription>FPY, FY, NTFY và Output theo từng giờ</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ChartErrorBoundary>
-            <div className="h-[300px]">
-              {hourlyStats && hourlyStats.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={hourlyStats.map((h: { hour: string; fpy: string; fy: string; ntfy: string; total: number }) => ({
-                      time: h.hour.split(' ')[1] || h.hour,
-                      FPY: parseFloat(h.fpy),
-                      FY: parseFloat(h.fy),
-                      NTFY: parseFloat(h.ntfy),
-                      Total: h.total,
-                    }))}
-                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-                    <XAxis 
-                      dataKey="time" 
-                      tick={{ fontSize: 10 }}
-                      interval="preserveStartEnd"
-                    />
-                    <YAxis 
-                      yAxisId="left"
-                      tick={{ fontSize: 10 }}
-                      domain={[0, 100]}
-                      label={{ value: '%', angle: -90, position: 'insideLeft', fontSize: 10 }}
-                    />
-                    <YAxis 
-                      yAxisId="right"
-                      orientation="right"
-                      tick={{ fontSize: 10 }}
-                      label={{ value: 'Output', angle: 90, position: 'insideRight', fontSize: 10 }}
-                    />
-                    <RechartsTooltip 
-                      contentStyle={{ 
-                        backgroundColor: 'rgba(0,0,0,0.8)', 
-                        border: 'none',
-                        borderRadius: '8px',
-                        fontSize: '12px'
-                      }}
-                    />
-                    <Legend />
-                    <Line 
-                      yAxisId="left"
-                      type="monotone" 
-                      dataKey="FPY" 
-                      stroke="#10b981" 
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                      activeDot={{ r: 5 }}
-                    />
-                    <Line 
-                      yAxisId="left"
-                      type="monotone" 
-                      dataKey="FY" 
-                      stroke="#ef4444" 
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                    />
-                    <Line 
-                      yAxisId="left"
-                      type="monotone" 
-                      dataKey="NTFY" 
-                      stroke="#f59e0b" 
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                    />
-                    <Line 
-                      yAxisId="right"
-                      type="monotone" 
-                      dataKey="Total" 
-                      stroke="#06b6d4" 
-                      strokeWidth={2}
-                      strokeDasharray="5 5"
-                      dot={{ r: 3 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-muted-foreground">
-                  Chưa có dữ liệu
-                </div>
-              )}
-            </div>
-            </ChartErrorBoundary>
-          </CardContent>
-        </Card>
-
-        {/* Charts Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Pie Chart */}
-          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-            <CardHeader>
-              <CardTitle className="text-base">Phân bố kết quả</CardTitle>
-              <CardDescription>Tỷ lệ OK/NG/NTF tổng hợp</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ChartErrorBoundary>
-              <div className="h-[200px]">
-                {pieData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={pieData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={50}
-                        outerRadius={75}
-                        paddingAngle={5}
-                        dataKey="value"
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      >
-                        {pieData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <RechartsTooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="h-full flex items-center justify-center text-muted-foreground">
-                    Chưa có dữ liệu
-                  </div>
-                )}
-              </div>
-              </ChartErrorBoundary>
-            </CardContent>
-          </Card>
-
-          {/* Bar Chart - Top machines */}
-          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-            <CardHeader>
-              <CardTitle className="text-base">Top máy theo sản lượng</CardTitle>
-              <CardDescription>10 máy có output cao nhất</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ChartErrorBoundary>
-              <div className="h-[200px]">
-                {machinesStats && (machinesStats as any[]).length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={(machinesStats as any[])
-                        .map(m => ({
-                          name: m.machine.name.length > 8 ? m.machine.name.substring(0, 8) + '...' : m.machine.name,
-                          output: m.stats.total,
-                          fpy: m.stats.yieldRate,
-                        }))
-                        .sort((a, b) => b.output - a.output)
-                        .slice(0, 8)
-                      }
-                      layout="vertical"
-                      margin={{ left: 60 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-                      <XAxis type="number" tick={{ fontSize: 10 }} />
-                      <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} />
-                      <RechartsTooltip />
-                      <Bar dataKey="output" fill="oklch(0.7 0.15 200)" radius={[0, 4, 4, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="h-full flex items-center justify-center text-muted-foreground">
-                    Chưa có dữ liệu
-                  </div>
-                )}
-              </div>
-              </ChartErrorBoundary>
-            </CardContent>
-          </Card>
-
-          {/* Top 5 Workstations with Defects */}
-          <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Factory className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />
-                Top 5 Công trạm có lỗi cao nhất
-              </CardTitle>
-              <CardDescription>Công trạm cần ưu tiên cải thiện</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {workstationSummary && (workstationSummary as any[]).length > 0 ? (
-                  (workstationSummary as any[])
-                    .sort((a: any, b: any) => (b.ngCount || 0) - (a.ngCount || 0))
-                    .slice(0, 5)
-                    .map((ws: any, index: number) => {
-                      const totalDefects = (ws.ngCount || 0) + (ws.ntfCount || 0);
-                      const yieldRate = ws.totalCount > 0 ? ((ws.okCount + ws.ntfCount) / ws.totalCount * 100) : 0;
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Shift Statistics */}
+              <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Clock className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />
+                    Thống kê theo ca
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {(shiftStats as ShiftStats[] | undefined)?.map((shift) => {
+                      const ShiftIcon = shift.shift === 'morning' ? Sunrise : shift.shift === 'afternoon' ? Sun : Moon;
                       return (
-                        <div key={ws.workstationId} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
-                          <div className="flex items-center gap-3 flex-1">
-                            <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center text-sm font-semibold text-orange-600">
-                              {index + 1}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-sm truncate">{ws.workstationName || 'Unknown'}</p>
-                              <p className="text-xs text-muted-foreground">{ws.workstationCode}</p>
-                            </div>
+                        <div key={shift.shift} className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
+                          <div className="flex items-center gap-2">
+                            <ShiftIcon className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm">{shift.shiftName}</span>
                           </div>
-                          <div className="flex items-center gap-4">
-                            <div className="text-right">
-                              <div className="text-sm font-semibold text-red-600">{totalDefects}</div>
-                              <div className="text-xs text-muted-foreground">Lỗi</div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-sm font-semibold text-blue-600">{yieldRate.toFixed(1)}%</div>
-                              <div className="text-xs text-muted-foreground">Yield</div>
-                            </div>
+                          <div className="flex items-center gap-4 text-sm">
+                            <span className="text-muted-foreground">{shift.total} sp</span>
+                            <span className={shift.fpy >= 95 ? 'text-success' : shift.fpy >= 85 ? 'text-warning' : 'text-destructive'}>
+                              {shift.fpy}%
+                            </span>
                           </div>
                         </div>
                       );
-                    })
-                ) : (
-                  <EmptyState
-                    variant="no-analytics"
-                    title="Chưa có dữ liệu công trạm"
-                    description="Dữ liệu sẽ hiển thị khi có kết quả kiểm tra từ các điểm đo."
-                    compact
-                  />
-                )}
-              </div>
-            </CardContent>
-          </Card>
+                    })}
+                    {(!shiftStats || (shiftStats as ShiftStats[]).length === 0) && (
+                      <p className="text-sm text-muted-foreground text-center py-4">Chưa có dữ liệu</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Top Performing Machines */}
+              <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Award className="h-4 w-4 text-success" />
+                    Top 5 máy tốt nhất
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {(topBottomMachines as { top: any[]; bottom: any[] } | undefined)?.top?.map((machine, index) => (
+                      <div key={machine.id} className="flex items-center justify-between p-2 rounded-lg bg-success/5 border border-success/20">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-success w-5">#{index + 1}</span>
+                          <span className="text-sm truncate max-w-[120px]">{machine.name}</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-sm">
+                          <span className="text-muted-foreground">{machine.total}</span>
+                          <span className="font-medium text-success">{machine.yieldRate.toFixed(1)}%</span>
+                        </div>
+                      </div>
+                    ))}
+                    {(!topBottomMachines || !(topBottomMachines as any).top?.length) && (
+                      <p className="text-sm text-muted-foreground text-center py-4">Chưa có dữ liệu</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Bottom Performing Machines */}
+              <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <ThumbsDown className="h-4 w-4 text-destructive" />
+                    Top 5 máy cần cải thiện
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {(topBottomMachines as { top: any[]; bottom: any[] } | undefined)?.bottom?.map((machine, index) => (
+                      <div key={machine.id} className="flex items-center justify-between p-2 rounded-lg bg-destructive/5 border border-destructive/20">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-destructive w-5">#{index + 1}</span>
+                          <span className="text-sm truncate max-w-[120px]">{machine.name}</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-sm">
+                          <span className="text-muted-foreground">{machine.total}</span>
+                          <span className="font-medium text-destructive">{machine.yieldRate.toFixed(1)}%</span>
+                        </div>
+                      </div>
+                    ))}
+                    {(!topBottomMachines || !(topBottomMachines as any).bottom?.length) && (
+                      <p className="text-sm text-muted-foreground text-center py-4">Chưa có dữ liệu</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Hourly Trend Chart */}
+            <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+              <CardHeader>
+                <CardTitle className="text-base">Xu hướng theo giờ</CardTitle>
+                <CardDescription>FPY, FY, NTFY và Output theo giờ trong ngày</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ChartErrorBoundary>
+                <div className="h-[300px]">
+                  {hourlyStats && hourlyStats.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart
+                        data={hourlyStats.map((h: { hour: string; fpy: string; fy: string; ntfy: string; total: number }) => ({
+                          time: h.hour.split(' ')[1] || h.hour,
+                          FPY: parseFloat(h.fpy),
+                          FY: parseFloat(h.fy),
+                          NTFY: parseFloat(h.ntfy),
+                          Total: h.total,
+                        }))}
+                        margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
+                        <XAxis 
+                          dataKey="time" 
+                          tick={{ fontSize: 10 }}
+                          interval="preserveStartEnd"
+                        />
+                        <YAxis 
+                          yAxisId="left"
+                          tick={{ fontSize: 10 }}
+                          domain={[0, 100]}
+                          label={{ value: '%', angle: -90, position: 'insideLeft', fontSize: 10 }}
+                        />
+                        <YAxis 
+                          yAxisId="right"
+                          orientation="right"
+                          tick={{ fontSize: 10 }}
+                          label={{ value: 'Output', angle: 90, position: 'insideRight', fontSize: 10 }}
+                        />
+                        <RechartsTooltip 
+                          contentStyle={{ 
+                            backgroundColor: 'rgba(0,0,0,0.8)', 
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '12px'
+                          }}
+                        />
+                        <Legend />
+                        <Line 
+                          yAxisId="left"
+                          type="monotone" 
+                          dataKey="FPY" 
+                          stroke="#10b981" 
+                          strokeWidth={2}
+                          dot={{ r: 3 }}
+                          activeDot={{ r: 5 }}
+                        />
+                        <Line 
+                          yAxisId="left"
+                          type="monotone" 
+                          dataKey="FY" 
+                          stroke="#ef4444" 
+                          strokeWidth={2}
+                          dot={{ r: 3 }}
+                        />
+                        <Line 
+                          yAxisId="left"
+                          type="monotone" 
+                          dataKey="NTFY" 
+                          stroke="#f59e0b" 
+                          strokeWidth={2}
+                          dot={{ r: 3 }}
+                        />
+                        <Line 
+                          yAxisId="right"
+                          type="monotone" 
+                          dataKey="Total" 
+                          stroke="#06b6d4" 
+                          strokeWidth={2}
+                          strokeDasharray="5 5"
+                          dot={{ r: 3 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-muted-foreground">
+                      Chưa có dữ liệu
+                    </div>
+                  )}
+                </div>
+                </ChartErrorBoundary>
+              </CardContent>
+            </Card>
+
+            {/* Charts Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Pie Chart */}
+              <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+                <CardHeader>
+                  <CardTitle className="text-base">Phân bố kết quả</CardTitle>
+                  <CardDescription>Tỷ lệ OK/NG/NTF tổng hợp</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ChartErrorBoundary>
+                  <div className="h-[200px]">
+                    {pieData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={pieData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={50}
+                            outerRadius={75}
+                            paddingAngle={5}
+                            dataKey="value"
+                            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                          >
+                            {pieData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <RechartsTooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-muted-foreground">
+                        Chưa có dữ liệu
+                      </div>
+                    )}
+                  </div>
+                  </ChartErrorBoundary>
+                </CardContent>
+              </Card>
+
+              {/* Bar Chart - Top machines */}
+              <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+                <CardHeader>
+                  <CardTitle className="text-base">Top máy theo sản lượng</CardTitle>
+                  <CardDescription>10 máy có output cao nhất</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ChartErrorBoundary>
+                  <div className="h-[200px]">
+                    {machinesStats && (machinesStats as any[]).length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={(machinesStats as any[])
+                            .map(m => ({
+                              name: m.machine.name.length > 8 ? m.machine.name.substring(0, 8) + '...' : m.machine.name,
+                              output: m.stats.total,
+                              fpy: m.stats.yieldRate,
+                            }))
+                            .sort((a, b) => b.output - a.output)
+                            .slice(0, 8)
+                          }
+                          layout="vertical"
+                          margin={{ left: 60 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
+                          <XAxis type="number" tick={{ fontSize: 10 }} />
+                          <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} />
+                          <RechartsTooltip />
+                          <Bar dataKey="output" fill="oklch(0.7 0.15 200)" radius={[0, 4, 4, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-muted-foreground">
+                        Chưa có dữ liệu
+                      </div>
+                    )}
+                  </div>
+                  </ChartErrorBoundary>
+                </CardContent>
+              </Card>
+
+              {/* Top 5 Workstations with Defects */}
+              <Card className={cardStyleProps.className} style={cardStyleProps.style}>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Factory className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />
+                    Top 5 Công trạm có lỗi cao nhất
+                  </CardTitle>
+                  <CardDescription>Công trạm cần ưu tiên cải thiện</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {workstationSummary && (workstationSummary as any[]).length > 0 ? (
+                      (workstationSummary as any[])
+                        .sort((a: any, b: any) => (b.ngCount || 0) - (a.ngCount || 0))
+                        .slice(0, 5)
+                        .map((ws: any, index: number) => {
+                          const totalDefects = (ws.ngCount || 0) + (ws.ntfCount || 0);
+                          const yieldRate = ws.totalCount > 0 ? ((ws.okCount + ws.ntfCount) / ws.totalCount * 100) : 0;
+                          return (
+                            <div key={ws.workstationId} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                              <div className="flex items-center gap-3 flex-1">
+                                <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center text-sm font-semibold text-orange-600">
+                                  {index + 1}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium text-sm truncate">{ws.workstationName || 'Unknown'}</p>
+                                  <p className="text-xs text-muted-foreground">{ws.workstationCode}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-4">
+                                <div className="text-right">
+                                  <div className="text-sm font-semibold text-red-600">{totalDefects}</div>
+                                  <div className="text-xs text-muted-foreground">Lỗi</div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-sm font-semibold text-blue-600">{yieldRate.toFixed(1)}%</div>
+                                  <div className="text-xs text-muted-foreground">Yield</div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                    ) : (
+                      <EmptyState
+                        variant="no-analytics"
+                        title="Chưa có dữ liệu công trạm"
+                        description="Dữ liệu sẽ hiển thị khi có kết quả kiểm tra từ các điểm đo."
+                        compact
+                      />
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
 
@@ -1660,144 +1466,28 @@ export default function Dashboard() {
                       <SelectItem value="month">30 ngày qua</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleExportPDF}
-                    disabled={exportingPDF || (!ngWorkstationSummary && !ngTopNGPoints)}
-                    className="flex items-center gap-1"
-                  >
-                    {exportingPDF ? (
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <FileDown className="h-4 w-4" />
-                    )}
-                    {exportingPDF ? "Đang xuất..." : "Xuất báo cáo"}
-                  </Button>
                 </div>
-              </div>
-
-              {/* NG Comparison Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Current Period Stats */}
-                <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium" style={{ opacity: 0.7 }}>
-                      {ngTimeFilter === "day" ? "Hôm nay" : ngTimeFilter === "week" ? "7 ngày qua" : "30 ngày qua"}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {ngComparisonLoading ? (
-                      <div className="h-16 flex items-center justify-center">
-                        <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
-                      </div>
-                    ) : ngComparisonData ? (
-                      <div className="space-y-2">
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-2xl font-bold">{ngComparisonData.current.ngRate.toFixed(2)}%</span>
-                          <span className="text-sm text-muted-foreground">Tỉ lệ NG</span>
-                        </div>
-                        <div className="flex items-center gap-4 text-sm">
-                          <span className="text-muted-foreground">Tổng: {ngComparisonData.current.totalCount.toLocaleString()}</span>
-                          <span className="text-red-500">NG: {ngComparisonData.current.ngCount.toLocaleString()}</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-muted-foreground text-sm">Không có dữ liệu</div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Previous Period Stats */}
-                <Card className={cardStyleProps.className} style={cardStyleProps.style}>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium" style={{ opacity: 0.7 }}>
-                      {ngTimeFilter === "day" ? "Hôm qua" : ngTimeFilter === "week" ? "7 ngày trước" : "30 ngày trước"}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {ngComparisonLoading ? (
-                      <div className="h-16 flex items-center justify-center">
-                        <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
-                      </div>
-                    ) : ngComparisonData ? (
-                      <div className="space-y-2">
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-2xl font-bold">{ngComparisonData.previous.ngRate.toFixed(2)}%</span>
-                          <span className="text-sm text-muted-foreground">Tỉ lệ NG</span>
-                        </div>
-                        <div className="flex items-center gap-4 text-sm">
-                          <span className="text-muted-foreground">Tổng: {ngComparisonData.previous.totalCount.toLocaleString()}</span>
-                          <span className="text-red-500">NG: {ngComparisonData.previous.ngCount.toLocaleString()}</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-muted-foreground text-sm">Không có dữ liệu</div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Change Indicator */}
-                <Card className={`${cardStyleProps.className} ${ngComparisonData?.changes.isImproved ? 'border-green-500/50' : 'border-red-500/50'}`} style={cardStyleProps.style}>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium" style={{ opacity: 0.7 }}>So sánh</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {ngComparisonLoading ? (
-                      <div className="h-16 flex items-center justify-center">
-                        <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
-                      </div>
-                    ) : ngComparisonData ? (
-                      <div className="space-y-2">
-                        <div className="flex items-baseline gap-2">
-                          {ngComparisonData.changes.isImproved ? (
-                            <TrendingDown className="h-6 w-6 text-green-500" />
-                          ) : (
-                            <TrendingUp className="h-6 w-6 text-red-500" />
-                          )}
-                          <span className={`text-2xl font-bold ${ngComparisonData.changes.isImproved ? 'text-green-500' : 'text-red-500'}`}>
-                            {ngComparisonData.changes.ngRateChange > 0 ? '+' : ''}{ngComparisonData.changes.ngRateChange.toFixed(2)}%
-                          </span>
-                        </div>
-                        <div className="text-sm">
-                          {ngComparisonData.changes.isImproved ? (
-                            <span className="text-green-500">Cải thiện so với kỳ trước</span>
-                          ) : ngComparisonData.changes.ngRateChange === 0 ? (
-                            <span className="text-muted-foreground">Không thay đổi</span>
-                          ) : (
-                            <span className="text-red-500">Tăng so với kỳ trước</span>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-muted-foreground text-sm">Không có dữ liệu</div>
-                    )}
-                  </CardContent>
-                </Card>
               </div>
 
               {/* NG Trend Chart */}
               <Card className={cardStyleProps.className} style={cardStyleProps.style}>
                 <CardHeader>
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
                     <div>
                       <CardTitle className="text-lg flex items-center gap-2">
                         <TrendingUp className="h-5 w-5" style={{ color: cardStyleProps.accentColor }} />
-                        Xu hướng tỉ lệ NG theo ngày
-                        {(trendFilterWorkstationId || trendFilterMeasurementPointId) && (
-                          <Badge variant="secondary" className="ml-2">Đã lọc</Badge>
-                        )}
+                        Xu hướng tỉ lệ NG
                       </CardTitle>
                       <CardDescription>
-                        Biểu đồ thể hiện xu hướng tỉ lệ NG theo thời gian
+                        Biến động tỉ lệ NG theo thời gian
                       </CardDescription>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2">
                       <Select 
                         value={trendFilterWorkstationId?.toString() || "all"} 
                         onValueChange={(v) => {
                           setTrendFilterWorkstationId(v === "all" ? undefined : Number(v));
-                          setTrendFilterMeasurementPointId(undefined); // Reset measurement point filter
+                          setTrendFilterMeasurementPointId(undefined);
                         }}
                       >
                         <SelectTrigger className="w-[180px]">
@@ -2000,503 +1690,394 @@ export default function Dashboard() {
             <CorporateFactoryStats />
           </TabsContent>
 
-          {/* Layout Tab */}
+          {/* Layout Tab - MOVED Machine Status Widget HERE */}
           <TabsContent value="layout" className="space-y-6 mt-6">
             <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-              <LayoutGrid className="h-5 w-5 text-primary" />
-              Layout Dây chuyền sản xuất
-            </h2>
-            <div className="flex items-center gap-2">
-              {/* Machine Status Filter */}
-              <Select value={machineStatusFilter} onValueChange={(v: "all" | "online" | "offline") => setMachineStatusFilter(v)}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue placeholder="Trạng thái" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tất cả</SelectItem>
-                  <SelectItem value="online">
-                    <span className="flex items-center gap-2">
-                      <Wifi className="h-3 w-3 text-green-500" />
-                      Online
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="offline">
-                    <span className="flex items-center gap-2">
-                      <WifiOff className="h-3 w-3 text-red-500" />
-                      Offline
-                    </span>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setMetricsSettingsOpen(true)}
-                className="gap-1"
-              >
-                <Settings2 className="h-4 w-4" />
-                Tùy chỉnh chỉ số
-              </Button>
-              <Badge variant="outline" className="text-muted-foreground">
-                {machinesByLine.size} dây chuyền • {Array.from(machinesByLine.values()).flat().length} máy
-              </Badge>
-            </div>
-          </div>
+              {/* Machine Status Widget - FIRST in Layout Tab */}
+              <MachineStatusWidget />
 
-          {machinesLoading ? (
-            <MachineGridSkeleton count={8} />
-          ) : machinesByLine.size === 0 ? (
-            <Card className="glass-card">
-              <CardContent className="py-12 text-center">
-                <Cpu className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">Chưa có máy nào trong bộ lọc hiện tại</p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-6">
-              {Array.from(machinesByLine.entries()).map(([lineName, machines]) => {
-                // Calculate line totals
-                const lineTotal = machines.reduce((sum, m) => sum + m.total, 0);
-                const lineOk = machines.reduce((sum, m) => sum + m.ok, 0);
-                const lineNg = machines.reduce((sum, m) => sum + m.ng, 0);
-                const lineNtf = machines.reduce((sum, m) => sum + m.ntf, 0);
-                const lineFpy = lineTotal > 0 ? ((lineOk / lineTotal) * 100).toFixed(1) : "0";
-                
-                // Get line info (product and production order)
-                const lineId = machines[0]?.lineId;
-                const lineAssignment = lineProductAssignments?.find(a => a.lineId === lineId && a.isActive);
-                const productModel = productModels?.find((p: any) => p.id === lineAssignment?.productModelId);
-                const productionOrder = productionOrders?.find(o => o.id === lineAssignment?.productionOrderId);
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                  <LayoutGrid className="h-5 w-5 text-primary" />
+                  Layout Dây chuyền sản xuất
+                </h2>
+                <div className="flex items-center gap-2">
+                  {/* Machine Status Filter */}
+                  <Select value={machineStatusFilter} onValueChange={(v: "all" | "online" | "offline") => setMachineStatusFilter(v)}>
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue placeholder="Trạng thái" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tất cả</SelectItem>
+                      <SelectItem value="online">
+                        <span className="flex items-center gap-2">
+                          <Wifi className="h-3 w-3 text-green-500" />
+                          Online
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="offline">
+                        <span className="flex items-center gap-2">
+                          <WifiOff className="h-3 w-3 text-red-500" />
+                          Offline
+                        </span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setMetricsSettingsOpen(true)}
+                    className="gap-1"
+                  >
+                    <Settings2 className="h-4 w-4" />
+                    Tùy chỉnh chỉ số
+                  </Button>
+                  <Badge variant="outline" className="text-muted-foreground">
+                    {machinesByLine.size} dây chuyền • {Array.from(machinesByLine.values()).flat().length} máy
+                  </Badge>
+                </div>
+              </div>
 
-                return (
-                  <Card key={lineName} className="glass-card overflow-hidden">
-                    {/* Line Header */}
-                    <div className="bg-gradient-to-r from-primary/10 to-transparent border-b border-border/50 px-6 py-4">
-                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-lg bg-primary/20 flex items-center justify-center">
-                            <Zap className="h-5 w-5 text-primary" />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h3 className="font-semibold text-foreground">{lineName}</h3>
-                              {productModel && (
-                                <Badge variant="secondary" className="text-xs">
-                                  <Box className="h-3 w-3 mr-1" />
-                                  {productModel.code}
-                                </Badge>
-                              )}
-                              {productionOrder && (
-                                <Badge variant="outline" className="text-xs border-primary/50 text-primary">
-                                  <FileText className="h-3 w-3 mr-1" />
-                                  {productionOrder.orderCode}
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-sm text-muted-foreground">
-                              {machines.length} máy hoạt động
-                              {productModel && ` • ${productModel.name}`}
-                            </p>
-                          </div>
-                        </div>
-                        
-                        {/* Line Summary Stats */}
-                        <div className="flex items-center gap-6 text-sm">
-                          <div className="text-center">
-                            <p className="text-muted-foreground">Output</p>
-                            <p className="font-semibold text-foreground">{lineTotal.toLocaleString()}</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-muted-foreground">FPY</p>
-                            <p className={`font-semibold ${parseFloat(lineFpy) >= 95 ? 'text-success' : parseFloat(lineFpy) >= 85 ? 'text-warning' : 'text-destructive'}`}>
-                              {lineFpy}%
-                            </p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-muted-foreground">OK/NG/NTF</p>
-                            <p className="font-semibold">
-                              <span className="text-success">{lineOk}</span>
-                              <span className="text-muted-foreground">/</span>
-                              <span className="text-destructive">{lineNg}</span>
-                              <span className="text-muted-foreground">/</span>
-                              <span className="text-warning">{lineNtf}</span>
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+              {machinesLoading ? (
+                <MachineGridSkeleton count={8} />
+              ) : machinesByLine.size === 0 ? (
+                <Card className="glass-card">
+                  <CardContent className="py-12 text-center">
+                    <Cpu className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground">Chưa có máy nào trong bộ lọc hiện tại</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-6">
+                  {Array.from(machinesByLine.entries()).map(([lineName, machines]) => {
+                    // Calculate line totals
+                    const lineTotal = machines.reduce((sum, m) => sum + m.total, 0);
+                    const lineOk = machines.reduce((sum, m) => sum + m.ok, 0);
+                    const lineNg = machines.reduce((sum, m) => sum + m.ng, 0);
+                    const lineNtf = machines.reduce((sum, m) => sum + m.ntf, 0);
+                    const lineFpy = lineTotal > 0 ? ((lineOk / lineTotal) * 100).toFixed(1) : "0";
+                    
+                    // Get line info (product and production order)
+                    const lineId = machines[0]?.lineId;
+                    const lineAssignment = lineProductAssignments?.find(a => a.lineId === lineId && a.isActive);
+                    const productModel = productModels?.find((p: any) => p.id === lineAssignment?.productModelId);
+                    const productionOrder = productionOrders?.find(o => o.id === lineAssignment?.productionOrderId);
 
-                    {/* Machines Grid */}
-                    <CardContent className="p-6">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                        {machines.map((machine) => {
-                          const { fpy, fy, ntfy } = calculateYields(machine);
-                          const fpyNum = parseFloat(fpy);
-                          const status = getStatusIndicator(fpyNum);
-                          const StatusIcon = status.icon;
-                          const machineImage = machine.image2DUrl || machine.image3DUrl || '/default-machine-2d.svg';
-
-                          return (
-                            <div
-                              key={machine.id}
-                              className="relative rounded-xl cursor-pointer transition-all hover:shadow-xl hover:scale-[1.02] overflow-hidden bg-card border border-border/50 group"
-                              onClick={() => openMachineDetail(machine)}
-                            >
-                              {/* Metrics Bar at Top - Customizable */}
-                              <div className="flex items-stretch bg-black/90 text-white">
-                                {visibleMetrics.fpy && (
-                                  <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
-                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">FPY</p>
-                                    <p className={`text-base font-bold ${fpyNum >= 90 ? 'text-emerald-400' : fpyNum >= 70 ? 'text-amber-400' : 'text-rose-400'}`}>
-                                      {fpy}%
-                                    </p>
-                                  </div>
-                                )}
-                                {visibleMetrics.fy && (
-                                  <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
-                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">FY</p>
-                                    <p className="text-base font-bold text-rose-400">{fy}%</p>
-                                  </div>
-                                )}
-                                {visibleMetrics.ntfy && (
-                                  <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
-                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">NTFY</p>
-                                    <p className="text-base font-bold text-amber-400">{ntfy}%</p>
-                                  </div>
-                                )}
-                                {visibleMetrics.output && (
-                                  <div className="flex-1 text-center py-2 px-1 relative">
-                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">Output</p>
-                                    <p className="text-base font-bold text-cyan-400">{machine.total}</p>
-                                  </div>
-                                )}
-                                {/* Status indicator */}
-                                <div className="flex items-center px-2">
-                                  <StatusIcon className={`h-4 w-4 ${status.color}`} />
-                                </div>
+                    return (
+                      <Card key={lineName} className="glass-card overflow-hidden">
+                        {/* Line Header */}
+                        <div className="bg-gradient-to-r from-primary/10 to-transparent border-b border-border/50 px-6 py-4">
+                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-lg bg-primary/20 flex items-center justify-center">
+                                <Zap className="h-5 w-5 text-primary" />
                               </div>
-
-                              {/* Machine Image - Large */}
-                              <div className="relative h-40 w-full bg-gradient-to-br from-slate-800 to-slate-900">
-                                {machineImage ? (
-                                  <>
-                                    <img
-                                      src={machineImage}
-                                      alt={machine.name}
-                                      className="w-full h-full object-contain p-2"
-                                    />
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                                  </>
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center">
-                                    <Cpu className="h-16 w-16 text-muted-foreground/30" />
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Machine info */}
-                              <div className="p-3 bg-card border-t border-border/30">
-                                <div className="flex items-center justify-between">
-                                  <div className="min-w-0 flex-1">
-                                    <h4 className="font-semibold text-foreground truncate">{machine.name}</h4>
-                                    <p className="text-xs text-muted-foreground">{machine.code}</p>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    {/* Online/Offline indicator */}
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs ${
-                                            onlineMachines.has(machine.code)
-                                              ? 'bg-emerald-500/20 text-emerald-400'
-                                              : 'bg-muted text-muted-foreground'
-                                          }`}>
-                                            {onlineMachines.has(machine.code) ? (
-                                              <Wifi className="h-3 w-3" />
-                                            ) : (
-                                              <WifiOff className="h-3 w-3" />
-                                            )}
-                                          </div>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                          <p>{onlineMachines.has(machine.code) ? 'Online' : 'Offline'}</p>
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-                                    <span className="text-xs text-primary flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <Eye className="h-3 w-3" />
-                                    </span>
-                                  </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <h3 className="font-semibold text-foreground">{lineName}</h3>
+                                  {productModel && (
+                                    <Badge variant="secondary" className="text-xs">
+                                      <Box className="h-3 w-3 mr-1" />
+                                      {productModel.code}
+                                    </Badge>
+                                  )}
+                                  {productionOrder && (
+                                    <Badge variant="outline" className="text-xs border-primary/50 text-primary">
+                                      <FileText className="h-3 w-3 mr-1" />
+                                      {productionOrder.orderCode}
+                                    </Badge>
+                                  )}
                                 </div>
+                                <p className="text-sm text-muted-foreground">
+                                  {machines.length} máy hoạt động
+                                  {productModel && ` • ${productModel.name}`}
+                                </p>
                               </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
+                            
+                            {/* Line Summary Stats */}
+                            <div className="flex items-center gap-6 text-sm">
+                              <div className="text-center">
+                                <p className="text-muted-foreground">Output</p>
+                                <p className="font-semibold text-foreground">{lineTotal.toLocaleString()}</p>
+                              </div>
+                              <div className="text-center">
+                                <p className="text-muted-foreground">FPY</p>
+                                <p className={`font-semibold ${parseFloat(lineFpy) >= 95 ? 'text-success' : parseFloat(lineFpy) >= 85 ? 'text-warning' : 'text-destructive'}`}>
+                                  {lineFpy}%
+                                </p>
+                              </div>
+                              <div className="text-center">
+                                <p className="text-muted-foreground">OK/NG/NTF</p>
+                                <p className="font-semibold">
+                                  <span className="text-success">{lineOk}</span>
+                                  <span className="text-muted-foreground">/</span>
+                                  <span className="text-destructive">{lineNg}</span>
+                                  <span className="text-muted-foreground">/</span>
+                                  <span className="text-warning">{lineNtf}</span>
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Machines Grid */}
+                        <CardContent className="p-6">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                            {machines.map((machine) => {
+                              const { fpy, fy, ntfy } = calculateYields(machine);
+                              const fpyNum = parseFloat(fpy);
+                              const status = getStatusIndicator(fpyNum);
+                              const StatusIcon = status.icon;
+                              const machineImage = machine.image2DUrl || machine.image3DUrl || '/default-machine-2d.svg';
+                              const isOnline = onlineMachines.has(machine.code);
+
+                              return (
+                                <div
+                                  key={machine.id}
+                                  className="relative rounded-xl cursor-pointer transition-all hover:shadow-xl hover:scale-[1.02] overflow-hidden bg-card border border-border/50 group"
+                                  onClick={() => openMachineDetail(machine)}
+                                >
+                                  {/* Online/Offline indicator */}
+                                  <div className={`absolute top-2 right-2 z-10 flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                                    isOnline ? 'bg-emerald-500/20 text-emerald-500' : 'bg-red-500/20 text-red-500'
+                                  }`}>
+                                    {isOnline ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+                                    {isOnline ? 'Online' : 'Offline'}
+                                  </div>
+
+                                  {/* Metrics Bar at Top - Customizable */}
+                                  <div className="flex items-stretch bg-black/90 text-white">
+                                    {visibleMetrics.fpy && (
+                                      <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
+                                        <p className="text-[10px] opacity-70 uppercase tracking-wider">FPY</p>
+                                        <p className={`text-base font-bold ${fpyNum >= 90 ? 'text-emerald-400' : fpyNum >= 70 ? 'text-amber-400' : 'text-rose-400'}`}>
+                                          {fpy}%
+                                        </p>
+                                      </div>
+                                    )}
+                                    {visibleMetrics.fy && (
+                                      <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
+                                        <p className="text-[10px] opacity-70 uppercase tracking-wider">FY</p>
+                                        <p className="text-base font-bold text-rose-400">{fy}%</p>
+                                      </div>
+                                    )}
+                                    {visibleMetrics.ntfy && (
+                                      <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
+                                        <p className="text-[10px] opacity-70 uppercase tracking-wider">NTFY</p>
+                                        <p className="text-base font-bold text-amber-400">{ntfy}%</p>
+                                      </div>
+                                    )}
+                                    {visibleMetrics.output && (
+                                      <div className="flex-1 text-center py-2 px-1 relative">
+                                        <p className="text-[10px] opacity-70 uppercase tracking-wider">Output</p>
+                                        <p className="text-base font-bold text-cyan-400">{machine.total}</p>
+                                      </div>
+                                    )}
+                                    {/* Status indicator */}
+                                    <div className="flex items-center px-2">
+                                      <StatusIcon className={`h-4 w-4 ${status.color}`} />
+                                    </div>
+                                  </div>
+
+                                  {/* Machine Image - Large */}
+                                  <div className="relative h-40 w-full bg-gradient-to-br from-slate-800 to-slate-900">
+                                    {machineImage ? (
+                                      <>
+                                        <img
+                                          src={machineImage}
+                                          alt={machine.name}
+                                          className="w-full h-full object-contain p-2"
+                                        />
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                                      </>
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center">
+                                        <Cpu className="h-16 w-16 text-muted-foreground/30" />
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Machine info */}
+                                  <div className="p-3 bg-card border-t border-border/30">
+                                    <div className="flex items-center justify-between">
+                                      <div className="min-w-0 flex-1">
+                                        <p className="font-semibold text-sm truncate">{machine.name}</p>
+                                        <p className="text-xs text-muted-foreground truncate">{machine.code}</p>
+                                      </div>
+                                      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </TabsContent>
         </Tabs>
       </div>
 
-      {/* Machine Detail Modal */}
+      {/* Machine Detail Dialog */}
       <Dialog open={machineDetailOpen} onOpenChange={setMachineDetailOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Cpu className="h-5 w-5 text-primary" />
               {selectedMachine?.name}
             </DialogTitle>
             <DialogDescription>
-              Mã máy: {selectedMachine?.code} • {selectedMachine?.lineName}
+              Mã máy: {selectedMachine?.code} | {selectedMachine?.lineName || 'Chưa phân loại'}
             </DialogDescription>
           </DialogHeader>
 
-          <Tabs defaultValue="overview" className="mt-4">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="overview">Tổng quan</TabsTrigger>
-              <TabsTrigger value="recent">Kết quả gần nhất</TabsTrigger>
-            </TabsList>
+          {selectedMachine && (
+            <div className="space-y-6">
+              {/* Machine Stats */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Total Output</p>
+                  <p className="text-2xl font-bold">{selectedMachine.total}</p>
+                </div>
+                <div className="p-4 rounded-lg bg-success/10">
+                  <p className="text-sm text-muted-foreground">FPY</p>
+                  <p className="text-2xl font-bold text-success">{selectedMachine.yieldRate.toFixed(1)}%</p>
+                </div>
+                <div className="p-4 rounded-lg bg-destructive/10">
+                  <p className="text-sm text-muted-foreground">NG</p>
+                  <p className="text-2xl font-bold text-destructive">{selectedMachine.ng}</p>
+                </div>
+                <div className="p-4 rounded-lg bg-warning/10">
+                  <p className="text-sm text-muted-foreground">NTF</p>
+                  <p className="text-2xl font-bold text-warning">{selectedMachine.ntf}</p>
+                </div>
+              </div>
 
-            <TabsContent value="overview" className="space-y-4">
-              {selectedMachine && (
-                <>
-                  {/* Stats Grid */}
-                  <div className="grid grid-cols-4 gap-4">
-                    <div className="text-center p-4 rounded-lg bg-muted/30">
-                      <p className="text-sm text-muted-foreground">Total Output</p>
-                      <p className="text-2xl font-bold text-foreground">{selectedMachine.total}</p>
-                    </div>
-                    <div className="text-center p-4 rounded-lg bg-success/10">
-                      <p className="text-sm text-muted-foreground">FPY</p>
-                      <p className="text-2xl font-bold text-success">
-                        {calculateYields(selectedMachine).fpy}%
-                      </p>
-                    </div>
-                    <div className="text-center p-4 rounded-lg bg-destructive/10">
-                      <p className="text-sm text-muted-foreground">FY</p>
-                      <p className="text-2xl font-bold text-destructive">
-                        {calculateYields(selectedMachine).fy}%
-                      </p>
-                    </div>
-                    <div className="text-center p-4 rounded-lg bg-warning/10">
-                      <p className="text-sm text-muted-foreground">NTFY</p>
-                      <p className="text-2xl font-bold text-warning">
-                        {calculateYields(selectedMachine).ntfy}%
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Mini Pie Chart */}
-                  <div className="h-[200px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={[
-                            { name: "OK", value: selectedMachine.ok, color: "oklch(0.72 0.17 145)" },
-                            { name: "NG", value: selectedMachine.ng, color: "oklch(0.65 0.2 25)" },
-                            { name: "NTF", value: selectedMachine.ntf, color: "oklch(0.78 0.15 75)" },
-                          ].filter(d => d.value > 0)}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={50}
-                          outerRadius={80}
-                          paddingAngle={5}
-                          dataKey="value"
-                          label={({ name, value }) => `${name}: ${value}`}
-                        >
-                          {[
-                            { name: "OK", value: selectedMachine.ok, color: "oklch(0.72 0.17 145)" },
-                            { name: "NG", value: selectedMachine.ng, color: "oklch(0.65 0.2 25)" },
-                            { name: "NTF", value: selectedMachine.ntf, color: "oklch(0.78 0.15 75)" },
-                          ].filter(d => d.value > 0).map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <RechartsTooltip />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                </>
-              )}
-            </TabsContent>
-
-            <TabsContent value="recent">
-              <ScrollArea className="h-[300px]">
+              {/* Recent Inspections */}
+              <div>
+                <h4 className="font-semibold mb-3 flex items-center gap-2">
+                  <History className="h-4 w-4" />
+                  Kết quả kiểm tra gần đây
+                </h4>
                 <div className="space-y-2">
-                  {recentInspections?.data?.map((inspection: InspectionResult) => (
-                    <div
-                      key={inspection.id}
-                      className="flex items-center justify-between p-3 rounded-lg bg-muted/30"
-                    >
-                      <div>
-                        <p className="font-medium text-foreground">{inspection.serialNumber}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {inspection.productModel} • {new Date(inspection.createdAt).toLocaleString('vi-VN')}
-                        </p>
+                  {recentInspections?.data?.slice(0, 5).map((inspection: any) => (
+                    <Link key={inspection.id} href={`/inspection/${inspection.id}`}>
+                      <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer">
+                        <div className="flex items-center gap-3">
+                          <Badge variant={
+                            inspection.overallResult === 'OK' ? 'default' :
+                            inspection.overallResult === 'NG' ? 'destructive' : 'secondary'
+                          }>
+                            {inspection.overallResult}
+                          </Badge>
+                          <span className="text-sm font-medium">{inspection.serialNumber}</span>
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(inspection.createdAt).toLocaleString('vi-VN')}
+                        </span>
                       </div>
-                      <Badge
-                        variant={
-                          inspection.overallResult === "OK"
-                            ? "default"
-                            : inspection.overallResult === "NG"
-                            ? "destructive"
-                            : "secondary"
-                        }
-                        className={
-                          inspection.overallResult === "OK"
-                            ? "bg-success text-success-foreground"
-                            : inspection.overallResult === "NTF"
-                            ? "bg-warning text-warning-foreground"
-                            : ""
-                        }
-                      >
-                        {inspection.overallResult}
-                      </Badge>
-                    </div>
+                    </Link>
                   ))}
                   {(!recentInspections?.data || recentInspections.data.length === 0) && (
-                    <p className="text-center text-muted-foreground py-8">
-                      Chưa có kết quả kiểm tra
-                    </p>
+                    <p className="text-sm text-muted-foreground text-center py-4">Chưa có kết quả kiểm tra</p>
                   )}
                 </div>
-              </ScrollArea>
-            </TabsContent>
-          </Tabs>
+              </div>
+
+              {/* Quick Actions */}
+              <div className="flex gap-2">
+                <Link href={`/history?machineId=${selectedMachine.id}`} className="flex-1">
+                  <Button variant="outline" className="w-full">
+                    <History className="h-4 w-4 mr-2" />
+                    Xem lịch sử
+                  </Button>
+                </Link>
+                <Link href={`/layout/${selectedMachine.factoryId}`} className="flex-1">
+                  <Button variant="outline" className="w-full">
+                    <Eye className="h-4 w-4 mr-2" />
+                    Xem trên layout
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
       {/* Metrics Settings Dialog */}
       <Dialog open={metricsSettingsOpen} onOpenChange={setMetricsSettingsOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Settings2 className="h-5 w-5 text-primary" />
-              Tùy chỉnh chỉ số hiển thị
-            </DialogTitle>
+            <DialogTitle>Tùy chỉnh chỉ số hiển thị</DialogTitle>
             <DialogDescription>
-              Chọn các chỉ số bạn muốn hiển thị trên thẻ máy
+              Chọn các chỉ số bạn muốn hiển thị trên card máy
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                  <Target className="h-4 w-4 text-emerald-500" />
-                </div>
-                <div>
-                  <p className="font-medium">FPY (First Pass Yield)</p>
-                  <p className="text-xs text-muted-foreground">Tỷ lệ sản phẩm đạt lần đầu</p>
-                </div>
-              </div>
-              <Button
-                variant={visibleMetrics.fpy ? "default" : "outline"}
-                size="sm"
-                onClick={() => setVisibleMetrics(prev => ({ ...prev, fpy: !prev.fpy }))}
-              >
-                {visibleMetrics.fpy ? "Hiển thị" : "Ẩn"}
-              </Button>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">FPY (First Pass Yield)</label>
+              <input
+                type="checkbox"
+                checked={visibleMetrics.fpy}
+                onChange={(e) => setVisibleMetrics(prev => ({ ...prev, fpy: e.target.checked }))}
+                className="h-4 w-4"
+              />
             </div>
-            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-rose-500/20 flex items-center justify-center">
-                  <ThumbsDown className="h-4 w-4 text-rose-500" />
-                </div>
-                <div>
-                  <p className="font-medium">FY (Fail Yield)</p>
-                  <p className="text-xs text-muted-foreground">Tỷ lệ sản phẩm lỗi</p>
-                </div>
-              </div>
-              <Button
-                variant={visibleMetrics.fy ? "default" : "outline"}
-                size="sm"
-                onClick={() => setVisibleMetrics(prev => ({ ...prev, fy: !prev.fy }))}
-              >
-                {visibleMetrics.fy ? "Hiển thị" : "Ẩn"}
-              </Button>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">FY (Fail Yield)</label>
+              <input
+                type="checkbox"
+                checked={visibleMetrics.fy}
+                onChange={(e) => setVisibleMetrics(prev => ({ ...prev, fy: e.target.checked }))}
+                className="h-4 w-4"
+              />
             </div>
-            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center">
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
-                </div>
-                <div>
-                  <p className="font-medium">NTFY (No Test Found Yield)</p>
-                  <p className="text-xs text-muted-foreground">Tỷ lệ không tìm thấy kết quả</p>
-                </div>
-              </div>
-              <Button
-                variant={visibleMetrics.ntfy ? "default" : "outline"}
-                size="sm"
-                onClick={() => setVisibleMetrics(prev => ({ ...prev, ntfy: !prev.ntfy }))}
-              >
-                {visibleMetrics.ntfy ? "Hiển thị" : "Ẩn"}
-              </Button>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">NTFY (NTF Yield)</label>
+              <input
+                type="checkbox"
+                checked={visibleMetrics.ntfy}
+                onChange={(e) => setVisibleMetrics(prev => ({ ...prev, ntfy: e.target.checked }))}
+                className="h-4 w-4"
+              />
             </div>
-            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-cyan-500/20 flex items-center justify-center">
-                  <BarChart3 className="h-4 w-4 text-cyan-500" />
-                </div>
-                <div>
-                  <p className="font-medium">Output</p>
-                  <p className="text-xs text-muted-foreground">Tổng số sản phẩm đã kiểm tra</p>
-                </div>
-              </div>
-              <Button
-                variant={visibleMetrics.output ? "default" : "outline"}
-                size="sm"
-                onClick={() => setVisibleMetrics(prev => ({ ...prev, output: !prev.output }))}
-              >
-                {visibleMetrics.output ? "Hiển thị" : "Ẩn"}
-              </Button>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">Output (Sản lượng)</label>
+              <input
+                type="checkbox"
+                checked={visibleMetrics.output}
+                onChange={(e) => setVisibleMetrics(prev => ({ ...prev, output: e.target.checked }))}
+                className="h-4 w-4"
+              />
             </div>
-          </div>
-          <div className="flex justify-between pt-4 border-t">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setVisibleMetrics({ fpy: true, fy: true, ntfy: true, output: true })}
-            >
-              Đặt lại mặc định
-            </Button>
-            <Button
-              onClick={() => setMetricsSettingsOpen(false)}
-            >
-              Xong
-            </Button>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* Workstation Drilldown Dialog */}
       <Dialog open={drilldownDialogOpen} onOpenChange={setDrilldownDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden">
+        <DialogContent className="max-w-4xl max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Factory className="h-5 w-5 text-primary" />
               Chi tiết công trạm: {selectedWorkstationForDrilldown?.name}
             </DialogTitle>
             <DialogDescription>
-              Mã: {selectedWorkstationForDrilldown?.code} • Dữ liệu từ {ngTimeFilter === "day" ? "hôm nay" : ngTimeFilter === "week" ? "7 ngày qua" : "30 ngày qua"}
+              Mã: {selectedWorkstationForDrilldown?.code} | Các điểm đo và tỉ lệ lỗi
             </DialogDescription>
           </DialogHeader>
-
           <ScrollArea className="max-h-[60vh]">
             {drilldownLoading ? (
               <div className="flex items-center justify-center h-32">
                 <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             ) : drilldownMeasurementPoints && drilldownMeasurementPoints.length > 0 ? (
-              <div className="space-y-3 pr-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-1">
                 {drilldownMeasurementPoints.map((mp: any) => {
                   const ngRate = mp.totalCount > 0 ? (mp.ngCount / mp.totalCount * 100) : 0;
                   const getNGColorClass = (rate: number) => {

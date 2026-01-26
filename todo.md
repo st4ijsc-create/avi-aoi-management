@@ -3937,3 +3937,28 @@ Menu structure mới:
 - Annotations: 9.4/10
 - AI/Predictive: 9.0/10
 - **Điểm tổng thể: 9.2/10**
+
+
+## Phase 154: Dashboard Layout, WebSocket, Menu Reorganization, Bug Fixes ✅
+
+### 1. Dashboard Layout Reorganization ✅
+- [x] Di chuyển KPI cards (Total Output, FPY, OK, NG, NTF) lên trên cùng
+- [x] Di chuyển Trạng thái kết nối máy vào Tab "Layout Dây chuyền"
+- [x] Sắp xếp lại cấu trúc tabs trong Dashboard
+
+### 2. WebSocket Real-time Updates ✅
+- [x] Cài đặt socket.io-client
+- [x] Tạo WebSocket hook cho MQTT Dashboard
+- [x] Toggle on/off WebSocket (default: off theo preference)
+- [x] Fallback về polling khi WebSocket tắt
+
+### 3. Sắp xếp lại Menu ✅
+- [x] Tổ chức lại 9 categories theo chức năng
+- [x] Sắp xếp menu items hợp lý
+- [x] Cập nhật navigation.tsx
+
+### 4. Rà soát và sửa lỗi ✅
+- [x] Kiểm tra tất cả các trang có sidebar
+- [x] Sửa lỗi mất sidebar (OEETargetSettings)
+- [x] Sửa lỗi TypeScript trong Dashboard.tsx
+- [x] Tests: 269 passed | 7 skipped
