@@ -41,7 +41,9 @@ import {
   Timer,
   Play,
   Heart,
-  Tags
+  Tags,
+  GitCompare,
+  Map
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -281,6 +283,18 @@ export const navGroups: NavGroup[] = [
         label: "Thống kê Annotation", 
         icon: <Tags className="h-4 w-4" />,
         description: "Phân tích xu hướng annotation theo máy, sản phẩm"
+      },
+      { 
+        href: "/annotation-comparison", 
+        label: "So sánh Annotation", 
+        icon: <GitCompare className="h-4 w-4" />,
+        description: "So sánh annotations giữa các lần kiểm tra"
+      },
+      { 
+        href: "/defect-heatmap", 
+        label: "Bản đồ nhiệt Defects", 
+        icon: <Map className="h-4 w-4" />,
+        description: "Hiển thị mật độ defects trên layout nhà máy"
       },
     ],
   },

@@ -7103,6 +7103,256 @@ Respond in JSON format with an array of findings.`
       await db.execute(sql`DELETE FROM image_annotations WHERE id = ${input.id}`);
       return { success: true };
     }),
+
+  // Get comparison data for same product across inspections
+  comparison: protectedProcedure
+    .input(z.object({
+      serialNumber: z.string().optional(),
+      productModelId: z.number().optional(),
+      measurementPointId: z.number().optional(),
+      machineId: z.number().optional(),
+      dateFrom: z.string().optional(),
+      dateTo: z.string().optional(),
+      limit: z.number().default(10),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      
+      // Build query to get inspections with annotations for comparison
+      let query = `
+        SELECT 
+          i.id as inspection_id,
+          i.serial_number,
+          i.inspection_time,
+          i.overall_result,
+          m.name as machine_name,
+          m.id as machine_id,
+          pm.name as product_model_name,
+          pm.id as product_model_id,
+          mr.id as measurement_result_id,
+          mr.image_url,
+          mr.result,
+          mr.value,
+          mp.name as measurement_point_name,
+          mp.id as measurement_point_id,
+          ia.id as annotation_id,
+          ia.annotations,
+          ia.created_at as annotation_created_at
+        FROM inspections i
+        LEFT JOIN machines m ON i.machine_id = m.id
+        LEFT JOIN product_models pm ON i.product_model_id = pm.id
+        LEFT JOIN measurement_results mr ON mr.inspection_id = i.id
+        LEFT JOIN measurement_points mp ON mr.measurement_point_id = mp.id
+        LEFT JOIN image_annotations ia ON ia.inspection_id = i.id AND ia.image_url = mr.image_url
+        WHERE mr.image_url IS NOT NULL
+      `;
+      
+      const conditions: string[] = [];
+      if (input.serialNumber) conditions.push(`i.serial_number = '${input.serialNumber}'`);
+      if (input.productModelId) conditions.push(`i.product_model_id = ${input.productModelId}`);
+      if (input.measurementPointId) conditions.push(`mr.measurement_point_id = ${input.measurementPointId}`);
+      if (input.machineId) conditions.push(`i.machine_id = ${input.machineId}`);
+      if (input.dateFrom) conditions.push(`i.inspection_time >= '${input.dateFrom}'`);
+      if (input.dateTo) conditions.push(`i.inspection_time <= '${input.dateTo}'`);
+      
+      if (conditions.length > 0) {
+        query += ' AND ' + conditions.join(' AND ');
+      }
+      
+      query += ` ORDER BY i.inspection_time DESC LIMIT ${input.limit}`;
+      
+      const result = await db.execute(sql.raw(query)) as any;
+      
+      // Group by measurement point for comparison
+      const grouped: Record<string, any[]> = {};
+      for (const row of result.rows || []) {
+        const key = `${row.measurement_point_id || 'unknown'}`;
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push({
+          inspectionId: row.inspection_id,
+          serialNumber: row.serial_number,
+          inspectionTime: row.inspection_time,
+          overallResult: row.overall_result,
+          machineName: row.machine_name,
+          machineId: row.machine_id,
+          productModelName: row.product_model_name,
+          productModelId: row.product_model_id,
+          measurementResultId: row.measurement_result_id,
+          imageUrl: row.image_url,
+          result: row.result,
+          value: row.value,
+          measurementPointName: row.measurement_point_name,
+          measurementPointId: row.measurement_point_id,
+          annotationId: row.annotation_id,
+          annotations: row.annotations ? (typeof row.annotations === 'string' ? JSON.parse(row.annotations) : row.annotations) : [],
+          annotationCreatedAt: row.annotation_created_at,
+        });
+      }
+      
+      return {
+        groups: Object.entries(grouped).map(([pointId, items]) => ({
+          measurementPointId: parseInt(pointId) || null,
+          measurementPointName: items[0]?.measurementPointName || 'Unknown',
+          inspections: items,
+        })),
+        totalInspections: result.rows?.length || 0,
+      };
+    }),
+
+  // Get defect heatmap data
+  heatmapData: protectedProcedure
+    .input(z.object({
+      machineId: z.number().optional(),
+      productModelId: z.number().optional(),
+      dateFrom: z.string().optional(),
+      dateTo: z.string().optional(),
+      annotationType: z.string().optional(),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      
+      // Get all annotations with their positions
+      let query = `
+        SELECT 
+          ia.id,
+          ia.annotations,
+          ia.inspection_id,
+          i.machine_id,
+          i.product_model_id,
+          i.inspection_time,
+          m.name as machine_name,
+          m.position_x,
+          m.position_y,
+          pm.name as product_model_name,
+          mr.measurement_point_id,
+          mp.name as measurement_point_name
+        FROM image_annotations ia
+        JOIN inspections i ON ia.inspection_id = i.id
+        LEFT JOIN machines m ON i.machine_id = m.id
+        LEFT JOIN product_models pm ON i.product_model_id = pm.id
+        LEFT JOIN measurement_results mr ON mr.inspection_id = i.id AND mr.image_url = ia.image_url
+        LEFT JOIN measurement_points mp ON mr.measurement_point_id = mp.id
+        WHERE ia.annotations IS NOT NULL
+      `;
+      
+      const conditions: string[] = [];
+      if (input.machineId) conditions.push(`i.machine_id = ${input.machineId}`);
+      if (input.productModelId) conditions.push(`i.product_model_id = ${input.productModelId}`);
+      if (input.dateFrom) conditions.push(`i.inspection_time >= '${input.dateFrom}'`);
+      if (input.dateTo) conditions.push(`i.inspection_time <= '${input.dateTo}'`);
+      
+      if (conditions.length > 0) {
+        query += ' AND ' + conditions.join(' AND ');
+      }
+      
+      const result = await db.execute(sql.raw(query)) as any;
+      
+      // Aggregate defect positions by machine
+      const machineDefects: Record<number, {
+        machineId: number;
+        machineName: string;
+        positionX: number | null;
+        positionY: number | null;
+        defectCount: number;
+        defectsByType: Record<string, number>;
+        defectsByColor: Record<string, number>;
+        recentDefects: any[];
+      }> = {};
+      
+      // Aggregate defect positions for heatmap
+      const heatmapPoints: Array<{
+        x: number;
+        y: number;
+        intensity: number;
+        machineId: number;
+        machineName: string;
+        annotationType: string;
+        color: string;
+      }> = [];
+      
+      for (const row of result.rows || []) {
+        const machineId = row.machine_id || 0;
+        if (!machineDefects[machineId]) {
+          machineDefects[machineId] = {
+            machineId,
+            machineName: row.machine_name || 'Unknown',
+            positionX: row.position_x,
+            positionY: row.position_y,
+            defectCount: 0,
+            defectsByType: {},
+            defectsByColor: {},
+            recentDefects: [],
+          };
+        }
+        
+        const annotations = typeof row.annotations === 'string' 
+          ? JSON.parse(row.annotations) 
+          : row.annotations;
+        
+        for (const ann of annotations || []) {
+          if (input.annotationType && ann.type !== input.annotationType) continue;
+          
+          machineDefects[machineId].defectCount++;
+          machineDefects[machineId].defectsByType[ann.type] = 
+            (machineDefects[machineId].defectsByType[ann.type] || 0) + 1;
+          machineDefects[machineId].defectsByColor[ann.color] = 
+            (machineDefects[machineId].defectsByColor[ann.color] || 0) + 1;
+          
+          // Add to heatmap points if machine has position
+          if (row.position_x !== null && row.position_y !== null) {
+            // Use annotation position within image + machine position
+            const annX = ann.points?.[0]?.x || 0.5;
+            const annY = ann.points?.[0]?.y || 0.5;
+            heatmapPoints.push({
+              x: row.position_x + (annX - 0.5) * 50, // Spread within 50px of machine center
+              y: row.position_y + (annY - 0.5) * 50,
+              intensity: 1,
+              machineId,
+              machineName: row.machine_name || 'Unknown',
+              annotationType: ann.type,
+              color: ann.color,
+            });
+          }
+          
+          // Keep recent defects
+          if (machineDefects[machineId].recentDefects.length < 5) {
+            machineDefects[machineId].recentDefects.push({
+              type: ann.type,
+              color: ann.color,
+              text: ann.text,
+              inspectionTime: row.inspection_time,
+              productModel: row.product_model_name,
+              measurementPoint: row.measurement_point_name,
+            });
+          }
+        }
+      }
+      
+      // Calculate intensity based on density
+      const maxCount = Math.max(...Object.values(machineDefects).map(m => m.defectCount), 1);
+      
+      return {
+        machines: Object.values(machineDefects).map(m => ({
+          ...m,
+          intensity: m.defectCount / maxCount, // Normalized 0-1
+        })),
+        heatmapPoints,
+        summary: {
+          totalDefects: Object.values(machineDefects).reduce((sum, m) => sum + m.defectCount, 0),
+          machinesWithDefects: Object.keys(machineDefects).length,
+          topDefectTypes: Object.entries(
+            Object.values(machineDefects).reduce((acc, m) => {
+              for (const [type, count] of Object.entries(m.defectsByType)) {
+                acc[type] = (acc[type] || 0) + count;
+              }
+              return acc;
+            }, {} as Record<string, number>)
+          ).sort((a, b) => b[1] - a[1]).slice(0, 5),
+        },
+      };
+    }),
 });
 
 // Annotation Templates Router

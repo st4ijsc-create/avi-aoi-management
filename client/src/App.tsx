@@ -46,6 +46,8 @@ import OEETargetSettings from "./pages/OEETargetSettings";
 import MachineHealthMonitoring from "./pages/MachineHealthMonitoring";
 import DrillDownDashboard from "./pages/DrillDownDashboard";
 import AnnotationStatistics from "./pages/AnnotationStatistics";
+import AnnotationComparisonPage from "./pages/AnnotationComparisonPage";
+import DefectHeatmapPage from "./pages/DefectHeatmapPage";
 
 function Router() {
   return (
@@ -93,6 +95,8 @@ function Router() {
       <Route path="/machine-health" component={MachineHealthMonitoring} />
       <Route path="/drill-down" component={DrillDownDashboard} />
       <Route path="/annotation-statistics" component={AnnotationStatistics} />
+      <Route path="/annotation-comparison" component={AnnotationComparisonPage} />
+      <Route path="/defect-heatmap" component={DefectHeatmapPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

@@ -3696,3 +3696,28 @@ Menu structure mới:
 - [x] Tích hợp với invokeLLM để phân tích hình ảnh
 - [x] Cache AI results để tránh duplicate analysis
 - [x] Hiển thị loading state và error handling
+
+
+## Phase 146: Annotation Comparison Tool & Defect Heatmap Overlay
+
+### 1. Annotation Comparison Tool
+- [x] Tạo API endpoint để lấy annotations của cùng product/serial qua nhiều lần kiểm tra
+- [x] Tạo AnnotationComparison.tsx component với:
+  - [x] Side-by-side view so sánh 2 ảnh cùng vị trí đo
+  - [x] Timeline selector để chọn các lần kiểm tra khác nhau
+  - [x] Highlight differences giữa các annotations
+  - [x] Overlay mode để xếp chồng annotations
+  - [x] Statistics panel hiển thị defect patterns
+- [x] Tích hợp vào History module
+- [x] Export comparison report
+
+### 2. Defect Heatmap Overlay
+- [x] Tạo API endpoint để aggregate defect locations theo machine/position
+- [x] Tạo DefectHeatmap.tsx component với:
+  - [x] Factory layout background (uploadable)
+  - [x] Heatmap overlay hiển thị mật độ defects
+  - [x] Click vào vùng để xem chi tiết defects
+  - [x] Filters: date range, machine, product, defect type
+  - [x] Color scale legend
+- [x] Tạo trang DefectHeatmapPage.tsx
+- [x] Thêm route và menu item
