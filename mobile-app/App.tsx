@@ -18,6 +18,8 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 
 import HomeScreen from './src/screens/HomeScreen';
+import DashboardScreen from './src/screens/DashboardScreen';
+import AlertsScreen from './src/screens/AlertsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import NGAlertPopup from './src/components/NGAlertPopup';
 import { useMqttStore } from './src/stores/mqttStore';
@@ -108,8 +110,12 @@ export default function App() {
               tabBarIcon: ({ focused, color, size }) => {
                 let iconName: keyof typeof Ionicons.glyphMap;
 
-                if (route.name === 'Home') {
+                if (route.name === 'Dashboard') {
+                  iconName = focused ? 'stats-chart' : 'stats-chart-outline';
+                } else if (route.name === 'Home') {
                   iconName = focused ? 'home' : 'home-outline';
+                } else if (route.name === 'Alerts') {
+                  iconName = focused ? 'notifications' : 'notifications-outline';
                 } else if (route.name === 'Settings') {
                   iconName = focused ? 'settings' : 'settings-outline';
                 } else {
@@ -131,11 +137,27 @@ export default function App() {
             })}
           >
             <Tab.Screen 
-              name="Home" 
-              component={HomeScreen}
+              name="Dashboard" 
+              component={DashboardScreen}
               options={{ 
                 title: 'Dashboard',
                 headerTitle: 'AVI/AOI Monitor',
+              }}
+            />
+            <Tab.Screen 
+              name="Home" 
+              component={HomeScreen}
+              options={{ 
+                title: 'Home',
+                headerTitle: 'Thống kê',
+              }}
+            />
+            <Tab.Screen 
+              name="Alerts" 
+              component={AlertsScreen}
+              options={{ 
+                title: 'Cảnh báo',
+                headerTitle: 'Cảnh báo',
               }}
             />
             <Tab.Screen 

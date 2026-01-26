@@ -4181,3 +4181,20 @@ Menu structure mới:
 - [x] Tạo API Reference (API_REFERENCE.md)
 - [x] Tạo User Guide (USER_GUIDE.md)
 - [x] Tạo System Evaluation Report (SYSTEM_EVALUATION_REPORT.md)
+
+
+## Phase 160: MQTT Broker Integration, Gantt Chart, Mobile App
+
+### 1. Tích hợp MQTT Broker thực tế
+- [x] Tạo tài liệu cấu hình MQTT broker chi tiết (MQTT_CONFIGURATION.md)
+- [x] Sample code Python/Node.js cho máy AVI/AOI
+- [x] Hướng dẫn kết nối Mosquitto/HiveMQ
+
+### 2. Gantt Chart cho Production Scheduling
+- [x] Kiểm tra GanttChart component hiện có (1235 lines, đầy đủ tính năng)
+- [x] Drag-drop, zoom, undo/redo, export PDF/Excel đã có sẵn
+
+### 3. Mobile App React Native
+- [x] Tạo DashboardScreen với KPI cards (Output, FPY, Yield, OK/NG/NTF)
+- [x] Tạo AlertsScreen với danh sách cảnh báo và filter
+- [x] Cập nhật navigation với 4 tabs (Dashboard, Home, Alerts, Settings)
