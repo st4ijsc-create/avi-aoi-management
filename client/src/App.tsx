@@ -48,6 +48,7 @@ import DrillDownDashboard from "./pages/DrillDownDashboard";
 import AnnotationStatistics from "./pages/AnnotationStatistics";
 import AnnotationComparisonPage from "./pages/AnnotationComparisonPage";
 import DefectHeatmapPage from "./pages/DefectHeatmapPage";
+import DefectPredictionPage from "./pages/DefectPredictionPage";
 
 function Router() {
   return (
@@ -97,6 +98,7 @@ function Router() {
       <Route path="/annotation-statistics" component={AnnotationStatistics} />
       <Route path="/annotation-comparison" component={AnnotationComparisonPage} />
       <Route path="/defect-heatmap" component={DefectHeatmapPage} />
+      <Route path="/defect-prediction" component={DefectPredictionPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

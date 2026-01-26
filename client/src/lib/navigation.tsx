@@ -43,7 +43,8 @@ import {
   Heart,
   Tags,
   GitCompare,
-  Map
+  Map,
+  Sparkles,
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -295,6 +296,12 @@ export const navGroups: NavGroup[] = [
         label: "Bản đồ nhiệt Defects", 
         icon: <Map className="h-4 w-4" />,
         description: "Hiển thị mật độ defects trên layout nhà máy"
+      },
+      { 
+        href: "/defect-prediction", 
+        label: "Dự đoán Defects", 
+        icon: <Sparkles className="h-4 w-4" />,
+        description: "AI dự đoán xu hướng defects trong tương lai"
       },
     ],
   },

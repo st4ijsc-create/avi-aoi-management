@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -30,7 +30,12 @@ import {
   Cpu,
   TrendingUp,
   Calendar,
+  Radio,
+  Bell,
+  Sparkles,
 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
@@ -106,6 +111,13 @@ export function DefectHeatmap() {
   const [selectedMachine, setSelectedMachine] = useState<MachineDefect | null>(null);
   const [layoutImage, setLayoutImage] = useState<string | null>(null);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
+  
+  // Real-time updates state (default OFF per user preference)
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [refreshInterval, setRefreshInterval] = useState(30); // seconds
+  const [newDefectsCount, setNewDefectsCount] = useState(0);
+  const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
+  const previousDefectCount = useRef<number>(0);
 
   // Fetch heatmap data
   const { data: heatmapData, isLoading, refetch } = trpc.annotation.heatmapData.useQuery({
@@ -223,6 +235,33 @@ export function DefectHeatmap() {
   useEffect(() => {
     drawHeatmap();
   }, [drawHeatmap]);
+
+  // Track defect count changes and show notifications
+  useEffect(() => {
+    if (heatmapData) {
+      const currentCount = heatmapData.summary.totalDefects;
+      if (previousDefectCount.current > 0 && currentCount > previousDefectCount.current) {
+        const newCount = currentCount - previousDefectCount.current;
+        setNewDefectsCount(prev => prev + newCount);
+        
+        // Show notification for new defects
+        toast.error(`+${newCount} defects mới phát hiện từ lần cập nhật trước`);
+      }
+      previousDefectCount.current = currentCount;
+      setLastRefreshTime(new Date());
+    }
+  }, [heatmapData]);
+
+  // Auto-refresh interval (default OFF)
+  useEffect(() => {
+    if (!autoRefresh) return;
+    
+    const interval = setInterval(() => {
+      refetch();
+    }, refreshInterval * 1000);
+    
+    return () => clearInterval(interval);
+  }, [autoRefresh, refreshInterval, refetch]);
 
   // Handle canvas click
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -356,7 +395,7 @@ export function DefectHeatmap() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 mt-4">
+          <div className="flex flex-wrap items-center gap-4 mt-4">
             <Button onClick={() => refetch()} variant="outline" className="gap-2">
               <RefreshCw className="h-4 w-4" />
               Làm mới
@@ -365,6 +404,50 @@ export function DefectHeatmap() {
               <Upload className="h-4 w-4" />
               Tải layout nhà máy
             </Button>
+            
+            {/* Auto-refresh controls */}
+            <div className="flex items-center gap-2 ml-auto border rounded-lg px-3 py-2 bg-muted/50">
+              <Radio className={cn("h-4 w-4", autoRefresh && "text-green-500 animate-pulse")} />
+              <Label htmlFor="auto-refresh" className="text-sm cursor-pointer">
+                Tự động cập nhật
+              </Label>
+              <Switch
+                id="auto-refresh"
+                checked={autoRefresh}
+                onCheckedChange={setAutoRefresh}
+              />
+              {autoRefresh && (
+                <Select
+                  value={refreshInterval.toString()}
+                  onValueChange={(v) => setRefreshInterval(parseInt(v))}
+                >
+                  <SelectTrigger className="w-24 h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10 giây</SelectItem>
+                    <SelectItem value="30">30 giây</SelectItem>
+                    <SelectItem value="60">1 phút</SelectItem>
+                    <SelectItem value="300">5 phút</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            
+            {/* New defects indicator */}
+            {newDefectsCount > 0 && (
+              <Badge variant="destructive" className="gap-1 animate-pulse">
+                <Sparkles className="h-3 w-3" />
+                +{newDefectsCount} mới
+              </Badge>
+            )}
+            
+            {/* Last refresh time */}
+            {lastRefreshTime && (
+              <span className="text-xs text-muted-foreground">
+                Cập nhật: {format(lastRefreshTime, 'HH:mm:ss', { locale: vi })}
+              </span>
+            )}
           </div>
         </CardContent>
       </Card>

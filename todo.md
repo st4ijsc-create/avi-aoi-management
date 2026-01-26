@@ -3721,3 +3721,35 @@ Menu structure mới:
   - [x] Color scale legend
 - [x] Tạo trang DefectHeatmapPage.tsx
 - [x] Thêm route và menu item
+
+
+## Phase 147: Defect Trend Prediction, Annotation Export/Import & Real-time Heatmap
+
+### 1. Defect Trend Prediction
+- [x] Tạo API endpoint dự đoán xu hướng defects với linear regression
+- [x] Phân tích dữ liệu lịch sử và tạo predictions
+- [x] Tạo DefectTrendPrediction.tsx component với:
+  - [x] ComposedChart hiển thị trend lịch sử và dự đoán
+  - [x] Confidence intervals (upper/lower bounds)
+  - [x] Filters: machine, product model, days range
+  - [x] Statistics cards (total, average, trend direction, slope)
+  - [x] AI insights panel với recommendations
+- [x] Tạo trang DefectPredictionPage.tsx
+- [x] Thêm route và menu item
+
+### 2. Annotation Export/Import
+- [x] Tạo API export endpoint (JSON, CSV formats)
+- [x] Tạo API import endpoint với merge/replace modes
+- [x] Tạo AnnotationExportImport.tsx component với:
+  - [x] Export tab với format selection và filters
+  - [x] Import tab với file upload và JSON paste
+  - [x] Preview dialog trước khi import
+  - [x] Progress và result indicators
+- [x] Validation và error handling
+
+### 3. Real-time Heatmap Updates
+- [x] Thêm auto-refresh toggle (default OFF theo user preference)
+- [x] Configurable refresh interval (10s, 30s, 1m, 5m)
+- [x] New defects notification khi có defects mới
+- [x] Last refresh timestamp display
+- [x] Badge hiển thị số defects mới kể từ lần refresh trước

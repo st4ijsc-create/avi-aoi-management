@@ -7353,6 +7353,327 @@ Respond in JSON format with an array of findings.`
         },
       };
     }),
+
+  // Defect trend prediction with AI
+  trendPrediction: protectedProcedure
+    .input(z.object({
+      machineId: z.number().optional(),
+      productModelId: z.number().optional(),
+      annotationType: z.string().optional(),
+      days: z.number().default(30), // Historical days
+      predictionDays: z.number().default(7), // Days to predict
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      
+      // Get historical defect data grouped by date
+      let query = `
+        SELECT 
+          DATE(i.inspection_time) as date,
+          COUNT(ia.id) as defect_count,
+          i.machine_id,
+          m.name as machine_name,
+          i.product_model_id,
+          pm.name as product_model_name
+        FROM image_annotations ia
+        JOIN inspections i ON ia.inspection_id = i.id
+        LEFT JOIN machines m ON i.machine_id = m.id
+        LEFT JOIN product_models pm ON i.product_model_id = pm.id
+        WHERE ia.annotations IS NOT NULL
+          AND i.inspection_time >= DATE_SUB(NOW(), INTERVAL ${input.days} DAY)
+      `;
+      
+      const conditions: string[] = [];
+      if (input.machineId) conditions.push(`i.machine_id = ${input.machineId}`);
+      if (input.productModelId) conditions.push(`i.product_model_id = ${input.productModelId}`);
+      
+      if (conditions.length > 0) {
+        query += ' AND ' + conditions.join(' AND ');
+      }
+      
+      query += ' GROUP BY DATE(i.inspection_time), i.machine_id, i.product_model_id ORDER BY date ASC';
+      
+      const result = await db.execute(sql.raw(query)) as any;
+      const historicalData = (result.rows || []).map((row: any) => ({
+        date: row.date,
+        defectCount: Number(row.defect_count),
+        machineId: row.machine_id,
+        machineName: row.machine_name,
+        productModelId: row.product_model_id,
+        productModelName: row.product_model_name,
+      }));
+      
+      // Calculate simple moving average and trend
+      const aggregatedByDate: Record<string, number> = {};
+      for (const item of historicalData) {
+        const dateStr = new Date(item.date).toISOString().split('T')[0];
+        aggregatedByDate[dateStr] = (aggregatedByDate[dateStr] || 0) + item.defectCount;
+      }
+      
+      const sortedDates = Object.keys(aggregatedByDate).sort();
+      const values = sortedDates.map(d => aggregatedByDate[d]);
+      
+      // Calculate trend using linear regression
+      const n = values.length;
+      let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+      for (let i = 0; i < n; i++) {
+        sumX += i;
+        sumY += values[i];
+        sumXY += i * values[i];
+        sumX2 += i * i;
+      }
+      
+      const slope = n > 1 ? (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX) : 0;
+      const intercept = n > 0 ? (sumY - slope * sumX) / n : 0;
+      
+      // Generate predictions
+      const predictions: Array<{ date: string; predicted: number; lower: number; upper: number }> = [];
+      const avgValue = n > 0 ? sumY / n : 0;
+      const stdDev = n > 1 ? Math.sqrt(values.reduce((sum, v) => sum + Math.pow(v - avgValue, 2), 0) / (n - 1)) : 0;
+      
+      for (let i = 0; i < input.predictionDays; i++) {
+        const futureDate = new Date();
+        futureDate.setDate(futureDate.getDate() + i + 1);
+        const dateStr = futureDate.toISOString().split('T')[0];
+        const predicted = Math.max(0, Math.round(intercept + slope * (n + i)));
+        const margin = stdDev * 1.96; // 95% confidence interval
+        
+        predictions.push({
+          date: dateStr,
+          predicted,
+          lower: Math.max(0, Math.round(predicted - margin)),
+          upper: Math.round(predicted + margin),
+        });
+      }
+      
+      // Calculate trend direction
+      const trendDirection = slope > 0.5 ? 'increasing' : slope < -0.5 ? 'decreasing' : 'stable';
+      const avgDaily = n > 0 ? Math.round(sumY / n) : 0;
+      const maxDaily = n > 0 ? Math.max(...values) : 0;
+      const minDaily = n > 0 ? Math.min(...values) : 0;
+      
+      return {
+        historical: sortedDates.map(date => ({
+          date,
+          actual: aggregatedByDate[date],
+        })),
+        predictions,
+        statistics: {
+          totalDefects: sumY,
+          avgDaily,
+          maxDaily,
+          minDaily,
+          trendDirection,
+          slope: Math.round(slope * 100) / 100,
+          confidence: n >= 7 ? 'high' : n >= 3 ? 'medium' : 'low',
+        },
+        insights: [
+          trendDirection === 'increasing' 
+            ? `Xu hướng tăng: Dự kiến defects sẽ tăng ${Math.round(slope * input.predictionDays)} trong ${input.predictionDays} ngày tới`
+            : trendDirection === 'decreasing'
+            ? `Xu hướng giảm: Dự kiến defects sẽ giảm ${Math.abs(Math.round(slope * input.predictionDays))} trong ${input.predictionDays} ngày tới`
+            : `Xu hướng ổn định: Defects duy trì ở mức trung bình ${avgDaily}/ngày`,
+          maxDaily > avgDaily * 2 ? `Cảnh báo: Có ngày đạt đỉnh ${maxDaily} defects, cao hơn trung bình ${Math.round((maxDaily / avgDaily - 1) * 100)}%` : null,
+          predictions[predictions.length - 1]?.predicted > avgDaily * 1.5 ? `Dự báo: Ngày ${predictions[predictions.length - 1]?.date} có thể đạt ${predictions[predictions.length - 1]?.predicted} defects` : null,
+        ].filter(Boolean),
+      };
+    }),
+
+  // Export annotations
+  export: protectedProcedure
+    .input(z.object({
+      format: z.enum(['json', 'csv']),
+      machineId: z.number().optional(),
+      productModelId: z.number().optional(),
+      dateFrom: z.string().optional(),
+      dateTo: z.string().optional(),
+      annotationType: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      
+      let query = `
+        SELECT 
+          ia.id,
+          ia.image_url,
+          ia.annotations,
+          ia.inspection_id,
+          i.serial_number,
+          i.inspection_time,
+          i.machine_id,
+          m.name as machine_name,
+          i.product_model_id,
+          pm.name as product_model_name,
+          mr.measurement_point_id,
+          mp.name as measurement_point_name
+        FROM image_annotations ia
+        JOIN inspections i ON ia.inspection_id = i.id
+        LEFT JOIN machines m ON i.machine_id = m.id
+        LEFT JOIN product_models pm ON i.product_model_id = pm.id
+        LEFT JOIN measurement_results mr ON mr.inspection_id = i.id AND mr.image_url = ia.image_url
+        LEFT JOIN measurement_points mp ON mr.measurement_point_id = mp.id
+        WHERE ia.annotations IS NOT NULL
+      `;
+      
+      const conditions: string[] = [];
+      if (input.machineId) conditions.push(`i.machine_id = ${input.machineId}`);
+      if (input.productModelId) conditions.push(`i.product_model_id = ${input.productModelId}`);
+      if (input.dateFrom) conditions.push(`i.inspection_time >= '${input.dateFrom}'`);
+      if (input.dateTo) conditions.push(`i.inspection_time <= '${input.dateTo}'`);
+      
+      if (conditions.length > 0) {
+        query += ' AND ' + conditions.join(' AND ');
+      }
+      
+      query += ' ORDER BY i.inspection_time DESC LIMIT 10000';
+      
+      const result = await db.execute(sql.raw(query)) as any;
+      const rows = result.rows || [];
+      
+      if (input.format === 'json') {
+        const exportData = rows.map((row: any) => {
+          const annotations = typeof row.annotations === 'string' ? JSON.parse(row.annotations) : row.annotations;
+          return {
+            id: row.id,
+            imageUrl: row.image_url,
+            inspectionId: row.inspection_id,
+            serialNumber: row.serial_number,
+            inspectionTime: row.inspection_time,
+            machineId: row.machine_id,
+            machineName: row.machine_name,
+            productModelId: row.product_model_id,
+            productModelName: row.product_model_name,
+            measurementPointId: row.measurement_point_id,
+            measurementPointName: row.measurement_point_name,
+            annotations: annotations,
+          };
+        });
+        
+        return {
+          format: 'json',
+          data: JSON.stringify(exportData, null, 2),
+          filename: `annotations_export_${new Date().toISOString().split('T')[0]}.json`,
+          count: exportData.length,
+        };
+      } else {
+        // CSV format
+        const csvRows: string[] = [];
+        csvRows.push('ID,Image URL,Inspection ID,Serial Number,Inspection Time,Machine ID,Machine Name,Product Model ID,Product Model Name,Measurement Point,Annotation Type,Annotation Color,Annotation Text,X,Y,Width,Height');
+        
+        for (const row of rows) {
+          const annotations = typeof row.annotations === 'string' ? JSON.parse(row.annotations) : row.annotations;
+          for (const ann of annotations || []) {
+            csvRows.push([
+              row.id,
+              `"${row.image_url || ''}"`,
+              row.inspection_id,
+              `"${row.serial_number || ''}"`,
+              row.inspection_time,
+              row.machine_id || '',
+              `"${row.machine_name || ''}"`,
+              row.product_model_id || '',
+              `"${row.product_model_name || ''}"`,
+              `"${row.measurement_point_name || ''}"`,
+              ann.type || '',
+              ann.color || '',
+              `"${(ann.text || '').replace(/"/g, '""')}"`,
+              ann.x || '',
+              ann.y || '',
+              ann.width || '',
+              ann.height || '',
+            ].join(','));
+          }
+        }
+        
+        return {
+          format: 'csv',
+          data: csvRows.join('\n'),
+          filename: `annotations_export_${new Date().toISOString().split('T')[0]}.csv`,
+          count: rows.length,
+        };
+      }
+    }),
+
+  // Import annotations
+  import: protectedProcedure
+    .input(z.object({
+      data: z.string(),
+      format: z.enum(['json']),
+      mode: z.enum(['merge', 'replace']).default('merge'),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+      
+      try {
+        const importData = JSON.parse(input.data);
+        if (!Array.isArray(importData)) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid import data format' });
+        }
+        
+        let imported = 0;
+        let skipped = 0;
+        let errors: string[] = [];
+        
+        for (const item of importData) {
+          try {
+            if (!item.imageUrl || !item.annotations) {
+              skipped++;
+              continue;
+            }
+            
+            // Check if annotation exists for this image
+            const existing = await db.execute(
+              sql`SELECT id FROM image_annotations WHERE image_url = ${item.imageUrl} LIMIT 1`
+            ) as any;
+            
+            if (existing.rows && existing.rows.length > 0) {
+              if (input.mode === 'replace') {
+                // Update existing
+                await db.execute(
+                  sql`UPDATE image_annotations SET annotations = ${JSON.stringify(item.annotations)}, updated_at = NOW() WHERE image_url = ${item.imageUrl}`
+                );
+                imported++;
+              } else {
+                // Merge - append new annotations
+                const existingRow = existing.rows[0];
+                const existingAnnotations = typeof existingRow.annotations === 'string' 
+                  ? JSON.parse(existingRow.annotations) 
+                  : existingRow.annotations;
+                const mergedAnnotations = [...(existingAnnotations || []), ...(item.annotations || [])];
+                await db.execute(
+                  sql`UPDATE image_annotations SET annotations = ${JSON.stringify(mergedAnnotations)}, updated_at = NOW() WHERE image_url = ${item.imageUrl}`
+                );
+                imported++;
+              }
+            } else {
+              // Need inspection_id to create new annotation
+              if (item.inspectionId) {
+                await db.execute(
+                  sql`INSERT INTO image_annotations (image_url, inspection_id, annotations, created_by) VALUES (${item.imageUrl}, ${item.inspectionId}, ${JSON.stringify(item.annotations)}, ${ctx.user.id})`
+                );
+                imported++;
+              } else {
+                skipped++;
+              }
+            }
+          } catch (err: any) {
+            errors.push(`Error importing ${item.imageUrl}: ${err.message}`);
+          }
+        }
+        
+        return {
+          success: true,
+          imported,
+          skipped,
+          errors: errors.slice(0, 10), // Limit errors shown
+        };
+      } catch (err: any) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: `Import failed: ${err.message}` });
+      }
+    }),
 });
 
 // Annotation Templates Router
