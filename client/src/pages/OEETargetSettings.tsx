@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import DashboardLayout from '@/components/DashboardLayout';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -147,7 +146,6 @@ export default function OEETargetSettings() {
   };
 
   return (
-    <DashboardLayout>
     <div className="container py-6">
       <div className="flex items-center gap-3 mb-6">
         <Target className="w-8 h-8 text-primary" />
@@ -402,6 +400,5 @@ export default function OEETargetSettings() {
         </TabsContent>
       </Tabs>
     </div>
-    </DashboardLayout>
   );
 }
