@@ -11,6 +11,8 @@ import {
   mqttProfileAssignments, 
   mqttConnectionLogs,
   mqttTopicTemplates,
+  mqttReconnectLogs,
+  mqttConnectionStatus,
   machines,
   stations,
   factories
@@ -1112,4 +1114,438 @@ export const mqttClientManagementRouter = router({
       errorsLast24h: Number(errorCount?.count) || 0,
     };
   }),
+
+  // ============= CONNECTION STATUS =============
+  
+  // Get connection status for all assignments
+  getConnectionStatus: protectedProcedure
+    .input(z.object({
+      profileId: z.number().int().optional(),
+      targetType: z.enum(["machine", "station", "factory"]).optional(),
+      status: z.enum(["connected", "disconnected", "connecting", "error", "unknown"]).optional(),
+      limit: z.number().int().min(1).max(100).default(50),
+      offset: z.number().int().min(0).default(0),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const { profileId, targetType, status, limit = 50, offset = 0 } = input || {};
+      
+      const conditions = [];
+      if (profileId) conditions.push(eq(mqttConnectionStatus.profileId, profileId));
+      if (targetType) conditions.push(eq(mqttConnectionStatus.targetType, targetType));
+      if (status) conditions.push(eq(mqttConnectionStatus.status, status));
+      
+      const statusList = await db.select()
+        .from(mqttConnectionStatus)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(mqttConnectionStatus.updatedAt))
+        .limit(limit)
+        .offset(offset);
+      
+      // Get profile and target names
+      const enrichedStatus = await Promise.all(statusList.map(async (s) => {
+        let targetName = "Unknown";
+        let profileName = "Unknown";
+        
+        // Get profile name
+        const [profile] = await db.select({ name: mqttClientProfiles.name })
+          .from(mqttClientProfiles)
+          .where(eq(mqttClientProfiles.id, s.profileId));
+        if (profile) profileName = profile.name;
+        
+        // Get target name
+        if (s.targetType === "machine" && s.targetId) {
+          const [machine] = await db.select({ name: machines.name })
+            .from(machines)
+            .where(eq(machines.id, s.targetId));
+          if (machine) targetName = machine.name;
+        } else if (s.targetType === "station" && s.targetId) {
+          const [station] = await db.select({ name: stations.name })
+            .from(stations)
+            .where(eq(stations.id, s.targetId));
+          if (station) targetName = station.name;
+        } else if (s.targetType === "factory" && s.targetId) {
+          const [factory] = await db.select({ name: factories.name })
+            .from(factories)
+            .where(eq(factories.id, s.targetId));
+          if (factory) targetName = factory.name;
+        }
+        
+        return {
+          ...s,
+          profileName,
+          targetName,
+        };
+      }));
+      
+      // Get total count
+      const [countResult] = await db.select({
+        count: sql<number>`COUNT(*)`.as('count'),
+      })
+        .from(mqttConnectionStatus)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+      
+      return {
+        items: enrichedStatus,
+        total: Number(countResult?.count) || 0,
+        limit,
+        offset,
+      };
+    }),
+
+  // Update connection status (for internal use)
+  updateConnectionStatus: protectedProcedure
+    .input(z.object({
+      profileId: z.number().int(),
+      assignmentId: z.number().int().optional(),
+      targetType: z.enum(["machine", "station", "factory"]).optional(),
+      targetId: z.number().int().optional(),
+      status: z.enum(["connected", "disconnected", "connecting", "error", "unknown"]),
+      clientId: z.string().optional(),
+      brokerUrl: z.string().optional(),
+      errorMessage: z.string().optional(),
+      errorCode: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await requireDb();
+      const { profileId, assignmentId, targetType, targetId, status, clientId, brokerUrl, errorMessage, errorCode } = input;
+      
+      // Check if status record exists
+      const conditions = [eq(mqttConnectionStatus.profileId, profileId)];
+      if (assignmentId) conditions.push(eq(mqttConnectionStatus.assignmentId, assignmentId));
+      
+      const [existing] = await db.select()
+        .from(mqttConnectionStatus)
+        .where(and(...conditions));
+      
+      const now = new Date();
+      
+      if (existing) {
+        // Update existing status
+        const updateData: any = { status };
+        
+        if (status === "connected") {
+          updateData.connectedAt = now;
+          updateData.disconnectedAt = null;
+          updateData.lastHeartbeat = now;
+        } else if (status === "disconnected" || status === "error") {
+          updateData.disconnectedAt = now;
+          if (existing.connectedAt) {
+            const connectionDuration = Math.floor((now.getTime() - new Date(existing.connectedAt).getTime()) / 1000);
+            updateData.totalConnectionTime = (existing.totalConnectionTime || 0) + connectionDuration;
+          }
+        }
+        
+        if (errorMessage) updateData.lastErrorMessage = errorMessage;
+        if (errorCode) updateData.lastErrorCode = errorCode;
+        if (clientId) updateData.clientId = clientId;
+        if (brokerUrl) updateData.brokerUrl = brokerUrl;
+        
+        await db.update(mqttConnectionStatus)
+          .set(updateData)
+          .where(eq(mqttConnectionStatus.id, existing.id));
+        
+        return { success: true, id: existing.id };
+      } else {
+        // Create new status record
+        const [result] = await db.insert(mqttConnectionStatus).values({
+          profileId,
+          assignmentId,
+          targetType,
+          targetId,
+          status,
+          clientId,
+          brokerUrl,
+          connectedAt: status === "connected" ? now : null,
+          lastHeartbeat: status === "connected" ? now : null,
+          lastErrorMessage: errorMessage,
+          lastErrorCode: errorCode,
+        });
+        
+        return { success: true, id: result.insertId };
+      }
+    }),
+
+  // Get connection status summary
+  getConnectionStatusSummary: protectedProcedure
+    .query(async () => {
+      const db = await requireDb();
+      
+      const [summary] = await db.select({
+        total: sql<number>`COUNT(*)`.as('total'),
+        connected: sql<number>`SUM(CASE WHEN status = 'connected' THEN 1 ELSE 0 END)`.as('connected'),
+        disconnected: sql<number>`SUM(CASE WHEN status = 'disconnected' THEN 1 ELSE 0 END)`.as('disconnected'),
+        connecting: sql<number>`SUM(CASE WHEN status = 'connecting' THEN 1 ELSE 0 END)`.as('connecting'),
+        error: sql<number>`SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END)`.as('error'),
+        unknown: sql<number>`SUM(CASE WHEN status = 'unknown' THEN 1 ELSE 0 END)`.as('unknown'),
+      }).from(mqttConnectionStatus);
+      
+      return {
+        total: Number(summary?.total) || 0,
+        connected: Number(summary?.connected) || 0,
+        disconnected: Number(summary?.disconnected) || 0,
+        connecting: Number(summary?.connecting) || 0,
+        error: Number(summary?.error) || 0,
+        unknown: Number(summary?.unknown) || 0,
+      };
+    }),
+
+  // ============= RECONNECT HISTORY =============
+  
+  // Log reconnect event
+  logReconnectEvent: protectedProcedure
+    .input(z.object({
+      profileId: z.number().int(),
+      assignmentId: z.number().int().optional(),
+      targetType: z.enum(["machine", "station", "factory"]).optional(),
+      targetId: z.number().int().optional(),
+      eventType: z.enum(["attempt", "success", "failure", "max_attempts_reached"]),
+      attemptNumber: z.number().int().default(1),
+      reconnectDelay: z.number().int().optional(),
+      connectionDuration: z.number().int().optional(),
+      errorCode: z.string().optional(),
+      errorMessage: z.string().optional(),
+      clientId: z.string().optional(),
+      brokerUrl: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await requireDb();
+      
+      const [result] = await db.insert(mqttReconnectLogs).values(input);
+      
+      // Update reconnect count in connection status
+      if (input.eventType === "attempt") {
+        const conditions = [eq(mqttConnectionStatus.profileId, input.profileId)];
+        if (input.assignmentId) conditions.push(eq(mqttConnectionStatus.assignmentId, input.assignmentId));
+        
+        await db.update(mqttConnectionStatus)
+          .set({ reconnectCount: sql`reconnectCount + 1` })
+          .where(and(...conditions));
+      }
+      
+      return { success: true, id: result.insertId };
+    }),
+
+  // Get reconnect history
+  getReconnectHistory: protectedProcedure
+    .input(z.object({
+      profileId: z.number().int().optional(),
+      assignmentId: z.number().int().optional(),
+      targetType: z.enum(["machine", "station", "factory"]).optional(),
+      targetId: z.number().int().optional(),
+      eventType: z.enum(["attempt", "success", "failure", "max_attempts_reached"]).optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      limit: z.number().int().min(1).max(500).default(100),
+      offset: z.number().int().min(0).default(0),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const { profileId, assignmentId, targetType, targetId, eventType, startDate, endDate, limit = 100, offset = 0 } = input || {};
+      
+      const conditions = [];
+      if (profileId) conditions.push(eq(mqttReconnectLogs.profileId, profileId));
+      if (assignmentId) conditions.push(eq(mqttReconnectLogs.assignmentId, assignmentId));
+      if (targetType) conditions.push(eq(mqttReconnectLogs.targetType, targetType));
+      if (targetId) conditions.push(eq(mqttReconnectLogs.targetId, targetId));
+      if (eventType) conditions.push(eq(mqttReconnectLogs.eventType, eventType));
+      if (startDate) conditions.push(sql`${mqttReconnectLogs.timestamp} >= ${startDate}`);
+      if (endDate) conditions.push(sql`${mqttReconnectLogs.timestamp} <= ${endDate}`);
+      
+      const logs = await db.select()
+        .from(mqttReconnectLogs)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(mqttReconnectLogs.timestamp))
+        .limit(limit)
+        .offset(offset);
+      
+      // Get total count
+      const [countResult] = await db.select({
+        count: sql<number>`COUNT(*)`.as('count'),
+      })
+        .from(mqttReconnectLogs)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+      
+      return {
+        items: logs,
+        total: Number(countResult?.count) || 0,
+        limit,
+        offset,
+      };
+    }),
+
+  // Get reconnect statistics
+  getReconnectStats: protectedProcedure
+    .input(z.object({
+      profileId: z.number().int().optional(),
+      targetType: z.enum(["machine", "station", "factory"]).optional(),
+      days: z.number().int().min(1).max(90).default(7),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const { profileId, targetType, days = 7 } = input || {};
+      
+      const conditions = [
+        sql`${mqttReconnectLogs.timestamp} > DATE_SUB(NOW(), INTERVAL ${days} DAY)`
+      ];
+      if (profileId) conditions.push(eq(mqttReconnectLogs.profileId, profileId));
+      if (targetType) conditions.push(eq(mqttReconnectLogs.targetType, targetType));
+      
+      // Overall stats
+      const [stats] = await db.select({
+        totalAttempts: sql<number>`SUM(CASE WHEN eventType = 'attempt' THEN 1 ELSE 0 END)`.as('totalAttempts'),
+        successCount: sql<number>`SUM(CASE WHEN eventType = 'success' THEN 1 ELSE 0 END)`.as('successCount'),
+        failureCount: sql<number>`SUM(CASE WHEN eventType = 'failure' THEN 1 ELSE 0 END)`.as('failureCount'),
+        maxAttemptsReached: sql<number>`SUM(CASE WHEN eventType = 'max_attempts_reached' THEN 1 ELSE 0 END)`.as('maxAttemptsReached'),
+        avgDelay: sql<number>`AVG(reconnectDelay)`.as('avgDelay'),
+        maxDelay: sql<number>`MAX(reconnectDelay)`.as('maxDelay'),
+      })
+        .from(mqttReconnectLogs)
+        .where(and(...conditions));
+      
+      // Daily breakdown
+      const dailyStats = await db.select({
+        date: sql<string>`DATE(timestamp)`.as('date'),
+        attempts: sql<number>`SUM(CASE WHEN eventType = 'attempt' THEN 1 ELSE 0 END)`.as('attempts'),
+        successes: sql<number>`SUM(CASE WHEN eventType = 'success' THEN 1 ELSE 0 END)`.as('successes'),
+        failures: sql<number>`SUM(CASE WHEN eventType = 'failure' THEN 1 ELSE 0 END)`.as('failures'),
+      })
+        .from(mqttReconnectLogs)
+        .where(and(...conditions))
+        .groupBy(sql`DATE(timestamp)`)
+        .orderBy(sql`DATE(timestamp)`);
+      
+      const totalAttempts = Number(stats?.totalAttempts) || 0;
+      const successCount = Number(stats?.successCount) || 0;
+      
+      return {
+        summary: {
+          totalAttempts,
+          successCount,
+          failureCount: Number(stats?.failureCount) || 0,
+          maxAttemptsReached: Number(stats?.maxAttemptsReached) || 0,
+          successRate: totalAttempts > 0 ? ((successCount / totalAttempts) * 100).toFixed(2) : "0.00",
+          avgDelay: Number(stats?.avgDelay) || 0,
+          maxDelay: Number(stats?.maxDelay) || 0,
+        },
+        daily: dailyStats.map(d => ({
+          date: d.date,
+          attempts: Number(d.attempts) || 0,
+          successes: Number(d.successes) || 0,
+          failures: Number(d.failures) || 0,
+        })),
+        period: days,
+      };
+    }),
+
+  // ============= EXPORT ASSIGNMENT REPORT =============
+  
+  // Export assignments report
+  exportAssignmentReport: protectedProcedure
+    .input(z.object({
+      profileId: z.number().int().optional(),
+      targetType: z.enum(["machine", "station", "factory"]).optional(),
+      isActive: z.boolean().optional(),
+      format: z.enum(["csv", "json"]).default("csv"),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const { profileId, targetType, isActive, format = "csv" } = input || {};
+      
+      const conditions = [];
+      if (profileId) conditions.push(eq(mqttProfileAssignments.profileId, profileId));
+      if (targetType) conditions.push(eq(mqttProfileAssignments.targetType, targetType));
+      if (isActive !== undefined) conditions.push(eq(mqttProfileAssignments.isActive, isActive));
+      
+      const assignments = await db.select()
+        .from(mqttProfileAssignments)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(mqttProfileAssignments.assignedAt));
+      
+      // Enrich with profile and target names
+      const enrichedAssignments = await Promise.all(assignments.map(async (a) => {
+        let targetName = "Unknown";
+        let profileName = "Unknown";
+        let targetCode = "";
+        
+        // Get profile name
+        const [profile] = await db.select({ name: mqttClientProfiles.name })
+          .from(mqttClientProfiles)
+          .where(eq(mqttClientProfiles.id, a.profileId));
+        if (profile) profileName = profile.name;
+        
+        // Get target name and code
+        if (a.targetType === "machine") {
+          const [machine] = await db.select({ name: machines.name, code: machines.code })
+            .from(machines)
+            .where(eq(machines.id, a.targetId));
+          if (machine) {
+            targetName = machine.name;
+            targetCode = machine.code || "";
+          }
+        } else if (a.targetType === "station") {
+          const [station] = await db.select({ name: stations.name, code: stations.code })
+            .from(stations)
+            .where(eq(stations.id, a.targetId));
+          if (station) {
+            targetName = station.name;
+            targetCode = station.code || "";
+          }
+        } else if (a.targetType === "factory") {
+          const [factory] = await db.select({ name: factories.name, code: factories.code })
+            .from(factories)
+            .where(eq(factories.id, a.targetId));
+          if (factory) {
+            targetName = factory.name;
+            targetCode = factory.code || "";
+          }
+        }
+        
+        return {
+          id: a.id,
+          profileId: a.profileId,
+          profileName,
+          targetType: a.targetType,
+          targetId: a.targetId,
+          targetName,
+          targetCode,
+          isActive: a.isActive,
+          assignedAt: a.assignedAt,
+          updatedAt: a.updatedAt,
+        };
+      }));
+      
+      if (format === "json") {
+        return {
+          format: "json",
+          data: enrichedAssignments,
+          total: enrichedAssignments.length,
+          exportedAt: new Date().toISOString(),
+        };
+      }
+      
+      // Generate CSV
+      const headers = ["ID", "Profile ID", "Profile Name", "Target Type", "Target ID", "Target Name", "Target Code", "Is Active", "Assigned At", "Updated At"];
+      const rows = enrichedAssignments.map(a => [
+        a.id,
+        a.profileId,
+        `"${a.profileName}"`,
+        a.targetType,
+        a.targetId,
+        `"${a.targetName}"`,
+        `"${a.targetCode}"`,
+        a.isActive ? "Yes" : "No",
+        a.assignedAt ? new Date(a.assignedAt).toISOString() : "",
+        a.updatedAt ? new Date(a.updatedAt).toISOString() : "",
+      ].join(","));
+      
+      const csv = [headers.join(","), ...rows].join("\n");
+      
+      return {
+        format: "csv",
+        data: csv,
+        total: enrichedAssignments.length,
+        exportedAt: new Date().toISOString(),
+      };
+    }),
 });

@@ -2747,3 +2747,89 @@ export const mqttTopicTemplates = mysqlTable("mqtt_topic_templates", {
 
 export type MqttTopicTemplate = typeof mqttTopicTemplates.$inferSelect;
 export type InsertMqttTopicTemplate = typeof mqttTopicTemplates.$inferInsert;
+
+
+/**
+ * MQTT Reconnect Logs - Lịch sử reconnect để phân tích độ ổn định
+ */
+export const mqttReconnectLogs = mysqlTable("mqtt_reconnect_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  profileId: int("profileId").notNull(),
+  assignmentId: int("assignmentId"),
+  
+  // Target Info
+  targetType: mysqlEnum("targetType", ["machine", "station", "factory"]),
+  targetId: int("targetId"),
+  
+  // Reconnect Event
+  eventType: mysqlEnum("eventType", ["attempt", "success", "failure", "max_attempts_reached"]).notNull(),
+  attemptNumber: int("attemptNumber").default(1).notNull(),
+  
+  // Timing
+  reconnectDelay: int("reconnectDelay"), // Delay before this attempt (ms)
+  connectionDuration: int("connectionDuration"), // How long was connected before disconnect (ms)
+  
+  // Error Info
+  errorCode: varchar("errorCode", { length: 100 }),
+  errorMessage: text("errorMessage"),
+  
+  // Connection Details
+  clientId: varchar("clientId", { length: 255 }),
+  brokerUrl: varchar("brokerUrl", { length: 500 }),
+  
+  // Metadata
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+}, (table) => [
+  index("idx_reconnect_profile").on(table.profileId),
+  index("idx_reconnect_assignment").on(table.assignmentId),
+  index("idx_reconnect_event").on(table.eventType),
+  index("idx_reconnect_timestamp").on(table.timestamp),
+  index("idx_reconnect_target").on(table.targetType, table.targetId),
+]);
+
+export type MqttReconnectLog = typeof mqttReconnectLogs.$inferSelect;
+export type InsertMqttReconnectLog = typeof mqttReconnectLogs.$inferInsert;
+
+/**
+ * MQTT Connection Status - Trạng thái kết nối real-time
+ */
+export const mqttConnectionStatus = mysqlTable("mqtt_connection_status", {
+  id: int("id").autoincrement().primaryKey(),
+  profileId: int("profileId").notNull(),
+  assignmentId: int("assignmentId"),
+  
+  // Target Info
+  targetType: mysqlEnum("targetType", ["machine", "station", "factory"]),
+  targetId: int("targetId"),
+  
+  // Status
+  status: mysqlEnum("status", ["connected", "disconnected", "connecting", "error", "unknown"]).default("unknown").notNull(),
+  
+  // Connection Info
+  clientId: varchar("clientId", { length: 255 }),
+  brokerUrl: varchar("brokerUrl", { length: 500 }),
+  
+  // Timing
+  connectedAt: timestamp("connectedAt"),
+  disconnectedAt: timestamp("disconnectedAt"),
+  lastHeartbeat: timestamp("lastHeartbeat"),
+  uptime: int("uptime").default(0), // Total uptime in seconds
+  
+  // Stats
+  reconnectCount: int("reconnectCount").default(0).notNull(),
+  totalConnectionTime: int("totalConnectionTime").default(0), // Total time connected (seconds)
+  lastErrorMessage: text("lastErrorMessage"),
+  lastErrorCode: varchar("lastErrorCode", { length: 100 }),
+  
+  // Metadata
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_conn_status_profile").on(table.profileId),
+  index("idx_conn_status_assignment").on(table.assignmentId),
+  index("idx_conn_status_status").on(table.status),
+  index("idx_conn_status_target").on(table.targetType, table.targetId),
+]);
+
+export type MqttConnectionStatus = typeof mqttConnectionStatus.$inferSelect;
+export type InsertMqttConnectionStatus = typeof mqttConnectionStatus.$inferInsert;

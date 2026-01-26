@@ -4408,3 +4408,38 @@ Menu structure mới:
 - [x] Test Auto-Reconnect Configuration schema và logic
 - [x] Test Bulk Assignment input validation
 - [x] Test Available Targets query
+
+
+## Phase 170: Connection Status Indicator, Reconnect History Log, Export Assignment Report
+
+### 1. Connection Status Indicator
+- [x] Tạo database tables (mqtt_connection_status, mqtt_reconnect_logs)
+- [x] Tạo API endpoint getConnectionStatus để lấy trạng thái kết nối real-time
+- [x] Tạo API endpoint updateConnectionStatus để cập nhật trạng thái
+- [x] Tạo API endpoint getConnectionStatusSummary để lấy tổng quan
+- [x] Thêm tab "Connection Status" trong MQTT Profiles page
+- [x] Hiển thị summary cards (Total, Connected, Disconnected, Connecting, Error, Unknown)
+- [x] Hiển thị bảng chi tiết connection status với uptime, reconnect count
+
+### 2. Reconnect History Log
+- [x] Tạo database table mqtt_reconnect_logs để lưu lịch sử reconnect
+- [x] Tạo API endpoint logReconnectEvent để ghi log
+- [x] Tạo API endpoint getReconnectHistory để lấy lịch sử
+- [x] Tạo API endpoint getReconnectStats để lấy thống kê
+- [x] Thêm tab "Reconnect Logs" trong MQTT Profiles page
+- [x] Hiển thị summary cards (Total Attempts, Success Rate, Failures, Avg Delay)
+- [x] Hiển thị biểu đồ trend reconnect theo ngày
+- [x] Hiển thị bảng lịch sử reconnect chi tiết
+
+### 3. Export Bulk Assignment Report
+- [x] Tạo API endpoint exportAssignmentReport (CSV/JSON format)
+- [x] Bao gồm thông tin: Profile ID, Profile Name, Target Type, Target ID, Target Name, Target Code, Is Active, Assigned At, Updated At
+- [x] Hỗ trợ filters: by profile, by target type, by isActive
+- [x] Thêm nút "Export Assignments" trong header
+- [x] Tự động download file CSV khi click
+
+### 4. Unit Tests
+- [x] Viết 39 test cases cho Connection Status và Reconnect History (mqttConnectionStatus.test.ts)
+- [x] Test schema validation cho tất cả API inputs
+- [x] Test calculations (success rate, percentages)
+- [x] Test export output format (CSV headers, value formatting)

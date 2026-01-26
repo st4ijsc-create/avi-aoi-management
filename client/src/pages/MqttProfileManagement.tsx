@@ -35,7 +35,11 @@ import {
   Upload,
   Heart,
   Wifi,
-  WifiOff
+  WifiOff,
+  History,
+  FileSpreadsheet,
+  Signal,
+  Clock
 } from "lucide-react";
 
 export default function MqttProfileManagement() {
@@ -58,8 +62,16 @@ export default function MqttProfileManagement() {
   const { data: stationsList } = trpc.station.list.useQuery();
   const { data: factoriesList } = trpc.factory.list.useQuery();
   const { data: connectionHealth, refetch: refetchHealth } = trpc.mqttClientManagement.getConnectionHealth.useQuery();
+  const { data: connectionStatusData, refetch: refetchConnectionStatus } = trpc.mqttClientManagement.getConnectionStatus.useQuery();
+  const { data: connectionStatusSummary, refetch: refetchStatusSummary } = trpc.mqttClientManagement.getConnectionStatusSummary.useQuery();
+  const { data: reconnectHistory, refetch: refetchReconnectHistory } = trpc.mqttClientManagement.getReconnectHistory.useQuery({ limit: 100 });
+  const { data: reconnectStats, refetch: refetchReconnectStats } = trpc.mqttClientManagement.getReconnectStats.useQuery({ days: 7 });
   const { data: exportData, refetch: refetchExport } = trpc.mqttClientManagement.exportProfiles.useQuery(
     { includeAssignments: true, includeTemplates: true },
+    { enabled: false }
+  );
+  const { data: assignmentReportData, refetch: refetchAssignmentReport } = trpc.mqttClientManagement.exportAssignmentReport.useQuery(
+    { format: "csv" },
     { enabled: false }
   );
 
@@ -329,7 +341,24 @@ export default function MqttProfileManagement() {
               }
             }}>
               <Download className="h-4 w-4 mr-2" />
-              Export
+              Export Profiles
+            </Button>
+            <Button variant="outline" onClick={async () => {
+              const result = await refetchAssignmentReport();
+              if (result.data) {
+                const csvData = typeof result.data.data === 'string' ? result.data.data : JSON.stringify(result.data.data);
+                const blob = new Blob([csvData], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `mqtt-assignments-${new Date().toISOString().split('T')[0]}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+                toast.success(`Đã xuất ${result.data.total} assignments thành công`);
+              }
+            }}>
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Export Assignments
             </Button>
             <Button variant="outline" onClick={() => setShowImportDialog(true)}>
               <Upload className="h-4 w-4 mr-2" />
@@ -485,6 +514,14 @@ export default function MqttProfileManagement() {
             <TabsTrigger value="templates">
               <FileJson className="h-4 w-4 mr-2" />
               Templates
+            </TabsTrigger>
+            <TabsTrigger value="connection-status">
+              <Signal className="h-4 w-4 mr-2" />
+              Connection Status
+            </TabsTrigger>
+            <TabsTrigger value="reconnect-logs">
+              <History className="h-4 w-4 mr-2" />
+              Reconnect Logs
             </TabsTrigger>
           </TabsList>
 
@@ -754,6 +791,270 @@ export default function MqttProfileManagement() {
                 </Card>
               )}
             </div>
+          </TabsContent>
+
+          {/* Connection Status Tab */}
+          <TabsContent value="connection-status" className="space-y-4">
+            {/* Status Summary */}
+            {connectionStatusSummary && (
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+                <Card>
+                  <CardContent className="pt-4 text-center">
+                    <div className="text-2xl font-bold">{connectionStatusSummary.total}</div>
+                    <p className="text-xs text-muted-foreground">Total</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 text-center">
+                    <div className="text-2xl font-bold text-green-500">{connectionStatusSummary.connected}</div>
+                    <p className="text-xs text-muted-foreground">Connected</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 text-center">
+                    <div className="text-2xl font-bold text-gray-500">{connectionStatusSummary.disconnected}</div>
+                    <p className="text-xs text-muted-foreground">Disconnected</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 text-center">
+                    <div className="text-2xl font-bold text-yellow-500">{connectionStatusSummary.connecting}</div>
+                    <p className="text-xs text-muted-foreground">Connecting</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 text-center">
+                    <div className="text-2xl font-bold text-red-500">{connectionStatusSummary.error}</div>
+                    <p className="text-xs text-muted-foreground">Error</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 text-center">
+                    <div className="text-2xl font-bold text-gray-400">{connectionStatusSummary.unknown}</div>
+                    <p className="text-xs text-muted-foreground">Unknown</p>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {/* Status List */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Connection Status Details</CardTitle>
+                  <Button variant="outline" size="sm" onClick={() => refetchConnectionStatus()}>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Refresh
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-2 px-3">Profile</th>
+                        <th className="text-left py-2 px-3">Target</th>
+                        <th className="text-left py-2 px-3">Status</th>
+                        <th className="text-left py-2 px-3">Connected At</th>
+                        <th className="text-left py-2 px-3">Last Heartbeat</th>
+                        <th className="text-left py-2 px-3">Reconnects</th>
+                        <th className="text-left py-2 px-3">Uptime</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {connectionStatusData?.items?.map((status: any) => (
+                        <tr key={status.id} className="border-b hover:bg-muted/50">
+                          <td className="py-2 px-3">{status.profileName}</td>
+                          <td className="py-2 px-3">
+                            <div className="flex items-center gap-1">
+                              <Badge variant="outline" className="text-xs">{status.targetType}</Badge>
+                              <span>{status.targetName}</span>
+                            </div>
+                          </td>
+                          <td className="py-2 px-3">
+                            <Badge variant={status.status === 'connected' ? 'default' : status.status === 'error' ? 'destructive' : 'secondary'}
+                              className={status.status === 'connected' ? 'bg-green-500' : ''}>
+                              {status.status === 'connected' && <Wifi className="h-3 w-3 mr-1" />}
+                              {status.status === 'disconnected' && <WifiOff className="h-3 w-3 mr-1" />}
+                              {status.status === 'error' && <XCircle className="h-3 w-3 mr-1" />}
+                              {status.status}
+                            </Badge>
+                          </td>
+                          <td className="py-2 px-3 text-xs">
+                            {status.connectedAt ? new Date(status.connectedAt).toLocaleString() : '-'}
+                          </td>
+                          <td className="py-2 px-3 text-xs">
+                            {status.lastHeartbeat ? new Date(status.lastHeartbeat).toLocaleString() : '-'}
+                          </td>
+                          <td className="py-2 px-3">{status.reconnectCount}</td>
+                          <td className="py-2 px-3 text-xs">
+                            {status.uptime ? `${Math.floor(status.uptime / 3600)}h ${Math.floor((status.uptime % 3600) / 60)}m` : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                      {(!connectionStatusData?.items || connectionStatusData.items.length === 0) && (
+                        <tr>
+                          <td colSpan={7} className="py-8 text-center text-muted-foreground">
+                            Chưa có dữ liệu connection status
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Reconnect Logs Tab */}
+          <TabsContent value="reconnect-logs" className="space-y-4">
+            {/* Reconnect Stats Summary */}
+            {reconnectStats && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Card>
+                  <CardContent className="pt-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Total Attempts</p>
+                        <div className="text-2xl font-bold">{reconnectStats.summary.totalAttempts}</div>
+                      </div>
+                      <RefreshCw className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Success Rate</p>
+                        <div className="text-2xl font-bold text-green-500">{reconnectStats.summary.successRate}%</div>
+                      </div>
+                      <CheckCircle2 className="h-8 w-8 text-green-500" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Failures</p>
+                        <div className="text-2xl font-bold text-red-500">{reconnectStats.summary.failureCount}</div>
+                      </div>
+                      <XCircle className="h-8 w-8 text-red-500" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Avg Delay</p>
+                        <div className="text-2xl font-bold">{Math.round(reconnectStats.summary.avgDelay)}ms</div>
+                      </div>
+                      <Clock className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {/* Daily Chart */}
+            {reconnectStats?.daily && reconnectStats.daily.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Reconnect Trend (Last {reconnectStats.period} days)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-48 flex items-end gap-1">
+                    {reconnectStats.daily.map((day: any, index: number) => {
+                      const maxAttempts = Math.max(...reconnectStats.daily.map((d: any) => d.attempts || 1));
+                      const height = maxAttempts > 0 ? (day.attempts / maxAttempts) * 100 : 0;
+                      return (
+                        <div key={index} className="flex-1 flex flex-col items-center gap-1">
+                          <div className="w-full bg-muted rounded-t relative" style={{ height: `${Math.max(height, 5)}%` }}>
+                            <div className="absolute bottom-0 w-full bg-green-500 rounded-t" 
+                              style={{ height: `${day.attempts > 0 ? (day.successes / day.attempts) * 100 : 0}%` }} />
+                          </div>
+                          <span className="text-xs text-muted-foreground rotate-45 origin-left">
+                            {new Date(day.date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex gap-4 mt-4 text-xs">
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 bg-muted rounded" />
+                      <span>Total Attempts</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 bg-green-500 rounded" />
+                      <span>Successes</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Reconnect History Table */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Reconnect History</CardTitle>
+                  <Button variant="outline" size="sm" onClick={() => refetchReconnectHistory()}>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Refresh
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-2 px-3">Time</th>
+                        <th className="text-left py-2 px-3">Event</th>
+                        <th className="text-left py-2 px-3">Attempt #</th>
+                        <th className="text-left py-2 px-3">Delay</th>
+                        <th className="text-left py-2 px-3">Error</th>
+                        <th className="text-left py-2 px-3">Client ID</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reconnectHistory?.items?.map((log: any) => (
+                        <tr key={log.id} className="border-b hover:bg-muted/50">
+                          <td className="py-2 px-3 text-xs">
+                            {new Date(log.timestamp).toLocaleString()}
+                          </td>
+                          <td className="py-2 px-3">
+                            <Badge variant={
+                              log.eventType === 'success' ? 'default' : 
+                              log.eventType === 'failure' || log.eventType === 'max_attempts_reached' ? 'destructive' : 'secondary'
+                            } className={log.eventType === 'success' ? 'bg-green-500' : ''}>
+                              {log.eventType}
+                            </Badge>
+                          </td>
+                          <td className="py-2 px-3">{log.attemptNumber}</td>
+                          <td className="py-2 px-3">{log.reconnectDelay ? `${log.reconnectDelay}ms` : '-'}</td>
+                          <td className="py-2 px-3 text-xs text-red-500 max-w-xs truncate" title={log.errorMessage}>
+                            {log.errorMessage || '-'}
+                          </td>
+                          <td className="py-2 px-3 text-xs font-mono">{log.clientId || '-'}</td>
+                        </tr>
+                      ))}
+                      {(!reconnectHistory?.items || reconnectHistory.items.length === 0) && (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                            Chưa có lịch sử reconnect
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
 
