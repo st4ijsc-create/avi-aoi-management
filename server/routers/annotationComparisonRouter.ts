@@ -53,12 +53,12 @@ export const annotationComparisonRouter = router({
         status: "PENDING",
         createdBy: ctx.user.id,
         createdByName: ctx.user.name || ctx.user.username,
-      });
+      }).returning({ id: annotationComparisonSessions.id });
 
       // Start comparison processing
-      processComparison(result.insertId, input.inspectionIds);
+      processComparison(result.id, input.inspectionIds);
 
-      return { id: result.insertId };
+      return { id: result.id };
     }),
 
   // Lấy danh sách sessions

@@ -44,9 +44,9 @@ export const trainingBatchCommentsRouter = router({
         userName: ctx.user.name || ctx.user.openId,
         content: input.content,
         parentId: input.parentId,
-      });
+      }).returning({ id: trainingBatchComments.id });
 
-      return { id: result.insertId };
+      return { id: result.id };
     }),
 
   // List comments for batch
@@ -172,9 +172,9 @@ export const trainingBatchCommentsRouter = router({
         name: input.name,
         color: input.color,
         description: input.description,
-      });
+      }).returning({ id: trainingBatchTags.id });
 
-      return { id: result.insertId };
+      return { id: result.id };
     }),
 
   // List all tags
@@ -263,9 +263,9 @@ export const trainingBatchCommentsRouter = router({
         batchId: input.batchId,
         tagId: input.tagId,
         assignedBy: ctx.user.id,
-      });
+      }).returning({ id: trainingBatchTagAssignments.id });
 
-      return { id: result.insertId };
+      return { id: result.id };
     }),
 
   // Remove tag from batch

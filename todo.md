@@ -4556,3 +4556,42 @@ Menu structure mới:
 - [x] Lập lộ trình migration chi tiết - 4 phases: Preparation, Development, Data Migration, Go-live
 - [x] Xác định testing strategy - Unit tests, Performance testing, UAT
 - [x] Tạo báo cáo đánh giá tổng hợp - POSTGRESQL_MIGRATION_ASSESSMENT.md
+
+
+## Phase 174: PostgreSQL Migration - Supabase Implementation
+
+### 1. Schema Conversion (MySQL → PostgreSQL)
+- [x] Convert drizzle/schema.ts từ MySQL sang PostgreSQL syntax
+- [x] Convert mysqlTable → pgTable
+- [x] Convert mysqlEnum → pgEnum
+- [x] Convert int("id").autoincrement() → serial("id")
+- [x] Fix duplicate index names (idx_lpa_line, idx_alert_type, idx_mqtt_logs_client)
+
+### 2. Dependencies & Configuration
+- [x] Install pg driver (pnpm add pg @types/pg)
+- [x] Update drizzle.config.ts cho PostgreSQL dialect
+- [x] Update server/db.ts với Pool connection và SSL config cho Supabase
+
+### 3. Application Code Patterns
+- [x] Convert onDuplicateKeyUpdate → onConflictDoUpdate (3 locations)
+- [x] Convert insertId patterns → .returning() (80+ locations)
+- [x] Fix TypeScript errors cho PostgreSQL QueryResult types
+- [x] Update raw SQL queries với RETURNING clause
+
+### 4. Database Migration
+- [x] Clean existing tables và enums từ Supabase
+- [x] Generate new PostgreSQL migrations
+- [x] Push schema lên Supabase PostgreSQL
+- [x] Verify 88 tables created successfully
+
+### 5. Testing & Validation
+- [x] Restart server và verify no database errors
+- [x] Test Dashboard UI hoạt động với PostgreSQL
+- [x] Verify user authentication working
+- [x] Confirm MQTT External connection
+
+### Summary
+- **Database**: Supabase PostgreSQL (88 tables)
+- **Schema**: Converted from MySQL/TiDB to PostgreSQL
+- **Connection**: SSL enabled với Supabase
+- **Status**: Migration Complete ✅

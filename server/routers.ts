@@ -6748,9 +6748,9 @@ const annotationRouter = router({
       } else {
         // Create new
         const result = await db.execute(
-          sql`INSERT INTO image_annotations (inspection_id, measurement_result_id, image_url, annotations, created_by) VALUES (${input.inspectionId || null}, ${input.measurementResultId || null}, ${input.imageUrl}, ${JSON.stringify(input.annotations)}, ${ctx.user.id})`
+          sql`INSERT INTO image_annotations (inspection_id, measurement_result_id, image_url, annotations, created_by) VALUES (${input.inspectionId || null}, ${input.measurementResultId || null}, ${input.imageUrl}, ${JSON.stringify(input.annotations)}, ${ctx.user.id}) RETURNING id`
         );
-        return { success: true, id: (result as any).insertId };
+        return { success: true, id: (result as any).rows?.[0]?.id };
       }
     }),
 
@@ -8091,11 +8091,11 @@ const rootCauseRouter = router({
       const insertResult = await db.execute(
         sql`INSERT INTO root_cause_analysis 
           (analysisType, machineId, machineCode, productModelId, productModelCode, factoryId, startDate, endDate, dataPointsAnalyzed, correlationMatrix, topFactors, aiInsights, paretoData, status, requestedBy, requestedByName, processingTime)
-          VALUES (${input.analysisType}, ${input.machineId || null}, ${machineCode}, ${input.productModelId || null}, ${productModelCode}, ${input.factoryId || null}, ${input.startDate}, ${input.endDate}, ${rows.length}, ${JSON.stringify(correlationMatrix)}, ${JSON.stringify(topFactors)}, ${JSON.stringify(aiInsights)}, ${JSON.stringify(paretoData)}, 'COMPLETED', ${ctx.user.id}, ${ctx.user.name || 'Unknown'}, ${Date.now() - startTime})`
+          VALUES (${input.analysisType}, ${input.machineId || null}, ${machineCode}, ${input.productModelId || null}, ${productModelCode}, ${input.factoryId || null}, ${input.startDate}, ${input.endDate}, ${rows.length}, ${JSON.stringify(correlationMatrix)}, ${JSON.stringify(topFactors)}, ${JSON.stringify(aiInsights)}, ${JSON.stringify(paretoData)}, 'COMPLETED', ${ctx.user.id}, ${ctx.user.name || 'Unknown'}, ${Date.now() - startTime}) RETURNING id`
       ) as any;
       
       return {
-        id: insertResult.insertId,
+        id: insertResult.rows?.[0]?.id,
         analysisType: input.analysisType,
         dataPointsAnalyzed: rows.length,
         topFactors,

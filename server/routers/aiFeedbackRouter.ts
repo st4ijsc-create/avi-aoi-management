@@ -54,9 +54,9 @@ export const aiFeedbackRouter = router({
         modelVersion: input.modelVersion || "1.0.0",
         modelName: input.modelName || "default",
         status: "PENDING",
-      });
+      }).returning({ id: aiSuggestions.id });
 
-      return { id: result.insertId };
+      return { id: result.id };
     }),
 
   // Get suggestions by inspection
@@ -157,7 +157,7 @@ export const aiFeedbackRouter = router({
         errorCategory: input.errorCategory,
         feedbackBy: ctx.user.id,
         feedbackByName: ctx.user.name || ctx.user.username,
-      });
+      }).returning({ id: aiFeedback.id });
 
       // Update suggestion status
       const newStatus = input.feedbackType === "CORRECT" ? "ACCEPTED" 
@@ -169,7 +169,7 @@ export const aiFeedbackRouter = router({
         .set({ status: newStatus })
         .where(eq(aiSuggestions.id, input.suggestionId));
 
-      return { id: result.insertId };
+      return { id: result.id };
     }),
 
   // List feedback
@@ -302,10 +302,10 @@ export const aiFeedbackRouter = router({
         partialCount,
         accuracy: String(accuracy),
         accuracyTrend: "STABLE",
-      });
+      }).returning({ id: aiModelMetrics.id });
 
       return { 
-        id: result.insertId, 
+        id: result.id, 
         accuracy, 
         totalSuggestions, 
         reviewedSuggestions 
@@ -370,7 +370,7 @@ export const aiFeedbackRouter = router({
         targetModelVersion: input.targetModelVersion,
         createdBy: ctx.user.id,
         createdByName: ctx.user.name || ctx.user.username,
-      });
+      }).returning({ id: aiTrainingBatches.id });
 
       // Mark feedback as included
       if (feedbackToInclude.length > 0) {
@@ -385,7 +385,7 @@ export const aiFeedbackRouter = router({
       }
 
       return { 
-        id: result.insertId, 
+        id: result.id, 
         batchId, 
         feedbackCount: feedbackToInclude.length 
       };

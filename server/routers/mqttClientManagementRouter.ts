@@ -192,9 +192,9 @@ export const mqttClientManagementRouter = router({
         subscribeTopics: input.subscribeTopics,
         publishTopics: input.publishTopics,
         createdBy: ctx.user.id,
-      });
+      }).returning({ id: mqttClientProfiles.id });
       
-      return { id: result.insertId, success: true };
+      return { id: result.id, success: true };
     }),
 
   // Update profile
@@ -268,9 +268,9 @@ export const mqttClientManagementRouter = router({
         name: input.newName,
         isDefault: false,
         createdBy: ctx.user.id,
-      });
+      }).returning({ id: mqttClientProfiles.id });
       
-      return { id: result.insertId, success: true };
+      return { id: result.id, success: true };
     }),
 
   // ============= ASSIGNMENTS =============
@@ -310,9 +310,9 @@ export const mqttClientManagementRouter = router({
         targetId: input.targetId,
         overrideSettings: input.overrideSettings,
         assignedBy: ctx.user.id,
-      });
+      }).returning({ id: mqttProfileAssignments.id });
       
-      return { id: result.insertId, success: true, updated: false };
+      return { id: result.id, success: true, updated: false };
     }),
 
   // Bulk assign profile to multiple targets
@@ -351,9 +351,9 @@ export const mqttClientManagementRouter = router({
           targetId: target.targetId,
           overrideSettings: input.overrideSettings,
           assignedBy: ctx.user.id,
-        });
+        }).returning({ id: mqttProfileAssignments.id });
         
-        results.push({ targetType: target.targetType, targetId: target.targetId, assignmentId: result.insertId });
+        results.push({ targetType: target.targetType, targetId: target.targetId, assignmentId: result.id });
       }
       
       return { success: true, assignments: results };
@@ -548,9 +548,9 @@ export const mqttClientManagementRouter = router({
     .mutation(async ({ input }) => {
       const db = await requireDb();
       
-      const [result] = await db.insert(mqttTopicTemplates).values(input);
+      const [result] = await db.insert(mqttTopicTemplates).values(input).returning({ id: mqttTopicTemplates.id });
       
-      return { id: result.insertId, success: true };
+      return { id: result.id, success: true };
     }),
 
   // Update template
@@ -1262,9 +1262,9 @@ export const mqttClientManagementRouter = router({
           lastHeartbeat: status === "connected" ? now : null,
           lastErrorMessage: errorMessage,
           lastErrorCode: errorCode,
-        });
+        }).returning({ id: mqttConnectionStatus.id });
         
-        return { success: true, id: result.insertId };
+        return { success: true, id: result.id };
       }
     }),
 
@@ -1313,7 +1313,7 @@ export const mqttClientManagementRouter = router({
     .mutation(async ({ input }) => {
       const db = await requireDb();
       
-      const [result] = await db.insert(mqttReconnectLogs).values(input);
+      const [result] = await db.insert(mqttReconnectLogs).values(input).returning({ id: mqttReconnectLogs.id });
       
       // Update reconnect count in connection status
       if (input.eventType === "attempt") {
@@ -1325,7 +1325,7 @@ export const mqttClientManagementRouter = router({
           .where(and(...conditions));
       }
       
-      return { success: true, id: result.insertId };
+      return { success: true, id: result.id };
     }),
 
   // Get reconnect history
@@ -1609,11 +1609,11 @@ export const mqttClientManagementRouter = router({
       
       if (existing.length === 0) {
         // Create new config
-        const result = await db.insert(mqttAlertConfig).values({
+        const [result] = await db.insert(mqttAlertConfig).values({
           profileId: profileId || null,
           ...updateData,
-        });
-        return { success: true, id: result[0].insertId };
+        }).returning({ id: mqttAlertConfig.id });
+        return { success: true, id: result.id };
       } else {
         // Update existing config
         await db.update(mqttAlertConfig)
@@ -1766,9 +1766,9 @@ export const mqttClientManagementRouter = router({
     .mutation(async ({ input }) => {
       const db = await requireDb();
       
-      const result = await db.insert(mqttConnectionAlerts).values(input);
+      const [result] = await db.insert(mqttConnectionAlerts).values(input).returning({ id: mqttConnectionAlerts.id });
       
-      return { success: true, id: result[0].insertId };
+      return { success: true, id: result.id };
     }),
 
   // ============= RECONNECT ANALYTICS =============

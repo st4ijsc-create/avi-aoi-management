@@ -138,9 +138,9 @@ export const defectHeatmapRouter = router({
           trend: "stable" as const,
         })),
         processingTimeMs: Date.now() - startTime,
-      });
+      }).returning({ id: defectHeatmapData.id });
 
-      return { id: result.insertId, totalDefects, hotspots };
+      return { id: result.id, totalDefects, hotspots };
     }),
 
   // Get heatmap data by ID
