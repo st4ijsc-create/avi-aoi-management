@@ -296,7 +296,7 @@ export async function createUser(data: {
   // Generate a unique openId for local users
   const openId = `local_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
   
-  const result = await db.insert(users).values({
+  const [result] = await db.insert(users).values({
     openId,
     username: data.username || data.email.split('@')[0],
     passwordHash,
@@ -308,7 +308,7 @@ export async function createUser(data: {
     loginMethod: 'local',
     role: data.role || 'user',
     isActive: true,
-  });
+  }).returning({ id: users.id });
   return Number(result.id);
 }
 
@@ -1773,7 +1773,7 @@ export async function createAlertSetting(data: InsertAlertSetting) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [result] = await db.insert(alertSettings).values(data).returning({ id: alertSettings.id });
-  return { id: result[0].id };
+  return { id: result.id };
 }
 
 export async function updateAlertSetting(id: number, data: Partial<InsertAlertSetting>) {
@@ -1807,7 +1807,7 @@ export async function createAlertHistory(data: InsertAlertHistory) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [result] = await db.insert(alertHistory).values(data).returning({ id: alertHistory.id });
-  return { id: result[0].id };
+  return { id: result.id };
 }
 
 export async function acknowledgeAlert(id: number, userId: number) {
@@ -1925,7 +1925,7 @@ export async function createProductMachineMapping(data: InsertProductMachineMapp
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [result] = await db.insert(productMachineMappings).values(data).returning({ id: productMachineMappings.id });
-  return { id: result[0].id };
+  return { id: result.id };
 }
 
 export async function updateProductMachineMapping(id: number, data: Partial<InsertProductMachineMapping>) {
@@ -1986,7 +1986,7 @@ export async function createShiftConfig(data: InsertShiftConfig) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [result] = await db.insert(shiftConfigs).values(data).returning({ id: shiftConfigs.id });
-  return { id: result[0].id };
+  return { id: result.id };
 }
 
 export async function updateShiftConfig(id: number, data: Partial<InsertShiftConfig>) {
@@ -2602,13 +2602,13 @@ export async function updateAlertConfiguration(config: {
 
   if (existing.length === 0) {
     // Create new - need userId, use 0 for system alert
-    const result = await db.insert(alertSettings).values({
+    const [result] = await db.insert(alertSettings).values({
       userId: 0, // System alert
       name: 'Machine Offline Alert',
       alertType: 'machine_offline',
       threshold: config.thresholdMinutes.toString(),
       isActive: config.isActive,
-    });
+    }).returning({ id: alertSettings.id });
     return result.id;
   } else {
     // Update existing
@@ -2913,7 +2913,7 @@ export async function createAuditLog(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   
-  const result = await db.insert(auditLogs).values({
+  const [result] = await db.insert(auditLogs).values({
     userId: data.userId ?? null,
     userName: data.userName ?? null,
     action: data.action,
@@ -2924,7 +2924,7 @@ export async function createAuditLog(data: {
     ipAddress: data.ipAddress ?? null,
     userAgent: data.userAgent ?? null,
     status: data.status ?? 'success',
-  });
+  }).returning({ id: auditLogs.id });
   
   return { id: Number(result.id) };
 }
@@ -3865,8 +3865,8 @@ export async function getNGComparison(filters: {
       db.execute(previousQuery),
     ]);
 
-    const current = (currentResult[0] as any)[0] || { totalCount: 0, okCount: 0, ngCount: 0, ntfCount: 0, ngRate: 0 };
-    const previous = (previousResult[0] as any)[0] || { totalCount: 0, okCount: 0, ngCount: 0, ntfCount: 0, ngRate: 0 };
+    const current = ((currentResult as any).rows?.[0] || (currentResult as any)[0]) || { totalCount: 0, okCount: 0, ngCount: 0, ntfCount: 0, ngRate: 0 };
+    const previous = ((previousResult as any).rows?.[0] || (previousResult as any)[0]) || { totalCount: 0, okCount: 0, ngCount: 0, ntfCount: 0, ngRate: 0 };
 
     // Calculate changes
     const ngRateChange = Number(current.ngRate) - Number(previous.ngRate);
@@ -4043,7 +4043,7 @@ export async function createOrUpdateSmtpConfig(data: Omit<InsertSmtpConfig, 'id'
       .where(eq(smtpConfig.id, existing.id));
     return existing.id;
   } else {
-    const [result] = await db.insert(smtpConfig).values(data).returning({ id: smtpConfig.id });
+    const [result] = await db.insert(smtpConfig).values(data as any).returning({ id: smtpConfig.id });
     return result.id;
   }
 }
@@ -4574,7 +4574,7 @@ export async function createMqttAlertRule(data: {
   const db = await getDb();
   if (!db) return null;
   
-  const result = await db.insert(mqttAlertRules).values({
+  const [result] = await db.insert(mqttAlertRules).values({
     name: data.name,
     description: data.description,
     ruleType: data.ruleType,
@@ -4587,7 +4587,7 @@ export async function createMqttAlertRule(data: {
     notifyMqtt: data.notifyMqtt ?? false,
     cooldownMinutes: data.cooldownMinutes || 15,
     createdBy: data.createdBy,
-  });
+  }).returning({ id: mqttAlertRules.id });
   
   return { id: Number(result.id) };
 }
@@ -4665,7 +4665,7 @@ export async function createMqttAlertHistoryEntry(data: {
   const db = await getDb();
   if (!db) return null;
   
-  const result = await db.insert(mqttAlertHistory).values({
+  const [result] = await db.insert(mqttAlertHistory).values({
     ruleId: data.ruleId,
     ruleName: data.ruleName,
     ruleType: data.ruleType,
@@ -4674,7 +4674,7 @@ export async function createMqttAlertHistoryEntry(data: {
     message: data.message,
     notificationSent: data.notificationSent ?? false,
     notificationError: data.notificationError,
-  });
+  }).returning({ id: mqttAlertHistory.id });
   
   return { id: Number(result.id) };
 }
@@ -6596,7 +6596,7 @@ export async function createProductCategory(data: InsertProductCategory) {
   if (!db) throw new Error("Database not available");
   
   const [result] = await db.insert(productCategories).values(data).returning({ id: productCategories.id });
-  return { id: result[0].id };
+  return { id: result.id };
 }
 
 export async function updateProductCategory(id: number, data: Partial<InsertProductCategory>) {
@@ -6950,7 +6950,7 @@ export async function getMarketplaceTemplateById(id: number) {
   if (!db) return null;
   
   const result = await db.select().from(templateMarketplace).where(eq(templateMarketplace.id, id));
-  return result || null;
+  return result[0] || null;
 }
 
 export async function incrementTemplateDownloads(id: number) {
@@ -7052,7 +7052,7 @@ export async function createOrderTemplate(data: InsertProductionOrderTemplate) {
   if (!db) throw new Error("Database not available");
   
   const [result] = await db.insert(productionOrderTemplates).values(data).returning({ id: productionOrderTemplates.id });
-  return { id: result[0].id };
+  return { id: result.id };
 }
 
 export async function updateOrderTemplate(id: number, data: Partial<InsertProductionOrderTemplate>) {
@@ -7239,7 +7239,7 @@ export async function createMqttClient(data: {
   // Generate a unique clientId from deviceId
   const clientId = `client_${data.deviceId}_${Date.now()}`;
   
-  const result = await db.insert(mqttClients).values({
+  const [result] = await db.insert(mqttClients).values({
     clientId,
     deviceId: data.deviceId,
     deviceName: data.deviceName,
@@ -7254,7 +7254,7 @@ export async function createMqttClient(data: {
     approvedAt: data.approvedAt || null,
     connectionStatus: data.connectionStatus || 'OFFLINE',
     isActive: data.isActive ?? true,
-  });
+  }).returning({ id: mqttClients.id });
   
   return { id: Number(result.id) };
 }

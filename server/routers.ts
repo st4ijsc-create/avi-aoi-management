@@ -3763,7 +3763,7 @@ const oeeRouter = router({
       WHERE isActive = true
       ORDER BY createdAt DESC
     `);
-    return result[0] || [];
+    return ((result as any).rows || result) || [];
   }),
 
   // Create OEE target
