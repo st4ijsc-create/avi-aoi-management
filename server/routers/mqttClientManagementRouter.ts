@@ -13,11 +13,13 @@ import {
   mqttTopicTemplates,
   mqttReconnectLogs,
   mqttConnectionStatus,
+  mqttConnectionAlerts,
+  mqttAlertConfig,
   machines,
   stations,
   factories
 } from "../../drizzle/schema";
-import { eq, and, desc, sql, like, inArray } from "drizzle-orm";
+import { eq, and, desc, asc, sql, like, inArray, gte, lte, count, sum, avg, isNull, between } from "drizzle-orm";
 
 // Helper to get db with null check
 async function requireDb() {
@@ -1547,5 +1549,415 @@ export const mqttClientManagementRouter = router({
         total: enrichedAssignments.length,
         exportedAt: new Date().toISOString(),
       };
+    }),
+
+  // ============= ALERT CONFIGURATION =============
+  
+  // Get alert configuration
+  getAlertConfig: protectedProcedure
+    .input(z.object({
+      profileId: z.number().int().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const profileId = input?.profileId;
+      
+      const configs = await db.select().from(mqttAlertConfig)
+        .where(profileId ? eq(mqttAlertConfig.profileId, profileId) : isNull(mqttAlertConfig.profileId))
+        .limit(1);
+      
+      if (configs.length === 0) {
+        // Return default config
+        return {
+          id: null,
+          profileId: profileId || null,
+          connectionLostThreshold: 5,
+          reconnectFailedThreshold: 10,
+          highReconnectRateThreshold: 20,
+          longDisconnectionThreshold: 30,
+          enableEmailNotification: false,
+          enablePushNotification: true,
+          notificationEmails: null,
+          isActive: true,
+        };
+      }
+      
+      return configs[0];
+    }),
+  
+  // Update alert configuration
+  updateAlertConfig: protectedProcedure
+    .input(z.object({
+      profileId: z.number().int().optional(),
+      connectionLostThreshold: z.number().int().min(1).max(1440).optional(),
+      reconnectFailedThreshold: z.number().int().min(1).max(100).optional(),
+      highReconnectRateThreshold: z.number().int().min(1).max(1000).optional(),
+      longDisconnectionThreshold: z.number().int().min(1).max(1440).optional(),
+      enableEmailNotification: z.boolean().optional(),
+      enablePushNotification: z.boolean().optional(),
+      notificationEmails: z.string().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await requireDb();
+      const { profileId, ...updateData } = input;
+      
+      // Check if config exists
+      const existing = await db.select().from(mqttAlertConfig)
+        .where(profileId ? eq(mqttAlertConfig.profileId, profileId) : isNull(mqttAlertConfig.profileId))
+        .limit(1);
+      
+      if (existing.length === 0) {
+        // Create new config
+        const result = await db.insert(mqttAlertConfig).values({
+          profileId: profileId || null,
+          ...updateData,
+        });
+        return { success: true, id: result[0].insertId };
+      } else {
+        // Update existing config
+        await db.update(mqttAlertConfig)
+          .set(updateData)
+          .where(eq(mqttAlertConfig.id, existing[0].id));
+        return { success: true, id: existing[0].id };
+      }
+    }),
+
+  // ============= CONNECTION ALERTS =============
+  
+  // Get connection alerts
+  getConnectionAlerts: protectedProcedure
+    .input(z.object({
+      profileId: z.number().int().optional(),
+      alertType: z.enum(["connection_lost", "reconnect_failed", "high_reconnect_rate", "long_disconnection"]).optional(),
+      severity: z.enum(["info", "warning", "critical"]).optional(),
+      isAcknowledged: z.boolean().optional(),
+      isResolved: z.boolean().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      limit: z.number().int().min(1).max(500).default(100),
+      offset: z.number().int().min(0).default(0),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const conditions: any[] = [];
+      
+      if (input?.profileId) conditions.push(eq(mqttConnectionAlerts.profileId, input.profileId));
+      if (input?.alertType) conditions.push(eq(mqttConnectionAlerts.alertType, input.alertType));
+      if (input?.severity) conditions.push(eq(mqttConnectionAlerts.severity, input.severity));
+      if (input?.isAcknowledged !== undefined) conditions.push(eq(mqttConnectionAlerts.isAcknowledged, input.isAcknowledged));
+      if (input?.isResolved !== undefined) conditions.push(eq(mqttConnectionAlerts.isResolved, input.isResolved));
+      if (input?.startDate) conditions.push(gte(mqttConnectionAlerts.triggeredAt, new Date(input.startDate)));
+      if (input?.endDate) conditions.push(lte(mqttConnectionAlerts.triggeredAt, new Date(input.endDate)));
+      
+      const alerts = await db.select().from(mqttConnectionAlerts)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(mqttConnectionAlerts.triggeredAt))
+        .limit(input?.limit || 100)
+        .offset(input?.offset || 0);
+      
+      // Get total count
+      const countResult = await db.select({ count: sql<number>`count(*)` })
+        .from(mqttConnectionAlerts)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+      
+      return {
+        alerts,
+        total: countResult[0]?.count || 0,
+        limit: input?.limit || 100,
+        offset: input?.offset || 0,
+      };
+    }),
+  
+  // Get alert summary
+  getAlertSummary: protectedProcedure
+    .query(async () => {
+      const db = await requireDb();
+      
+      // Get counts by type and severity
+      const summary = await db.select({
+        alertType: mqttConnectionAlerts.alertType,
+        severity: mqttConnectionAlerts.severity,
+        isAcknowledged: mqttConnectionAlerts.isAcknowledged,
+        count: sql<number>`count(*)`,
+      })
+        .from(mqttConnectionAlerts)
+        .where(eq(mqttConnectionAlerts.isResolved, false))
+        .groupBy(mqttConnectionAlerts.alertType, mqttConnectionAlerts.severity, mqttConnectionAlerts.isAcknowledged);
+      
+      // Calculate totals
+      const totals = {
+        total: 0,
+        unacknowledged: 0,
+        critical: 0,
+        warning: 0,
+        info: 0,
+        byType: {
+          connection_lost: 0,
+          reconnect_failed: 0,
+          high_reconnect_rate: 0,
+          long_disconnection: 0,
+        },
+      };
+      
+      summary.forEach(row => {
+        const cnt = Number(row.count);
+        totals.total += cnt;
+        if (!row.isAcknowledged) totals.unacknowledged += cnt;
+        if (row.severity === "critical") totals.critical += cnt;
+        if (row.severity === "warning") totals.warning += cnt;
+        if (row.severity === "info") totals.info += cnt;
+        if (row.alertType) totals.byType[row.alertType as keyof typeof totals.byType] += cnt;
+      });
+      
+      return totals;
+    }),
+  
+  // Acknowledge alert
+  acknowledgeAlert: protectedProcedure
+    .input(z.object({
+      alertId: z.number().int(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await requireDb();
+      
+      await db.update(mqttConnectionAlerts)
+        .set({
+          isAcknowledged: true,
+          acknowledgedAt: new Date(),
+          acknowledgedBy: ctx.user.id,
+        })
+        .where(eq(mqttConnectionAlerts.id, input.alertId));
+      
+      return { success: true };
+    }),
+  
+  // Resolve alert
+  resolveAlert: protectedProcedure
+    .input(z.object({
+      alertId: z.number().int(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await requireDb();
+      
+      await db.update(mqttConnectionAlerts)
+        .set({
+          isResolved: true,
+          resolvedAt: new Date(),
+        })
+        .where(eq(mqttConnectionAlerts.id, input.alertId));
+      
+      return { success: true };
+    }),
+  
+  // Create alert (internal use)
+  createAlert: protectedProcedure
+    .input(z.object({
+      profileId: z.number().int(),
+      assignmentId: z.number().int().optional(),
+      targetType: z.enum(["machine", "station", "factory"]).optional(),
+      targetId: z.number().int().optional(),
+      alertType: z.enum(["connection_lost", "reconnect_failed", "high_reconnect_rate", "long_disconnection"]),
+      severity: z.enum(["info", "warning", "critical"]).default("warning"),
+      title: z.string(),
+      message: z.string().optional(),
+      thresholdMinutes: z.number().int().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await requireDb();
+      
+      const result = await db.insert(mqttConnectionAlerts).values(input);
+      
+      return { success: true, id: result[0].insertId };
+    }),
+
+  // ============= RECONNECT ANALYTICS =============
+  
+  // Get reconnect heatmap (by hour/day)
+  getReconnectHeatmap: protectedProcedure
+    .input(z.object({
+      profileId: z.number().int().optional(),
+      targetType: z.enum(["machine", "station", "factory"]).optional(),
+      days: z.number().int().min(1).max(30).default(7),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const days = input?.days || 7;
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      
+      const conditions: any[] = [gte(mqttReconnectLogs.timestamp, startDate)];
+      if (input?.profileId) conditions.push(eq(mqttReconnectLogs.profileId, input.profileId));
+      if (input?.targetType) conditions.push(eq(mqttReconnectLogs.targetType, input.targetType));
+      
+      // Get reconnect counts by day of week and hour
+      const heatmapData = await db.select({
+        dayOfWeek: sql<number>`DAYOFWEEK(timestamp)`,
+        hourOfDay: sql<number>`HOUR(timestamp)`,
+        count: sql<number>`count(*)`,
+      })
+        .from(mqttReconnectLogs)
+        .where(and(...conditions))
+        .groupBy(sql`DAYOFWEEK(timestamp)`, sql`HOUR(timestamp)`);
+      
+      // Build heatmap matrix (7 days x 24 hours)
+      const matrix: number[][] = Array(7).fill(null).map(() => Array(24).fill(0));
+      let maxCount = 0;
+      
+      heatmapData.forEach(row => {
+        const dayIndex = Number(row.dayOfWeek) - 1; // 0-6 (Sunday-Saturday)
+        const hourIndex = Number(row.hourOfDay); // 0-23
+        const cnt = Number(row.count);
+        if (dayIndex >= 0 && dayIndex < 7 && hourIndex >= 0 && hourIndex < 24) {
+          matrix[dayIndex][hourIndex] = cnt;
+          if (cnt > maxCount) maxCount = cnt;
+        }
+      });
+      
+      return {
+        matrix,
+        maxCount,
+        days: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+        hours: Array.from({ length: 24 }, (_, i) => `${i}:00`),
+        period: { days, startDate: startDate.toISOString() },
+      };
+    }),
+  
+  // Get top reconnect profiles
+  getTopReconnectProfiles: protectedProcedure
+    .input(z.object({
+      days: z.number().int().min(1).max(90).default(7),
+      limit: z.number().int().min(1).max(50).default(10),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const days = input?.days || 7;
+      const limit = input?.limit || 10;
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      
+      // Get top profiles by reconnect count
+      const topProfiles = await db.select({
+        profileId: mqttReconnectLogs.profileId,
+        totalAttempts: sql<number>`count(*)`,
+        successCount: sql<number>`SUM(CASE WHEN eventType = 'success' THEN 1 ELSE 0 END)`,
+        failureCount: sql<number>`SUM(CASE WHEN eventType = 'failure' THEN 1 ELSE 0 END)`,
+        avgDelay: sql<number>`AVG(reconnectDelay)`,
+        maxAttempts: sql<number>`MAX(attemptNumber)`,
+      })
+        .from(mqttReconnectLogs)
+        .where(gte(mqttReconnectLogs.timestamp, startDate))
+        .groupBy(mqttReconnectLogs.profileId)
+        .orderBy(desc(sql`count(*)`)) 
+        .limit(limit);
+      
+      // Enrich with profile names
+      const profileIds = topProfiles.map(p => p.profileId);
+      const profiles = profileIds.length > 0 
+        ? await db.select().from(mqttClientProfiles).where(inArray(mqttClientProfiles.id, profileIds))
+        : [];
+      const profileMap = new Map(profiles.map(p => [p.id, p]));
+      
+      return topProfiles.map(p => ({
+        profileId: p.profileId,
+        profileName: profileMap.get(p.profileId)?.name || `Profile #${p.profileId}`,
+        totalAttempts: Number(p.totalAttempts),
+        successCount: Number(p.successCount),
+        failureCount: Number(p.failureCount),
+        successRate: p.totalAttempts > 0 ? ((Number(p.successCount) / Number(p.totalAttempts)) * 100).toFixed(1) : "0.0",
+        avgDelay: Math.round(Number(p.avgDelay) || 0),
+        maxAttempts: Number(p.maxAttempts),
+      }));
+    }),
+  
+  // Get reconnect trend by day
+  getReconnectTrend: protectedProcedure
+    .input(z.object({
+      profileId: z.number().int().optional(),
+      days: z.number().int().min(1).max(90).default(30),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const days = input?.days || 30;
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      
+      const conditions: any[] = [gte(mqttReconnectLogs.timestamp, startDate)];
+      if (input?.profileId) conditions.push(eq(mqttReconnectLogs.profileId, input.profileId));
+      
+      const trendData = await db.select({
+        date: sql<string>`DATE(timestamp)`,
+        totalAttempts: sql<number>`count(*)`,
+        successCount: sql<number>`SUM(CASE WHEN eventType = 'success' THEN 1 ELSE 0 END)`,
+        failureCount: sql<number>`SUM(CASE WHEN eventType = 'failure' THEN 1 ELSE 0 END)`,
+        avgDelay: sql<number>`AVG(reconnectDelay)`,
+      })
+        .from(mqttReconnectLogs)
+        .where(and(...conditions))
+        .groupBy(sql`DATE(timestamp)`)
+        .orderBy(asc(sql`DATE(timestamp)`));
+      
+      return trendData.map(row => ({
+        date: row.date,
+        totalAttempts: Number(row.totalAttempts),
+        successCount: Number(row.successCount),
+        failureCount: Number(row.failureCount),
+        avgDelay: Math.round(Number(row.avgDelay) || 0),
+      }));
+    }),
+  
+  // Get reconnect stats by target
+  getReconnectStatsByTarget: protectedProcedure
+    .input(z.object({
+      targetType: z.enum(["machine", "station", "factory"]),
+      days: z.number().int().min(1).max(90).default(7),
+      limit: z.number().int().min(1).max(50).default(10),
+    }))
+    .query(async ({ input }) => {
+      const db = await requireDb();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - input.days);
+      
+      const stats = await db.select({
+        targetId: mqttReconnectLogs.targetId,
+        totalAttempts: sql<number>`count(*)`,
+        successCount: sql<number>`SUM(CASE WHEN eventType = 'success' THEN 1 ELSE 0 END)`,
+        failureCount: sql<number>`SUM(CASE WHEN eventType = 'failure' THEN 1 ELSE 0 END)`,
+      })
+        .from(mqttReconnectLogs)
+        .where(and(
+          gte(mqttReconnectLogs.timestamp, startDate),
+          eq(mqttReconnectLogs.targetType, input.targetType)
+        ))
+        .groupBy(mqttReconnectLogs.targetId)
+        .orderBy(desc(sql`count(*)`))
+        .limit(input.limit);
+      
+      // Enrich with target names
+      const targetIds = stats.map(s => s.targetId).filter((id): id is number => id !== null);
+      let targetMap = new Map<number, { name: string; code: string }>();
+      
+      if (targetIds.length > 0) {
+        if (input.targetType === "machine") {
+          const targets = await db.select().from(machines).where(inArray(machines.id, targetIds));
+          targetMap = new Map(targets.map(t => [t.id, { name: t.name, code: t.code }]));
+        } else if (input.targetType === "station") {
+          const targets = await db.select().from(stations).where(inArray(stations.id, targetIds));
+          targetMap = new Map(targets.map(t => [t.id, { name: t.name, code: t.code }]));
+        } else if (input.targetType === "factory") {
+          const targets = await db.select().from(factories).where(inArray(factories.id, targetIds));
+          targetMap = new Map(targets.map(t => [t.id, { name: t.name, code: t.code }]));
+        }
+      }
+      
+      return stats.map(s => ({
+        targetId: s.targetId,
+        targetName: s.targetId ? targetMap.get(s.targetId)?.name || `${input.targetType} #${s.targetId}` : "Unknown",
+        targetCode: s.targetId ? targetMap.get(s.targetId)?.code || "" : "",
+        totalAttempts: Number(s.totalAttempts),
+        successCount: Number(s.successCount),
+        failureCount: Number(s.failureCount),
+        successRate: s.totalAttempts > 0 ? ((Number(s.successCount) / Number(s.totalAttempts)) * 100).toFixed(1) : "0.0",
+      }));
     }),
 });

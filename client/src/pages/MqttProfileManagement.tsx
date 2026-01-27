@@ -39,7 +39,14 @@ import {
   History,
   FileSpreadsheet,
   Signal,
-  Clock
+  Clock,
+  Bell,
+  BellOff,
+  BarChart3,
+  TrendingUp,
+  AlertTriangle,
+  Check,
+  Eye
 } from "lucide-react";
 
 export default function MqttProfileManagement() {
@@ -74,6 +81,14 @@ export default function MqttProfileManagement() {
     { format: "csv" },
     { enabled: false }
   );
+  
+  // Alert & Analytics Queries
+  const { data: alertConfig, refetch: refetchAlertConfig } = trpc.mqttClientManagement.getAlertConfig.useQuery();
+  const { data: connectionAlerts, refetch: refetchAlerts } = trpc.mqttClientManagement.getConnectionAlerts.useQuery({ isResolved: false, limit: 50 });
+  const { data: alertSummary, refetch: refetchAlertSummary } = trpc.mqttClientManagement.getAlertSummary.useQuery();
+  const { data: reconnectHeatmap, refetch: refetchHeatmap } = trpc.mqttClientManagement.getReconnectHeatmap.useQuery({ days: 7 });
+  const { data: topReconnectProfiles, refetch: refetchTopProfiles } = trpc.mqttClientManagement.getTopReconnectProfiles.useQuery({ days: 7, limit: 10 });
+  const { data: reconnectTrend, refetch: refetchTrend } = trpc.mqttClientManagement.getReconnectTrend.useQuery({ days: 30 });
 
   // Mutations
   const createProfile = trpc.mqttClientManagement.createProfile.useMutation({
@@ -153,6 +168,39 @@ export default function MqttProfileManagement() {
       toast.success("Đã gỡ bỏ assignment");
       refetchAssignments();
       refetchStats();
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
+
+  // Alert Mutations
+  const updateAlertConfig = trpc.mqttClientManagement.updateAlertConfig.useMutation({
+    onSuccess: () => {
+      toast.success("Đã cập nhật cấu hình cảnh báo");
+      refetchAlertConfig();
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const acknowledgeAlert = trpc.mqttClientManagement.acknowledgeAlert.useMutation({
+    onSuccess: () => {
+      toast.success("Đã xác nhận cảnh báo");
+      refetchAlerts();
+      refetchAlertSummary();
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const resolveAlert = trpc.mqttClientManagement.resolveAlert.useMutation({
+    onSuccess: () => {
+      toast.success("Đã giải quyết cảnh báo");
+      refetchAlerts();
+      refetchAlertSummary();
     },
     onError: (error) => {
       toast.error(error.message);
@@ -522,6 +570,19 @@ export default function MqttProfileManagement() {
             <TabsTrigger value="reconnect-logs">
               <History className="h-4 w-4 mr-2" />
               Reconnect Logs
+            </TabsTrigger>
+            <TabsTrigger value="alerts" className="relative">
+              <Bell className="h-4 w-4 mr-2" />
+              Alerts
+              {alertSummary && alertSummary.unacknowledged > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                  {alertSummary.unacknowledged}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="analytics">
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Analytics
             </TabsTrigger>
           </TabsList>
 
@@ -1056,7 +1117,6 @@ export default function MqttProfileManagement() {
               </CardContent>
             </Card>
           </TabsContent>
-        </Tabs>
 
         {/* Create/Edit Profile Dialog */}
         <Dialog open={showCreateDialog || !!editingProfile} onOpenChange={(open) => {
@@ -1487,6 +1547,379 @@ export default function MqttProfileManagement() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+          {/* Alerts Tab */}
+          <TabsContent value="alerts" className="space-y-4">
+            {/* Alert Summary Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <Card>
+                <CardContent className="pt-4">
+                  <div className="text-2xl font-bold">{alertSummary?.total || 0}</div>
+                  <p className="text-xs text-muted-foreground">Total Active</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4">
+                  <div className="text-2xl font-bold text-red-500">{alertSummary?.unacknowledged || 0}</div>
+                  <p className="text-xs text-muted-foreground">Unacknowledged</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4">
+                  <div className="text-2xl font-bold text-red-600">{alertSummary?.critical || 0}</div>
+                  <p className="text-xs text-muted-foreground">Critical</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4">
+                  <div className="text-2xl font-bold text-yellow-500">{alertSummary?.warning || 0}</div>
+                  <p className="text-xs text-muted-foreground">Warning</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4">
+                  <div className="text-2xl font-bold text-blue-500">{alertSummary?.info || 0}</div>
+                  <p className="text-xs text-muted-foreground">Info</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Alert Configuration */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Settings2 className="h-5 w-5" />
+                    Cấu hình Cảnh báo
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="space-y-2">
+                    <Label>Mất kết nối (phút)</Label>
+                    <Input
+                      type="number"
+                      value={alertConfig?.connectionLostThreshold || 5}
+                      onChange={(e) => updateAlertConfig.mutate({ connectionLostThreshold: parseInt(e.target.value) })}
+                      min={1}
+                      max={1440}
+                    />
+                    <p className="text-xs text-muted-foreground">Cảnh báo khi mất kết nối quá thời gian này</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Reconnect thất bại (lần)</Label>
+                    <Input
+                      type="number"
+                      value={alertConfig?.reconnectFailedThreshold || 10}
+                      onChange={(e) => updateAlertConfig.mutate({ reconnectFailedThreshold: parseInt(e.target.value) })}
+                      min={1}
+                      max={100}
+                    />
+                    <p className="text-xs text-muted-foreground">Cảnh báo khi reconnect thất bại liên tiếp</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Tần suất reconnect cao (lần/giờ)</Label>
+                    <Input
+                      type="number"
+                      value={alertConfig?.highReconnectRateThreshold || 20}
+                      onChange={(e) => updateAlertConfig.mutate({ highReconnectRateThreshold: parseInt(e.target.value) })}
+                      min={1}
+                      max={1000}
+                    />
+                    <p className="text-xs text-muted-foreground">Cảnh báo khi reconnect quá nhiều trong 1 giờ</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Ngắt kết nối lâu (phút)</Label>
+                    <Input
+                      type="number"
+                      value={alertConfig?.longDisconnectionThreshold || 30}
+                      onChange={(e) => updateAlertConfig.mutate({ longDisconnectionThreshold: parseInt(e.target.value) })}
+                      min={1}
+                      max={1440}
+                    />
+                    <p className="text-xs text-muted-foreground">Cảnh báo khi ngắt kết nối quá lâu</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-6 mt-4 pt-4 border-t">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={alertConfig?.enablePushNotification || false}
+                      onCheckedChange={(checked) => updateAlertConfig.mutate({ enablePushNotification: checked })}
+                    />
+                    <Label>Push Notification</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={alertConfig?.enableEmailNotification || false}
+                      onCheckedChange={(checked) => updateAlertConfig.mutate({ enableEmailNotification: checked })}
+                    />
+                    <Label>Email Notification</Label>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Alert List */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Danh sách Cảnh báo</CardTitle>
+                  <Button variant="outline" size="sm" onClick={() => refetchAlerts()}>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Refresh
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {connectionAlerts?.alerts?.map((alert: any) => (
+                    <div key={alert.id} className={`p-4 rounded-lg border-l-4 ${
+                      alert.severity === 'critical' ? 'border-l-red-500 bg-red-500/10' :
+                      alert.severity === 'warning' ? 'border-l-yellow-500 bg-yellow-500/10' :
+                      'border-l-blue-500 bg-blue-500/10'
+                    }`}>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            {alert.severity === 'critical' && <AlertTriangle className="h-5 w-5 text-red-500" />}
+                            {alert.severity === 'warning' && <AlertCircle className="h-5 w-5 text-yellow-500" />}
+                            {alert.severity === 'info' && <Bell className="h-5 w-5 text-blue-500" />}
+                            <span className="font-medium">{alert.title}</span>
+                            <Badge variant="outline">{alert.alertType.replace(/_/g, ' ')}</Badge>
+                            {alert.isAcknowledged && <Badge variant="secondary">Acknowledged</Badge>}
+                          </div>
+                          <p className="text-sm text-muted-foreground mt-1">{alert.message}</p>
+                          <p className="text-xs text-muted-foreground mt-2">
+                            Triggered: {new Date(alert.triggeredAt).toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {!alert.isAcknowledged && (
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => acknowledgeAlert.mutate({ alertId: alert.id })}
+                            >
+                              <Eye className="h-4 w-4 mr-1" />
+                              Acknowledge
+                            </Button>
+                          )}
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => resolveAlert.mutate({ alertId: alert.id })}
+                          >
+                            <Check className="h-4 w-4 mr-1" />
+                            Resolve
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {(!connectionAlerts?.alerts || connectionAlerts.alerts.length === 0) && (
+                    <div className="py-8 text-center text-muted-foreground">
+                      <BellOff className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                      <p>Không có cảnh báo nào</p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Analytics Tab */}
+          <TabsContent value="analytics" className="space-y-4">
+            {/* Reconnect Heatmap */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5" />
+                  Reconnect Heatmap (7 ngày gần nhất)
+                </CardTitle>
+                <CardDescription>Phân bố reconnect theo giờ và ngày trong tuần</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {reconnectHeatmap && (
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[600px]">
+                      {/* Hour labels */}
+                      <div className="flex mb-1">
+                        <div className="w-12"></div>
+                        {reconnectHeatmap.hours.filter((_, i) => i % 3 === 0).map((hour) => (
+                          <div key={hour} className="flex-1 text-xs text-center text-muted-foreground">
+                            {hour}
+                          </div>
+                        ))}
+                      </div>
+                      {/* Heatmap grid */}
+                      {reconnectHeatmap.days.map((day, dayIndex) => (
+                        <div key={day} className="flex items-center mb-1">
+                          <div className="w-12 text-xs text-muted-foreground">{day}</div>
+                          <div className="flex-1 flex gap-px">
+                            {reconnectHeatmap.matrix[dayIndex].map((count, hourIndex) => {
+                              const intensity = reconnectHeatmap.maxCount > 0 ? count / reconnectHeatmap.maxCount : 0;
+                              return (
+                                <div
+                                  key={hourIndex}
+                                  className="flex-1 h-6 rounded-sm transition-colors"
+                                  style={{
+                                    backgroundColor: count === 0 
+                                      ? 'hsl(var(--muted))' 
+                                      : `rgba(239, 68, 68, ${0.2 + intensity * 0.8})`
+                                  }}
+                                  title={`${day} ${hourIndex}:00 - ${count} reconnects`}
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                      {/* Legend */}
+                      <div className="flex items-center justify-end gap-2 mt-4">
+                        <span className="text-xs text-muted-foreground">Ít</span>
+                        <div className="flex gap-px">
+                          {[0, 0.25, 0.5, 0.75, 1].map((intensity) => (
+                            <div
+                              key={intensity}
+                              className="w-4 h-4 rounded-sm"
+                              style={{
+                                backgroundColor: intensity === 0 
+                                  ? 'hsl(var(--muted))' 
+                                  : `rgba(239, 68, 68, ${0.2 + intensity * 0.8})`
+                              }}
+                            />
+                          ))}
+                        </div>
+                        <span className="text-xs text-muted-foreground">Nhiều</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {!reconnectHeatmap && (
+                  <div className="py-8 text-center text-muted-foreground">
+                    Chưa có dữ liệu heatmap
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Top Reconnect Profiles */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  Top Profiles có nhiều Reconnect nhất
+                </CardTitle>
+                <CardDescription>Profiles có tần suất reconnect cao trong 7 ngày gần nhất</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {topReconnectProfiles?.map((profile: any, index: number) => (
+                    <div key={profile.profileId} className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg">
+                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold">
+                        {index + 1}
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium">{profile.profileName}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {profile.totalAttempts} attempts | {profile.successRate}% success rate
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm">
+                          <span className="text-green-500">{profile.successCount}</span>
+                          {' / '}
+                          <span className="text-red-500">{profile.failureCount}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">Avg delay: {profile.avgDelay}ms</div>
+                      </div>
+                    </div>
+                  ))}
+                  {(!topReconnectProfiles || topReconnectProfiles.length === 0) && (
+                    <div className="py-8 text-center text-muted-foreground">
+                      Chưa có dữ liệu reconnect
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Reconnect Trend Chart */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-5 w-5" />
+                  Xu hướng Reconnect (30 ngày)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {reconnectTrend && reconnectTrend.length > 0 ? (
+                  <div className="space-y-4">
+                    {/* Simple bar chart */}
+                    <div className="flex items-end gap-1 h-40">
+                      {reconnectTrend.map((day: any) => {
+                        const maxAttempts = Math.max(...reconnectTrend.map((d: any) => d.totalAttempts));
+                        const height = maxAttempts > 0 ? (day.totalAttempts / maxAttempts) * 100 : 0;
+                        return (
+                          <div
+                            key={day.date}
+                            className="flex-1 flex flex-col items-center gap-1"
+                            title={`${day.date}: ${day.totalAttempts} attempts`}
+                          >
+                            <div 
+                              className="w-full bg-primary/80 rounded-t transition-all hover:bg-primary"
+                              style={{ height: `${height}%`, minHeight: day.totalAttempts > 0 ? '4px' : '0' }}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Date labels */}
+                    <div className="flex gap-1">
+                      {reconnectTrend.filter((_: any, i: number) => i % 5 === 0).map((day: any) => (
+                        <div key={day.date} className="flex-1 text-xs text-center text-muted-foreground">
+                          {new Date(day.date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+                        </div>
+                      ))}
+                    </div>
+                    {/* Summary */}
+                    <div className="grid grid-cols-4 gap-4 pt-4 border-t">
+                      <div className="text-center">
+                        <div className="text-lg font-bold">
+                          {reconnectTrend.reduce((sum: number, d: any) => sum + d.totalAttempts, 0)}
+                        </div>
+                        <p className="text-xs text-muted-foreground">Total Attempts</p>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-lg font-bold text-green-500">
+                          {reconnectTrend.reduce((sum: number, d: any) => sum + d.successCount, 0)}
+                        </div>
+                        <p className="text-xs text-muted-foreground">Successes</p>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-lg font-bold text-red-500">
+                          {reconnectTrend.reduce((sum: number, d: any) => sum + d.failureCount, 0)}
+                        </div>
+                        <p className="text-xs text-muted-foreground">Failures</p>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-lg font-bold">
+                          {Math.round(reconnectTrend.reduce((sum: number, d: any) => sum + d.avgDelay, 0) / reconnectTrend.length)}ms
+                        </div>
+                        <p className="text-xs text-muted-foreground">Avg Delay</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-8 text-center text-muted-foreground">
+                    Chưa có dữ liệu trend
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
 
         {/* Bulk Assign Dialog */}
         <Dialog open={showBulkAssignDialog} onOpenChange={setShowBulkAssignDialog}>

@@ -4443,3 +4443,47 @@ Menu structure mới:
 - [x] Test schema validation cho tất cả API inputs
 - [x] Test calculations (success rate, percentages)
 - [x] Test export output format (CSV headers, value formatting)
+
+
+## Phase 171: Real-time Status Updates, Alert on Connection Loss, Reconnect Analytics Dashboard
+
+### 1. Real-time Status Updates với WebSocket
+- [x] Thêm queries cho Connection Status và Reconnect History
+- [x] Thêm tab "Connection Status" hiển thị trạng thái kết nối
+- [x] Thêm tab "Reconnect Logs" hiển thị lịch sử reconnect
+- [x] Thêm nút Refresh để cập nhật dữ liệu thủ công
+
+### 2. Alert on Connection Loss
+- [x] Tạo database tables mqtt_connection_alerts và mqtt_alert_config
+- [x] Tạo API endpoint getAlertConfig và updateAlertConfig
+- [x] Tạo API endpoint getConnectionAlerts và getAlertSummary
+- [x] Tạo API endpoint acknowledgeAlert và resolveAlert
+- [x] Tạo API endpoint createAlert
+- [x] Thêm tab "Alerts" trong MQTT Profiles page
+- [x] Hiển thị alert summary cards (Total, Unacknowledged, Critical, Warning, Info)
+- [x] Hiển thị cấu hình cảnh báo có thể chỉnh sửa (thresholds, notifications)
+- [x] Hiển thị danh sách alerts với Acknowledge và Resolve buttons
+
+### 3. Reconnect Analytics Dashboard
+- [x] Tạo API endpoint getReconnectHeatmap (theo giờ/ngày)
+- [x] Tạo API endpoint getTopReconnectProfiles
+- [x] Tạo API endpoint getReconnectTrend (30 ngày)
+- [x] Tạo API endpoint getReconnectStatsByTarget
+- [x] Thêm tab "Analytics" trong MQTT Profiles page
+- [x] Hiển thị heatmap 7x24 với color gradient
+- [x] Hiển thị top profiles có nhiều reconnect nhất
+- [x] Hiển thị biểu đồ trend reconnect 30 ngày
+
+### 4. Unit Tests
+- [x] Viết 46 test cases cho Alert và Analytics APIs (mqttAlertAnalytics.test.ts)
+- [x] Test Alert Configuration Schema
+- [x] Test Connection Alerts Schema
+- [x] Test Create Alert Schema
+- [x] Test Reconnect Heatmap Schema
+- [x] Test Top Reconnect Profiles Schema
+- [x] Test Reconnect Trend Schema
+- [x] Test Reconnect Stats by Target Schema
+- [x] Test Alert Summary Calculations
+- [x] Test Heatmap Matrix Generation
+- [x] Test Top Profiles Calculations
+- [x] Test Trend Data Processing

@@ -2833,3 +2833,80 @@ export const mqttConnectionStatus = mysqlTable("mqtt_connection_status", {
 
 export type MqttConnectionStatus = typeof mqttConnectionStatus.$inferSelect;
 export type InsertMqttConnectionStatus = typeof mqttConnectionStatus.$inferInsert;
+
+
+/**
+ * MQTT Connection Alerts - Cảnh báo mất kết nối
+ */
+export const mqttConnectionAlerts = mysqlTable("mqtt_connection_alerts", {
+  id: int("id").autoincrement().primaryKey(),
+  profileId: int("profileId").notNull(),
+  assignmentId: int("assignmentId"),
+  
+  // Target Info
+  targetType: mysqlEnum("targetType", ["machine", "station", "factory"]),
+  targetId: int("targetId"),
+  
+  // Alert Info
+  alertType: mysqlEnum("alertType", ["connection_lost", "reconnect_failed", "high_reconnect_rate", "long_disconnection"]).notNull(),
+  severity: mysqlEnum("severity", ["info", "warning", "critical"]).default("warning").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message"),
+  
+  // Timing
+  triggeredAt: timestamp("triggeredAt").defaultNow().notNull(),
+  acknowledgedAt: timestamp("acknowledgedAt"),
+  acknowledgedBy: int("acknowledgedBy"),
+  resolvedAt: timestamp("resolvedAt"),
+  
+  // Threshold Config
+  thresholdMinutes: int("thresholdMinutes").default(5), // Ngưỡng thời gian mất kết nối (phút)
+  
+  // Status
+  isAcknowledged: boolean("isAcknowledged").default(false).notNull(),
+  isResolved: boolean("isResolved").default(false).notNull(),
+  
+  // Metadata
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_alert_profile").on(table.profileId),
+  index("idx_alert_assignment").on(table.assignmentId),
+  index("idx_alert_type").on(table.alertType),
+  index("idx_alert_severity").on(table.severity),
+  index("idx_alert_acknowledged").on(table.isAcknowledged),
+  index("idx_alert_triggered").on(table.triggeredAt),
+]);
+export type MqttConnectionAlert = typeof mqttConnectionAlerts.$inferSelect;
+export type InsertMqttConnectionAlert = typeof mqttConnectionAlerts.$inferInsert;
+
+/**
+ * MQTT Alert Configuration - Cấu hình cảnh báo
+ */
+export const mqttAlertConfig = mysqlTable("mqtt_alert_config", {
+  id: int("id").autoincrement().primaryKey(),
+  profileId: int("profileId"), // null = global config
+  
+  // Thresholds
+  connectionLostThreshold: int("connectionLostThreshold").default(5).notNull(), // Phút
+  reconnectFailedThreshold: int("reconnectFailedThreshold").default(10).notNull(), // Số lần thất bại liên tiếp
+  highReconnectRateThreshold: int("highReconnectRateThreshold").default(20).notNull(), // Số lần reconnect trong 1 giờ
+  longDisconnectionThreshold: int("longDisconnectionThreshold").default(30).notNull(), // Phút
+  
+  // Notification Settings
+  enableEmailNotification: boolean("enableEmailNotification").default(false).notNull(),
+  enablePushNotification: boolean("enablePushNotification").default(true).notNull(),
+  notificationEmails: text("notificationEmails"), // Comma-separated emails
+  
+  // Status
+  isActive: boolean("isActive").default(true).notNull(),
+  
+  // Metadata
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("idx_alert_config_profile").on(table.profileId),
+  index("idx_alert_config_active").on(table.isActive),
+]);
+export type MqttAlertConfig = typeof mqttAlertConfig.$inferSelect;
+export type InsertMqttAlertConfig = typeof mqttAlertConfig.$inferInsert;
