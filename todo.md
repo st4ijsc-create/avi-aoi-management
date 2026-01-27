@@ -4639,12 +4639,45 @@ Menu structure mới:
 
 ### 3. Production Testing
 - [x] Test CRUD operations qua API (20 tests PASS)
-- [ ] Tạo Factory mới qua UI (routes chưa được định nghĩa - 404)
-- [ ] Tạo Workshop mới qua UI (routes chưa được định nghĩa - 404)
-- [ ] Tạo Line mới qua UI (routes chưa được định nghĩa - 404)
-- [ ] Tạo Machine mới qua UI (routes chưa được định nghĩa - 404)
+- [x] Tạo Factory mới qua UI (FAC001 - Nhà máy Bắc Ninh)
+- [x] Tạo Workshop mới qua UI (WS001 - Xưởng lắp ráp SMT)
+- [x] Tạo Line mới qua UI (LINE001 - Dây chuyền SMT 1)
+- [x] Tạo Station mới qua UI (ST001 - Trạm kiểm tra AOI)
+- [x] Tạo Machine mới qua UI (AVI001 - Máy AVI kiểm tra PCB)
 - [x] Kiểm tra dữ liệu được lưu đúng trong PostgreSQL (88 tables)
 - [x] Dashboard hoạt động tốt với PostgreSQL
 
 ### 4. Checkpoint
-- [ ] Save checkpoint Phase 176
+- [x] Save checkpoint Phase 176 (ab34e540)
+
+
+## Phase 177: Routes, UI Components & Seed Data
+
+### 1. Navigation Fix (Completed)
+- [x] Cập nhật Settings.tsx để hỗ trợ URL query parameters (?tab=xxx)
+- [x] Cập nhật sidebar navigation để link đến Settings với tab parameters:
+  - /settings?tab=factories - Quản lý Nhà máy
+  - /settings?tab=workshops - Quản lý Xưởng
+  - /settings?tab=lines - Quản lý Dây chuyền
+  - /settings?tab=machines - Quản lý Máy
+- [x] Deep linking hoạt động - URL sync với active tab
+
+### 2. Test Tạo Dữ Liệu Production qua UI (Completed)
+- [x] Test tạo Factory mới qua UI (FAC001 - Nhà máy Bắc Ninh)
+- [x] Test tạo Workshop mới (WS001 - Xưởng lắp ráp SMT)
+- [x] Test tạo Line mới (LINE001 - Dây chuyền SMT 1)
+- [x] Test tạo Station mới (ST001 - Trạm kiểm tra AOI)
+- [x] Test tạo Machine mới (AVI001 - Máy AVI kiểm tra PCB, Koh Young KY-8000)
+- [x] Verify dữ liệu được lưu đúng trong PostgreSQL
+
+### 3. Seed Data Script (Completed)
+- [x] Tạo script seed-demo-data.ts để tạo dữ liệu demo
+- [x] Seed 4 Factories với thông tin chi tiết (FAC-HN, FAC-BN2, FAC-HP, FAC001)
+- [x] Seed 28 Workshops (SMT, DIP, TEST per Factory)
+- [x] Seed 37 Lines (A, B per Workshop)
+- [x] Seed 73 Stations (Pre-AOI, Post-Reflow, Final per Line)
+- [x] Seed 23 Machines (AVI, AOI, SPI types)
+- [x] Script tự động skip duplicate data (ON CONFLICT handling)
+
+### 4. Checkpoint
+- [x] Save checkpoint Phase 177

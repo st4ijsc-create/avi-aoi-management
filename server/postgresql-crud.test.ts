@@ -66,8 +66,43 @@ describe('PostgreSQL CRUD Tests with SSL Certificate', () => {
 
     it('should INSERT a factory', async () => {
       const result = await pool.query(`
-        INSERT INTO factories (name, code, address, is_active, created_at, updated_at)
-        VALUES ('Test Factory', 'TEST001', 'Test Address', true, NOW(), NOW())
+        INSERT INTO factories (name, code, address, "isActive", "createdAt", "updatedAt")
+        VALUES ('Test Factory CRUD', 'TEST-CRUD-001', 'Test Address', true, NOW(), NOW())
+        ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name
         RETURNING id
       `);
       testFactoryId = result.rows[0].id;
+      expect(testFactoryId).toBeDefined();
+    });
+
+    it('should SELECT the factory', async () => {
+      const result = await pool.query(`
+        SELECT * FROM factories WHERE id = $1
+      `, [testFactoryId]);
+      expect(result.rows.length).toBe(1);
+      expect(result.rows[0].name).toBe('Test Factory CRUD');
+    });
+
+    it('should UPDATE the factory', async () => {
+      await pool.query(`
+        UPDATE factories SET name = $1, "updatedAt" = NOW() WHERE id = $2
+      `, ['Updated Factory Name', testFactoryId]);
+      
+      const result = await pool.query(`
+        SELECT name FROM factories WHERE id = $1
+      `, [testFactoryId]);
+      expect(result.rows[0].name).toBe('Updated Factory Name');
+    });
+
+    it('should soft DELETE the factory', async () => {
+      await pool.query(`
+        UPDATE factories SET "isActive" = false WHERE id = $1
+      `, [testFactoryId]);
+      
+      const result = await pool.query(`
+        SELECT "isActive" FROM factories WHERE id = $1
+      `, [testFactoryId]);
+      expect(result.rows[0].isActive).toBe(false);
+    });
+  });
+});

@@ -58,7 +58,8 @@ import UserAssignments from "@/components/UserAssignments";
 import WorkstationManagement from "@/components/WorkstationManagement";
 import { ProductCategoryManagement } from "@/components/ProductCategoryManagement";
 import NotificationSoundCustomization from "@/components/NotificationSoundCustomization";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation, useSearch } from "wouter";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
 import { useFormShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -91,7 +92,30 @@ export default function Settings() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
-  const [activeTab, setActiveTab] = useState("factories");
+  const search = useSearch();
+  const [location, setLocation] = useLocation();
+  
+  // Parse tab from URL query parameter
+  const getTabFromUrl = () => {
+    const params = new URLSearchParams(search);
+    return params.get('tab') || 'factories';
+  };
+  
+  const [activeTab, setActiveTab] = useState(getTabFromUrl);
+  
+  // Update URL when tab changes
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    setLocation(`/settings?tab=${tab}`);
+  };
+  
+  // Sync tab with URL on mount and URL changes
+  useEffect(() => {
+    const tabFromUrl = getTabFromUrl();
+    if (tabFromUrl !== activeTab) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [search]);
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
   
   const toggleCategory = (category: string) => {
@@ -626,7 +650,7 @@ export default function Settings() {
         </div>
 
         <ErrorBoundary>
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <Tabs value={activeTab} onValueChange={handleTabChange}>
           <div className="flex gap-6">
             {/* Vertical Sidebar Navigation */}
             <div className="w-64 shrink-0 space-y-1">
@@ -645,7 +669,7 @@ export default function Settings() {
                 {!collapsedCategories['infrastructure'] && (
                   <div className="ml-6 space-y-1">
                     <button
-                      onClick={() => setActiveTab('factories')}
+                      onClick={() => handleTabChange('factories')}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
                         activeTab === 'factories' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
                       }`}
@@ -654,7 +678,7 @@ export default function Settings() {
                       Nhà máy
                     </button>
                     <button
-                      onClick={() => setActiveTab('workshops')}
+                      onClick={() => handleTabChange('workshops')}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
                         activeTab === 'workshops' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
                       }`}
@@ -663,7 +687,7 @@ export default function Settings() {
                       Nhà xưởng
                     </button>
                     <button
-                      onClick={() => setActiveTab('lines')}
+                      onClick={() => handleTabChange('lines')}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
                         activeTab === 'lines' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
                       }`}
@@ -672,7 +696,7 @@ export default function Settings() {
                       Dây chuyền
                     </button>
                     <button
-                      onClick={() => setActiveTab('stations')}
+                      onClick={() => handleTabChange('stations')}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
                         activeTab === 'stations' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
                       }`}
@@ -681,7 +705,7 @@ export default function Settings() {
                       Trạm kiểm tra
                     </button>
                     <button
-                      onClick={() => setActiveTab('machines')}
+                      onClick={() => handleTabChange('machines')}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
                         activeTab === 'machines' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
                       }`}
@@ -690,7 +714,7 @@ export default function Settings() {
                       Máy kiểm tra
                     </button>
                     <button
-                      onClick={() => setActiveTab('workstations')}
+                      onClick={() => handleTabChange('workstations')}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
                         activeTab === 'workstations' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
                       }`}
@@ -717,7 +741,7 @@ export default function Settings() {
                 {!collapsedCategories['production'] && (
                   <div className="ml-6 space-y-1">
                     <button
-                      onClick={() => setActiveTab('shifts')}
+                      onClick={() => handleTabChange('shifts')}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
                         activeTab === 'shifts' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
                       }`}
@@ -726,7 +750,7 @@ export default function Settings() {
                       Ca làm việc
                     </button>
                     <button
-                      onClick={() => setActiveTab('stages')}
+                      onClick={() => handleTabChange('stages')}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
                         activeTab === 'stages' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
                       }`}
@@ -735,7 +759,7 @@ export default function Settings() {
                       Công đoạn
                     </button>
                     <button
-                      onClick={() => setActiveTab('mapping')}
+                      onClick={() => handleTabChange('mapping')}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
                         activeTab === 'mapping' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
                       }`}
@@ -762,7 +786,7 @@ export default function Settings() {
                 {!collapsedCategories['products'] && (
                   <div className="ml-6 space-y-1">
                     <button
-                      onClick={() => setActiveTab('product-categories')}
+                      onClick={() => handleTabChange('product-categories')}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-accent transition-colors ${activeTab === 'product-categories' ? 'bg-accent' : ''}`}
                     >
                       <FolderTree className="h-4 w-4" />
@@ -801,7 +825,7 @@ export default function Settings() {
                 {!collapsedCategories['quality'] && (
                   <div className="ml-6 space-y-1">
                     <button
-                      onClick={() => setActiveTab('yield-thresholds')}
+                      onClick={() => handleTabChange('yield-thresholds')}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
                         activeTab === 'yield-thresholds' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
                       }`}
@@ -810,7 +834,7 @@ export default function Settings() {
                       Yield
                     </button>
                     <button
-                      onClick={() => setActiveTab('alerts')}
+                      onClick={() => handleTabChange('alerts')}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
                         activeTab === 'alerts' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
                       }`}
@@ -837,7 +861,7 @@ export default function Settings() {
                 {!collapsedCategories['system'] && (
                   <div className="ml-6 space-y-1">
                     <button
-                      onClick={() => setActiveTab('report-templates')}
+                      onClick={() => handleTabChange('report-templates')}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
                         activeTab === 'report-templates' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
                       }`}
@@ -846,7 +870,7 @@ export default function Settings() {
                       Mẫu báo cáo
                     </button>
                     <button
-                      onClick={() => setActiveTab('scheduled-reports')}
+                      onClick={() => handleTabChange('scheduled-reports')}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
                         activeTab === 'scheduled-reports' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
                       }`}
@@ -855,7 +879,7 @@ export default function Settings() {
                       Báo cáo tự động
                     </button>
                     <button
-                      onClick={() => setActiveTab('smtp-config')}
+                      onClick={() => handleTabChange('smtp-config')}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
                         activeTab === 'smtp-config' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
                       }`}
@@ -864,7 +888,7 @@ export default function Settings() {
                       Cấu hình SMTP
                     </button>
                     <button
-                      onClick={() => setActiveTab('email-template')}
+                      onClick={() => handleTabChange('email-template')}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
                         activeTab === 'email-template' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
                       }`}
@@ -880,7 +904,7 @@ export default function Settings() {
                       Audit Log
                     </button>
                     <button
-                      onClick={() => setActiveTab('cache-stats')}
+                      onClick={() => handleTabChange('cache-stats')}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
                         activeTab === 'cache-stats' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
                       }`}
@@ -890,7 +914,7 @@ export default function Settings() {
                     </button>
                     {isAdmin && (
                       <button
-                        onClick={() => setActiveTab('user-assignments')}
+                        onClick={() => handleTabChange('user-assignments')}
                         className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
                           activeTab === 'user-assignments' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
                         }`}
