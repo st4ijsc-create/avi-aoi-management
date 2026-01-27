@@ -4487,3 +4487,45 @@ Menu structure mới:
 - [x] Test Heatmap Matrix Generation
 - [x] Test Top Profiles Calculations
 - [x] Test Trend Data Processing
+
+
+## Phase 172: Background Job Scheduler, Email/Push Notification, Alert Dashboard Widget
+
+### 1. Background Job Scheduler
+- [x] Tạo scheduler service để kiểm tra connection status định kỳ (mqttAlertScheduler.ts)
+- [x] Tạo job kiểm tra connection lost (checkConnectionLost - so sánh lastHeartbeat với threshold)
+- [x] Tạo job kiểm tra high reconnect rate (checkHighReconnectRate - đếm reconnects trong 1 giờ)
+- [x] Tạo job kiểm tra reconnect failures (checkReconnectFailures)
+- [x] Tạo job kiểm tra long disconnection (checkLongDisconnection - thời gian offline > threshold)
+- [x] Tự động tạo alerts khi vượt threshold
+- [x] Tự động resolve alerts khi connection được khôi phục (autoResolveAlerts)
+- [x] Thêm API để bật/tắt scheduler (startScheduler, stopScheduler)
+- [x] Thêm API cấu hình interval (updateSchedulerConfig)
+- [x] Thêm API kiểm tra trạng thái scheduler (getSchedulerStatus)
+- [x] Thêm API trigger manual check (triggerAlertChecks)
+
+### 2. Email/Push Notification Integration
+- [x] Tích hợp với notification service có sẵn (notifyOwner)
+- [x] Gửi push notification khi có alert mới với severity critical
+- [x] Thêm template cho notification content (emoji + profile name + details)
+- [x] Thêm rate limiting để tránh spam notifications (15 phút cooldown)
+- [x] Thêm API gửi test notification (sendTestNotification)
+
+### 3. Alert Dashboard Widget
+- [x] Tạo API endpoint getAlertWidgetData cho dashboard
+- [x] Tạo AlertWidget component hiển thị số lượng alerts (AlertWidget.tsx)
+- [x] Hiển thị breakdown theo severity (critical, warning, info badges)
+- [x] Thêm link để navigate đến MQTT Profiles > Alerts tab
+- [x] Tích hợp widget vào Dashboard Overview page (MqttAlertWidget)
+- [x] Kết hợp cả Rule Alerts và Connection Alerts trong widget
+
+### 4. Unit Tests
+- [x] Viết 33 tests cho Background Job Scheduler logic (mqttAlertScheduler.test.ts)
+- [x] Test Scheduler Config Schema
+- [x] Test Start Scheduler Schema
+- [x] Test Alert Widget Data Schema
+- [x] Test Send Test Notification Schema
+- [x] Test Threshold Calculations
+- [x] Test Rate Limiting
+- [x] Test Alert Summary Calculations
+- [x] Test Combined Alert Widget logic

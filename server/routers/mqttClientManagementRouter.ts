@@ -1960,4 +1960,134 @@ export const mqttClientManagementRouter = router({
         successRate: s.totalAttempts > 0 ? ((Number(s.successCount) / Number(s.totalAttempts)) * 100).toFixed(1) : "0.0",
       }));
     }),
+
+  // ============= ALERT SCHEDULER APIs =============
+  
+  /**
+   * Get scheduler status
+   */
+  getSchedulerStatus: protectedProcedure.query(async () => {
+    const { getSchedulerStatus } = await import("../mqttAlertScheduler");
+    return getSchedulerStatus();
+  }),
+
+  /**
+   * Start alert scheduler
+   */
+  startScheduler: adminProcedure
+    .input(z.object({
+      intervalMinutes: z.number().int().min(1).max(60).default(5),
+    }))
+    .mutation(async ({ input }) => {
+      const { startAlertScheduler } = await import("../mqttAlertScheduler");
+      startAlertScheduler(input.intervalMinutes);
+      return { success: true, message: `Scheduler started with ${input.intervalMinutes} minute interval` };
+    }),
+
+  /**
+   * Stop alert scheduler
+   */
+  stopScheduler: adminProcedure.mutation(async () => {
+    const { stopAlertScheduler } = await import("../mqttAlertScheduler");
+    stopAlertScheduler();
+    return { success: true, message: "Scheduler stopped" };
+  }),
+
+  /**
+   * Update scheduler config
+   */
+  updateSchedulerConfig: adminProcedure
+    .input(z.object({
+      enabled: z.boolean().optional(),
+      intervalMinutes: z.number().int().min(1).max(60).optional(),
+      notifyOnCritical: z.boolean().optional(),
+      notifyOnWarning: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { updateSchedulerConfig } = await import("../mqttAlertScheduler");
+      updateSchedulerConfig(input);
+      return { success: true };
+    }),
+
+  /**
+   * Manually trigger alert checks
+   */
+  triggerAlertChecks: adminProcedure.mutation(async () => {
+    const { triggerAlertChecks } = await import("../mqttAlertScheduler");
+    return await triggerAlertChecks();
+  }),
+
+  // ============= ALERT WIDGET APIs =============
+  
+  /**
+   * Get alert widget data for dashboard
+   */
+  getAlertWidgetData: protectedProcedure.query(async () => {
+    const db = await requireDb();
+    
+    // Get unresolved alerts summary
+    const summary = await db.select({
+      severity: mqttConnectionAlerts.severity,
+      count: sql<number>`COUNT(*)`.as('count'),
+    })
+    .from(mqttConnectionAlerts)
+    .where(eq(mqttConnectionAlerts.isResolved, false))
+    .groupBy(mqttConnectionAlerts.severity);
+
+    // Get recent alerts (last 24h)
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const recentAlerts = await db.select({
+      id: mqttConnectionAlerts.id,
+      profileId: mqttConnectionAlerts.profileId,
+      alertType: mqttConnectionAlerts.alertType,
+      severity: mqttConnectionAlerts.severity,
+      title: mqttConnectionAlerts.title,
+      triggeredAt: mqttConnectionAlerts.triggeredAt,
+      isAcknowledged: mqttConnectionAlerts.isAcknowledged,
+    })
+    .from(mqttConnectionAlerts)
+    .where(
+      and(
+        eq(mqttConnectionAlerts.isResolved, false),
+        gte(mqttConnectionAlerts.triggeredAt, oneDayAgo)
+      )
+    )
+    .orderBy(desc(mqttConnectionAlerts.triggeredAt))
+    .limit(5);
+
+    // Calculate totals
+    const totals = {
+      total: 0,
+      critical: 0,
+      warning: 0,
+      info: 0,
+    };
+
+    summary.forEach(row => {
+      const cnt = Number(row.count);
+      totals.total += cnt;
+      if (row.severity === 'critical') totals.critical = cnt;
+      if (row.severity === 'warning') totals.warning = cnt;
+      if (row.severity === 'info') totals.info = cnt;
+    });
+
+    return {
+      ...totals,
+      recentAlerts,
+    };
+  }),
+
+  /**
+   * Send test notification
+   */
+  sendTestNotification: adminProcedure
+    .input(z.object({
+      title: z.string().min(1).max(255),
+      content: z.string().min(1).max(1000),
+    }))
+    .mutation(async ({ input }) => {
+      const { notifyOwner } = await import("../_core/notification");
+      const success = await notifyOwner(input);
+      return { success, message: success ? "Notification sent" : "Failed to send notification" };
+    }),
 });
