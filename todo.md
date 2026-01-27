@@ -4529,3 +4529,30 @@ Menu structure mới:
 - [x] Test Rate Limiting
 - [x] Test Alert Summary Calculations
 - [x] Test Combined Alert Widget logic
+
+
+## Phase 173: Đánh giá chuyển đổi PostgreSQL cho môi trường Tập đoàn lớn
+
+### 1. Phân tích hệ thống hiện tại
+- [x] Kiểm tra cấu trúc database schema hiện tại (MySQL/TiDB) - 89 tables, 2912 dòng schema
+- [x] Đánh giá số lượng tables, relationships, indexes - ~396 indexes
+- [x] Xác định các data types chính - int(419), timestamp(212), text(104), decimal(51), json(37)
+- [x] Đánh giá các module chính - Core Manufacturing, MQTT/IoT, Analytics, User Management
+
+### 2. So sánh MySQL vs PostgreSQL
+- [x] So sánh hiệu suất (performance benchmarks) - Tương đương ~30% variance
+- [x] So sánh khả năng mở rộng (scalability) - PostgreSQL đã được chứng minh ở Instagram, Notion, OpenAI
+- [x] So sánh tính năng enterprise - PostgreSQL vượt trội với RLS, DDL Transaction, Window Functions
+- [x] So sánh chi phí vận hành và licensing - PostgreSQL MIT-like license, không lo Oracle
+
+### 3. Đánh giá tác động migration
+- [x] Xác định các thay đổi cần thiết trong code - Chủ yếu rename imports trong Drizzle ORM
+- [x] Đánh giá downtime và rollback strategy - Phased migration, giữ MySQL 2 tuần sau go-live
+- [x] Xác định rủi ro và mitigation plan - XID Wraparound, Connection Pooling
+- [x] Ước tính timeline và resources cần thiết - 6-9 tuần, 4-5 người
+
+### 4. Lập kế hoạch migration
+- [x] Thiết kế architecture mới với PostgreSQL - Bao gồm PgBouncer, pg_stat_statements
+- [x] Lập lộ trình migration chi tiết - 4 phases: Preparation, Development, Data Migration, Go-live
+- [x] Xác định testing strategy - Unit tests, Performance testing, UAT
+- [x] Tạo báo cáo đánh giá tổng hợp - POSTGRESQL_MIGRATION_ASSESSMENT.md
