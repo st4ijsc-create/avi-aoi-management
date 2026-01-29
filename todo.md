@@ -4704,3 +4704,30 @@ Menu structure mới:
 
 ### 4. Checkpoint
 - [x] Save checkpoint Phase 178
+
+
+## Phase 179: 24h Inspection Data, Shift Config & History Test
+
+### 1. Tạo Inspection Data cho 24 giờ gần nhất
+- [x] Tạo script seed-24h-inspection-data.ts
+- [x] Generate 737 inspection records trong 24 giờ gần nhất (tăng từ 279 lên 1,016)
+- [x] Phân bố đều 12 inspections/giờ trong 24 giờ
+- [x] Dữ liệu đã được seed thành công
+
+### 2. Cấu hình Shift Config
+- [x] Kiểm tra schema shift_configs trong drizzle/schema.ts
+- [x] Tạo 3 shift configs global (áp dụng toàn hệ thống) (Ca 1: 6h-14h, Ca 2: 14h-22h, Ca 3: 22h-6h)
+- [x] Seed shift config data (SHIFT1, SHIFT2, SHIFT3)
+- [x] Shift configs đã được tạo thành công
+
+### 3. Test Module Lịch sử kiểm tra
+- [ ] Truy cập trang History
+- [ ] Test filter theo Machine
+- [ ] Test filter theo Product Model
+- [ ] Test filter theo Result (OK/NG/NTF)
+- [ ] Test filter theo Time Range
+- [ ] Test pagination
+- [ ] Test sort by inspection time
+
+### 4. Checkpoint
+- [x] Save checkpoint Phase 179
