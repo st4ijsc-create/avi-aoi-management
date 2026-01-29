@@ -1,5 +1,6 @@
 import { eq, and, desc, asc, gte, lte, gt, lt, like, sql, or, isNull, isNotNull, not, ne, SQL } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import { 
   InsertUser, users,
   factories, InsertFactory,
@@ -68,7 +69,13 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      const client = postgres(process.env.DATABASE_URL, {
+        ssl: 'require',
+        max: 10,
+        idle_timeout: 20,
+        connect_timeout: 10,
+      });
+      _db = drizzle(client);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -3050,9 +3057,9 @@ export async function getAuditLogStats(days: number = 7): Promise<{
   }));
   
   // Actions by day
-  const byDayResult = await db.execute(sql`SELECT DATE(createdAt) as date, COUNT(*) as count FROM audit_logs 
+  const byDayResult = await db.execute(sql`SELECT CAST(createdAt AS DATE) as date, COUNT(*) as count FROM audit_logs 
     WHERE createdAt >= ${startDateStr}
-    GROUP BY DATE(createdAt) ORDER BY date DESC`);
+    GROUP BY CAST(createdAt AS DATE) ORDER BY date DESC`);
   const actionsByDay = ((byDayResult as any)[0] || []).map((row: any) => ({
     date: row.date,
     count: row.count,
@@ -3753,7 +3760,7 @@ export async function getNGTrendByDay(filters?: {
   try {
     const query = sql`
       SELECT 
-        DATE(pi.inspectionTime) as date,
+        CAST(pi.inspectionTime AS DATE) as date,
         COALESCE(COUNT(mr.id), 0) as totalCount,
         COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as okCount,
         COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as ngCount,
@@ -3767,7 +3774,7 @@ export async function getNGTrendByDay(filters?: {
       ${filters?.endDate ? sql`AND pi.inspectionTime <= ${filters.endDate}` : sql``}
       ${filters?.workstationId ? sql`AND mpd.workstationId = ${filters.workstationId}` : sql``}
       ${filters?.measurementPointDefId ? sql`AND mr.pointDefId = ${filters.measurementPointDefId}` : sql``}
-      GROUP BY DATE(pi.inspectionTime)
+      GROUP BY CAST(pi.inspectionTime AS DATE)
       ORDER BY date ASC
     `;
 
@@ -4857,11 +4864,11 @@ export async function getThroughputByCorporate(filters: {
 
   let dateFormat: SQL;
   if (interval === 'hour') {
-    dateFormat = sql`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%m-%d %H:00:00')`;
+    dateFormat = sql`DATE_TRUNC('hour', ${productInspections.inspectionTime})`;
   } else if (interval === 'week') {
-    dateFormat = sql`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%u')`;
+    dateFormat = sql`DATE_TRUNC('week', ${productInspections.inspectionTime})`;
   } else {
-    dateFormat = sql`DATE(${productInspections.inspectionTime})`;
+    dateFormat = sql`CAST(${productInspections.inspectionTime} AS DATE)`;
   }
 
   const results = await db
@@ -4872,8 +4879,8 @@ export async function getThroughputByCorporate(filters: {
     })
     .from(productInspections)
     .where(whereClause)
-    .groupBy(productInspections.corporateCode, sql`timeInterval`)
-    .orderBy(sql`timeInterval`);
+    .groupBy(productInspections.corporateCode, dateFormat)
+    .orderBy(dateFormat);
 
   return results.map(r => ({
     corporateCode: r.corporateCode || 'N/A',
@@ -4926,11 +4933,11 @@ export async function getThroughputByFactory(filters: {
 
   let dateFormat: SQL;
   if (interval === 'hour') {
-    dateFormat = sql`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%m-%d %H:00:00')`;
+    dateFormat = sql`DATE_TRUNC('hour', ${productInspections.inspectionTime})`;
   } else if (interval === 'week') {
-    dateFormat = sql`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%u')`;
+    dateFormat = sql`DATE_TRUNC('week', ${productInspections.inspectionTime})`;
   } else {
-    dateFormat = sql`DATE(${productInspections.inspectionTime})`;
+    dateFormat = sql`CAST(${productInspections.inspectionTime} AS DATE)`;
   }
 
   const results = await db
@@ -4942,8 +4949,8 @@ export async function getThroughputByFactory(filters: {
     })
     .from(productInspections)
     .where(whereClause)
-    .groupBy(productInspections.corporateCode, productInspections.factoryCode, sql`timeInterval`)
-    .orderBy(sql`timeInterval`);
+    .groupBy(productInspections.corporateCode, productInspections.factoryCode, dateFormat)
+    .orderBy(dateFormat);
 
   return results.map(r => ({
     corporateCode: r.corporateCode || 'N/A',
@@ -5757,13 +5764,13 @@ export async function getYieldTrendData(filters: {
   
   let dateFormat: SQL;
   if (interval === 'hour') {
-    dateFormat = sql`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%m-%d %H:00:00')`;
+    dateFormat = sql`DATE_TRUNC('hour', ${productInspections.inspectionTime})`;
   } else if (interval === 'week') {
-    dateFormat = sql`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%u')`;
+    dateFormat = sql`DATE_TRUNC('week', ${productInspections.inspectionTime})`;
   } else if (interval === 'month') {
-    dateFormat = sql`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%m')`;
+    dateFormat = sql`DATE_TRUNC('month', ${productInspections.inspectionTime})`;
   } else {
-    dateFormat = sql`DATE(${productInspections.inspectionTime})`;
+    dateFormat = sql`CAST(${productInspections.inspectionTime} AS DATE)`;
   }
   
   const results = await db
@@ -5776,8 +5783,8 @@ export async function getYieldTrendData(filters: {
     })
     .from(productInspections)
     .where(and(...conditions))
-    .groupBy(sql`timeInterval`)
-    .orderBy(sql`timeInterval`);
+    .groupBy(dateFormat)
+    .orderBy(dateFormat);
   
   return results.map(r => ({
     timeInterval: r.timeInterval,
@@ -5820,7 +5827,7 @@ export async function getRecentYieldData(filters: {
   
   const results = await db
     .select({
-      date: sql`DATE(${productInspections.inspectionTime})`.as('date'),
+      date: sql`CAST(${productInspections.inspectionTime} AS DATE)`.as('date'),
       totalCount: sql<number>`COUNT(*)`,
       okCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'OK' THEN 1 ELSE 0 END)`,
       ngCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NG' THEN 1 ELSE 0 END)`,

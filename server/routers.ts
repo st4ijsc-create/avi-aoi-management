@@ -7545,7 +7545,7 @@ Respond in JSON format with an array of findings.`
       // Get historical defect data grouped by date
       let query = `
         SELECT 
-          DATE(i.inspectionTime) as date,
+          CAST(i.inspectionTime AS DATE) as date,
           COUNT(ia.id) as defect_count,
           i.machineId,
           m.name as machine_name,
@@ -7556,7 +7556,7 @@ Respond in JSON format with an array of findings.`
         LEFT JOIN machines m ON i.machineId = m.id
         LEFT JOIN product_models pm ON i.productModelId = pm.id
         WHERE ia.annotations IS NOT NULL
-          AND i.inspectionTime >= DATE_SUB(NOW(), INTERVAL ${input.days} DAY)
+          AND i.inspectionTime >= NOW() - INTERVAL '${input.days} days'
       `;
       
       const conditions: string[] = [];
@@ -7567,7 +7567,7 @@ Respond in JSON format with an array of findings.`
         query += ' AND ' + conditions.join(' AND ');
       }
       
-      query += ' GROUP BY DATE(i.inspectionTime), i.machineId, i.productModelId ORDER BY date ASC';
+      query += ' GROUP BY CAST(i.inspectionTime AS DATE), i.machineId, i.productModelId ORDER BY date ASC';
       
       const result = await db.execute(sql.raw(query)) as any;
       const historicalData = (result.rows || []).map((row: any) => ({
@@ -8508,7 +8508,7 @@ const predictiveAlertRouter = router({
       // Get inspection data
       let query = sql`
         SELECT 
-          DATE(i.created_at) as date,
+          CAST(i.created_at AS DATE) as date,
           m.id as machine_id, m.code as machine_code,
           pm.id as product_model_id, pm.code as product_model_code,
           f.id as factory_id,
@@ -8528,7 +8528,7 @@ const predictiveAlertRouter = router({
         query = sql`${query} AND f.id = ${input.factoryId}`;
       }
       
-      query = sql`${query} GROUP BY DATE(i.created_at), m.id, m.code, pm.id, pm.code, f.id ORDER BY date ASC`;
+      query = sql`${query} GROUP BY CAST(i.created_at AS DATE), m.id, m.code, pm.id, pm.code, f.id ORDER BY date ASC`;
       
       const result = await db.execute(query) as any;
       const rows = result.rows || [];
