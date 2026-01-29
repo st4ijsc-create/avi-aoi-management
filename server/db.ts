@@ -1,6 +1,5 @@
 import { eq, and, desc, asc, gte, lte, gt, lt, like, sql, or, isNull, isNotNull, not, ne, SQL } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { drizzle } from "drizzle-orm/mysql2";
 import { 
   InsertUser, users,
   factories, InsertFactory,
@@ -63,19 +62,16 @@ import {
   productionOrderTemplates, InsertProductionOrderTemplate
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+  if (!_db && process.env.SUPABASE_DATABASE_URL) {
     try {
-      const client = postgres(process.env.DATABASE_URL, {
-        ssl: 'require',
-        max: 10,
-        idle_timeout: 20,
-        connect_timeout: 10,
-      });
-      _db = drizzle(client);
+      _db = drizzle(process.env.DATABASE_URL);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -135,7 +131,8 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
+    await db.insert(users).values(values).onConflictDoUpdate({
+      target: users.openId,
       set: updateSet,
     });
   } catch (error) {
@@ -203,7 +200,7 @@ export async function createLocalUser(data: {
   // Generate a unique openId for local users
   const openId = `local_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
   
-  const result = await db.insert(users).values({
+  const [result] = await db.insert(users).values({
     openId,
     username: data.username,
     passwordHash: data.passwordHash,
@@ -215,8 +212,8 @@ export async function createLocalUser(data: {
     loginMethod: 'local',
     role: data.role || 'user',
     isActive: true,
-  });
-  return { id: Number(result[0].insertId), openId };
+  }).returning({ id: users.id });
+  return { id: Number(result.id), openId };
 }
 
 export async function updateUser(userId: number, data: {
@@ -277,7 +274,7 @@ export async function createUser(data: {
   // Generate a unique openId for local users
   const openId = `local_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
   
-  const result = await db.insert(users).values({
+  const [result] = await db.insert(users).values({
     openId,
     username: data.username || data.email.split('@')[0],
     passwordHash,
@@ -289,8 +286,8 @@ export async function createUser(data: {
     loginMethod: 'local',
     role: data.role || 'user',
     isActive: true,
-  });
-  return Number(result[0].insertId);
+  }).returning({ id: users.id });
+  return Number(result.id);
 }
 
 export async function searchUsers(query: string) {
@@ -338,16 +335,16 @@ export async function get2FAStatus(userId: number) {
   const result = await db.select({
     twoFactorEnabled: users.twoFactorEnabled,
     twoFactorSecret: users.twoFactorSecret,
-  }).from(users).where(eq(users.id, userId));
-  return result[0] || null;
+  }).from(users).where(eq(users.id, userId)).limit(1);
+  return result.length > 0 ? result[0] : null;
 }
 
 // ============ FACTORY FUNCTIONS ============
 export async function createFactory(data: InsertFactory) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(factories).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(factories).values(data).returning({ id: factories.id });
+  return result.id;
 }
 
 export async function getFactories() {
@@ -360,7 +357,7 @@ export async function getFactoryById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(factories).where(eq(factories.id, id)).limit(1);
-  return result[0];
+  return result.length > 0 ? result[0] : undefined;
 }
 
 export async function updateFactory(id: number, data: Partial<InsertFactory>) {
@@ -379,8 +376,8 @@ export async function deleteFactory(id: number) {
 export async function createWorkshop(data: InsertWorkshop) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(workshops).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(workshops).values(data).returning({ id: workshops.id });
+  return result.id;
 }
 
 export async function getWorkshopsByFactory(factoryId: number) {
@@ -401,7 +398,7 @@ export async function getWorkshopById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(workshops).where(eq(workshops.id, id)).limit(1);
-  return result[0];
+  return result.length > 0 ? result[0] : undefined;
 }
 
 export async function updateWorkshop(id: number, data: Partial<InsertWorkshop>) {
@@ -420,8 +417,8 @@ export async function deleteWorkshop(id: number) {
 export async function createProductionLine(data: InsertProductionLine) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(productionLines).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(productionLines).values(data).returning({ id: productionLines.id });
+  return result.id;
 }
 
 export async function getProductionLinesByWorkshop(workshopId: number) {
@@ -442,7 +439,7 @@ export async function getLineById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(productionLines).where(eq(productionLines.id, id)).limit(1);
-  return result[0];
+  return result.length > 0 ? result[0] : undefined;
 }
 
 export async function updateProductionLine(id: number, data: Partial<InsertProductionLine>) {
@@ -461,8 +458,8 @@ export async function deleteProductionLine(id: number) {
 export async function createStation(data: InsertStation) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(stations).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(stations).values(data).returning({ id: stations.id });
+  return result.id;
 }
 
 export async function getStationsByLine(lineId: number) {
@@ -483,7 +480,7 @@ export async function getStationById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(stations).where(eq(stations.id, id)).limit(1);
-  return result[0];
+  return result.length > 0 ? result[0] : undefined;
 }
 
 export async function updateStation(id: number, data: Partial<InsertStation>) {
@@ -502,8 +499,8 @@ export async function deleteStation(id: number) {
 export async function createMachine(data: InsertMachine) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(machines).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(machines).values(data).returning({ id: machines.id });
+  return result.id;
 }
 
 export async function getMachinesByStation(stationId: number) {
@@ -550,14 +547,14 @@ export async function getMachineByApiKey(apiKey: string) {
   const result = await db.select().from(machines)
     .where(and(eq(machines.apiKey, apiKey), eq(machines.isActive, true)))
     .limit(1);
-  return result[0];
+  return result.length > 0 ? result[0] : undefined;
 }
 
 export async function getMachineById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(machines).where(eq(machines.id, id)).limit(1);
-  return result[0];
+  return result.length > 0 ? result[0] : undefined;
 }
 
 export async function getMachineByCode(code: string) {
@@ -566,7 +563,7 @@ export async function getMachineByCode(code: string) {
   const result = await db.select().from(machines)
     .where(and(eq(machines.code, code), eq(machines.isActive, true)))
     .limit(1);
-  return result[0];
+  return result.length > 0 ? result[0] : undefined;
 }
 
 export async function updateMachineHeartbeat(id: number) {
@@ -591,8 +588,8 @@ export async function deleteMachine(id: number) {
 export async function createProductModel(data: InsertProductModel) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(productModels).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(productModels).values(data).returning({ id: productModels.id });
+  return result.id;
 }
 
 export async function getProductModels(options?: {
@@ -668,14 +665,14 @@ export async function getProductModelById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(productModels).where(eq(productModels.id, id)).limit(1);
-  return result[0];
+  return result.length > 0 ? result[0] : undefined;
 }
 
 export async function getProductModelByCode(code: string) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(productModels).where(eq(productModels.code, code)).limit(1);
-  return result[0];
+  return result.length > 0 ? result[0] : undefined;
 }
 
 export async function updateProductModel(id: number, data: Partial<InsertProductModel>) {
@@ -697,8 +694,8 @@ export async function deleteProductModel(id: number) {
 export async function createProductInspection(data: InsertProductInspection) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(productInspections).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(productInspections).values(data).returning({ id: productInspections.id });
+  return result.id;
 }
 
 export async function getProductInspections(filters: {
@@ -771,7 +768,7 @@ export async function getProductInspectionById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(productInspections).where(eq(productInspections.id, id)).limit(1);
-  return result[0];
+  return result.length > 0 ? result[0] : undefined;
 }
 
 export async function updateProductInspectionNTF(id: number, userId: number, reason: string) {
@@ -789,8 +786,8 @@ export async function updateProductInspectionNTF(id: number, userId: number, rea
 export async function createMeasurementPointDef(data: InsertMeasurementPointDef) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(measurementPointDefs).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(measurementPointDefs).values(data).returning({ id: measurementPointDefs.id });
+  return result.id;
 }
 
 export async function getMeasurementPointDefsByProductModel(productModelId: number) {
@@ -813,7 +810,7 @@ export async function getMeasurementPointDefById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(measurementPointDefs).where(eq(measurementPointDefs.id, id)).limit(1);
-  return result[0];
+  return result.length > 0 ? result[0] : undefined;
 }
 
 export async function getMeasurementPointDefByCode(productModelId: number, code: string) {
@@ -825,7 +822,7 @@ export async function getMeasurementPointDefByCode(productModelId: number, code:
       eq(measurementPointDefs.code, code)
     ))
     .limit(1);
-  return result[0];
+  return result.length > 0 ? result[0] : undefined;
 }
 
 export async function updateMeasurementPointDef(id: number, data: Partial<InsertMeasurementPointDef>) {
@@ -844,8 +841,8 @@ export async function deleteMeasurementPointDef(id: number) {
 export async function createMeasurementResult(data: InsertMeasurementResult) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(measurementResults).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(measurementResults).values(data).returning({ id: measurementResults.id });
+  return result.id;
 }
 
 export async function createMeasurementResults(dataList: InsertMeasurementResult[]) {
@@ -867,7 +864,7 @@ export async function getMeasurementResultById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(measurementResults).where(eq(measurementResults.id, id)).limit(1);
-  return result[0];
+  return result.length > 0 ? result[0] : undefined;
 }
 
 export async function updateMeasurementResultRemark(id: number, remark: string) {
@@ -880,8 +877,8 @@ export async function updateMeasurementResultRemark(id: number, remark: string) 
 export async function createFactoryLayout(data: InsertFactoryLayout) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(factoryLayouts).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(factoryLayouts).values(data).returning({ id: factoryLayouts.id });
+  return result.id;
 }
 
 export async function getFactoryLayoutsByWorkshop(workshopId: number) {
@@ -912,7 +909,7 @@ export async function getFactoryLayoutById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(factoryLayouts).where(eq(factoryLayouts.id, id)).limit(1);
-  return result[0];
+  return result.length > 0 ? result[0] : undefined;
 }
 
 export async function updateFactoryLayout(id: number, data: Partial<InsertFactoryLayout>) {
@@ -925,8 +922,8 @@ export async function updateFactoryLayout(id: number, data: Partial<InsertFactor
 export async function createMachinePosition(data: InsertMachinePosition) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(machinePositions).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(machinePositions).values(data).returning({ id: machinePositions.id });
+  return result.id;
 }
 
 export async function getMachinePositionsByLayout(layoutId: number) {
@@ -951,8 +948,8 @@ export async function deleteMachinePosition(id: number) {
 export async function createWorkshopPosition(data: InsertWorkshopPosition) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(workshopPositions).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(workshopPositions).values(data).returning({ id: workshopPositions.id });
+  return result.id;
 }
 
 export async function getWorkshopPositionsByLayout(layoutId: number) {
@@ -965,8 +962,8 @@ export async function getWorkshopPositionsByLayout(layoutId: number) {
 export async function createFactoryPosition(data: InsertFactoryPosition) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(factoryPositions).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(factoryPositions).values(data).returning({ id: factoryPositions.id });
+  return result.id;
 }
 
 export async function getFactoryPositionsByLayout(layoutId: number) {
@@ -980,7 +977,8 @@ export async function upsertDailyStatistics(data: InsertDailyStatistics) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  await db.insert(dailyStatistics).values(data).onDuplicateKeyUpdate({
+  await db.insert(dailyStatistics).values(data).onConflictDoUpdate({
+    target: [dailyStatistics.machineId, dailyStatistics.date],
     set: {
       totalCount: data.totalCount,
       okCount: data.okCount,
@@ -1616,8 +1614,8 @@ export async function seedSampleData() {
 
   const factoryIds: number[] = [];
   for (const factory of factoryData) {
-    const result = await db.insert(factories).values(factory);
-    factoryIds.push(result[0].insertId);
+    const [result] = await db.insert(factories).values(factory).returning({ id: factories.id });
+    factoryIds.push(result.id);
   }
 
   // Create 2-4 workshops per factory
@@ -1638,8 +1636,8 @@ export async function seedSampleData() {
 
   const workshopIds: number[] = [];
   for (const workshop of workshopData) {
-    const result = await db.insert(workshops).values(workshop);
-    workshopIds.push(result[0].insertId);
+    const [result] = await db.insert(workshops).values(workshop).returning({ id: workshops.id });
+    workshopIds.push(result.id);
   }
 
   // Create production lines
@@ -1655,8 +1653,8 @@ export async function seedSampleData() {
 
   const lineIds: number[] = [];
   for (const line of lineData) {
-    const result = await db.insert(productionLines).values(line);
-    lineIds.push(result[0].insertId);
+    const [result] = await db.insert(productionLines).values(line).returning({ id: productionLines.id });
+    lineIds.push(result.id);
   }
 
   // Create stations
@@ -1670,8 +1668,8 @@ export async function seedSampleData() {
 
   const stationIds: number[] = [];
   for (const station of stationData) {
-    const result = await db.insert(stations).values(station);
-    stationIds.push(result[0].insertId);
+    const [result] = await db.insert(stations).values(station).returning({ id: stations.id });
+    stationIds.push(result.id);
   }
 
   // Create machines with API keys
@@ -1690,14 +1688,14 @@ export async function seedSampleData() {
   }
 
   // Create sample product model
-  const productModelResult = await db.insert(productModels).values({
+  const [productModelResult] = await db.insert(productModels).values({
     code: "PCB-001",
     name: "PCB Main Board v1.0",
     description: "Main circuit board for electronic device",
     imageWidth: 1920,
     imageHeight: 1080,
-  });
-  const productModelId = productModelResult[0].insertId;
+  }).returning({ id: productModels.id });
+  const productModelId = productModelResult.id;
 
   // Create sample measurement points (30 points)
   const measurementTypes = ["DIMENSION", "VISUAL", "POSITION", "COLOR", "SURFACE"] as const;
@@ -1746,14 +1744,14 @@ export async function getAlertSettingById(id: number) {
   const result = await db.select().from(alertSettings)
     .where(eq(alertSettings.id, id))
     .limit(1);
-  return result[0];
+  return result.length > 0 ? result[0] : undefined;
 }
 
 export async function createAlertSetting(data: InsertAlertSetting) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(alertSettings).values(data);
-  return { id: result[0].insertId };
+  const [result] = await db.insert(alertSettings).values(data).returning({ id: alertSettings.id });
+  return { id: result.id };
 }
 
 export async function updateAlertSetting(id: number, data: Partial<InsertAlertSetting>) {
@@ -1786,8 +1784,8 @@ export async function getAlertHistory(alertSettingId?: number, limit: number = 5
 export async function createAlertHistory(data: InsertAlertHistory) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(alertHistory).values(data);
-  return { id: result[0].insertId };
+  const [result] = await db.insert(alertHistory).values(data).returning({ id: alertHistory.id });
+  return { id: result.id };
 }
 
 export async function acknowledgeAlert(id: number, userId: number) {
@@ -1840,7 +1838,7 @@ export async function seedInspectionData(count: number = 100) {
     const overallResult = results[Math.floor(Math.random() * results.length)] as 'OK' | 'NG' | 'NTF';
     
     // Create inspection record
-    const inspectionResult = await db.insert(productInspections).values({
+    const [inspectionResult] = await db.insert(productInspections).values({
       machineId: machine.id,
       productModelId: productModelId,
       serialNumber,
@@ -1850,8 +1848,8 @@ export async function seedInspectionData(count: number = 100) {
       originalResult: overallResult === 'NTF' ? 'NG' : overallResult,
       inspectionTime: inspectionDate,
       cycleTime: String((Math.random() * 5 + 1).toFixed(2)), // 1-6 seconds
-    });
-    const inspectionId = inspectionResult[0].insertId;
+    }).returning({ id: productInspections.id });
+    const inspectionId = inspectionResult.id;
 
     // Create measurement results for each point
     for (const point of measurementPoints) {
@@ -1904,8 +1902,8 @@ export async function getProductMachineMappings(machineId?: number, productModel
 export async function createProductMachineMapping(data: InsertProductMachineMapping) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(productMachineMappings).values(data);
-  return { id: result[0].insertId };
+  const [result] = await db.insert(productMachineMappings).values(data).returning({ id: productMachineMappings.id });
+  return { id: result.id };
 }
 
 export async function updateProductMachineMapping(id: number, data: Partial<InsertProductMachineMapping>) {
@@ -1965,8 +1963,8 @@ export async function getShiftConfigs(factoryId?: number) {
 export async function createShiftConfig(data: InsertShiftConfig) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(shiftConfigs).values(data);
-  return { id: result[0].insertId };
+  const [result] = await db.insert(shiftConfigs).values(data).returning({ id: shiftConfigs.id });
+  return { id: result.id };
 }
 
 export async function updateShiftConfig(id: number, data: Partial<InsertShiftConfig>) {
@@ -2018,21 +2016,21 @@ export async function getProductionOrders(filters?: {
 export async function getProductionOrderById(id: number) {
   const db = await getDb();
   if (!db) return null;
-  const result = await db.select().from(productionOrders).where(eq(productionOrders.id, id));
-  return result[0] || null;
+  const result = await db.select().from(productionOrders).where(eq(productionOrders.id, id)).limit(1);
+  return result.length > 0 ? result[0] : null;
 }
 
 export async function getProductionOrderByCode(orderCode: string) {
   const db = await getDb();
   if (!db) return null;
-  const result = await db.select().from(productionOrders).where(eq(productionOrders.orderCode, orderCode));
-  return result[0] || null;
+  const result = await db.select().from(productionOrders).where(eq(productionOrders.orderCode, orderCode)).limit(1);
+  return result.length > 0 ? result[0] : null;
 }
 
 export async function createProductionOrder(data: InsertProductionOrder) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(productionOrders).values(data);
+  const [result] = await db.insert(productionOrders).values(data).returning({ id: productionOrders.id });
   return result;
 }
 
@@ -2093,13 +2091,13 @@ export async function getLineStageById(id: number) {
   const db = await getDb();
   if (!db) return null;
   const result = await db.select().from(lineStages).where(eq(lineStages.id, id));
-  return result[0] || null;
+  return result || null;
 }
 
 export async function createLineStage(data: InsertLineStage) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(lineStages).values(data);
+  const [result] = await db.insert(lineStages).values(data).returning({ id: lineStages.id });
   return result;
 }
 
@@ -2151,7 +2149,7 @@ export async function getLineProductAssignments(filters?: {
 export async function createLineProductAssignment(data: InsertLineProductAssignment) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(lineProductAssignments).values(data);
+  const [result] = await db.insert(lineProductAssignments).values(data).returning({ id: lineProductAssignments.id });
   return result;
 }
 
@@ -2234,8 +2232,8 @@ export async function createMachineStatusLog(data: InsertMachineStatusLog) {
   const db = await getDb();
   if (!db) return null;
 
-  const result = await db.insert(machineStatusLogs).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(machineStatusLogs).values(data).returning({ id: machineStatusLogs.id });
+  return result.id;
 }
 
 export async function getMachineStatusLogs(machineId: number, limit: number = 100) {
@@ -2258,8 +2256,7 @@ export async function getLatestMachineStatus(machineId: number) {
     .where(eq(machineStatusLogs.machineId, machineId))
     .orderBy(desc(machineStatusLogs.timestamp))
     .limit(1);
-
-  return result[0] || null;
+  return result.length > 0 ? result[0] : null;
 }
 
 export async function getAllMachinesWithStatus() {
@@ -2398,8 +2395,8 @@ export async function createMachineHeartbeat(data: InsertMachineHeartbeat) {
   const db = await getDb();
   if (!db) return null;
 
-  const result = await db.insert(machineHeartbeats).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(machineHeartbeats).values(data).returning({ id: machineHeartbeats.id });
+  return result.id;
 }
 
 export async function getMachineHeartbeats(machineId: number, limit: number = 100) {
@@ -2422,8 +2419,7 @@ export async function getLatestMachineHeartbeat(machineId: number) {
     .where(eq(machineHeartbeats.machineId, machineId))
     .orderBy(desc(machineHeartbeats.timestamp))
     .limit(1);
-
-  return result[0] || null;
+  return result.length > 0 ? result[0] : null;
 }
 
 export async function getHeartbeatHistory(machineId: number, hours: number = 24) {
@@ -2584,14 +2580,14 @@ export async function updateAlertConfiguration(config: {
 
   if (existing.length === 0) {
     // Create new - need userId, use 0 for system alert
-    const result = await db.insert(alertSettings).values({
+    const [result] = await db.insert(alertSettings).values({
       userId: 0, // System alert
       name: 'Machine Offline Alert',
       alertType: 'machine_offline',
       threshold: config.thresholdMinutes.toString(),
       isActive: config.isActive,
-    });
-    return result[0].insertId;
+    }).returning({ id: alertSettings.id });
+    return result.id;
   } else {
     // Update existing
     await db.update(alertSettings)
@@ -2705,8 +2701,8 @@ export async function getManualConnectionByMachineId(machineId: number) {
 export async function createManualConnection(data: InsertManualMachineConnection) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(manualMachineConnections).values(data);
-  return { id: Number(result[0].insertId) };
+  const [result] = await db.insert(manualMachineConnections).values(data).returning({ id: manualMachineConnections.id });
+  return { id: Number(result.id) };
 }
 
 export async function updateManualConnection(id: number, data: Partial<InsertManualMachineConnection>) {
@@ -2789,8 +2785,8 @@ export async function getYieldAlertThresholdByType(metricType: 'FPY' | 'FY' | 'N
 export async function createYieldAlertThreshold(data: InsertYieldAlertThreshold) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(yieldAlertThresholds).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(yieldAlertThresholds).values(data).returning({ id: yieldAlertThresholds.id });
+  return result.id;
 }
 
 export async function updateYieldAlertThreshold(id: number, data: Partial<InsertYieldAlertThreshold>) {
@@ -2817,8 +2813,8 @@ export async function getEnabledYieldAlertThresholds() {
 export async function createYieldThresholdHistory(data: InsertYieldThresholdHistory) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(yieldThresholdHistory).values(data);
-  return { id: Number(result[0].insertId), ...data };
+  const [result] = await db.insert(yieldThresholdHistory).values(data).returning({ id: yieldThresholdHistory.id });
+  return { id: Number(result.id), ...data };
 }
 
 export async function getYieldThresholdHistoryByThreshold(thresholdId: number) {
@@ -2895,7 +2891,7 @@ export async function createAuditLog(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   
-  const result = await db.insert(auditLogs).values({
+  const [result] = await db.insert(auditLogs).values({
     userId: data.userId ?? null,
     userName: data.userName ?? null,
     action: data.action,
@@ -2906,9 +2902,9 @@ export async function createAuditLog(data: {
     ipAddress: data.ipAddress ?? null,
     userAgent: data.userAgent ?? null,
     status: data.status ?? 'success',
-  });
+  }).returning({ id: auditLogs.id });
   
-  return { id: Number(result[0].insertId) };
+  return { id: Number(result.id) };
 }
 
 export async function getAuditLogs(params: {
@@ -3173,8 +3169,8 @@ export async function createUserSession(data: {
   const db = await getDb();
   if (!db) return 0;
   
-  const [result] = await db.insert(userSessions).values(data);
-  return result.insertId;
+  const [result] = await db.insert(userSessions).values(data).returning({ id: userSessions.id });
+  return result.id;
 }
 
 export async function getUserSessions(userId: number) {
@@ -3302,8 +3298,8 @@ export async function createSystemSetting(data: InsertSystemSetting) {
   const db = await getDb();
   if (!db) return 0;
   
-  const [result] = await db.insert(systemSettings).values(data);
-  return result.insertId;
+  const [result] = await db.insert(systemSettings).values(data).returning({ id: systemSettings.id });
+  return result.id;
 }
 
 
@@ -3328,15 +3324,15 @@ export async function getWorkstationById(id: number) {
   if (!db) return null;
   
   const result = await db.select().from(workstations).where(eq(workstations.id, id)).limit(1);
-  return result[0] || null;
+  return result.length > 0 ? result[0] : null;
 }
 
 export async function createWorkstation(data: Omit<InsertWorkstation, 'id' | 'createdAt' | 'updatedAt'>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const result = await db.insert(workstations).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(workstations).values(data).returning({ id: workstations.id });
+  return result.id;
 }
 
 export async function updateWorkstation(id: number, data: Partial<Omit<InsertWorkstation, 'id' | 'createdAt' | 'updatedAt'>>) {
@@ -3393,7 +3389,9 @@ export async function getDefectsByWorkstation(filters?: {
     `;
     
     const result = await db.execute(query);
-    return (result[0] as unknown) as Array<{
+    // PostgreSQL returns rows directly
+    const rows = (result as any).rows || result;
+    return (rows as unknown) as Array<{
       workstationId: number | null;
       workstationCode: string | null;
       workstationName: string | null;
@@ -3448,7 +3446,9 @@ export async function getTopNGMeasurementPointsByWorkstation(filters?: {
     `;
 
     const result = await db.execute(query);
-    return (result[0] as unknown) as Array<{
+    // PostgreSQL returns rows directly
+    const rows = (result as any).rows || result;
+    return (rows as unknown) as Array<{
       workstationId: number | null;
       workstationCode: string | null;
       workstationName: string | null;
@@ -3498,7 +3498,9 @@ export async function getWorkstationSummary(filters?: {
     `;
     
     const result = await db.execute(query);
-    return (result[0] as unknown) as Array<{
+    // PostgreSQL returns rows directly
+    const rows = (result as any).rows || result;
+    return (rows as unknown) as Array<{
       workstationId: number;
       workstationCode: string;
       workstationName: string;
@@ -3554,7 +3556,9 @@ export async function getMeasurementPointsByWorkstation(filters: {
     `;
 
     const result = await db.execute(query);
-    return (result[0] as unknown) as Array<{
+    // PostgreSQL returns rows directly
+    const rows = (result as any).rows || result;
+    return (rows as unknown) as Array<{
       measurementPointId: number;
       measurementPointCode: string;
       measurementPointName: string;
@@ -3684,7 +3688,7 @@ export async function seedWorkstationAnalyticsData(options?: {
     const overallResult = results[Math.floor(Math.random() * results.length)] as 'OK' | 'NG' | 'NTF';
     
     // Create inspection record
-    const inspectionResult = await db.insert(productInspections).values({
+    const [inspectionResult] = await db.insert(productInspections).values({
       machineId: machine.id,
       productModelId: productModelId,
       serialNumber,
@@ -3694,8 +3698,8 @@ export async function seedWorkstationAnalyticsData(options?: {
       originalResult: overallResult === 'NTF' ? 'NG' : overallResult,
       inspectionTime: inspectionDate,
       cycleTime: String((Math.random() * 5 + 1).toFixed(2)),
-    });
-    const inspectionId = inspectionResult[0].insertId;
+    }).returning({ id: productInspections.id });
+    const inspectionId = inspectionResult.id;
     createdInspections++;
 
     // Create measurement results for each point
@@ -3779,7 +3783,9 @@ export async function getNGTrendByDay(filters?: {
     `;
 
     const result = await db.execute(query);
-    return (result[0] as unknown) as Array<{
+    // PostgreSQL returns rows directly
+    const rows = (result as any).rows || result;
+    return (rows as unknown) as Array<{
       date: string;
       totalCount: number;
       okCount: number;
@@ -3837,8 +3843,8 @@ export async function getNGComparison(filters: {
       db.execute(previousQuery),
     ]);
 
-    const current = (currentResult[0] as any)[0] || { totalCount: 0, okCount: 0, ngCount: 0, ntfCount: 0, ngRate: 0 };
-    const previous = (previousResult[0] as any)[0] || { totalCount: 0, okCount: 0, ngCount: 0, ntfCount: 0, ngRate: 0 };
+    const current = ((currentResult as any).rows?.[0] || (currentResult as any)[0]) || { totalCount: 0, okCount: 0, ngCount: 0, ntfCount: 0, ngRate: 0 };
+    const previous = ((previousResult as any).rows?.[0] || (previousResult as any)[0]) || { totalCount: 0, okCount: 0, ngCount: 0, ntfCount: 0, ngRate: 0 };
 
     // Calculate changes
     const ngRateChange = Number(current.ngRate) - Number(previous.ngRate);
@@ -3922,8 +3928,8 @@ export async function createScheduledReport(data: InsertScheduledReport) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const result = await db.insert(scheduledReports).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(scheduledReports).values(data).returning({ id: scheduledReports.id });
+  return result.id;
 }
 
 export async function updateScheduledReport(id: number, data: Partial<InsertScheduledReport>) {
@@ -3959,8 +3965,8 @@ export async function createScheduledReportLog(data: InsertScheduledReportLog) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const result = await db.insert(scheduledReportLogs).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(scheduledReportLogs).values(data).returning({ id: scheduledReportLogs.id });
+  return result.id;
 }
 
 export async function getReportsDueForSending() {
@@ -4015,8 +4021,8 @@ export async function createOrUpdateSmtpConfig(data: Omit<InsertSmtpConfig, 'id'
       .where(eq(smtpConfig.id, existing.id));
     return existing.id;
   } else {
-    const result = await db.insert(smtpConfig).values(data);
-    return result[0].insertId;
+    const [result] = await db.insert(smtpConfig).values(data as any).returning({ id: smtpConfig.id });
+    return result.id;
   }
 }
 
@@ -4517,8 +4523,7 @@ export async function getMqttAlertRuleById(id: number) {
     .from(mqttAlertRules)
     .where(eq(mqttAlertRules.id, id))
     .limit(1);
-  
-  return result[0] || null;
+  return result.length > 0 ? result[0] : null;
 }
 
 export async function getEnabledMqttAlertRules() {
@@ -4547,7 +4552,7 @@ export async function createMqttAlertRule(data: {
   const db = await getDb();
   if (!db) return null;
   
-  const result = await db.insert(mqttAlertRules).values({
+  const [result] = await db.insert(mqttAlertRules).values({
     name: data.name,
     description: data.description,
     ruleType: data.ruleType,
@@ -4560,9 +4565,9 @@ export async function createMqttAlertRule(data: {
     notifyMqtt: data.notifyMqtt ?? false,
     cooldownMinutes: data.cooldownMinutes || 15,
     createdBy: data.createdBy,
-  });
+  }).returning({ id: mqttAlertRules.id });
   
-  return { id: Number(result[0].insertId) };
+  return { id: Number(result.id) };
 }
 
 export async function updateMqttAlertRule(id: number, data: Partial<{
@@ -4638,7 +4643,7 @@ export async function createMqttAlertHistoryEntry(data: {
   const db = await getDb();
   if (!db) return null;
   
-  const result = await db.insert(mqttAlertHistory).values({
+  const [result] = await db.insert(mqttAlertHistory).values({
     ruleId: data.ruleId,
     ruleName: data.ruleName,
     ruleType: data.ruleType,
@@ -4647,9 +4652,9 @@ export async function createMqttAlertHistoryEntry(data: {
     message: data.message,
     notificationSent: data.notificationSent ?? false,
     notificationError: data.notificationError,
-  });
+  }).returning({ id: mqttAlertHistory.id });
   
-  return { id: Number(result[0].insertId) };
+  return { id: Number(result.id) };
 }
 
 export async function resolveMqttAlert(id: number, userId: number, note?: string) {
@@ -4683,8 +4688,7 @@ export async function getSystemConfigByKey(key: string) {
     .from(systemConfig)
     .where(eq(systemConfig.configKey, key))
     .limit(1);
-  
-  return result[0] || null;
+  return result.length > 0 ? result[0] : null;
 }
 
 export async function updateSystemConfig(key: string, value: string, userId: number) {
@@ -4711,8 +4715,8 @@ export async function createSystemConfig(data: {
   const db = await getDb();
   if (!db) return null;
   
-  const result = await db.insert(systemConfig).values(data);
-  return { id: Number(result[0].insertId) };
+  const [result] = await db.insert(systemConfig).values(data).returning({ id: systemConfig.id });
+  return { id: Number(result.id) };
 }
 
 
@@ -5016,7 +5020,7 @@ export async function createCorporateAssignment(data: InsertUserCorporateAssignm
   const db = await getDb();
   if (!db) return null;
   
-  const [result] = await db.insert(userCorporateAssignments).values(data);
+  const [result] = await db.insert(userCorporateAssignments).values(data).returning({ id: userCorporateAssignments.id });
   return result;
 }
 
@@ -5024,7 +5028,7 @@ export async function createFactoryAssignment(data: InsertUserFactoryAssignment)
   const db = await getDb();
   if (!db) return null;
   
-  const [result] = await db.insert(userFactoryAssignments).values(data);
+  const [result] = await db.insert(userFactoryAssignments).values(data).returning({ id: userFactoryAssignments.id });
   return result;
 }
 
@@ -5139,8 +5143,8 @@ export async function createEmailTemplateConfig(data: InsertEmailTemplateConfig)
     await db.update(emailTemplateConfig).set({ isDefault: false });
   }
   
-  const [result] = await db.insert(emailTemplateConfig).values(data);
-  return { id: Number(result.insertId) };
+  const [result] = await db.insert(emailTemplateConfig).values(data).returning({ id: emailTemplateConfig.id });
+  return { id: Number(result.id) };
 }
 
 export async function updateEmailTemplateConfig(id: number, data: Partial<InsertEmailTemplateConfig>) {
@@ -5180,8 +5184,8 @@ export async function createNotification(data: InsertNotification) {
   const db = await getDb();
   if (!db) return null;
   
-  const [result] = await db.insert(notifications).values(data);
-  return { id: Number(result.insertId) };
+  const [result] = await db.insert(notifications).values(data).returning({ id: notifications.id });
+  return { id: Number(result.id) };
 }
 
 export async function getNotifications(userId: number, filters?: {
@@ -5279,8 +5283,8 @@ export async function broadcastNotification(userIds: number[], data: Omit<Insert
   
   const results: number[] = [];
   for (const userId of userIds) {
-    const [result] = await db.insert(notifications).values({ ...data, userId });
-    results.push(Number(result.insertId));
+    const [result] = await db.insert(notifications).values({ ...data, userId }).returning({ id: notifications.id });
+    results.push(Number(result.id));
   }
   return results;
 }
@@ -5376,8 +5380,8 @@ export async function saveDashboardWidgetLayout(userId: number, widgets: InsertD
       userId,
       widgets,
       isActive: true,
-    });
-    return { id: Number(result.insertId) };
+    }).returning({ id: dashboardWidgetLayouts.id });
+    return { id: Number(result.id) };
   }
 }
 
@@ -5448,8 +5452,8 @@ export async function createDashboardTemplate(data: InsertDashboardTemplate) {
   const db = await getDb();
   if (!db) return null;
   
-  const [result] = await db.insert(dashboardTemplates).values(data);
-  return { id: Number(result.insertId) };
+  const [result] = await db.insert(dashboardTemplates).values(data).returning({ id: dashboardTemplates.id });
+  return { id: Number(result.id) };
 }
 
 export async function updateDashboardTemplate(id: number, data: Partial<InsertDashboardTemplate>) {
@@ -5551,8 +5555,8 @@ export async function createProcess(data: InsertProcess) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const [result] = await db.insert(processes).values(data);
-  return { id: Number(result.insertId) };
+  const [result] = await db.insert(processes).values(data).returning({ id: processes.id });
+  return { id: Number(result.id) };
 }
 
 export async function updateProcess(id: number, data: Partial<InsertProcess>) {
@@ -5620,8 +5624,8 @@ export async function createLineProcessAssignment(data: InsertLineProcessAssignm
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const [result] = await db.insert(lineProcessAssignments).values(data);
-  return { id: Number(result.insertId) };
+  const [result] = await db.insert(lineProcessAssignments).values(data).returning({ id: lineProcessAssignments.id });
+  return { id: Number(result.id) };
 }
 
 export async function updateLineProcessAssignment(id: number, data: Partial<InsertLineProcessAssignment>) {
@@ -5987,8 +5991,8 @@ export async function createWidgetStylePreset(data: Omit<InsertWidgetStylePreset
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const [result] = await db.insert(widgetStylePresets).values(data);
-  return { id: Number(result.insertId) };
+  const [result] = await db.insert(widgetStylePresets).values(data).returning({ id: widgetStylePresets.id });
+  return { id: Number(result.id) };
 }
 
 export async function updateWidgetStylePreset(id: number, data: Partial<InsertWidgetStylePreset>) {
@@ -6554,7 +6558,7 @@ export async function getProductCategoryById(id: number) {
   if (!db) return null;
   
   const result = await db.select().from(productCategories).where(eq(productCategories.id, id)).limit(1);
-  return result[0] || null;
+  return result.length > 0 ? result[0] : null;
 }
 
 export async function getProductCategoryByCode(code: string) {
@@ -6562,15 +6566,15 @@ export async function getProductCategoryByCode(code: string) {
   if (!db) return null;
   
   const result = await db.select().from(productCategories).where(eq(productCategories.code, code)).limit(1);
-  return result[0] || null;
+  return result.length > 0 ? result[0] : null;
 }
 
 export async function createProductCategory(data: InsertProductCategory) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const result = await db.insert(productCategories).values(data);
-  return { id: result[0].insertId };
+  const [result] = await db.insert(productCategories).values(data).returning({ id: productCategories.id });
+  return { id: result.id };
 }
 
 export async function updateProductCategory(id: number, data: Partial<InsertProductCategory>) {
@@ -6752,8 +6756,8 @@ export async function createBackupLog(log: InsertBackupLog) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const result = await db.insert(backupLogs).values(log);
-  return result[0].insertId;
+  const [result] = await db.insert(backupLogs).values(log).returning({ id: backupLogs.id });
+  return result.id;
 }
 
 export async function listBackupLogs(filters?: {
@@ -6809,8 +6813,8 @@ export async function createScheduledBackup(backup: InsertScheduledBackup) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const result = await db.insert(scheduledBackups).values(backup);
-  return result[0].insertId;
+  const [result] = await db.insert(scheduledBackups).values(backup).returning({ id: scheduledBackups.id });
+  return result.id;
 }
 
 export async function updateScheduledBackup(id: number, data: Partial<InsertScheduledBackup>) {
@@ -6845,7 +6849,7 @@ export async function getScheduledBackupById(id: number) {
   if (!db) return null;
   
   const result = await db.select().from(scheduledBackups).where(eq(scheduledBackups.id, id));
-  return result[0] || null;
+  return result || null;
 }
 
 export async function getScheduledBackupsDue() {
@@ -6866,8 +6870,8 @@ export async function publishTemplateToMarketplace(data: InsertTemplateMarketpla
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const result = await db.insert(templateMarketplace).values(data);
-  return result[0].insertId;
+  const [result] = await db.insert(templateMarketplace).values(data).returning({ id: templateMarketplace.id });
+  return result.id;
 }
 
 export async function listMarketplaceTemplates(filters?: {
@@ -6956,12 +6960,12 @@ export async function createTemplateReview(review: InsertTemplateReview) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const result = await db.insert(templateReviews).values(review);
+  const [result] = await db.insert(templateReviews).values(review).returning({ id: templateReviews.id });
   
   // Update marketplace rating
   await updateMarketplaceRating(review.marketplaceId);
   
-  return result[0].insertId;
+  return result.id;
 }
 
 export async function listTemplateReviews(marketplaceId: number) {
@@ -7025,8 +7029,8 @@ export async function createOrderTemplate(data: InsertProductionOrderTemplate) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const result = await db.insert(productionOrderTemplates).values(data);
-  return { id: result[0].insertId };
+  const [result] = await db.insert(productionOrderTemplates).values(data).returning({ id: productionOrderTemplates.id });
+  return { id: result.id };
 }
 
 export async function updateOrderTemplate(id: number, data: Partial<InsertProductionOrderTemplate>) {
@@ -7213,7 +7217,7 @@ export async function createMqttClient(data: {
   // Generate a unique clientId from deviceId
   const clientId = `client_${data.deviceId}_${Date.now()}`;
   
-  const result = await db.insert(mqttClients).values({
+  const [result] = await db.insert(mqttClients).values({
     clientId,
     deviceId: data.deviceId,
     deviceName: data.deviceName,
@@ -7228,9 +7232,9 @@ export async function createMqttClient(data: {
     approvedAt: data.approvedAt || null,
     connectionStatus: data.connectionStatus || 'OFFLINE',
     isActive: data.isActive ?? true,
-  });
+  }).returning({ id: mqttClients.id });
   
-  return { id: Number(result[0].insertId) };
+  return { id: Number(result.id) };
 }
 
 // ============ MQTT CLIENT CONNECTION HISTORY ============

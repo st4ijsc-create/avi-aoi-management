@@ -286,7 +286,8 @@ function setupEventHandlers() {
             clientId: mqttClient[0].id,
             topic: sub.topic,
             qos: sub.qos,
-          }).onDuplicateKeyUpdate({
+          }).onConflictDoUpdate({
+            target: [schema.mqttSubscriptions.clientId, schema.mqttSubscriptions.topic],
             set: { isActive: true },
           });
         }

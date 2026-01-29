@@ -29,6 +29,7 @@ import Setup from "./pages/Setup";
 import MqttDashboard from "./pages/MqttDashboard";
 import MqttAlertRules from "./pages/MqttAlertRules";
 import MqttClientManagement from "./pages/MqttClientManagement";
+import MqttProfileManagement from "./pages/MqttProfileManagement";
 import MqttTopicsMessages from "./pages/MqttTopicsMessages";
 import CustomDashboard from "./pages/CustomDashboard";
 import SystemConfiguration from "./pages/SystemConfiguration";
@@ -57,6 +58,8 @@ import PredictiveAlertsPage from "./pages/PredictiveAlertsPage";
 import DashboardMarketplace from "./pages/DashboardMarketplace";
 import HistoryExportScheduling from "./pages/HistoryExportScheduling";
 import CorporateDashboard from "./pages/CorporateDashboard";
+import AIPerformanceDashboard from "./pages/AIPerformanceDashboard";
+import TestAnnotationPage from "./pages/TestAnnotationPage";
 
 function Router() {
   return (
@@ -88,6 +91,7 @@ function Router() {
       <Route path="/mqtt-dashboard" component={MqttDashboard} />
       <Route path="/mqtt-alerts" component={MqttAlertRules} />
       <Route path="/mqtt-clients" component={MqttClientManagement} />
+      <Route path="/mqtt-profiles" component={MqttProfileManagement} />
       <Route path="/mqtt-topics" component={MqttTopicsMessages} />
       <Route path="/custom-dashboard" component={CustomDashboard} />
       <Route path="/system-config" component={SystemConfiguration} />
@@ -115,6 +119,8 @@ function Router() {
       <Route path="/predictive-alerts" component={PredictiveAlertsPage} />
       <Route path="/dashboard-marketplace" component={DashboardMarketplace} />
       <Route path="/history-export-scheduling" component={HistoryExportScheduling} />
+      <Route path="/ai-performance" component={AIPerformanceDashboard} />
+      <Route path="/test-annotation" component={TestAnnotationPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

@@ -2542,60 +2542,134 @@ export default function Dashboard() {
   );
 }
 
-// MQTT Alert Widget Component
+// MQTT Alert Widget Component - Combined alerts from mqttAlert and mqttClientManagement
 function MqttAlertWidget() {
+  // Rule-based alerts
   const { data: unresolvedAlerts } = trpc.mqttAlert.unresolved.useQuery(undefined, {
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchInterval: 30000,
   });
 
-  if (!unresolvedAlerts || unresolvedAlerts.length === 0) {
-    return null; // Don't show widget if no alerts
+  // Connection alerts from scheduler
+  const { data: connectionAlerts } = trpc.mqttClientManagement.getAlertWidgetData.useQuery(undefined, {
+    refetchInterval: 30000,
+  });
+
+  const totalRuleAlerts = unresolvedAlerts?.length || 0;
+  const totalConnectionAlerts = connectionAlerts?.total || 0;
+  const totalAlerts = totalRuleAlerts + totalConnectionAlerts;
+
+  if (totalAlerts === 0) {
+    return null;
   }
 
+  // Combine and sort alerts by time
+  const combinedAlerts: Array<{
+    id: string | number;
+    type: 'rule' | 'connection';
+    title: string;
+    message: string;
+    severity: string;
+    triggeredAt: Date;
+  }> = [];
+
+  // Add rule-based alerts
+  unresolvedAlerts?.forEach((alert: any) => {
+    combinedAlerts.push({
+      id: `rule-${alert.id}`,
+      type: 'rule',
+      title: alert.ruleName,
+      message: alert.message,
+      severity: 'warning',
+      triggeredAt: new Date(alert.triggeredAt),
+    });
+  });
+
+  // Add connection alerts
+  connectionAlerts?.recentAlerts?.forEach((alert: any) => {
+    combinedAlerts.push({
+      id: `conn-${alert.id}`,
+      type: 'connection',
+      title: alert.title,
+      message: alert.alertType.replace(/_/g, ' '),
+      severity: alert.severity,
+      triggeredAt: new Date(alert.triggeredAt),
+    });
+  });
+
+  // Sort by time descending
+  combinedAlerts.sort((a, b) => b.triggeredAt.getTime() - a.triggeredAt.getTime());
+
+  const hasCritical = (connectionAlerts?.critical || 0) > 0;
+
   return (
-    <Card className="glass-card border-red-500/50 bg-red-500/5">
+    <Card className={`glass-card ${hasCritical ? 'border-red-500/50 bg-red-500/5' : 'border-yellow-500/50 bg-yellow-500/5'}`}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-base flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-red-400" />
+            <AlertTriangle className={`w-5 h-5 ${hasCritical ? 'text-red-400' : 'text-yellow-400'}`} />
             MQTT Alerts
-            <Badge variant="destructive" className="ml-2">
-              {unresolvedAlerts.length}
-            </Badge>
+            <div className="flex gap-1 ml-2">
+              {(connectionAlerts?.critical || 0) > 0 && (
+                <Badge variant="destructive">{connectionAlerts?.critical} critical</Badge>
+              )}
+              {(connectionAlerts?.warning || 0) > 0 && (
+                <Badge variant="outline" className="border-yellow-500 text-yellow-500">{connectionAlerts?.warning} warning</Badge>
+              )}
+              {totalRuleAlerts > 0 && (
+                <Badge variant="secondary">{totalRuleAlerts} rules</Badge>
+              )}
+            </div>
           </CardTitle>
-          <Link href="/mqtt-alerts">
-            <Button variant="outline" size="sm">
-              View All
-              <ChevronRight className="w-4 h-4 ml-1" />
-            </Button>
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/mqtt-profiles?tab=alerts">
+              <Button variant="outline" size="sm">
+                Connection Alerts
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </Link>
+            <Link href="/mqtt-alerts">
+              <Button variant="outline" size="sm">
+                Rule Alerts
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </Link>
+          </div>
         </div>
-        <CardDescription>Unresolved MQTT system alerts</CardDescription>
+        <CardDescription>Unresolved MQTT system alerts ({totalAlerts} total)</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
-          {unresolvedAlerts.slice(0, 3).map((alert: any) => (
+          {combinedAlerts.slice(0, 5).map((alert) => (
             <div
               key={alert.id}
-              className="flex items-start gap-3 p-3 rounded-lg bg-background/50 border border-red-500/20"
+              className={`flex items-start gap-3 p-3 rounded-lg bg-background/50 border ${
+                alert.severity === 'critical' ? 'border-red-500/20' : 'border-yellow-500/20'
+              }`}
             >
               <div className="mt-0.5">
-                <AlertTriangle className="w-4 h-4 text-red-400" />
+                <AlertTriangle className={`w-4 h-4 ${
+                  alert.severity === 'critical' ? 'text-red-400' : 'text-yellow-400'
+                }`} />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm">{alert.ruleName}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-medium text-sm">{alert.title}</p>
+                  <Badge variant="outline" className="text-xs">
+                    {alert.type === 'rule' ? 'Rule' : 'Connection'}
+                  </Badge>
+                </div>
                 <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
                   {alert.message}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {new Date(alert.triggeredAt).toLocaleString('vi-VN')}
+                  {alert.triggeredAt.toLocaleString('vi-VN')}
                 </p>
               </div>
             </div>
           ))}
-          {unresolvedAlerts.length > 3 && (
+          {combinedAlerts.length > 5 && (
             <p className="text-xs text-muted-foreground text-center pt-2">
-              +{unresolvedAlerts.length - 3} more alerts
+              +{combinedAlerts.length - 5} more alerts
             </p>
           )}
         </div>

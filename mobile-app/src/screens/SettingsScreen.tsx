@@ -12,8 +12,21 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
 import { useMqttStore } from '../stores/mqttStore';
+
+// Configure notification handler
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 export default function SettingsScreen() {
   const { settings, updateSettings, connect, disconnect, isConnected, isConnecting, connectionError } = useMqttStore();
@@ -23,6 +36,12 @@ export default function SettingsScreen() {
   const [username, setUsername] = useState(settings.username);
   const [password, setPassword] = useState(settings.password);
   const [alertDuration, setAlertDuration] = useState(String(settings.alertDisplayDuration));
+  
+  // Notification test states
+  const [fcmToken, setFcmToken] = useState<string | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<string>('unknown');
+  const [isSendingTest, setIsSendingTest] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   useEffect(() => {
     setBrokerUrl(settings.brokerUrl);
@@ -30,7 +49,140 @@ export default function SettingsScreen() {
     setUsername(settings.username);
     setPassword(settings.password);
     setAlertDuration(String(settings.alertDisplayDuration));
+    
+    // Check notification permissions and get token
+    checkNotificationSetup();
   }, [settings]);
+
+  const checkNotificationSetup = async () => {
+    try {
+      // Check permissions
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      setNotificationPermission(existingStatus);
+      
+      if (existingStatus === 'granted') {
+        // Get push token
+        if (Device.isDevice) {
+          const token = await Notifications.getExpoPushTokenAsync({
+            projectId: 'your-project-id', // Replace with actual project ID
+          });
+          setFcmToken(token.data);
+        } else {
+          setFcmToken('Simulator - No token available');
+        }
+      }
+    } catch (error) {
+      console.error('Error checking notification setup:', error);
+    }
+  };
+
+  const requestNotificationPermission = async () => {
+    try {
+      const { status } = await Notifications.requestPermissionsAsync();
+      setNotificationPermission(status);
+      
+      if (status === 'granted') {
+        await checkNotificationSetup();
+        Alert.alert('Thành công', 'Đã cấp quyền thông báo');
+      } else {
+        Alert.alert('Lỗi', 'Không thể cấp quyền thông báo. Vui lòng kiểm tra cài đặt thiết bị.');
+      }
+    } catch (error) {
+      Alert.alert('Lỗi', 'Không thể yêu cầu quyền thông báo');
+    }
+  };
+
+  const sendLocalTestNotification = async () => {
+    setIsSendingTest(true);
+    setTestResult(null);
+    
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '🔔 Test Notification',
+          body: 'Đây là thông báo test local từ AVI/AOI Management App',
+          data: { type: 'test', timestamp: Date.now() },
+          sound: true,
+          badge: 1,
+        },
+        trigger: { seconds: 1 },
+      });
+      
+      setTestResult({ success: true, message: 'Đã gửi thông báo local thành công!' });
+    } catch (error: any) {
+      setTestResult({ success: false, message: `Lỗi: ${error.message}` });
+    } finally {
+      setIsSendingTest(false);
+    }
+  };
+
+  const sendRemoteTestNotification = async () => {
+    if (!settings.apiUrl) {
+      Alert.alert('Lỗi', 'Vui lòng cấu hình API URL trước');
+      return;
+    }
+    
+    setIsSendingTest(true);
+    setTestResult(null);
+    
+    try {
+      const response = await fetch(`${settings.apiUrl}/api/trpc/fcm.sendTestNotification`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          json: {
+            deviceToken: fcmToken,
+            title: '🔔 Test Push Notification',
+            body: 'Đây là thông báo test từ server AVI/AOI',
+          },
+        }),
+      });
+      
+      if (response.ok) {
+        setTestResult({ success: true, message: 'Đã gửi yêu cầu push notification đến server!' });
+      } else {
+        const errorData = await response.json();
+        setTestResult({ success: false, message: `Server error: ${errorData.error?.message || 'Unknown error'}` });
+      }
+    } catch (error: any) {
+      setTestResult({ success: false, message: `Network error: ${error.message}` });
+    } finally {
+      setIsSendingTest(false);
+    }
+  };
+
+  const sendNGAlertTest = async () => {
+    setIsSendingTest(true);
+    setTestResult(null);
+    
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '⚠️ NG Alert - Test',
+          body: 'Phát hiện sản phẩm NG tại Line 1, Machine AVI-001\nSerial: TEST-001\nDefect: Scratch on surface',
+          data: { 
+            type: 'ng_alert', 
+            machineId: 'AVI-001',
+            serial: 'TEST-001',
+            defectType: 'Scratch',
+            timestamp: Date.now(),
+          },
+          sound: true,
+          badge: 1,
+          categoryIdentifier: 'ng_alert',
+        },
+        trigger: { seconds: 1 },
+      });
+      
+      setTestResult({ success: true, message: 'Đã gửi NG Alert test thành công!' });
+    } catch (error: any) {
+      setTestResult({ success: false, message: `Lỗi: ${error.message}` });
+    } finally {
+      setIsSendingTest(false);
+    }
+  };
 
   const handleSave = async () => {
     await updateSettings({
@@ -78,6 +230,110 @@ export default function SettingsScreen() {
             {isConnecting ? 'Đang kết nối...' : isConnected ? 'Ngắt kết nối' : 'Kết nối'}
           </Text>
         </TouchableOpacity>
+      </View>
+
+      {/* Test Notification Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>🔔 Test Thông báo</Text>
+        
+        {/* Permission Status */}
+        <View style={styles.permissionRow}>
+          <View style={styles.permissionInfo}>
+            <Text style={styles.permissionLabel}>Quyền thông báo</Text>
+            <View style={styles.permissionStatus}>
+              <View style={[
+                styles.permissionDot, 
+                { backgroundColor: notificationPermission === 'granted' ? '#10b981' : '#f59e0b' }
+              ]} />
+              <Text style={[
+                styles.permissionText,
+                { color: notificationPermission === 'granted' ? '#10b981' : '#f59e0b' }
+              ]}>
+                {notificationPermission === 'granted' ? 'Đã cấp quyền' : 
+                 notificationPermission === 'denied' ? 'Bị từ chối' : 'Chưa xác định'}
+              </Text>
+            </View>
+          </View>
+          {notificationPermission !== 'granted' && (
+            <TouchableOpacity 
+              style={styles.permissionButton}
+              onPress={requestNotificationPermission}
+            >
+              <Text style={styles.permissionButtonText}>Cấp quyền</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* FCM Token */}
+        <View style={styles.tokenSection}>
+          <Text style={styles.tokenLabel}>Push Token:</Text>
+          <Text style={styles.tokenValue} numberOfLines={2} ellipsizeMode="middle">
+            {fcmToken || 'Chưa có token'}
+          </Text>
+        </View>
+
+        {/* Test Buttons */}
+        <View style={styles.testButtonsContainer}>
+          <TouchableOpacity
+            style={[styles.testButton, styles.testButtonLocal]}
+            onPress={sendLocalTestNotification}
+            disabled={isSendingTest || notificationPermission !== 'granted'}
+          >
+            {isSendingTest ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Text style={styles.testButtonIcon}>📱</Text>
+                <Text style={styles.testButtonText}>Test Local</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.testButton, styles.testButtonRemote]}
+            onPress={sendRemoteTestNotification}
+            disabled={isSendingTest || notificationPermission !== 'granted' || !fcmToken}
+          >
+            {isSendingTest ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Text style={styles.testButtonIcon}>☁️</Text>
+                <Text style={styles.testButtonText}>Test Remote</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.testButton, styles.testButtonNG]}
+            onPress={sendNGAlertTest}
+            disabled={isSendingTest || notificationPermission !== 'granted'}
+          >
+            {isSendingTest ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Text style={styles.testButtonIcon}>⚠️</Text>
+                <Text style={styles.testButtonText}>Test NG Alert</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Test Result */}
+        {testResult && (
+          <View style={[
+            styles.testResultBox,
+            { backgroundColor: testResult.success ? '#10b98120' : '#ef444420' }
+          ]}>
+            <Text style={[
+              styles.testResultText,
+              { color: testResult.success ? '#10b981' : '#ef4444' }
+            ]}>
+              {testResult.success ? '✓ ' : '✗ '}{testResult.message}
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* MQTT Settings */}
@@ -210,7 +466,14 @@ export default function SettingsScreen() {
           <Text style={styles.infoLabel}>Station ID:</Text>
           <Text style={styles.infoValue}>{settings.stationId || 'Tất cả'}</Text>
         </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Platform:</Text>
+          <Text style={styles.infoValue}>{Platform.OS} {Platform.Version}</Text>
+        </View>
       </View>
+      
+      {/* Bottom padding */}
+      <View style={{ height: 40 }} />
     </ScrollView>
   );
 }
@@ -345,5 +608,104 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontFamily: 'monospace',
+  },
+  // Test Notification Styles
+  permissionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  permissionInfo: {
+    flex: 1,
+  },
+  permissionLabel: {
+    color: '#fff',
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  permissionStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  permissionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  permissionText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  permissionButton: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  permissionButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  tokenSection: {
+    backgroundColor: '#0f0f1a',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  tokenLabel: {
+    color: '#888',
+    fontSize: 11,
+    marginBottom: 4,
+  },
+  tokenValue: {
+    color: '#fff',
+    fontSize: 11,
+    fontFamily: 'monospace',
+  },
+  testButtonsContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  testButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 60,
+  },
+  testButtonLocal: {
+    backgroundColor: '#3b82f6',
+  },
+  testButtonRemote: {
+    backgroundColor: '#8b5cf6',
+  },
+  testButtonNG: {
+    backgroundColor: '#f59e0b',
+  },
+  testButtonIcon: {
+    fontSize: 20,
+    marginBottom: 4,
+  },
+  testButtonText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  testResultBox: {
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  testResultText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
 });

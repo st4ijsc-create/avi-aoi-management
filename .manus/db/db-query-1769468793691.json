@@ -1,0 +1,9 @@
+{
+  "query": "CREATE INDEX idx_reconnect_profile ON mqtt_reconnect_logs (profileId);\nCREATE INDEX idx_reconnect_assignment ON mqtt_reconnect_logs (assignmentId);\nCREATE INDEX idx_reconnect_event ON mqtt_reconnect_logs (eventType);\nCREATE INDEX idx_reconnect_timestamp ON mqtt_reconnect_logs (timestamp);\nCREATE INDEX idx_reconnect_target ON mqtt_reconnect_logs (targetType, targetId);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute CREATE INDEX idx_reconnect_profile ON mqtt_reconnect_logs (profileId);\nCREATE INDEX idx_reconnect_assignment ON mqtt_reconnect_logs (assignmentId);\nCREATE INDEX idx_reconnect_event ON mqtt_reconnect_logs (eventType);\nCREATE INDEX idx_reconnect_timestamp ON mqtt_reconnect_logs (timestamp);\nCREATE INDEX idx_reconnect_target ON mqtt_reconnect_logs (targetType, targetId);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 4817
+}

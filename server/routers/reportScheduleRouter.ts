@@ -162,9 +162,9 @@ export const reportScheduleRouter = router({
         nextScheduledAt,
         createdBy: ctx.user.id,
         isActive: true,
-      });
+      }).returning({ id: scheduledReports.id });
       
-      return { id: result.insertId, nextScheduledAt };
+      return { id: result.id, nextScheduledAt };
     }),
 
   // Update scheduled report
@@ -368,14 +368,14 @@ export const reportScheduleRouter = router({
         recipientCount: report.recipients.length,
         successCount: 0,
         failedCount: 0,
-      });
+      }).returning({ id: scheduledReportLogs.id });
       
       // In a real implementation, this would trigger the actual report generation
       // For now, we just mark it as pending
       
       return { 
         success: true, 
-        logId: logResult.insertId,
+        logId: logResult.id,
         message: "Report generation triggered. Check logs for status.",
       };
     }),

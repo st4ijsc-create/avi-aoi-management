@@ -227,7 +227,7 @@ async function getAverageLatency(minutes: number): Promise<number> {
       AND deliveryStatus = 'DELIVERED'
   `);
 
-  const rows = result as any[];
+  const rows = (result as unknown as { rows: any[] }).rows || [];
   return rows[0]?.avg_latency || 0;
 }
 
@@ -252,7 +252,7 @@ async function getMessageFailureRate(minutes: number): Promise<number> {
     WHERE createdAt >= ${since}
   `);
 
-  const rows = result as any[];
+  const rows = (result as unknown as { rows: any[] }).rows || [];
   const total = parseInt(rows[0]?.total || "0");
   const failed = parseInt(rows[0]?.failed || "0");
   
@@ -271,7 +271,7 @@ async function getThroughput(minutes: number): Promise<number> {
     WHERE createdAt >= ${since}
   `);
 
-  const rows = result as any[];
+  const rows = (result as unknown as { rows: any[] }).rows || [];
   const count = parseInt(rows[0]?.count || "0");
   
   return count / minutes; // messages per minute

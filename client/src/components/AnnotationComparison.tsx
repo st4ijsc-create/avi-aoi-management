@@ -6,14 +6,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import {
   GitCompare,
   Layers,
-  Calendar,
   Search,
   ChevronLeft,
   ChevronRight,
@@ -32,7 +31,10 @@ import {
   AlertTriangle,
   Clock,
   Image as ImageIcon,
+  FileDown,
+  Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
@@ -63,13 +65,13 @@ interface ComparisonGroup {
   inspections: ComparisonItem[];
 }
 
-const resultColors = {
+const resultColors: Record<string, string> = {
   OK: 'text-green-500 bg-green-500/10',
   NG: 'text-red-500 bg-red-500/10',
   NTF: 'text-orange-500 bg-orange-500/10',
 };
 
-const resultIcons = {
+const resultIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   OK: CheckCircle2,
   NG: XCircle,
   NTF: AlertTriangle,
@@ -127,6 +129,39 @@ export function AnnotationComparison() {
     refetch();
   };
 
+  // Export PDF mutation
+  const exportPdfMutation = trpc.annotationComparison.generatePdfReport.useMutation({
+    onSuccess: (data) => {
+      // Create downloadable JSON report (can be converted to PDF on client)
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `comparison-report-${data.inspection1.serialNumber}-${data.inspection2.serialNumber}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Đã xuất báo cáo thành công');
+    },
+    onError: (error) => {
+      toast.error(`Lỗi xuất báo cáo: ${error.message}`);
+    },
+  });
+
+  const handleExportPdf = () => {
+    if (!leftItem || !rightItem) {
+      toast.error('Vui lòng chọn 2 inspections để so sánh');
+      return;
+    }
+    exportPdfMutation.mutate({
+      inspectionId1: leftItem.inspectionId,
+      inspectionId2: rightItem.inspectionId,
+      includeImages: true,
+      includePatterns: true,
+    });
+  };
+
   const leftItem = selectedGroup?.inspections[leftIndex];
   const rightItem = selectedGroup?.inspections[rightIndex];
 
@@ -151,7 +186,7 @@ export function AnnotationComparison() {
     };
   }, [leftItem, rightItem]);
 
-  const renderAnnotationOverlay = (annotations: any[], imageWidth: number, imageHeight: number) => {
+  const renderAnnotationOverlay = (annotations: any[]) => {
     if (!showAnnotations || !annotations?.length) return null;
     
     return (
@@ -271,7 +306,7 @@ export function AnnotationComparison() {
       );
     }
 
-    const ResultIcon = resultIcons[item.result as keyof typeof resultIcons] || AlertTriangle;
+    const ResultIcon = resultIcons[item.result] || AlertTriangle;
 
     return (
       <div className="flex-1 flex flex-col">
@@ -279,7 +314,7 @@ export function AnnotationComparison() {
         <div className={cn("p-3 rounded-t-lg border-2", borderColor)}>
           <div className="flex items-center justify-between mb-2">
             <span className="font-medium">{label}</span>
-            <Badge variant="outline" className={resultColors[item.result as keyof typeof resultColors]}>
+            <Badge variant="outline" className={resultColors[item.result] || ''}>
               <ResultIcon className="h-3 w-3 mr-1" />
               {item.result}
             </Badge>
@@ -309,7 +344,7 @@ export function AnnotationComparison() {
               alt={item.measurementPointName}
               className="max-w-full max-h-full object-contain"
             />
-            {renderAnnotationOverlay(item.annotations, 100, 100)}
+            {renderAnnotationOverlay(item.annotations)}
           </div>
         </div>
 
@@ -328,7 +363,7 @@ export function AnnotationComparison() {
                 return (
                   <span key={type} className="flex items-center gap-1">
                     <Icon className="h-3 w-3" />
-                    {count}
+                    {count as number}
                   </span>
                 );
               })}
@@ -370,14 +405,14 @@ export function AnnotationComparison() {
             <div className="space-y-2">
               <Label>Model sản phẩm</Label>
               <Select
-                value={productModelId?.toString() || ''}
-                onValueChange={(v) => setProductModelId(v ? parseInt(v) : undefined)}
+                value={productModelId?.toString() || 'all'}
+                onValueChange={(v) => setProductModelId(v === 'all' ? undefined : parseInt(v))}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Chọn model..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Tất cả</SelectItem>
+                  <SelectItem value="all">Tất cả</SelectItem>
                   {productModels?.map((pm: any) => (
                     <SelectItem key={pm.id} value={pm.id.toString()}>
                       {pm.name}
@@ -390,14 +425,14 @@ export function AnnotationComparison() {
             <div className="space-y-2">
               <Label>Máy</Label>
               <Select
-                value={machineId?.toString() || ''}
-                onValueChange={(v) => setMachineId(v ? parseInt(v) : undefined)}
+                value={machineId?.toString() || 'all'}
+                onValueChange={(v) => setMachineId(v === 'all' ? undefined : parseInt(v))}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Chọn máy..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Tất cả</SelectItem>
+                  <SelectItem value="all">Tất cả</SelectItem>
                   {machines?.map((m: any) => (
                     <SelectItem key={m.id} value={m.id.toString()}>
                       {m.name}
@@ -410,14 +445,15 @@ export function AnnotationComparison() {
             <div className="space-y-2">
               <Label>Điểm đo</Label>
               <Select
-                value={measurementPointId?.toString() || ''}
-                onValueChange={(v) => setMeasurementPointId(v ? parseInt(v) : undefined)}
+                value={measurementPointId?.toString() || 'all'}
+                onValueChange={(v) => setMeasurementPointId(v === 'all' ? undefined : parseInt(v))}
+                disabled={!productModelId}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Chọn điểm đo..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Tất cả</SelectItem>
+                  <SelectItem value="all">Tất cả</SelectItem>
                   {measurementPoints?.map((mp: any) => (
                     <SelectItem key={mp.id} value={mp.id.toString()}>
                       {mp.name}
@@ -449,6 +485,22 @@ export function AnnotationComparison() {
               <Button onClick={handleSearch} className="w-full gap-2">
                 <Search className="h-4 w-4" />
                 Tìm kiếm
+              </Button>
+            </div>
+
+            <div className="flex items-end">
+              <Button 
+                variant="outline" 
+                onClick={handleExportPdf} 
+                className="w-full gap-2"
+                disabled={!leftItem || !rightItem || exportPdfMutation.isPending}
+              >
+                {exportPdfMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileDown className="h-4 w-4" />
+                )}
+                Xuất báo cáo
               </Button>
             </div>
           </div>
@@ -504,7 +556,7 @@ export function AnnotationComparison() {
                 </CardTitle>
                 <div className="flex items-center gap-2">
                   {/* View Mode Toggle */}
-                  <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as any)}>
+                  <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'side-by-side' | 'overlay')}>
                     <TabsList className="h-8">
                       <TabsTrigger value="side-by-side" className="text-xs px-2">
                         <GitCompare className="h-3 w-3 mr-1" />
@@ -644,7 +696,7 @@ export function AnnotationComparison() {
                             className="max-w-full max-h-full object-contain"
                             style={{ transform: `scale(${zoom})` }}
                           />
-                          {showAnnotations && renderAnnotationOverlay(leftItem.annotations, 100, 100)}
+                          {showAnnotations && renderAnnotationOverlay(leftItem.annotations)}
                         </div>
                       )}
                       {/* Overlay image (right) */}
@@ -659,7 +711,7 @@ export function AnnotationComparison() {
                             className="max-w-full max-h-full object-contain"
                             style={{ transform: `scale(${zoom})` }}
                           />
-                          {showAnnotations && renderAnnotationOverlay(rightItem.annotations, 100, 100)}
+                          {showAnnotations && renderAnnotationOverlay(rightItem.annotations)}
                         </div>
                       )}
                       {/* Opacity slider */}
@@ -742,5 +794,3 @@ export function AnnotationComparison() {
     </div>
   );
 }
-
-export default AnnotationComparison;

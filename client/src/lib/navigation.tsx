@@ -146,24 +146,31 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin'
       },
       { 
-        href: "/corporations", 
-        label: "Quản lý Tập đoàn", 
-        icon: <Building2 className="h-4 w-4" />,
-        description: "Quản lý thông tin các tập đoàn",
-        requiredRole: 'admin'
-      },
-      { 
-        href: "/companies", 
-        label: "Quản lý Công ty", 
-        icon: <Factory className="h-4 w-4" />,
-        description: "Quản lý thông tin các công ty",
-        requiredRole: 'admin'
-      },
-      { 
-        href: "/factories", 
+        href: "/settings?tab=factories", 
         label: "Quản lý Nhà máy", 
         icon: <Factory className="h-4 w-4" />,
         description: "Quản lý thông tin các nhà máy",
+        requiredRole: 'admin'
+      },
+      { 
+        href: "/settings?tab=workshops", 
+        label: "Quản lý Xưởng", 
+        icon: <Building2 className="h-4 w-4" />,
+        description: "Quản lý thông tin các xưởng sản xuất",
+        requiredRole: 'admin'
+      },
+      { 
+        href: "/settings?tab=lines", 
+        label: "Quản lý Dây chuyền", 
+        icon: <Factory className="h-4 w-4" />,
+        description: "Quản lý thông tin các dây chuyền sản xuất",
+        requiredRole: 'admin'
+      },
+      { 
+        href: "/settings?tab=machines", 
+        label: "Quản lý Máy", 
+        icon: <Factory className="h-4 w-4" />,
+        description: "Quản lý thông tin các máy AVI/AOI",
         requiredRole: 'admin'
       },
     ],
@@ -208,6 +215,12 @@ export const navGroups: NavGroup[] = [
         label: "MQTT Replay", 
         icon: <Play className="h-4 w-4" />,
         description: "Phát lại và debug tin nhắn MQTT"
+      },
+      { 
+        href: "/mqtt-profiles", 
+        label: "MQTT Profiles", 
+        icon: <Server className="h-4 w-4" />,
+        description: "Quản lý tập trung cấu hình MQTT"
       },
       { 
         href: "/oee-dashboard", 
