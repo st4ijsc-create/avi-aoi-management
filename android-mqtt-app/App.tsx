@@ -17,7 +17,6 @@ import NotificationHistoryScreen from './src/screens/NotificationHistoryScreen';
 import StationConfigScreen from './src/screens/StationConfigScreen';
 
 // Services
-import { initMqttService } from './src/services/mqttService';
 import { initNotificationService } from './src/services/notificationService';
 
 const Stack = createNativeStackNavigator();
@@ -39,10 +38,11 @@ const theme = {
 
 export default function App() {
   useEffect(() => {
-    // Initialize services on app start
+    // Initialize notification service on app start.
+    // MQTT connection is now started manually from the UI
+    // to avoid errors before the user is ready.
     const initServices = async () => {
       await initNotificationService();
-      await initMqttService();
     };
     
     initServices();

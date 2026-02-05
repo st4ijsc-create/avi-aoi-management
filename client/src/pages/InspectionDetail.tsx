@@ -629,14 +629,14 @@ export default function InspectionDetail() {
               <SplitSquareVertical className="h-5 w-5" /> 
               So sánh ảnh thực tế với ảnh mẫu
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription asChild>
               {selectedMeasurement && (
-                <div className="flex items-center gap-2">
+                <span className="flex items-center gap-2">
                   <span className="font-medium">{selectedMeasurement.pointCode || `Point ${selectedMeasurement.pointDefId}`}</span>
                   <span className="text-muted-foreground">-</span>
                   <span>{selectedMeasurement.pointName}</span>
                   {getResultBadge(selectedMeasurement.result)}
-                </div>
+                </span>
               )}
             </DialogDescription>
           </DialogHeader>

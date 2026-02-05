@@ -59,10 +59,10 @@ export default function CategoryAnalytics() {
   const { data: inspectionsData, isLoading: loadingInspections, refetch } = trpc.inspection.list.useQuery({
     startDate: dateRange.start,
     endDate: dateRange.end,
-    limit: 10000,
+    limit: 1000,
   });
   const inspections = inspectionsData?.data || [];
-  const { data: productModels } = trpc.productModel.list.useQuery({ limit: 1000 });
+  const { data: productModels } = trpc.productModel.list.useQuery({ limit: 100 });
 
   // Process data for charts
   const analyticsData = useMemo(() => {

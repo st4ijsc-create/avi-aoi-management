@@ -409,11 +409,11 @@ export default function YieldThresholdSettings() {
               ) : (
                 <ScrollArea className="h-[500px]">
                   <div className="space-y-4">
-                    {history.map((item, index) => {
+                    {history.map((item) => {
                       const metricInfo = METRIC_INFO[item.metricType as keyof typeof METRIC_INFO];
                       const Icon = metricInfo?.icon || Activity;
                       return (
-                        <div key={index} className="flex items-start gap-4 p-4 rounded-lg bg-muted/30 border border-border/50">
+                        <div key={`${item.metricType}-${item.createdAt}`} className="flex items-start gap-4 p-4 rounded-lg bg-muted/30 border border-border/50">
                           <div className={`p-2 rounded-lg bg-muted ${metricInfo?.color || 'text-primary'}`}>
                             <Icon className="h-4 w-4" />
                           </div>

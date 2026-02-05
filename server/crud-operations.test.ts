@@ -24,9 +24,9 @@ describe('PostgreSQL CRUD Operations', () => {
     }
     
     pool = new Pool({
-      connectionString: process.env.SUPABASE_DATABASE_URL,
-      ssl: sslConfig
-    });
+    connectionString: process.env.DATABASE_URL,
+    ssl: sslConfig
+  });
   });
 
   afterAll(async () => {

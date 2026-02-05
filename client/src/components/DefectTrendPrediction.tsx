@@ -217,9 +217,13 @@ export function DefectTrendPrediction() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Tổng defects</p>
-                <p className="text-2xl font-bold">
-                  {isLoading ? <Skeleton className="h-8 w-16" /> : data?.statistics.totalDefects || 0}
-                </p>
+                {isLoading ? (
+                  <Skeleton className="h-8 w-16" />
+                ) : (
+                  <p className="text-2xl font-bold">
+                    {data?.statistics.totalDefects || 0}
+                  </p>
+                )}
               </div>
               <BarChart3 className="h-8 w-8 text-muted-foreground" />
             </div>
@@ -231,9 +235,9 @@ export function DefectTrendPrediction() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Trung bình/ngày</p>
-                <p className="text-2xl font-bold">
+                <div className="text-2xl font-bold">
                   {isLoading ? <Skeleton className="h-8 w-16" /> : data?.statistics.avgDaily || 0}
-                </p>
+                </div>
               </div>
               <Calendar className="h-8 w-8 text-muted-foreground" />
             </div>
@@ -246,7 +250,7 @@ export function DefectTrendPrediction() {
               <div>
                 <p className="text-sm text-muted-foreground">Xu hướng</p>
                 <div className="flex items-center gap-2">
-                  <p className={cn('text-2xl font-bold capitalize', getTrendColor())}>
+                  <div className={cn('text-2xl font-bold capitalize', getTrendColor())}>
                     {isLoading ? (
                       <Skeleton className="h-8 w-20" />
                     ) : data?.statistics.trendDirection === 'increasing' ? (
@@ -256,7 +260,7 @@ export function DefectTrendPrediction() {
                     ) : (
                       'Ổn định'
                     )}
-                  </p>
+                  </div>
                   {!isLoading && getTrendIcon()}
                 </div>
               </div>
@@ -270,9 +274,9 @@ export function DefectTrendPrediction() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Độ dốc (slope)</p>
-                <p className="text-2xl font-bold">
+                <div className="text-2xl font-bold">
                   {isLoading ? <Skeleton className="h-8 w-16" /> : data?.statistics.slope || 0}
-                </p>
+                </div>
               </div>
               {getConfidenceBadge()}
             </div>

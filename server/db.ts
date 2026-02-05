@@ -1,5 +1,6 @@
-import { eq, and, desc, asc, gte, lte, gt, lt, like, sql, or, isNull, isNotNull, not, ne, SQL } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { eq, and, desc, asc, gte, lte, gt, lt, like, sql, or, isNull, isNotNull, not, ne, inArray, SQL } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import { 
   InsertUser, users,
   factories, InsertFactory,
@@ -67,14 +68,23 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _client: ReturnType<typeof postgres> | null = null;
 
 export async function getDb() {
-  if (!_db && process.env.SUPABASE_DATABASE_URL) {
+  if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      console.log("[Database] Connecting to PostgreSQL...");
+      _client = postgres(process.env.DATABASE_URL, {
+        max: 10,
+        idle_timeout: 20,
+        connect_timeout: 10,
+      });
+      _db = drizzle(_client);
+      console.log("[Database] Connected successfully");
     } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
+      console.error("[Database] Failed to connect:", error);
       _db = null;
+      _client = null;
     }
   }
   return _db;
@@ -350,7 +360,7 @@ export async function createFactory(data: InsertFactory) {
 export async function getFactories() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(factories).where(eq(factories.isActive, true)).orderBy(factories.name);
+  return db.select().from(factories).orderBy(factories.name);
 }
 
 export async function getFactoryById(id: number) {
@@ -384,14 +394,14 @@ export async function getWorkshopsByFactory(factoryId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(workshops)
-    .where(and(eq(workshops.factoryId, factoryId), eq(workshops.isActive, true)))
+    .where(eq(workshops.factoryId, factoryId))
     .orderBy(workshops.name);
 }
 
 export async function getWorkshops() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(workshops).where(eq(workshops.isActive, true)).orderBy(workshops.name);
+  return db.select().from(workshops).orderBy(workshops.name);
 }
 
 export async function getWorkshopById(id: number) {
@@ -425,14 +435,14 @@ export async function getProductionLinesByWorkshop(workshopId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(productionLines)
-    .where(and(eq(productionLines.workshopId, workshopId), eq(productionLines.isActive, true)))
+    .where(eq(productionLines.workshopId, workshopId))
     .orderBy(productionLines.name);
 }
 
 export async function getProductionLines() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(productionLines).where(eq(productionLines.isActive, true)).orderBy(productionLines.name);
+  return db.select().from(productionLines).orderBy(productionLines.name);
 }
 
 export async function getLineById(id: number) {
@@ -507,14 +517,14 @@ export async function getMachinesByStation(stationId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(machines)
-    .where(and(eq(machines.stationId, stationId), eq(machines.isActive, true)))
+    .where(eq(machines.stationId, stationId))
     .orderBy(machines.name);
 }
 
 export async function getMachines() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(machines).where(eq(machines.isActive, true)).orderBy(machines.name);
+  return db.select().from(machines).orderBy(machines.name);
 }
 
 // Get machines with full hierarchy info (line, workshop, factory)
@@ -599,12 +609,18 @@ export async function getProductModels(options?: {
   sortOrder?: "asc" | "desc";
   limit?: number;
   offset?: number;
+  isActive?: boolean;
 }) {
   const db = await getDb();
   if (!db) return [];
   
   // Build WHERE conditions
-  const conditions = [eq(productModels.isActive, true)];
+  const conditions: any[] = [];
+  
+  // Only filter by isActive if explicitly specified
+  if (options?.isActive !== undefined) {
+    conditions.push(eq(productModels.isActive, options.isActive));
+  }
   
   // Apply search filter
   if (options?.search) {
@@ -643,12 +659,14 @@ export async function getProductModels(options?: {
       orderByClause = desc(productModels.createdAt);
   }
   
-  // Build final query with pagination
-  let query = db
-    .select()
-    .from(productModels)
-    .where(and(...conditions))
-    .orderBy(orderByClause);
+  // Build final query with optional WHERE + pagination
+  let query = db.select().from(productModels);
+
+  if (conditions.length > 0) {
+    query = query.where(and(...conditions));
+  }
+
+  query = query.orderBy(orderByClause);
   
   if (options?.limit && options?.offset) {
     return query.limit(options.limit).offset(options.offset);
@@ -732,11 +750,11 @@ export async function getProductInspections(filters: {
       const accessConditions = [];
       if (corporateAssignments.length > 0) {
         const corporateCodes = corporateAssignments.map(a => a.corporateCode);
-        accessConditions.push(sql`${productInspections.corporateCode} IN (${corporateCodes.map(c => `'${c}'`).join(',')})`);
+        accessConditions.push(inArray(productInspections.corporateCode, corporateCodes));
       }
       if (factoryAssignments.length > 0) {
         const factoryCodes = factoryAssignments.map(a => a.factoryCode);
-        accessConditions.push(sql`${productInspections.factoryCode} IN (${factoryCodes.map(c => `'${c}'`).join(',')})`);
+        accessConditions.push(inArray(productInspections.factoryCode, factoryCodes));
       }
       if (accessConditions.length > 0) {
         conditions.push(or(...accessConditions));
@@ -819,6 +837,18 @@ export async function getMeasurementPointDefByCode(productModelId: number, code:
   const result = await db.select().from(measurementPointDefs)
     .where(and(
       eq(measurementPointDefs.productModelId, productModelId),
+      eq(measurementPointDefs.code, code)
+    ))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getMeasurementPointDefByMachineAndCode(machineId: number, code: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(measurementPointDefs)
+    .where(and(
+      eq(measurementPointDefs.machineId, machineId),
       eq(measurementPointDefs.code, code)
     ))
     .limit(1);
@@ -1075,21 +1105,21 @@ export async function getDashboardStats(filters?: {
       
       if (workshopIds.length > 0) {
         const linesInWorkshops = await db.select({ id: productionLines.id }).from(productionLines)
-          .where(sql`${productionLines.workshopId} IN (${workshopIds.join(',')})`);
+          .where(inArray(productionLines.workshopId, workshopIds));
         const lineIds = linesInWorkshops.map(l => l.id);
         
         if (lineIds.length > 0) {
           const stationsInLines = await db.select({ id: stations.id }).from(stations)
-            .where(sql`${stations.lineId} IN (${lineIds.join(',')})`);
+            .where(inArray(stations.lineId, lineIds));
           const stationIds = stationsInLines.map(s => s.id);
           
           if (stationIds.length > 0) {
             const machinesInStations = await db.select({ id: machines.id }).from(machines)
-              .where(sql`${machines.stationId} IN (${stationIds.join(',')})`);
+              .where(inArray(machines.stationId, stationIds));
             const machineIds = machinesInStations.map(m => m.id);
             
             if (machineIds.length > 0) {
-              conditions.push(sql`${productInspections.machineId} IN (${machineIds.join(',')})`);
+              conditions.push(inArray(productInspections.machineId, machineIds));
             } else {
               return { total: 0, ok: 0, ng: 0, ntf: 0, yieldRate: 0 };
             }
@@ -1210,10 +1240,10 @@ export async function getShiftStats(filters?: {
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
   // Define shifts: Morning (6-14), Afternoon (14-22), Night (22-6)
-  // Use alias for TiDB compatibility in GROUP BY
+  // PostgreSQL uses EXTRACT(HOUR FROM timestamp)
   const shiftExpr = sql<string>`CASE 
-    WHEN HOUR(${productInspections.inspectionTime}) >= 6 AND HOUR(${productInspections.inspectionTime}) < 14 THEN 'morning'
-    WHEN HOUR(${productInspections.inspectionTime}) >= 14 AND HOUR(${productInspections.inspectionTime}) < 22 THEN 'afternoon'
+    WHEN EXTRACT(HOUR FROM ${productInspections.inspectionTime}) >= 6 AND EXTRACT(HOUR FROM ${productInspections.inspectionTime}) < 14 THEN 'morning'
+    WHEN EXTRACT(HOUR FROM ${productInspections.inspectionTime}) >= 14 AND EXTRACT(HOUR FROM ${productInspections.inspectionTime}) < 22 THEN 'afternoon'
     ELSE 'night'
   END`;
   
@@ -1322,21 +1352,22 @@ export async function getDailyStats(factoryId?: number, workshopId?: number, day
   startDate.setHours(0, 0, 0, 0);
   const startDateStr = startDate.toISOString().slice(0, 19).replace('T', ' ');
 
-  // Use raw SQL for TiDB compatibility - GROUP BY with alias
+  // Use raw SQL for PostgreSQL compatibility - GROUP BY with alias
   const result = await db.execute(sql.raw(`
     SELECT 
-      DATE_FORMAT(inspectionTime, '%Y-%m-%d') as date,
-      COUNT(*) as totalProducts,
-      SUM(CASE WHEN overallResult = 'OK' THEN 1 ELSE 0 END) as okCount,
-      SUM(CASE WHEN overallResult = 'NG' THEN 1 ELSE 0 END) as ngCount,
-      SUM(CASE WHEN overallResult = 'NTF' THEN 1 ELSE 0 END) as ntfCount
+      TO_CHAR("inspectionTime", 'YYYY-MM-DD') as date,
+      COUNT(*) as "totalProducts",
+      SUM(CASE WHEN "overallResult" = 'OK' THEN 1 ELSE 0 END) as "okCount",
+      SUM(CASE WHEN "overallResult" = 'NG' THEN 1 ELSE 0 END) as "ngCount",
+      SUM(CASE WHEN "overallResult" = 'NTF' THEN 1 ELSE 0 END) as "ntfCount"
     FROM product_inspections
-    WHERE inspectionTime >= '${startDateStr}'
+    WHERE "inspectionTime" >= '${startDateStr}'
     GROUP BY date
     ORDER BY date DESC
   `));
 
-  const rows = (result as any)[0] || [];
+  // PostgreSQL returns result.rows, MySQL returns result[0]
+  const rows = Array.isArray(result) ? result : (result as any).rows || [];
   return rows.map((r: any) => ({
     date: String(r.date),
     totalProducts: Number(r.totalProducts) || 0,
@@ -1362,26 +1393,27 @@ export async function getHourlyStats(filters?: {
   startDate.setHours(startDate.getHours() - hoursBack);
   const startDateStr = startDate.toISOString().slice(0, 19).replace('T', ' ');
 
-  // Use raw SQL for TiDB compatibility - GROUP BY with alias
+  // Use raw SQL for PostgreSQL compatibility - GROUP BY with alias
   let machineCondition = '';
   if (filters?.machineId) {
-    machineCondition = ` AND machineId = ${filters.machineId}`;
+    machineCondition = ` AND "machineId" = ${filters.machineId}`;
   }
 
   const result = await db.execute(sql.raw(`
     SELECT 
-      DATE_FORMAT(inspectionTime, '%Y-%m-%d %H:00') as hour,
-      COUNT(*) as totalProducts,
-      SUM(CASE WHEN overallResult = 'OK' THEN 1 ELSE 0 END) as okCount,
-      SUM(CASE WHEN overallResult = 'NG' THEN 1 ELSE 0 END) as ngCount,
-      SUM(CASE WHEN overallResult = 'NTF' THEN 1 ELSE 0 END) as ntfCount
+      TO_CHAR("inspectionTime", 'YYYY-MM-DD HH24:00') as hour,
+      COUNT(*) as "totalProducts",
+      SUM(CASE WHEN "overallResult" = 'OK' THEN 1 ELSE 0 END) as "okCount",
+      SUM(CASE WHEN "overallResult" = 'NG' THEN 1 ELSE 0 END) as "ngCount",
+      SUM(CASE WHEN "overallResult" = 'NTF' THEN 1 ELSE 0 END) as "ntfCount"
     FROM product_inspections
-    WHERE inspectionTime >= '${startDateStr}'${machineCondition}
+    WHERE "inspectionTime" >= '${startDateStr}'${machineCondition}
     GROUP BY hour
     ORDER BY hour ASC
   `));
 
-  const rows = (result as any)[0] || [];
+  // PostgreSQL returns result.rows, MySQL returns result[0]
+  const rows = Array.isArray(result) ? result : (result as any).rows || [];
   return rows.map((r: any) => {
     const total = Number(r.totalProducts) || 1;
     const ok = Number(r.okCount) || 0;
@@ -1436,7 +1468,7 @@ export async function searchInspections(params: {
         .where(like(factories.code, `%${params.factoryCode}%`));
       if (factoryResult.length > 0) {
         const workshopResult = await db.select({ id: workshops.id }).from(workshops)
-          .where(sql`${workshops.factoryId} IN (${factoryResult.map(f => f.id).join(',')})`);
+          .where(inArray(workshops.factoryId, factoryResult.map(f => f.id)));
         workshopIds = workshopResult.map(w => w.id);
       }
     }
@@ -1451,7 +1483,7 @@ export async function searchInspections(params: {
 
     if (workshopIds && workshopIds.length > 0) {
       const lineResult = await db.select({ id: productionLines.id }).from(productionLines)
-        .where(sql`${productionLines.workshopId} IN (${workshopIds.join(',')})`);
+        .where(inArray(productionLines.workshopId, workshopIds));
       lineIds = lineResult.map(l => l.id);
     }
 
@@ -1465,7 +1497,7 @@ export async function searchInspections(params: {
 
     if (lineIds && lineIds.length > 0) {
       const stationResult = await db.select({ id: stations.id }).from(stations)
-        .where(sql`${stations.lineId} IN (${lineIds.join(',')})`);
+        .where(inArray(stations.lineId, lineIds));
       stationIds = stationResult.map(s => s.id);
     }
 
@@ -1479,7 +1511,7 @@ export async function searchInspections(params: {
 
     if (stationIds && stationIds.length > 0) {
       const machineResult = await db.select({ id: machines.id }).from(machines)
-        .where(sql`${machines.stationId} IN (${stationIds.join(',')})`);
+        .where(inArray(machines.stationId, stationIds));
       machineIds = machineResult.map(m => m.id);
     }
   }
@@ -1487,7 +1519,7 @@ export async function searchInspections(params: {
   // Build inspection query
   const conditions = [];
   if (machineIds && machineIds.length > 0) {
-    conditions.push(sql`${productInspections.machineId} IN (${machineIds.join(',')})`);
+    conditions.push(inArray(productInspections.machineId, machineIds));
   } else if (params.factoryCode || params.workshopCode || params.lineCode || params.stationCode || params.machineCode) {
     // No machines found matching filters
     return { data: [], total: 0 };
@@ -1531,7 +1563,7 @@ export async function getTopNGMeasurementPoints(params: {
       .from(productInspections)
       .where(eq(productInspections.machineId, params.machineId));
     if (inspectionIds.length > 0) {
-      conditions.push(sql`${measurementResults.inspectionId} IN (${inspectionIds.map(i => i.id).join(',')})`);
+      conditions.push(inArray(measurementResults.inspectionId, inspectionIds.map(i => i.id)));
     } else {
       return [];
     }
@@ -1548,7 +1580,7 @@ export async function getTopNGMeasurementPoints(params: {
       .where(and(...inspectionConditions));
     
     if (inspectionIds.length > 0) {
-      conditions.push(sql`${measurementResults.inspectionId} IN (${inspectionIds.map(i => i.id).join(',')})`);
+      conditions.push(inArray(measurementResults.inspectionId, inspectionIds.map(i => i.id)));
     } else {
       return [];
     }
@@ -1570,7 +1602,7 @@ export async function getTopNGMeasurementPoints(params: {
 
   const pointDefs = await db.select()
     .from(measurementPointDefs)
-    .where(sql`${measurementPointDefs.id} IN (${pointDefIds.join(',')})`);
+    .where(inArray(measurementPointDefs.id, pointDefIds));
 
   const pointDefMap = new Map(pointDefs.map(p => [p.id, p]));
 
@@ -2961,11 +2993,12 @@ export async function getAuditLogs(params: {
     values.push(params.status);
   }
   if (params.startDate) {
-    conditions.push("createdAt >= ?");
+    // Quote "createdAt" for PostgreSQL since the column name is mixed-case
+    conditions.push('"createdAt" >= ?');
     values.push(params.startDate);
   }
   if (params.endDate) {
-    conditions.push("createdAt <= ?");
+    conditions.push('"createdAt" <= ?');
     values.push(params.endDate);
   }
   
@@ -2973,9 +3006,9 @@ export async function getAuditLogs(params: {
   const limit = params.limit || 50;
   const offset = params.offset || 0;
   
-  // Build query with parameters
+  // Build query with parameters (PostgreSQL with quoted column names)
   let countQuery = `SELECT COUNT(*) as total FROM audit_logs ${whereClause}`;
-  let selectQuery = `SELECT * FROM audit_logs ${whereClause} ORDER BY createdAt DESC LIMIT ${limit} OFFSET ${offset}`;
+  let selectQuery = `SELECT * FROM audit_logs ${whereClause} ORDER BY "createdAt" DESC LIMIT ${limit} OFFSET ${offset}`;
   
   // Get total count
   const countResult = await db.execute(sql`${sql.raw(countQuery)}`);
@@ -3019,17 +3052,21 @@ export async function getAuditLogStats(days: number = 7): Promise<{
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
   
-  const startDateStr = startDate.toISOString().slice(0, 19).replace('T', ' ');
+  const startDateStr = startDate.toISOString().slice(0, 19).replace("T", " ");
   
   // Total actions
-  const totalResult = await db.execute(sql`SELECT COUNT(*) as total FROM audit_logs WHERE createdAt >= ${startDateStr}`);
+  // Note: "createdAt" must be quoted for PostgreSQL because the column
+  // was created with a mixed-case identifier.
+  const totalResult = await db.execute(
+    sql`SELECT COUNT(*) as total FROM audit_logs WHERE "createdAt" >= ${startDateStr}`,
+  );
   const totalActions = (totalResult as any)[0]?.[0]?.total || 0;
   
   // Login counts
   const loginResult = await db.execute(sql`SELECT 
     SUM(CASE WHEN action = 'login' AND status = 'success' THEN 1 ELSE 0 END) as loginCount,
     SUM(CASE WHEN action = 'login_failed' OR (action = 'login' AND status = 'failure') THEN 1 ELSE 0 END) as failedLogins
-  FROM audit_logs WHERE createdAt >= ${startDateStr}`);
+  FROM audit_logs WHERE "createdAt" >= ${startDateStr}`);
   const loginCount = (loginResult as any)[0]?.[0]?.loginCount || 0;
   const failedLogins = (loginResult as any)[0]?.[0]?.failedLogins || 0;
   
@@ -3038,24 +3075,25 @@ export async function getAuditLogStats(days: number = 7): Promise<{
     SUM(CASE WHEN action = 'create' THEN 1 ELSE 0 END) as createCount,
     SUM(CASE WHEN action = 'update' THEN 1 ELSE 0 END) as updateCount,
     SUM(CASE WHEN action = 'delete' THEN 1 ELSE 0 END) as deleteCount
-  FROM audit_logs WHERE createdAt >= ${startDateStr}`);
+  FROM audit_logs WHERE "createdAt" >= ${startDateStr}`);
   const createCount = (crudResult as any)[0]?.[0]?.createCount || 0;
   const updateCount = (crudResult as any)[0]?.[0]?.updateCount || 0;
   const deleteCount = (crudResult as any)[0]?.[0]?.deleteCount || 0;
   
   // Top users
-  const topUsersResult = await db.execute(sql`SELECT userName, COUNT(*) as count FROM audit_logs 
-    WHERE createdAt >= ${startDateStr} AND userName IS NOT NULL
-    GROUP BY userName ORDER BY count DESC LIMIT 10`);
+  // "userName" is mixed-case in the schema, so it must be quoted.
+  const topUsersResult = await db.execute(sql`SELECT "userName", COUNT(*) as count FROM audit_logs 
+    WHERE "createdAt" >= ${startDateStr} AND "userName" IS NOT NULL
+    GROUP BY "userName" ORDER BY count DESC LIMIT 10`);
   const topUsers = ((topUsersResult as any)[0] || []).map((row: any) => ({
     userName: row.userName,
     count: row.count,
   }));
   
   // Actions by day
-  const byDayResult = await db.execute(sql`SELECT CAST(createdAt AS DATE) as date, COUNT(*) as count FROM audit_logs 
-    WHERE createdAt >= ${startDateStr}
-    GROUP BY CAST(createdAt AS DATE) ORDER BY date DESC`);
+  const byDayResult = await db.execute(sql`SELECT CAST("createdAt" AS DATE) as date, COUNT(*) as count FROM audit_logs 
+    WHERE "createdAt" >= ${startDateStr}
+    GROUP BY CAST("createdAt" AS DATE) ORDER BY date DESC`);
   const actionsByDay = ((byDayResult as any)[0] || []).map((row: any) => ({
     date: row.date,
     count: row.count,
@@ -3311,11 +3349,15 @@ export async function getWorkstations(filters?: { lineId?: number; workshopId?: 
   const db = await getDb();
   if (!db) return [];
   
-  const conditions = [eq(workstations.isActive, filters?.isActive ?? true)];
+  const conditions: any[] = [];
+  if (filters?.isActive !== undefined) conditions.push(eq(workstations.isActive, filters.isActive));
   if (filters?.lineId) conditions.push(eq(workstations.lineId, filters.lineId));
   if (filters?.workshopId) conditions.push(eq(workstations.workshopId, filters.workshopId));
   if (filters?.factoryId) conditions.push(eq(workstations.factoryId, filters.factoryId));
   
+  if (conditions.length === 0) {
+    return db.select().from(workstations).orderBy(workstations.orderIndex);
+  }
   return db.select().from(workstations).where(and(...conditions)).orderBy(workstations.orderIndex);
 }
 
@@ -3324,6 +3366,14 @@ export async function getWorkstationById(id: number) {
   if (!db) return null;
   
   const result = await db.select().from(workstations).where(eq(workstations.id, id)).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function getWorkstationByCode(code: string) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db.select().from(workstations).where(eq(workstations.code, code)).limit(1);
   return result.length > 0 ? result[0] : null;
 }
 
@@ -3360,13 +3410,17 @@ export async function getDefectsByWorkstation(filters?: {
   if (!db) return [];
   
   try {
+    // Convert Date objects to ISO strings for postgres-js
+    const startDateStr = filters?.startDate?.toISOString();
+    const endDateStr = filters?.endDate?.toISOString();
+    
     // Simplified query: Use LEFT JOIN to handle cases with no measurement results
     const query = sql`
       SELECT 
         w.id as workstationId,
         w.code as workstationCode,
         w.name as workstationName,
-        w.processType,
+        w."processType",
         mpd.id as measurementPointId,
         mpd.code as measurementPointCode,
         mpd.name as measurementPointName,
@@ -3375,15 +3429,15 @@ export async function getDefectsByWorkstation(filters?: {
         COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as ngCount,
         COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount
       FROM workstations w
-      LEFT JOIN measurement_point_defs mpd ON mpd.workstationId = w.id
-      LEFT JOIN measurement_results mr ON mr.pointDefId = mpd.id
-      LEFT JOIN product_inspections pi ON mr.inspectionId = pi.id
-      WHERE w.isActive = 1
-      ${filters?.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
-      ${filters?.endDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime <= ${filters.endDate})` : sql``}
-      ${filters?.productModelId ? sql`AND (mpd.productModelId IS NULL OR mpd.productModelId = ${filters.productModelId})` : sql``}
-      ${filters?.machineId ? sql`AND (pi.machineId IS NULL OR pi.machineId = ${filters.machineId})` : sql``}
-      GROUP BY w.id, w.code, w.name, w.processType, mpd.id, mpd.code, mpd.name
+      LEFT JOIN measurement_point_defs mpd ON mpd."workstationId" = w.id
+      LEFT JOIN measurement_results mr ON mr."pointDefId" = mpd.id
+      LEFT JOIN product_inspections pi ON mr."inspectionId" = pi.id
+      WHERE w."isActive" = true
+      ${startDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" >= ${startDateStr})` : sql``}
+      ${endDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" <= ${endDateStr})` : sql``}
+      ${filters?.productModelId ? sql`AND (mpd."productModelId" IS NULL OR mpd."productModelId" = ${filters.productModelId})` : sql``}
+      ${filters?.machineId ? sql`AND (pi."machineId" IS NULL OR pi."machineId" = ${filters.machineId})` : sql``}
+      GROUP BY w.id, w.code, w.name, w."processType", mpd.id, mpd.code, mpd.name
       HAVING mpd.id IS NOT NULL
       ORDER BY ngCount DESC
     `;
@@ -3421,6 +3475,10 @@ export async function getTopNGMeasurementPointsByWorkstation(filters?: {
 
   try {
     const limitVal = filters?.limit || 10;
+    // Convert Date objects to ISO strings for postgres-js
+    const startDateStr = filters?.startDate?.toISOString();
+    const endDateStr = filters?.endDate?.toISOString();
+    
     const query = sql`
       SELECT 
         w.id as workstationId,
@@ -3433,14 +3491,14 @@ export async function getTopNGMeasurementPointsByWorkstation(filters?: {
         COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as ngCount,
         COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount
       FROM measurement_point_defs mpd
-      LEFT JOIN workstations w ON mpd.workstationId = w.id
-      LEFT JOIN measurement_results mr ON mr.pointDefId = mpd.id AND mr.result IN ('NG', 'NTF')
-      LEFT JOIN product_inspections pi ON mr.inspectionId = pi.id
+      LEFT JOIN workstations w ON mpd."workstationId" = w.id
+      LEFT JOIN measurement_results mr ON mr."pointDefId" = mpd.id AND mr.result IN ('NG', 'NTF')
+      LEFT JOIN product_inspections pi ON mr."inspectionId" = pi.id
       WHERE 1=1
-      ${filters?.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
-      ${filters?.endDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime <= ${filters.endDate})` : sql``}
+      ${startDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" >= ${startDateStr})` : sql``}
+      ${endDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" <= ${endDateStr})` : sql``}
       GROUP BY w.id, w.code, w.name, mpd.id, mpd.code, mpd.name
-      HAVING ngCount > 0 OR ntfCount > 0
+      HAVING SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) > 0 OR SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END) > 0
       ORDER BY ngCount DESC
       LIMIT ${limitVal}
     `;
@@ -3474,12 +3532,16 @@ export async function getWorkstationSummary(filters?: {
   if (!db) return [];
   
   try {
+    // Convert Date objects to ISO strings for postgres-js
+    const startDateStr = filters?.startDate?.toISOString();
+    const endDateStr = filters?.endDate?.toISOString();
+    
     const query = sql`
       SELECT 
         w.id as workstationId,
         w.code as workstationCode,
         w.name as workstationName,
-        w.processType,
+        w."processType",
         COALESCE(COUNT(DISTINCT mpd.id), 0) as measurementPointCount,
         COALESCE(COUNT(mr.id), 0) as totalInspections,
         COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as okCount,
@@ -3487,13 +3549,13 @@ export async function getWorkstationSummary(filters?: {
         COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount,
         COALESCE(ROUND(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as yieldRate
       FROM workstations w
-      LEFT JOIN measurement_point_defs mpd ON mpd.workstationId = w.id
-      LEFT JOIN measurement_results mr ON mr.pointDefId = mpd.id
-      LEFT JOIN product_inspections pi ON mr.inspectionId = pi.id
-      WHERE w.isActive = 1
-      ${filters?.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
-      ${filters?.endDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime <= ${filters.endDate})` : sql``}
-      GROUP BY w.id, w.code, w.name, w.processType
+      LEFT JOIN measurement_point_defs mpd ON mpd."workstationId" = w.id
+      LEFT JOIN measurement_results mr ON mr."pointDefId" = mpd.id
+      LEFT JOIN product_inspections pi ON mr."inspectionId" = pi.id
+      WHERE w."isActive" = true
+      ${startDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" >= ${startDateStr})` : sql``}
+      ${endDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" <= ${endDateStr})` : sql``}
+      GROUP BY w.id, w.code, w.name, w."processType"
       ORDER BY ngCount DESC
     `;
     
@@ -3529,6 +3591,10 @@ export async function getMeasurementPointsByWorkstation(filters: {
   if (!db) return [];
 
   try {
+    // Convert Date objects to ISO strings for postgres-js
+    const startDateStr = filters.startDate?.toISOString();
+    const endDateStr = filters.endDate?.toISOString();
+    
     const query = sql`
       SELECT 
         mpd.id as measurementPointId,
@@ -3546,11 +3612,11 @@ export async function getMeasurementPointsByWorkstation(filters: {
         COALESCE(MIN(mr.measuredValue), 0) as minValue,
         COALESCE(MAX(mr.measuredValue), 0) as maxValue
       FROM measurement_point_defs mpd
-      LEFT JOIN measurement_results mr ON mr.pointDefId = mpd.id
-      LEFT JOIN product_inspections pi ON mr.inspectionId = pi.id
-      WHERE mpd.workstationId = ${filters.workstationId}
-      ${filters.startDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime >= ${filters.startDate})` : sql``}
-      ${filters.endDate ? sql`AND (pi.inspectionTime IS NULL OR pi.inspectionTime <= ${filters.endDate})` : sql``}
+      LEFT JOIN measurement_results mr ON mr."pointDefId" = mpd.id
+      LEFT JOIN product_inspections pi ON mr."inspectionId" = pi.id
+      WHERE mpd."workstationId" = ${filters.workstationId}
+      ${startDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" >= ${startDateStr})` : sql``}
+      ${endDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" <= ${endDateStr})` : sql``}
       GROUP BY mpd.id, mpd.code, mpd.name, mpd.pointType, mpd.lowerLimit, mpd.upperLimit, mpd.unit
       ORDER BY ngCount DESC, mpd.code ASC
     `;
@@ -3762,23 +3828,27 @@ export async function getNGTrendByDay(filters?: {
   if (!db) return [];
 
   try {
+    // Convert Date objects to ISO strings for postgres-js
+    const startDateStr = filters?.startDate?.toISOString();
+    const endDateStr = filters?.endDate?.toISOString();
+    
     const query = sql`
       SELECT 
-        CAST(pi.inspectionTime AS DATE) as date,
+        CAST(pi."inspectionTime" AS DATE) as date,
         COALESCE(COUNT(mr.id), 0) as totalCount,
         COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as okCount,
         COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as ngCount,
         COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount,
         COALESCE(ROUND(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as ngRate
       FROM measurement_results mr
-      INNER JOIN product_inspections pi ON mr.inspectionId = pi.id
-      LEFT JOIN measurement_point_defs mpd ON mr.pointDefId = mpd.id
-      WHERE pi.inspectionTime IS NOT NULL
-      ${filters?.startDate ? sql`AND pi.inspectionTime >= ${filters.startDate}` : sql``}
-      ${filters?.endDate ? sql`AND pi.inspectionTime <= ${filters.endDate}` : sql``}
-      ${filters?.workstationId ? sql`AND mpd.workstationId = ${filters.workstationId}` : sql``}
-      ${filters?.measurementPointDefId ? sql`AND mr.pointDefId = ${filters.measurementPointDefId}` : sql``}
-      GROUP BY CAST(pi.inspectionTime AS DATE)
+      INNER JOIN product_inspections pi ON mr."inspectionId" = pi.id
+      LEFT JOIN measurement_point_defs mpd ON mr."pointDefId" = mpd.id
+      WHERE pi."inspectionTime" IS NOT NULL
+      ${startDateStr ? sql`AND pi."inspectionTime" >= ${startDateStr}` : sql``}
+      ${endDateStr ? sql`AND pi."inspectionTime" <= ${endDateStr}` : sql``}
+      ${filters?.workstationId ? sql`AND mpd."workstationId" = ${filters.workstationId}` : sql``}
+      ${filters?.measurementPointDefId ? sql`AND mr."pointDefId" = ${filters.measurementPointDefId}` : sql``}
+      GROUP BY CAST(pi."inspectionTime" AS DATE)
       ORDER BY date ASC
     `;
 
@@ -3810,6 +3880,12 @@ export async function getNGComparison(filters: {
   if (!db) return null;
 
   try {
+    // Convert Date objects to ISO strings for postgres-js
+    const currentStartStr = filters.currentStartDate.toISOString();
+    const currentEndStr = filters.currentEndDate.toISOString();
+    const previousStartStr = filters.previousStartDate.toISOString();
+    const previousEndStr = filters.previousEndDate.toISOString();
+    
     // Get current period stats
     const currentQuery = sql`
       SELECT 
@@ -3819,9 +3895,9 @@ export async function getNGComparison(filters: {
         COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount,
         COALESCE(ROUND(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as ngRate
       FROM measurement_results mr
-      INNER JOIN product_inspections pi ON mr.inspectionId = pi.id
-      WHERE pi.inspectionTime >= ${filters.currentStartDate}
-        AND pi.inspectionTime <= ${filters.currentEndDate}
+      INNER JOIN product_inspections pi ON mr."inspectionId" = pi.id
+      WHERE pi."inspectionTime" >= ${currentStartStr}
+        AND pi."inspectionTime" <= ${currentEndStr}
     `;
 
     // Get previous period stats
@@ -3833,9 +3909,9 @@ export async function getNGComparison(filters: {
         COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount,
         COALESCE(ROUND(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as ngRate
       FROM measurement_results mr
-      INNER JOIN product_inspections pi ON mr.inspectionId = pi.id
-      WHERE pi.inspectionTime >= ${filters.previousStartDate}
-        AND pi.inspectionTime <= ${filters.previousEndDate}
+      INNER JOIN product_inspections pi ON mr."inspectionId" = pi.id
+      WHERE pi."inspectionTime" >= ${previousStartStr}
+        AND pi."inspectionTime" <= ${previousEndStr}
     `;
 
     const [currentResult, previousResult] = await Promise.all([
@@ -4235,8 +4311,8 @@ export async function getMqttDashboardStats() {
   const db = await getDb();
   if (!db) return null;
   
-  // Get client counts by status
-  const clients = await db.select().from(mqttClients);
+  // Get client counts by status (only active clients)
+  const clients = await db.select().from(mqttClients).where(eq(mqttClients.isActive, true));
   
   const totalClients = clients.length;
   const onlineClients = clients.filter(c => c.connectionStatus === 'ONLINE').length;
@@ -5714,7 +5790,7 @@ export async function getTopNGMeasurementPointsEnhanced(filters: {
       ngCount: sql<number>`COUNT(*)`,
       totalCount: sql<number>`(
         SELECT COUNT(*) FROM measurement_results mr2 
-        WHERE mr2.measurementPointId = ${measurementResults.pointDefId}
+        WHERE mr2.pointDefId = ${measurementResults.pointDefId}
       )`,
     })
     .from(measurementResults)
@@ -7439,13 +7515,13 @@ export async function getWorkstationErrorSummary(filters: {
   
   // By hour (last 24 hours)
   const byHour = await db.select({
-    hour: sql<string>`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%m-%d %H:00')`,
+    hour: sql<string>`TO_CHAR(${productInspections.inspectionTime}, 'YYYY-MM-DD HH24:00')`,
     count: sql<number>`COUNT(*)`,
   })
     .from(productInspections)
     .where(and(...conditions))
-    .groupBy(sql`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%m-%d %H:00')`)
-    .orderBy(sql`DATE_FORMAT(${productInspections.inspectionTime}, '%Y-%m-%d %H:00')`);
+    .groupBy(sql`TO_CHAR(${productInspections.inspectionTime}, 'YYYY-MM-DD HH24:00')`)
+    .orderBy(sql`TO_CHAR(${productInspections.inspectionTime}, 'YYYY-MM-DD HH24:00')`);
   
   return {
     total: Number(totalResult[0]?.count || 0),

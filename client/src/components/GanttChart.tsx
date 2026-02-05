@@ -954,9 +954,9 @@ export default function GanttChart({
               {/* Date columns */}
               <div className="flex-1 overflow-x-auto" ref={scrollRef}>
                 <div className="flex" style={{ width: `${dateRange.days.length * cellWidth}px` }}>
-                  {dateRange.days.map((day, index) => (
+                  {dateRange.days.map((day) => (
                     <div
-                      key={index}
+                      key={day.toISOString()}
                       className={`flex-shrink-0 p-1 text-center text-xs border-r ${
                         isToday(day) ? "bg-primary/10 font-bold" : ""
                       } ${day.getDay() === 0 || day.getDay() === 6 ? "bg-muted/30" : ""}`}
@@ -1058,9 +1058,9 @@ export default function GanttChart({
                       >
                         {/* Grid lines */}
                         <div className="absolute inset-0 flex pointer-events-none">
-                          {dateRange.days.map((day, index) => (
+                          {dateRange.days.map((day) => (
                             <div
-                              key={index}
+                              key={day.toISOString()}
                               className={`flex-shrink-0 border-r ${
                                 isToday(day) ? "bg-primary/5" : ""
                               } ${day.getDay() === 0 || day.getDay() === 6 ? "bg-muted/20" : ""}`}

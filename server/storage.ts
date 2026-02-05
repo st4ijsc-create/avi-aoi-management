@@ -1,7 +1,10 @@
-// Preconfigured storage helpers for Manus WebDev templates
-// Uses the Biz-provided storage proxy (Authorization: Bearer <token>)
+// Preconfigured storage helpers
+// Default: use Manus Forge storage proxy (Authorization: Bearer <token>)
+// Optional: local filesystem mode for self-hosted deployments
 
 import { ENV } from './_core/env';
+import fs from "fs";
+import path from "path";
 
 type StorageConfig = { baseUrl: string; apiKey: string };
 
@@ -72,8 +75,32 @@ export async function storagePut(
   data: Buffer | Uint8Array | string,
   contentType = "application/octet-stream"
 ): Promise<{ key: string; url: string }> {
-  const { baseUrl, apiKey } = getStorageConfig();
   const key = normalizeKey(relKey);
+  const storageMode = process.env.STORAGE_MODE ?? "forge";
+
+  // Local filesystem mode: save files under LOCAL_STORAGE_DIR (default: ./uploads)
+  if (storageMode === "local") {
+    const uploadsRoot = process.env.LOCAL_STORAGE_DIR
+      ? path.resolve(process.env.LOCAL_STORAGE_DIR)
+      : path.join(process.cwd(), "uploads");
+
+    const filePath = path.join(uploadsRoot, key);
+
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+
+    if (typeof data === "string") {
+      await fs.promises.writeFile(filePath, data);
+    } else {
+      await fs.promises.writeFile(filePath, Buffer.from(data));
+    }
+
+    // Files will be served by Express from /uploads
+    const url = `/uploads/${key}`;
+    return { key, url };
+  }
+
+  // Default: Forge storage proxy mode
+  const { baseUrl, apiKey } = getStorageConfig();
   const uploadUrl = buildUploadUrl(baseUrl, key);
   const formData = toFormData(data, contentType, key.split("/").pop() ?? key);
   const response = await fetch(uploadUrl, {
@@ -93,8 +120,18 @@ export async function storagePut(
 }
 
 export async function storageGet(relKey: string): Promise<{ key: string; url: string; }> {
-  const { baseUrl, apiKey } = getStorageConfig();
   const key = normalizeKey(relKey);
+  const storageMode = process.env.STORAGE_MODE ?? "forge";
+
+  if (storageMode === "local") {
+    // In local mode, files are served directly from /uploads
+    return {
+      key,
+      url: `/uploads/${key}`,
+    };
+  }
+
+  const { baseUrl, apiKey } = getStorageConfig();
   return {
     key,
     url: await buildDownloadUrl(baseUrl, key, apiKey),

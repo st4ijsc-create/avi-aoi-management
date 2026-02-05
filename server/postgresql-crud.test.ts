@@ -20,9 +20,9 @@ describe('PostgreSQL CRUD Tests with SSL Certificate', () => {
     }
     
     pool = new Pool({
-      connectionString: process.env.SUPABASE_DATABASE_URL,
-      ssl: sslConfig
-    });
+    connectionString: process.env.DATABASE_URL,
+    ssl: sslConfig
+  });
   });
 
   afterAll(async () => {

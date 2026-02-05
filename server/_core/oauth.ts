@@ -1,16 +1,320 @@
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+import bcrypt from "bcryptjs";
 import type { Express, Request, Response } from "express";
+import crypto from "node:crypto";
 import * as db from "../db";
 import { getSessionCookieOptions } from "./cookies";
+import {
+  getConfiguredProvider,
+  isManusOAuthEnabled,
+  listEnabledExternalProviders,
+  type ConfiguredOAuthProvider,
+  type ExternalOAuthProvider,
+  type OAuthUserProfile,
+} from "./oauthProviders";
 import { sdk } from "./sdk";
-import bcrypt from "bcryptjs";
 
 function getQueryParam(req: Request, key: string): string | undefined {
   const value = req.query[key];
   return typeof value === "string" ? value : undefined;
 }
 
+type OAuthStateEntry = {
+  provider: ExternalOAuthProvider;
+  redirectPath: string;
+  expiresAt: number;
+};
+
+type ExternalTokenResponse = {
+  access_token: string;
+  token_type?: string;
+  refresh_token?: string;
+  id_token?: string;
+  scope?: string;
+  expires_in?: number;
+};
+
+const STATE_TTL_MS = 5 * 60 * 1000;
+const oauthStateStore = new Map<string, OAuthStateEntry>();
+const externalProviderSet = new Set<ExternalOAuthProvider>([
+  "google",
+  "microsoft",
+  "github",
+]);
+
+const cleanupExpiredStates = () => {
+  const now = Date.now();
+  for (const [key, entry] of oauthStateStore.entries()) {
+    if (entry.expiresAt <= now) {
+      oauthStateStore.delete(key);
+    }
+  }
+};
+
+const scheduleCleanup = () => {
+  const interval = setInterval(cleanupExpiredStates, STATE_TTL_MS);
+  if (typeof interval.unref === "function") {
+    interval.unref();
+  }
+};
+
+scheduleCleanup();
+
+const createStateEntry = (
+  provider: ExternalOAuthProvider,
+  redirectPath: string
+) => {
+  cleanupExpiredStates();
+  const state = crypto.randomBytes(32).toString("hex");
+  oauthStateStore.set(state, {
+    provider,
+    redirectPath,
+    expiresAt: Date.now() + STATE_TTL_MS,
+  });
+  return state;
+};
+
+const consumeStateEntry = (
+  state: string,
+  provider: ExternalOAuthProvider
+) => {
+  const entry = oauthStateStore.get(state);
+  if (!entry || entry.provider !== provider || entry.expiresAt < Date.now()) {
+    throw new Error("Invalid OAuth state");
+  }
+  oauthStateStore.delete(state);
+  return entry.redirectPath;
+};
+
+const isExternalProvider = (value: string): value is ExternalOAuthProvider =>
+  externalProviderSet.has(value as ExternalOAuthProvider);
+
+const buildBaseUrl = (req: Request) => `${req.protocol}://${req.get("host")}`;
+
+const normalizeRedirectPath = (redirectParam?: string | null) => {
+  if (!redirectParam || typeof redirectParam !== "string") return "/";
+  return redirectParam.startsWith("/") ? redirectParam : "/";
+};
+
+async function exchangeCodeForProvider(
+  providerId: ExternalOAuthProvider,
+  config: ConfiguredOAuthProvider,
+  code: string,
+  redirectUri: string
+): Promise<ExternalTokenResponse> {
+  const params = new URLSearchParams({
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
+    code,
+    redirect_uri: redirectUri,
+  });
+
+  if (providerId !== "github") {
+    params.set("grant_type", "authorization_code");
+  }
+
+  const response = await fetch(config.tokenUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    },
+    body: params,
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(
+      `[OAuth] Token exchange failed for ${providerId}: ${response.status} ${response.statusText} - ${errorBody}`
+    );
+  }
+
+  return (await response.json()) as ExternalTokenResponse;
+}
+
+async function fetchUserProfileFromProvider(
+  providerId: ExternalOAuthProvider,
+  config: ConfiguredOAuthProvider,
+  accessToken: string
+): Promise<OAuthUserProfile> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+    Accept: "application/json",
+  };
+
+  const fetchJson = async (url: string) => {
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(
+        `[OAuth] Failed to fetch profile from ${providerId}: ${response.status} ${response.statusText} - ${errorBody}`
+      );
+    }
+    return response.json() as Promise<Record<string, any>>;
+  };
+
+  if (providerId === "github") {
+    headers["User-Agent"] = "avi-aoi-management";
+    const profile = await fetchJson(config.userInfoUrl!);
+    let email = profile.email ?? null;
+
+    if (!email) {
+      const emailResponse = await fetchJson("https://api.github.com/user/emails");
+      const emails = Array.isArray(emailResponse) ? emailResponse : [];
+      const primary =
+        emails.find((item: any) => item.primary && item.verified) ??
+        emails.find((item: any) => item.primary) ??
+        emails[0];
+      email = primary?.email ?? null;
+    }
+
+    if (!profile.id) {
+      throw new Error("GitHub profile is missing id");
+    }
+
+    return {
+      id: String(profile.id),
+      name: profile.name ?? profile.login ?? null,
+      email,
+      avatarUrl: profile.avatar_url ?? null,
+    };
+  }
+
+  if (!config.userInfoUrl) {
+    throw new Error(`Provider ${providerId} does not define a userInfoUrl`);
+  }
+
+  const profile = await fetchJson(config.userInfoUrl);
+
+  if (providerId === "google") {
+    const id = profile.sub ?? profile.id;
+    if (!id) throw new Error("Google profile missing sub");
+    const derivedName = `${profile.given_name ?? ""} ${profile.family_name ?? ""}`.trim();
+    return {
+      id: String(id),
+      name: profile.name ?? (derivedName || null),
+      email: profile.email ?? null,
+      avatarUrl: profile.picture ?? null,
+    };
+  }
+
+  // Microsoft
+  const id = profile.sub ?? profile.oid ?? profile.id;
+  if (!id) throw new Error("Microsoft profile missing sub");
+  const email = profile.email ?? profile.preferred_username ?? profile.unique_name ?? null;
+  return {
+    id: String(id),
+    name: profile.name ?? profile.given_name ?? null,
+    email,
+  };
+}
+
 export function registerOAuthRoutes(app: Express) {
+  app.get("/api/oauth/providers", (_req: Request, res: Response) => {
+    res.json({
+      manus: isManusOAuthEnabled(),
+      providers: listEnabledExternalProviders(),
+    });
+  });
+
+  app.get("/api/oauth/:provider/login", (req: Request, res: Response) => {
+    const providerParam = req.params.provider;
+    if (!isExternalProvider(providerParam)) {
+      res.status(404).json({ error: "Unsupported OAuth provider" });
+      return;
+    }
+
+    const config = getConfiguredProvider(providerParam);
+    if (!config) {
+      res.status(400).json({ error: `${providerParam} OAuth is not configured` });
+      return;
+    }
+
+    const redirectPath = normalizeRedirectPath(getQueryParam(req, "redirect"));
+    const callbackUrl = `${buildBaseUrl(req)}/api/oauth/${providerParam}/callback`;
+    const state = createStateEntry(providerParam, redirectPath);
+
+    const authorizeUrl = new URL(config.authorizeUrl);
+    authorizeUrl.searchParams.set("client_id", config.clientId);
+    authorizeUrl.searchParams.set("redirect_uri", callbackUrl);
+    authorizeUrl.searchParams.set("response_type", "code");
+    authorizeUrl.searchParams.set("scope", config.scope.join(" "));
+    authorizeUrl.searchParams.set("state", state);
+    Object.entries(config.extraAuthParams ?? {}).forEach(([key, value]) => {
+      authorizeUrl.searchParams.set(key, value);
+    });
+
+    res.redirect(authorizeUrl.toString());
+  });
+
+  app.get("/api/oauth/:provider/callback", async (req: Request, res: Response) => {
+    const providerParam = req.params.provider;
+    if (!isExternalProvider(providerParam)) {
+      res.status(404).json({ error: "Unsupported OAuth provider" });
+      return;
+    }
+
+    const config = getConfiguredProvider(providerParam);
+    if (!config) {
+      res.status(400).json({ error: `${providerParam} OAuth is not configured` });
+      return;
+    }
+
+    const code = getQueryParam(req, "code");
+    const state = getQueryParam(req, "state");
+
+    if (!code || !state) {
+      res.status(400).json({ error: "code and state are required" });
+      return;
+    }
+
+    let redirectPath = "/";
+    try {
+      redirectPath = consumeStateEntry(state, providerParam);
+    } catch (error) {
+      console.error(`[OAuth] Invalid state for ${providerParam}`, error);
+      res.status(400).json({ error: "Invalid OAuth state" });
+      return;
+    }
+
+    try {
+      const callbackUrl = `${buildBaseUrl(req)}/api/oauth/${providerParam}/callback`;
+      const tokenResponse = await exchangeCodeForProvider(providerParam, config, code, callbackUrl);
+
+      if (!tokenResponse.access_token) {
+        throw new Error("Access token missing in response");
+      }
+
+      const profile = await fetchUserProfileFromProvider(
+        providerParam,
+        config,
+        tokenResponse.access_token
+      );
+      const openId = `${providerParam}:${profile.id}`;
+      const displayName = profile.name || profile.email || config.name;
+
+      await db.upsertUser({
+        openId,
+        name: displayName ?? null,
+        email: profile.email ?? null,
+        loginMethod: providerParam,
+        lastSignedIn: new Date(),
+      });
+
+      const sessionToken = await sdk.createSessionToken(openId, {
+        name: displayName ?? "",
+        expiresInMs: ONE_YEAR_MS,
+      });
+
+      const cookieOptions = getSessionCookieOptions(req);
+      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+      res.redirect(302, redirectPath || "/");
+    } catch (error) {
+      console.error(`[OAuth] ${providerParam} callback failed`, error);
+      res.status(500).json({ error: `${config.name} OAuth callback failed` });
+    }
+  });
+
   // Local login route
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     try {

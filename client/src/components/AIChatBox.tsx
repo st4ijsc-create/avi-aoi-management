@@ -210,7 +210,7 @@ export function AIChatBox({
                 <div className="flex max-w-2xl flex-wrap justify-center gap-2">
                   {suggestedPrompts.map((prompt, index) => (
                     <button
-                      key={index}
+                      key={`prompt-${index}-${prompt.slice(0, 10)}`}
                       onClick={() => onSendMessage(prompt)}
                       disabled={isLoading}
                       className="rounded-lg border border-border bg-card px-4 py-2 text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
@@ -233,7 +233,7 @@ export function AIChatBox({
 
                 return (
                   <div
-                    key={index}
+                    key={`${message.role}-${index}`}
                     className={cn(
                       "flex gap-3",
                       message.role === "user"

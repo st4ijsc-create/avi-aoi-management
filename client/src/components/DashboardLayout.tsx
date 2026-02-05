@@ -152,11 +152,25 @@ function DashboardLayoutContent({
         // Fall through to default
       }
     }
-    // Default: open groups that contain the current path or have defaultOpen
+    // Default: open at most one group (accordion behavior)
+    const currentOrLocation = currentPath || location;
+    let activeGroupId: string | null = null;
+    let defaultOpenGroupId: string | null = null;
+
+    navGroups.forEach(group => {
+      const hasActiveItem = group.items.some(item => item.href === currentOrLocation);
+      if (hasActiveItem && !activeGroupId) {
+        activeGroupId = group.id;
+      }
+      if (group.defaultOpen && !defaultOpenGroupId) {
+        defaultOpenGroupId = group.id;
+      }
+    });
+
+    const openGroupId = activeGroupId ?? defaultOpenGroupId;
     const defaults: Record<string, boolean> = {};
     navGroups.forEach(group => {
-      const hasActiveItem = group.items.some(item => item.href === (currentPath || location));
-      defaults[group.id] = hasActiveItem || group.defaultOpen || false;
+      defaults[group.id] = openGroupId ? group.id === openGroupId : false;
     });
     return defaults;
   });
@@ -207,10 +221,25 @@ function DashboardLayoutContent({
   }, [isResizing, setSidebarWidth]);
 
   const toggleGroup = (groupId: string) => {
-    setOpenGroups(prev => ({
-      ...prev,
-      [groupId]: !prev[groupId],
-    }));
+    setOpenGroups(prev => {
+      const isCurrentlyOpen = !!prev[groupId];
+
+      // If the group is currently open, allow collapsing it (result: no group open)
+      if (isCurrentlyOpen) {
+        return {
+          ...prev,
+          [groupId]: false,
+        };
+      }
+
+      // When opening a group, close all others (accordion behavior)
+      const next: Record<string, boolean> = {};
+      Object.keys(prev).forEach(id => {
+        next[id] = false;
+      });
+      next[groupId] = true;
+      return next;
+    });
   };
 
   // Filter groups based on user role (also filters items within groups)

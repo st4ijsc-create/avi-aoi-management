@@ -47,7 +47,6 @@ import { navItems } from "@/lib/navigation";
 import { ErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
 import MachineMapping from "@/components/MachineMapping";
 import ManualMachineMapping from "@/components/ManualMachineMapping";
-import { UnifiedMappingTable } from "@/components/UnifiedMappingTable";
 import YieldThresholdSettings from "@/components/YieldThresholdSettings";
 import ScheduledReports from "@/components/ScheduledReports";
 import ReportTemplates from "@/components/ReportTemplates";
@@ -241,14 +240,28 @@ export default function Settings() {
   });
 
   // Queries
-  const { data: factories, refetch: refetchFactories } = trpc.factory.list.useQuery();
-  const { data: workshops, refetch: refetchWorkshops } = trpc.workshop.list.useQuery();
-  const { data: lines, refetch: refetchLines } = trpc.line.list.useQuery();
+  const { data: factories, refetch: refetchFactories, error: factoriesError, isLoading: factoriesLoading } = trpc.factory.list.useQuery();
+  const { data: workshops, refetch: refetchWorkshops, error: workshopsError } = trpc.workshop.list.useQuery();
+  const { data: lines, refetch: refetchLines, error: linesError } = trpc.line.list.useQuery();
   const { data: stations, refetch: refetchStations } = trpc.station.list.useQuery();
   const { data: machines, refetch: refetchMachines } = trpc.machine.list.useQuery();
   const { data: shifts, refetch: refetchShifts } = trpc.shiftConfig.list.useQuery();
   const { data: stages, refetch: refetchStages } = trpc.lineStage.list.useQuery();
   const { data: alerts, refetch: refetchAlerts } = trpc.alert.list.useQuery();
+
+  // Debug logging
+  console.log('🏭 Settings Debug:', {
+    factories: factories?.length ?? 'undefined',
+    factoriesError: factoriesError?.message,
+    factoriesLoading,
+    workshops: workshops?.length ?? 'undefined', 
+    workshopsError: workshopsError?.message,
+    lines: lines?.length ?? 'undefined',
+    linesError: linesError?.message,
+    activeTab,
+    isAdmin,
+    user: user?.username
+  });
 
   // Alert Mutations
   const createAlertMutation = trpc.alert.create.useMutation({
@@ -2246,8 +2259,27 @@ export default function Settings() {
           {/* Machine Mapping Tab */}
           <TabsContent value="mapping">
             <div className="space-y-6">
-              {/* Unified Mapping Table - MQTT + Manual */}
-              <UnifiedMappingTable />
+              {/* Info Card - Redirect to MQTT Clients page */}
+              <Card className="glass-card border-blue-500/30 bg-blue-500/5">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 rounded-full bg-blue-500/20">
+                      <Wifi className="h-6 w-6 text-blue-400" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold">Quản lý MQTT Clients</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Phê duyệt, quản lý MQTT clients và kết nối thủ công đã được chuyển sang trang riêng
+                      </p>
+                    </div>
+                    <Button asChild>
+                      <a href="/mqtt-clients">
+                        Đi đến MQTT Clients →
+                      </a>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
               
               {/* Legacy Auto Mapping via WebSocket */}
               <Card className="glass-card">

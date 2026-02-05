@@ -1130,6 +1130,7 @@ export const mqttSubscriptions = pgTable("mqtt_subscriptions", {
 }, (table) => [
   index("idx_mqtt_subs_client").on(table.clientId),
   index("idx_mqtt_subs_topic").on(table.topic),
+  uniqueIndex("mqtt_subscriptions_client_topic_unique").on(table.clientId, table.topic),
 ]);
 
 export type MqttSubscription = typeof mqttSubscriptions.$inferSelect;

@@ -233,8 +233,8 @@ export default function SPCAnalysis() {
                   {/* Pareto Chart Visualization */}
                   <div className="relative h-64 border rounded-lg p-4 bg-muted/20">
                     <div className="flex items-end justify-between h-full gap-2">
-                      {paretoData.map((item, index) => (
-                        <div key={index} className="flex flex-col items-center flex-1">
+                      {paretoData.map((item) => (
+                        <div key={item.pointCode} className="flex flex-col items-center flex-1">
                           <div className="relative w-full flex flex-col items-center">
                             {/* Cumulative line point */}
                             <div 
@@ -539,8 +539,8 @@ export default function SPCAnalysis() {
                 <Skeleton className="h-64 w-full" />
               ) : anomalyData && anomalyData.anomalies.length > 0 ? (
                 <div className="space-y-4">
-                  {anomalyData.anomalies.map((anomaly, index) => (
-                    <Alert key={index} variant="destructive">
+                  {anomalyData.anomalies.map((anomaly) => (
+                    <Alert key={`${anomaly.date}-${anomaly.zScore}`} variant="destructive">
                       <AlertTriangle className="h-4 w-4" />
                       <AlertTitle>Anomaly Detected - {String(anomaly.date)}</AlertTitle>
                       <AlertDescription>
@@ -592,9 +592,9 @@ export default function SPCAnalysis() {
                 </div>
               ) : rootCauseData ? (
                 <div className="space-y-4">
-                  {rootCauseData.suggestions.map((suggestion, index) => (
+                  {rootCauseData.suggestions.map((suggestion) => (
                     <Alert 
-                      key={index} 
+                      key={`${suggestion.title}-${suggestion.severity}`} 
                       variant={suggestion.severity === 'high' ? 'destructive' : 'default'}
                     >
                       <div className="flex items-start gap-3">

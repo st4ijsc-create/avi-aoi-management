@@ -387,8 +387,8 @@ export default function PredictiveAlertsPage() {
                       {alertDetail.aiAnalysis.factors?.length > 0 && (
                         <div className="space-y-2">
                           <p className="text-sm text-muted-foreground">Yếu tố ảnh hưởng:</p>
-                          {alertDetail.aiAnalysis.factors.map((factor: any, index: number) => (
-                            <div key={index} className="p-2 rounded bg-muted/50">
+                          {alertDetail.aiAnalysis.factors.map((factor: any) => (
+                            <div key={factor.name} className="p-2 rounded bg-muted/50">
                               <div className="flex items-center justify-between">
                                 <span className="text-sm font-medium">{factor.name}</span>
                                 <Badge variant="outline">{factor.contribution}%</Badge>
@@ -404,7 +404,7 @@ export default function PredictiveAlertsPage() {
                         <div className="space-y-2">
                           <p className="text-sm text-muted-foreground">Đề xuất:</p>
                           {alertDetail.aiAnalysis.recommendations.map((rec: string, index: number) => (
-                            <div key={index} className="flex items-start gap-2 p-2 rounded bg-muted/50">
+                            <div key={`alert-rec-${index}`} className="flex items-start gap-2 p-2 rounded bg-muted/50">
                               <Target className="h-4 w-4 mt-0.5 text-primary" />
                               <span className="text-sm">{rec}</span>
                             </div>

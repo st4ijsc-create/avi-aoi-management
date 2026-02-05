@@ -43,7 +43,9 @@ export async function initNotificationService(): Promise<void> {
         channelName: 'Cảnh báo lỗi',
         channelDescription: 'Thông báo cảnh báo lỗi sản xuất',
         playSound: true,
-        soundName: 'error_sound',
+        // Use default system sound to avoid crashes if a custom
+        // sound resource is not present or misconfigured
+        soundName: 'default',
         importance: 5, // IMPORTANCE_HIGH
         vibrate: true,
       },
@@ -56,7 +58,7 @@ export async function initNotificationService(): Promise<void> {
         channelName: 'Cảnh báo',
         channelDescription: 'Thông báo cảnh báo hệ thống',
         playSound: true,
-        soundName: 'warning_sound',
+        soundName: 'default',
         importance: 4, // IMPORTANCE_DEFAULT
         vibrate: true,
       },
@@ -116,7 +118,9 @@ export function showNotification(
     vibrate: type !== 'info',
     vibration: 300,
     playSound: type !== 'info',
-    soundName: type === 'error' ? 'error_sound' : 'default',
+    // Use default sound for both error and warning to match
+    // the channel configuration and avoid invalid custom names
+    soundName: 'default',
     actions: ['Xem chi tiết', 'Bỏ qua'],
   });
 }

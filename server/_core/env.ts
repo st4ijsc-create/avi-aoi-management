@@ -1,10 +1,19 @@
+const clean = (value?: string) => (value ? value.trim() : "");
+
 export const ENV = {
-  appId: process.env.VITE_APP_ID ?? "",
-  cookieSecret: process.env.JWT_SECRET ?? "",
-  databaseUrl: process.env.DATABASE_URL ?? "",
-  oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
-  ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
+  appId: clean(process.env.VITE_APP_ID),
+  cookieSecret: clean(process.env.JWT_SECRET),
+  databaseUrl: clean(process.env.DATABASE_URL),
+  oAuthServerUrl: clean(process.env.OAUTH_SERVER_URL),
+  oAuthPortalUrl: clean(process.env.VITE_OAUTH_PORTAL_URL),
+  ownerOpenId: clean(process.env.OWNER_OPEN_ID),
   isProduction: process.env.NODE_ENV === "production",
-  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
-  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  forgeApiUrl: clean(process.env.BUILT_IN_FORGE_API_URL),
+  forgeApiKey: clean(process.env.BUILT_IN_FORGE_API_KEY),
+  googleClientId: clean(process.env.GOOGLE_CLIENT_ID),
+  googleClientSecret: clean(process.env.GOOGLE_CLIENT_SECRET),
+  microsoftClientId: clean(process.env.MICROSOFT_CLIENT_ID),
+  microsoftClientSecret: clean(process.env.MICROSOFT_CLIENT_SECRET),
+  githubClientId: clean(process.env.GITHUB_CLIENT_ID),
+  githubClientSecret: clean(process.env.GITHUB_CLIENT_SECRET),
 };

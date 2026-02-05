@@ -27,23 +27,49 @@ interface MqttClientInfo {
   stationId?: number;
 }
 
+/**
+ * Enhanced NG Alert Payload with comprehensive error information
+ * Following the new structure for MQTT messages
+ */
 interface NGAlertPayload {
-  type: 'NG_ALERT';
-  inspectionId: number;
-  serialNumber: string;
-  productName: string;
-  machineName: string;
-  stationName: string;
+  alertId: string;
   timestamp: string;
+  station: {
+    id: string;
+    name: string;
+    line: string;
+    area: string;
+  };
+  product: {
+    id: string;
+    name: string;
+    serialNumber: string;
+    model?: string;
+    customer?: string;
+  };
+  error: {
+    code: string;
+    type: string;
+    description: string;
+    imageUrl?: string;
+  };
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  machine: {
+    id: number;
+    name: string;
+    code: string;
+  };
   ngPoints: Array<{
     pointId: number;
     pointName: string;
     result: string;
     actualValue?: string;
+    expectedValue?: string;
     imageUrl?: string;
   }>;
   totalNG: number;
   imageUrl?: string;
+  inspectionId: number;
 }
 
 interface SummaryPayload {
@@ -72,7 +98,10 @@ interface SummaryPayload {
 // MQTT Broker instance (local)
 let aedes: Aedes | null = null;
 let mqttServer: ReturnType<typeof createServer> | null = null;
+let mqttWsServer: ReturnType<typeof createServer> | null = null;
 let db: any = null;
+let mqttHandlersInitialized = false;
+let mqttPortConflictDetected = false;
 
 // External MQTT client (for cloud broker)
 let externalMqttClient: MqttClient | null = null;
@@ -93,6 +122,44 @@ const EXTERNAL_MQTT_USE_TLS = process.env.EXTERNAL_MQTT_USE_TLS === 'true' ||
   EXTERNAL_MQTT_BROKER.startsWith('mqtts://') || 
   EXTERNAL_MQTT_BROKER.startsWith('wss://');
 
+function disableLocalBrokerDueToPortConflict(label: string, port: number) {
+  if (mqttPortConflictDetected) {
+    return;
+  }
+  mqttPortConflictDetected = true;
+
+  console.error(
+    `[MQTT] ${label} port ${port} is already in use. ` +
+      'The local MQTT broker will be disabled until the conflict is resolved.'
+  );
+
+  shutdownMqttBroker()
+    .then(() => {
+      console.warn(
+        '[MQTT] Local MQTT broker disabled due to port conflict. ' +
+          'Update MQTT_PORT/MQTT_WS_PORT or stop the conflicting service to re-enable it.'
+      );
+    })
+    .catch((error) => {
+      console.error('[MQTT] Failed to shutdown broker after port conflict:', error);
+    });
+}
+
+function attachServerErrorHandler(
+  server: ReturnType<typeof createServer>,
+  label: string,
+  port: number
+) {
+  server.on('error', (error: NodeJS.ErrnoException) => {
+    if (error?.code === 'EADDRINUSE') {
+      disableLocalBrokerDueToPortConflict(label, port);
+    } else {
+      console.error(`[MQTT] ${label} server error:`, error?.message || error);
+      server.close();
+    }
+  });
+}
+
 /**
  * Initialize MQTT broker
  */
@@ -105,19 +172,39 @@ export function initMqttBroker() {
   // Get db instance
   import('../db').then(async module => {
     db = await module.getDb();
+
+    // Initialize MQTT event handlers once both broker and DB are ready
+    if (aedes && !mqttHandlersInitialized) {
+      setupEventHandlers();
+      mqttHandlersInitialized = true;
+      console.log('[MQTT] Event handlers initialized (DB ready)');
+    }
   });
   
   // Create Aedes broker
   aedes = new Aedes();
 
-  // Create TCP server
+  // Create TCP server (MQTT over TCP) listening on 0.0.0.0:MQTT_PORT
   mqttServer = createServer(aedes);
-  mqttServer.listen(MQTT_PORT, () => {
-    console.log(`[MQTT] Broker started on port ${MQTT_PORT}`);
+  attachServerErrorHandler(mqttServer, 'TCP broker', MQTT_PORT);
+  mqttServer.listen(MQTT_PORT, '0.0.0.0', () => {
+    console.log(`[MQTT] TCP broker started on 0.0.0.0:${MQTT_PORT}`);
   });
 
-  // Setup event handlers
-  setupEventHandlers();
+  // Create WebSocket server (MQTT over WebSocket) on 0.0.0.0:MQTT_WS_PORT
+  // This allows web clients to connect via ws://host:MQTT_WS_PORT
+  mqttWsServer = createServer(aedes, { ws: true });
+  attachServerErrorHandler(mqttWsServer, 'WebSocket broker', MQTT_WS_PORT);
+  mqttWsServer.listen(MQTT_WS_PORT, '0.0.0.0', () => {
+    console.log(`[MQTT] WebSocket broker started on 0.0.0.0:${MQTT_WS_PORT}`);
+  });
+
+  // If DB was initialized earlier (e.g. in tests), attach handlers now
+  if (db && !mqttHandlersInitialized) {
+    setupEventHandlers();
+    mqttHandlersInitialized = true;
+    console.log('[MQTT] Event handlers initialized');
+  }
 
   // Initialize external MQTT client if enabled
   initExternalMqttClient();
@@ -132,7 +219,20 @@ function initExternalMqttClient() {
     return;
   }
 
-  const brokerUrl = `${EXTERNAL_MQTT_BROKER}:${EXTERNAL_MQTT_PORT}`;
+  // Build broker URL robustly: allow EXTERNAL_MQTT_BROKER to include or omit port
+  let brokerUrl = EXTERNAL_MQTT_BROKER;
+  try {
+    const url = new URL(EXTERNAL_MQTT_BROKER);
+    if (!url.port) {
+      url.port = EXTERNAL_MQTT_PORT.toString();
+    }
+    brokerUrl = url.toString();
+  } catch {
+    // Fallback for non-standard URLs: append port if not already present
+    if (!EXTERNAL_MQTT_BROKER.match(/:\d+$/)) {
+      brokerUrl = `${EXTERNAL_MQTT_BROKER}:${EXTERNAL_MQTT_PORT}`;
+    }
+  }
   console.log(`[MQTT External] Connecting to ${brokerUrl}...`);
 
   const options: mqtt.IClientOptions = {
@@ -170,7 +270,10 @@ function initExternalMqttClient() {
  * Setup MQTT event handlers
  */
 function setupEventHandlers() {
-  if (!aedes || !db) return;
+  if (!aedes || !db) {
+    console.warn('[MQTT] Cannot setup event handlers yet (broker or DB not ready)');
+    return;
+  }
 
   // Client authentication
   aedes.authenticate = async (client, username, password, callback) => {
@@ -224,6 +327,7 @@ function setupEventHandlers() {
           connectionStatus: 'ONLINE',
           lastConnectedAt: new Date(),
           lastHeartbeat: new Date(),
+          isActive: true,
         });
 
         console.log(`[MQTT] New client registered (pending approval): ${client.id} (${deviceId})`);
@@ -310,7 +414,7 @@ function setupEventHandlers() {
 }
 
 /**
- * Publish NG alert to relevant clients
+ * Publish NG alert to relevant clients with enhanced payload structure
  */
 export async function publishNGAlert(data: {
   machineId: number;
@@ -324,7 +428,24 @@ export async function publishNGAlert(data: {
   stationName?: string;
   inspectionId: number;
   timestamp: Date;
-  measurementResults: Array<{ pointCode: string; result: string; value?: string | number | null }>;
+  // Enhanced product info
+  productModelId?: number;
+  productModelName?: string;
+  productModelCode?: string;
+  customer?: string;
+  // Enhanced measurement results with image URLs
+  measurementResults: Array<{ 
+    pointId?: number;
+    pointCode: string; 
+    result: string; 
+    value?: string | number | null;
+    expectedValue?: string | number | null;
+    imageUrl?: string;
+  }>;
+  // Main error image URL
+  errorImageUrl?: string;
+  // Severity level
+  severity?: 'low' | 'medium' | 'high' | 'critical';
 }): Promise<boolean> {
   const { stationId } = data;
   if (!aedes || !db) {
@@ -352,25 +473,66 @@ export async function publishNGAlert(data: {
       return false;
     }
 
-    const { factory, workshop } = station[0];
+    const { factory, workshop, line } = station[0];
     const topic = `avi/factory/${factory.id}/workshop/${workshop.id}/station/${stationId}/errors`;
 
-    // Build payload
+    // Generate unique alert ID
+    const alertId = `ALT-${new Date().getFullYear()}-${String(data.inspectionId).padStart(6, '0')}`;
+    
+    // Determine severity based on NG count
+    const ngCount = data.measurementResults.filter(m => m.result === 'NG').length;
+    const severity = data.severity || (ngCount >= 5 ? 'critical' : ngCount >= 3 ? 'high' : ngCount >= 2 ? 'medium' : 'low');
+    
+    // Get first NG point with image for main error image
+    const firstNGWithImage = data.measurementResults.find(m => m.result === 'NG' && m.imageUrl);
+    const mainImageUrl = data.errorImageUrl || firstNGWithImage?.imageUrl;
+    
+    // Build primary error description
+    const primaryNG = data.measurementResults.find(m => m.result === 'NG');
+    const errorDescription = primaryNG 
+      ? `${primaryNG.pointCode} - Result: ${primaryNG.result}${primaryNG.value ? `, Value: ${primaryNG.value}` : ''}${primaryNG.expectedValue ? `, Expected: ${primaryNG.expectedValue}` : ''}`
+      : `${ngCount} NG point(s) detected`;
+
+    // Build enhanced payload following new structure
     const payload: NGAlertPayload = {
-      type: 'NG_ALERT',
-      inspectionId: data.inspectionId,
-      serialNumber: data.serialNumber,
-      productName: '',
-      machineName: data.machineName,
-      stationName: data.stationName || station[0].station.name,
+      alertId,
       timestamp: data.timestamp.toISOString(),
-      ngPoints: data.measurementResults.map((m, i) => ({
-        pointId: i,
+      station: {
+        id: `ST-${stationId}`,
+        name: data.stationName || station[0].station.name,
+        line: data.lineName || line.name,
+        area: data.workshopName || workshop.name,
+      },
+      product: {
+        id: data.productModelCode ? `PRD-${data.productModelCode}` : `PRD-${data.serialNumber}`,
+        name: data.productModelName || 'Unknown Product',
+        serialNumber: data.serialNumber,
+        model: data.productModelCode,
+        customer: data.customer,
+      },
+      error: {
+        code: primaryNG?.pointCode ? `E-${primaryNG.pointCode}` : `E-NG-${data.inspectionId}`,
+        type: 'Inspection Error',
+        description: errorDescription,
+        imageUrl: mainImageUrl,
+      },
+      severity,
+      machine: {
+        id: data.machineId,
+        name: data.machineName,
+        code: data.machineCode,
+      },
+      ngPoints: data.measurementResults.filter(m => m.result === 'NG').map((m, i) => ({
+        pointId: m.pointId || i,
         pointName: m.pointCode,
         result: m.result,
         actualValue: m.value?.toString(),
+        expectedValue: m.expectedValue?.toString(),
+        imageUrl: m.imageUrl,
       })),
-      totalNG: data.measurementResults.length,
+      totalNG: ngCount,
+      imageUrl: mainImageUrl,
+      inspectionId: data.inspectionId,
     };
 
     // Publish message
@@ -586,6 +748,23 @@ export async function sendClientCommand(
     });
 
     console.log(`[MQTT] Sent command to client ${client[0].clientId}: ${command}`);
+
+    // Log message for client history & health dashboard
+    try {
+      await db.insert(schema.mqttMessageLogs).values({
+        messageType: 'CUSTOM',
+        topic,
+        payload: { command, data },
+        targetClientId: client[0].id,
+        stationId: client[0].stationId ?? null,
+        deliveryStatus: 'DELIVERED',
+        deliveredAt: new Date(),
+      });
+    } catch (logError) {
+      console.error('[MQTT] Error logging client command:', logError);
+    }
+
+    console.log(`[MQTT] Sent command to client ${client[0].clientId}: ${command}`);
     return true;
   } catch (error) {
     console.error('[MQTT] Error sending command:', error);
@@ -616,16 +795,38 @@ export function shutdownMqttBroker(): Promise<void> {
     if (mqttServer) {
       mqttServer.close(() => {
         console.log('[MQTT] Server closed');
+
+        // Also close WebSocket server if running
+        if (mqttWsServer) {
+          mqttWsServer.close(() => {
+            console.log('[MQTT] WebSocket server closed');
+          });
+          mqttWsServer = null;
+        }
+
         if (aedes) {
           aedes.close(() => {
             console.log('[MQTT] Broker closed');
+            aedes = null;
+            mqttServer = null;
+            mqttHandlersInitialized = false;
             resolve();
           });
         } else {
+          mqttServer = null;
+          mqttHandlersInitialized = false;
           resolve();
         }
       });
     } else {
+      if (mqttWsServer) {
+        mqttWsServer.close(() => {
+          console.log('[MQTT] WebSocket server closed');
+        });
+        mqttWsServer = null;
+      }
+      aedes = null;
+      mqttHandlersInitialized = false;
       resolve();
     }
   });

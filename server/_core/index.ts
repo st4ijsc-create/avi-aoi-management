@@ -1,7 +1,10 @@
 import "dotenv/config";
 import express from "express";
-import { createServer } from "http";
+import { createServer as createHttpServer } from "http";
+import { createServer as createHttpsServer } from "https";
+import fs from "fs";
 import net from "net";
+import path from "path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
@@ -15,6 +18,8 @@ import { initMqttBroker, shutdownMqttBroker } from "../services/mqttService";
 import { startAlertEvaluationJob, stopAlertEvaluationJob } from "../services/alertEvaluationService";
 import { initSummaryScheduler, stopSummaryScheduler } from "../services/mqttSummaryScheduler";
 import { cacheWarmingService } from "../services/cacheWarmingService";
+
+const HTTPS_ENABLED = process.env.HTTPS_ENABLED === "true";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -37,10 +42,98 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 
 async function startServer() {
   const app = express();
-  const server = createServer(app);
+  // Choose HTTP or HTTPS server based on configuration
+  let server: ReturnType<typeof createHttpServer> | ReturnType<typeof createHttpsServer>;
+
+  if (HTTPS_ENABLED) {
+    const keyPath = process.env.HTTPS_KEY_PATH;
+    const certPath = process.env.HTTPS_CERT_PATH;
+    const caPath = process.env.HTTPS_CA_PATH;
+
+    if (!keyPath || !certPath) {
+      throw new Error(
+        "HTTPS_ENABLED=true nhưng HTTPS_KEY_PATH hoặc HTTPS_CERT_PATH chưa được cấu hình trong .env",
+      );
+    }
+
+    const httpsOptions: any = {
+      key: fs.readFileSync(keyPath),
+      cert: fs.readFileSync(certPath),
+    };
+
+    if (caPath) {
+      httpsOptions.ca = fs.readFileSync(caPath);
+    }
+
+    server = createHttpsServer(httpsOptions, app);
+    console.log("[HTTPS] HTTPS server enabled");
+  } else {
+    server = createHttpServer(app);
+  }
+  
+  // Enable CORS for external machine clients (e.g. inspection-submit-app.html)
+  app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key");
+
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(204);
+    }
+
+    next();
+  });
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+  // Serve local uploads if STORAGE_MODE=local
+  if (process.env.STORAGE_MODE === "local") {
+    const uploadsRoot = process.env.LOCAL_STORAGE_DIR
+      ? path.resolve(process.env.LOCAL_STORAGE_DIR)
+      : path.join(process.cwd(), "uploads");
+
+    if (!fs.existsSync(uploadsRoot)) {
+      fs.mkdirSync(uploadsRoot, { recursive: true });
+    }
+
+    app.use("/uploads", express.static(uploadsRoot));
+    console.log(`[Storage] Local uploads enabled at /uploads (dir: ${uploadsRoot})`);
+  }
+
+  // REST endpoints for external machines (proxy to tRPC machineApi router)
+  app.post("/api/machine/submit-inspection", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res });
+      const caller = appRouter.createCaller(ctx);
+
+      const apiKey = req.header("x-api-key") || req.body.apiKey;
+      const input = { ...req.body, apiKey };
+
+      const result = await caller.machineApi.submitInspection(input as any);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[MachineAPI] submit-inspection error:", error);
+      res.status(400).json({ success: false, message: error?.message || "Submit inspection failed" });
+    }
+  });
+
+  app.post("/api/machine/upload-image", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res });
+      const caller = appRouter.createCaller(ctx);
+
+      const apiKey = req.header("x-api-key") || req.body.apiKey;
+      const input = { ...req.body, apiKey };
+
+      const result = await caller.machineApi.uploadImage(input as any);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[MachineAPI] upload-image error:", error);
+      res.status(400).json({ success: false, message: error?.message || "Upload image failed" });
+    }
+  });
+
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   // tRPC API
@@ -87,8 +180,10 @@ async function startServer() {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
+  const protocol = HTTPS_ENABLED ? "https" : "http";
+
   server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}/`);
+    console.log(`Server running on ${protocol}://localhost:${port}/`);
     
     // Initialize cache warming service
     cacheWarmingService.initialize().catch(err => {

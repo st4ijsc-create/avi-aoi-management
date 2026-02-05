@@ -1,6 +1,6 @@
-/**
+﻿/**
  * MQTT Client Management Router
- * Quản lý tập trung các MQTT Client profiles và assignments
+ * Quáº£n lÃ½ táº­p trung cÃ¡c MQTT Client profiles vÃ  assignments
  */
 
 import { z } from "zod";
@@ -439,19 +439,19 @@ export const mqttClientManagementRouter = router({
             .from(machines)
             .where(eq(machines.id, a.assignment.targetId))
             .limit(1);
-          targetName = machine?.name || `Machine #${a.assignment.targetId}`;
+          targetName = machine?.name || 'Machine #' + a.assignment.targetId;
         } else if (a.assignment.targetType === "station") {
           const [station] = await db.select({ name: stations.name })
             .from(stations)
             .where(eq(stations.id, a.assignment.targetId))
             .limit(1);
-          targetName = station?.name || `Station #${a.assignment.targetId}`;
+          targetName = station?.name || 'Station #' + a.assignment.targetId;
         } else if (a.assignment.targetType === "factory") {
           const [factory] = await db.select({ name: factories.name })
             .from(factories)
             .where(eq(factories.id, a.assignment.targetId))
             .limit(1);
-          targetName = factory?.name || `Factory #${a.assignment.targetId}`;
+          targetName = factory?.name || 'Factory #' + a.assignment.targetId;
         }
         
         return {
@@ -756,7 +756,7 @@ export const mqttClientManagementRouter = router({
         profile: mqttClientProfiles,
         assignmentCount: sql<number>`(
           SELECT COUNT(*) FROM mqtt_profile_assignments 
-          WHERE profileId = ${mqttClientProfiles.id} AND isActive = 1
+          WHERE ${mqttProfileAssignments.profileId} = ${mqttClientProfiles.id} AND ${mqttProfileAssignments.isActive} = true
         )`.as('assignmentCount'),
       }).from(mqttClientProfiles).where(eq(mqttClientProfiles.isActive, true));
       
@@ -765,7 +765,7 @@ export const mqttClientManagementRouter = router({
           profile: mqttClientProfiles,
           assignmentCount: sql<number>`(
             SELECT COUNT(*) FROM mqtt_profile_assignments 
-            WHERE profileId = ${mqttClientProfiles.id} AND isActive = 1
+            WHERE ${mqttProfileAssignments.profileId} = ${mqttClientProfiles.id} AND ${mqttProfileAssignments.isActive} = true
           )`.as('assignmentCount'),
         }).from(mqttClientProfiles).where(eq(mqttClientProfiles.id, profileId));
       }
@@ -774,8 +774,13 @@ export const mqttClientManagementRouter = router({
       
       // Get recent connection events for each profile
       const healthData = await Promise.all(profiles.map(async ({ profile, assignmentCount }) => {
-        // Get last connection event
-        const [lastEvent] = await db.select()
+        // Get last connection event (select explicit columns for strong typing)
+        const [lastEvent] = await db.select({
+          eventType: mqttConnectionLogs.eventType,
+          eventMessage: mqttConnectionLogs.eventMessage,
+          timestamp: mqttConnectionLogs.timestamp,
+          clientId: mqttConnectionLogs.clientId,
+        })
           .from(mqttConnectionLogs)
           .where(eq(mqttConnectionLogs.profileId, profile.id))
           .orderBy(desc(mqttConnectionLogs.timestamp))
@@ -789,7 +794,7 @@ export const mqttClientManagementRouter = router({
           .where(and(
             eq(mqttConnectionLogs.profileId, profile.id),
             eq(mqttConnectionLogs.eventType, "error"),
-            sql`${mqttConnectionLogs.timestamp} > DATE_SUB(NOW(), INTERVAL 1 HOUR)`
+            sql`${mqttConnectionLogs.timestamp} >= NOW() - INTERVAL '1 hour'`
           ));
         
         // Get reconnect count in last hour
@@ -800,7 +805,7 @@ export const mqttClientManagementRouter = router({
           .where(and(
             eq(mqttConnectionLogs.profileId, profile.id),
             eq(mqttConnectionLogs.eventType, "reconnect"),
-            sql`${mqttConnectionLogs.timestamp} > DATE_SUB(NOW(), INTERVAL 1 HOUR)`
+            sql`${mqttConnectionLogs.timestamp} >= NOW() - INTERVAL '1 hour'`
           ));
         
         // Determine health status
@@ -817,10 +822,10 @@ export const mqttClientManagementRouter = router({
               statusMessage = "Connected and stable";
             } else if (reconnectsLastHour >= 3) {
               status = "warning";
-              statusMessage = `${reconnectsLastHour} reconnections in last hour`;
+              statusMessage = reconnectsLastHour + ' reconnections in last hour';
             } else {
               status = "warning";
-              statusMessage = `${errorsLastHour} errors in last hour`;
+              statusMessage = errorsLastHour + ' errors in last hour';
             }
           } else if (lastEvent.eventType === "disconnect") {
             status = "error";
@@ -1074,15 +1079,15 @@ export const mqttClientManagementRouter = router({
     // Count profiles
     const [profileCount] = await db.select({
       total: sql<number>`COUNT(*)`.as('total'),
-      active: sql<number>`SUM(CASE WHEN isActive = 1 THEN 1 ELSE 0 END)`.as('active'),
+      active: sql<number>`SUM(CASE WHEN ${mqttClientProfiles.isActive} = true THEN 1 ELSE 0 END)`.as('active'),
     }).from(mqttClientProfiles);
     
     // Count assignments
     const [assignmentCount] = await db.select({
       total: sql<number>`COUNT(*)`.as('total'),
-      machines: sql<number>`SUM(CASE WHEN targetType = 'machine' AND isActive = 1 THEN 1 ELSE 0 END)`.as('machines'),
-      stations: sql<number>`SUM(CASE WHEN targetType = 'station' AND isActive = 1 THEN 1 ELSE 0 END)`.as('stations'),
-      factories: sql<number>`SUM(CASE WHEN targetType = 'factory' AND isActive = 1 THEN 1 ELSE 0 END)`.as('factories'),
+      machines: sql<number>`SUM(CASE WHEN ${mqttProfileAssignments.targetType} = 'machine' AND ${mqttProfileAssignments.isActive} = true THEN 1 ELSE 0 END)`.as('machines'),
+      stations: sql<number>`SUM(CASE WHEN ${mqttProfileAssignments.targetType} = 'station' AND ${mqttProfileAssignments.isActive} = true THEN 1 ELSE 0 END)`.as('stations'),
+      factories: sql<number>`SUM(CASE WHEN ${mqttProfileAssignments.targetType} = 'factory' AND ${mqttProfileAssignments.isActive} = true THEN 1 ELSE 0 END)`.as('factories'),
     }).from(mqttProfileAssignments);
     
     // Recent connection events
@@ -1098,7 +1103,7 @@ export const mqttClientManagementRouter = router({
       .from(mqttConnectionLogs)
       .where(and(
         eq(mqttConnectionLogs.eventType, "error"),
-        sql`${mqttConnectionLogs.timestamp} > DATE_SUB(NOW(), INTERVAL 24 HOUR)`
+        sql`${mqttConnectionLogs.timestamp} >= NOW() - INTERVAL '24 hours'`
       ));
     
     return {
@@ -1388,34 +1393,34 @@ export const mqttClientManagementRouter = router({
       const { profileId, targetType, days = 7 } = input || {};
       
       const conditions = [
-        sql`${mqttReconnectLogs.timestamp} > DATE_SUB(NOW(), INTERVAL ${days} DAY)`
+        sql`${mqttReconnectLogs.timestamp} >= NOW() - INTERVAL '${sql.raw(days.toString())} days'`
       ];
       if (profileId) conditions.push(eq(mqttReconnectLogs.profileId, profileId));
       if (targetType) conditions.push(eq(mqttReconnectLogs.targetType, targetType));
       
       // Overall stats
       const [stats] = await db.select({
-        totalAttempts: sql<number>`SUM(CASE WHEN eventType = 'attempt' THEN 1 ELSE 0 END)`.as('totalAttempts'),
-        successCount: sql<number>`SUM(CASE WHEN eventType = 'success' THEN 1 ELSE 0 END)`.as('successCount'),
-        failureCount: sql<number>`SUM(CASE WHEN eventType = 'failure' THEN 1 ELSE 0 END)`.as('failureCount'),
-        maxAttemptsReached: sql<number>`SUM(CASE WHEN eventType = 'max_attempts_reached' THEN 1 ELSE 0 END)`.as('maxAttemptsReached'),
-        avgDelay: sql<number>`AVG(reconnectDelay)`.as('avgDelay'),
-        maxDelay: sql<number>`MAX(reconnectDelay)`.as('maxDelay'),
+        totalAttempts: sql<number>`SUM(CASE WHEN ${mqttReconnectLogs.eventType} = 'attempt' THEN 1 ELSE 0 END)`.as('totalAttempts'),
+        successCount: sql<number>`SUM(CASE WHEN ${mqttReconnectLogs.eventType} = 'success' THEN 1 ELSE 0 END)`.as('successCount'),
+        failureCount: sql<number>`SUM(CASE WHEN ${mqttReconnectLogs.eventType} = 'failure' THEN 1 ELSE 0 END)`.as('failureCount'),
+        maxAttemptsReached: sql<number>`SUM(CASE WHEN ${mqttReconnectLogs.eventType} = 'max_attempts_reached' THEN 1 ELSE 0 END)`.as('maxAttemptsReached'),
+        avgDelay: sql<number>`AVG(${mqttReconnectLogs.reconnectDelay})`.as('avgDelay'),
+        maxDelay: sql<number>`MAX(${mqttReconnectLogs.reconnectDelay})`.as('maxDelay'),
       })
         .from(mqttReconnectLogs)
         .where(and(...conditions));
       
       // Daily breakdown
       const dailyStats = await db.select({
-        date: sql<string>`DATE(timestamp)`.as('date'),
-        attempts: sql<number>`SUM(CASE WHEN eventType = 'attempt' THEN 1 ELSE 0 END)`.as('attempts'),
-        successes: sql<number>`SUM(CASE WHEN eventType = 'success' THEN 1 ELSE 0 END)`.as('successes'),
-        failures: sql<number>`SUM(CASE WHEN eventType = 'failure' THEN 1 ELSE 0 END)`.as('failures'),
+        date: sql<string>`timestamp::date`.as('date'),
+        attempts: sql<number>`SUM(CASE WHEN ${mqttReconnectLogs.eventType} = 'attempt' THEN 1 ELSE 0 END)`.as('attempts'),
+        successes: sql<number>`SUM(CASE WHEN ${mqttReconnectLogs.eventType} = 'success' THEN 1 ELSE 0 END)`.as('successes'),
+        failures: sql<number>`SUM(CASE WHEN ${mqttReconnectLogs.eventType} = 'failure' THEN 1 ELSE 0 END)`.as('failures'),
       })
         .from(mqttReconnectLogs)
         .where(and(...conditions))
-        .groupBy(sql`DATE(timestamp)`)
-        .orderBy(sql`DATE(timestamp)`);
+        .groupBy(sql`timestamp::date`)
+        .orderBy(sql`timestamp::date`);
       
       const totalAttempts = Number(stats?.totalAttempts) || 0;
       const successCount = Number(stats?.successCount) || 0;
@@ -1792,14 +1797,14 @@ export const mqttClientManagementRouter = router({
       
       // Get reconnect counts by day of week and hour
       const heatmapData = await db.select({
-        dayOfWeek: sql<number>`DAYOFWEEK(timestamp)`,
-        hourOfDay: sql<number>`HOUR(timestamp)`,
+        dayOfWeek: sql<number>`EXTRACT(DOW FROM timestamp)`,
+        hourOfDay: sql<number>`EXTRACT(HOUR FROM timestamp)`,
         count: sql<number>`count(*)`,
       })
         .from(mqttReconnectLogs)
         .where(and(...conditions))
-        .groupBy(sql`DAYOFWEEK(timestamp)`, sql`HOUR(timestamp)`);
-      
+        .groupBy(sql.raw("EXTRACT(DOW FROM timestamp)"), sql.raw("EXTRACT(HOUR FROM timestamp)"));
+
       // Build heatmap matrix (7 days x 24 hours)
       const matrix: number[][] = Array(7).fill(null).map(() => Array(24).fill(0));
       let maxCount = 0;
@@ -1818,7 +1823,7 @@ export const mqttClientManagementRouter = router({
         matrix,
         maxCount,
         days: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
-        hours: Array.from({ length: 24 }, (_, i) => `${i}:00`),
+        hours: Array.from({ length: 24 }, (_, i) => i + ":00"),
         period: { days, startDate: startDate.toISOString() },
       };
     }),
@@ -1839,16 +1844,16 @@ export const mqttClientManagementRouter = router({
       // Get top profiles by reconnect count
       const topProfiles = await db.select({
         profileId: mqttReconnectLogs.profileId,
-        totalAttempts: sql<number>`count(*)`,
-        successCount: sql<number>`SUM(CASE WHEN eventType = 'success' THEN 1 ELSE 0 END)`,
-        failureCount: sql<number>`SUM(CASE WHEN eventType = 'failure' THEN 1 ELSE 0 END)`,
-        avgDelay: sql<number>`AVG(reconnectDelay)`,
-        maxAttempts: sql<number>`MAX(attemptNumber)`,
+        totalAttempts: count().as('totalAttempts'),
+        successCount: sql<number>`SUM(CASE WHEN ${mqttReconnectLogs.eventType} = 'success' THEN 1 ELSE 0 END)`.as('successCount'),
+        failureCount: sql<number>`SUM(CASE WHEN ${mqttReconnectLogs.eventType} = 'failure' THEN 1 ELSE 0 END)`.as('failureCount'),
+        avgDelay: avg(mqttReconnectLogs.reconnectDelay).as('avgDelay'),
+        maxAttempts: sql<number>`MAX(${mqttReconnectLogs.attemptNumber})`.as('maxAttempts'),
       })
         .from(mqttReconnectLogs)
         .where(gte(mqttReconnectLogs.timestamp, startDate))
         .groupBy(mqttReconnectLogs.profileId)
-        .orderBy(desc(sql`count(*)`)) 
+        .orderBy(desc(sql`totalAttempts`))
         .limit(limit);
       
       // Enrich with profile names
@@ -1860,7 +1865,7 @@ export const mqttClientManagementRouter = router({
       
       return topProfiles.map(p => ({
         profileId: p.profileId,
-        profileName: profileMap.get(p.profileId)?.name || `Profile #${p.profileId}`,
+        profileName: profileMap.get(p.profileId)?.name || 'Profile #' + p.profileId,
         totalAttempts: Number(p.totalAttempts),
         successCount: Number(p.successCount),
         failureCount: Number(p.failureCount),
@@ -1886,16 +1891,16 @@ export const mqttClientManagementRouter = router({
       if (input?.profileId) conditions.push(eq(mqttReconnectLogs.profileId, input.profileId));
       
       const trendData = await db.select({
-        date: sql<string>`DATE(timestamp)`,
-        totalAttempts: sql<number>`count(*)`,
-        successCount: sql<number>`SUM(CASE WHEN eventType = 'success' THEN 1 ELSE 0 END)`,
-        failureCount: sql<number>`SUM(CASE WHEN eventType = 'failure' THEN 1 ELSE 0 END)`,
-        avgDelay: sql<number>`AVG(reconnectDelay)`,
+        date: sql.raw("timestamp::date"),
+        totalAttempts: count(),
+        successCount: count(mqttReconnectLogs.eventType),
+        failureCount: count(mqttReconnectLogs.eventType),
+        avgDelay: avg(mqttReconnectLogs.reconnectDelay),
       })
         .from(mqttReconnectLogs)
         .where(and(...conditions))
-        .groupBy(sql`DATE(timestamp)`)
-        .orderBy(asc(sql`DATE(timestamp)`));
+        .groupBy(sql.raw("timestamp::date"))
+        .orderBy(asc(sql.raw("timestamp::date")));
       
       return trendData.map(row => ({
         date: row.date,
@@ -1920,9 +1925,9 @@ export const mqttClientManagementRouter = router({
       
       const stats = await db.select({
         targetId: mqttReconnectLogs.targetId,
-        totalAttempts: sql<number>`count(*)`,
-        successCount: sql<number>`SUM(CASE WHEN eventType = 'success' THEN 1 ELSE 0 END)`,
-        failureCount: sql<number>`SUM(CASE WHEN eventType = 'failure' THEN 1 ELSE 0 END)`,
+        totalAttempts: count(),
+        successCount: count(mqttReconnectLogs.eventType),
+        failureCount: count(mqttReconnectLogs.eventType),
       })
         .from(mqttReconnectLogs)
         .where(and(
@@ -1930,7 +1935,7 @@ export const mqttClientManagementRouter = router({
           eq(mqttReconnectLogs.targetType, input.targetType)
         ))
         .groupBy(mqttReconnectLogs.targetId)
-        .orderBy(desc(sql`count(*)`))
+        .orderBy(desc(count()))
         .limit(input.limit);
       
       // Enrich with target names
@@ -1952,7 +1957,7 @@ export const mqttClientManagementRouter = router({
       
       return stats.map(s => ({
         targetId: s.targetId,
-        targetName: s.targetId ? targetMap.get(s.targetId)?.name || `${input.targetType} #${s.targetId}` : "Unknown",
+        targetName: s.targetId ? targetMap.get(s.targetId)?.name || (input.targetType + ' #' + s.targetId) : "Unknown",
         targetCode: s.targetId ? targetMap.get(s.targetId)?.code || "" : "",
         totalAttempts: Number(s.totalAttempts),
         successCount: Number(s.successCount),
@@ -2091,3 +2096,4 @@ export const mqttClientManagementRouter = router({
       return { success, message: success ? "Notification sent" : "Failed to send notification" };
     }),
 });
+

@@ -1,7 +1,9 @@
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { emitNGAlert, emitYieldWarning, emitDashboardUpdate } from "./_core/socket";
 import { systemRouter } from "./_core/systemRouter";
+import { sdk } from "./_core/sdk";
+import { isManusOAuthEnabled, listEnabledExternalProviders } from "./_core/oauthProviders";
 import { processRouter } from "./routers/processRouter";
 import { spcAnalysisRouter } from "./routers/spcAnalysisRouter";
 import { twoFactorRouter } from "./routers/twoFactorRouter";
@@ -22,6 +24,123 @@ import { storagePut } from "./storage";
 import { invokeLLM } from "./_core/llm";
 import { statsCache, CACHE_KEYS, CACHE_TTL } from "./_core/cache";
 import * as cachedStats from "./functions/cachedStatistics";
+
+type PointDefRecord = Awaited<ReturnType<typeof db.getMeasurementPointDefById>>;
+type PointDefCache = Map<string, PointDefRecord | null>;
+
+async function resolveMeasurementPointDefinition(
+  code: string | undefined,
+  productModelId: number | undefined,
+  machineId: number,
+  productCache: PointDefCache,
+  machineCache: PointDefCache,
+) {
+  if (!code) return null;
+  const normalized = code.trim();
+  if (!normalized) return null;
+
+  if (productModelId) {
+    if (!productCache.has(normalized)) {
+      const point = await db.getMeasurementPointDefByCode(productModelId, normalized);
+      productCache.set(normalized, point ?? null);
+    }
+    const cached = productCache.get(normalized);
+    if (cached) {
+      return cached;
+    }
+  }
+
+  if (!machineCache.has(normalized)) {
+    const point = await db.getMeasurementPointDefByMachineAndCode(machineId, normalized);
+    machineCache.set(normalized, point ?? null);
+  }
+  return machineCache.get(normalized) ?? null;
+}
+
+type WorkstationCache = Map<string, number | null>;
+
+async function resolveWorkstationId(code: string | undefined, cache: WorkstationCache) {
+  if (!code) return undefined;
+  const normalized = code.trim();
+  if (!normalized) return undefined;
+
+  if (!cache.has(normalized)) {
+    const workstation = await db.getWorkstationByCode(normalized);
+    cache.set(normalized, workstation?.id ?? null);
+  }
+
+  const cached = cache.get(normalized);
+  return cached ?? undefined;
+}
+
+function toOptionalDecimal(value?: string | number | null) {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return undefined;
+    return value.toString();
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function cleanUndefined<T extends Record<string, unknown>>(payload: T) {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, val]) => val !== undefined)
+  ) as Partial<T>;
+}
+
+function inferImageExtension(mimeType?: string) {
+  if (!mimeType) return "png";
+  const normalized = mimeType.toLowerCase();
+  const mapping: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/bmp": "bmp",
+  };
+  return mapping[normalized] || normalized.split("/").pop() || "png";
+}
+
+async function uploadPointReferenceImage(
+  productModelId: number,
+  pointCode: string,
+  imageBase64?: string,
+  mimeType?: string,
+  imageUrl?: string,
+) {
+  if (imageUrl && imageUrl.trim().length > 0) {
+    return { url: imageUrl.trim(), key: undefined as string | undefined };
+  }
+
+  if (!imageBase64 || imageBase64.trim().length === 0) {
+    return undefined;
+  }
+
+  const trimmed = imageBase64.trim();
+  if (/^https?:\/\//i.test(trimmed)) {
+    return { url: trimmed, key: undefined };
+  }
+
+  let actualMime = mimeType || "image/png";
+  let base64Payload = trimmed;
+  const dataUrlMatch = trimmed.match(/^data:([^;]+);base64,(.+)$/);
+  if (dataUrlMatch) {
+    actualMime = dataUrlMatch[1];
+    base64Payload = dataUrlMatch[2];
+  }
+
+  try {
+    const buffer = Buffer.from(base64Payload, "base64");
+    const safeCode = pointCode.replace(/[^a-zA-Z0-9-_]/g, "_");
+    const ext = inferImageExtension(actualMime);
+    const fileKey = `measurement-points/${productModelId}/${safeCode}-${Date.now()}-${nanoid(6)}.${ext}`;
+    const upload = await storagePut(fileKey, buffer, actualMime);
+    return upload;
+  } catch (error) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: `Invalid image payload for point ${pointCode}` });
+  }
+}
 
 // Admin procedure - only admin users can access
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -422,32 +541,38 @@ const productModelRouter = router({
       
       // Check if referenceImageUrl is a base64 data URL and upload to S3
       if (input.referenceImageUrl && input.referenceImageUrl.startsWith('data:')) {
-        try {
-          // Parse base64 data URL
-          const matches = input.referenceImageUrl.match(/^data:([^;]+);base64,(.+)$/);
-          if (matches) {
-            const mimeType = matches[1];
-            const base64Data = matches[2];
-            const buffer = Buffer.from(base64Data, 'base64');
-            
-            // Determine file extension
-            const extMap: Record<string, string> = {
-              'image/jpeg': 'jpg',
-              'image/png': 'png',
-              'image/gif': 'gif',
-              'image/webp': 'webp',
-            };
-            const ext = extMap[mimeType] || 'jpg';
-            const fileKey = `product-models/${input.code}-${nanoid(8)}.${ext}`;
-            
-            // Upload to S3
-            const { url, key } = await storagePut(fileKey, buffer, mimeType);
-            finalImageUrl = url;
-            finalImageKey = key;
+        const isForgeConfigured = !!(process.env.BUILT_IN_FORGE_API_URL && process.env.BUILT_IN_FORGE_API_KEY);
+        if (!isForgeConfigured) {
+          // Forge storage is not configured – skip external upload but do not fail creation
+          console.warn('Forge storage not configured, skipping product model image upload for create');
+        } else {
+          try {
+            // Parse base64 data URL
+            const matches = input.referenceImageUrl.match(/^data:([^;]+);base64,(.+)$/);
+            if (matches) {
+              const mimeType = matches[1];
+              const base64Data = matches[2];
+              const buffer = Buffer.from(base64Data, 'base64');
+              
+              // Determine file extension
+              const extMap: Record<string, string> = {
+                'image/jpeg': 'jpg',
+                'image/png': 'png',
+                'image/gif': 'gif',
+                'image/webp': 'webp',
+              };
+              const ext = extMap[mimeType] || 'jpg';
+              const fileKey = `product-models/${input.code}-${nanoid(8)}.${ext}`;
+              
+              // Upload to S3
+              const { url, key } = await storagePut(fileKey, buffer, mimeType);
+              finalImageUrl = url;
+              finalImageKey = key;
+            }
+          } catch (error) {
+            console.error('Failed to upload product model image to S3:', error);
+            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to upload image' });
           }
-        } catch (error) {
-          console.error('Failed to upload product model image to S3:', error);
-          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to upload image' });
         }
       }
       
@@ -499,30 +624,36 @@ const productModelRouter = router({
       
       // Check if referenceImageUrl is a base64 data URL and upload to S3
       if (data.referenceImageUrl && data.referenceImageUrl.startsWith('data:')) {
-        try {
-          const matches = data.referenceImageUrl.match(/^data:([^;]+);base64,(.+)$/);
-          if (matches) {
-            const mimeType = matches[1];
-            const base64Data = matches[2];
-            const buffer = Buffer.from(base64Data, 'base64');
-            
-            const extMap: Record<string, string> = {
-              'image/jpeg': 'jpg',
-              'image/png': 'png',
-              'image/gif': 'gif',
-              'image/webp': 'webp',
-            };
-            const ext = extMap[mimeType] || 'jpg';
-            const code = data.code || `product-${id}`;
-            const fileKey = `product-models/${code}-${nanoid(8)}.${ext}`;
-            
-            const { url, key } = await storagePut(fileKey, buffer, mimeType);
-            finalData.referenceImageUrl = url;
-            finalData.referenceImageKey = key;
+        const isForgeConfigured = !!(process.env.BUILT_IN_FORGE_API_URL && process.env.BUILT_IN_FORGE_API_KEY);
+        if (!isForgeConfigured) {
+          // Forge storage is not configured – skip external upload but do not fail update
+          console.warn('Forge storage not configured, skipping product model image upload for update');
+        } else {
+          try {
+            const matches = data.referenceImageUrl.match(/^data:([^;]+);base64,(.+)$/);
+            if (matches) {
+              const mimeType = matches[1];
+              const base64Data = matches[2];
+              const buffer = Buffer.from(base64Data, 'base64');
+              
+              const extMap: Record<string, string> = {
+                'image/jpeg': 'jpg',
+                'image/png': 'png',
+                'image/gif': 'gif',
+                'image/webp': 'webp',
+              };
+              const ext = extMap[mimeType] || 'jpg';
+              const code = data.code || `product-${id}`;
+              const fileKey = `product-models/${code}-${nanoid(8)}.${ext}`;
+              
+              const { url, key } = await storagePut(fileKey, buffer, mimeType);
+              finalData.referenceImageUrl = url;
+              finalData.referenceImageKey = key;
+            }
+          } catch (error) {
+            console.error('Failed to upload product model image to S3:', error);
+            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to upload image' });
           }
-        } catch (error) {
-          console.error('Failed to upload product model image to S3:', error);
-          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to upload image' });
         }
       }
       
@@ -1487,6 +1618,41 @@ const seedDataRouter = router({
     }),
 });
 
+const measurementTypeValueList = [
+  "DIMENSION",
+  "VISUAL",
+  "ELECTRICAL",
+  "POSITION",
+  "COLOR",
+  "SURFACE",
+  "OTHER",
+] as const;
+
+const measurementPointSyncSchema = z.object({
+  code: z.string().trim().min(1).max(50),
+  name: z.string().trim().min(1).max(255),
+  description: z.string().optional(),
+  measurementType: z.preprocess(
+    (val) => (typeof val === "string" ? val.toUpperCase() : val),
+    z.enum(measurementTypeValueList)
+  ).default("VISUAL"),
+  unit: z.string().max(20).optional(),
+  lowerLimit: z.union([z.string(), z.number()]).optional(),
+  upperLimit: z.union([z.string(), z.number()]).optional(),
+  nominalValue: z.union([z.string(), z.number()]).optional(),
+  positionX: z.number().int(),
+  positionY: z.number().int(),
+  radius: z.number().int().positive().optional(),
+  cropWidth: z.number().int().positive().optional(),
+  cropHeight: z.number().int().positive().optional(),
+  orderIndex: z.number().int().nonnegative().optional(),
+  workstationCode: z.string().trim().optional(),
+  isActive: z.boolean().optional(),
+  imageBase64: z.string().optional(),
+  imageMimeType: z.string().optional(),
+  imageUrl: z.string().url().optional(),
+});
+
 // ============ MACHINE API ROUTER (for external machine integration) ============
 const machineApiRouter = router({
   // Submit inspection data from machine
@@ -1535,7 +1701,7 @@ const machineApiRouter = router({
       if (input.apiKey) {
         machine = await db.getMachineByApiKey(input.apiKey);
       } else if (input.machineCode) {
-        machine = await db.getMachineByCode(input.machineCode);
+        machine = await db.getMachineByCode(input.machineCode.trim());
       }
       
       if (!machine) {
@@ -1544,6 +1710,12 @@ const machineApiRouter = router({
           message: input.apiKey ? 'Invalid API key' : 'Invalid machine code' 
         });
       }
+
+      const normalizedProductModelCode = input.productModel?.trim();
+      const productModelRecord = normalizedProductModelCode
+        ? await db.getProductModelByCode(normalizedProductModelCode)
+        : undefined;
+      const resolvedProductModelCode = productModelRecord?.code || normalizedProductModelCode;
 
       // Update machine heartbeat
       await db.updateMachineHeartbeat(machine.id);
@@ -1561,7 +1733,8 @@ const machineApiRouter = router({
       const inspectionId = await db.createProductInspection({
         machineId: machine.id,
         serialNumber: input.serialNumber,
-        productModel: input.productModel,
+        productModelId: productModelRecord?.id,
+        productModel: resolvedProductModelCode,
         batchNumber: input.batchNumber,
         overallResult: input.overallResult,
         originalResult: input.overallResult,
@@ -1585,28 +1758,35 @@ const machineApiRouter = router({
 
       // Process measurements - support both pointId and pointCode
       const measurementResults = [];
+      const productPointCache: PointDefCache = new Map();
+      const machinePointCache: PointDefCache = new Map();
       for (const measurement of input.measurements) {
-        let pointDef;
-        
-        // Try pointId first (new format), then pointCode (backward compatible)
-        if (measurement.pointId) {
-          pointDef = await db.getMeasurementPointDefByCode(machine.id, measurement.pointId);
+        const candidateCodes = [measurement.pointId, measurement.pointCode].filter((code): code is string => Boolean(code));
+        let pointDef: PointDefRecord | null = null;
+        for (const code of candidateCodes) {
+          pointDef = await resolveMeasurementPointDefinition(
+            code,
+            productModelRecord?.id,
+            machine.id,
+            productPointCache,
+            machinePointCache,
+          );
+          if (pointDef) break;
         }
-        if (!pointDef && measurement.pointCode) {
-          pointDef = await db.getMeasurementPointDefByCode(machine.id, measurement.pointCode);
+
+        if (!pointDef) {
+          continue;
         }
-        
-        if (pointDef) {
-          measurementResults.push({
-            inspectionId,
-            pointDefId: pointDef.id,
-            measuredValue: measurement.measuredValue !== undefined ? String(measurement.measuredValue) : undefined,
-            result: measurement.result,
-            remark: measurement.remark,
-            // Store image if provided (will need to upload to S3 in production)
-            imageUrl: measurement.imageBase64 ? measurement.imageBase64.substring(0, 100) + '...' : undefined,
-          });
-        }
+
+        measurementResults.push({
+          inspectionId,
+          pointDefId: pointDef.id,
+          measuredValue: measurement.measuredValue !== undefined ? String(measurement.measuredValue) : undefined,
+          result: measurement.result,
+          remark: measurement.remark,
+          // Store image if provided (will need to upload to S3 in production)
+          imageUrl: measurement.imageBase64 ? measurement.imageBase64.substring(0, 100) + '...' : undefined,
+        });
       }
 
       if (measurementResults.length > 0) {
@@ -1633,6 +1813,8 @@ const machineApiRouter = router({
         // Publish NG alert to MQTT clients
         try {
           const { publishNGAlert } = await import('./services/mqttService');
+          const productModelInfo = productModelRecord || null;
+          
           await publishNGAlert({
             machineId: machine.id,
             machineName: machine.name,
@@ -1645,11 +1827,25 @@ const machineApiRouter = router({
             stationName: station?.name,
             inspectionId,
             timestamp: new Date(),
+            // Enhanced product info
+            productModelId: productModelInfo?.id,
+            productModelName: productModelInfo?.name || resolvedProductModelCode,
+            productModelCode: productModelInfo?.code || resolvedProductModelCode,
+            // Measurement results with image URLs
             measurementResults: input.measurements?.filter(m => m.result === 'NG').map(m => ({
+              pointId: undefined,
               pointCode: m.pointId || m.pointCode || 'UNKNOWN',
               result: m.result,
               value: m.measuredValue,
+              // Include image URL if provided (base64 or actual URL)
+              imageUrl: m.imageBase64 && m.imageBase64.startsWith('http') 
+                ? m.imageBase64 
+                : m.imageBase64 
+                  ? `data:image/jpeg;base64,${m.imageBase64.substring(0, 100)}...` 
+                  : undefined,
             })) || [],
+            // Determine severity based on NG count
+            severity: (input.measurements?.filter(m => m.result === 'NG').length || 0) >= 3 ? 'critical' : 'high',
           });
         } catch (mqttError) {
           console.error('[MQTT] Failed to publish NG alert:', mqttError);
@@ -1705,8 +1901,26 @@ const machineApiRouter = router({
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid API key' });
       }
 
-      // Get point definition
-      const pointDef = await db.getMeasurementPointDefByCode(machine.id, input.pointCode);
+      const inspection = await db.getProductInspectionById(input.inspectionId);
+      if (!inspection) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Inspection not found' });
+      }
+
+      const inspectionModel = inspection.productModelId
+        ? await db.getProductModelById(inspection.productModelId)
+        : inspection.productModel
+          ? await db.getProductModelByCode(inspection.productModel.trim())
+          : undefined;
+
+      const productPointCache: PointDefCache = new Map();
+      const machinePointCache: PointDefCache = new Map();
+      const pointDef = await resolveMeasurementPointDefinition(
+        input.pointCode,
+        inspectionModel?.id,
+        machine.id,
+        productPointCache,
+        machinePointCache,
+      );
       if (!pointDef) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Measurement point not found' });
       }
@@ -1744,6 +1958,142 @@ const machineApiRouter = router({
       }).where(eq(measurementResults.id, results[0].id));
 
       return { success: true, imageUrl: url };
+    }),
+
+  syncMeasurementPoints: publicProcedure
+    .input(z.object({
+      machineCode: z.string().optional(),
+      apiKey: z.string().optional(),
+      productModelCode: z.string().trim().min(1),
+      points: z.array(measurementPointSyncSchema).min(1),
+    }).refine((data) => data.apiKey || data.machineCode, {
+      message: 'Either apiKey or machineCode must be provided',
+    }))
+    .mutation(async ({ input }) => {
+      let machine;
+      if (input.apiKey) {
+        machine = await db.getMachineByApiKey(input.apiKey);
+      } else if (input.machineCode) {
+        machine = await db.getMachineByCode(input.machineCode.trim());
+      }
+
+      if (!machine) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: input.apiKey ? 'Invalid API key' : 'Invalid machine code' });
+      }
+
+      await db.updateMachineHeartbeat(machine.id);
+
+      const normalizedModelCode = input.productModelCode.trim();
+      const productModel = await db.getProductModelByCode(normalizedModelCode);
+      if (!productModel) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Product model not found' });
+      }
+
+      const workstationCache: WorkstationCache = new Map();
+      const results: Array<{ code: string; id: number; action: 'created' | 'updated' }> = [];
+      const errors: Array<{ code: string; message: string }> = [];
+
+      for (const [index, point] of input.points.entries()) {
+        try {
+          const existing = await db.getMeasurementPointDefByCode(productModel.id, point.code);
+          const workstationId = await resolveWorkstationId(point.workstationCode, workstationCache);
+          const referenceImage = await uploadPointReferenceImage(
+            productModel.id,
+            point.code,
+            point.imageBase64,
+            point.imageMimeType,
+            point.imageUrl,
+          );
+
+          if (existing) {
+            const updatePayload = cleanUndefined({
+              name: point.name,
+              description: point.description,
+              measurementType: point.measurementType,
+              unit: point.unit,
+              lowerLimit: toOptionalDecimal(point.lowerLimit),
+              upperLimit: toOptionalDecimal(point.upperLimit),
+              nominalValue: toOptionalDecimal(point.nominalValue),
+              positionX: point.positionX,
+              positionY: point.positionY,
+              radius: point.radius,
+              cropWidth: point.cropWidth,
+              cropHeight: point.cropHeight,
+              orderIndex: point.orderIndex,
+              workstationId,
+              machineId: machine.id,
+              isActive: point.isActive ?? true,
+              updatedAt: new Date(),
+            });
+
+            if (referenceImage) {
+              updatePayload.referenceImageUrl = referenceImage.url;
+              if (referenceImage.key) {
+                updatePayload.referenceImageKey = referenceImage.key;
+              }
+            }
+
+            await db.updateMeasurementPointDef(existing.id, updatePayload);
+            results.push({ code: point.code, id: existing.id, action: 'updated' });
+          } else {
+            const newPoint = {
+              productModelId: productModel.id,
+              machineId: machine.id,
+              workstationId,
+              code: point.code,
+              name: point.name,
+              description: point.description,
+              measurementType: point.measurementType,
+              unit: point.unit,
+              lowerLimit: toOptionalDecimal(point.lowerLimit),
+              upperLimit: toOptionalDecimal(point.upperLimit),
+              nominalValue: toOptionalDecimal(point.nominalValue),
+              positionX: point.positionX,
+              positionY: point.positionY,
+              radius: point.radius ?? 20,
+              cropWidth: point.cropWidth ?? 100,
+              cropHeight: point.cropHeight ?? 100,
+              orderIndex: point.orderIndex ?? index,
+              isActive: point.isActive ?? true,
+            };
+
+            if (referenceImage) {
+              newPoint.referenceImageUrl = referenceImage.url;
+              if (referenceImage.key) {
+                newPoint.referenceImageKey = referenceImage.key;
+              }
+            }
+
+            const id = await db.createMeasurementPointDef(newPoint);
+            results.push({ code: point.code, id, action: 'created' });
+          }
+        } catch (error) {
+          errors.push({
+            code: point.code,
+            message: error instanceof TRPCError
+              ? error.message
+              : error instanceof Error
+                ? error.message
+                : 'Unknown error',
+          });
+        }
+      }
+
+      const createdCount = results.filter((r) => r.action === 'created').length;
+      const updatedCount = results.filter((r) => r.action === 'updated').length;
+
+      return {
+        success: errors.length === 0,
+        machineId: machine.id,
+        productModelId: productModel.id,
+        productModelCode: productModel.code,
+        total: input.points.length,
+        created: createdCount,
+        updated: updatedCount,
+        failed: errors.length,
+        points: results,
+        errors,
+      };
     }),
 
   // Heartbeat endpoint
@@ -3438,7 +3788,9 @@ const mqttClientRouter = router({
         stationId,
         stationName: 'Test Station',
         serialNumber: input.serialNumber || `SN-${Date.now()}`,
-        inspectionId: Date.now(),
+        // Use a clamped inspectionId so it always fits
+        // into a 32-bit integer column in PostgreSQL
+        inspectionId: Date.now() % 2147483647,
         timestamp: new Date(),
         measurementResults: [{
           pointCode: input.ngPointName || 'Test Point',
@@ -3754,16 +4106,16 @@ const oeeRouter = router({
   // List all OEE targets
   listTargets: protectedProcedure.query(async () => {
     const { getDb } = await import('./db');
-    const { sql } = await import('drizzle-orm');
+    const { oeeTargets } = await import('../drizzle/schema');
+    const { desc, eq } = await import('drizzle-orm');
     const db = await getDb();
     if (!db) return [];
     
-    const result = await db.execute(sql`
-      SELECT * FROM oee_targets
-      WHERE isActive = true
-      ORDER BY createdAt DESC
-    `);
-    return ((result as any).rows || result) || [];
+    const result = await db.select()
+      .from(oeeTargets)
+      .where(eq(oeeTargets.isActive, true))
+      .orderBy(desc(oeeTargets.createdAt));
+    return result || [];
   }),
 
   // Create OEE target
@@ -6896,18 +7248,18 @@ const annotationRouter = router({
         SELECT 
           ia.id,
           ia.annotations,
-          ia.created_at,
-          ia.inspection_id,
-          i.machine_id,
-          i.product_model_id,
+          ia.createdAt,
+          ia.inspectionId,
+          i.machineId,
+          i.productModelId,
           m.code as machine_code,
           m.name as machine_name,
           pm.code as product_code,
           pm.name as product_name
         FROM image_annotations ia
-        LEFT JOIN inspections i ON ia.inspection_id = i.id
-        LEFT JOIN machines m ON i.machine_id = m.id
-        LEFT JOIN product_models pm ON i.product_model_id = pm.id
+        LEFT JOIN product_inspections i ON ia.inspectionId = i.id
+        LEFT JOIN machines m ON i.machineId = m.id
+        LEFT JOIN product_models pm ON i.productModelId = pm.id
         WHERE 1=1
       `;
       
@@ -6918,16 +7270,16 @@ const annotationRouter = router({
       
       // Apply date filters
       if (input?.dateFrom) {
-        rows = rows.filter((r: any) => new Date(r.created_at) >= input.dateFrom!);
+        rows = rows.filter((r: any) => new Date(r.createdAt) >= input.dateFrom!);
       }
       if (input?.dateTo) {
-        rows = rows.filter((r: any) => new Date(r.created_at) <= input.dateTo!);
+        rows = rows.filter((r: any) => new Date(r.createdAt) <= input.dateTo!);
       }
       if (input?.machineId) {
-        rows = rows.filter((r: any) => r.machine_id === input.machineId);
+        rows = rows.filter((r: any) => r.machineId === input.machineId);
       }
       if (input?.productModelId) {
-        rows = rows.filter((r: any) => r.product_model_id === input.productModelId);
+        rows = rows.filter((r: any) => r.productModelId === input.productModelId);
       }
       
       // Calculate statistics
@@ -7303,44 +7655,44 @@ Respond in JSON format with an array of findings.`
       let query = `
         SELECT 
           i.id as inspection_id,
-          i.serial_number,
-          i.inspection_time,
-          i.overall_result,
+          i.serialNumber,
+          i.inspectionTime,
+          i.overallResult,
           m.name as machine_name,
           m.id as machine_id,
           pm.name as product_model_name,
           pm.id as product_model_id,
           mr.id as measurement_result_id,
-          mr.image_url,
+          mr.imageUrl,
           mr.result,
-          mr.value,
+          mr.actualValue as value,
           mp.name as measurement_point_name,
           mp.id as measurement_point_id,
           ia.id as annotation_id,
           ia.annotations,
-          ia.created_at as annotation_created_at
-        FROM inspections i
-        LEFT JOIN machines m ON i.machine_id = m.id
-        LEFT JOIN product_models pm ON i.product_model_id = pm.id
-        LEFT JOIN measurement_results mr ON mr.inspection_id = i.id
-        LEFT JOIN measurement_points mp ON mr.measurement_point_id = mp.id
-        LEFT JOIN image_annotations ia ON ia.inspection_id = i.id AND ia.image_url = mr.image_url
-        WHERE mr.image_url IS NOT NULL
+          ia.createdAt as annotation_created_at
+        FROM product_inspections i
+        LEFT JOIN machines m ON i.machineId = m.id
+        LEFT JOIN product_models pm ON i.productModelId = pm.id
+        LEFT JOIN measurement_results mr ON mr.inspectionId = i.id
+        LEFT JOIN measurement_points mp ON mr.pointDefId = mp.id
+        LEFT JOIN image_annotations ia ON ia.inspectionId = i.id AND ia.imageUrl = mr.imageUrl
+        WHERE mr.imageUrl IS NOT NULL
       `;
       
       const conditions: string[] = [];
-      if (input.serialNumber) conditions.push(`i.serial_number = '${input.serialNumber}'`);
-      if (input.productModelId) conditions.push(`i.product_model_id = ${input.productModelId}`);
-      if (input.measurementPointId) conditions.push(`mr.measurement_point_id = ${input.measurementPointId}`);
-      if (input.machineId) conditions.push(`i.machine_id = ${input.machineId}`);
-      if (input.dateFrom) conditions.push(`i.inspection_time >= '${input.dateFrom}'`);
-      if (input.dateTo) conditions.push(`i.inspection_time <= '${input.dateTo}'`);
+      if (input.serialNumber) conditions.push(`i.serialNumber = '${input.serialNumber}'`);
+      if (input.productModelId) conditions.push(`i.productModelId = ${input.productModelId}`);
+      if (input.measurementPointId) conditions.push(`mr.pointDefId = ${input.measurementPointId}`);
+      if (input.machineId) conditions.push(`i.machineId = ${input.machineId}`);
+      if (input.dateFrom) conditions.push(`i.inspectionTime >= '${input.dateFrom}'`);
+      if (input.dateTo) conditions.push(`i.inspectionTime <= '${input.dateTo}'`);
       
       if (conditions.length > 0) {
         query += ' AND ' + conditions.join(' AND ');
       }
       
-      query += ` ORDER BY i.inspection_time DESC LIMIT ${input.limit}`;
+      query += ` ORDER BY i.inspectionTime DESC LIMIT ${input.limit}`;
       
       const result = await db.execute(sql.raw(query)) as any;
       
@@ -7351,15 +7703,15 @@ Respond in JSON format with an array of findings.`
         if (!grouped[key]) grouped[key] = [];
         grouped[key].push({
           inspectionId: row.inspection_id,
-          serialNumber: row.serial_number,
-          inspectionTime: row.inspection_time,
-          overallResult: row.overall_result,
+          serialNumber: row.serialnumber,
+          inspectionTime: row.inspectiontime,
+          overallResult: row.overallresult,
           machineName: row.machine_name,
           machineId: row.machine_id,
           productModelName: row.product_model_name,
           productModelId: row.product_model_id,
           measurementResultId: row.measurement_result_id,
-          imageUrl: row.image_url,
+          imageUrl: row.imageurl,
           result: row.result,
           value: row.value,
           measurementPointName: row.measurement_point_name,
@@ -7398,7 +7750,7 @@ Respond in JSON format with an array of findings.`
         SELECT 
           ia.id,
           ia.annotations,
-          ia.inspection_id,
+          ia.inspectionId,
           i.machineId,
           i.productModelId,
           i.inspectionTime,
@@ -7406,14 +7758,14 @@ Respond in JSON format with an array of findings.`
           m.positionX,
           m.positionY,
           pm.name as product_model_name,
-          mr.measurementPointId,
+          mr.pointDefId,
           mp.name as measurement_point_name
         FROM image_annotations ia
         JOIN product_inspections i ON ia.inspectionId = i.id
         LEFT JOIN machines m ON i.machineId = m.id
         LEFT JOIN product_models pm ON i.productModelId = pm.id
         LEFT JOIN measurement_results mr ON mr.inspectionId = i.id AND mr.imageUrl = ia.imageUrl
-        LEFT JOIN measurement_points mp ON mr.measurementPointId = mp.id
+        LEFT JOIN measurement_points mp ON mr.pointDefId = mp.id
         WHERE ia.annotations IS NOT NULL
       `;
       
@@ -7453,13 +7805,13 @@ Respond in JSON format with an array of findings.`
       }> = [];
       
       for (const row of result.rows || []) {
-        const machineId = row.machine_id || 0;
+        const machineId = row.machineId || 0;
         if (!machineDefects[machineId]) {
           machineDefects[machineId] = {
             machineId,
             machineName: row.machine_name || 'Unknown',
-            positionX: row.position_x,
-            positionY: row.position_y,
+            positionX: row.positionX,
+            positionY: row.positionY,
             defectCount: 0,
             defectsByType: {},
             defectsByColor: {},
@@ -7572,7 +7924,7 @@ Respond in JSON format with an array of findings.`
         query += ' AND ' + conditions.join(' AND ');
       }
       
-      query += ' GROUP BY CAST(i.inspectionTime AS DATE), i.machineId, i.productModelId ORDER BY date ASC';
+      query += ' GROUP BY CAST(i.inspectionTime AS DATE), i.machineId, m.name, i.productModelId, pm.name ORDER BY date ASC';
       
       const result = await db.execute(sql.raw(query)) as any;
       const historicalData = (result.rows || []).map((row: any) => ({
@@ -7965,19 +8317,19 @@ const rootCauseRouter = router({
       // Get inspection data for analysis
       let query = sql`
         SELECT 
-          i.id, i.serial_number, i.result, i.created_at,
+          i.id, i.serialNumber, i.result, i."createdAt",
           m.id as machine_id, m.code as machine_code, m.name as machine_name,
           pm.id as product_model_id, pm.code as product_model_code,
           f.id as factory_id, f.code as factory_code,
-          mr.result as measurement_result, mr.actual_value,
+          mr.result as measurement_result, mr.actualValue,
           mp.name as measurement_point_name
         FROM product_inspections i
-        LEFT JOIN machines m ON i.machine_id = m.id
-        LEFT JOIN product_models pm ON i.product_model_id = pm.id
-        LEFT JOIN factories f ON m.factory_id = f.id
-        LEFT JOIN measurement_results mr ON mr.inspection_id = i.id
-        LEFT JOIN measurement_point_defs mp ON mr.measurement_point_id = mp.id
-        WHERE i.created_at BETWEEN ${input.startDate} AND ${input.endDate}
+        LEFT JOIN machines m ON i.machineId = m.id
+        LEFT JOIN product_models pm ON i.productModelId = pm.id
+        LEFT JOIN factories f ON m.factoryId = f.id
+        LEFT JOIN measurement_results mr ON mr.inspectionId = i.id
+        LEFT JOIN measurement_points mp ON mr.pointDefId = mp.id
+        WHERE i."createdAt" BETWEEN ${input.startDate} AND ${input.endDate}
       `;
       
       const conditions: string[] = [];
@@ -8124,7 +8476,7 @@ const rootCauseRouter = router({
       if (input?.machineId) {
         query = sql`${query} AND machineId = ${input.machineId}`;
       }
-      query = sql`${query} ORDER BY createdAt DESC LIMIT ${input?.limit || 20}`;
+      query = sql`${query} ORDER BY "createdAt" DESC LIMIT ${input?.limit || 20}`;
       
       const result = await db.execute(query) as any;
       return (result.rows || []).map((row: any) => ({
@@ -8368,23 +8720,22 @@ const predictiveAlertRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
       
-      let query = sql`SELECT * FROM predictive_alerts WHERE 1=1`;
-      if (input?.status) {
-        query = sql`${query} AND status = ${input.status}`;
-      }
-      if (input?.severity) {
-        query = sql`${query} AND severity = ${input.severity}`;
-      }
-      if (input?.alertType) {
-        query = sql`${query} AND alertType = ${input.alertType}`;
-      }
-      if (input?.machineId) {
-        query = sql`${query} AND machineId = ${input.machineId}`;
-      }
-      query = sql`${query} ORDER BY createdAt DESC LIMIT ${input?.limit || 50}`;
+      const { predictiveAlerts } = await import('../drizzle/schema');
+      const { desc, eq, and } = await import('drizzle-orm');
       
-      const result = await db.execute(query) as any;
-      return (result.rows || []).map((row: any) => ({
+      const conditions: any[] = [];
+      if (input?.status) conditions.push(eq(predictiveAlerts.status, input.status));
+      if (input?.severity) conditions.push(eq(predictiveAlerts.severity, input.severity));
+      if (input?.alertType) conditions.push(eq(predictiveAlerts.alertType, input.alertType));
+      if (input?.machineId) conditions.push(eq(predictiveAlerts.machineId, input.machineId));
+      
+      const result = await db.select()
+        .from(predictiveAlerts)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(predictiveAlerts.createdAt))
+        .limit(input?.limit || 50);
+      
+      return (result || []).map((row: any) => ({
         id: row.id,
         alertType: row.alertType,
         severity: row.severity,
@@ -8513,17 +8864,17 @@ const predictiveAlertRouter = router({
       // Get inspection data
       let query = sql`
         SELECT 
-          CAST(i.created_at AS DATE) as date,
+          CAST(i."createdAt" AS DATE) as date,
           m.id as machine_id, m.code as machine_code,
           pm.id as product_model_id, pm.code as product_model_code,
           f.id as factory_id,
           COUNT(*) as total,
           SUM(CASE WHEN i.result = 'NG' THEN 1 ELSE 0 END) as ng_count
         FROM product_inspections i
-        LEFT JOIN machines m ON i.machine_id = m.id
-        LEFT JOIN product_models pm ON i.product_model_id = pm.id
-        LEFT JOIN factories f ON m.factory_id = f.id
-        WHERE i.created_at >= ${daysAgo}
+        LEFT JOIN machines m ON i.machineId = m.id
+        LEFT JOIN product_models pm ON i.productModelId = pm.id
+        LEFT JOIN factories f ON m.factoryId = f.id
+        WHERE i."createdAt" >= ${daysAgo}
       `;
       
       if (input?.machineId) {
@@ -8533,7 +8884,7 @@ const predictiveAlertRouter = router({
         query = sql`${query} AND f.id = ${input.factoryId}`;
       }
       
-      query = sql`${query} GROUP BY CAST(i.created_at AS DATE), m.id, m.code, pm.id, pm.code, f.id ORDER BY date ASC`;
+      query = sql`${query} GROUP BY CAST(i."createdAt" AS DATE), m.id, m.code, pm.id, pm.code, f.id ORDER BY date ASC`;
       
       const result = await db.execute(query) as any;
       const rows = result.rows || [];
@@ -8649,11 +9000,89 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+    checkSetupRequired: publicProcedure.query(async () => {
+      // Check if any admin user exists
+      const existingAdmins = await db.getUsersByRole('admin');
+      return { 
+        required: existingAdmins.length === 0,
+        message: existingAdmins.length === 0 ? 'Cần tạo tài khoản admin đầu tiên' : 'Hệ thống đã được cài đặt'
+      };
+    }),
+    oauthProviders: publicProcedure.query(() => ({
+      manus: isManusOAuthEnabled(),
+      providers: listEnabledExternalProviders(),
+    })),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
+    login: publicProcedure
+      .input(z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const bcrypt = await import('bcryptjs');
+        
+        // Find user by username
+        const user = await db.getUserByUsername(input.username);
+        if (!user) {
+          throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Tên đăng nhập hoặc mật khẩu không đúng' });
+        }
+        
+        // Check if user is active
+        if (!user.isActive) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Tài khoản đã bị vô hiệu hóa' });
+        }
+        
+        // Check if user has password (local account)
+        if (!user.passwordHash) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Tài khoản này không hỗ trợ đăng nhập bằng mật khẩu' });
+        }
+        
+        // Verify password
+        const isValid = await bcrypt.compare(input.password, user.passwordHash);
+        if (!isValid) {
+          throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Tên đăng nhập hoặc mật khẩu không đúng' });
+        }
+        
+        // Check if 2FA is enabled
+        const twoFAStatus = await db.get2FAStatus(user.id);
+        if (twoFAStatus?.twoFactorEnabled) {
+          // Return requires2FA flag instead of logging in
+          return { 
+            requires2FA: true,
+            userId: user.id,
+            message: "Vui lòng nhập mã xác thực 2 bước"
+          };
+        }
+        
+        // Update last signed in
+        await db.upsertUser({
+          openId: user.openId,
+          lastSignedIn: new Date(),
+        });
+        
+        // Create session token
+        const sessionToken = await sdk.createSessionToken(user.openId, {
+          name: user.name || "",
+          expiresInMs: ONE_YEAR_MS,
+        });
+        
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+        
+        return { 
+          success: true, 
+          user: {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+          }
+        };
+      }),
     setupAdmin: publicProcedure
       .input(z.object({
         username: z.string().min(3).max(50),

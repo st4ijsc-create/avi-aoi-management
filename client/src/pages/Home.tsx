@@ -2,6 +2,9 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getLoginUrl } from "@/const";
+import { trpc } from "@/lib/trpc";
+import { useEffect } from "react";
+import { useLocation } from "wouter";
 import { 
   Activity, 
   BarChart3, 
@@ -20,6 +23,15 @@ import { Link } from "wouter";
 
 export default function Home() {
   const { user, loading, isAuthenticated } = useAuth();
+  const [, setLocation] = useLocation();
+  const { data: setupCheck } = trpc.auth.checkSetupRequired.useQuery();
+
+  // Redirect to setup if no admin exists
+  useEffect(() => {
+    if (setupCheck?.required && !isAuthenticated) {
+      setLocation("/setup");
+    }
+  }, [setupCheck, isAuthenticated, setLocation]);
 
   const features = [
     {
@@ -186,8 +198,8 @@ export default function Home() {
       <section className="py-12 border-y border-border/50 bg-card/30">
         <div className="container">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            {stats.map((stat, index) => (
-              <div key={index} className="text-center">
+            {stats.map((stat) => (
+              <div key={stat.label} className="text-center">
                 <div className="inline-flex items-center justify-center h-12 w-12 rounded-xl bg-primary/10 mb-3">
                   <span className="text-primary">{stat.icon}</span>
                 </div>
@@ -212,8 +224,8 @@ export default function Home() {
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {features.map((feature, index) => (
-              <Card key={index} className="glass-card hover:border-primary/50 transition-all duration-300 group">
+            {features.map((feature) => (
+              <Card key={feature.title} className="glass-card hover:border-primary/50 transition-all duration-300 group">
                 <CardHeader>
                   <div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
                     <span className="text-primary">{feature.icon}</span>

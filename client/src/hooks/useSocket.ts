@@ -44,6 +44,15 @@ export function useSocket(options: UseSocketOptions = {}) {
 
   const { factoryId, workshopId, machineId, onAlert, onDashboardUpdate } = options;
 
+  // Store callbacks in refs to avoid effect re-runs
+  const onAlertRef = useRef(onAlert);
+  const onDashboardUpdateRef = useRef(onDashboardUpdate);
+  
+  useEffect(() => {
+    onAlertRef.current = onAlert;
+    onDashboardUpdateRef.current = onDashboardUpdate;
+  }, [onAlert, onDashboardUpdate]);
+
   useEffect(() => {
     // Connect to Socket.io server
     const socket = io({
@@ -69,19 +78,19 @@ export function useSocket(options: UseSocketOptions = {}) {
     socket.on("inspection:alert", (alert: InspectionAlert) => {
       console.log("[Socket.io] Received alert:", alert);
       setAlerts((prev) => [alert, ...prev].slice(0, 50)); // Keep last 50 alerts
-      onAlert?.(alert);
+      onAlertRef.current?.(alert);
     });
 
     socket.on("dashboard:update", (update: DashboardUpdate) => {
       console.log("[Socket.io] Received dashboard update:", update);
-      onDashboardUpdate?.(update);
+      onDashboardUpdateRef.current?.(update);
     });
 
     return () => {
       socket.emit("unsubscribe", { factoryId, workshopId, machineId });
       socket.disconnect();
     };
-  }, [factoryId, workshopId, machineId, onAlert, onDashboardUpdate]);
+  }, [factoryId, workshopId, machineId]);
 
   const clearAlerts = useCallback(() => {
     setAlerts([]);

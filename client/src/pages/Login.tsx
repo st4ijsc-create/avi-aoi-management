@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Loader2, LogIn, ExternalLink, Factory, Shield, ShieldCheck, ArrowLeft } from "lucide-react";
+import { Loader2, LogIn, ExternalLink, Factory, Shield, ShieldCheck, ArrowLeft, Chrome, Github, Globe } from "lucide-react";
 import { getLoginUrl } from "@/const";
+import { trpc } from "@/lib/trpc";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -22,6 +23,17 @@ export default function Login() {
   const [userId, setUserId] = useState<number | null>(null);
   const [otpToken, setOtpToken] = useState("");
 
+  const loginMutation = trpc.auth.login.useMutation();
+  const { data: setupCheck } = trpc.auth.checkSetupRequired.useQuery();
+  const { data: oauthProviders } = trpc.auth.oauthProviders.useQuery();
+
+  // Redirect to setup if no admin exists
+  useEffect(() => {
+    if (setupCheck?.required) {
+      setLocation("/setup");
+    }
+  }, [setupCheck, setLocation]);
+
   const handleLocalLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -32,35 +44,27 @@ export default function Login() {
 
     setIsLoading(true);
     try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formData),
+      const result = await loginMutation.mutateAsync({
+        username: formData.username,
+        password: formData.password,
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.error || "Đăng nhập thất bại");
-        return;
-      }
-
       // Check if 2FA is required
-      if (data.requires2FA) {
+      if ('requires2FA' in result && result.requires2FA) {
         setRequires2FA(true);
-        setUserId(data.userId);
+        setUserId(result.userId);
         toast.info("Vui lòng nhập mã xác thực 2 bước");
         return;
       }
 
       toast.success("Đăng nhập thành công");
-      // Reload to update auth state
-      window.location.href = "/";
-    } catch (error) {
+      // Wait a bit for cookie to be set, then reload
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 500);
+    } catch (error: any) {
       console.error("Login error:", error);
-      toast.error("Đăng nhập thất bại. Vui lòng thử lại.");
+      toast.error(error.message || "Đăng nhập thất bại. Vui lòng thử lại.");
     } finally {
       setIsLoading(false);
     }
@@ -107,9 +111,31 @@ export default function Login() {
     setOtpToken("");
   };
 
-  const handleOAuthLogin = () => {
-    window.location.href = getLoginUrl();
+  const getRedirectPath = () => {
+    if (typeof window === "undefined") return "/";
+    const params = new URLSearchParams(window.location.search);
+    const nextValue = params.get("next");
+    if (nextValue && nextValue.startsWith("/")) {
+      return nextValue;
+    }
+    return "/";
   };
+
+  type ExternalProvider = "google" | "microsoft" | "github";
+
+  const handleOAuthLogin = (provider: "manus" | ExternalProvider) => {
+    if (provider === "manus") {
+      window.location.href = getLoginUrl();
+      return;
+    }
+
+    const redirectPath = getRedirectPath();
+    window.location.href = `/api/oauth/${provider}/login?redirect=${encodeURIComponent(redirectPath)}`;
+  };
+
+  const hasManusOAuth = oauthProviders?.manus ?? false;
+  const enabledExternalProviders = oauthProviders?.providers ?? [];
+  const hasExternalOAuth = enabledExternalProviders.length > 0;
 
   // 2FA Verification Screen
   if (requires2FA) {
@@ -264,18 +290,68 @@ export default function Login() {
               </TabsContent>
 
               <TabsContent value="oauth" className="mt-4">
-                <div className="text-center space-y-4">
-                  <p className="text-slate-400 text-sm">
-                    Đăng nhập bằng tài khoản Manus của bạn
+                {oauthProviders === undefined ? (
+                  <div className="text-center text-slate-400 text-sm py-4">
+                    Đang tải cấu hình đăng nhập...
+                  </div>
+                ) : hasManusOAuth || hasExternalOAuth ? (
+                  <div className="space-y-6">
+                    {hasManusOAuth && (
+                      <div className="text-center space-y-3">
+                        <p className="text-slate-400 text-sm">
+                          Đăng nhập bằng tài khoản Manus của bạn
+                        </p>
+                        <Button
+                          onClick={() => handleOAuthLogin("manus")}
+                          className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700"
+                        >
+                          <ExternalLink className="h-4 w-4 mr-2" />
+                          Đăng nhập với Manus
+                        </Button>
+                      </div>
+                    )}
+
+                    {hasExternalOAuth && (
+                      <div className="space-y-3">
+                        <p className="text-center text-slate-400 text-sm">
+                          Hoặc sử dụng tài khoản doanh nghiệp
+                        </p>
+                        {enabledExternalProviders.includes("google") && (
+                          <Button
+                            onClick={() => handleOAuthLogin("google")}
+                            className="w-full bg-gradient-to-r from-rose-500 to-orange-500 hover:from-rose-600 hover:to-orange-600"
+                          >
+                            <Chrome className="h-4 w-4 mr-2" />
+                            Đăng nhập với Google
+                          </Button>
+                        )}
+                        {enabledExternalProviders.includes("microsoft") && (
+                          <Button
+                            onClick={() => handleOAuthLogin("microsoft")}
+                            className="w-full bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700"
+                          >
+                            <Globe className="h-4 w-4 mr-2" />
+                            Đăng nhập với Microsoft
+                          </Button>
+                        )}
+                        {enabledExternalProviders.includes("github") && (
+                          <Button
+                            onClick={() => handleOAuthLogin("github")}
+                            variant="outline"
+                            className="w-full border-slate-600 text-slate-100 hover:bg-slate-800"
+                          >
+                            <Github className="h-4 w-4 mr-2" />
+                            Đăng nhập với GitHub
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-center text-slate-400 text-sm">
+                    OAuth chưa được cấu hình. Liên hệ quản trị viên để bật các nhà cung cấp đăng nhập.
                   </p>
-                  <Button
-                    onClick={handleOAuthLogin}
-                    className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700"
-                  >
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    Đăng nhập với Manus
-                  </Button>
-                </div>
+                )}
               </TabsContent>
             </Tabs>
           </CardContent>

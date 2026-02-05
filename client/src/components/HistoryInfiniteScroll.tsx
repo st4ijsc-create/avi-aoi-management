@@ -223,6 +223,7 @@ export function HistoryInfiniteScroll({ filters, machines }: HistoryInfiniteScro
           refresh={refresh}
           total={total}
           renderItem={renderInspectionItem}
+          keyExtractor={(item) => item.id}
           renderEmpty={renderEmpty}
           showTotal={false}
           loadingText="Đang tải lịch sử..."

@@ -31,6 +31,7 @@ import {
   saveMqttConfig,
   isConnected,
   getStationConfig,
+  connectMqtt,
 } from '../services/mqttService';
 import {
   startBackgroundService,
@@ -46,6 +47,8 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [mqttEnabled, setMqttEnabled] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [backgroundRunning, setBackgroundRunning] = useState(false);
   const [overlayPermission, setOverlayPermission] = useState(false);
   const [stationName, setStationName] = useState('Chưa cấu hình');
@@ -89,6 +92,28 @@ export default function HomeScreen() {
     
     setConnected(isConnected());
     setBackgroundRunning(isBackgroundServiceRunning());
+  };
+
+  const handleManualConnect = async () => {
+    setConnectionError(null);
+    setConnecting(true);
+    try {
+      const config = await getMqttConfig();
+      await connectMqtt(config);
+
+      // Ensure the config is marked as enabled once user connects manually
+      if (!mqttEnabled) {
+        setMqttEnabled(true);
+        await saveMqttConfig({ enabled: true });
+      }
+
+      setConnected(isConnected());
+    } catch (error) {
+      console.error('Manual MQTT connect error:', error);
+      setConnectionError('Kết nối MQTT thất bại. Vui lòng kiểm tra cấu hình.');
+    } finally {
+      setConnecting(false);
+    }
   };
 
   const handleRequestOverlayPermission = async () => {
@@ -136,6 +161,21 @@ export default function HomeScreen() {
               onPress={() => navigation.navigate('StationConfig')}
             />
           </View>
+
+          <Button
+            mode="contained"
+            icon={connected ? 'check' : 'access-point-network'}
+            onPress={handleManualConnect}
+            loading={connecting}
+            disabled={connecting || connected}
+            style={styles.connectButton}
+          >
+            {connected ? 'Đã kết nối MQTT' : 'Kết nối MQTT'}
+          </Button>
+
+          {connectionError && (
+            <Text style={styles.connectionError}>{connectionError}</Text>
+          )}
         </Card.Content>
       </Card>
 
@@ -449,5 +489,14 @@ const styles = StyleSheet.create({
   },
   footer: {
     height: 24,
+  },
+  connectButton: {
+    marginTop: 16,
+    backgroundColor: '#14b8a6',
+  },
+  connectionError: {
+    marginTop: 8,
+    color: '#fecaca',
+    fontSize: 13,
   },
 });

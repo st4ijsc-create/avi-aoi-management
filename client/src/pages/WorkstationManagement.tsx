@@ -169,9 +169,9 @@ export default function WorkstationManagement() {
       code: formData.code,
       name: formData.name,
       description: formData.description || undefined,
-      lineId: formData.lineId ? parseInt(formData.lineId) : undefined,
-      workshopId: formData.workshopId ? parseInt(formData.workshopId) : undefined,
-      factoryId: formData.factoryId ? parseInt(formData.factoryId) : undefined,
+      lineId: formData.lineId && formData.lineId !== 'none' ? parseInt(formData.lineId) : undefined,
+      workshopId: formData.workshopId && formData.workshopId !== 'none' ? parseInt(formData.workshopId) : undefined,
+      factoryId: formData.factoryId && formData.factoryId !== 'none' ? parseInt(formData.factoryId) : undefined,
       processType: formData.processType as any,
       orderIndex: formData.orderIndex,
     });
@@ -185,9 +185,9 @@ export default function WorkstationManagement() {
       code: formData.code,
       name: formData.name,
       description: formData.description || undefined,
-      lineId: formData.lineId ? parseInt(formData.lineId) : undefined,
-      workshopId: formData.workshopId ? parseInt(formData.workshopId) : undefined,
-      factoryId: formData.factoryId ? parseInt(formData.factoryId) : undefined,
+      lineId: formData.lineId && formData.lineId !== 'none' ? parseInt(formData.lineId) : undefined,
+      workshopId: formData.workshopId && formData.workshopId !== 'none' ? parseInt(formData.workshopId) : undefined,
+      factoryId: formData.factoryId && formData.factoryId !== 'none' ? parseInt(formData.factoryId) : undefined,
       processType: formData.processType as any,
       orderIndex: formData.orderIndex,
       isActive: formData.isActive,
@@ -540,7 +540,7 @@ export default function WorkstationManagement() {
                       <SelectValue placeholder="Chọn nhà máy" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Không chọn</SelectItem>
+                      <SelectItem value="none">Không chọn</SelectItem>
                       {factories?.map((f) => (
                         <SelectItem key={f.id} value={f.id.toString()}>
                           {f.name}
@@ -559,7 +559,7 @@ export default function WorkstationManagement() {
                       <SelectValue placeholder="Chọn dây chuyền" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Không chọn</SelectItem>
+                      <SelectItem value="none">Không chọn</SelectItem>
                       {lines?.map((l) => (
                         <SelectItem key={l.id} value={l.id.toString()}>
                           {l.name}

@@ -557,22 +557,22 @@ export const annotationComparisonRouter = router({
         );
       }
 
-      // Get date format based on groupBy
+      // Get date format based on groupBy - PostgreSQL TO_CHAR format
       let dateFormat: string;
       switch (input.groupBy) {
         case "week":
-          dateFormat = "%Y-%u"; // Year-Week
+          dateFormat = "IYYY-IW"; // Year-Week (ISO week)
           break;
         case "month":
-          dateFormat = "%Y-%m"; // Year-Month
+          dateFormat = "YYYY-MM"; // Year-Month
           break;
         default:
-          dateFormat = "%Y-%m-%d"; // Year-Month-Day
+          dateFormat = "YYYY-MM-DD"; // Year-Month-Day
       }
 
       const trendData = await db
         .select({
-          period: sql<string>`DATE_FORMAT(${productInspections.inspectionTime}, ${dateFormat})`,
+          period: sql<string>`TO_CHAR(${productInspections.inspectionTime}, ${dateFormat})`,
           totalInspections: sql<number>`COUNT(*)`,
           okCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'OK' THEN 1 ELSE 0 END)`,
           ngCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NG' THEN 1 ELSE 0 END)`,
@@ -580,8 +580,8 @@ export const annotationComparisonRouter = router({
         })
         .from(productInspections)
         .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .groupBy(sql`DATE_FORMAT(${productInspections.inspectionTime}, ${dateFormat})`)
-        .orderBy(sql`DATE_FORMAT(${productInspections.inspectionTime}, ${dateFormat})`);
+        .groupBy(sql`TO_CHAR(${productInspections.inspectionTime}, ${dateFormat})`)
+        .orderBy(sql`TO_CHAR(${productInspections.inspectionTime}, ${dateFormat})`);
 
       // Calculate summary
       const summary = trendData.reduce((acc, item) => {

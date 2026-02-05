@@ -60,7 +60,7 @@ export default function MqttDashboard() {
     
     // Connect to WebSocket
     const socket = io(window.location.origin, {
-      path: '/socket.io',
+      path: '/api/socket.io',
       transports: ['websocket', 'polling'],
     });
     

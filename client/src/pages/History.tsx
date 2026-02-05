@@ -2569,9 +2569,9 @@ export default function History() {
                       </CardHeader>
                       <CardContent>
                         <div className="space-y-3">
-                          {aiAnalysis.anomalies.map((anomaly, index) => (
+                          {aiAnalysis.anomalies.map((anomaly) => (
                             <div 
-                              key={index}
+                              key={`${anomaly.date}-${anomaly.type}`}
                               className={`p-4 rounded-lg flex items-center justify-between ${
                                 anomaly.severity === 'critical' ? 'bg-destructive/20' : 'bg-warning/20'
                               }`}
@@ -2613,7 +2613,7 @@ export default function History() {
                       <CardContent>
                         <div className="space-y-3">
                           {aiAnalysis.recommendations.map((rec, index) => (
-                            <div key={index} className="p-4 rounded-lg bg-secondary/30 flex items-start gap-3">
+                            <div key={`recommendation-${index}`} className="p-4 rounded-lg bg-secondary/30 flex items-start gap-3">
                               <span className="text-lg">{rec.split(' ')[0]}</span>
                               <p className="text-foreground">{rec.substring(rec.indexOf(' ') + 1)}</p>
                             </div>

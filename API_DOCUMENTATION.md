@@ -15,8 +15,9 @@
 5. [Statistics APIs](#statistics-apis)
 6. [Import/Export APIs](#importexport-apis)
 7. [MQTT APIs](#mqtt-apis)
-8. [Alert APIs](#alert-apis)
-9. [Error Codes](#error-codes)
+8. [Machine Integration APIs](#machine-integration-apis)
+9. [Alert APIs](#alert-apis)
+10. [Error Codes](#error-codes)
 
 ---
 
@@ -84,15 +85,25 @@ product_inspections {
 // Machine API (from inspection device)
 POST /api/trpc/machineApi.submitInspection
 {
+  "machineCode": "AOI-01",
   "apiKey": "machine-api-key",
   "companyCode": "CORP001",  // Maps to corporateCode
   "factoryCode": "FAC001",
   "serialNumber": "SN123456",
   "productModel": "MODEL-A",
   "overallResult": "OK",
-  "measurementResults": [...]
+  "measurements": [
+    {
+      "pointCode": "P01",
+      "measuredValue": 0.12,
+      "result": "OK",
+      "remark": "Within spec"
+    }
+  ]
 }
 ```
+
+**Response:** `{ "success": true, "inspectionId": 1234 }`
 
 ### Backward Compatibility
 
@@ -399,6 +410,124 @@ const testMutation = trpc.mqttClient.testNGAlert.useMutation();
 await testMutation.mutateAsync();
 
 // Publishes a test NG alert to MQTT broker
+```
+
+---
+
+## Machine Integration APIs
+
+### Submit Inspection (`machineApi.submitInspection`)
+
+- **Auth:** `apiKey` header/body or `machineCode`
+- **When to use:** Called by AOI/AVI machines after every cycle
+- **Behavior:** Automatically links `productModelId`, updates production order counters, and emits NG alerts/MQTT notifications
+
+```jsonc
+POST /api/trpc/machineApi.submitInspection
+{
+  "machineCode": "AOI-01",           // or provide apiKey
+  "serialNumber": "SN123456",
+  "productModel": "PCBA-REV3",
+  "overallResult": "NG",
+  "inspectionTime": "2026-02-05T02:01:00Z",
+  "companyCode": "CORP001",
+  "factoryCode": "FAC001",
+  "productionOrderCode": "WO-20260205-01",
+  "measurements": [
+    {
+      "pointId": "P01",
+      "pointCode": "Connector-A",
+      "measuredValue": 0.42,
+      "result": "NG",
+      "remark": "Bent pin",
+      "imageBase64": "data:image/png;base64,iVBORw0..."
+    }
+  ]
+}
+
+// Response
+{
+  "success": true,
+  "inspectionId": 98214
+}
+```
+
+> ℹ️ The backend first resolves `pointId`/`pointCode` using the current product-model definition, then falls back to machine-bound points. Images are automatically uploaded to Forge/local storage.
+
+### Upload Measurement Image (`machineApi.uploadImage`)
+
+Use when a machine wants to attach or re-upload an image for a specific measurement after the initial submission.
+
+```jsonc
+POST /api/trpc/machineApi.uploadImage
+{
+  "apiKey": "machine-api-key",
+  "inspectionId": 98214,
+  "pointCode": "Connector-A",
+  "imageBase64": "<base64>",
+  "mimeType": "image/jpeg"
+}
+
+// Response
+{ "success": true, "imageUrl": "https://.../inspections/98214/Connector-A-abc.jpg" }
+```
+
+### Sync Measurement Points (`machineApi.syncMeasurementPoints`)
+
+Allows each machine to push its measurement-point setup (coordinates, tolerances, cropped images) so the server remains in sync with on-machine recipes.
+
+```jsonc
+POST /api/trpc/machineApi.syncMeasurementPoints
+{
+  "machineCode": "AOI-01",
+  "productModelCode": "PCBA-REV3",
+  "points": [
+    {
+      "code": "P01",
+      "name": "Connector A",
+      "measurementType": "VISUAL",
+      "unit": "px",
+      "lowerLimit": 0.1,
+      "upperLimit": 0.3,
+      "positionX": 540,
+      "positionY": 410,
+      "radius": 25,
+      "cropWidth": 120,
+      "cropHeight": 120,
+      "orderIndex": 1,
+      "workstationCode": "WS-AOI",
+      "imageBase64": "data:image/png;base64,iVBORw0..."
+    }
+  ]
+}
+
+// Response summary
+{
+  "success": true,
+  "productModelId": 33,
+  "created": 1,
+  "updated": 7,
+  "failed": 0,
+  "errors": []
+}
+```
+
+**Rules & Notes**
+- Each point is matched by `productModelId + code`. Existing points are updated; missing ones are inserted.
+- Optional `workstationCode` lets the server resolve workstation IDs automatically.
+- Provide either `imageBase64`, a `data:` URL, or `imageUrl`. Base64 payloads are stored via Forge/local uploads.
+- Call this endpoint whenever the on-machine recipe changes to keep analysis overlays/limits aligned.
+
+### Heartbeat (`machineApi.heartbeat`)
+
+Keeps the machine marked online.
+
+```jsonc
+POST /api/trpc/machineApi.heartbeat
+{ "apiKey": "machine-api-key" }
+
+// Response
+{ "success": true, "machineId": 12 }
 ```
 
 ---

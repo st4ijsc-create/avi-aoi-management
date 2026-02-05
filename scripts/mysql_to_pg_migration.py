@@ -136,7 +136,7 @@ def convert_db(content):
     content = re.sub(
         r'mysql\.createPool\(\{[^}]+\}\)',
         '''new Pool({
-    connectionString: process.env.SUPABASE_DATABASE_URL,
+    connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
   })''',
         content,

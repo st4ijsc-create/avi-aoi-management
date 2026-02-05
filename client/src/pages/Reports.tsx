@@ -685,9 +685,9 @@ export default function Reports() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {machineComparisonData.slice(0, 5).map((machine: { name: string; code: string; total: number; yieldRate: number }, index: number) => {
+                  {machineComparisonData.slice(0, 5).map((machine: { name: string; code: string; total: number; yieldRate: number }) => {
                     return (
-                      <TableRow key={index}>
+                      <TableRow key={machine.code}>
                         <TableCell className="font-medium">{machine.name}</TableCell>
                         <TableCell className="text-muted-foreground">{machine.code}</TableCell>
                         <TableCell className="text-right">{machine.total.toLocaleString()}</TableCell>
@@ -913,8 +913,8 @@ export default function Reports() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {yieldTrendData.slice(-14).reverse().map((row: { fullDate: string; total: number; ok: number; ng: number; ntf: number; yieldRate: number }, index: number) => (
-                    <TableRow key={index}>
+                  {yieldTrendData.slice(-14).reverse().map((row: { fullDate: string; total: number; ok: number; ng: number; ntf: number; yieldRate: number }) => (
+                    <TableRow key={row.fullDate}>
                       <TableCell>{row.fullDate}</TableCell>
                       <TableCell className="text-right">{row.total.toLocaleString()}</TableCell>
                       <TableCell className="text-right text-green-500">{row.ok.toLocaleString()}</TableCell>
@@ -983,8 +983,8 @@ export default function Reports() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {machineComparisonData.map((machine: { name: string; code: string; total: number; yieldRate: number; ngRate: number }, index: number) => (
-                    <TableRow key={index}>
+                  {machineComparisonData.map((machine: { name: string; code: string; total: number; yieldRate: number; ngRate: number }) => (
+                    <TableRow key={machine.code}>
                       <TableCell className="font-medium">{machine.name}</TableCell>
                       <TableCell className="text-muted-foreground">{machine.code}</TableCell>
                       <TableCell className="text-right">{machine.total.toLocaleString()}</TableCell>
@@ -1045,8 +1045,8 @@ export default function Reports() {
 
           {/* Factory Details */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {factoryComparisonData.map((factory: { name: string; code: string; total: number; yieldRate: number; machines: number }, index: number) => (
-              <Card key={index}>
+            {factoryComparisonData.map((factory: { name: string; code: string; total: number; yieldRate: number; machines: number }) => (
+              <Card key={factory.code}>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-lg">{factory.name}</CardTitle>
                   <CardDescription>{factory.code}</CardDescription>

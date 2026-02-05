@@ -493,10 +493,47 @@ Chạy báo cáo ngay lập tức.
 
 ## 10. Machine API (machineApi)
 
-API cho máy AVI/AOI gửi dữ liệu inspection.
+API cho máy AVI/AOI gửi dữ liệu inspection và đồng bộ điểm đo.
 
 ### 10.1 machineApi.submitInspection
-Gửi kết quả inspection từ máy.
+Gửi kết quả inspection sau mỗi chu kỳ.
+
+**Type:** Mutation  
+**Auth:** Machine API Key hoặc `machineCode`
+
+**Input:**
+```typescript
+{
+  apiKey?: string;
+  machineCode?: string;
+  serialNumber: string;
+  productModel?: string;
+  batchNumber?: string;
+  overallResult: "OK" | "NG";
+  inspectionTime?: string; // ISO 8601
+  cycleTime?: number;
+  companyCode?: string;
+  factoryCode?: string;
+  workshopCode?: string;
+  lineCode?: string;
+  stageCode?: string;
+  productionOrderCode?: string;
+  operatorId?: string;
+  measurements: Array<{
+    pointId?: string;
+    pointCode?: string;
+    measuredValue?: number | string;
+    result: "OK" | "NG";
+    remark?: string;
+    imageBase64?: string; // data URL hoặc raw base64
+  }>;
+}
+```
+
+**Response:** `{ success: true; inspectionId: number; }
+
+### 10.2 machineApi.uploadImage
+Đính kèm lại ảnh cho một measurement sau khi đã gửi inspection.
 
 **Type:** Mutation  
 **Auth:** Machine API Key  
@@ -504,39 +541,71 @@ Gửi kết quả inspection từ máy.
 ```typescript
 {
   apiKey: string;
-  serialNumber: string;
+  inspectionId: number;
+  pointCode: string;
+  imageBase64: string; // base64 hoặc data URL
+  mimeType?: string;   // mặc định image/jpeg
+}
+```
+
+**Response:** `{ success: true; imageUrl: string; }
+
+### 10.3 machineApi.syncMeasurementPoints
+Đồng bộ định nghĩa điểm đo (tọa độ, ngưỡng, ảnh mẫu) từ máy lên server.
+
+**Type:** Mutation  
+**Auth:** Machine API Key hoặc `machineCode`
+
+**Input:**
+```typescript
+{
+  apiKey?: string;
+  machineCode?: string;
   productModelCode: string;
-  result: "OK" | "NG";
-  inspectionTime: Date;
-  cycleTime?: number;
-  measurements?: Array<{
-    pointCode: string;
-    value: number;
-    result: "OK" | "NG";
+  points: Array<{
+    code: string;
+    name: string;
+    description?: string;
+    measurementType: "DIMENSION" | "VISUAL" | "ELECTRICAL" | "POSITION" | "COLOR" | "SURFACE" | "OTHER";
+    unit?: string;
+    lowerLimit?: number | string;
+    upperLimit?: number | string;
+    nominalValue?: number | string;
+    positionX: number;
+    positionY: number;
+    radius?: number;
+    cropWidth?: number;
+    cropHeight?: number;
+    orderIndex?: number;
+    workstationCode?: string;
+    isActive?: boolean;
+    imageBase64?: string;
+    imageMimeType?: string;
     imageUrl?: string;
   }>;
-  images?: Array<{
-    url: string;
-    type: "MAIN" | "DETAIL" | "DEFECT";
-  }>;
 }
 ```
 
-### 10.2 machineApi.heartbeat
-Gửi heartbeat từ máy.
+**Response:**
+```typescript
+{
+  success: boolean;
+  productModelId: number;
+  created: number;
+  updated: number;
+  failed: number;
+  errors: Array<{ code: string; message: string }>;
+}
+```
+
+### 10.4 machineApi.heartbeat
+Đánh dấu máy đang hoạt động.
 
 **Type:** Mutation  
 **Auth:** Machine API Key  
-**Input:**
-```typescript
-{
-  apiKey: string;
-  status: "running" | "stopped" | "error" | "maintenance";
-  cpuUsage?: number;
-  memoryUsage?: number;
-  temperature?: number;
-}
-```
+**Input:** `{ apiKey: string; }`
+
+**Response:** `{ success: true; machineId: number; }`
 
 ---
 

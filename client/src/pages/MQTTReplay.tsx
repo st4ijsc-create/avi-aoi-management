@@ -250,9 +250,9 @@ export default function MQTTReplay() {
                 <CardContent>
                   <ScrollArea className="h-96" ref={scrollRef}>
                     <div className="space-y-2">
-                      {filteredLiveMessages.map((msg, index) => (
+                      {filteredLiveMessages.map((msg) => (
                         <div
-                          key={index}
+                          key={`${msg.timestamp}-${msg.topic}`}
                           className={`p-2 rounded border cursor-pointer transition-colors ${
                             selectedMessage === msg
                               ? "border-primary bg-primary/5"
@@ -369,9 +369,9 @@ export default function MQTTReplay() {
 
                 <ScrollArea className="h-96">
                   <div className="space-y-2">
-                    {messageHistory?.map((msg, index) => (
+                    {messageHistory?.map((msg) => (
                       <div
-                        key={index}
+                        key={`${msg.timestamp}-${msg.topic}`}
                         className="p-3 rounded border hover:bg-muted/50 cursor-pointer"
                         onClick={() => setSelectedMessage(msg as MqttMessage)}
                       >

@@ -159,7 +159,7 @@ export default function Dashboard() {
   const [lastRefreshTime, setLastRefreshTime] = useState(new Date());
   const [activeTab, setActiveTab] = useState<"overview" | "layout" | "ng-visual" | "corporate-stats">("overview");
   const [machineStatusFilter, setMachineStatusFilter] = useState<"all" | "online" | "offline">("all");
-  const [ngTimeFilter, setNgTimeFilter] = useState<"day" | "week" | "month">("week");
+  const [ngTimeFilter, setNgTimeFilter] = useState<"day" | "week" | "month">("month"); // Default to month for more data
   const [selectedWorkstationForDrilldown, setSelectedWorkstationForDrilldown] = useState<{ id: number; code: string; name: string } | null>(null);
   const [trendFilterWorkstationId, setTrendFilterWorkstationId] = useState<number | undefined>(undefined);
   const [trendFilterMeasurementPointId, setTrendFilterMeasurementPointId] = useState<number | undefined>(undefined);
@@ -1176,7 +1176,7 @@ export default function Dashboard() {
               {yieldAlerts.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
                   {yieldAlerts.map((alert, index) => (
-                    <TooltipProvider key={index}>
+                    <TooltipProvider key={`${alert.type}-${alert.level}-${index}`}>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs cursor-pointer ${
@@ -1403,12 +1403,14 @@ export default function Dashboard() {
                       interval="preserveStartEnd"
                     />
                     <YAxis 
+                      key="yaxis-left"
                       yAxisId="left"
                       tick={{ fontSize: 10 }}
                       domain={[0, 100]}
                       label={{ value: '%', angle: -90, position: 'insideLeft', fontSize: 10 }}
                     />
                     <YAxis 
+                      key="yaxis-right"
                       yAxisId="right"
                       orientation="right"
                       tick={{ fontSize: 10 }}
@@ -1424,6 +1426,7 @@ export default function Dashboard() {
                     />
                     <Legend />
                     <Line 
+                      key="line-fpy"
                       yAxisId="left"
                       type="monotone" 
                       dataKey="FPY" 
@@ -1433,6 +1436,7 @@ export default function Dashboard() {
                       activeDot={{ r: 5 }}
                     />
                     <Line 
+                      key="line-fy"
                       yAxisId="left"
                       type="monotone" 
                       dataKey="FY" 
@@ -1441,6 +1445,7 @@ export default function Dashboard() {
                       dot={{ r: 3 }}
                     />
                     <Line 
+                      key="line-ntfy"
                       yAxisId="left"
                       type="monotone" 
                       dataKey="NTFY" 
@@ -1449,6 +1454,7 @@ export default function Dashboard() {
                       dot={{ r: 3 }}
                     />
                     <Line 
+                      key="line-total"
                       yAxisId="right"
                       type="monotone" 
                       dataKey="Total" 

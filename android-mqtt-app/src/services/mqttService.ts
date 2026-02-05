@@ -3,11 +3,14 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+import MQTT from 'sp-react-native-mqtt';
 import { showNotification, showBubbleNotification } from './notificationService';
 import { useNotificationStore } from '../store/notificationStore';
 
 // MQTT Client instance
 let mqttClient: any = null;
+let mqttConnected = false;
 let reconnectTimer: NodeJS.Timeout | null = null;
 
 // Configuration keys
@@ -127,30 +130,71 @@ export async function saveStationConfig(config: StationConfig): Promise<void> {
  */
 export async function connectMqtt(config: MqttConfig): Promise<void> {
   try {
-    // Note: In actual implementation, use react-native-mqtt or similar library
-    // This is a simplified example
-    
-    console.log('Connecting to MQTT broker:', config.brokerUrl);
-    
-    // Simulated MQTT client setup
-    // In real app, use:
-    // import MQTT from 'react-native-mqtt';
-    // mqttClient = new MQTT.Client(config.brokerUrl, config.port, config.clientId);
-    
-    // For demo, we'll use a mock connection
-    mqttClient = {
-      connected: true,
-      subscribe: (topic: string) => console.log('Subscribed to:', topic),
-      unsubscribe: (topic: string) => console.log('Unsubscribed from:', topic),
-      disconnect: () => console.log('Disconnected'),
-    };
-    
-    // Subscribe to topics
-    config.topics.forEach(topic => {
-      mqttClient.subscribe(topic);
+    console.log('Connecting to MQTT broker:', config.brokerUrl, 'port', config.port);
+
+    // Disconnect any existing client first
+    await disconnectMqtt();
+
+    // Build URI: allow full mqtt://host:port or just host
+    const hasProtocol = config.brokerUrl.startsWith('mqtt://') || config.brokerUrl.startsWith('mqtts://');
+    let uri = hasProtocol
+      ? config.brokerUrl
+      : `mqtt://${config.brokerUrl}:${config.port}`;
+
+    // On Android emulator, "localhost"/"127.0.0.1" trỏ vào chính device,
+    // không phải máy chạy broker. Dùng 10.0.2.2 để truy cập host machine.
+    if (
+      Platform.OS === 'android' &&
+      (uri.includes('://localhost') || uri.includes('://127.0.0.1'))
+    ) {
+      uri = uri.replace('://localhost', '://10.0.2.2').replace('://127.0.0.1', '://10.0.2.2');
+    }
+
+    mqttClient = await MQTT.createClient({
+      uri,
+      clientId: config.clientId,
+      user: config.username,
+      pass: config.password,
+      auth: !!(config.username || config.password),
+      keepalive: 60,
+      clean: true,
     });
-    
-    console.log('MQTT connected successfully');
+
+    mqttClient.on('closed', () => {
+      console.log('[MQTT] Connection closed');
+      mqttConnected = false;
+    });
+
+    mqttClient.on('error', (msg: any) => {
+      console.log('[MQTT] Error', msg);
+    });
+
+    mqttClient.on('connect', () => {
+      console.log('[MQTT] Connected');
+      mqttConnected = true;
+
+      // Subscribe to configured topics when connected
+      config.topics.forEach((topic) => {
+        try {
+          mqttClient.subscribe(topic, 0);
+        } catch (err) {
+          console.log('[MQTT] Subscribe error', topic, err);
+        }
+      });
+    });
+
+    mqttClient.on('message', (msg: any) => {
+      try {
+        const topic = msg.topic;
+        const message = msg.data;
+        handleMqttMessage(topic, message);
+      } catch (err) {
+        console.error('Error handling MQTT message from client:', err);
+      }
+    });
+
+    mqttClient.connect();
+    console.log('MQTT connect initiated with URI:', uri);
     
   } catch (error) {
     console.error('MQTT connection error:', error);
@@ -174,6 +218,7 @@ export async function disconnectMqtt(): Promise<void> {
       console.error('Error disconnecting MQTT:', error);
     }
     mqttClient = null;
+    mqttConnected = false;
   }
 }
 
@@ -253,15 +298,22 @@ export function handleMqttMessage(topic: string, message: string): void {
  * Get connection status
  */
 export function isConnected(): boolean {
-  return mqttClient?.connected || false;
+  try {
+    if (mqttClient && typeof mqttClient.isConnected === 'function') {
+      return mqttClient.isConnected();
+    }
+  } catch (err) {
+    console.log('[MQTT] isConnected error', err);
+  }
+  return mqttConnected;
 }
 
 /**
  * Subscribe to additional topic
  */
 export function subscribeTopic(topic: string): void {
-  if (mqttClient && mqttClient.connected) {
-    mqttClient.subscribe(topic);
+  if (mqttClient && isConnected()) {
+    mqttClient.subscribe(topic, 0);
   }
 }
 
@@ -269,7 +321,7 @@ export function subscribeTopic(topic: string): void {
  * Unsubscribe from topic
  */
 export function unsubscribeTopic(topic: string): void {
-  if (mqttClient && mqttClient.connected) {
+  if (mqttClient && isConnected()) {
     mqttClient.unsubscribe(topic);
   }
 }

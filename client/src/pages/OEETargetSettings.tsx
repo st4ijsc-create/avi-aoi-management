@@ -242,17 +242,17 @@ export default function OEETargetSettings() {
                   <div className="space-y-2">
                     <Label htmlFor="machine">Target Machine (Optional)</Label>
                     <Select
-                      value={selectedMachineId?.toString() || ''}
+                      value={selectedMachineId?.toString() || 'none'}
                       onValueChange={(value) => {
-                        setSelectedMachineId(value ? parseInt(value) : null);
-                        if (value) setSelectedLineId(null);
+                        setSelectedMachineId(value && value !== 'none' ? parseInt(value) : null);
+                        if (value && value !== 'none') setSelectedLineId(null);
                       }}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select machine" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                         {machines?.map((machine: any) => (
                           <SelectItem key={machine.id} value={machine.id.toString()}>
                             {machine.name} ({machine.code})
@@ -265,17 +265,17 @@ export default function OEETargetSettings() {
                   <div className="space-y-2">
                     <Label htmlFor="line">Target Line (Optional)</Label>
                     <Select
-                      value={selectedLineId?.toString() || ''}
+                      value={selectedLineId?.toString() || 'none'}
                       onValueChange={(value) => {
-                        setSelectedLineId(value ? parseInt(value) : null);
-                        if (value) setSelectedMachineId(null);
+                        setSelectedLineId(value && value !== 'none' ? parseInt(value) : null);
+                        if (value && value !== 'none') setSelectedMachineId(null);
                       }}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select line" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                         {lines?.map((line: any) => (
                           <SelectItem key={line.id} value={line.id.toString()}>
                             {line.name} ({line.code})

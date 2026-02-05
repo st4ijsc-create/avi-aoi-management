@@ -315,8 +315,8 @@ export default function RootCauseAnalysisPage() {
 
                   <TabsContent value="factors" className="mt-4">
                     <div className="space-y-4">
-                      {analysisDetail.topFactors?.map((factor: any, index: number) => (
-                        <div key={index} className="space-y-2">
+                      {analysisDetail.topFactors?.map((factor: any) => (
+                        <div key={factor.factor} className="space-y-2">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <span className="font-medium">{factor.factor}</span>
@@ -383,8 +383,8 @@ export default function RootCauseAnalysisPage() {
                           Nguyên nhân Gốc rễ
                         </h4>
                         <div className="space-y-2">
-                          {analysisDetail.aiInsights?.rootCauses?.map((cause: any, index: number) => (
-                            <div key={index} className="p-3 rounded-lg border">
+                          {analysisDetail.aiInsights?.rootCauses?.map((cause: any) => (
+                            <div key={cause.cause} className="p-3 rounded-lg border">
                               <div className="flex items-center justify-between">
                                 <span className="font-medium">{cause.cause}</span>
                                 <Badge variant={cause.probability > 0.5 ? "destructive" : "secondary"}>
@@ -409,7 +409,7 @@ export default function RootCauseAnalysisPage() {
                         </h4>
                         <div className="space-y-2">
                           {analysisDetail.aiInsights?.recommendations?.map((rec: string, index: number) => (
-                            <div key={index} className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
+                            <div key={`rec-${index}`} className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
                               <Target className="h-4 w-4 mt-0.5 text-primary" />
                               <span className="text-sm">{rec}</span>
                             </div>
@@ -425,7 +425,7 @@ export default function RootCauseAnalysisPage() {
                         </h4>
                         <div className="space-y-2">
                           {analysisDetail.aiInsights?.preventiveMeasures?.map((measure: string, index: number) => (
-                            <div key={index} className="flex items-start gap-3 p-3 rounded-lg border">
+                            <div key={`measure-${index}`} className="flex items-start gap-3 p-3 rounded-lg border">
                               <CheckCircle className="h-4 w-4 mt-0.5 text-green-500" />
                               <span className="text-sm">{measure}</span>
                             </div>

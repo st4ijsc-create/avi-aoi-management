@@ -14,6 +14,7 @@ interface InfiniteScrollListProps<T> {
   refresh: () => Promise<void>;
   total?: number;
   renderItem: (item: T, index: number) => ReactNode;
+  keyExtractor: (item: T, index: number) => string | number;
   renderEmpty?: () => ReactNode;
   renderHeader?: () => ReactNode;
   className?: string;
@@ -35,6 +36,7 @@ export function InfiniteScrollList<T>({
   refresh,
   total,
   renderItem,
+  keyExtractor,
   renderEmpty,
   renderHeader,
   className = '',
@@ -114,7 +116,7 @@ export function InfiniteScrollList<T>({
       {/* List items */}
       <div className="space-y-2">
         {data.map((item, index) => (
-          <div key={index} className={itemClassName}>
+          <div key={keyExtractor(item, index)} className={itemClassName}>
             {renderItem(item, index)}
           </div>
         ))}

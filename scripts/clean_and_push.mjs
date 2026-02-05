@@ -1,8 +1,8 @@
 import { Pool } from 'pg';
 
-const connectionString = process.env.SUPABASE_DATABASE_URL;
+const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
-  console.error('SUPABASE_DATABASE_URL is required');
+  console.error('DATABASE_URL is required');
   process.exit(1);
 }
 
