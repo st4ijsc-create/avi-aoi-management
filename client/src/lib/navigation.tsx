@@ -48,6 +48,7 @@ import {
   Search,
   MessageSquare,
   LayoutDashboard,
+  Camera,
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -106,24 +107,6 @@ export const navGroups: NavGroup[] = [
         icon: <TrendingUp className="h-4 w-4" />,
         description: "Phân tích chi tiết từ Corporate đến Machine"
       },
-      { 
-        href: "/custom-dashboard", 
-        label: "Dashboard Tùy chỉnh", 
-        icon: <LayoutGrid className="h-4 w-4" />,
-        description: "Tạo dashboard với widgets tùy chọn"
-      },
-      { 
-        href: "/dashboard-templates", 
-        label: "Mẫu Dashboard", 
-        icon: <LayoutDashboard className="h-4 w-4" />,
-        description: "Quản lý các mẫu dashboard"
-      },
-      { 
-        href: "/dashboard-marketplace", 
-        label: "Marketplace", 
-        icon: <Store className="h-4 w-4" />,
-        description: "Tải và chia sẻ templates"
-      },
     ],
   },
 
@@ -146,31 +129,10 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin'
       },
       { 
-        href: "/settings?tab=factories", 
-        label: "Quản lý Nhà máy", 
-        icon: <Factory className="h-4 w-4" />,
-        description: "Quản lý thông tin các nhà máy",
-        requiredRole: 'admin'
-      },
-      { 
-        href: "/settings?tab=workshops", 
-        label: "Quản lý Xưởng", 
+        href: "/corporate-layout", 
+        label: "Cấu trúc Tập đoàn", 
         icon: <Building2 className="h-4 w-4" />,
-        description: "Quản lý thông tin các xưởng sản xuất",
-        requiredRole: 'admin'
-      },
-      { 
-        href: "/settings?tab=lines", 
-        label: "Quản lý Dây chuyền", 
-        icon: <Factory className="h-4 w-4" />,
-        description: "Quản lý thông tin các dây chuyền sản xuất",
-        requiredRole: 'admin'
-      },
-      { 
-        href: "/settings?tab=machines", 
-        label: "Quản lý Máy", 
-        icon: <Factory className="h-4 w-4" />,
-        description: "Quản lý thông tin các máy AVI/AOI",
+        description: "Quản lý cấu trúc tập đoàn",
         requiredRole: 'admin'
       },
     ],
@@ -296,6 +258,12 @@ export const navGroups: NavGroup[] = [
         icon: <History className="h-4 w-4" />,
         description: "Xem lịch sử kết quả kiểm tra"
       },
+      {
+        href: "/aoi-packages",
+        label: "AOI Image Packages",
+        icon: <Camera className="h-4 w-4" />,
+        description: "Upload ảnh AOI/AVI - Traceability & Audit"
+      },
       { 
         href: "/history-export-scheduling", 
         label: "Lịch xuất báo cáo", 
@@ -399,12 +367,6 @@ export const navGroups: NavGroup[] = [
         label: "Layout nhà máy", 
         icon: <LayoutGrid className="h-4 w-4" />,
         description: "Cấu hình layout nhà máy"
-      },
-      { 
-        href: "/corporate-layout", 
-        label: "Tập đoàn", 
-        icon: <Building2 className="h-4 w-4" />,
-        description: "Quản lý cấu trúc tập đoàn"
       },
     ],
   },

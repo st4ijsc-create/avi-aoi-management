@@ -9,6 +9,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import EmbeddedCustomDashboard from "@/components/EmbeddedCustomDashboard";
+import EmbeddedDashboardTemplates from "@/components/EmbeddedDashboardTemplates";
+import EmbeddedDashboardMarketplace from "@/components/EmbeddedDashboardMarketplace";
 import { 
   Building2,
   Warehouse,
@@ -41,7 +44,10 @@ import {
   Mail,
   Users,
   FolderTree,
-  FileText
+  FileText,
+  LayoutDashboard,
+  ShoppingBag,
+  Package
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { ErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
@@ -56,6 +62,7 @@ import { EmailTemplateEditor } from "@/components/EmailTemplateEditor";
 import UserAssignments from "@/components/UserAssignments";
 import WorkstationManagement from "@/components/WorkstationManagement";
 import { ProductCategoryManagement } from "@/components/ProductCategoryManagement";
+import { ProductMachineMappingContent } from "@/components/ProductMachineMappingContent";
 import NotificationSoundCustomization from "@/components/NotificationSoundCustomization";
 import { useState, useEffect } from "react";
 import { useLocation, useSearch } from "wouter";
@@ -667,6 +674,51 @@ export default function Settings() {
           <div className="flex gap-6">
             {/* Vertical Sidebar Navigation */}
             <div className="w-64 shrink-0 space-y-1">
+              {/* Category: Dashboard Center */}
+              <div className="space-y-1">
+                <button
+                  onClick={() => toggleCategory('dashboardCenter')}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <LayoutDashboard className="h-4 w-4 text-purple-500" />
+                    <span>Dashboard Center</span>
+                  </div>
+                  {collapsedCategories['dashboardCenter'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </button>
+                {!collapsedCategories['dashboardCenter'] && (
+                  <div className="ml-6 space-y-1">
+                    <button
+                      onClick={() => handleTabChange('custom-dashboard')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'custom-dashboard' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <LayoutDashboard className="h-4 w-4" />
+                      Custom Dashboard
+                    </button>
+                    <button
+                      onClick={() => handleTabChange('dashboard-templates')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'dashboard-templates' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <FileText className="h-4 w-4" />
+                      Dashboard Templates
+                    </button>
+                    <button
+                      onClick={() => handleTabChange('dashboard-marketplace')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'dashboard-marketplace' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
+                    >
+                      <ShoppingBag className="h-4 w-4" />
+                      Dashboard Marketplace
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {/* Category: Cơ sở hạ tầng */}
               <div className="space-y-1">
                 <button
@@ -800,21 +852,25 @@ export default function Settings() {
                   <div className="ml-6 space-y-1">
                     <button
                       onClick={() => handleTabChange('product-categories')}
-                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-accent transition-colors ${activeTab === 'product-categories' ? 'bg-accent' : ''}`}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${activeTab === 'product-categories' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
                     >
                       <FolderTree className="h-4 w-4" />
                       Danh mục sản phẩm
                     </button>
                     <button
-                      onClick={() => window.location.href = '/product-models'}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-accent transition-colors"
+                      onClick={() => handleTabChange('product-models')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'product-models' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
                     >
                       <Award className="h-4 w-4" />
                       Mẫu sản phẩm
                     </button>
                     <button
-                      onClick={() => window.location.href = '/product-machine-mapping'}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-accent transition-colors"
+                      onClick={() => handleTabChange('product-machine-mapping')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'product-machine-mapping' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
                     >
                       <Cpu className="h-4 w-4" />
                       Mapping sản phẩm
@@ -910,8 +966,10 @@ export default function Settings() {
                       Email Template
                     </button>
                     <button
-                      onClick={() => window.location.href = '/audit-logs'}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-accent transition-colors"
+                      onClick={() => handleTabChange('audit-logs')}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                        activeTab === 'audit-logs' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                      }`}
                     >
                       <Activity className="h-4 w-4" />
                       Audit Log
@@ -2337,6 +2395,72 @@ export default function Settings() {
           {/* Product Categories Tab */}
           <TabsContent value="product-categories">
             <ProductCategoryManagement />
+          </TabsContent>
+
+          {/* Custom Dashboard Tab */}
+          <TabsContent value="custom-dashboard">
+            <EmbeddedCustomDashboard />
+          </TabsContent>
+
+          {/* Dashboard Templates Tab */}
+          <TabsContent value="dashboard-templates">
+            <EmbeddedDashboardTemplates />
+          </TabsContent>
+
+          {/* Dashboard Marketplace Tab */}
+          <TabsContent value="dashboard-marketplace">
+            <EmbeddedDashboardMarketplace />
+          </TabsContent>
+
+          {/* Product Models Tab */}
+          <TabsContent value="product-models">
+            <Card>
+              <CardHeader>
+                <CardTitle>Mẫu sản phẩm</CardTitle>
+                <CardDescription>Quản lý các mẫu sản phẩm</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                  <Package className="h-16 w-16 text-muted-foreground" />
+                  <div className="text-center space-y-2">
+                    <p className="text-lg font-medium">Quản lý Mẫu sản phẩm</p>
+                    <p className="text-sm text-muted-foreground">
+                      Quản lý các mẫu sản phẩm và điểm đo
+                    </p>
+                  </div>
+                  <Button 
+                    onClick={() => setLocation("/products")}
+                    className="gap-2"
+                  >
+                    <Package className="h-4 w-4" />
+                    Mở trang Mẫu sản phẩm
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Product Machine Mapping Tab */}
+          <TabsContent value="product-machine-mapping">
+            <ProductMachineMappingContent />
+          </TabsContent>
+
+          {/* Audit Logs Tab */}
+          <TabsContent value="audit-logs">
+            <Card>
+              <CardHeader>
+                <CardTitle>Audit Log</CardTitle>
+                <CardDescription>Lịch sử thay đổi hệ thống</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <iframe 
+                  src="/audit-logs" 
+                  className="w-full border-0" 
+                  style={{ height: 'calc(100vh - 250px)' }}
+                  title="Audit Log"
+                />
+              </CardContent>
+            </Card>
           </TabsContent>
             </div>
           </div>

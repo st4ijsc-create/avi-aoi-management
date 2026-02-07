@@ -2961,3 +2961,127 @@ export const mqttAlertConfig = pgTable("mqtt_alert_config", {
 ]);
 export type MqttAlertConfig = typeof mqttAlertConfig.$inferSelect;
 export type InsertMqttAlertConfig = typeof mqttAlertConfig.$inferInsert;
+
+// ============================================================
+// AOI Image Upload - ZIP Package System
+// ============================================================
+
+export const packageStatusEnum = pgEnum("packagestatusenum", [
+  "pending",      // Presign URL generated, waiting for upload
+  "uploading",    // ZIP upload in progress
+  "uploaded",     // ZIP uploaded to storage, not yet committed
+  "committed",    // Metadata parsed and linked to inspection
+  "failed",       // Upload or processing failed
+]);
+
+/**
+ * Inspection Packages - Gói ZIP ảnh AOI
+ * Mỗi gói chứa ảnh các điểm đo của một lần kiểm tra
+ */
+export const inspectionPackages = pgTable("inspection_packages", {
+  id: serial("id").primaryKey(),
+  inspectionId: integer("inspectionId"),                    // Linked after commit
+  machineId: integer("machineId").notNull(),                // Máy AOI/AVI
+  
+  // Package identity
+  packageId: varchar("packageId", { length: 100 }).notNull().unique(), // UUID or inspectionId from agent
+  storageKey: varchar("storageKey", { length: 500 }),       // S3/MinIO object key
+  storageUrl: text("storageUrl"),                           // Download URL
+  
+  // Metadata from meta.json
+  serialNumber: varchar("serialNumber", { length: 100 }),
+  productModel: varchar("productModel", { length: 100 }),
+  factoryCode: varchar("factoryCode", { length: 50 }),
+  lineCode: varchar("lineCode", { length: 50 }),
+  machineCode: varchar("machineCode", { length: 50 }),
+  inspectionTime: timestamp("inspectionTime"),
+  overallResult: overallResultEnum("overallResult"),
+  totalPoints: integer("totalPoints").default(0),
+  okCount: integer("okCount").default(0),
+  ngCount: integer("ngCount").default(0),
+  
+  // File info
+  fileSizeBytes: bigint("fileSizeBytes", { mode: "number" }),
+  imageCount: integer("imageCount").default(0),
+  
+  // Status tracking
+  status: packageStatusEnum("status").default("pending").notNull(),
+  errorMessage: text("errorMessage"),
+  presignExpiresAt: timestamp("presignExpiresAt"),
+  uploadedAt: timestamp("uploadedAt"),
+  committedAt: timestamp("committedAt"),
+  
+  // Metadata
+  metaJson: json("metaJson"),                               // Full meta.json content
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_pkg_inspection").on(table.inspectionId),
+  index("idx_pkg_machine").on(table.machineId),
+  index("idx_pkg_package_id").on(table.packageId),
+  index("idx_pkg_serial").on(table.serialNumber),
+  index("idx_pkg_status").on(table.status),
+  index("idx_pkg_inspection_time").on(table.inspectionTime),
+  index("idx_pkg_machine_time").on(table.machineId, table.inspectionTime),
+]);
+
+export type InspectionPackage = typeof inspectionPackages.$inferSelect;
+export type InsertInspectionPackage = typeof inspectionPackages.$inferInsert;
+
+/**
+ * Package Images - Thông tin từng ảnh trong gói ZIP
+ * Được parse từ meta.json khi commit
+ */
+export const packageImages = pgTable("package_images", {
+  id: serial("id").primaryKey(),
+  packageId: integer("packageId").notNull(),               // FK -> inspection_packages.id
+  
+  // Point info from meta.json
+  pointCode: varchar("pointCode", { length: 50 }).notNull(),
+  pointName: varchar("pointName", { length: 255 }),
+  fileName: varchar("fileName", { length: 255 }).notNull(), // e.g. "MP001.jpg"
+  result: overallResultEnum("result"),
+  measurementValue: varchar("measurementValue", { length: 100 }),
+  
+  // Cache info
+  cachedUrl: text("cachedUrl"),                             // Extracted & cached URL 
+  cachedAt: timestamp("cachedAt"),
+  cacheExpiresAt: timestamp("cacheExpiresAt"),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_pkgimg_package").on(table.packageId),
+  index("idx_pkgimg_point").on(table.pointCode),
+]);
+
+export type PackageImage = typeof packageImages.$inferSelect;
+export type InsertPackageImage = typeof packageImages.$inferInsert;
+
+/**
+ * Upload Queue Metrics - Theo dõi hàng đợi upload từ các máy
+ * Agent gửi metrics định kỳ
+ */
+export const uploadQueueMetrics = pgTable("upload_queue_metrics", {
+  id: serial("id").primaryKey(),
+  machineId: integer("machineId").notNull(),
+  
+  // Queue stats
+  queuedCount: integer("queuedCount").default(0).notNull(),
+  uploadingCount: integer("uploadingCount").default(0).notNull(),
+  failedCount: integer("failedCount").default(0).notNull(),
+  completedCount: integer("completedCount").default(0).notNull(),
+  
+  // Disk stats
+  diskUsedBytes: bigint("diskUsedBytes", { mode: "number" }),
+  diskFreeBytes: bigint("diskFreeBytes", { mode: "number" }),
+  
+  // Performance
+  avgUploadLatencyMs: integer("avgUploadLatencyMs"),
+  lastUploadAt: timestamp("lastUploadAt"),
+  lastErrorMessage: text("lastErrorMessage"),
+  
+  recordedAt: timestamp("recordedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_uqm_machine").on(table.machineId),
+  index("idx_uqm_recorded").on(table.recordedAt),
+]);

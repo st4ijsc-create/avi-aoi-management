@@ -1,0 +1,756 @@
+/**
+ * AOI Image Packages - Traceability Screen
+ * Quản lý upload ảnh AOI: tra cứu, xem ảnh, tải ZIP
+ */
+import { useState, useMemo } from "react";
+import DashboardLayout from "@/components/DashboardLayout";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
+import { Link } from "wouter";
+import { format } from "date-fns";
+import {
+  Package,
+  Search,
+  Download,
+  Eye,
+  Image as ImageIcon,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  AlertTriangle,
+  HardDrive,
+  Activity,
+  BarChart3,
+  Camera,
+  RefreshCcw,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  FileArchive,
+  Cpu,
+} from "lucide-react";
+
+// ============================================================
+// Status badge helper
+// ============================================================
+function StatusBadge({ status }: { status: string }) {
+  const variants: Record<string, { label: string; className: string }> = {
+    pending: { label: "Đang chờ", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" },
+    uploading: { label: "Đang upload", className: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" },
+    uploaded: { label: "Đã upload", className: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200" },
+    committed: { label: "Hoàn tất", className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
+    failed: { label: "Lỗi", className: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200" },
+  };
+  const v = variants[status] || { label: status, className: "bg-gray-100 text-gray-800" };
+  return <Badge className={v.className}>{v.label}</Badge>;
+}
+
+function ResultBadge({ result }: { result: string | null }) {
+  if (!result) return <Badge variant="outline">N/A</Badge>;
+  if (result === "OK") return <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">OK</Badge>;
+  if (result === "NG") return <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">NG</Badge>;
+  return <Badge className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">{result}</Badge>;
+}
+
+function formatBytes(bytes: number | null): string {
+  if (!bytes) return "N/A";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+// ============================================================
+// Main Page Component
+// ============================================================
+export default function AOIPackages() {
+  const [activeTab, setActiveTab] = useState("packages");
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(20);
+  const [searchSerial, setSearchSerial] = useState("");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterResult, setFilterResult] = useState<string>("all");
+  const [filterMachineCode, setFilterMachineCode] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
+  const [viewImageDialog, setViewImageDialog] = useState<{ packageId: string; pointCode: string; fileName: string } | null>(null);
+
+  // Queries
+  const packagesQuery = trpc.aoiPackage.listPackages.useQuery({
+    page,
+    pageSize,
+    serialNumber: searchSerial || undefined,
+    status: filterStatus !== "all" ? (filterStatus as any) : undefined,
+    overallResult: filterResult !== "all" ? (filterResult as any) : undefined,
+    machineCode: filterMachineCode || undefined,
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
+  });
+
+  const statsQuery = trpc.aoiPackage.getUploadStats.useQuery({});
+  const queueQuery = trpc.aoiPackage.getQueueStatus.useQuery({});
+
+  const packageDetailQuery = trpc.aoiPackage.getPackage.useQuery(
+    { packageId: selectedPackageId! },
+    { enabled: !!selectedPackageId }
+  );
+
+  const imageQuery = trpc.aoiPackage.getImage.useQuery(
+    {
+      packageId: viewImageDialog?.packageId || "",
+      pointCode: viewImageDialog?.pointCode,
+      fileName: viewImageDialog?.fileName,
+    },
+    { enabled: !!viewImageDialog }
+  );
+
+  return (
+    <DashboardLayout>
+      <div className="space-y-6 p-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+              <Camera className="h-8 w-8 text-primary" />
+              AOI Image Packages
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Quản lý upload ảnh kiểm tra từ máy AOI/AVI - Traceability & Audit
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              packagesQuery.refetch();
+              statsQuery.refetch();
+              queueQuery.refetch();
+            }}
+          >
+            <RefreshCcw className="h-4 w-4 mr-2" />
+            Làm mới
+          </Button>
+        </div>
+
+        {/* Stats Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Package className="h-8 w-8 text-blue-500" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Tổng packages</p>
+                  <p className="text-2xl font-bold">{statsQuery.data?.summary?.total || 0}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="h-8 w-8 text-green-500" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Committed</p>
+                  <p className="text-2xl font-bold">{statsQuery.data?.summary?.committed || 0}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <XCircle className="h-8 w-8 text-red-500" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Failed</p>
+                  <p className="text-2xl font-bold">{statsQuery.data?.summary?.failed || 0}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <ImageIcon className="h-8 w-8 text-purple-500" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Tổng ảnh</p>
+                  <p className="text-2xl font-bold">{statsQuery.data?.summary?.totalImages || 0}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <HardDrive className="h-8 w-8 text-orange-500" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Tổng dung lượng</p>
+                  <p className="text-2xl font-bold">{formatBytes(statsQuery.data?.summary?.totalSize || 0)}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+            <TabsTrigger value="packages" className="gap-2">
+              <Package className="h-4 w-4" /> Packages
+            </TabsTrigger>
+            <TabsTrigger value="queue" className="gap-2">
+              <Activity className="h-4 w-4" /> Upload Queue
+            </TabsTrigger>
+            <TabsTrigger value="stats" className="gap-2">
+              <BarChart3 className="h-4 w-4" /> Thống kê
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Tab: Packages List */}
+          <TabsContent value="packages" className="space-y-4">
+            {/* Filters */}
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex flex-wrap gap-3 items-end">
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Serial Number</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Tìm theo serial..."
+                        className="pl-10"
+                        value={searchSerial}
+                        onChange={(e) => { setSearchSerial(e.target.value); setPage(1); }}
+                      />
+                    </div>
+                  </div>
+                  <div className="min-w-[130px]">
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Machine Code</label>
+                    <Input
+                      placeholder="Mã máy"
+                      value={filterMachineCode}
+                      onChange={(e) => { setFilterMachineCode(e.target.value); setPage(1); }}
+                    />
+                  </div>
+                  <div className="min-w-[130px]">
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Trạng thái</label>
+                    <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v); setPage(1); }}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Tất cả</SelectItem>
+                        <SelectItem value="committed">Hoàn tất</SelectItem>
+                        <SelectItem value="uploaded">Đã upload</SelectItem>
+                        <SelectItem value="pending">Đang chờ</SelectItem>
+                        <SelectItem value="failed">Lỗi</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="min-w-[120px]">
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Kết quả</label>
+                    <Select value={filterResult} onValueChange={(v) => { setFilterResult(v); setPage(1); }}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Tất cả</SelectItem>
+                        <SelectItem value="OK">OK</SelectItem>
+                        <SelectItem value="NG">NG</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="min-w-[140px]">
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Từ ngày</label>
+                    <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} />
+                  </div>
+                  <div className="min-w-[140px]">
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Đến ngày</label>
+                    <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Table */}
+            <Card>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="text-left p-3 font-medium">Package ID</th>
+                        <th className="text-left p-3 font-medium">Serial Number</th>
+                        <th className="text-left p-3 font-medium">Product Model</th>
+                        <th className="text-left p-3 font-medium">Machine</th>
+                        <th className="text-left p-3 font-medium">Kết quả</th>
+                        <th className="text-center p-3 font-medium">Ảnh</th>
+                        <th className="text-right p-3 font-medium">Dung lượng</th>
+                        <th className="text-left p-3 font-medium">Trạng thái</th>
+                        <th className="text-left p-3 font-medium">Thời gian</th>
+                        <th className="text-center p-3 font-medium">Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {packagesQuery.isLoading ? (
+                        <tr><td colSpan={10} className="text-center p-8 text-muted-foreground">Đang tải...</td></tr>
+                      ) : packagesQuery.data?.data.length === 0 ? (
+                        <tr><td colSpan={10} className="text-center p-8 text-muted-foreground">Không có dữ liệu</td></tr>
+                      ) : (
+                        packagesQuery.data?.data.map((pkg) => (
+                          <tr
+                            key={pkg.id}
+                            className="border-b hover:bg-muted/30 cursor-pointer transition-colors"
+                            onClick={() => setSelectedPackageId(pkg.packageId)}
+                          >
+                            <td className="p-3">
+                              <code className="text-xs bg-muted px-1 py-0.5 rounded">
+                                {pkg.packageId.length > 16 ? `${pkg.packageId.slice(0, 16)}...` : pkg.packageId}
+                              </code>
+                            </td>
+                            <td className="p-3 font-medium">{pkg.serialNumber || "—"}</td>
+                            <td className="p-3">{pkg.productModel || "—"}</td>
+                            <td className="p-3">
+                              <Badge variant="outline" className="font-mono text-xs">
+                                <Cpu className="h-3 w-3 mr-1" />
+                                {pkg.machineCode || "—"}
+                              </Badge>
+                            </td>
+                            <td className="p-3"><ResultBadge result={pkg.overallResult} /></td>
+                            <td className="p-3 text-center">
+                              <span className="text-xs">
+                                {pkg.imageCount || 0}
+                                {pkg.ngCount && pkg.ngCount > 0 ? (
+                                  <span className="text-red-500 ml-1">({pkg.ngCount} NG)</span>
+                                ) : null}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right text-xs">{formatBytes(pkg.fileSizeBytes)}</td>
+                            <td className="p-3"><StatusBadge status={pkg.status} /></td>
+                            <td className="p-3 text-xs text-muted-foreground">
+                              {pkg.inspectionTime
+                                ? format(new Date(pkg.inspectionTime), "dd/MM/yyyy HH:mm")
+                                : pkg.createdAt
+                                  ? format(new Date(pkg.createdAt), "dd/MM/yyyy HH:mm")
+                                  : "—"}
+                            </td>
+                            <td className="p-3 text-center">
+                              <div className="flex items-center gap-1 justify-center" onClick={(e) => e.stopPropagation()}>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setSelectedPackageId(pkg.packageId)}
+                                  title="Xem chi tiết"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                {pkg.status === "committed" && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      window.open(`/api/aoi/download/${pkg.packageId}`, "_blank");
+                                    }}
+                                    title="Tải ZIP gốc"
+                                  >
+                                    <Download className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination */}
+                {packagesQuery.data && packagesQuery.data.totalPages > 1 && (
+                  <div className="flex items-center justify-between p-3 border-t">
+                    <span className="text-sm text-muted-foreground">
+                      Trang {page} / {packagesQuery.data.totalPages} ({packagesQuery.data.total} kết quả)
+                    </span>
+                    <div className="flex gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={page <= 1}
+                        onClick={() => setPage(page - 1)}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={page >= packagesQuery.data.totalPages}
+                        onClick={() => setPage(page + 1)}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Tab: Upload Queue Status */}
+          <TabsContent value="queue" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Activity className="h-5 w-5" />
+                  Upload Queue - Trạng thái hàng đợi theo máy
+                </CardTitle>
+                <CardDescription>
+                  Theo dõi hàng đợi upload từ các máy AOI/AVI (cập nhật bởi Agent)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {queueQuery.isLoading ? (
+                  <p className="text-center text-muted-foreground py-8">Đang tải...</p>
+                ) : !queueQuery.data || queueQuery.data.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Activity className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                    <p>Chưa có dữ liệu từ Agent</p>
+                    <p className="text-xs mt-1">Agent sẽ gửi metrics định kỳ khi kết nối</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {queueQuery.data.map((metric, i) => (
+                      <Card key={i} className="border-l-4 border-l-blue-500">
+                        <CardContent className="p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <Badge variant="outline" className="font-mono">
+                              Machine #{metric.machineId}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {metric.recordedAt ? format(new Date(metric.recordedAt), "HH:mm:ss") : "—"}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div className="flex items-center gap-2">
+                              <Clock className="h-4 w-4 text-yellow-500" />
+                              <span>Queued: <strong>{metric.queuedCount}</strong></span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Activity className="h-4 w-4 text-blue-500" />
+                              <span>Uploading: <strong>{metric.uploadingCount}</strong></span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <CheckCircle2 className="h-4 w-4 text-green-500" />
+                              <span>Done: <strong>{metric.completedCount}</strong></span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <XCircle className="h-4 w-4 text-red-500" />
+                              <span>Failed: <strong>{metric.failedCount}</strong></span>
+                            </div>
+                          </div>
+                          {metric.diskUsedBytes != null && metric.diskFreeBytes != null && (
+                            <div className="text-xs text-muted-foreground">
+                              <HardDrive className="h-3 w-3 inline mr-1" />
+                              Disk: {formatBytes(metric.diskUsedBytes)} / {formatBytes((metric.diskUsedBytes || 0) + (metric.diskFreeBytes || 0))}
+                              {metric.diskFreeBytes != null && metric.diskUsedBytes != null && (
+                                <div className="mt-1 h-2 bg-muted rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full ${
+                                      metric.diskUsedBytes / ((metric.diskUsedBytes || 1) + (metric.diskFreeBytes || 1)) > 0.85
+                                        ? "bg-red-500"
+                                        : "bg-blue-500"
+                                    }`}
+                                    style={{
+                                      width: `${Math.min(100, (metric.diskUsedBytes / ((metric.diskUsedBytes || 1) + (metric.diskFreeBytes || 1))) * 100)}%`,
+                                    }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {metric.avgUploadLatencyMs && (
+                            <div className="text-xs text-muted-foreground">
+                              Avg latency: {metric.avgUploadLatencyMs}ms
+                            </div>
+                          )}
+                          {metric.lastErrorMessage && (
+                            <div className="text-xs text-red-500 flex items-start gap-1">
+                              <AlertTriangle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                              {metric.lastErrorMessage}
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Tab: Statistics */}
+          <TabsContent value="stats" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5" />
+                  Thống kê upload theo máy
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {statsQuery.isLoading ? (
+                  <p className="text-center text-muted-foreground py-8">Đang tải...</p>
+                ) : !statsQuery.data?.perMachine || statsQuery.data.perMachine.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">Chưa có dữ liệu</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/50">
+                          <th className="text-left p-3 font-medium">Machine</th>
+                          <th className="text-right p-3 font-medium">Tổng</th>
+                          <th className="text-right p-3 font-medium">Committed</th>
+                          <th className="text-right p-3 font-medium">Failed</th>
+                          <th className="text-right p-3 font-medium">Tỷ lệ thành công</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {statsQuery.data.perMachine.map((m, i) => (
+                          <tr key={i} className="border-b">
+                            <td className="p-3">
+                              <Badge variant="outline" className="font-mono">
+                                {m.machineCode || `#${m.machineId}`}
+                              </Badge>
+                            </td>
+                            <td className="p-3 text-right font-medium">{m.total}</td>
+                            <td className="p-3 text-right text-green-600">{m.committed}</td>
+                            <td className="p-3 text-right text-red-600">{m.failed}</td>
+                            <td className="p-3 text-right">
+                              {m.total > 0
+                                ? `${((m.committed / m.total) * 100).toFixed(1)}%`
+                                : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+
+        {/* Package Detail Dialog */}
+        <Dialog open={!!selectedPackageId} onOpenChange={(open) => !open && setSelectedPackageId(null)}>
+          <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileArchive className="h-5 w-5" />
+                Chi tiết Package
+              </DialogTitle>
+              <DialogDescription>
+                {selectedPackageId && (
+                  <code className="text-xs">{selectedPackageId}</code>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+
+            <ScrollArea className="flex-1 pr-4">
+              {packageDetailQuery.isLoading ? (
+                <div className="text-center py-8 text-muted-foreground">Đang tải...</div>
+              ) : packageDetailQuery.data ? (
+                <div className="space-y-6">
+                  {/* Package Info */}
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <span className="text-muted-foreground block text-xs">Serial Number</span>
+                      <span className="font-medium">{packageDetailQuery.data.serialNumber || "—"}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-xs">Product Model</span>
+                      <span className="font-medium">{packageDetailQuery.data.productModel || "—"}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-xs">Machine</span>
+                      <Badge variant="outline" className="font-mono">
+                        {packageDetailQuery.data.machine?.name || packageDetailQuery.data.machineCode || "—"}
+                      </Badge>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-xs">Kết quả</span>
+                      <ResultBadge result={packageDetailQuery.data.overallResult} />
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-xs">Trạng thái</span>
+                      <StatusBadge status={packageDetailQuery.data.status} />
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-xs">Dung lượng</span>
+                      <span>{formatBytes(packageDetailQuery.data.fileSizeBytes)}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-xs">Thời gian kiểm tra</span>
+                      <span>
+                        {packageDetailQuery.data.inspectionTime
+                          ? format(new Date(packageDetailQuery.data.inspectionTime), "dd/MM/yyyy HH:mm:ss")
+                          : "—"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-xs">Upload lúc</span>
+                      <span>
+                        {packageDetailQuery.data.uploadedAt
+                          ? format(new Date(packageDetailQuery.data.uploadedAt), "dd/MM/yyyy HH:mm:ss")
+                          : "—"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-xs">Điểm đo</span>
+                      <span>
+                        {packageDetailQuery.data.totalPoints || 0} ({packageDetailQuery.data.okCount || 0} OK / {packageDetailQuery.data.ngCount || 0} NG)
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Download button */}
+                  {packageDetailQuery.data.status === "committed" && (
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.open(`/api/aoi/download/${selectedPackageId}`, "_blank")}
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Tải ZIP gốc (Audit)
+                      </Button>
+                      {packageDetailQuery.data.inspectionId && (
+                        <Link href={`/inspection/${packageDetailQuery.data.inspectionId}`}>
+                          <Button variant="outline" size="sm">
+                            <Eye className="h-4 w-4 mr-2" />
+                            Xem Inspection
+                          </Button>
+                        </Link>
+                      )}
+                    </div>
+                  )}
+
+                  <Separator />
+
+                  {/* Images Grid */}
+                  <div>
+                    <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <ImageIcon className="h-4 w-4" />
+                      Ảnh điểm đo ({packageDetailQuery.data.images?.length || 0})
+                    </h3>
+
+                    {packageDetailQuery.data.images && packageDetailQuery.data.images.length > 0 ? (
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {packageDetailQuery.data.images.map((img) => (
+                          <Card
+                            key={img.id}
+                            className={`cursor-pointer hover:ring-2 hover:ring-primary transition-all ${
+                              img.result === "NG" ? "border-red-300 dark:border-red-700" : ""
+                            }`}
+                            onClick={() =>
+                              setViewImageDialog({
+                                packageId: selectedPackageId!,
+                                pointCode: img.pointCode,
+                                fileName: img.fileName,
+                              })
+                            }
+                          >
+                            <CardContent className="p-3 space-y-2">
+                              {/* Thumbnail from REST endpoint */}
+                              <div className="aspect-square bg-muted rounded-lg overflow-hidden flex items-center justify-center relative">
+                                <img
+                                  src={`/api/aoi/image/${selectedPackageId}/${img.fileName}`}
+                                  alt={img.pointCode}
+                                  className="object-cover w-full h-full"
+                                  loading="lazy"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = "none";
+                                    (e.target as HTMLImageElement).parentElement!.innerHTML =
+                                      '<div class="flex flex-col items-center justify-center h-full text-muted-foreground"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg><span class="text-xs mt-1">Preview</span></div>';
+                                  }}
+                                />
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-mono font-medium">{img.pointCode}</span>
+                                <ResultBadge result={img.result} />
+                              </div>
+                              {img.pointName && (
+                                <span className="text-xs text-muted-foreground block truncate">{img.pointName}</span>
+                              )}
+                              {img.measurementValue && (
+                                <span className="text-xs text-muted-foreground">{img.measurementValue}</span>
+                              )}
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <ImageIcon className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                        <p>Chưa có thông tin ảnh</p>
+                        <p className="text-xs mt-1">Dữ liệu ảnh sẽ có sau khi commit thành công</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">Package không tìm thấy</div>
+              )}
+            </ScrollArea>
+          </DialogContent>
+        </Dialog>
+
+        {/* Image Viewer Dialog */}
+        <Dialog open={!!viewImageDialog} onOpenChange={(open) => !open && setViewImageDialog(null)}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ImageIcon className="h-5 w-5" />
+                {viewImageDialog?.pointCode || viewImageDialog?.fileName}
+              </DialogTitle>
+              <DialogDescription>
+                Package: {viewImageDialog?.packageId}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex items-center justify-center min-h-[400px] bg-muted rounded-lg overflow-hidden">
+              {viewImageDialog && (
+                <img
+                  src={`/api/aoi/image/${viewImageDialog.packageId}/${viewImageDialog.fileName}`}
+                  alt={viewImageDialog.pointCode || viewImageDialog.fileName}
+                  className="max-w-full max-h-[60vh] object-contain"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                    (e.target as HTMLImageElement).parentElement!.innerHTML =
+                      '<div class="text-center text-muted-foreground py-8"><p>Không thể tải ảnh</p><p class="text-xs">Có thể ZIP chưa được upload hoặc ảnh không tồn tại</p></div>';
+                  }}
+                />
+              )}
+            </div>
+            <div className="flex justify-end gap-2 mt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (viewImageDialog) {
+                    window.open(`/api/aoi/image/${viewImageDialog.packageId}/${viewImageDialog.fileName}`, "_blank");
+                  }
+                }}
+              >
+                <ImageIcon className="h-4 w-4 mr-2" />
+                Mở ảnh gốc
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </DashboardLayout>
+  );
+}

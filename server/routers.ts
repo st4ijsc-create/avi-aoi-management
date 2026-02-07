@@ -13,6 +13,7 @@ import { defectHeatmapRouter } from "./routers/defectHeatmapRouter";
 import { aiFeedbackRouter } from "./routers/aiFeedbackRouter";
 import { trainingBatchCommentsRouter } from "./routers/trainingBatchCommentsRouter";
 import { mqttClientManagementRouter } from "./routers/mqttClientManagementRouter";
+import { aoiPackageRouter } from "./routers/aoiPackageRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -9173,6 +9174,7 @@ export const appRouter = router({
   aiFeedback: aiFeedbackRouter,
   trainingBatchComments: trainingBatchCommentsRouter,
   mqttClientManagement: mqttClientManagementRouter,
+  aoiPackage: aoiPackageRouter,
 });
 
 export type AppRouter = typeof appRouter;

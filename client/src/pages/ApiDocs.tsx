@@ -1,29 +1,37 @@
+import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { navItems } from "@/lib/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { toast } from "sonner";
-import { 
+import { cn } from "@/lib/utils";
+import {
+  Activity,
   Copy,
-  Code,
+  Languages,
+  RefreshCcw,
   Send,
-  Upload,
-  CheckCircle2,
-  AlertCircle,
-  Wifi,
-  Database,
-  FileDown,
+  ShieldCheck,
+  UploadCloud,
+  Building2,
+  Users2,
+  ClipboardList,
   BarChart3,
-  Mail
+  PanelsTopLeft,
+  RadioTower,
+  BellRing,
+  CalendarClock,
+  Camera,
+  FileArchive,
+  HardDrive,
 } from "lucide-react";
-import { navItems } from "@/lib/navigation";
-
-
+import { toast } from "sonner";
 
 const copyToClipboard = (text: string) => {
-  navigator.clipboard.writeText(text);
-  toast.success("Đã copy vào clipboard");
+  navigator.clipboard.writeText(text).then(() => {
+    toast.success("Đã copy vào clipboard");
+  });
 };
 
 const CodeBlock = ({ code, language = "json" }: { code: string; language?: string }) => (
@@ -31,980 +39,1473 @@ const CodeBlock = ({ code, language = "json" }: { code: string; language?: strin
     <Button
       variant="ghost"
       size="icon"
-      className="absolute top-2 right-2 h-8 w-8"
+      className="absolute right-2 top-2 h-8 w-8"
       onClick={() => copyToClipboard(code)}
     >
       <Copy className="h-4 w-4" />
     </Button>
-    <pre className="bg-secondary/50 rounded-lg p-4 overflow-x-auto text-sm">
-      <code className="text-foreground">{code}</code>
+    <pre className="overflow-auto rounded-2xl bg-zinc-900/95 p-4 text-xs text-zinc-100 shadow-inner">
+      <code data-language={language}>{code}</code>
     </pre>
   </div>
 );
 
-export default function ApiDocs() {
-  const baseUrl = window.location.origin;
+const glassCard = "border border-white/10 bg-white/5 backdrop-blur-xl";
 
-  const submitInspectionExample = `{
-  "machineCode": "AVI001",
-  "serialNumber": "SN123456789",
-  "productModel": "MODEL-A",
-  "batchNumber": "BATCH001",
-  "cycleTime": 5.2,
-  "overallResult": "OK",
-  "companyCode": "CORP-VN",
-  "factoryCode": "FAC-HN",
-  "workshopCode": "WS-01",
-  "lineCode": "LINE-A",
-  "stageCode": "STAGE-1",
-  "productionOrderCode": "PO-2025-001",
-  "operatorId": "OP-001",
-  "measurements": [
+type MenuItem = {
+  id: string;
+  label: string;
+  icon: any;
+};
+
+export default function ApiDocs() {
+  const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+  const endpointBase = `${baseUrl || ""}/api/trpc`;
+  const [activeMenu, setActiveMenu] = useState("machine");
+
+  const menuItems: MenuItem[] = [
+    { id: "machine", label: "Machine APIs", icon: Activity },
+    { id: "auth", label: "Authentication", icon: ShieldCheck },
+    { id: "factory", label: "Factory & Assets", icon: Building2 },
+    { id: "assignments", label: "User Assignments", icon: Users2 },
+    { id: "inspection", label: "Inspection APIs", icon: ClipboardList },
+    { id: "stats", label: "Statistics & OEE", icon: BarChart3 },
+    { id: "import", label: "Import/Export", icon: PanelsTopLeft },
+    { id: "mqtt", label: "MQTT", icon: RadioTower },
+    { id: "alerts", label: "Alerts", icon: BellRing },
+    { id: "reports", label: "Scheduled Reports", icon: CalendarClock },
+    { id: "aoiPackage", label: "AOI Image Upload", icon: Camera },
+  ];
+
+  // ============================================================
+  // AOI Image Package examples
+  // ============================================================
+  const aoiPresignExample = `POST ${endpointBase}/aoiPackage.presign
+Headers: X-API-Key: machine-api-key
+
+{
+  "apiKey": "MCH-API-xxxx",
+  "inspectionId": "INS-20260207-001",
+  "sizeBytes": 15728640
+}`;
+
+  const aoiPresignResponse = `{
+  "success": true,
+  "alreadyCommitted": false,
+  "packageId": "INS-20260207-001",
+  "objectKey": "aoi/AOI-01/2026/02/07/INS-20260207-001.zip",
+  "uploadUrl": "/api/aoi/upload/INS-20260207-001",
+  "expiresAt": "2026-02-07T10:15:00.000Z"
+}`;
+
+  const aoiUploadExample = `PUT /api/aoi/upload/INS-20260207-001
+Headers:
+  Content-Type: application/octet-stream
+  X-API-Key: MCH-API-xxxx
+  X-Machine-Code: AOI-01
+
+Body: <raw ZIP binary data>`;
+
+  const aoiUploadResponse = `{
+  "success": true,
+  "packageId": "INS-20260207-001",
+  "storageKey": "aoi/AOI-01/2026/02/07/INS-20260207-001.zip",
+  "sizeBytes": 15728640
+}`;
+
+  const aoiCommitExample = `POST ${endpointBase}/aoiPackage.commit
+Headers: X-API-Key: machine-api-key
+
+{
+  "apiKey": "MCH-API-xxxx",
+  "packageId": "INS-20260207-001"
+}`;
+
+  const aoiCommitResponse = `{
+  "success": true,
+  "alreadyCommitted": false,
+  "packageId": "INS-20260207-001",
+  "inspectionId": 98214,
+  "imageCount": 12,
+  "totalPoints": 12
+}`;
+
+  const aoiMetaJsonExample = `// Cấu trúc ZIP Package:
+// ├── meta.json
+// └── images/
+//     ├── P01.jpg
+//     ├── P02.jpg
+//     └── ...
+
+// meta.json schema:
+{
+  "serialNumber": "SN-20260207-001",
+  "productModel": "PCBA-REV3",
+  "factory": "FAC001",
+  "line": "LINE-A",
+  "machine": "AOI-01",
+  "startedAt": "2026-02-07T10:00:00Z",
+  "finishedAt": "2026-02-07T10:00:15Z",
+  "summary": {
+    "totalPoints": 12,
+    "ok": 11,
+    "ng": 1
+  },
+  "points": [
     {
-      "pointId": "POINT001",
-      "measuredValue": "12.5mm",
+      "code": "P01",
+      "name": "Connector A",
+      "fileName": "P01.jpg",
       "result": "OK",
-      "remark": "Điểm đo 1 - Kích thước",
-      "imageBase64": "data:image/jpeg;base64,/9j/4AAQ..."
+      "value": 0.25
     },
     {
-      "pointId": "POINT002",
-      "measuredValue": "PASS",
-      "result": "OK",
-      "remark": "Điểm đo 2 - Màu sắc"
+      "code": "P02",
+      "name": "IC U3",
+      "fileName": "P02.jpg",
+      "result": "NG",
+      "value": 0.52
+    }
+  ]
+}`;
+
+  const aoiQueueMetricsExample = `POST ${endpointBase}/aoiPackage.reportQueueMetrics
+Headers: X-API-Key: machine-api-key
+
+{
+  "apiKey": "MCH-API-xxxx",
+  "queuedCount": 5,
+  "uploadingCount": 1,
+  "failedCount": 0,
+  "completedCount": 120,
+  "diskUsedBytes": 5368709120,
+  "diskFreeBytes": 10737418240,
+  "avgUploadLatencyMs": 1250,
+  "lastErrorMessage": null
+}`;
+
+  const aoiAgentFlowExample = `// === Agent Upload Flow (TypeScript) ===
+import fetch from "node-fetch";
+import fs from "fs";
+
+const BASE = "${typeof window !== "undefined" ? window.location.origin : ""}/api/trpc";
+const API_KEY = process.env.MACHINE_API_KEY!;
+
+async function uploadPackage(zipPath: string, inspectionId: string) {
+  // Step 1: Presign
+  const presignRes = await fetch(BASE + "/aoiPackage.presign", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
+    body: JSON.stringify({
+      apiKey: API_KEY,
+      inspectionId,
+      sizeBytes: fs.statSync(zipPath).size,
+    }),
+  });
+  const { result: { data: presign } } = await presignRes.json();
+
+  if (presign.alreadyCommitted) {
+    console.log("Already committed, skipping.");
+    return;
+  }
+
+  // Step 2: Upload ZIP binary
+  const zipBuffer = fs.readFileSync(zipPath);
+  const uploadRes = await fetch(
+    "${typeof window !== "undefined" ? window.location.origin : ""}" + presign.uploadUrl,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-API-Key": API_KEY,
+        "X-Machine-Code": "AOI-01",
+      },
+      body: zipBuffer,
+    }
+  );
+
+  // Step 3: Commit
+  const commitRes = await fetch(BASE + "/aoiPackage.commit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
+    body: JSON.stringify({
+      apiKey: API_KEY,
+      packageId: inspectionId,
+    }),
+  });
+  const commit = await commitRes.json();
+  console.log("Committed:", commit.result.data);
+}`;
+
+  const aoiPythonAgentExample = `import requests, os
+
+BASE = "${typeof window !== "undefined" ? window.location.origin : ""}/api/trpc"
+ORIGIN = "${typeof window !== "undefined" ? window.location.origin : ""}"
+API_KEY = os.environ["MACHINE_API_KEY"]
+
+def upload_package(zip_path: str, inspection_id: str):
+    # Step 1: Presign
+    presign = requests.post(
+        f"{BASE}/aoiPackage.presign",
+        json={"apiKey": API_KEY, "inspectionId": inspection_id,
+              "sizeBytes": os.path.getsize(zip_path)},
+        headers={"X-API-Key": API_KEY},
+    ).json()["result"]["data"]
+
+    if presign.get("alreadyCommitted"):
+        print("Already committed"); return
+
+    # Step 2: Upload
+    with open(zip_path, "rb") as f:
+        requests.put(
+            f"{ORIGIN}{presign['uploadUrl']}",
+            data=f.read(),
+            headers={"Content-Type": "application/octet-stream",
+                     "X-API-Key": API_KEY, "X-Machine-Code": "AOI-01"},
+        )
+
+    # Step 3: Commit
+    commit = requests.post(
+        f"{BASE}/aoiPackage.commit",
+        json={"apiKey": API_KEY, "packageId": inspection_id},
+        headers={"X-API-Key": API_KEY},
+    ).json()
+    print("Committed:", commit["result"]["data"])`;
+
+  const submitInspectionExample = `POST ${endpointBase}/machineApi.submitInspection
+Headers: X-API-Key: machine-api-key
+
+{
+  "machineCode": "AOI-01",
+  "serialNumber": "SN123456",
+  "productModel": "PCBA-REV3",
+  "overallResult": "NG",
+  "inspectionTime": "2026-02-05T02:01:00Z",
+  "companyCode": "CORP001",
+  "factoryCode": "FAC001",
+  "productionOrderCode": "WO-20260205-01",
+  "measurements": [
+    {
+      "pointId": "P01",
+      "pointCode": "Connector-A",
+      "measuredValue": 0.42,
+      "result": "NG",
+      "remark": "Bent pin",
+      "imageBase64": "data:image/png;base64,iVBORw0..."
     }
   ]
 }`;
 
   const submitInspectionResponse = `{
   "success": true,
-  "data": {
-    "inspectionId": 123,
-    "serialNumber": "SN123456789",
-    "overallResult": "OK",
-    "measurementCount": 2,
-    "createdAt": "2025-01-13T10:30:00.000Z"
-  }
+  "inspectionId": 98214
 }`;
 
-  const uploadImageExample = `curl -X POST "${baseUrl}/api/machine/upload-image" \\
-  -H "X-API-Key: your-machine-api-key" \\
-  -H "Content-Type: multipart/form-data" \\
-  -F "image=@/path/to/image.jpg" \\
-  -F "inspectionId=123" \\
-  -F "pointId=POINT001"`;
+  const uploadImageExample = `POST ${endpointBase}/machineApi.uploadImage
+Headers: X-API-Key: machine-api-key
+
+{
+  "inspectionId": 98214,
+  "pointCode": "Connector-A",
+  "imageBase64": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
+  "mimeType": "image/jpeg"
+}`;
 
   const uploadImageResponse = `{
   "success": true,
-  "data": {
-    "imageUrl": "https://storage.example.com/images/abc123.jpg"
-  }
+  "imageUrl": "https://files.manus.im/inspections/98214/connector-a.jpg"
 }`;
+
+  const syncPointsExample = `POST ${endpointBase}/machineApi.syncMeasurementPoints
+Headers: X-API-Key: machine-api-key
+
+{
+  "machineCode": "AOI-01",
+  "productModelCode": "PCBA-REV3",
+  "points": [
+    {
+      "code": "P01",
+      "name": "Connector A",
+      "measurementType": "VISUAL",
+      "unit": "px",
+      "lowerLimit": 0.1,
+      "upperLimit": 0.3,
+      "positionX": 540,
+      "positionY": 410,
+      "radius": 25,
+      "cropWidth": 120,
+      "cropHeight": 120,
+      "workstationCode": "WS-AOI",
+      "imageBase64": "data:image/png;base64,iVBORw0..."
+    }
+  ]
+}`;
+
+  const syncPointsResponse = `{
+  "success": true,
+  "productModelId": 33,
+  "created": 1,
+  "updated": 7,
+  "failed": 0,
+  "errors": []
+}`;
+
+  const heartbeatExample = `POST ${endpointBase}/machineApi.heartbeat
+Headers: X-API-Key: machine-api-key
+
+{}`;
 
   const errorResponse = `{
-  "success": false,
   "error": {
-    "code": "INVALID_API_KEY",
-    "message": "API Key không hợp lệ hoặc đã bị vô hiệu hóa"
+    "code": "UNAUTHORIZED",
+    "message": "Invalid API key"
   }
 }`;
 
-  return (
-    <DashboardLayout 
-      title="AVI/AOI Management" 
-      navItems={navItems}
-      currentPath="/api-docs"
-    >
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">API Documentation</h1>
-          <p className="text-muted-foreground">Hướng dẫn tích hợp API cho máy AVI/AOI gửi dữ liệu kiểm tra</p>
-        </div>
+  const languageGuides = [
+    {
+      name: "TypeScript / Node.js",
+      code: `import fetch from "node-fetch";
 
-        {/* Overview */}
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Code className="h-5 w-5 text-primary" />
-              Tổng quan
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-muted-foreground">
-              Hệ thống cung cấp REST API để các máy AVI, AOI và thiết bị tự động hóa gửi dữ liệu kiểm tra.
-              Mỗi máy được cấp một API Key riêng để xác thực.
-            </p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="p-4 rounded-lg bg-secondary/50">
-                <h4 className="font-medium text-foreground mb-2">Base URL</h4>
-                <code className="text-sm text-primary">{baseUrl}/api/machine</code>
-              </div>
-              <div className="p-4 rounded-lg bg-secondary/50">
-                <h4 className="font-medium text-foreground mb-2">Authentication</h4>
-                <code className="text-sm text-primary">Header: X-API-Key</code>
-              </div>
-              <div className="p-4 rounded-lg bg-secondary/50">
-                <h4 className="font-medium text-foreground mb-2">Content-Type</h4>
-                <code className="text-sm text-primary">application/json</code>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* API Endpoints */}
-        <Tabs defaultValue="submit">
-          <TabsList className="grid w-full grid-cols-7">
-            <TabsTrigger value="submit" className="gap-2">
-              <Send className="h-4 w-4" />
-              Gửi kết quả
-            </TabsTrigger>
-            <TabsTrigger value="upload" className="gap-2">
-              <Upload className="h-4 w-4" />
-              Upload ảnh
-            </TabsTrigger>
-            <TabsTrigger value="websocket" className="gap-2">
-              <Wifi className="h-4 w-4" />
-              WebSocket
-            </TabsTrigger>
-            <TabsTrigger value="statistics" className="gap-2">
-              <BarChart3 className="h-4 w-4" />
-              Thống kê
-            </TabsTrigger>
-            <TabsTrigger value="export" className="gap-2">
-              <FileDown className="h-4 w-4" />
-              Export
-            </TabsTrigger>
-            <TabsTrigger value="reports" className="gap-2">
-              <Mail className="h-4 w-4" />
-              Báo cáo
-            </TabsTrigger>
-            <TabsTrigger value="errors" className="gap-2">
-              <AlertCircle className="h-4 w-4" />
-              Xử lý lỗi
-            </TabsTrigger>
-          </TabsList>
-
-          {/* Submit Inspection */}
-          <TabsContent value="submit">
-            <Card className="glass-card">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <Badge className="bg-success text-success-foreground">POST</Badge>
-                  <code className="text-foreground">/api/machine/submit-inspection</code>
-                </div>
-                <CardDescription>
-                  Gửi kết quả kiểm tra của một sản phẩm bao gồm tất cả các điểm đo
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">Headers</h4>
-                  <div className="bg-secondary/50 rounded-lg p-4">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border">
-                          <th className="text-left py-2 text-muted-foreground">Header</th>
-                          <th className="text-left py-2 text-muted-foreground">Giá trị</th>
-                          <th className="text-left py-2 text-muted-foreground">Mô tả</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>X-API-Key</code></td>
-                          <td className="py-2"><code>your-machine-api-key</code></td>
-                          <td className="py-2 text-muted-foreground">API Key của máy (bắt buộc)</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2"><code>Content-Type</code></td>
-                          <td className="py-2"><code>application/json</code></td>
-                          <td className="py-2 text-muted-foreground">Định dạng dữ liệu</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">Request Body</h4>
-                  <CodeBlock code={submitInspectionExample} />
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">Mô tả các trường</h4>
-                  <div className="bg-secondary/50 rounded-lg p-4">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border">
-                          <th className="text-left py-2 text-muted-foreground">Trường</th>
-                          <th className="text-left py-2 text-muted-foreground">Kiểu</th>
-                          <th className="text-left py-2 text-muted-foreground">Bắt buộc</th>
-                          <th className="text-left py-2 text-muted-foreground">Mô tả</th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-foreground">
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>machineCode</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2"><CheckCircle2 className="h-4 w-4 text-success" /></td>
-                          <td className="py-2 text-muted-foreground">Mã máy (phải khớp với API Key)</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>serialNumber</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2"><CheckCircle2 className="h-4 w-4 text-success" /></td>
-                          <td className="py-2 text-muted-foreground">Số serial sản phẩm</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>productModel</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2">-</td>
-                          <td className="py-2 text-muted-foreground">Model sản phẩm</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>batchNumber</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2">-</td>
-                          <td className="py-2 text-muted-foreground">Số lô sản xuất</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>cycleTime</code></td>
-                          <td className="py-2">number</td>
-                          <td className="py-2">-</td>
-                          <td className="py-2 text-muted-foreground">Thời gian kiểm tra (giây)</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>overallResult</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2"><CheckCircle2 className="h-4 w-4 text-success" /></td>
-                          <td className="py-2 text-muted-foreground">"OK" hoặc "NG"</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>companyCode</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2">-</td>
-                          <td className="py-2 text-muted-foreground">Mã công ty/tập đoàn (Enterprise)</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>factoryCode</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2">-</td>
-                          <td className="py-2 text-muted-foreground">Mã nhà máy (Enterprise)</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>workshopCode</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2">-</td>
-                          <td className="py-2 text-muted-foreground">Mã nhà xưởng</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>lineCode</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2">-</td>
-                          <td className="py-2 text-muted-foreground">Mã dây chuyền</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>stageCode</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2">-</td>
-                          <td className="py-2 text-muted-foreground">Mã công đoạn</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>productionOrderCode</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2">-</td>
-                          <td className="py-2 text-muted-foreground">Mã lệnh sản xuất</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>operatorId</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2">-</td>
-                          <td className="py-2 text-muted-foreground">Mã công nhân vận hành</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2"><code>measurements</code></td>
-                          <td className="py-2">array</td>
-                          <td className="py-2"><CheckCircle2 className="h-4 w-4 text-success" /></td>
-                          <td className="py-2 text-muted-foreground">Danh sách các điểm đo</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">Cấu trúc measurement</h4>
-                  <div className="bg-secondary/50 rounded-lg p-4">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border">
-                          <th className="text-left py-2 text-muted-foreground">Trường</th>
-                          <th className="text-left py-2 text-muted-foreground">Kiểu</th>
-                          <th className="text-left py-2 text-muted-foreground">Mô tả</th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-foreground">
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>pointId</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2 text-muted-foreground">ID điểm đo (bắt buộc)</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>measuredValue</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2 text-muted-foreground">Giá trị đo được</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>result</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2 text-muted-foreground">"OK" hoặc "NG" (bắt buộc)</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>remark</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2 text-muted-foreground">Ghi chú cho điểm đo</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2"><code>imageBase64</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2 text-muted-foreground">Ảnh điểm đo (base64 encoded)</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">Response thành công</h4>
-                  <CodeBlock code={submitInspectionResponse} />
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Upload Image */}
-          <TabsContent value="upload">
-            <Card className="glass-card">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <Badge className="bg-success text-success-foreground">POST</Badge>
-                  <code className="text-foreground">/api/machine/upload-image</code>
-                </div>
-                <CardDescription>
-                  Upload ảnh điểm đo riêng biệt (thay thế cho imageBase64 trong submit-inspection)
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">cURL Example</h4>
-                  <CodeBlock code={uploadImageExample} language="bash" />
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">Form Data</h4>
-                  <div className="bg-secondary/50 rounded-lg p-4">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border">
-                          <th className="text-left py-2 text-muted-foreground">Field</th>
-                          <th className="text-left py-2 text-muted-foreground">Kiểu</th>
-                          <th className="text-left py-2 text-muted-foreground">Mô tả</th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-foreground">
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>image</code></td>
-                          <td className="py-2">file</td>
-                          <td className="py-2 text-muted-foreground">File ảnh (JPEG, PNG)</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>inspectionId</code></td>
-                          <td className="py-2">number</td>
-                          <td className="py-2 text-muted-foreground">ID kết quả kiểm tra</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2"><code>pointId</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2 text-muted-foreground">ID điểm đo</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">Response</h4>
-                  <CodeBlock code={uploadImageResponse} />
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-           {/* WebSocket Mapping */}
-          <TabsContent value="websocket">
-            <Card className="glass-card">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <Badge className="bg-primary text-primary-foreground">WebSocket</Badge>
-                  <code className="text-foreground">ws://{'{host}'}/api/socket.io</code>
-                </div>
-                <CardDescription>
-                  Kết nối WebSocket để đăng ký máy và gửi dữ liệu realtime
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">1. Kết nối WebSocket</h4>
-                  <CodeBlock code={`// Sử dụng Socket.IO client
-import { io } from "socket.io-client";
-
-const socket = io("${baseUrl}", {
-  path: "/api/socket.io",
-  transports: ["websocket", "polling"],
-});
-
-socket.on("connect", () => {
-  console.log("Connected to server");
-});`} language="javascript" />
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">2. Đăng ký máy (Tự động)</h4>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    Máy gửi yêu cầu đăng ký, Admin phê duyệt trên giao diện Settings {'>'} Machine Mapping
-                  </p>
-                  <CodeBlock code={`// Gửi yêu cầu đăng ký
-socket.emit("machine:register", {
-  code: "AVI001",           // Mã máy (bắt buộc)
-  name: "Máy AVI 001",      // Tên máy (bắt buộc)
-  type: "AVI",              // Loại: "AVI" | "AOI" (bắt buộc)
-  serialNumber: "SN123",    // Số serial (tùy chọn)
-  manufacturer: "ABC Corp", // Nhà sản xuất (tùy chọn)
-  model: "Model X",         // Model (tùy chọn)
-  firmwareVersion: "1.0.0"  // Phiên bản firmware (tùy chọn)
-});
-
-// Nhận xác nhận yêu cầu đã được nhận
-socket.on("machine:register_ack", (data) => {
-  console.log("Registration status:", data.status);
-  // status: "pending" - Đang chờ Admin phê duyệt
-});
-
-// Nhận thông báo được phê duyệt
-socket.on("machine:registration_approved", (data) => {
-  console.log("Approved! Machine ID:", data.machineId);
-  console.log("API Key:", data.apiKey);
-  // Lưu machineId và apiKey để sử dụng
-});
-
-// Nhận thông báo bị từ chối
-socket.on("machine:registration_rejected", (data) => {
-  console.log("Rejected:", data.reason);
-});`} language="javascript" />
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">3. Xác nhận kết nối sau khi được phê duyệt</h4>
-                  <CodeBlock code={`// Sau khi được phê duyệt, xác nhận kết nối
-socket.emit("machine:confirm_mapping", {
-  machineId: 123,           // ID máy từ server
-  machineCode: "AVI001",    // Mã máy
-  apiKey: "your-api-key"    // API Key từ server
-});
-
-// Gửi heartbeat định kỳ (đề xuất mỗi 30 giây)
-setInterval(() => {
-  socket.emit("machine:heartbeat", {
-    machineId: 123,
-    status: "running",
-    metrics: {
-      cpuUsage: 45.2,
-      memoryUsage: 60.5,
-      temperature: 42.0
-    }
-  });
-}, 30000);`} language="javascript" />
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">4. Kết nối thủ công (Manual Mapping)</h4>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    Admin cấu hình kết nối đến máy qua IP:Port trong Settings {'>'} Machine Mapping {'>'} Kết nối thủ công
-                  </p>
-                  <div className="bg-secondary/50 rounded-lg p-4">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border">
-                          <th className="text-left py-2 text-muted-foreground">Trường</th>
-                          <th className="text-left py-2 text-muted-foreground">Kiểu</th>
-                          <th className="text-left py-2 text-muted-foreground">Mô tả</th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-foreground">
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>machineId</code></td>
-                          <td className="py-2">number</td>
-                          <td className="py-2 text-muted-foreground">ID máy trong hệ thống</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>ipAddress</code></td>
-                          <td className="py-2">string</td>
-                          <td className="py-2 text-muted-foreground">Địa chỉ IP của máy (IPv4/IPv6)</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>port</code></td>
-                          <td className="py-2">number</td>
-                          <td className="py-2 text-muted-foreground">Cổng kết nối (mặc định: 8080)</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>protocol</code></td>
-                          <td className="py-2">enum</td>
-                          <td className="py-2 text-muted-foreground">"websocket" | "tcp" | "http"</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>isEnabled</code></td>
-                          <td className="py-2">boolean</td>
-                          <td className="py-2 text-muted-foreground">Bật/tắt kết nối</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><code>maxRetries</code></td>
-                          <td className="py-2">number</td>
-                          <td className="py-2 text-muted-foreground">Số lần thử lại tối đa</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2"><code>retryIntervalSeconds</code></td>
-                          <td className="py-2">number</td>
-                          <td className="py-2 text-muted-foreground">Khoảng cách giữa các lần thử (giây)</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">5. Yêu cầu máy hỗ trợ (Manual Mapping)</h4>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    Để hệ thống kết nối được, máy cần:
-                  </p>
-                  <CodeBlock code={`// 1. Với protocol "http":
-// Máy cần có endpoint GET /health trả về status 200
-GET http://{ip}:{port}/health
-Response: 200 OK
-
-// 2. Với protocol "websocket":
-// Máy cần chấp nhận kết nối WebSocket
-ws://{ip}:{port}
-
-// 3. Với protocol "tcp":
-// Máy cần lắng nghe trên port TCP
-tcp://{ip}:{port}`} language="text" />
-                </div>
-
-                <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
-                  <h4 className="font-medium text-primary mb-2">Lưu ý</h4>
-                  <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
-                    <li>Mỗi máy chỉ có thể có một cấu hình kết nối thủ công</li>
-                    <li>Hệ thống sẽ tự động thử lại kết nối khi mất kết nối</li>
-                    <li>Timeout mặc định cho test kết nối: 5 giây</li>
-                    <li>Nên sử dụng WebSocket để có hiệu suất tốt nhất</li>
-                  </ul>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Statistics APIs */}
-          <TabsContent value="statistics">
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5 text-primary" />
-                  Statistics APIs
-                </CardTitle>
-                <CardDescription>
-                  APIs thống kê với caching tự động (TTL: 5 phút)
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">1. Yield Rate theo Công ty</h4>
-                  <div className="flex items-center gap-3 mb-2">
-                    <Badge className="bg-blue-500 text-white">GET</Badge>
-                    <code className="text-foreground">/api/trpc/corporateFactoryStats.yieldByCorporate</code>
-                  </div>
-                  <CodeBlock code={`// Query params
-{
-  "startDate": "2025-01-01T00:00:00Z",
-  "endDate": "2025-01-31T23:59:59Z"
-}
-
-// Response
-[
-  {
-    "corporateCode": "CORP001",
-    "totalInspections": 15000,
-    "okCount": 14250,
-    "ngCount": 500,
-    "ntfCount": 250,
-    "yieldRate": "95.00"
-  }
-]`} />
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">2. Yield Rate theo Nhà máy</h4>
-                  <div className="flex items-center gap-3 mb-2">
-                    <Badge className="bg-blue-500 text-white">GET</Badge>
-                    <code className="text-foreground">/api/trpc/corporateFactoryStats.yieldByFactory</code>
-                  </div>
-                  <CodeBlock code={`// Query params
-{
-  "corporateCode": "CORP001",  // Optional
-  "startDate": "2025-01-01T00:00:00Z",
-  "endDate": "2025-01-31T23:59:59Z"
-}
-
-// Response
-[
-  {
-    "factoryCode": "FAC001",
-    "corporateCode": "CORP001",
-    "totalInspections": 5000,
-    "okCount": 4750,
-    "ngCount": 200,
-    "ntfCount": 50,
-    "yieldRate": "95.00"
-  }
-]`} />
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">3. Throughput theo Công ty</h4>
-                  <div className="flex items-center gap-3 mb-2">
-                    <Badge className="bg-blue-500 text-white">GET</Badge>
-                    <code className="text-foreground">/api/trpc/corporateFactoryStats.throughputByCorporate</code>
-                  </div>
-                  <CodeBlock code={`// Query params
-{
-  "startDate": "2025-01-01T00:00:00Z",
-  "endDate": "2025-01-31T23:59:59Z",
-  "interval": "day"  // "hour" | "day" | "week"
-}
-
-// Response
-[
-  {
-    "date": "2025-01-15",
-    "corporateCode": "CORP001",
-    "count": 500
-  }
-]`} />
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">4. Cache Statistics (Admin)</h4>
-                  <div className="flex items-center gap-3 mb-2">
-                    <Badge className="bg-blue-500 text-white">GET</Badge>
-                    <code className="text-foreground">/api/trpc/corporateFactoryStats.cacheStats</code>
-                  </div>
-                  <CodeBlock code={`// Response
-{
-  "hits": 1250,
-  "misses": 150,
-  "size": 45,
-  "memoryUsage": 524288,
-  "isRedisConnected": true,
-  "lastError": null,
-  "uptime": 86400000
-}`} />
-                </div>
-
-                <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
-                  <h4 className="font-medium text-primary mb-2">Lưu ý về Caching</h4>
-                  <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
-                    <li>Tất cả statistics APIs được cache với TTL 5 phút</li>
-                    <li>Cache tự động invalidate khi có inspection mới</li>
-                    <li>Hỗ trợ Redis với fallback về in-memory cache</li>
-                    <li>Admin có thể xem cache stats và clear cache thủ công</li>
-                  </ul>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Export APIs */}
-          <TabsContent value="export">
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <FileDown className="h-5 w-5 text-primary" />
-                  Export APIs
-                </CardTitle>
-                <CardDescription>
-                  APIs xuất dữ liệu ra Excel và PDF
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">1. Export Inspections</h4>
-                  <div className="flex items-center gap-3 mb-2">
-                    <Badge className="bg-green-500 text-white">POST</Badge>
-                    <code className="text-foreground">/api/trpc/export.exportInspections</code>
-                  </div>
-                  <CodeBlock code={`// Request body
-{
-  "startDate": "2025-01-01T00:00:00Z",
-  "endDate": "2025-01-31T23:59:59Z",
-  "format": "excel",  // "excel" | "csv"
-  "machineId": 1,     // Optional
-  "result": "NG"      // Optional: "OK" | "NG" | "NTF"
-}
-
-// Response
-{
-  "url": "https://storage.example.com/exports/inspections_2025-01-31.xlsx",
-  "filename": "inspections_2025-01-31.xlsx"
-}`} />
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">2. Export Dashboard Statistics</h4>
-                  <div className="flex items-center gap-3 mb-2">
-                    <Badge className="bg-green-500 text-white">POST</Badge>
-                    <code className="text-foreground">/api/trpc/export.exportDashboardStats</code>
-                  </div>
-                  <CodeBlock code={`// Request body
-{
-  "startDate": "2025-01-01T00:00:00Z",
-  "endDate": "2025-01-31T23:59:59Z",
-  "format": "excel",  // "excel" | "pdf"
-  "corporateCode": "CORP001"  // Optional
-}
-
-// Response
-{
-  "url": "https://storage.example.com/exports/dashboard_stats_2025-01-31.xlsx",
-  "filename": "dashboard_stats_2025-01-31.xlsx"
-}
-
-// Excel file includes 4 sheets:
-// - Summary: Tổng quan thống kê
-// - Corporate Stats: Thống kê theo công ty
-// - Factory Stats: Thống kê theo nhà máy
-// - Daily Throughput: Sản lượng theo ngày`} />
-                </div>
-
-                <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
-                  <h4 className="font-medium text-primary mb-2">Lưu ý về Export</h4>
-                  <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
-                    <li>File export được lưu trên S3 và có URL tạm thời</li>
-                    <li>Access control: User chỉ export được data của corporates/factories được assign</li>
-                    <li>Giới hạn: Tối đa 100,000 records mỗi lần export</li>
-                    <li>Format PDF sẽ tạo HTML report có thể in ấn</li>
-                  </ul>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Scheduled Reports APIs */}
-          <TabsContent value="reports">
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Mail className="h-5 w-5 text-primary" />
-                  Scheduled Reports APIs
-                </CardTitle>
-                <CardDescription>
-                  APIs quản lý báo cáo tự động gửi qua email
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">1. Preview Statistics Report</h4>
-                  <div className="flex items-center gap-3 mb-2">
-                    <Badge className="bg-blue-500 text-white">GET</Badge>
-                    <code className="text-foreground">/api/trpc/scheduledReport.previewStatisticsReport</code>
-                  </div>
-                  <CodeBlock code={`// Query params
-{
-  "frequency": "weekly",  // "daily" | "weekly" | "monthly"
-  "corporateCode": "CORP001",  // Optional
-  "factoryCode": "FAC001"      // Optional
-}
-
-// Response
-{
-  "content": {
-    "title": "Báo cáo Hàng tuần - Preview Report",
-    "period": { "start": "...", "end": "..." },
-    "summary": {
-      "totalInspections": 5000,
-      "okCount": 4750,
-      "ngCount": 200,
-      "ntfCount": 50,
-      "yieldRate": "95.00"
-    },
-    "corporateStats": [...],
-    "factoryStats": [...],
-    "topNGMachines": [...]
+const res = await fetch("${endpointBase}/machineApi.submitInspection", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "X-API-Key": process.env.MACHINE_KEY!
   },
-  "html": "<html>...</html>"
-}`} />
-                </div>
+  body: JSON.stringify(payload)
+});
+console.log(await res.json());`,
+    },
+    {
+      name: "Python",
+      code: `import requests
 
+BASE_URL = "${endpointBase}"
+headers = {"X-API-Key": "machine-api-key"}
+response = requests.post(
+    f"{BASE_URL}/machineApi.submitInspection",
+    json=payload,
+    headers=headers,
+    timeout=10
+)
+print(response.json())`,
+    },
+    {
+      name: "Java",
+      code: `HttpClient client = HttpClient.newHttpClient();
+HttpRequest request = HttpRequest.newBuilder()
+    .uri(URI.create("${endpointBase}/machineApi.submitInspection"))
+    .header("Content-Type", "application/json")
+    .header("X-API-Key", apiKey)
+    .POST(HttpRequest.BodyPublishers.ofString(payload))
+    .build();
+HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());`,
+    },
+    {
+      name: "C#",
+      code: `using var client = new HttpClient();
+client.DefaultRequestHeaders.Add("X-API-Key", apiKey);
+var res = await client.PostAsync(
+  "${endpointBase}/machineApi.submitInspection",
+  new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"));
+var body = await res.Content.ReadAsStringAsync();`,
+    },
+    {
+      name: "Go",
+      code: `payloadBytes, _ := json.Marshal(payload)
+req, _ := http.NewRequest(
+  http.MethodPost,
+  "${endpointBase}/machineApi.submitInspection",
+  bytes.NewBuffer(payloadBytes),
+)
+req.Header.Set("Content-Type", "application/json")
+req.Header.Set("X-API-Key", apiKey)
+res, err := http.DefaultClient.Do(req)
+defer res.Body.Close()`,
+    },
+  ];
+
+  return (
+    <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/api-docs">
+      <div className="flex gap-6">
+        {/* Left Sidebar */}
+        <aside className="hidden lg:block w-64">
+          <div className="sticky top-24 space-y-2">
+            <p className="mb-3 px-3 text-xs font-semibold uppercase text-muted-foreground">
+              API Categories
+            </p>
+            {menuItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveMenu(item.id)}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left text-sm transition",
+                    activeMenu === item.id
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted"
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span className="font-medium">{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </aside>
+
+        {/* Main Content */}
+        <div className="flex-1 space-y-6">
+          {/* Header */}
+          <section className="overflow-hidden rounded-3xl border bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 p-8 text-white shadow-2xl">
+            <div className="space-y-4">
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1 text-sm font-medium">
+                <Languages className="h-4 w-4" />
+                API Documentation
+              </div>
+              <h1 className="text-3xl font-semibold leading-tight">
+                API Reference cho Hệ thống MES
+              </h1>
+              <p className="max-w-3xl text-base text-white/80">
+                Tài liệu đầy đủ các API endpoint cho tích hợp hệ thống AVI/AOI. Sử dụng endpoint tRPC với xác thực API Key hoặc JWT.
+              </p>
+            </div>
+            <div className="mt-6 grid gap-4 md:grid-cols-3">
+              <Card className="border-white/20 bg-white/5 text-white">
+                <CardHeader>
+                  <CardTitle className="text-sm uppercase tracking-wide text-white/70">Base URL</CardTitle>
+                  <CardDescription className="text-white text-base">
+                    {endpointBase}
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+              <Card className="border-white/20 bg-white/5 text-white">
+                <CardHeader>
+                  <CardTitle className="text-sm uppercase tracking-wide text-white/70">Authentication</CardTitle>
+                  <CardDescription className="text-white text-base">
+                    Header X-API-Key hoặc JWT Cookie
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+              <Card className="border-white/20 bg-white/5 text-white">
+                <CardHeader>
+                  <CardTitle className="text-sm uppercase tracking-wide text-white/70">Content-Type</CardTitle>
+                  <CardDescription className="text-white text-base">application/json</CardDescription>
+                </CardHeader>
+              </Card>
+            </div>
+          </section>
+
+          {/* Machine APIs */}
+          {activeMenu === "machine" && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Activity className="h-5 w-5" />
+                    Machine Integration APIs
+                  </CardTitle>
+                  <CardDescription>
+                    Các API dành cho máy AVI/AOI gửi dữ liệu inspection và đồng bộ điểm đo.
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+
+              <Tabs defaultValue="submit" className="space-y-6">
+                <TabsList className="grid w-full grid-cols-4">
+                  <TabsTrigger value="submit" className="gap-2">
+                    <Send className="h-4 w-4" />
+                    Submit Inspection
+                  </TabsTrigger>
+                  <TabsTrigger value="upload" className="gap-2">
+                    <UploadCloud className="h-4 w-4" />
+                    Upload Image
+                  </TabsTrigger>
+                  <TabsTrigger value="sync" className="gap-2">
+                    <RefreshCcw className="h-4 w-4" />
+                    Sync Points
+                  </TabsTrigger>
+                  <TabsTrigger value="heartbeat" className="gap-2">
+                    <Activity className="h-4 w-4" />
+                    Heartbeat
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="submit">
+                  <Card className={glassCard}>
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <Badge className="bg-success text-success-foreground">POST</Badge>
+                        <code className="text-sm text-white">machineApi.submitInspection</code>
+                      </div>
+                      <CardDescription>
+                        Đẩy kết quả inspection kèm toàn bộ measurement và thông tin sản xuất.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <div>
+                        <h4 className="mb-3 font-semibold text-white">Request</h4>
+                        <CodeBlock code={submitInspectionExample} language="typescript" />
+                      </div>
+                      <div>
+                        <h4 className="mb-3 font-semibold text-white">Response</h4>
+                        <CodeBlock code={submitInspectionResponse} />
+                      </div>
+                      <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 p-4 text-sm text-white/80">
+                        <ul className="list-disc space-y-1 pl-5">
+                          <li>Tự động liên kết productModelId từ productModel code</li>
+                          <li>Hỗ trợ pointId hoặc pointCode (ưu tiên pointId)</li>
+                          <li>Ảnh tự động upload lên Forge hoặc thư mục uploads/</li>
+                          <li>Tự động emit MQTT notification cho kết quả NG</li>
+                        </ul>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                <TabsContent value="upload">
+                  <Card className={glassCard}>
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <Badge className="bg-success text-success-foreground">POST</Badge>
+                        <code className="text-sm text-white">machineApi.uploadImage</code>
+                      </div>
+                      <CardDescription>Upload lại ảnh điểm đo khi cần thay thế.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <div>
+                        <h4 className="mb-3 font-semibold text-white">Request</h4>
+                        <CodeBlock code={uploadImageExample} language="typescript" />
+                      </div>
+                      <div>
+                        <h4 className="mb-3 font-semibold text-white">Response</h4>
+                        <CodeBlock code={uploadImageResponse} />
+                      </div>
+                      <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 p-4 text-sm text-white/80">
+                        <ul className="list-disc space-y-1 pl-5">
+                          <li>Kích thước ảnh tối đa 10MB</li>
+                          <li>Tự động parse mimeType khi dùng data URL</li>
+                          <li>Hỗ trợ cả base64 thuần và data URL format</li>
+                        </ul>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                <TabsContent value="sync">
+                  <Card className={glassCard}>
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <Badge className="bg-success text-success-foreground">POST</Badge>
+                        <code className="text-sm text-white">
+                          machineApi.syncMeasurementPoints
+                        </code>
+                      </div>
+                      <CardDescription>Đồng bộ tọa độ, dung sai, ảnh tham chiếu từ máy.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <div>
+                        <h4 className="mb-3 font-semibold text-white">Request</h4>
+                        <CodeBlock code={syncPointsExample} language="typescript" />
+                      </div>
+                      <div>
+                        <h4 className="mb-3 font-semibold text-white">Response</h4>
+                        <CodeBlock code={syncPointsResponse} />
+                      </div>
+                      <div className="rounded-2xl bg-white/5 p-4 text-sm text-white/80">
+                        <ul className="list-disc space-y-1 pl-5">
+                          <li>Trùng productModelId + code → update, còn lại tạo mới</li>
+                          <li>workstationCode tự map sang ID nếu tồn tại</li>
+                          <li>Nên gọi khi thay đổi recipe hoặc setup mới</li>
+                        </ul>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                <TabsContent value="heartbeat">
+                  <Card className={glassCard}>
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <Badge className="bg-success text-success-foreground">POST</Badge>
+                        <code className="text-sm text-white">machineApi.heartbeat</code>
+                      </div>
+                      <CardDescription>Duy trì trạng thái online cho máy.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <div>
+                        <h4 className="mb-3 font-semibold text-white">Request</h4>
+                        <CodeBlock code={heartbeatExample} language="typescript" />
+                      </div>
+                      <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 p-4 text-sm text-white/80">
+                        <ul className="list-disc space-y-1 pl-5">
+                          <li>Gọi mỗi 30 giây để tránh offline</li>
+                          <li>Submit inspection cũng refresh heartbeat tự động</li>
+                          <li>Response: {`{success: true, machineId: number}`}</li>
+                        </ul>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
+
+              <section className="space-y-4">
                 <div>
-                  <h4 className="font-medium text-foreground mb-3">2. Send Statistics Report</h4>
-                  <div className="flex items-center gap-3 mb-2">
-                    <Badge className="bg-green-500 text-white">POST</Badge>
-                    <code className="text-foreground">/api/trpc/scheduledReport.sendStatisticsReport</code>
+                  <h2 className="text-xl font-semibold text-foreground">Multi-language Quickstart</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Mẫu mã nguồn thực tế cho TypeScript, Python, Java, C#, Go.
+                  </p>
+                </div>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {languageGuides.map((guide) => (
+                    <Card key={guide.name} className="border border-white/10 bg-slate-900 text-white">
+                      <CardHeader>
+                        <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs uppercase tracking-wide">
+                          <Languages className="h-3 w-3" />
+                          {guide.name}
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <CodeBlock code={guide.code} language="javascript" />
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </section>
+
+              <Card className={glassCard}>
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <Badge variant="destructive">Errors</Badge>
+                    <CardTitle>Xử lý lỗi & resiliency</CardTitle>
                   </div>
-                  <CodeBlock code={`// Request body
-{
-  "name": "Báo cáo tuần",
-  "frequency": "weekly",
-  "recipients": ["manager@company.com", "qa@company.com"],
-  "corporateCode": "CORP001",  // Optional
-  "factoryCode": "FAC001"      // Optional
-}
-
-// Response
-{
-  "success": true,
-  "message": "Report sent to 2 recipients",
-  "summary": {
-    "totalInspections": 5000,
-    "yieldRate": "95.00"
-  }
-}`} />
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">3. CRUD Scheduled Reports</h4>
-                  <div className="bg-secondary/50 rounded-lg p-4">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border">
-                          <th className="text-left py-2 text-muted-foreground">Method</th>
-                          <th className="text-left py-2 text-muted-foreground">Endpoint</th>
-                          <th className="text-left py-2 text-muted-foreground">Mô tả</th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-foreground">
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><Badge className="bg-blue-500 text-white">GET</Badge></td>
-                          <td className="py-2"><code>scheduledReport.list</code></td>
-                          <td className="py-2 text-muted-foreground">Danh sách báo cáo đã lên lịch</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><Badge className="bg-green-500 text-white">POST</Badge></td>
-                          <td className="py-2"><code>scheduledReport.create</code></td>
-                          <td className="py-2 text-muted-foreground">Tạo báo cáo tự động mới</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><Badge className="bg-yellow-500 text-white">PUT</Badge></td>
-                          <td className="py-2"><code>scheduledReport.update</code></td>
-                          <td className="py-2 text-muted-foreground">Cập nhật cấu hình báo cáo</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><Badge variant="destructive">DELETE</Badge></td>
-                          <td className="py-2"><code>scheduledReport.delete</code></td>
-                          <td className="py-2 text-muted-foreground">Xóa báo cáo</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2"><Badge className="bg-green-500 text-white">POST</Badge></td>
-                          <td className="py-2"><code>scheduledReport.sendTest</code></td>
-                          <td className="py-2 text-muted-foreground">Gửi email test</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
-                  <h4 className="font-medium text-primary mb-2">Lưu ý về Scheduled Reports</h4>
-                  <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
-                    <li>Cần cấu hình SMTP trước khi sử dụng (Settings &gt; Cấu hình SMTP)</li>
-                    <li>Hỗ trợ 3 tần suất: Hàng ngày, Hàng tuần, Hàng tháng</li>
-                    <li>Email template bao gồm: Summary, Corporate Stats, Factory Stats, Top NG</li>
-                    <li>Có thể preview trước khi gửi</li>
-                  </ul>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Errors */}
-          <TabsContent value="errors">
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="text-lg">Xử lý lỗi</CardTitle>
-                <CardDescription>
-                  Các mã lỗi và cách xử lý khi gọi API
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">Response lỗi</h4>
+                  <CardDescription>Các mã lỗi chính từ machineApi</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   <CodeBlock code={errorResponse} />
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-foreground mb-3">Danh sách mã lỗi</h4>
-                  <div className="bg-secondary/50 rounded-lg p-4">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border">
-                          <th className="text-left py-2 text-muted-foreground">HTTP Code</th>
-                          <th className="text-left py-2 text-muted-foreground">Error Code</th>
-                          <th className="text-left py-2 text-muted-foreground">Mô tả</th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-foreground">
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><Badge variant="destructive">401</Badge></td>
-                          <td className="py-2"><code>INVALID_API_KEY</code></td>
-                          <td className="py-2 text-muted-foreground">API Key không hợp lệ hoặc đã bị vô hiệu hóa</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><Badge variant="destructive">400</Badge></td>
-                          <td className="py-2"><code>INVALID_REQUEST</code></td>
-                          <td className="py-2 text-muted-foreground">Dữ liệu request không hợp lệ</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><Badge variant="destructive">400</Badge></td>
-                          <td className="py-2"><code>MACHINE_CODE_MISMATCH</code></td>
-                          <td className="py-2 text-muted-foreground">Mã máy không khớp với API Key</td>
-                        </tr>
-                        <tr className="border-b border-border/50">
-                          <td className="py-2"><Badge variant="destructive">404</Badge></td>
-                          <td className="py-2"><code>INSPECTION_NOT_FOUND</code></td>
-                          <td className="py-2 text-muted-foreground">Không tìm thấy kết quả kiểm tra</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2"><Badge variant="destructive">500</Badge></td>
-                          <td className="py-2"><code>INTERNAL_ERROR</code></td>
-                          <td className="py-2 text-muted-foreground">Lỗi hệ thống, vui lòng thử lại</td>
-                        </tr>
-                      </tbody>
-                    </table>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-2xl border border-white/20 p-4">
+                      <h4 className="font-semibold text-white">HTTP 401 · UNAUTHORIZED</h4>
+                      <p className="text-sm text-white/80">Sai hoặc thiếu API Key.</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/20 p-4">
+                      <h4 className="font-semibold text-white">HTTP 400 · BAD_REQUEST</h4>
+                      <p className="text-sm text-white/80">Payload thiếu trường bắt buộc hoặc sai schema.</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/20 p-4">
+                      <h4 className="font-semibold text-white">HTTP 404 · NOT_FOUND</h4>
+                      <p className="text-sm text-white/80">Không tìm thấy inspection / measurement.</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/20 p-4">
+                      <h4 className="font-semibold text-white">HTTP 500 · INTERNAL_ERROR</h4>
+                      <p className="text-sm text-white/80">Retry với exponential backoff, log diagnostics.</p>
+                    </div>
                   </div>
-                </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
-                <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
-                  <h4 className="font-medium text-primary mb-2">Lưu ý quan trọng</h4>
-                  <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
-                    <li>API Key được cấp khi tạo máy mới trong Settings</li>
-                    <li>Mỗi máy có một API Key riêng, không chia sẻ giữa các máy</li>
-                    <li>Nếu API Key bị lộ, liên hệ Admin để tạo lại</li>
-                    <li>Ảnh nên được nén trước khi gửi để tối ưu băng thông</li>
-                    <li>Kích thước ảnh tối đa: 10MB</li>
-                  </ul>
+          {/* Auth */}
+          {activeMenu === "auth" && (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <ShieldCheck className="h-5 w-5" />
+                    Authentication & Authorization
+                  </CardTitle>
+                  <CardDescription>
+                    Hệ thống sử dụng Manus OAuth cho authentication và RBAC cho authorization.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">Roles</h4>
+                    <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                      <li><strong>admin:</strong> Full access to all resources</li>
+                      <li><strong>user:</strong> Limited access based on corporate/factory assignments</li>
+                    </ul>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <h4 className="mb-2 font-semibold">auth.me - Get Current User</h4>
+                      <CodeBlock code={`const { data: user } = trpc.auth.me.useQuery();
+// Returns: { id, openId, email, name, role, createdAt }`} />
+                    </div>
+
+                    <div>
+                      <h4 className="mb-2 font-semibold">auth.localLogin - Login với Username/Password</h4>
+                      <CodeBlock code={`const loginMutation = trpc.auth.localLogin.useMutation();
+await loginMutation.mutateAsync({
+  username: "admin",
+  password: "password",
+  totpCode: "123456" // Optional 2FA
+});`} />
+                    </div>
+
+                    <div>
+                      <h4 className="mb-2 font-semibold">auth.logout - Đăng xuất</h4>
+                      <CodeBlock code={`const logoutMutation = trpc.auth.logout.useMutation();
+await logoutMutation.mutateAsync();`} />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Factory Management */}
+          {activeMenu === "factory" && (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Building2 className="h-5 w-5" />
+                    Factory & Asset Management
+                  </CardTitle>
+                  <CardDescription>
+                    Quản lý factory/workshop/line/station/machine kèm API Key.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">factory.list - Danh sách nhà máy</h4>
+                    <CodeBlock code={`const { data: factories } = trpc.factory.list.useQuery();`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">factory.create - Tạo nhà máy mới (Admin)</h4>
+                    <CodeBlock code={`const createMutation = trpc.factory.create.useMutation();
+await createMutation.mutateAsync({
+  code: "FAC001",
+  name: "Factory Bắc Ninh",
+  address: "VSIP"
+});`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">machine.regenerateApiKey - Tạo lại API Key (Admin)</h4>
+                    <CodeBlock code={`const regenerateMutation = trpc.machine.regenerateApiKey.useMutation();
+const { apiKey } = await regenerateMutation.mutateAsync({ id: 5 });
+// Response: { apiKey: "MCH-API-..." }`} />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* User Assignments */}
+          {activeMenu === "assignments" && (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users2 className="h-5 w-5" />
+                    User Assignments & Access Control
+                  </CardTitle>
+                  <CardDescription>
+                    Giới hạn phạm vi nhìn thấy dữ liệu theo corporate/factory assignment.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">userAssignment.getMyAssignments</h4>
+                    <CodeBlock code={`const { data } = trpc.userAssignment.getMyAssignments.useQuery();
+// Returns: { corporateAssignments: [...], factoryAssignments: [...] }`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">userAssignment.assignCorporate (Admin)</h4>
+                    <CodeBlock code={`const assignMutation = trpc.userAssignment.assignCorporate.useMutation();
+await assignMutation.mutateAsync({
+  userId: 42,
+  corporateCode: "CORP001"
+});`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">userAssignment.assignFactory (Admin)</h4>
+                    <CodeBlock code={`const assignMutation = trpc.userAssignment.assignFactory.useMutation();
+await assignMutation.mutateAsync({
+  userId: 42,
+  factoryCode: "FAC001"
+});`} />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Inspection APIs */}
+          {activeMenu === "inspection" && (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <ClipboardList className="h-5 w-5" />
+                    Inspection APIs
+                  </CardTitle>
+                  <CardDescription>
+                    Tra cứu và thao tác inspection record, hỗ trợ filter đa chiều.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">inspection.list - Danh sách inspection</h4>
+                    <CodeBlock code={`const { data } = trpc.inspection.list.useQuery({
+  machineId: 5,
+  result: "NG",
+  startDate: new Date('2026-01-01'),
+  endDate: new Date('2026-01-31'),
+  limit: 50,
+  offset: 0
+});`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">inspection.getById - Chi tiết inspection</h4>
+                    <CodeBlock code={`const { data } = trpc.inspection.getById.useQuery({ id: 123 });`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">inspection.search - Search nâng cao</h4>
+                    <CodeBlock code={`const { data } = trpc.inspection.search.useQuery({
+  factoryCode: "FAC001",
+  serialNumber: "SN",
+  productModel: "MODEL-A",
+  result: "NG"
+});`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">inspection.updateNTF - Đánh dấu NTF (false positive)</h4>
+                    <CodeBlock code={`const updateMutation = trpc.inspection.updateNTF.useMutation();
+await updateMutation.mutateAsync({
+  id: 123,
+  isNTF: true,
+  ntfReason: "Defect không ảnh hưởng chức năng"
+});`} />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Statistics */}
+          {activeMenu === "stats" && (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <BarChart3 className="h-5 w-5" />
+                    Statistics & OEE
+                  </CardTitle>
+                  <CardDescription>
+                    Dashboard tổng quan, yield trend, throughput đa tầng.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">corporateFactoryStats.yieldRateByCorporate</h4>
+                    <CodeBlock code={`const { data } = trpc.corporateFactoryStats.yieldRateByCorporate.useQuery({
+  startDate: new Date('2026-01-01'),
+  endDate: new Date('2026-01-31')
+});
+// Returns: Array<{ corporateCode, totalInspections, okCount, ngCount, yieldRate }>`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">corporateFactoryStats.yieldRateByFactory</h4>
+                    <CodeBlock code={`const { data } = trpc.corporateFactoryStats.yieldRateByFactory.useQuery({
+  corporateCode: "CORP001",
+  startDate: new Date('2026-01-01'),
+  endDate: new Date('2026-01-31')
+});`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">dashboard.stats - Thống kê tổng quan</h4>
+                    <CodeBlock code={`const { data } = trpc.dashboard.stats.useQuery({
+  factoryId: 1,
+  startDate: new Date('2026-02-01'),
+  endDate: new Date('2026-02-05')
+});
+// Returns: { totalOutput, okCount, ngCount, fpy, yieldRate }`} />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Import/Export */}
+          {activeMenu === "import" && (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <PanelsTopLeft className="h-5 w-5" />
+                    Import / Export Pipelines
+                  </CardTitle>
+                  <CardDescription>
+                    Bulk onboarding dữ liệu nền tảng bằng Excel/CSV.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">import.importFactories (Admin)</h4>
+                    <CodeBlock code={`const importMutation = trpc.import.importFactories.useMutation();
+const result = await importMutation.mutateAsync({ data: excelData });
+// Response: { success: number, failed: number, errors: string[] }`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">export.exportInspections (Admin)</h4>
+                    <CodeBlock code={`const exportMutation = trpc.export.exportInspections.useMutation();
+const result = await exportMutation.mutateAsync({
+  corporateCode: "CORP001",
+  factoryCode: "FAC001",
+  startDate: new Date('2026-01-01'),
+  endDate: new Date('2026-01-31')
+});
+// Returns: { fileUrl: "https://s3.../inspections.xlsx", recordCount: 1240 }`} />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* MQTT */}
+          {activeMenu === "mqtt" && (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <RadioTower className="h-5 w-5" />
+                    MQTT Connectivity
+                  </CardTitle>
+                  <CardDescription>
+                    Giám sát broker, approve client, realtime throughput.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">mqttClient.status - Trạng thái broker</h4>
+                    <CodeBlock code={`const { data } = trpc.mqttClient.status.useQuery();
+// Returns: { connected, brokerUrl, clientsOnline, messagesPerMinute }`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">mqttClient.dashboardStats</h4>
+                    <CodeBlock code={`const { data } = trpc.mqttClient.dashboardStats.useQuery();
+// Returns: { totalMessages, messagesSent, messagesFailed, ngAlerts }`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">mqttClient.approve (Admin)</h4>
+                    <CodeBlock code={`const approveMutation = trpc.mqttClient.approve.useMutation();
+await approveMutation.mutateAsync({ id: 5 });`} />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Alerts */}
+          {activeMenu === "alerts" && (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <BellRing className="h-5 w-5" />
+                    Alerts & Notifications
+                  </CardTitle>
+                  <CardDescription>
+                    Pipeline cảnh báo yield/máy offline với acknowledge flow.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">alert.list - Danh sách alerts</h4>
+                    <CodeBlock code={`const { data } = trpc.alert.list.useQuery({
+  severity: "HIGH",
+  acknowledged: false
+});`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">alert.acknowledge - Đánh dấu đã đọc</h4>
+                    <CodeBlock code={`const acknowledgeMutation = trpc.alert.acknowledge.useMutation();
+await acknowledgeMutation.mutateAsync({ id: 123 });`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">alert.create (Admin)</h4>
+                    <CodeBlock code={`const createMutation = trpc.alert.create.useMutation();
+await createMutation.mutateAsync({
+  name: "High NG Rate Alert",
+  alertType: "ng_count",
+  threshold: "10",
+  comparisonOperator: "gt",
+  machineId: 5,
+  notifyEmail: true,
+  cooldownMinutes: 60
+});`} />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* AOI Image Upload */}
+          {activeMenu === "aoiPackage" && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Camera className="h-5 w-5" />
+                    AOI Image Package Upload APIs
+                  </CardTitle>
+                  <CardDescription>
+                    Upload ảnh kiểm tra AOI/AVI theo phương thức ZIP Package + Async Upload.
+                    Hỗ trợ Presign → Upload → Commit flow với idempotency.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="rounded-2xl border border-dashed border-amber-500/40 bg-amber-500/5 p-4 text-sm space-y-2">
+                    <h4 className="font-semibold text-amber-400 flex items-center gap-2">
+                      <FileArchive className="h-4 w-4" />
+                      Upload Flow (3 bước)
+                    </h4>
+                    <ol className="list-decimal pl-5 space-y-1 text-muted-foreground">
+                      <li><strong>Presign</strong> — Agent gọi <code>aoiPackage.presign</code> để tạo bản ghi và lấy upload URL</li>
+                      <li><strong>Upload</strong> — Agent PUT binary ZIP lên <code>/api/aoi/upload/:packageId</code> (max 200MB)</li>
+                      <li><strong>Commit</strong> — Agent gọi <code>aoiPackage.commit</code> để parse meta.json, liên kết inspection, cập nhật trạng thái</li>
+                    </ol>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Tất cả endpoint đều idempotent — retry an toàn khi gặp lỗi mạng.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Tabs defaultValue="presign" className="space-y-6">
+                <TabsList className="grid w-full grid-cols-5">
+                  <TabsTrigger value="presign" className="gap-1 text-xs">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    1. Presign
+                  </TabsTrigger>
+                  <TabsTrigger value="upload" className="gap-1 text-xs">
+                    <UploadCloud className="h-3.5 w-3.5" />
+                    2. Upload ZIP
+                  </TabsTrigger>
+                  <TabsTrigger value="commit" className="gap-1 text-xs">
+                    <Send className="h-3.5 w-3.5" />
+                    3. Commit
+                  </TabsTrigger>
+                  <TabsTrigger value="meta" className="gap-1 text-xs">
+                    <FileArchive className="h-3.5 w-3.5" />
+                    ZIP Format
+                  </TabsTrigger>
+                  <TabsTrigger value="queue" className="gap-1 text-xs">
+                    <HardDrive className="h-3.5 w-3.5" />
+                    Queue Metrics
+                  </TabsTrigger>
+                </TabsList>
+
+                {/* Presign */}
+                <TabsContent value="presign">
+                  <Card className={glassCard}>
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <Badge className="bg-success text-success-foreground">POST</Badge>
+                        <code className="text-sm text-white">aoiPackage.presign</code>
+                      </div>
+                      <CardDescription>
+                        Tạo bản ghi package và lấy upload URL. Agent gọi trước khi upload.
+                        Nếu package đã commit, trả về <code>alreadyCommitted: true</code> (idempotent).
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <div>
+                        <h4 className="mb-3 font-semibold text-white">Request</h4>
+                        <CodeBlock code={aoiPresignExample} language="typescript" />
+                      </div>
+                      <div>
+                        <h4 className="mb-3 font-semibold text-white">Response</h4>
+                        <CodeBlock code={aoiPresignResponse} />
+                      </div>
+                      <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 p-4 text-sm text-white/80">
+                        <h4 className="font-semibold mb-2">Parameters</h4>
+                        <ul className="list-disc space-y-1 pl-5">
+                          <li><code>apiKey</code> hoặc <code>machineCode</code> — xác thực máy (ít nhất 1 trong 2)</li>
+                          <li><code>inspectionId</code> — ID duy nhất cho package (từ Agent)</li>
+                          <li><code>sizeBytes</code> — kích thước ZIP dự kiến (bytes)</li>
+                          <li><code>sha256</code> — (optional) hash SHA-256 cho integrity check</li>
+                        </ul>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                {/* Upload ZIP */}
+                <TabsContent value="upload">
+                  <Card className={glassCard}>
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <Badge className="bg-blue-600 text-white">PUT</Badge>
+                        <code className="text-sm text-white">/api/aoi/upload/:packageId</code>
+                      </div>
+                      <CardDescription>
+                        Upload binary ZIP trực tiếp. Đây là REST endpoint (không phải tRPC).
+                        Kích thước tối đa 200MB.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <div>
+                        <h4 className="mb-3 font-semibold text-white">Request</h4>
+                        <CodeBlock code={aoiUploadExample} language="typescript" />
+                      </div>
+                      <div>
+                        <h4 className="mb-3 font-semibold text-white">Response</h4>
+                        <CodeBlock code={aoiUploadResponse} />
+                      </div>
+                      <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 p-4 text-sm text-white/80">
+                        <h4 className="font-semibold mb-2">Lưu ý quan trọng</h4>
+                        <ul className="list-disc space-y-1 pl-5">
+                          <li>Content-Type phải là <code>application/octet-stream</code></li>
+                          <li>Headers bắt buộc: <code>X-API-Key</code> + <code>X-Machine-Code</code></li>
+                          <li>Package phải được presign trước (status: pending)</li>
+                          <li>ZIP sử dụng STORE mode (không nén) để tối ưu tốc độ</li>
+                          <li>Retry an toàn — file sẽ bị ghi đè nếu upload lại</li>
+                        </ul>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                {/* Commit */}
+                <TabsContent value="commit">
+                  <Card className={glassCard}>
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <Badge className="bg-success text-success-foreground">POST</Badge>
+                        <code className="text-sm text-white">aoiPackage.commit</code>
+                      </div>
+                      <CardDescription>
+                        Xác nhận upload xong. Server parse meta.json, extract danh sách ảnh,
+                        liên kết inspection record, cập nhật trạng thái thành "committed".
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <div>
+                        <h4 className="mb-3 font-semibold text-white">Request</h4>
+                        <CodeBlock code={aoiCommitExample} language="typescript" />
+                      </div>
+                      <div>
+                        <h4 className="mb-3 font-semibold text-white">Response</h4>
+                        <CodeBlock code={aoiCommitResponse} />
+                      </div>
+                      <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 p-4 text-sm text-white/80">
+                        <h4 className="font-semibold mb-2">Xử lý khi commit</h4>
+                        <ul className="list-disc space-y-1 pl-5">
+                          <li>Parse <code>meta.json</code> từ ZIP để lấy serialNumber, productModel, points</li>
+                          <li>Tự động tạo <code>package_images</code> records cho từng điểm đo</li>
+                          <li>Link tới <code>product_inspections</code> nếu trùng serialNumber + machineId</li>
+                          <li>Đếm OK/NG từ summary hoặc danh sách points</li>
+                          <li>Nếu lỗi parse → status = "failed" với errorMessage</li>
+                        </ul>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                {/* ZIP Format */}
+                <TabsContent value="meta">
+                  <Card className={glassCard}>
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <Badge variant="outline" className="text-white border-white/40">FORMAT</Badge>
+                        <code className="text-sm text-white">ZIP Package Structure & meta.json</code>
+                      </div>
+                      <CardDescription>
+                        Cấu trúc file ZIP mà Agent cần tạo trước khi upload.
+                        Sử dụng STORE mode (không nén) để tối ưu I/O.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <div>
+                        <h4 className="mb-3 font-semibold text-white">Cấu trúc ZIP & meta.json Schema</h4>
+                        <CodeBlock code={aoiMetaJsonExample} language="json" />
+                      </div>
+                      <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 p-4 text-sm text-white/80">
+                        <h4 className="font-semibold mb-2">Quy tắc đặt tên file ảnh</h4>
+                        <ul className="list-disc space-y-1 pl-5">
+                          <li>Tất cả ảnh nằm trong thư mục <code>images/</code></li>
+                          <li><code>fileName</code> trong points phải khớp với tên file thực tế trong ZIP</li>
+                          <li>Hỗ trợ định dạng: JPG, JPEG, PNG, BMP, TIFF</li>
+                          <li>Nên dùng tên <code>pointCode</code> làm tên file (vd: P01.jpg)</li>
+                          <li><code>result</code>: "OK" | "NG" | "NTF" (Not True Failure)</li>
+                        </ul>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                {/* Queue Metrics */}
+                <TabsContent value="queue">
+                  <Card className={glassCard}>
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <Badge className="bg-success text-success-foreground">POST</Badge>
+                        <code className="text-sm text-white">aoiPackage.reportQueueMetrics</code>
+                      </div>
+                      <CardDescription>
+                        Agent gửi metrics hàng đợi upload định kỳ (mỗi 30s-60s) để giám sát.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <div>
+                        <h4 className="mb-3 font-semibold text-white">Request</h4>
+                        <CodeBlock code={aoiQueueMetricsExample} language="typescript" />
+                      </div>
+                      <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 p-4 text-sm text-white/80">
+                        <h4 className="font-semibold mb-2">Các trường metrics</h4>
+                        <ul className="list-disc space-y-1 pl-5">
+                          <li><code>queuedCount</code> — số package đang đợi trong hàng đợi</li>
+                          <li><code>uploadingCount</code> — số package đang upload</li>
+                          <li><code>completedCount</code> — tổng số đã upload thành công</li>
+                          <li><code>failedCount</code> — tổng số lỗi</li>
+                          <li><code>diskUsedBytes</code> / <code>diskFreeBytes</code> — dung lượng ổ đĩa SSD cache</li>
+                          <li><code>avgUploadLatencyMs</code> — latency trung bình (ms)</li>
+                          <li><code>lastErrorMessage</code> — thông báo lỗi gần nhất</li>
+                        </ul>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
+
+              {/* REST Endpoints */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Activity className="h-5 w-5" />
+                    REST Endpoints (Image Serving)
+                  </CardTitle>
+                  <CardDescription>
+                    Các endpoint REST phục vụ ảnh trực tiếp cho thẻ &lt;img&gt; và download ZIP audit.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-3">
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <div className="flex items-center gap-3 mb-2">
+                        <Badge className="bg-emerald-600 text-white">GET</Badge>
+                        <code className="text-sm">/api/aoi/image/:packageId/:fileName</code>
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Lấy ảnh điểm đo — tự động extract từ ZIP, cache trên SSD (7 ngày), thêm watermark.
+                      </p>
+                      <ul className="list-disc pl-5 text-xs text-muted-foreground space-y-1">
+                        <li>Trả về <code>image/jpeg</code> trực tiếp (dùng được trong <code>&lt;img src=&quot;...&quot;&gt;</code>)</li>
+                        <li>Header <code>X-Cache: HIT|MISS</code> cho biết từ cache hay extract mới</li>
+                        <li>Cache TTL: 7 ngày (configurable qua <code>AOI_CACHE_TTL_DAYS</code>)</li>
+                      </ul>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <div className="flex items-center gap-3 mb-2">
+                        <Badge className="bg-emerald-600 text-white">GET</Badge>
+                        <code className="text-sm">/api/aoi/download/:packageId</code>
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Download ZIP gốc cho purposes audit/traceability. Không qua cache/watermark.
+                      </p>
+                      <ul className="list-disc pl-5 text-xs text-muted-foreground space-y-1">
+                        <li>Local storage: trả file trực tiếp qua <code>sendFile</code></li>
+                        <li>Forge storage: redirect tới URL từ S3-compatible storage</li>
+                        <li>Filename: <code>{`{packageId}.zip`}</code></li>
+                      </ul>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Query APIs */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <ClipboardList className="h-5 w-5" />
+                    tRPC Query Endpoints (Web UI)
+                  </CardTitle>
+                  <CardDescription>
+                    Các endpoint tra cứu package, ảnh, thống kê — yêu cầu đăng nhập (protectedProcedure).
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">aoiPackage.listPackages — Danh sách packages</h4>
+                    <CodeBlock code={`const { data } = trpc.aoiPackage.listPackages.useQuery({
+  page: 1,
+  pageSize: 20,
+  serialNumber: "SN-2026",     // optional filter
+  machineCode: "AOI-01",       // optional filter
+  status: "committed",          // "pending" | "uploading" | "uploaded" | "committed" | "failed"
+  overallResult: "NG",         // "OK" | "NG" | "NTF"
+  dateFrom: "2026-02-01",
+  dateTo: "2026-02-07",
+});
+// Returns: { data: Package[], total, totalPages, page, pageSize }`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">aoiPackage.getPackage — Chi tiết package</h4>
+                    <CodeBlock code={`const { data } = trpc.aoiPackage.getPackage.useQuery({
+  packageId: "INS-20260207-001",
+});
+// Returns: Package với images[], machine info`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">aoiPackage.getImage — Lấy ảnh (base64 qua tRPC)</h4>
+                    <CodeBlock code={`const { data } = trpc.aoiPackage.getImage.useQuery({
+  packageId: "INS-20260207-001",
+  pointCode: "P01",      // hoặc fileName
+  fileName: "P01.jpg",   // hoặc pointCode
+});
+// Returns: { imageBase64, mimeType, fileName, fromCache }
+// Ảnh có watermark: SN, Machine, Time, User`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">aoiPackage.getUploadStats — Thống kê upload</h4>
+                    <CodeBlock code={`const { data } = trpc.aoiPackage.getUploadStats.useQuery({});
+// Returns: {
+//   summary: { total, committed, failed, pending, totalImages, totalSize, ngPackages },
+//   perMachine: [{ machineCode, machineId, total, committed, failed }]
+// }`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">aoiPackage.getQueueStatus — Trạng thái queue</h4>
+                    <CodeBlock code={`const { data } = trpc.aoiPackage.getQueueStatus.useQuery({});
+// Returns: Array metrics mới nhất theo máy`} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Agent Code Samples */}
+              <section className="space-y-4">
+                <div>
+                  <h2 className="text-xl font-semibold text-foreground">Agent Integration Code</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Mã nguồn mẫu cho AOI Agent — upload flow đầy đủ 3 bước.
+                  </p>
                 </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <Card className="border border-white/10 bg-slate-900 text-white">
+                    <CardHeader>
+                      <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs uppercase tracking-wide">
+                        <Languages className="h-3 w-3" />
+                        TypeScript / Node.js Agent
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <CodeBlock code={aoiAgentFlowExample} language="typescript" />
+                    </CardContent>
+                  </Card>
+                  <Card className="border border-white/10 bg-slate-900 text-white">
+                    <CardHeader>
+                      <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs uppercase tracking-wide">
+                        <Languages className="h-3 w-3" />
+                        Python Agent
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <CodeBlock code={aoiPythonAgentExample} language="python" />
+                    </CardContent>
+                  </Card>
+                </div>
+              </section>
+
+              {/* Environment Variables */}
+              <Card className={glassCard}>
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <Badge variant="outline" className="text-white border-white/40">CONFIG</Badge>
+                    <CardTitle>Environment Variables</CardTitle>
+                  </div>
+                  <CardDescription>Các biến environment liên quan đến AOI Image Upload</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-2xl border border-white/20 p-4">
+                      <h4 className="font-semibold text-white">AOI_CACHE_DIR</h4>
+                      <p className="text-sm text-white/80">Thư mục cache ảnh SSD. Default: <code>uploads/aoi-cache</code></p>
+                    </div>
+                    <div className="rounded-2xl border border-white/20 p-4">
+                      <h4 className="font-semibold text-white">AOI_CACHE_TTL_DAYS</h4>
+                      <p className="text-sm text-white/80">Thời gian cache ảnh (ngày). Default: <code>7</code></p>
+                    </div>
+                    <div className="rounded-2xl border border-white/20 p-4">
+                      <h4 className="font-semibold text-white">AOI_PRESIGN_TTL_MINUTES</h4>
+                      <p className="text-sm text-white/80">Thời gian hiệu lực presign URL. Default: <code>15</code></p>
+                    </div>
+                    <div className="rounded-2xl border border-white/20 p-4">
+                      <h4 className="font-semibold text-white">STORAGE_MODE</h4>
+                      <p className="text-sm text-white/80">"local" hoặc "forge" (S3-compatible). Default: <code>forge</code></p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Scheduled Reports */}
+          {activeMenu === "reports" && (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <CalendarClock className="h-5 w-5" />
+                    Scheduled Reports
+                  </CardTitle>
+                  <CardDescription>
+                    Lập lịch gửi báo cáo PDF/Excel qua email tự động.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">scheduledReport.list</h4>
+                    <CodeBlock code={`const { data } = trpc.scheduledReport.list.useQuery();`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">scheduledReport.create (Admin)</h4>
+                    <CodeBlock code={`const createMutation = trpc.scheduledReport.create.useMutation();
+await createMutation.mutateAsync({
+  name: "Daily Yield Report",
+  reportType: "yield",
+  schedule: "DAILY",
+  scheduleTime: "07:30",
+  recipients: ["qa@corp.com", "manager@corp.com"]
+});`} />
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 font-semibold">scheduledReport.trigger (Admin) - Chạy ngay lập tức</h4>
+                    <CodeBlock code={`const triggerMutation = trpc.scheduledReport.trigger.useMutation();
+await triggerMutation.mutateAsync({ id: 5 });`} />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </div>
       </div>
     </DashboardLayout>
   );
