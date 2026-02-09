@@ -272,6 +272,301 @@ def upload_package(zip_path: str, inspection_id: str):
     ).json()
     print("Committed:", commit["result"]["data"])`;
 
+  const aoiCSharpWpfExample = `// === C# WPF AOI Agent — Upload qua MinIO-compatible Server ===
+// NuGet: System.IO.Compression, System.Net.Http.Json, Newtonsoft.Json
+
+using System.IO;
+using System.IO.Compression;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+public class AoiUploadService
+{
+    private readonly HttpClient _http;
+    private readonly string _baseUrl;   // "${typeof window !== "undefined" ? window.location.origin : ""}"
+    private readonly string _trpcUrl;   // "${typeof window !== "undefined" ? window.location.origin : ""}/api/trpc"
+    private readonly string _apiKey;    // Machine API Key
+    private readonly string _machineCode;
+
+    public AoiUploadService(string baseUrl, string apiKey, string machineCode)
+    {
+        _baseUrl = baseUrl.TrimEnd('/');
+        _trpcUrl = $"{_baseUrl}/api/trpc";
+        _apiKey = apiKey;
+        _machineCode = machineCode;
+        _http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+        _http.DefaultRequestHeaders.Add("X-API-Key", _apiKey);
+    }
+
+    // ── Tạo ZIP Package từ thư mục ảnh AOI ──────────────────
+    public string CreateZipPackage(
+        string imageFolder,
+        string serialNumber,
+        string productModel,
+        string factoryCode,
+        List<PointResult> points)
+    {
+        var zipPath = Path.Combine(
+            Path.GetTempPath(),
+            $"AOI_{serialNumber}_{DateTime.Now:yyyyMMdd_HHmmss}.zip");
+
+        using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
+
+        // Thêm ảnh vào images/
+        foreach (var pt in points)
+        {
+            var imgPath = Path.Combine(imageFolder, pt.FileName);
+            if (File.Exists(imgPath))
+                zip.CreateEntryFromFile(imgPath, $"images/{pt.FileName}",
+                    CompressionLevel.NoCompression); // STORE mode
+        }
+
+        // Tạo meta.json
+        var meta = new
+        {
+            serialNumber,
+            productModel,
+            factory = factoryCode,
+            line = "",
+            machine = _machineCode,
+            startedAt = DateTime.UtcNow.ToString("o"),
+            finishedAt = DateTime.UtcNow.ToString("o"),
+            summary = new
+            {
+                totalPoints = points.Count,
+                ok = points.Count(p => p.Result == "OK"),
+                ng = points.Count(p => p.Result == "NG")
+            },
+            points = points.Select(p => new
+            {
+                code = p.Code,
+                name = p.Name,
+                fileName = p.FileName,
+                result = p.Result,
+                value = p.Value
+            })
+        };
+
+        var metaEntry = zip.CreateEntry("meta.json",
+            CompressionLevel.NoCompression);
+        using var writer = new StreamWriter(metaEntry.Open());
+        writer.Write(JsonSerializer.Serialize(meta,
+            new JsonSerializerOptions { WriteIndented = true }));
+
+        return zipPath;
+    }
+
+    // ── Upload Flow đầy đủ 3 bước ───────────────────────────
+    public async Task<UploadResult> UploadPackageAsync(
+        string zipPath, string inspectionId)
+    {
+        var fileSize = new FileInfo(zipPath).Length;
+
+        // ▸ Step 1: Presign
+        var presignPayload = JsonSerializer.Serialize(new
+        {
+            apiKey = _apiKey,
+            inspectionId,
+            sizeBytes = fileSize
+        });
+        var presignRes = await _http.PostAsync(
+            $"{_trpcUrl}/aoiPackage.presign",
+            new StringContent(presignPayload,
+                System.Text.Encoding.UTF8, "application/json"));
+        presignRes.EnsureSuccessStatusCode();
+
+        var presignJson = JsonDocument.Parse(
+            await presignRes.Content.ReadAsStringAsync());
+        var data = presignJson.RootElement
+            .GetProperty("result").GetProperty("data");
+
+        if (data.GetProperty("alreadyCommitted").GetBoolean())
+            return new UploadResult { AlreadyCommitted = true };
+
+        var uploadUrl = data.GetProperty("uploadUrl").GetString()!;
+
+        // ▸ Step 2: Upload ZIP binary
+        using var zipStream = File.OpenRead(zipPath);
+        var uploadContent = new StreamContent(zipStream);
+        uploadContent.Headers.ContentType =
+            new MediaTypeHeaderValue("application/octet-stream");
+
+        var uploadReq = new HttpRequestMessage(
+            HttpMethod.Put, $"{_baseUrl}{uploadUrl}");
+        uploadReq.Content = uploadContent;
+        uploadReq.Headers.Add("X-Machine-Code", _machineCode);
+
+        var uploadRes = await _http.SendAsync(uploadReq);
+        uploadRes.EnsureSuccessStatusCode();
+
+        // ▸ Step 3: Commit
+        var commitPayload = JsonSerializer.Serialize(new
+        {
+            apiKey = _apiKey,
+            packageId = inspectionId
+        });
+        var commitRes = await _http.PostAsync(
+            $"{_trpcUrl}/aoiPackage.commit",
+            new StringContent(commitPayload,
+                System.Text.Encoding.UTF8, "application/json"));
+        commitRes.EnsureSuccessStatusCode();
+
+        var commitJson = JsonDocument.Parse(
+            await commitRes.Content.ReadAsStringAsync());
+        var commitData = commitJson.RootElement
+            .GetProperty("result").GetProperty("data");
+
+        return new UploadResult
+        {
+            Success = true,
+            PackageId = inspectionId,
+            ImageCount = commitData.TryGetProperty(
+                "imageCount", out var ic) ? ic.GetInt32() : 0
+        };
+    }
+
+    // ── Report Queue Metrics (gọi mỗi 30s) ─────────────────
+    public async Task ReportQueueMetricsAsync(
+        int queued, int uploading, int failed, int completed,
+        long diskUsed, long diskFree, int avgLatencyMs)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            apiKey = _apiKey,
+            queuedCount = queued,
+            uploadingCount = uploading,
+            failedCount = failed,
+            completedCount = completed,
+            diskUsedBytes = diskUsed,
+            diskFreeBytes = diskFree,
+            avgUploadLatencyMs = avgLatencyMs
+        });
+        await _http.PostAsync(
+            $"{_trpcUrl}/aoiPackage.reportQueueMetrics",
+            new StringContent(payload,
+                System.Text.Encoding.UTF8, "application/json"));
+    }
+}
+
+public record PointResult(
+    string Code, string Name, string FileName,
+    string Result, double? Value);
+
+public class UploadResult
+{
+    public bool Success { get; set; }
+    public bool AlreadyCommitted { get; set; }
+    public string? PackageId { get; set; }
+    public int ImageCount { get; set; }
+}`;
+
+  const aoiCSharpWpfUsageExample = `// === Sử dụng trong WPF ViewModel ===========================
+// Thêm vào ViewModel của màn hình AOI/AVI inspection
+
+public class InspectionViewModel : INotifyPropertyChanged
+{
+    private readonly AoiUploadService _uploader;
+    private readonly Queue<PendingUpload> _uploadQueue = new();
+    private readonly DispatcherTimer _metricsTimer;
+    private int _completedCount, _failedCount;
+
+    public InspectionViewModel()
+    {
+        // Khởi tạo với server URL và API Key từ config
+        _uploader = new AoiUploadService(
+            baseUrl: ConfigurationManager.AppSettings["ServerUrl"]!,
+            apiKey:  ConfigurationManager.AppSettings["MachineApiKey"]!,
+            machineCode: ConfigurationManager.AppSettings["MachineCode"]!
+        );
+
+        // Timer gửi metrics mỗi 30 giây
+        _metricsTimer = new DispatcherTimer
+        { Interval = TimeSpan.FromSeconds(30) };
+        _metricsTimer.Tick += async (s, e) =>
+            await ReportMetricsAsync();
+        _metricsTimer.Start();
+    }
+
+    // ── Gọi sau khi AOI kiểm tra xong 1 board ──────────────
+    public async Task OnInspectionCompleted(
+        string serialNumber, string productModel,
+        string imageFolder, List<PointResult> points)
+    {
+        var inspectionId =
+            $"INS-{DateTime.Now:yyyyMMdd-HHmmss}-{serialNumber}";
+
+        // Tạo ZIP package
+        var zipPath = _uploader.CreateZipPackage(
+            imageFolder, serialNumber, productModel,
+            "FAC001", points);
+
+        // Thêm vào queue
+        _uploadQueue.Enqueue(new PendingUpload
+        {
+            ZipPath = zipPath,
+            InspectionId = inspectionId
+        });
+
+        // Upload async (không block UI)
+        _ = Task.Run(() => ProcessQueueAsync());
+    }
+
+    private async Task ProcessQueueAsync()
+    {
+        while (_uploadQueue.TryDequeue(out var item))
+        {
+            try
+            {
+                var result = await _uploader
+                    .UploadPackageAsync(
+                        item.ZipPath, item.InspectionId);
+
+                if (result.Success || result.AlreadyCommitted)
+                    _completedCount++;
+
+                // Xóa ZIP tạm sau khi upload thành công
+                File.Delete(item.ZipPath);
+            }
+            catch (Exception ex)
+            {
+                _failedCount++;
+                // Retry: thêm lại vào cuối queue
+                _uploadQueue.Enqueue(item);
+                await Task.Delay(5000); // backoff
+                Debug.WriteLine($"Upload failed: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task ReportMetricsAsync()
+    {
+        var drive = new DriveInfo("C");
+        await _uploader.ReportQueueMetricsAsync(
+            queued: _uploadQueue.Count,
+            uploading: 1,
+            failed: _failedCount,
+            completed: _completedCount,
+            diskUsed: drive.TotalSize - drive.AvailableFreeSpace,
+            diskFree: drive.AvailableFreeSpace,
+            avgLatencyMs: 1500);
+    }
+}
+
+record PendingUpload
+{
+    public string ZipPath { get; init; } = "";
+    public string InspectionId { get; init; } = "";
+}
+
+// ── App.config ──────────────────────────────────────────────
+// <appSettings>
+//   <add key="ServerUrl" value="${typeof window !== "undefined" ? window.location.origin : ""}" />
+//   <add key="MachineApiKey" value="MCH-API-xxxx" />
+//   <add key="MachineCode" value="AOI-01" />
+// </appSettings>`;
+
   const submitInspectionExample = `POST ${endpointBase}/machineApi.submitInspection
 Headers: X-API-Key: machine-api-key
 
@@ -1406,6 +1701,59 @@ await createMutation.mutateAsync({
                     Mã nguồn mẫu cho AOI Agent — upload flow đầy đủ 3 bước.
                   </p>
                 </div>
+                <div className="grid gap-4 lg:grid-cols-1">
+                  {/* C# WPF — full width vì code dài */}
+                  <Card className="border border-white/10 bg-slate-900 text-white">
+                    <CardHeader>
+                      <div className="flex items-center gap-3">
+                        <div className="inline-flex items-center gap-2 rounded-full bg-blue-500/20 px-3 py-1 text-xs uppercase tracking-wide text-blue-300">
+                          <Languages className="h-3 w-3" />
+                          C# WPF — AOI/AVI Agent (MinIO-compatible)
+                        </div>
+                        <Badge variant="outline" className="text-xs border-amber-400/50 text-amber-300">Recommended</Badge>
+                      </div>
+                      <p className="text-xs text-white/60 mt-2">
+                        Dành cho máy AOI/AVI chạy Windows + WPF. Hỗ trợ tạo ZIP, upload 3 bước, queue nội bộ, retry tự động, report metrics.
+                        Tương thích MinIO (S3-compatible) qua REST endpoint.
+                      </p>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <div>
+                        <h4 className="mb-3 font-semibold text-white text-sm">AoiUploadService — Service class đầy đủ</h4>
+                        <CodeBlock code={aoiCSharpWpfExample} language="csharp" />
+                      </div>
+                      <div>
+                        <h4 className="mb-3 font-semibold text-white text-sm">WPF ViewModel — Tích hợp vào màn hình kiểm tra</h4>
+                        <CodeBlock code={aoiCSharpWpfUsageExample} language="csharp" />
+                      </div>
+                      <div className="rounded-2xl border border-dashed border-blue-400/30 bg-blue-500/5 p-4 text-sm text-white/80">
+                        <h4 className="font-semibold text-blue-300 mb-2">Hướng dẫn tích hợp cho máy AOI/AVI hiện tại</h4>
+                        <ol className="list-decimal pl-5 space-y-1">
+                          <li>Thêm NuGet package: <code>System.IO.Compression</code> (có sẵn trong .NET Framework 4.6.2+)</li>
+                          <li>Copy class <code>AoiUploadService</code> vào project WPF</li>
+                          <li>Cấu hình <code>App.config</code> với ServerUrl, MachineApiKey, MachineCode</li>
+                          <li>Gọi <code>OnInspectionCompleted()</code> sau khi AOI kiểm tra xong mỗi board</li>
+                          <li>Upload chạy async — không block giao diện kiểm tra</li>
+                          <li>Retry tự động khi mất mạng (backoff 5s)</li>
+                          <li>Queue metrics được gửi mỗi 30s để giám sát trên Web UI</li>
+                        </ol>
+                      </div>
+                      <div className="rounded-2xl border border-dashed border-amber-400/30 bg-amber-500/5 p-4 text-sm text-white/80">
+                        <h4 className="font-semibold text-amber-300 mb-2">Lưu ý khi migrate từ MinIO trực tiếp</h4>
+                        <ul className="list-disc pl-5 space-y-1">
+                          <li>Thay thế <code>MinioClient.PutObjectAsync()</code> bằng <code>AoiUploadService.UploadPackageAsync()</code></li>
+                          <li>Không cần cài MinIO SDK — upload qua HTTP REST thuần</li>
+                          <li>ZIP STORE mode (NoCompression) giống MinIO — tốc độ tương đương</li>
+                          <li>Server tự lưu vào storage backend (local hoặc S3-compatible)</li>
+                          <li>Ảnh tự được watermark + cache khi user xem trên Web UI</li>
+                          <li>Presign URL hết hạn sau 15 phút — Agent cần gọi lại nếu timeout</li>
+                        </ul>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* TypeScript & Python — 2 cột */}
                 <div className="grid gap-4 lg:grid-cols-2">
                   <Card className="border border-white/10 bg-slate-900 text-white">
                     <CardHeader>

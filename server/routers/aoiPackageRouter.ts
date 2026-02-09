@@ -27,6 +27,7 @@ import {
   uploadQueueMetrics,
   machines,
   productInspections,
+  packageActivityLogs,
 } from "../../drizzle/schema";
 import JSZip from "jszip";
 import fs from "fs";
@@ -45,6 +46,57 @@ const PRESIGN_TTL_MINUTES = parseInt(process.env.AOI_PRESIGN_TTL_MINUTES || "15"
 // Ensure cache directory exists
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
+
+// ============================================================
+// Activity Log Helper - Ghi nhật ký hoạt động gói tin
+// ============================================================
+type LogEvent = typeof packageActivityLogs.$inferInsert["event"];
+type LogLevel = "info" | "warn" | "error";
+
+interface LogOptions {
+  packageDbId: number;
+  packageId: string;
+  machineId?: number | null;
+  event: LogEvent;
+  level?: LogLevel;
+  message: string;
+  detail?: string | null;
+  source?: "agent" | "server" | "user";
+  userId?: number | null;
+  userName?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  durationMs?: number | null;
+  fileSizeBytes?: number | null;
+  metadata?: Record<string, any> | null;
+}
+
+async function logPackageActivity(opts: LogOptions): Promise<void> {
+  try {
+    const database = await getDb();
+    if (!database) return;
+    await database.insert(packageActivityLogs).values({
+      packageDbId: opts.packageDbId,
+      packageId: opts.packageId,
+      machineId: opts.machineId ?? null,
+      event: opts.event,
+      level: opts.level || "info",
+      message: opts.message,
+      detail: opts.detail ?? null,
+      source: opts.source ?? "server",
+      userId: opts.userId ?? null,
+      userName: opts.userName ?? null,
+      ipAddress: opts.ipAddress ?? null,
+      userAgent: opts.userAgent ?? null,
+      durationMs: opts.durationMs ?? null,
+      fileSizeBytes: opts.fileSizeBytes ?? null,
+      metadata: opts.metadata ?? null,
+    });
+  } catch (err) {
+    // Log helper should never break the main flow
+    console.error("[AOI-LOG] Failed to write activity log:", err);
+  }
 }
 
 // ============================================================
@@ -195,7 +247,7 @@ async function getOrExtractImage(
 // Meta.json schema
 // ============================================================
 const metaJsonSchema = z.object({
-  inspectionId: z.string(),
+  inspectionId: z.string().optional(),
   serialNumber: z.string(),
   productModel: z.string(),
   factory: z.string().optional(),
@@ -296,7 +348,7 @@ export const aoiPackageRouter = router({
       const uploadUrl = `/api/aoi/upload/${input.inspectionId}`;
 
       // Create package record
-      await database.insert(inspectionPackages).values({
+      const insertResult = await database.insert(inspectionPackages).values({
         machineId: machineRecord.id,
         packageId: input.inspectionId,
         storageKey: objectKey,
@@ -304,7 +356,23 @@ export const aoiPackageRouter = router({
         status: "pending",
         machineCode: machineRecord.code,
         presignExpiresAt: expiresAt,
-      });
+      }).returning({ id: inspectionPackages.id });
+
+      // Log: presign event
+      const pkgDbId = insertResult[0]?.id;
+      if (pkgDbId) {
+        await logPackageActivity({
+          packageDbId: pkgDbId,
+          packageId: input.inspectionId,
+          machineId: machineRecord.id,
+          event: "presign",
+          message: `Presigned URL created for package ${input.inspectionId}`,
+          source: "agent",
+          detail: `Storage key: ${objectKey}, Size: ${input.sizeBytes} bytes, Expires: ${expiresAt.toISOString()}`,
+          fileSizeBytes: input.sizeBytes,
+          metadata: { objectKey, uploadUrl, sizeBytes: input.sizeBytes },
+        });
+      }
 
       // Update machine heartbeat
       await db.updateMachineHeartbeat(machineRecord.id);
@@ -370,6 +438,18 @@ export const aoiPackageRouter = router({
       if (pkg.machineId !== machine.id) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Package belongs to another machine" });
       }
+
+      // Log: commit_start
+      const commitStartTime = Date.now();
+      await logPackageActivity({
+        packageDbId: pkg.id,
+        packageId: pkg.packageId,
+        machineId: machine.id,
+        event: "commit_start",
+        message: `Commit started for package ${pkg.packageId}`,
+        source: "agent",
+        detail: `Storage key: ${pkg.storageKey || 'N/A'}`,
+      });
 
       // Try to parse meta.json from the ZIP
       let metaData: z.infer<typeof metaJsonSchema> | null = null;
@@ -466,6 +546,25 @@ export const aoiPackageRouter = router({
             })
             .where(eq(inspectionPackages.id, pkg.id));
 
+          // Log: commit_success
+          const commitDuration = Date.now() - commitStartTime;
+          await logPackageActivity({
+            packageDbId: pkg.id,
+            packageId: pkg.packageId,
+            machineId: machine.id,
+            event: "commit_success",
+            message: `Package committed successfully — ${imageFiles.length} images, ${metaData?.summary?.totalPoints || imageFiles.length} points`,
+            source: "agent",
+            durationMs: commitDuration,
+            detail: `Serial: ${metaData?.serialNumber || 'N/A'}, Model: ${metaData?.productModel || 'N/A'}, Result: ${metaData?.summary?.ng && metaData.summary.ng > 0 ? 'NG' : 'OK'}, Linked inspection: ${linkedInspectionId || 'none'}`,
+            metadata: {
+              imageCount: imageFiles.length,
+              serialNumber: metaData?.serialNumber,
+              overallResult: metaData?.summary?.ng && metaData.summary.ng > 0 ? 'NG' : 'OK',
+              linkedInspectionId,
+            },
+          });
+
           return {
             success: true,
             alreadyCommitted: false,
@@ -475,6 +574,21 @@ export const aoiPackageRouter = router({
             totalPoints: metaData?.summary?.totalPoints || imageFiles.length,
           };
         } catch (err: any) {
+          // Log: commit_fail
+          const commitDuration = Date.now() - commitStartTime;
+          await logPackageActivity({
+            packageDbId: pkg.id,
+            packageId: pkg.packageId,
+            machineId: machine.id,
+            event: "commit_fail",
+            level: "error",
+            message: `Commit failed: ${err.message}`,
+            source: "server",
+            durationMs: commitDuration,
+            detail: err.stack || err.message,
+            metadata: { errorCode: err.code, storageKey: pkg.storageKey },
+          });
+
           // Mark as failed
           await database
             .update(inspectionPackages)
@@ -739,6 +853,74 @@ export const aoiPackageRouter = router({
         .select()
         .from(packageImages)
         .where(eq(packageImages.packageId, pkgId));
+    }),
+
+  /**
+   * 6b. Get activity logs for a package
+   * Trả về nhật ký hoạt động theo timeline
+   */
+  getPackageLogs: protectedProcedure
+    .input(z.object({
+      packageId: z.string().optional(),
+      id: z.number().optional(),
+      limit: z.number().default(100),
+    }))
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+      let pkgDbId: number;
+      let pkgPackageId: string;
+
+      if (input.id) {
+        pkgDbId = input.id;
+        const pkg = await database
+          .select({ packageId: inspectionPackages.packageId })
+          .from(inspectionPackages)
+          .where(eq(inspectionPackages.id, input.id))
+          .limit(1);
+        pkgPackageId = pkg[0]?.packageId || "";
+      } else if (input.packageId) {
+        const pkgs = await database
+          .select({ id: inspectionPackages.id, packageId: inspectionPackages.packageId })
+          .from(inspectionPackages)
+          .where(eq(inspectionPackages.packageId, input.packageId))
+          .limit(1);
+
+        if (pkgs.length === 0) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Package not found" });
+        }
+        pkgDbId = pkgs[0].id;
+        pkgPackageId = pkgs[0].packageId;
+      } else {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "id or packageId required" });
+      }
+
+      const logs = await database
+        .select({
+          id: packageActivityLogs.id,
+          event: packageActivityLogs.event,
+          level: packageActivityLogs.level,
+          message: packageActivityLogs.message,
+          detail: packageActivityLogs.detail,
+          source: packageActivityLogs.source,
+          userName: packageActivityLogs.userName,
+          ipAddress: packageActivityLogs.ipAddress,
+          durationMs: packageActivityLogs.durationMs,
+          fileSizeBytes: packageActivityLogs.fileSizeBytes,
+          metadata: packageActivityLogs.metadata,
+          createdAt: packageActivityLogs.createdAt,
+        })
+        .from(packageActivityLogs)
+        .where(eq(packageActivityLogs.packageDbId, pkgDbId))
+        .orderBy(desc(packageActivityLogs.createdAt))
+        .limit(input.limit);
+
+      return {
+        packageId: pkgPackageId,
+        logs,
+        total: logs.length,
+      };
     }),
 
   /**

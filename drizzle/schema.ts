@@ -3085,3 +3085,59 @@ export const uploadQueueMetrics = pgTable("upload_queue_metrics", {
   index("idx_uqm_machine").on(table.machineId),
   index("idx_uqm_recorded").on(table.recordedAt),
 ]);
+
+// ============================================================
+// Package Activity Logs - Nhật ký hoạt động upload gói tin AOI
+// Ghi lại mọi sự kiện: presign, upload, commit, lỗi, xem, tải
+// ============================================================
+export const packageActivityLogEventEnum = pgEnum("package_activity_log_event", [
+  "presign",        // Agent yêu cầu presigned URL
+  "upload_start",   // Bắt đầu upload ZIP
+  "upload_success", // Upload thành công
+  "upload_fail",    // Upload thất bại
+  "commit_start",   // Bắt đầu commit (parse ZIP)
+  "commit_success", // Commit thành công
+  "commit_fail",    // Commit thất bại (parse lỗi, meta.json sai, ...)
+  "retry",          // Agent retry upload
+  "image_view",     // User xem ảnh trong gói tin
+  "zip_download",   // User tải ZIP gốc
+  "status_change",  // Thay đổi trạng thái khác
+]);
+
+export const packageActivityLogs = pgTable("package_activity_logs", {
+  id: serial("id").primaryKey(),
+  packageDbId: integer("packageDbId").notNull(),            // FK -> inspection_packages.id
+  packageId: varchar("packageId", { length: 100 }).notNull(), // Human-readable package ID
+  machineId: integer("machineId"),                          // Máy thực hiện (nếu có)
+  
+  // Event info
+  event: packageActivityLogEventEnum("event").notNull(),
+  level: varchar("level", { length: 10 }).notNull().default("info"), // info, warn, error
+  message: text("message").notNull(),                       // Mô tả sự kiện
+  detail: text("detail"),                                   // Chi tiết lỗi / stack trace / thông tin thêm
+  
+  // Context
+  source: varchar("source", { length: 30 }),                // "agent" | "server" | "user"
+  userId: integer("userId"),                                // User nào thao tác (nếu có)
+  userName: varchar("userName", { length: 100 }),           // Tên user (cache)
+  ipAddress: varchar("ipAddress", { length: 45 }),          // IP máy client
+  userAgent: varchar("userAgent", { length: 500 }),         // Browser/Agent user-agent
+  
+  // Metrics (optional)
+  durationMs: integer("durationMs"),                        // Thời gian xử lý (ms)
+  fileSizeBytes: bigint("fileSizeBytes", { mode: "number" }), // Kích thước file liên quan
+  
+  // Metadata blob
+  metadata: json("metadata"),                               // Dữ liệu thêm dạng JSON
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_pal_package").on(table.packageDbId),
+  index("idx_pal_package_id").on(table.packageId),
+  index("idx_pal_event").on(table.event),
+  index("idx_pal_created").on(table.createdAt),
+  index("idx_pal_machine").on(table.machineId),
+]);
+
+export type PackageActivityLog = typeof packageActivityLogs.$inferSelect;
+export type InsertPackageActivityLog = typeof packageActivityLogs.$inferInsert;

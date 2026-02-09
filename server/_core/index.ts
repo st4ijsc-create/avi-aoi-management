@@ -5,6 +5,7 @@ import { createServer as createHttpsServer } from "https";
 import fs from "fs";
 import net from "net";
 import path from "path";
+import { eq } from "drizzle-orm";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
@@ -191,6 +192,9 @@ async function startServer() {
         return res.json({ success: true, alreadyUploaded: true, packageId });
       }
 
+      // Detect retry (already uploaded before)
+      const isRetry = pkg.status === "uploaded" || pkg.status === "uploading";
+
       const zipBuffer = req.body as Buffer;
       if (!zipBuffer || zipBuffer.length === 0) {
         return res.status(400).json({ success: false, message: "Empty request body" });
@@ -215,9 +219,56 @@ async function startServer() {
         .where(eq(inspectionPackages.id, pkg.id));
 
       console.log(`[AOI] ZIP uploaded: ${packageId} (${(zipBuffer.length / 1024 / 1024).toFixed(1)}MB) from machine ${machine.code}`);
+
+      // Log activity: upload_success (or retry)
+      try {
+        const { packageActivityLogs } = await import("../../drizzle/schema");
+        await database.insert(packageActivityLogs).values({
+          packageDbId: pkg.id,
+          packageId: packageId,
+          machineId: machine.id,
+          event: isRetry ? "retry" : "upload_success",
+          level: "info",
+          message: isRetry
+            ? `ZIP re-uploaded (retry): ${(zipBuffer.length / 1024).toFixed(1)} KB`
+            : `ZIP uploaded successfully: ${(zipBuffer.length / 1024).toFixed(1)} KB`,
+          source: "agent",
+          ipAddress: req.ip || req.socket.remoteAddress || null,
+          userAgent: req.header("user-agent") || null,
+          fileSizeBytes: zipBuffer.length,
+          detail: `Storage key: ${storageKey}`,
+          metadata: { storageKey, sizeBytes: zipBuffer.length, isRetry },
+        });
+      } catch (_logErr) { /* logging should not break upload */ }
+
       res.json({ success: true, packageId, sizeBytes: zipBuffer.length, storageKey });
     } catch (error: any) {
       console.error("[AOI] upload error:", error);
+
+      // Log activity: upload_fail
+      try {
+        const { packageActivityLogs } = await import("../../drizzle/schema");
+        const database2 = await getDb();
+        const { packageId: pkgIdParam } = req.params;
+        if (database2 && pkgIdParam) {
+          const { inspectionPackages: ip } = await import("../../drizzle/schema");
+          const found = await database2.select({ id: ip.id }).from(ip).where(eq(ip.packageId, pkgIdParam)).limit(1);
+          if (found.length > 0) {
+            await database2.insert(packageActivityLogs).values({
+              packageDbId: found[0].id,
+              packageId: pkgIdParam,
+              event: "upload_fail",
+              level: "error",
+              message: `Upload failed: ${error?.message || 'Unknown error'}`,
+              source: "server",
+              detail: error?.stack || error?.message,
+              ipAddress: req.ip || req.socket.remoteAddress || null,
+              userAgent: req.header("user-agent") || null,
+            });
+          }
+        }
+      } catch (_logErr) { /* ignore */ }
+
       res.status(500).json({ success: false, message: error?.message || "Upload failed" });
     }
   });
@@ -335,10 +386,42 @@ async function startServer() {
           : path.join(process.cwd(), "uploads");
         const filePath = path.join(uploadsRoot, pkg.storageKey);
         if (!fs.existsSync(filePath)) return res.status(404).json({ message: "ZIP file not found" });
+
+        // Log activity: zip_download
+        try {
+          const { packageActivityLogs } = await import("../../drizzle/schema");
+          await database.insert(packageActivityLogs).values({
+            packageDbId: pkg.id,
+            packageId: packageId,
+            event: "zip_download",
+            level: "info",
+            message: `ZIP downloaded for audit`,
+            source: "user",
+            ipAddress: req.ip || req.socket.remoteAddress || null,
+            userAgent: req.header("user-agent") || null,
+            fileSizeBytes: pkg.fileSizeBytes,
+          });
+        } catch (_logErr) { /* ignore */ }
+
         res.setHeader("Content-Type", "application/zip");
         res.setHeader("Content-Disposition", `attachment; filename="${packageId}.zip"`);
         return res.sendFile(filePath);
       } else {
+        // Log activity: zip_download
+        try {
+          const { packageActivityLogs } = await import("../../drizzle/schema");
+          await database.insert(packageActivityLogs).values({
+            packageDbId: pkg.id,
+            packageId: packageId,
+            event: "zip_download",
+            level: "info",
+            message: `ZIP downloaded for audit (redirect)`,
+            source: "user",
+            ipAddress: req.ip || req.socket.remoteAddress || null,
+            userAgent: req.header("user-agent") || null,
+          });
+        } catch (_logErr) { /* ignore */ }
+
         const { storageGet } = await import("../storage");
         const { url } = await storageGet(pkg.storageKey);
         return res.redirect(url);
