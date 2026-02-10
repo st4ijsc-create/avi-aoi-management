@@ -1,0 +1,41 @@
+{
+  "inspectionId": "INS-20240115-001",
+  "serialNumber": "SN-20240115-001",
+  "productModel": "PCB-V2-Standard",
+  "factory": "FACTORY-HN",
+  "line": "LINE-3",
+  "machineCode": "AOI-LINE1-01",
+  "startedAt": "2024-01-15T10:30:00Z",
+  "finishedAt": "2024-01-15T10:32:30Z",
+  "points": [
+    {
+      "code": "R1",
+      "name": "Resistance 1",
+      "fileName": "image_001.jpg",
+      "result": "OK",
+      "value": 1023.5,
+      "unit": "Ω"
+    },
+    {
+      "code": "R2",
+      "name": "Resistance 2",
+      "fileName": "image_002.jpg",
+      "result": "NG",
+      "value": 0,
+      "unit": "Ω"
+    },
+    {
+      "code": "CAP1",
+      "name": "Capacitor 15",
+      "fileName": "image_003.jpg",
+      "result": "OK",
+      "value": 10.2,
+      "unit": "μF"
+    }
+  ],
+  "summary": {
+    "totalPoints": 3,
+    "ok": 2,
+    "ng": 1
+  }
+}

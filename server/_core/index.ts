@@ -73,18 +73,32 @@ async function startServer() {
     server = createHttpServer(app);
   }
   
-  // Enable CORS for external machine clients (e.g. inspection-submit-app.html)
+  // ============================================================
+  // CORS Configuration for External Machine Clients (AOI/AVI)
+  // Allows cross-origin requests from C# applications on LAN
+  // ============================================================
   app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key");
+    const origin = req.headers.origin;
+    
+    // Allow all origins (for LAN devices)
+    res.setHeader("Access-Control-Allow-Origin", origin || "*");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", 
+      "Content-Type, Authorization, x-api-key, x-machine-code, X-API-Key, X-Machine-Code, User-Agent, Content-Length, Accept, Origin");
+    res.setHeader("Access-Control-Expose-Headers", 
+      "Content-Length, Content-Type, ETag, X-Request-Id");
+    res.setHeader("Access-Control-Max-Age", "86400"); // 24 hours
 
+    // Handle preflight OPTIONS requests
     if (req.method === "OPTIONS") {
-      return res.sendStatus(204);
+      console.log(`[CORS] Preflight request: ${req.path}`);
+      return res.status(204).end();
     }
 
     next();
   });
+
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -141,12 +155,28 @@ async function startServer() {
   // Agent uploads ZIP directly via this endpoint
   // ============================================================
   app.put("/api/aoi/upload/:packageId", express.raw({ type: "*/*", limit: "200mb" }), async (req, res) => {
+    const startTime = Date.now();
+    
+    // Ensure CORS headers are set (even on error responses)
+    const origin = req.headers.origin;
+    if (origin) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    }
+    
     try {
       const { packageId } = req.params;
-      const apiKey = req.header("x-api-key") || "";
-      const machineCode = req.header("x-machine-code") || "";
+      const apiKey = req.header("x-api-key") || req.header("X-API-Key") || "";
+      const machineCode = req.header("x-machine-code") || req.header("X-Machine-Code") || "";
+      const contentType = req.header("content-type") || "";
+      const contentLength = req.header("content-length") || "0";
+
+      console.log(`[AOI-Upload] ${req.method} ${req.path} from ${req.ip || req.socket.remoteAddress}`);
+      console.log(`[AOI-Upload] Origin: ${origin || 'none'}, Content-Type: ${contentType}, Content-Length: ${contentLength}`);
+      console.log(`[AOI-Upload] Headers: API-Key=${apiKey ? 'present' : 'missing'}, Machine-Code=${machineCode || 'missing'}`);
 
       if (!apiKey && !machineCode) {
+        console.warn(`[AOI-Upload] Missing credentials for ${packageId}`);
         return res.status(401).json({ success: false, message: "x-api-key or x-machine-code header required" });
       }
 
@@ -197,8 +227,11 @@ async function startServer() {
 
       const zipBuffer = req.body as Buffer;
       if (!zipBuffer || zipBuffer.length === 0) {
-        return res.status(400).json({ success: false, message: "Empty request body" });
+        console.error(`[AOI-Upload] Empty body for ${packageId}. Raw body type: ${typeof req.body}, Content-Type: ${contentType}`);
+        return res.status(400).json({ success: false, message: "Empty request body. Ensure Content-Type is set correctly (application/zip or application/octet-stream)" });
       }
+
+      console.log(`[AOI-Upload] Body received: ${zipBuffer.length} bytes for ${packageId}`);
 
       // Store the ZIP file
       const { storagePut } = await import("../storage");
@@ -244,6 +277,13 @@ async function startServer() {
       res.json({ success: true, packageId, sizeBytes: zipBuffer.length, storageKey });
     } catch (error: any) {
       console.error("[AOI] upload error:", error);
+      console.error("[AOI] Error stack:", error?.stack);
+      console.error("[AOI] Request details:", {
+        packageId: req.params.packageId,
+        headers: req.headers,
+        bodyType: typeof req.body,
+        bodyLength: req.body?.length || 0,
+      });
 
       // Log activity: upload_fail
       try {

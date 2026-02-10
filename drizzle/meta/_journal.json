@@ -8,6 +8,13 @@
       "when": 1769491805724,
       "tag": "0000_volatile_zaladane",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1770708495151,
+      "tag": "0001_nice_sinister_six",
+      "breakpoints": true
     }
   ]
 }

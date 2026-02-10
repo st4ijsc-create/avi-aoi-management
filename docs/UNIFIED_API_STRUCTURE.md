@@ -1,0 +1,540 @@
+# Unified API Structure - Cấu trúc JSON đồng bộ
+
+## Tổng quan
+
+Document này mô tả cấu trúc JSON đã được **đồng bộ hóa** giữa:
+- **HTTP REST AOI Package Upload** (meta.json)
+- **tRPC submitInspection API**
+
+Mục tiêu: Client có thể sử dụng cùng một cấu trúc JSON để gửi dữ liệu qua cả hai API, giúp đồng bộ dữ liệu và dễ tra cứu history.
+
+---
+
+## 1. Inspection Metadata - Thông tin kiểm tra
+
+### Thông tin sản phẩm (REQUIRED)
+
+```json
+{
+  "serialNumber": "SN123456789",          // Số serial sản phẩm (BẮT BUỘC)
+  "productModel": "ModelA-V2",            // Model sản phẩm (BẮT BUỘC)
+  "batchNumber": "BATCH-2024-001"         // Số lô (optional)
+}
+```
+
+### Thông tin máy móc
+
+```json
+{
+  "machineCode": "AOI-LINE1-01",          // Mã máy kiểm tra
+  "inspectionId": "INS-20240101-001"      // ID inspection tạo từ máy (optional)
+}
+```
+
+### Thời gian kiểm tra
+
+```json
+{
+  "inspectionTime": "2024-01-15T10:30:00Z",  // ISO 8601 datetime (submitInspection compat)
+  "startedAt": "2024-01-15T10:30:00Z",       // Alias (AOI package compat)
+  "finishedAt": "2024-01-15T10:32:30Z",      // Thời gian kết thúc
+  "cycleTime": 150.5                          // Thời gian chu kỳ (giây)
+}
+```
+
+**Lưu ý:** Hệ thống tự động dùng `inspectionTime` hoặc `startedAt` (ưu tiên `inspectionTime`).
+
+---
+
+## 2. Enterprise Hierarchy - Cấp bậc doanh nghiệp
+
+Cấu trúc từ trên xuống (top-down):
+
+```json
+{
+  "companyCode": "COMPANY-A",           // Mã tập đoàn/công ty
+  "factoryCode": "FACTORY-HN",          // Mã nhà máy (ưu tiên)
+  "factory": "FACTORY-HN",              // Backward compatible (old field)
+  "workshopCode": "WORKSHOP-01",        // Mã nhà xưởng
+  "lineCode": "LINE-3",                 // Mã dây chuyền (ưu tiên)
+  "line": "LINE-3",                     // Backward compatible (old field)
+  "stageCode": "STAGE-AOI"              // Mã công đoạn
+}
+```
+
+**Khuyến nghị:** 
+- Dùng fields mới: `factoryCode`, `lineCode`, `workshopCode`, `stageCode`
+- Fields cũ (`factory`, `line`) vẫn hỗ trợ để tương thích ngược
+
+---
+
+## 3. Production Context - Bối cảnh sản xuất
+
+```json
+{
+  "productionOrderCode": "PO-2024-0115-001", // Mã lệnh sản xuất
+  "operatorId": "OP-0023"                     // Mã công nhân vận hành
+}
+```
+
+---
+
+## 4. Measurements - Dữ liệu đo lường (CORE)
+
+### 4.1. Cấu trúc đồng bộ (NEW - Khuyến nghị)
+
+```json
+{
+  "measurements": [
+    {
+      "pointId": "POINT-001",               // ID điểm đo (ưu tiên - submitInspection)
+      "pointCode": "R1-IC1-PIN1",           // Mã điểm đo (fallback)
+      "name": "IC1 Pin 1 Resistance",       // Tên điểm đo (optional)
+      "fileName": "image_001.jpg",          // Tên file ảnh trong ZIP
+      "result": "OK",                       // Kết quả: "OK" | "NG" | "NTF"
+      "measuredValue": 1023.5,              // Giá trị đo (ưu tiên - submitInspection)
+      "unit": "Ω",                          // Đơn vị (optional)
+      "remark": "Đo lại lần 2"              // Ghi chú (optional)
+    },
+    {
+      "pointId": "POINT-002",
+      "pointCode": "R2-IC1-PIN2",
+      "fileName": "image_002.jpg",
+      "result": "NG",
+      "measuredValue": 0,                   // Short circuit
+      "unit": "Ω",
+      "remark": "Short - Cần thay IC"
+    }
+  ]
+}
+```
+
+### 4.2. Cấu trúc legacy (Old - Vẫn hỗ trợ)
+
+```json
+{
+  "points": [
+    {
+      "code": "R1-IC1-PIN1",                // Mã điểm đo (old field)
+      "name": "IC1 Pin 1 Resistance",
+      "fileName": "image_001.jpg",
+      "result": "OK",
+      "value": 1023.5,                      // Old field name
+      "unit": "Ω"
+    }
+  ]
+}
+```
+
+**Hệ thống tự động normalize:**
+- `measurements` → ưu tiên
+- `points` → fallback nếu không có `measurements`
+- Point code: `pointId` → `pointCode` → `code`
+- Measured value: `measuredValue` → `value`
+
+---
+
+## 5. Overall Result & Summary - Kết quả tổng thể
+
+### Kết quả tổng thể
+
+```json
+{
+  "overallResult": "NG"   // "OK" | "NG" | "NTF"
+}
+```
+
+**Logic tự động:**
+- Nếu không có `overallResult`, hệ thống tự động tính:
+  - Có bất kỳ measurement nào "NG" → `overallResult = "NG"`
+  - Tất cả "OK" → `overallResult = "OK"`
+
+### Thống kê (optional - tự động tính nếu không có)
+
+```json
+{
+  "summary": {
+    "totalPoints": 10,
+    "ok": 8,
+    "ng": 2,
+    "ntf": 0
+  }
+}
+```
+
+---
+
+## 6. Complete Example - Ví dụ đầy đủ
+
+### 6.1. AOI Package - meta.json
+
+```json
+{
+  "machineCode": "AOI-LINE1-01",
+  "inspectionTime": "2024-01-15T10:30:00Z",
+  "cycleTime": 150.5,
+  
+  "serialNumber": "SN-20240115-001",
+  "productModel": "PCB-V2-Standard",
+  "batchNumber": "BATCH-2024-001",
+  
+  "companyCode": "COMPANY-A",
+  "factoryCode": "FACTORY-HN",
+  "workshopCode": "WORKSHOP-SMT",
+  "lineCode": "LINE-3",
+  "stageCode": "STAGE-AOI",
+  
+  "productionOrderCode": "PO-2024-0115-001",
+  "operatorId": "OP-0023",
+  
+  "overallResult": "NG",
+  
+  "measurements": [
+    {
+      "pointId": "POINT-001",
+      "pointCode": "R1-IC1-PIN1",
+      "name": "IC1 Pin 1 Resistance",
+      "fileName": "image_001.jpg",
+      "result": "OK",
+      "measuredValue": 1023.5,
+      "unit": "Ω",
+      "remark": "In spec"
+    },
+    {
+      "pointId": "POINT-002",
+      "pointCode": "R2-IC2-PIN5",
+      "name": "IC2 Pin 5 Resistance",
+      "fileName": "image_002.jpg",
+      "result": "NG",
+      "measuredValue": 0,
+      "unit": "Ω",
+      "remark": "Short circuit - Replace IC2"
+    },
+    {
+      "pointId": "POINT-003",
+      "pointCode": "CAP-C15",
+      "name": "C15 Capacitance",
+      "fileName": "image_003.jpg",
+      "result": "OK",
+      "measuredValue": 10.2,
+      "unit": "μF"
+    }
+  ],
+  
+  "summary": {
+    "totalPoints": 3,
+    "ok": 2,
+    "ng": 1,
+    "ntf": 0
+  }
+}
+```
+
+### 6.2. submitInspection API (tRPC)
+
+```typescript
+// Client call
+const result = await trpc.machine.submitInspection.mutate({
+  machineCode: "AOI-LINE1-01",
+  apiKey: "your-api-key",
+  
+  inspectionTime: "2024-01-15T10:30:00Z",
+  cycleTime: "150.5",
+  
+  serialNumber: "SN-20240115-001",
+  productModel: "PCB-V2-Standard",
+  batchNumber: "BATCH-2024-001",
+  
+  companyCode: "COMPANY-A",
+  factoryCode: "FACTORY-HN",
+  workshopCode: "WORKSHOP-SMT",
+  lineCode: "LINE-3",
+  stageCode: "STAGE-AOI",
+  
+  productionOrderCode: "PO-2024-0115-001",
+  operatorId: "OP-0023",
+  
+  measurements: [
+    {
+      pointId: "POINT-001",
+      pointCode: "R1-IC1-PIN1",
+      measuredValue: "1023.5",
+      result: "OK",
+      remark: "In spec",
+      imageBase64: "data:image/jpeg;base64,/9j/4AAQ..."  // Optional inline image
+    },
+    {
+      pointId: "POINT-002",
+      pointCode: "R2-IC2-PIN5",
+      measuredValue: "0",
+      result: "NG",
+      remark: "Short circuit - Replace IC2",
+      imageBase64: "data:image/jpeg;base64,/9j/4AAQ..."
+    }
+  ]
+});
+```
+
+---
+
+## 7. Field Mapping - Bảng mapping giữa 2 API
+
+| Concept | AOI Package (meta.json) | submitInspection (tRPC) | Priority |
+|---------|-------------------------|-------------------------|----------|
+| Point ID | `measurements[].pointId` | `measurements[].pointId` | ✅ Same |
+| Point Code | `measurements[].pointCode` | `measurements[].pointCode` | ✅ Same |
+| Measured Value | `measurements[].measuredValue` | `measurements[].measuredValue` | ✅ Same |
+| Result | `measurements[].result` | `measurements[].result` | ✅ Same |
+| Remark | `measurements[].remark` | `measurements[].remark` | ✅ Same |
+| Image | `measurements[].fileName` | `measurements[].imageBase64` | Different |
+| Factory | `factoryCode` (new) | `factoryCode` (new) | ✅ Same |
+| Line | `lineCode` (new) | `lineCode` (new) | ✅ Same |
+| Workshop | `workshopCode` (new) | `workshopCode` (new) | ✅ Same |
+| Stage | `stageCode` (new) | `stageCode` (new) | ✅ Same |
+| Production Order | `productionOrderCode` (new) | `productionOrderCode` (new) | ✅ Same |
+| Operator | `operatorId` (new) | `operatorId` (new) | ✅ Same |
+| Batch | `batchNumber` (new) | `batchNumber` (new) | ✅ Same |
+
+---
+
+## 8. Image Handling - Xử lý ảnh
+
+### 8.1. AOI Package (ZIP upload)
+
+```
+package.zip
+├── meta.json
+└── images/
+    ├── image_001.jpg
+    ├── image_002.jpg
+    └── image_003.jpg
+```
+
+- **meta.json**: Chứa `measurements[].fileName`
+- **images/**: Folder chứa các file ảnh
+- **Image URL**: `/api/aoi/image/{packageId}/{fileName}`
+
+### 8.2. submitInspection (Base64 inline)
+
+```json
+{
+  "measurements": [
+    {
+      "pointId": "POINT-001",
+      "imageBase64": "data:image/jpeg;base64,/9j/4AAQ..."
+    }
+  ]
+}
+```
+
+- **imageBase64**: Ảnh được encode base64 inline trong JSON
+- **Image URL**: Hệ thống lưu substring 100 chars đầu trong DB
+
+---
+
+## 9. Backward Compatibility - Tương thích ngược
+
+Hệ thống **vẫn chấp nhận** cấu trúc cũ:
+
+### Legacy meta.json (vẫn hoạt động)
+
+```json
+{
+  "serialNumber": "SN123",
+  "productModel": "PCB-V1",
+  "factory": "FACTORY-HN",       // Old field
+  "line": "LINE-3",              // Old field
+  "points": [                     // Old field name
+    {
+      "code": "R1",               // Old field name
+      "value": 1023.5,            // Old field name
+      "fileName": "image_001.jpg",
+      "result": "OK"
+    }
+  ]
+}
+```
+
+**Normalization logic:**
+1. `measurements` field missing → use `points`
+2. `factoryCode` missing → use `factory`
+3. `lineCode` missing → use `line`
+4. `pointId` missing → use `pointCode` → use `code`
+5. `measuredValue` missing → use `value`
+
+---
+
+## 10. Benefits - Lợi ích của đồng bộ
+
+### ✅ Consistency (Nhất quán)
+- Cùng một field names giữa 2 API
+- Client code dễ maintain
+
+### ✅ Traceability (Khả năng truy vết)
+- Đầy đủ enterprise hierarchy (company → factory → workshop → line → stage)
+- Production context (production order, operator, batch)
+- Dễ dàng query history theo bất kỳ level nào
+
+### ✅ Flexibility (Linh hoạt)
+- Hỗ trợ cả 2 phương thức: ZIP upload và base64 inline
+- Backward compatible với cấu trúc cũ
+- Auto-calculation cho summary và overallResult
+
+### ✅ Standardization (Tiêu chuẩn hóa)
+- Enum values: `"OK" | "NG" | "NTF"`
+- ISO 8601 datetime format
+- Consistent point identification: pointId → pointCode → code
+
+---
+
+## 11. Migration Guide - Hướng dẫn chuyển đổi
+
+### Client cũ (Old structure) → Client mới (New structure)
+
+```diff
+{
+  "serialNumber": "SN123",
+  "productModel": "PCB-V1",
+- "factory": "FACTORY-HN",
++ "factoryCode": "FACTORY-HN",
+- "line": "LINE-3",
++ "lineCode": "LINE-3",
++ "workshopCode": "WORKSHOP-SMT",
++ "stageCode": "STAGE-AOI",
++ "companyCode": "COMPANY-A",
++ "productionOrderCode": "PO-2024-001",
++ "operatorId": "OP-0023",
++ "batchNumber": "BATCH-2024-001",
+  
+- "points": [
++ "measurements": [
+    {
+-     "code": "R1",
++     "pointId": "POINT-001",
++     "pointCode": "R1",
+-     "value": 1023.5,
++     "measuredValue": 1023.5,
+      "fileName": "image_001.jpg",
+-     "result": "OK"
++     "result": "OK",
++     "unit": "Ω",
++     "remark": "In spec"
+    }
+  ]
+}
+```
+
+---
+
+## 12. Query Examples - Ví dụ truy vấn
+
+### Tìm tất cả inspection của một production order
+
+```sql
+SELECT * FROM product_inspections
+WHERE production_order_code = 'PO-2024-0115-001'
+ORDER BY inspection_time DESC;
+```
+
+### Tìm inspection theo enterprise hierarchy
+
+```sql
+SELECT * FROM product_inspections
+WHERE company_code = 'COMPANY-A'
+  AND factory_code = 'FACTORY-HN'
+  AND workshop_code = 'WORKSHOP-SMT'
+  AND line_code = 'LINE-3'
+  AND stage_code = 'STAGE-AOI'
+ORDER BY inspection_time DESC;
+```
+
+### Tìm tất cả NG inspections của một operator
+
+```sql
+SELECT * FROM product_inspections
+WHERE operator_id = 'OP-0023'
+  AND overall_result = 'NG'
+ORDER BY inspection_time DESC;
+```
+
+### Tìm tất cả measurement results theo batch
+
+```sql
+SELECT pi.batch_number, pi.serial_number, mr.measured_value, mr.result
+FROM product_inspections pi
+JOIN measurement_results mr ON mr.inspection_id = pi.id
+WHERE pi.batch_number = 'BATCH-2024-001'
+ORDER BY pi.inspection_time, mr.id;
+```
+
+---
+
+## 13. Validation Rules - Quy tắc validation
+
+### Required fields
+- ✅ `serialNumber` (string, min 1 char)
+- ✅ `productModel` (string, min 1 char)
+- ✅ `measurements` array (min 1 item) hoặc `points` array
+
+### Optional but recommended
+- `companyCode`, `factoryCode`, `workshopCode`, `lineCode`, `stageCode`
+- `productionOrderCode`, `operatorId`, `batchNumber`
+- `inspectionTime` (ISO 8601 datetime)
+- `overallResult` (auto-calculated if missing)
+
+### Measurement point rules
+- Mỗi point phải có `fileName` (AOI package) hoặc `imageBase64` (submitInspection)
+- `pointId` hoặc `pointCode` hoặc `code` (at least one)
+- `result` phải là `"OK"` | `"NG"` | `"NTF"`
+
+---
+
+## 14. FAQ
+
+### Q1: Có cần thay đổi client code ngay không?
+**A:** Không bắt buộc. Hệ thống vẫn hỗ trợ cấu trúc cũ (backward compatible). Nhưng **khuyến nghị migrate** để có đầy đủ features mới.
+
+### Q2: `measurements` và `points` khác gì nhau?
+**A:** 
+- `measurements`: Cấu trúc mới, đồng bộ với submitInspection, có thêm field `pointId`, `measuredValue`, `remark`
+- `points`: Cấu trúc cũ, vẫn hoạt động nhưng thiếu một số fields mới
+
+### Q3: Nếu gửi cả `measurements` và `points` thì sao?
+**A:** Hệ thống ưu tiên `measurements`. Field `points` bị ignore.
+
+### Q4: `inspectionTime` và `startedAt` khác gì?
+**A:** Giống nhau, chỉ là tên khác nhau để tương thích:
+- `inspectionTime`: submitInspection (tRPC)
+- `startedAt`: AOI package (old field)
+- Hệ thống ưu tiên `inspectionTime`
+
+### Q5: Có thể tìm history theo production order không?
+**A:** Có! Dùng field `productionOrderCode` → Query `product_inspections.production_order_code`.
+
+### Q6: Image URL format như thế nào?
+**A:**
+- AOI Package: `/api/aoi/image/{packageId}/{fileName}`
+- submitInspection: Chỉ lưu snippet base64 trong DB (100 chars)
+
+---
+
+## 15. Contact & Support
+
+Nếu có câu hỏi hoặc cần hỗ trợ về API structure:
+
+1. Xem chi tiết trong source code:
+   - `server/routers/aoiPackageRouter.ts` (AOI Package API)
+   - `server/routers.ts` (submitInspection API)
+   
+2. Kiểm tra schema validation:
+   - Search `metaJsonSchema` trong aoiPackageRouter.ts
+   - Search `submitInspection` input schema trong routers.ts
+
+3. Test examples:
+   - `docs/API_REFERENCE.md`
+   - `test-api.mjs`
+
+---
+
+**Last Updated:** 2024-01-15  
+**Version:** 2.0 (Unified Structure)

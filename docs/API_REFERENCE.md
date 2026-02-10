@@ -496,7 +496,12 @@ Chạy báo cáo ngay lập tức.
 API cho máy AVI/AOI gửi dữ liệu inspection và đồng bộ điểm đo.
 
 ### 10.1 machineApi.submitInspection
-Gửi kết quả inspection sau mỗi chu kỳ.
+Gửi kết quả inspection sau mỗi chu kỳ. **API này đã được đồng bộ hóa với AOI Package API** (xem [UNIFIED_API_STRUCTURE.md](./UNIFIED_API_STRUCTURE.md)).
+
+**⚠️ Important Fix (Feb 2026):** 
+- Trước đây: Measurement với pointId/pointCode không tồn tại trong hệ thống sẽ bị **bỏ qua hoàn toàn**
+- **Bây giờ:** Measurement vẫn được **lưu với pointDefId = 0** ngay cả khi point definition chưa tồn tại
+- **Lợi ích:** Không mất dữ liệu, có thể map point definition sau, log warning để admin biết
 
 **Type:** Mutation  
 **Auth:** Machine API Key hoặc `machineCode`
@@ -504,33 +509,89 @@ Gửi kết quả inspection sau mỗi chu kỳ.
 **Input:**
 ```typescript
 {
+  // Authentication
   apiKey?: string;
   machineCode?: string;
-  serialNumber: string;
-  productModel?: string;
-  batchNumber?: string;
-  overallResult: "OK" | "NG";
-  inspectionTime?: string; // ISO 8601
-  cycleTime?: number;
-  companyCode?: string;
-  factoryCode?: string;
-  workshopCode?: string;
-  lineCode?: string;
-  stageCode?: string;
-  productionOrderCode?: string;
-  operatorId?: string;
+  
+  // Product identification (REQUIRED)
+  serialNumber: string;          // Số serial sản phẩm (BẮT BUỘC)
+  productModel?: string;          // Model sản phẩm
+  batchNumber?: string;           // Số lô sản xuất
+  
+  // Inspection timing
+  inspectionTime?: string;        // ISO 8601 datetime
+  cycleTime?: number;             // Thời gian chu kỳ (giây)
+  
+  // Enterprise hierarchy (NEW - đồng bộ với AOI Package)
+  companyCode?: string;           // Mã tập đoàn/công ty
+  factoryCode?: string;           // Mã nhà máy
+  workshopCode?: string;          // Mã nhà xưởng
+  lineCode?: string;              // Mã dây chuyền
+  stageCode?: string;             // Mã công đoạn
+  
+  // Production context (NEW - đồng bộ với AOI Package)
+  productionOrderCode?: string;   // Mã lệnh sản xuất
+  operatorId?: string;            // Mã công nhân vận hành
+  
+  // Overall result (optional - auto-calculated from measurements)
+  overallResult?: "OK" | "NG" | "NTF";
+  
+  // Measurements - UNIFIED structure (đồng bộ với AOI Package)
   measurements: Array<{
-    pointId?: string;
-    pointCode?: string;
-    measuredValue?: number | string;
-    result: "OK" | "NG";
-    remark?: string;
-    imageBase64?: string; // data URL hoặc raw base64
+    pointId?: string;             // ID điểm đo (khuyến nghị)
+    pointCode?: string;           // Mã điểm đo (fallback)
+    measuredValue?: number | string;  // Giá trị đo
+    result: "OK" | "NG" | "NTF";  // Kết quả điểm đo
+    remark?: string;              // Ghi chú
+    imageBase64?: string;         // Ảnh base64 inline (data URL hoặc raw)
   }>;
 }
 ```
 
-**Response:** `{ success: true; inspectionId: number; }
+**Response:** `{ success: true; inspectionId: number; }`
+
+**Example Request:**
+```json
+{
+  "machineCode": "AOI-LINE1-01",
+  "apiKey": "your-api-key",
+  
+  "serialNumber": "SN-20240115-001",
+  "productModel": "PCB-V2-Standard",
+  "batchNumber": "BATCH-2024-001",
+  
+  "inspectionTime": "2024-01-15T10:30:00Z",
+  "cycleTime": 150.5,
+  
+  "companyCode": "COMPANY-A",
+  "factoryCode": "FACTORY-HN",
+  "workshopCode": "WORKSHOP-SMT",
+  "lineCode": "LINE-3",
+  "stageCode": "STAGE-AOI",
+  
+  "productionOrderCode": "PO-2024-0115-001",
+  "operatorId": "OP-0023",
+  
+  "measurements": [
+    {
+      "pointId": "POINT-001",
+      "pointCode": "R1-IC1-PIN1",
+      "measuredValue": 1023.5,
+      "result": "OK",
+      "remark": "In spec",
+      "imageBase64": "data:image/jpeg;base64,/9j/4AAQ..."
+    },
+    {
+      "pointId": "POINT-002",
+      "pointCode": "R2-IC2-PIN5",
+      "measuredValue": 0,
+      "result": "NG",
+      "remark": "Short circuit - Replace IC2",
+      "imageBase64": "data:image/jpeg;base64,/9j/4AAQ..."
+    }
+  ]
+}
+```
 
 ### 10.2 machineApi.uploadImage
 Đính kèm lại ảnh cho một measurement sau khi đã gửi inspection.
@@ -609,7 +670,265 @@ Gửi kết quả inspection sau mỗi chu kỳ.
 
 ---
 
-## Error Codes
+## 11. AOI Package Upload (aoiPackage)
+
+Hệ thống hỗ trợ upload ZIP package từ AOI machines với cấu trúc đồng bộ với submitInspection API. Xem chi tiết: [UNIFIED_API_STRUCTURE.md](./UNIFIED_API_STRUCTURE.md)
+
+### 11.1 aoiPackage.presign
+Tạo URL upload cho inspection package mới.
+
+**Type:** Mutation  
+**Auth:** Machine API Key  
+**Input:**
+```typescript
+{
+  apiKey: string;
+  machineCode?: string;
+  inspectionId?: string;  // ID từ máy AOI
+  metadata?: {
+    serialNumber?: string;
+    productModel?: string;
+    expectedImages?: number;
+  };
+}
+```
+
+**Response:**
+```typescript
+{
+  success: true;
+  packageId: string;
+  uploadUrl: string;  // URL để upload ZIP file
+}
+```
+
+### 11.2 Upload ZIP File (HTTP POST)
+Upload file ZIP đến URL từ presign.
+
+**Method:** POST  
+**URL:** `{uploadUrl}` từ presign response  
+**Content-Type:** `multipart/form-data`  
+**Body:** ZIP file
+
+**ZIP Structure:**
+```
+package.zip
+├── meta.json          // Required - inspection metadata
+└── images/           // Required - folder chứa ảnh
+    ├── image_001.jpg
+    ├── image_002.jpg
+    └── image_003.jpg
+```
+
+**meta.json Structure (UNIFIED - đồng bộ với submitInspection):**
+```json
+{
+  "machineCode": "AOI-LINE1-01",
+  "inspectionId": "INS-20240115-001",
+  
+  "serialNumber": "SN-20240115-001",
+  "productModel": "PCB-V2-Standard",
+  "batchNumber": "BATCH-2024-001",
+  
+  "inspectionTime": "2024-01-15T10:30:00Z",
+  "startedAt": "2024-01-15T10:30:00Z",
+  "finishedAt": "2024-01-15T10:32:30Z",
+  "cycleTime": 150.5,
+  
+  "companyCode": "COMPANY-A",
+  "factoryCode": "FACTORY-HN",
+  "workshopCode": "WORKSHOP-SMT",
+  "lineCode": "LINE-3",
+  "stageCode": "STAGE-AOI",
+  
+  "productionOrderCode": "PO-2024-0115-001",
+  "operatorId": "OP-0023",
+  
+  "overallResult": "NG",
+  
+  "measurements": [
+    {
+      "pointId": "POINT-001",
+      "pointCode": "R1-IC1-PIN1",
+      "name": "IC1 Pin 1 Resistance",
+      "fileName": "image_001.jpg",
+      "result": "OK",
+      "measuredValue": 1023.5,
+      "unit": "Ω",
+      "remark": "In spec"
+    },
+    {
+      "pointId": "POINT-002",
+      "pointCode": "R2-IC2-PIN5",
+      "name": "IC2 Pin 5 Resistance",
+      "fileName": "image_002.jpg",
+      "result": "NG",
+      "measuredValue": 0,
+      "unit": "Ω",
+      "remark": "Short circuit - Replace IC2"
+    }
+  ],
+  
+  "summary": {
+    "totalPoints": 2,
+    "ok": 1,
+    "ng": 1,
+    "ntf": 0
+  }
+}
+```
+
+**Legacy meta.json (vẫn hỗ trợ - backward compatible):**
+```json
+{
+  "inspectionId": "INS-20240115-001",
+  "serialNumber": "SN-20240115-001",
+  "productModel": "PCB-V2-Standard",
+  "factory": "FACTORY-HN",
+  "line": "LINE-3",
+  "machineCode": "AOI-LINE1-01",
+  "startedAt": "2024-01-15T10:30:00Z",
+  "finishedAt": "2024-01-15T10:32:30Z",
+  "points": [
+    {
+      "code": "R1",
+      "name": "Resistance 1",
+      "fileName": "image_001.jpg",
+      "result": "OK",
+      "value": 1023.5,
+      "unit": "Ω"
+    }
+  ],
+  "summary": {
+    "totalPoints": 1,
+    "ok": 1,
+    "ng": 0
+  }
+}
+```
+
+### 11.3 aoiPackage.commit
+Xác nhận package đã upload hoàn tất và parse dữ liệu.
+
+**Type:** Mutation  
+**Auth:** Machine API Key  
+**Input:**
+```typescript
+{
+  apiKey: string;
+  packageId: string;
+}
+```
+
+**Response:**
+```typescript
+{
+  success: true;
+  packageId: string;
+  inspectionId: number;  // ID của productInspection được tạo
+  status: "committed";
+  stats: {
+    totalPoints: number;
+    okCount: number;
+    ngCount: number;
+    imageCount: number;
+  };
+  imageUrls: string[];  // URLs của ảnh đã upload
+}
+```
+
+### 11.4 aoiPackage.getImage
+Lấy ảnh từ package (internal use).
+
+**Type:** Query  
+**Auth:** Protected  
+**Input:**
+```typescript
+{
+  packageId: string;
+  fileName: string;
+}
+```
+
+**Response:** Binary image data
+
+**URL Format:** `/api/aoi/image/{packageId}/{fileName}`
+
+### 11.5 Field Mapping - So sánh submitInspection vs AOI Package
+
+| Field | submitInspection | AOI meta.json | Notes |
+|-------|------------------|---------------|-------|
+| **Point ID** | `measurements[].pointId` | `measurements[].pointId` | Unified ✅ |
+| **Point Code** | `measurements[].pointCode` | `measurements[].pointCode` | Unified ✅ |
+| **Value** | `measurements[].measuredValue` | `measurements[].measuredValue` | Unified ✅ |
+| **Result** | `measurements[].result` | `measurements[].result` | Unified ✅ |
+| **Remark** | `measurements[].remark` | `measurements[].remark` | Unified ✅ |
+| **Image** | `measurements[].imageBase64` | `measurements[].fileName` | Different method |
+| **Factory** | `factoryCode` | `factoryCode` | Unified ✅ |
+| **Line** | `lineCode` | `lineCode` | Unified ✅ |
+| **Workshop** | `workshopCode` | `workshopCode` | Unified ✅ |
+| **Stage** | `stageCode` | `stageCode` | Unified ✅ |
+| **Batch** | `batchNumber` | `batchNumber` | Unified ✅ |
+| **Prod. Order** | `productionOrderCode` | `productionOrderCode` | Unified ✅ |
+| **Operator** | `operatorId` | `operatorId` | Unified ✅ |
+
+**Benefits of Unified Structure:**
+- ✅ Same field names → Easy client code
+- ✅ Consistent history queries
+- ✅ Full traceability (company → factory → workshop → line → stage)
+- ✅ Backward compatible với legacy structure
+
+---
+
+## 12. Code Examples
+
+Hệ thống cung cấp code examples đầy đủ cho nhiều ngôn ngữ lập trình:
+
+### 📘 C# (.NET)
+**File:** [examples/CSharp_API_Examples.md](./examples/CSharp_API_Examples.md)
+
+**Includes:**
+- ✅ Submit Inspection with tRPC
+- ✅ AOI Package Upload (Presign → Upload → Commit)
+- ✅ Image conversion to Base64
+- ✅ Machine Heartbeat service
+- ✅ Sync Measurement Points
+- ✅ Rate limiting & error handling
+- ✅ Complete working examples
+
+**Quick Start:**
+```csharp
+var config = new ApiConfig {
+    BaseUrl = "https://your-server.com",
+    MachineCode = "AOI-LINE1-01",
+    ApiKey = "your-api-key"
+};
+
+using var client = new ApiClient(config);
+var service = new InspectionService(client, config);
+
+var inspection = new InspectionData {
+    SerialNumber = "SN-20260210-001",
+    ProductModel = "PCB-V2-Standard",
+    OverallResult = "OK",
+    Measurements = new List<MeasurementData> { ... }
+};
+
+await service.SubmitInspectionAsync(inspection);
+```
+
+### 📗 Python
+**Coming soon:** `examples/Python_API_Examples.md`
+
+### 📙 JavaScript/TypeScript
+**Coming soon:** `examples/JavaScript_API_Examples.md`
+
+### 📕 Java
+**Coming soon:** `examples/Java_API_Examples.md`
+
+---
+
+## 13. Error Codes
 
 | Code | Mô tả |
 |------|-------|
@@ -622,7 +941,7 @@ Gửi kết quả inspection sau mỗi chu kỳ.
 
 ---
 
-## Rate Limiting
+## 14. Rate Limiting
 
 | Endpoint Type | Limit |
 |---------------|-------|
@@ -632,4 +951,58 @@ Gửi kết quả inspection sau mỗi chu kỳ.
 
 ---
 
-*Tài liệu này được tạo tự động. Phiên bản: 1.0.0*
+## 15. Troubleshooting
+
+### Problem: Measurement không được lưu
+
+**Triệu chứng:** 
+- Client gửi measurements với pointId/pointCode
+- Response thành công nhưng không thấy measurement trong DB
+
+**Nguyên nhân (trước Feb 2026):**
+- PointId/pointCode chưa được định nghĩa trong hệ thống
+- Measurement bị skip (không lưu)
+
+**Giải pháp (sau Feb 2026):**
+- ✅ **Fixed:** Measurement vẫn được lưu với pointDefId = 0
+- System log warning: `[submitInspection] Point definition not found for: {pointCode}`
+- Admin có thể map point definition sau bằng cách:
+  1. Tạo point definition với cùng pointCode
+  2. Update measurementResults để link với pointDefId mới
+
+**Cách kiểm tra:**
+```sql
+-- Xem measurements không có point definition
+SELECT * FROM measurement_results
+WHERE point_def_id = 0
+ORDER BY created_at DESC;
+
+-- Xem point codes trong remark
+SELECT remark FROM measurement_results
+WHERE point_def_id = 0 AND remark LIKE 'Point:%';
+```
+
+### Problem: Rate limit exceeded
+
+**Triệu chứng:**
+- HTTP 429 Too Many Requests
+
+**Giải pháp:**
+- Machine API: Max 1000 requests/minute (enough for real-time)
+- Sử dụng heartbeat interval 30-60 seconds
+- Batch measurements trong một request thay vì gửi riêng lẻ
+- Implement exponential backoff
+
+### Problem: Image too large
+
+**Triệu chứng:**
+- Request timeout hoặc 413 Payload Too Large
+
+**Giải pháp:**
+- Resize image trước khi encode base64 (khuyến nghị: 800x600 hoặc nhỏ hơn)
+- Compress JPEG quality: 70-85%
+- Hoặc dùng AOI Package upload (ZIP) thay vì inline base64
+
+---
+
+*Tài liệu này được cập nhật: February 10, 2026 | Version: 2.0*

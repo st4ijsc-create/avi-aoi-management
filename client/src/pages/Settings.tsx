@@ -47,7 +47,8 @@ import {
   FileText,
   LayoutDashboard,
   ShoppingBag,
-  Package
+  Package,
+  Shield
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { ErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBoundary";
@@ -64,6 +65,7 @@ import WorkstationManagement from "@/components/WorkstationManagement";
 import { ProductCategoryManagement } from "@/components/ProductCategoryManagement";
 import { ProductMachineMappingContent } from "@/components/ProductMachineMappingContent";
 import NotificationSoundCustomization from "@/components/NotificationSoundCustomization";
+import { PermissionsManagement } from "@/components/PermissionsManagement";
 import { useState, useEffect } from "react";
 import { useLocation, useSearch } from "wouter";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -992,6 +994,17 @@ export default function Settings() {
                       >
                         <Users className="h-4 w-4" />
                         Phân quyền dữ liệu
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        onClick={() => handleTabChange('permissions')}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                          activeTab === 'permissions' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                        }`}
+                      >
+                        <Shield className="h-4 w-4" />
+                        Phân quyền người dùng
                       </button>
                     )}
                   </div>
@@ -2390,6 +2403,11 @@ export default function Settings() {
           {/* User Assignments Tab */}
           <TabsContent value="user-assignments">
             <UserAssignments />
+          </TabsContent>
+
+          {/* Permissions Tab */}
+          <TabsContent value="permissions">
+            <PermissionsManagement />
           </TabsContent>
 
           {/* Product Categories Tab */}

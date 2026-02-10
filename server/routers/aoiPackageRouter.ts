@@ -244,17 +244,55 @@ async function getOrExtractImage(
 }
 
 // ============================================================
-// Meta.json schema
+// Meta.json schema - Đồng bộ với submitInspection API
 // ============================================================
 const metaJsonSchema = z.object({
-  inspectionId: z.string().optional(),
-  serialNumber: z.string(),
-  productModel: z.string(),
-  factory: z.string().optional(),
-  line: z.string().optional(),
+  // Machine identification (backward compatible)
   machineCode: z.string().optional(),
-  startedAt: z.string().optional(),
-  finishedAt: z.string().optional(),
+  inspectionId: z.string().optional(), // Internal inspection ID from agent
+  
+  // Product information (REQUIRED)
+  serialNumber: z.string(), // Số serial sản phẩm
+  productModel: z.string(), // Model sản phẩm
+  batchNumber: z.string().optional(), // Số lô
+  
+  // Inspection timing
+  startedAt: z.string().optional(), // ISO datetime
+  finishedAt: z.string().optional(), // ISO datetime
+  inspectionTime: z.string().optional(), // Alias for startedAt (submitInspection compat)
+  cycleTime: z.number().optional(), // Thời gian chu kỳ (giây)
+  
+  // Overall result
+  overallResult: z.enum(["OK", "NG", "NTF"]).optional(), // Kết quả tổng thể
+  
+  // Enterprise hierarchy (top-down) - Đồng bộ với submitInspection
+  companyCode: z.string().optional(), // Mã tập đoàn/công ty
+  factoryCode: z.string().optional(), // Mã nhà máy (alias: factory)
+  factory: z.string().optional(), // Backward compatible
+  workshopCode: z.string().optional(), // Mã nhà xưởng
+  lineCode: z.string().optional(), // Mã dây chuyền (alias: line)
+  line: z.string().optional(), // Backward compatible
+  stageCode: z.string().optional(), // Mã công đoạn
+  
+  // Production context
+  productionOrderCode: z.string().optional(), // Mã lệnh sản xuất
+  operatorId: z.string().optional(), // Mã công nhân vận hành
+  
+  // Measurement data - Đồng bộ với submitInspection measurements
+  measurements: z.array(z.object({
+    pointId: z.string().optional(), // ID điểm đo (submitInspection compat)
+    pointCode: z.string().optional(), // Mã điểm đo (backward compatible)
+    code: z.string().optional(), // Alias for pointCode
+    name: z.string().optional(), // Tên điểm đo
+    fileName: z.string(), // Tên file ảnh trong ZIP
+    result: z.enum(["OK", "NG", "NTF"]).optional(), // Kết quả
+    measuredValue: z.union([z.number(), z.string()]).optional(), // Giá trị đo (submitInspection compat)
+    value: z.union([z.number(), z.string()]).optional(), // Alias (backward compatible)
+    unit: z.string().optional(), // Đơn vị
+    remark: z.string().optional(), // Ghi chú
+  })),
+  
+  // Legacy fields (backward compatible)
   points: z.array(z.object({
     code: z.string(),
     name: z.string().optional(),
@@ -262,7 +300,9 @@ const metaJsonSchema = z.object({
     result: z.enum(["OK", "NG", "NTF"]).optional(),
     value: z.union([z.number(), z.string()]).optional(),
     unit: z.string().optional(),
-  })),
+  })).optional(),
+  
+  // Summary (auto-calculated if not provided)
   summary: z.object({
     totalPoints: z.number(),
     ok: z.number(),
@@ -487,15 +527,18 @@ export const aoiPackageRouter = router({
             (name) => name.startsWith("images/") && !name.endsWith("/")
           );
 
+          // Normalize measurements - support both measurements and points (backward compat)
+          const normalizedMeasurements = metaData?.measurements || metaData?.points || [];
+
           // Insert package image records
-          if (metaData?.points) {
-            const imageRecords = metaData.points.map((point) => ({
+          if (normalizedMeasurements.length > 0) {
+            const imageRecords = normalizedMeasurements.map((point) => ({
               packageId: pkg.id,
-              pointCode: point.code,
+              pointCode: point.pointId || point.pointCode || point.code || 'UNKNOWN',
               pointName: point.name || null,
               fileName: point.fileName,
               result: point.result as "OK" | "NG" | "NTF" | undefined,
-              measurementValue: point.value?.toString() || null,
+              measurementValue: (point.measuredValue || point.value)?.toString() || null,
             }));
 
             if (imageRecords.length > 0) {
@@ -503,9 +546,12 @@ export const aoiPackageRouter = router({
             }
           }
 
-          // Link to existing inspection if possible
+          // Create or link to inspection record
           let linkedInspectionId: number | undefined;
+          let createdInspection = false;
+
           if (metaData?.serialNumber) {
+            // Try to find existing inspection
             const inspections = await database
               .select()
               .from(productInspections)
@@ -520,8 +566,92 @@ export const aoiPackageRouter = router({
 
             if (inspections.length > 0) {
               linkedInspectionId = inspections[0].id;
+            } else {
+              // Create new inspection record from AOI package data
+              const inspectionTime = metaData.inspectionTime 
+                ? new Date(metaData.inspectionTime) 
+                : metaData.startedAt 
+                ? new Date(metaData.startedAt) 
+                : new Date();
+              
+              // Determine overall result
+              const overallResult = metaData.overallResult 
+                || (metaData.summary?.ng && metaData.summary.ng > 0 ? "NG" : "OK");
+
+              const [newInspection] = await database
+                .insert(productInspections)
+                .values({
+                  machineId: machine.id,
+                  serialNumber: metaData.serialNumber,
+                  productModel: metaData.productModel || null,
+                  batchNumber: metaData.batchNumber || null,
+                  
+                  // Enterprise hierarchy - prioritize new fields
+                  corporateCode: metaData.companyCode || null,
+                  factoryCode: metaData.factoryCode || metaData.factory || null,
+                  workshopCode: metaData.workshopCode || null,
+                  lineCode: metaData.lineCode || metaData.line || null,
+                  stageCode: metaData.stageCode || null,
+                  
+                  // Production context
+                  productionOrderCode: metaData.productionOrderCode || null,
+                  operatorId: metaData.operatorId || null,
+                  
+                  overallResult: overallResult as "OK" | "NG" | "NTF",
+                  originalResult: overallResult as "OK" | "NG",
+                  inspectionTime: inspectionTime,
+                  cycleTime: metaData.cycleTime ? String(metaData.cycleTime) : null,
+                  createdAt: inspectionTime,
+                  updatedAt: inspectionTime,
+                })
+                .returning({ id: productInspections.id });
+
+              linkedInspectionId = newInspection.id;
+              createdInspection = true;
+
+              // Create measurement results with image URLs pointing to AOI package images
+              // Use normalizedMeasurements (supports both measurements and points fields)
+              if (normalizedMeasurements.length > 0) {
+                const { measurementResults } = await import("../../drizzle/schema");
+                
+                const measurementRecords = normalizedMeasurements
+                  .filter((point) => point.fileName) // Only points with images
+                  .map((point, idx) => {
+                    // Support both new and old field names
+                    const pointCode = point.pointId || point.pointCode || point.code || `Point_${idx + 1}`;
+                    const pointName = point.name || pointCode;
+                    const measuredVal = point.measuredValue !== undefined ? point.measuredValue : point.value;
+                    
+                    return {
+                      inspectionId: linkedInspectionId!,
+                      pointDefId: 0, // No point definition from AOI
+                      measuredValue: measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null,
+                      measuredValueText: measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null,
+                      result: (point.result || "NTF") as "OK" | "NG" | "NTF",
+                      imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
+                      remark: point.remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`,
+                      createdAt: inspectionTime,
+                    };
+                  });
+
+                if (measurementRecords.length > 0) {
+                  await database.insert(measurementResults).values(measurementRecords);
+                }
+              }
             }
           }
+
+          // Calculate summary from measurements if not provided
+          const calculatedSummary = metaData?.summary || {
+            totalPoints: normalizedMeasurements.length,
+            ok: normalizedMeasurements.filter(p => p.result === 'OK').length,
+            ng: normalizedMeasurements.filter(p => p.result === 'NG').length,
+            ntf: normalizedMeasurements.filter(p => !p.result || p.result === 'NTF').length,
+          };
+
+          // Determine overall result
+          const finalOverallResult = metaData?.overallResult 
+            || (calculatedSummary.ng > 0 ? "NG" : "OK");
 
           // Update package record
           await database
@@ -531,14 +661,18 @@ export const aoiPackageRouter = router({
               inspectionId: linkedInspectionId || null,
               serialNumber: metaData?.serialNumber || null,
               productModel: metaData?.productModel || null,
-              factoryCode: metaData?.factory || null,
-              lineCode: metaData?.line || null,
-              overallResult: metaData?.summary?.ng && metaData.summary.ng > 0 ? "NG" : "OK",
-              totalPoints: metaData?.summary?.totalPoints || imageFiles.length,
-              okCount: metaData?.summary?.ok || 0,
-              ngCount: metaData?.summary?.ng || 0,
+              factoryCode: metaData?.factoryCode || metaData?.factory || null,
+              lineCode: metaData?.lineCode || metaData?.line || null,
+              overallResult: finalOverallResult as "OK" | "NG" | "NTF",
+              totalPoints: calculatedSummary.totalPoints,
+              okCount: calculatedSummary.ok,
+              ngCount: calculatedSummary.ng,
               imageCount: imageFiles.length,
-              inspectionTime: metaData?.startedAt ? new Date(metaData.startedAt) : null,
+              inspectionTime: metaData?.inspectionTime 
+                ? new Date(metaData.inspectionTime)
+                : metaData?.startedAt 
+                ? new Date(metaData.startedAt) 
+                : null,
               metaJson: metaData as any,
               committedAt: new Date(),
               uploadedAt: new Date(),
@@ -553,15 +687,16 @@ export const aoiPackageRouter = router({
             packageId: pkg.packageId,
             machineId: machine.id,
             event: "commit_success",
-            message: `Package committed successfully — ${imageFiles.length} images, ${metaData?.summary?.totalPoints || imageFiles.length} points`,
+            message: `Package committed successfully — ${imageFiles.length} images, ${metaData?.summary?.totalPoints || imageFiles.length} points${createdInspection ? ', inspection created' : ', linked to existing inspection'}`,
             source: "agent",
             durationMs: commitDuration,
-            detail: `Serial: ${metaData?.serialNumber || 'N/A'}, Model: ${metaData?.productModel || 'N/A'}, Result: ${metaData?.summary?.ng && metaData.summary.ng > 0 ? 'NG' : 'OK'}, Linked inspection: ${linkedInspectionId || 'none'}`,
+            detail: `Serial: ${metaData?.serialNumber || 'N/A'}, Model: ${metaData?.productModel || 'N/A'}, Result: ${metaData?.summary?.ng && metaData.summary.ng > 0 ? 'NG' : 'OK'}, Inspection ID: ${linkedInspectionId || 'none'}${createdInspection ? ' (NEW)' : ' (EXISTING)'}`,
             metadata: {
               imageCount: imageFiles.length,
               serialNumber: metaData?.serialNumber,
               overallResult: metaData?.summary?.ng && metaData.summary.ng > 0 ? 'NG' : 'OK',
               linkedInspectionId,
+              createdInspection,
             },
           });
 

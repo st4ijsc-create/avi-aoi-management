@@ -14,6 +14,7 @@ import { aiFeedbackRouter } from "./routers/aiFeedbackRouter";
 import { trainingBatchCommentsRouter } from "./routers/trainingBatchCommentsRouter";
 import { mqttClientManagementRouter } from "./routers/mqttClientManagementRouter";
 import { aoiPackageRouter } from "./routers/aoiPackageRouter";
+import { permissionsRouter } from "./routers/permissionsRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -1761,9 +1762,13 @@ const machineApiRouter = router({
       const measurementResults = [];
       const productPointCache: PointDefCache = new Map();
       const machinePointCache: PointDefCache = new Map();
+      const missingPointCodes: string[] = []; // Track missing point definitions
+      
       for (const measurement of input.measurements) {
         const candidateCodes = [measurement.pointId, measurement.pointCode].filter((code): code is string => Boolean(code));
         let pointDef: PointDefRecord | null = null;
+        let usedCode: string | undefined;
+        
         for (const code of candidateCodes) {
           pointDef = await resolveMeasurementPointDefinition(
             code,
@@ -1772,22 +1777,34 @@ const machineApiRouter = router({
             productPointCache,
             machinePointCache,
           );
-          if (pointDef) break;
+          if (pointDef) {
+            usedCode = code;
+            break;
+          }
         }
 
+        // Even if point definition not found, still save measurement with pointDefId = 0
+        // This allows data to be captured even if point is not pre-configured
+        const pointCode = measurement.pointId || measurement.pointCode || 'UNKNOWN';
         if (!pointDef) {
-          continue;
+          missingPointCodes.push(pointCode);
+          console.warn(`[submitInspection] Point definition not found for: ${pointCode} (machine: ${machine.code}, product: ${resolvedProductModelCode || 'N/A'})`);
         }
 
         measurementResults.push({
           inspectionId,
-          pointDefId: pointDef.id,
+          pointDefId: pointDef?.id || 0, // Use 0 if point definition not found
           measuredValue: measurement.measuredValue !== undefined ? String(measurement.measuredValue) : undefined,
           result: measurement.result,
-          remark: measurement.remark,
+          remark: measurement.remark || (pointDef ? undefined : `Point: ${pointCode}`), // Store point code in remark if no definition
           // Store image if provided (will need to upload to S3 in production)
           imageUrl: measurement.imageBase64 ? measurement.imageBase64.substring(0, 100) + '...' : undefined,
         });
+      }
+      
+      // Log summary of missing point definitions
+      if (missingPointCodes.length > 0) {
+        console.warn(`[submitInspection] ${missingPointCodes.length} measurement(s) saved without point definition: ${missingPointCodes.join(', ')}`);
       }
 
       if (measurementResults.length > 0) {
@@ -9175,6 +9192,7 @@ export const appRouter = router({
   trainingBatchComments: trainingBatchCommentsRouter,
   mqttClientManagement: mqttClientManagementRouter,
   aoiPackage: aoiPackageRouter,
+  permissions: permissionsRouter,
 });
 
 export type AppRouter = typeof appRouter;

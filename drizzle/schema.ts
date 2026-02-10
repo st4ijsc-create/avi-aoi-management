@@ -112,6 +112,63 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
 /**
+ * Permissions - Quyền hạn truy cập các module/chức năng
+ */
+export const permissionCategoryEnum = pgEnum("permissioncategoryenum", [
+  "dashboard",
+  "history",
+  "analytics",
+  "reports",
+  "mqtt",
+  "settings",
+  "admin"
+]);
+
+export const permissions = pgTable("permissions", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull(),
+  category: permissionCategoryEnum("category").notNull(),
+  moduleName: varchar("moduleName", { length: 100 }).notNull(), // e.g., "history", "mqtt_monitor", "reports"
+  canView: boolean("canView").default(false).notNull(),
+  canCreate: boolean("canCreate").default(false).notNull(),
+  canEdit: boolean("canEdit").default(false).notNull(),
+  canDelete: boolean("canDelete").default(false).notNull(),
+  canExport: boolean("canExport").default(false).notNull(),
+  customPermissions: json("customPermissions"), // JSON cho permissions đặc biệt
+  grantedBy: integer("grantedBy"), // User ID của người cấp quyền
+  grantedAt: timestamp("grantedAt").defaultNow().notNull(),
+  expiresAt: timestamp("expiresAt"), // Thời gian hết hạn (optional)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_permissions_user").on(table.userId),
+  index("idx_permissions_category").on(table.category),
+  index("idx_permissions_module").on(table.moduleName),
+  // Unique constraint: mỗi user chỉ có 1 permission record cho 1 module
+  uniqueIndex("idx_permissions_user_module").on(table.userId, table.moduleName),
+]);
+
+export type Permission = typeof permissions.$inferSelect;
+export type InsertPermission = typeof permissions.$inferInsert;
+
+/**
+ * User Roles - Nhóm quyền template
+ */
+export const userRoles = pgTable("user_roles", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 100 }).notNull().unique(),
+  description: text("description"),
+  isSystem: boolean("isSystem").default(false).notNull(), // System roles không thể xóa
+  permissions: json("permissions").notNull(), // JSON array của permission templates
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type UserRole = typeof userRoles.$inferSelect;
+export type InsertUserRole = typeof userRoles.$inferInsert;
+
+/**
  * Factory - Nhà máy (thuộc tập đoàn)
  */
 export const factories = pgTable("factories", {

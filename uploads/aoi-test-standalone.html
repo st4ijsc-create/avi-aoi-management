@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AOI Upload Test - Standalone</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      padding: 20px;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: #16213e;
+      border-radius: 8px;
+      padding: 30px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    h1 { color: #0f3460; margin-bottom: 20px; text-align: center; }
+    .form-group { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; color: #aaa; font-size: 14px; }
+    input { 
+      width: 100%; 
+      padding: 10px; 
+      background: #0f3460; 
+      border: 1px solid #533483; 
+      border-radius: 4px; 
+      color: #eee;
+      font-size: 14px;
+    }
+    input:focus { outline: none; border-color: #e94560; }
+    button {
+      width: 100%;
+      padding: 12px;
+      background: linear-gradient(135deg, #e94560 0%, #533483 100%);
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 16px;
+      margin-top: 10px;
+    }
+    button:hover { opacity: 0.9; }
+    button:disabled { background: #555; cursor: not-allowed; }
+    .log {
+      background: #000;
+      color: #0f0;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      max-height: 400px;
+      overflow-y: auto;
+      margin-top: 20px;
+      white-space: pre-wrap;
+    }
+    .error { color: #ff6b6b; }
+    .success { color: #51cf66; }
+    .info { color: #74c0fc; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 AOI Upload Test Client (Standalone)</h1>
+    <p style="text-align: center; color: #888; margin-bottom: 20px;">Test upload từ bất kỳ máy nào trong LAN</p>
+    
+    <div class="form-group">
+      <label>Server URL:</label>
+      <input type="text" id="serverUrl" value="http://172.16.1.250:3001" placeholder="http://172.16.1.250:3001">
+    </div>
+    
+    <div class="form-group">
+      <label>API Key:</label>
+      <input type="text" id="apiKey" value="avi_2642fa98f019d20aacac728270556d11204ebb7aaca2fdd6" placeholder="avi_xxx...">
+    </div>
+    
+    <div class="form-group">
+      <label>Machine Code:</label>
+      <input type="text" id="machineCode" value="FAC-HN-DIP-B-ST3-AOI" placeholder="FAC-HN-DIP-B-ST3-AOI">
+    </div>
+    
+    <button onclick="testConnection()">🔌 Test Connection</button>
+    <button onclick="testUpload()">📤 Test Upload (Mock Data)</button>
+    <button onclick="clearLog()">🗑️ Clear Log</button>
+    
+    <div class="log" id="log"></div>
+  </div>
+
+  <script>
+    function log(message, type = 'info') {
+      const timestamp = new Date().toLocaleTimeString('vi-VN');
+      const logDiv = document.getElementById('log');
+      const className = type === 'error' ? 'error' : type === 'success' ? 'success' : 'info';
+      logDiv.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function clearLog() {
+      document.getElementById('log').innerHTML = '';
+    }
+
+    async function testConnection() {
+      const serverUrl = document.getElementById('serverUrl').value.trim();
+      const apiKey = document.getElementById('apiKey').value.trim();
+      const machineCode = document.getElementById('machineCode').value.trim();
+
+      log(`Testing connection to ${serverUrl}...`, 'info');
+      log(`API Key: ${apiKey.substring(0, 20)}...`, 'info');
+      log(`Machine: ${machineCode}`, 'info');
+
+      try {
+        // Test with a simple tRPC call
+        const response = await fetch(`${serverUrl}/api/trpc/aoiPackage.reportQueueMetrics`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            apiKey: apiKey,
+            machineCode: machineCode,
+            queueSize: 0,
+            pendingBytes: 0
+          })
+        });
+
+        log(`Response status: ${response.status} ${response.statusText}`, 
+             response.ok ? 'success' : 'error');
+        
+        const text = await response.text();
+        log(`Response: ${text.substring(0, 200)}${text.length > 200 ? '...' : ''}`, 
+             response.ok ? 'success' : 'error');
+
+        if (response.ok) {
+          log('✅ Connection successful!', 'success');
+        } else {
+          log('❌ Connection failed!', 'error');
+        }
+      } catch (error) {
+        log(`❌ Error: ${error.message}`, 'error');
+        log('Possible causes:', 'error');
+        log('  - Server not running', 'error');
+        log('  - Wrong URL or port', 'error');
+        log('  - Network/firewall blocking', 'error');
+      }
+    }
+
+    async function testUpload() {
+      const serverUrl = document.getElementById('serverUrl').value.trim();
+      const apiKey = document.getElementById('apiKey').value.trim();
+      const machineCode = document.getElementById('machineCode').value.trim();
+
+      if (!serverUrl || !apiKey || !machineCode) {
+        log('❌ Please fill in all fields', 'error');
+        return;
+      }
+
+      const inspectionId = `TEST-${Date.now()}`;
+      log(`\n=== Starting upload test ===`, 'info');
+      log(`Inspection ID: ${inspectionId}`, 'info');
+
+      try {
+        // Step 1: Create mock data
+        const mockData = JSON.stringify({
+          inspectionId: inspectionId,
+          machineCode: machineCode,
+          timestamp: new Date().toISOString(),
+          result: 'NG',
+          images: 5
+        });
+        const mockBlob = new Blob([mockData], {type: 'application/octet-stream'});
+        log(`Mock data created: ${mockBlob.size} bytes`, 'info');
+
+        // Step 2: Presign
+        log(`\n[1/3] Calling presign...`, 'info');
+        const presignResponse = await fetch(`${serverUrl}/api/trpc/aoiPackage.presign`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            apiKey: apiKey,
+            inspectionId: inspectionId,
+            sizeBytes: mockBlob.size
+          })
+        });
+
+        log(`Presign response: ${presignResponse.status}`, presignResponse.ok ? 'success' : 'error');
+        
+        if (!presignResponse.ok) {
+          const errorText = await presignResponse.text();
+          throw new Error(`Presign failed: ${presignResponse.status} - ${errorText}`);
+        }
+
+        const presignData = await presignResponse.json();
+        const uploadUrl = presignData.result?.data?.uploadUrl;
+        const packageId = presignData.result?.data?.packageId;
+
+        log(`✅ Presign OK - Upload URL: ${uploadUrl}`, 'success');
+
+        // Step 3: Upload
+        log(`\n[2/3] Uploading to ${uploadUrl}...`, 'info');
+        log(`Headers: Content-Type=application/octet-stream, X-API-Key=${apiKey.substring(0,20)}..., X-Machine-Code=${machineCode}`, 'info');
+
+        const uploadResponse = await fetch(`${serverUrl}${uploadUrl}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'X-API-Key': apiKey,
+            'X-Machine-Code': machineCode
+          },
+          body: mockBlob
+        });
+
+        log(`Upload response: ${uploadResponse.status}`, uploadResponse.ok ? 'success' : 'error');
+
+        if (!uploadResponse.ok) {
+          const errorText = await uploadResponse.text();
+          throw new Error(`Upload failed: ${uploadResponse.status} - ${errorText}`);
+        }
+
+        const uploadData = await uploadResponse.json();
+        log(`✅ Upload OK: ${JSON.stringify(uploadData)}`, 'success');
+
+        // Step 4: Commit
+        log(`\n[3/3] Committing package...`, 'info');
+        const commitResponse = await fetch(`${serverUrl}/api/trpc/aoiPackage.commit`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            apiKey: apiKey,
+            packageId: packageId
+          })
+        });
+
+        log(`Commit response: ${commitResponse.status}`, commitResponse.ok ? 'success' : 'error');
+
+        if (!commitResponse.ok) {
+          const errorText = await commitResponse.text();
+          throw new Error(`Commit failed: ${commitResponse.status} - ${errorText}`);
+        }
+
+        const commitData = await commitResponse.json();
+        log(`✅ Commit OK: ${JSON.stringify(commitData)}`, 'success');
+
+        log(`\n🎉 Complete! Package ${packageId} uploaded successfully!`, 'success');
+
+      } catch (error) {
+        log(`\n❌ Upload failed: ${error.message}`, 'error');
+        log(`Check server logs for details`, 'error');
+      }
+    }
+
+    // Auto-log on load
+    window.addEventListener('load', () => {
+      log('AOI Upload Test Client loaded', 'success');
+      log('This page can be opened from any machine in LAN', 'info');
+      log('Click "Test Connection" to verify server connectivity', 'info');
+      log('', 'info');
+    });
+  </script>
+</body>
+</html>
