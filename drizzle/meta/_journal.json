@@ -15,6 +15,13 @@
       "when": 1770708495151,
       "tag": "0001_nice_sinister_six",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1770713767211,
+      "tag": "0002_useful_tusk",
+      "breakpoints": true
     }
   ]
 }

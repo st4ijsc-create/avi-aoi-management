@@ -66,6 +66,7 @@ import { ProductCategoryManagement } from "@/components/ProductCategoryManagemen
 import { ProductMachineMappingContent } from "@/components/ProductMachineMappingContent";
 import NotificationSoundCustomization from "@/components/NotificationSoundCustomization";
 import { PermissionsManagement } from "@/components/PermissionsManagement";
+import { RoleManagement } from "@/components/RoleManagement";
 import { useState, useEffect } from "react";
 import { useLocation, useSearch } from "wouter";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -1005,6 +1006,17 @@ export default function Settings() {
                       >
                         <Shield className="h-4 w-4" />
                         Phân quyền người dùng
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        onClick={() => handleTabChange('roles')}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                          activeTab === 'roles' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                        }`}
+                      >
+                        <Users className="h-4 w-4" />
+                        Quản lý vai trò
                       </button>
                     )}
                   </div>
@@ -2408,6 +2420,11 @@ export default function Settings() {
           {/* Permissions Tab */}
           <TabsContent value="permissions">
             <PermissionsManagement />
+          </TabsContent>
+
+          {/* Roles Tab */}
+          <TabsContent value="roles">
+            <RoleManagement />
           </TabsContent>
 
           {/* Product Categories Tab */}

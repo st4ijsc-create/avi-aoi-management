@@ -3,7 +3,15 @@ import { pgTable, pgEnum, serial, integer, text, timestamp, varchar, decimal, bo
 
 
 // PostgreSQL Enum Definitions
-export const roleEnum = pgEnum("roleenum", ["user", "admin"]);
+export const roleEnum = pgEnum("roleenum", [
+  "admin",           // Full system access
+  "supervisor",      // Workshop supervisor - manage operators and view all data
+  "quality_inspector", // QC specialist - focus on quality control and reports
+  "operator",        // Machine operator - submit inspections, view assigned machines
+  "maintenance",     // Maintenance technician - machine status and logs
+  "viewer",          // Read-only access - dashboards and reports only
+  "user"             // Basic user access (default)
+]);
 export const machineTypeEnum = pgEnum("machinetypeenum", ["AVI", "AOI", "AUTOMATION"]);
 export const operationStatusEnum = pgEnum("operationstatusenum", ["running", "stopped", "error", "maintenance"]);
 export const lifecycleStatusEnum = pgEnum("lifecyclestatusenum", ["development", "active", "eol", "archived"]);

@@ -225,21 +225,22 @@ export default function Layout() {
 
   // Combine machine positions with stats
   const machinesWithStats = useMemo<MachineWithStats[]>(() => {
-    if (!layoutData?.positions || !machines || !machinesStats) return [];
+    if (!layoutData?.positions || !machinesStats) return [];
 
     return layoutData.positions.map(pos => {
-      const machine = machines.find(m => m.id === pos.machineId);
+      // Use image data from positions (joined with machines in server) or fallback to machines query
+      const machineFromList = machines?.find(m => m.id === pos.machineId);
       const stats = machinesStats.find(s => s.machine.id === pos.machineId)?.stats || {
         total: 0, ok: 0, ng: 0, ntf: 0, yieldRate: 0
       };
 
       return {
         id: pos.machineId,
-        code: machine?.code || "",
-        name: machine?.name || `Machine ${pos.machineId}`,
-        machineType: machine?.machineType || "UNKNOWN",
-        image2DUrl: machine?.image2DUrl,
-        image3DUrl: machine?.image3DUrl,
+        code: (pos as any).code || machineFromList?.code || "",
+        name: (pos as any).name || machineFromList?.name || `Machine ${pos.machineId}`,
+        machineType: (pos as any).machineType || machineFromList?.machineType || "UNKNOWN",
+        image2DUrl: (pos as any).image2DUrl || machineFromList?.image2DUrl,
+        image3DUrl: (pos as any).image3DUrl || machineFromList?.image3DUrl,
         positionX: pos.positionX,
         positionY: pos.positionY,
         width: pos.width,
@@ -659,7 +660,10 @@ export default function Layout() {
                     >
                       {machinesWithStats.length > 0 ? (
                         machinesWithStats.map((machine) => {
-                          const imageUrl = layoutType === "2D" ? machine.image2DUrl : machine.image3DUrl;
+                          // Fallback logic: use 2D or 3D image based on layoutType, fallback to available image, then default
+                          const preferredImage = layoutType === "2D" ? machine.image2DUrl : machine.image3DUrl;
+                          const fallbackImage = layoutType === "2D" ? machine.image3DUrl : machine.image2DUrl;
+                          const imageUrl = preferredImage || fallbackImage || '/default-machine-2d.svg';
                           const customPos = machinePositions[machine.id];
                           const posX = customPos ? customPos.x : machine.positionX;
                           const posY = customPos ? customPos.y : machine.positionY;

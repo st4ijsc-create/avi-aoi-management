@@ -486,6 +486,14 @@ export async function getStations() {
   return db.select().from(stations).where(eq(stations.isActive, true)).orderBy(stations.orderIndex);
 }
 
+// Get default station (first available station for auto-registration)
+export async function getDefaultStation() {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(stations).where(eq(stations.isActive, true)).orderBy(stations.id).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
 export async function getStationById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
@@ -959,7 +967,25 @@ export async function createMachinePosition(data: InsertMachinePosition) {
 export async function getMachinePositionsByLayout(layoutId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(machinePositions).where(eq(machinePositions.layoutId, layoutId));
+  // Join with machines to get image URLs
+  const result = await db
+    .select({
+      position: machinePositions,
+      machine: machines,
+    })
+    .from(machinePositions)
+    .leftJoin(machines, eq(machinePositions.machineId, machines.id))
+    .where(eq(machinePositions.layoutId, layoutId));
+  
+  // Flatten the result to include machine data directly in position
+  return result.map(r => ({
+    ...r.position,
+    code: r.machine?.code,
+    name: r.machine?.name,
+    machineType: r.machine?.machineType,
+    image2DUrl: r.machine?.image2DUrl,
+    image3DUrl: r.machine?.image3DUrl,
+  }));
 }
 
 export async function updateMachinePosition(id: number, data: Partial<InsertMachinePosition>) {

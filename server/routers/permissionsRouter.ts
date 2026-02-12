@@ -5,10 +5,113 @@ import { eq, and } from "drizzle-orm";
 import { getDb } from "../db";
 import { permissions, users, userRoles, type Permission, type InsertPermission } from "../../drizzle/schema";
 
+// Default role permissions mapping
+const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
+  admin: [
+    // Admin has full access to everything
+    { category: 'dashboard', moduleName: 'dashboard_view', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+    { category: 'dashboard', moduleName: 'dashboard_widgets', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'history', moduleName: 'history_view', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+    { category: 'history', moduleName: 'history_export', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'history', moduleName: 'history_delete', canView: true, canCreate: false, canEdit: false, canDelete: true, canExport: false },
+    { category: 'analytics', moduleName: 'analytics_view', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_advanced', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
+    { category: 'reports', moduleName: 'reports_view', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+    { category: 'reports', moduleName: 'reports_create', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'reports', moduleName: 'reports_schedule', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'reports', moduleName: 'reports_export', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'mqtt', moduleName: 'mqtt_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'mqtt', moduleName: 'mqtt_configure', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'mqtt', moduleName: 'mqtt_logs', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'settings', moduleName: 'settings_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'settings', moduleName: 'settings_factory', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'settings', moduleName: 'settings_machines', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'settings', moduleName: 'settings_users', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'settings', moduleName: 'settings_alerts', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'admin', moduleName: 'admin_panel', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+    { category: 'admin', moduleName: 'admin_logs', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'admin', moduleName: 'admin_permissions', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'admin', moduleName: 'admin_system', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+  ],
+  supervisor: [
+    // Supervisor can view and manage most things except admin functions
+    { category: 'dashboard', moduleName: 'dashboard_view', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: true },
+    { category: 'dashboard', moduleName: 'dashboard_widgets', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'history', moduleName: 'history_view', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: true },
+    { category: 'history', moduleName: 'history_export', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_advanced', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'reports', moduleName: 'reports_view', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
+    { category: 'reports', moduleName: 'reports_create', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    { category: 'reports', moduleName: 'reports_schedule', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    { category: 'reports', moduleName: 'reports_export', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'mqtt', moduleName: 'mqtt_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'settings', moduleName: 'settings_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'settings', moduleName: 'settings_alerts', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+  ],
+  quality_inspector: [
+    // Quality inspector focuses on inspection data and quality control
+    { category: 'dashboard', moduleName: 'dashboard_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'history', moduleName: 'history_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'history', moduleName: 'history_export', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_advanced', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'reports', moduleName: 'reports_view', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: true },
+    { category: 'reports', moduleName: 'reports_create', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
+    { category: 'reports', moduleName: 'reports_export', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'settings', moduleName: 'settings_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'settings', moduleName: 'settings_alerts', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+  ],
+  operator: [
+    // Operator can view assigned machines and submit inspection data
+    { category: 'dashboard', moduleName: 'dashboard_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'history', moduleName: 'history_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+  ],
+  maintenance: [
+    // Maintenance can view machine status and logs
+    { category: 'dashboard', moduleName: 'dashboard_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'history', moduleName: 'history_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'history', moduleName: 'history_export', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'mqtt', moduleName: 'mqtt_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'mqtt', moduleName: 'mqtt_logs', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'settings', moduleName: 'settings_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'settings', moduleName: 'settings_machines', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+  ],
+  viewer: [
+    // Viewer has read-only access to dashboards and reports
+    { category: 'dashboard', moduleName: 'dashboard_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'history', moduleName: 'history_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'analytics', moduleName: 'analytics_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'reports', moduleName: 'reports_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+  ],
+  user: [
+    // Basic user access
+    { category: 'dashboard', moduleName: 'dashboard_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'history', moduleName: 'history_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+  ]
+};
+
 // Admin procedure - only admin users can access
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
+  }
+  return next({ ctx });
+});
+
+// Supervisor procedure - admin or supervisor can access
+const supervisorProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (ctx.user.role !== 'admin' && ctx.user.role !== 'supervisor') {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Supervisor access required' });
+  }
+  return next({ ctx });
+});
+
+// Quality inspector procedure - admin, supervisor, or quality_inspector can access
+const qualityProcedure = protectedProcedure.use(({ ctx, next }) => {
+  const allowedRoles = ['admin', 'supervisor', 'quality_inspector'];
+  if (!allowedRoles.includes(ctx.user.role)) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Quality inspector access required' });
   }
   return next({ ctx });
 });
@@ -25,6 +128,166 @@ const permissionCategoryEnum = z.enum([
 ]);
 
 export const permissionsRouter = router({
+  // ============ ROLE MANAGEMENT ============
+  
+  // List all available role types
+  listRoleTypes: protectedProcedure
+    .query(() => {
+      return [
+        {
+          value: 'admin',
+          label: 'Admin',
+          description: 'Full system access - can manage everything',
+          icon: 'shield-check',
+          color: 'red'
+        },
+        {
+          value: 'supervisor',
+          label: 'Supervisor',
+          description: 'Workshop supervisor - can view all data and manage operators',
+          icon: 'users',
+          color: 'blue'
+        },
+        {
+          value: 'quality_inspector',
+          label: 'Quality Inspector',
+          description: 'Quality control specialist - can view and export data, manage quality alerts',
+          icon: 'clipboard-check',
+          color: 'green'
+        },
+        {
+          value: 'operator',
+          label: 'Operator',
+          description: 'Machine operator - can view assigned machines and submit data',
+          icon: 'user-cog',
+          color: 'purple'
+        },
+        {
+          value: 'maintenance',
+          label: 'Maintenance',
+          description: 'Maintenance technician - can view machine status and logs',
+          icon: 'wrench',
+          color: 'orange'
+        },
+        {
+          value: 'viewer',
+          label: 'Viewer',
+          description: 'Read-only access - can only view dashboards and reports',
+          icon: 'eye',
+          color: 'gray'
+        },
+        {
+          value: 'user',
+          label: 'User',
+          description: 'Basic user access',
+          icon: 'user',
+          color: 'slate'
+        }
+      ];
+    }),
+
+  // Update user role  
+  updateUserRole: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      role: z.enum(['admin', 'supervisor', 'quality_inspector', 'operator', 'maintenance', 'viewer', 'user'])
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      
+      const targetUser = await db.query.users.findFirst({
+        where: eq(users.id, input.userId)
+      });
+      
+      if (!targetUser) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+      }
+      
+      await db
+        .update(users)
+        .set({
+          role: input.role,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, input.userId));
+      
+      return { success: true, userId: input.userId, newRole: input.role };
+    }),
+
+  // Get role statistics
+  getRoleStatistics: adminProcedure
+    .query(async () => {
+      const db = await getDb();
+      const allUsers = await db.select({ role: users.role }).from(users);
+      
+      const stats = allUsers.reduce((acc: Record<string, number>, user: any) => {
+        acc[user.role] = (acc[user.role] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      
+      return stats;
+    }),
+
+  // Get default permissions for a role
+  getDefaultPermissionsForRole: adminProcedure
+    .input(z.object({
+      role: z.enum(['admin', 'supervisor', 'quality_inspector', 'operator', 'maintenance', 'viewer', 'user'])
+    }))
+    .query(({ input }) => {
+      return DEFAULT_ROLE_PERMISSIONS[input.role] || [];
+    }),
+
+  // Apply default permissions to user based on role
+  applyRolePermissions: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      role: z.enum(['admin', 'supervisor', 'quality_inspector', 'operator', 'maintenance', 'viewer', 'user'])
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      
+      // Get default permissions for role
+      const defaultPerms = DEFAULT_ROLE_PERMISSIONS[input.role] || [];
+      
+      // Delete existing permissions
+      await db
+        .delete(permissions)
+        .where(eq(permissions.userId, input.userId));
+      
+      // Insert new default permissions
+      if (defaultPerms.length > 0) {
+        await db
+          .insert(permissions)
+          .values(
+            defaultPerms.map((perm: any) => ({
+              userId: input.userId,
+              category: perm.category,
+              moduleName: perm.moduleName,
+              canView: perm.canView,
+              canCreate: perm.canCreate,
+              canEdit: perm.canEdit,
+              canDelete: perm.canDelete,
+              canExport: perm.canExport,
+              grantedBy: ctx.user.id,
+              grantedAt: new Date(),
+            }))
+          );
+      }
+      
+      // Update user role
+      await db
+        .update(users)
+        .set({
+          role: input.role,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, input.userId));
+      
+      return { success: true, permissionsApplied: defaultPerms.length };
+    }),
+
+  // ============ EXISTING PERMISSIONS CRUD ============
+  
   // Get all users with their permissions
   listUsersWithPermissions: adminProcedure
     .query(async () => {

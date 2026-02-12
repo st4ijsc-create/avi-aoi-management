@@ -880,7 +880,246 @@ Lấy ảnh từ package (internal use).
 
 ---
 
-## 12. Code Examples
+## 12. External Machine Registration API
+
+API cho phép AVI/AOI Client tự động đăng ký máy vào hệ thống mà không cần tạo thủ công trên web dashboard.
+
+**Base URL:** `/api/external`  
+**Authentication:** Master API Key (Header: `X-Master-Key`)
+
+### 12.1 Authentication
+
+Tất cả requests đến External API đều yêu cầu header `X-Master-Key`:
+
+```http
+X-Master-Key: <your-master-api-key>
+```
+
+Master API Key được cấu hình trong `.env`:
+```env
+MASTER_API_KEY=your_secure_master_key_here
+```
+
+**Error Response (401):**
+```json
+{
+  "error": "Unauthorized",
+  "message": "Invalid or missing Master API Key"
+}
+```
+
+### 12.2 POST /api/external/machines/register
+
+Đăng ký máy mới hoặc lấy thông tin máy đã tồn tại. Phương thức này là **idempotent** - gọi nhiều lần với cùng `code` sẽ trả về cùng kết quả.
+
+**Request:**
+```http
+POST /api/external/machines/register
+Content-Type: application/json
+X-Master-Key: your_master_key
+
+{
+  "code": "FAC-HN-AOI-01",
+  "name": "AOI Machine Line 01",     // Optional, default = code
+  "machineType": "AOI"               // Optional: AOI, SPI, AVI (default: AOI)
+}
+```
+
+**Input Schema:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `code` | string | ✅ Yes | Unique machine code |
+| `name` | string | ❌ No | Display name (default: same as code) |
+| `machineType` | string | ❌ No | Machine type: `AOI`, `SPI`, `AVI` (default: `AOI`) |
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "created": true,
+  "machine": {
+    "id": 45,
+    "code": "FAC-HN-AOI-01",
+    "name": "AOI Machine Line 01",
+    "machineType": "AOI",
+    "apiKey": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "stationId": 1
+  }
+}
+```
+
+**Response Fields:**
+| Field | Description |
+|-------|-------------|
+| `success` | Always `true` on success |
+| `created` | `true` = new machine created, `false` = existing machine returned |
+| `machine.apiKey` | API key for machine authentication (use in `/api/machines/*` endpoints) |
+| `machine.stationId` | Station ID assigned to machine |
+
+**Usage in Client:**
+```csharp
+// C# Example
+var registerRequest = new {
+    code = "FAC-HN-AOI-01",
+    name = "AOI Machine 01",
+    machineType = "AOI"
+};
+
+var response = await httpClient.PostAsJsonAsync(
+    "/api/external/machines/register", 
+    registerRequest
+);
+
+var result = await response.Content.ReadFromJsonAsync<RegisterResponse>();
+
+// Store apiKey for subsequent API calls
+string machineApiKey = result.machine.apiKey;
+```
+
+### 12.3 GET /api/external/machines/by-code/:code
+
+Lấy thông tin máy theo mã code.
+
+**Request:**
+```http
+GET /api/external/machines/by-code/FAC-HN-AOI-01
+X-Master-Key: your_master_key
+```
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "machine": {
+    "id": 45,
+    "code": "FAC-HN-AOI-01",
+    "name": "AOI Machine Line 01",
+    "machineType": "AOI",
+    "apiKey": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "stationId": 1
+  }
+}
+```
+
+**Response (Not Found - 404):**
+```json
+{
+  "success": false,
+  "error": "Machine not found"
+}
+```
+
+### 12.4 GET /api/external/machines
+
+Lấy danh sách tất cả máy trong hệ thống.
+
+**Request:**
+```http
+GET /api/external/machines
+X-Master-Key: your_master_key
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "machines": [
+    {
+      "id": 45,
+      "code": "FAC-HN-AOI-01",
+      "name": "AOI Machine Line 01",
+      "machineType": "AOI",
+      "apiKey": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "stationId": 1
+    },
+    {
+      "id": 46,
+      "code": "FAC-HN-SPI-02",
+      "name": "SPI Machine Line 02",
+      "machineType": "SPI",
+      "apiKey": "b2c3d4e5-f6a7-8901-bcde-f23456789012",
+      "stationId": 1
+    }
+  ]
+}
+```
+
+### 12.5 Complete Integration Flow
+
+**Workflow cho AVI/AOI Client kết nối lần đầu:**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    AVI/AOI Client                       │
+└─────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+         ┌─────────────────────────────────────┐
+         │  POST /api/external/machines/register │
+         │  X-Master-Key: master_key            │
+         │  { code: "MACHINE-001" }             │
+         └─────────────────────────────────────┘
+                           │
+                           ▼
+         ┌─────────────────────────────────────┐
+         │  Response: { machine: { apiKey } }   │
+         │  → Store apiKey locally              │
+         └─────────────────────────────────────┘
+                           │
+                           ▼
+         ┌─────────────────────────────────────┐
+         │  Subsequent calls use Machine API:   │
+         │  POST /api/machines/submit-inspection│
+         │  X-API-Key: <machine_api_key>        │
+         └─────────────────────────────────────┘
+```
+
+**C# Complete Example:**
+```csharp
+public class MachineAutoRegistration
+{
+    private readonly HttpClient _httpClient;
+    private readonly string _masterApiKey;
+    private readonly string _serverUrl;
+    
+    public MachineAutoRegistration(string serverUrl, string masterApiKey)
+    {
+        _serverUrl = serverUrl;
+        _masterApiKey = masterApiKey;
+        _httpClient = new HttpClient();
+        _httpClient.DefaultRequestHeaders.Add("X-Master-Key", masterApiKey);
+    }
+    
+    public async Task<string> RegisterAndGetApiKey(string machineCode)
+    {
+        // Try to get existing machine first
+        var getResponse = await _httpClient.GetAsync(
+            $"{_serverUrl}/api/external/machines/by-code/{machineCode}");
+        
+        if (getResponse.IsSuccessStatusCode)
+        {
+            var existing = await getResponse.Content
+                .ReadFromJsonAsync<MachineResponse>();
+            return existing.machine.apiKey;
+        }
+        
+        // Register new machine
+        var registerResponse = await _httpClient.PostAsJsonAsync(
+            $"{_serverUrl}/api/external/machines/register",
+            new { code = machineCode, machineType = "AOI" }
+        );
+        
+        var result = await registerResponse.Content
+            .ReadFromJsonAsync<RegisterResponse>();
+        
+        return result.machine.apiKey;
+    }
+}
+```
+
+---
+
+## 13. Code Examples
 
 Hệ thống cung cấp code examples đầy đủ cho nhiều ngôn ngữ lập trình:
 
@@ -928,7 +1167,7 @@ await service.SubmitInspectionAsync(inspection);
 
 ---
 
-## 13. Error Codes
+## 14. Error Codes
 
 | Code | Mô tả |
 |------|-------|
@@ -941,7 +1180,7 @@ await service.SubmitInspectionAsync(inspection);
 
 ---
 
-## 14. Rate Limiting
+## 15. Rate Limiting
 
 | Endpoint Type | Limit |
 |---------------|-------|
@@ -951,7 +1190,7 @@ await service.SubmitInspectionAsync(inspection);
 
 ---
 
-## 15. Troubleshooting
+## 16. Troubleshooting
 
 ### Problem: Measurement không được lưu
 
@@ -1005,4 +1244,4 @@ WHERE point_def_id = 0 AND remark LIKE 'Point:%';
 
 ---
 
-*Tài liệu này được cập nhật: February 10, 2026 | Version: 2.0*
+*Tài liệu này được cập nhật: February 10, 2026 | Version: 2.1 - Added External Machine Registration API*

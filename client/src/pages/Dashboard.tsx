@@ -675,7 +675,7 @@ export default function Dashboard() {
     if (!machinesStats) return new Map<string, MachineStats[]>();
     
     type MachineWithHierarchy = {
-      machine: { id: number; code: string; name: string };
+      machine: { id: number; code: string; name: string; image2DUrl?: string | null; image3DUrl?: string | null };
       station: { id: number; name: string; lineId: number } | null;
       line: { id: number; name: string; workshopId: number } | null;
       workshop: { id: number; name: string; factoryId: number } | null;
@@ -687,6 +687,8 @@ export default function Dashboard() {
       id: m.machine.id,
       name: m.machine.name,
       code: m.machine.code,
+      image2DUrl: m.machine.image2DUrl,
+      image3DUrl: m.machine.image3DUrl,
       total: m.stats.total,
       ok: m.stats.ok,
       ng: m.stats.ng,

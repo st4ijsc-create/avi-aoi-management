@@ -151,6 +151,167 @@ async function startServer() {
   });
 
   // ============================================================
+  // External Machine Registration API
+  // Allows AVI/AOI clients to auto-register machines and get API keys
+  // Uses Master API Key for authentication
+  // ============================================================
+  const MASTER_API_KEY = process.env.MASTER_API_KEY || "master_api_key_change_me";
+  
+  // Middleware to validate Master API Key
+  const validateMasterKey = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const providedKey = req.header("x-master-key") || req.header("X-Master-Key") || req.query.masterKey;
+    if (providedKey !== MASTER_API_KEY) {
+      return res.status(401).json({ success: false, message: "Invalid or missing Master API Key" });
+    }
+    next();
+  };
+
+  // POST /api/external/machines/register - Register a new machine or return existing
+  app.post("/api/external/machines/register", validateMasterKey, async (req, res) => {
+    try {
+      const { code, name, machineType, stationId, model, manufacturer, description } = req.body;
+
+      if (!code || !name) {
+        return res.status(400).json({ success: false, message: "code and name are required" });
+      }
+
+      // Validate machineType
+      const validTypes = ["AVI", "AOI", "AUTOMATION"];
+      const type = machineType || "AVI";
+      if (!validTypes.includes(type)) {
+        return res.status(400).json({ success: false, message: `machineType must be one of: ${validTypes.join(", ")}` });
+      }
+
+      const { getMachineByCode, createMachine, getDefaultStation } = await import("../db");
+      const { nanoid } = await import("nanoid");
+
+      // Check if machine already exists
+      let machine = await getMachineByCode(code);
+
+      if (machine) {
+        // Machine exists, return its info
+        console.log(`[External] Machine ${code} already exists, returning existing API key`);
+        return res.json({
+          success: true,
+          created: false,
+          machine: {
+            id: machine.id,
+            code: machine.code,
+            name: machine.name,
+            machineType: machine.machineType,
+            apiKey: machine.apiKey,
+            stationId: machine.stationId,
+          },
+          message: "Machine already exists",
+        });
+      }
+
+      // Create new machine
+      // If stationId not provided, use default station (id: 1) or first available
+      let targetStationId = stationId;
+      if (!targetStationId) {
+        const defaultStation = await getDefaultStation();
+        if (!defaultStation) {
+          return res.status(400).json({ success: false, message: "No station available. Please create a station first or provide stationId." });
+        }
+        targetStationId = defaultStation.id;
+      }
+
+      const apiKey = `mach_${nanoid(32)}`;
+      const machineId = await createMachine({
+        stationId: targetStationId,
+        code,
+        name,
+        machineType: type,
+        model: model || null,
+        manufacturer: manufacturer || null,
+        description: description || null,
+        apiKey,
+      });
+
+      console.log(`[External] New machine registered: ${code} (ID: ${machineId})`);
+
+      res.json({
+        success: true,
+        created: true,
+        machine: {
+          id: machineId,
+          code,
+          name,
+          machineType: type,
+          apiKey,
+          stationId: targetStationId,
+        },
+        message: "Machine registered successfully",
+      });
+    } catch (error: any) {
+      console.error("[External] register-machine error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to register machine" });
+    }
+  });
+
+  // GET /api/external/machines/by-code/:code - Get machine info by code
+  app.get("/api/external/machines/by-code/:code", validateMasterKey, async (req, res) => {
+    try {
+      const { code } = req.params;
+
+      if (!code) {
+        return res.status(400).json({ success: false, message: "Machine code is required" });
+      }
+
+      const { getMachineByCode } = await import("../db");
+      const machine = await getMachineByCode(code);
+
+      if (!machine) {
+        return res.status(404).json({ success: false, message: "Machine not found" });
+      }
+
+      res.json({
+        success: true,
+        machine: {
+          id: machine.id,
+          code: machine.code,
+          name: machine.name,
+          machineType: machine.machineType,
+          apiKey: machine.apiKey,
+          stationId: machine.stationId,
+          model: machine.model,
+          manufacturer: machine.manufacturer,
+          isActive: machine.isActive,
+        },
+      });
+    } catch (error: any) {
+      console.error("[External] get-machine error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to get machine" });
+    }
+  });
+
+  // GET /api/external/machines - List all machines
+  app.get("/api/external/machines", validateMasterKey, async (req, res) => {
+    try {
+      const { getMachines } = await import("../db");
+      const machines = await getMachines();
+
+      res.json({
+        success: true,
+        total: machines.length,
+        machines: machines.map(m => ({
+          id: m.id,
+          code: m.code,
+          name: m.name,
+          machineType: m.machineType,
+          apiKey: m.apiKey,
+          stationId: m.stationId,
+          isActive: m.isActive,
+        })),
+      });
+    } catch (error: any) {
+      console.error("[External] list-machines error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to list machines" });
+    }
+  });
+
+  // ============================================================
   // AOI Package Upload - REST endpoint for binary ZIP upload
   // Agent uploads ZIP directly via this endpoint
   // ============================================================
