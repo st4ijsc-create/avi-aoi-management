@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,6 +54,7 @@ type UserType = {
 };
 
 export default function Users() {
+  const { t } = useTranslation();
   const { user: currentUser } = useAuth();
   const isAdmin = currentUser?.role === "admin";
 
@@ -104,48 +106,48 @@ export default function Users() {
 
   const createMutation = trpc.user.create.useMutation({
     onSuccess: () => {
-      toast.success("Tạo người dùng thành công");
+      toast.success(t('users.createSuccess'));
       setCreateDialogOpen(false);
       resetCreateForm();
       refetchUsers();
     },
     onError: (error) => {
-      toast.error(error.message || "Lỗi khi tạo người dùng");
+      toast.error(error.message || t('users.createError'));
     },
   });
 
   const updateMutation = trpc.user.update.useMutation({
     onSuccess: () => {
-      toast.success("Cập nhật người dùng thành công");
+      toast.success(t('users.updateSuccess'));
       setEditDialogOpen(false);
       setEditingUser(null);
       refetchUsers();
     },
     onError: (error) => {
-      toast.error(error.message || "Lỗi khi cập nhật người dùng");
+      toast.error(error.message || t('users.updateError'));
     },
   });
 
   const updatePasswordMutation = trpc.user.updatePassword.useMutation({
     onSuccess: () => {
-      toast.success("Đổi mật khẩu thành công");
+      toast.success(t('users.passwordChangeSuccess'));
       setPasswordDialogOpen(false);
       setPasswordForm({ newPassword: "", confirmPassword: "" });
     },
     onError: (error) => {
-      toast.error(error.message || "Lỗi khi đổi mật khẩu");
+      toast.error(error.message || t('users.passwordChangeError'));
     },
   });
 
   const deleteMutation = trpc.user.delete.useMutation({
     onSuccess: () => {
-      toast.success("Xóa người dùng thành công");
+      toast.success(t('users.deleteSuccess'));
       setDeleteDialogOpen(false);
       setUserToDelete(null);
       refetchUsers();
     },
     onError: (error) => {
-      toast.error(error.message || "Lỗi khi xóa người dùng");
+      toast.error(error.message || t('users.deleteError'));
     },
   });
 
@@ -165,15 +167,15 @@ export default function Users() {
 
   const handleCreate = async () => {
     if (!createForm.username || !createForm.password || !createForm.name) {
-      toast.error("Vui lòng điền đầy đủ thông tin bắt buộc");
+      toast.error(t('users.fillRequired'));
       return;
     }
     if (createForm.password !== createForm.confirmPassword) {
-      toast.error("Mật khẩu xác nhận không khớp");
+      toast.error(t('users.passwordMismatch'));
       return;
     }
     if (createForm.password.length < 6) {
-      toast.error("Mật khẩu phải có ít nhất 6 ký tự");
+      toast.error(t('users.passwordMinLength'));
       return;
     }
 
@@ -238,11 +240,11 @@ export default function Users() {
     if (!editingUser) return;
     
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      toast.error("Mật khẩu xác nhận không khớp");
+      toast.error(t('users.passwordMismatch'));
       return;
     }
     if (passwordForm.newPassword.length < 6) {
-      toast.error("Mật khẩu phải có ít nhất 6 ký tự");
+      toast.error(t('users.passwordMinLength'));
       return;
     }
 
@@ -292,14 +294,14 @@ export default function Users() {
 
   if (!isAdmin) {
     return (
-      <DashboardLayout title="Người dùng" navItems={navItems}>
+      <DashboardLayout title={t('users.title')} navItems={navItems}>
         <div className="flex items-center justify-center h-[60vh]">
           <Card className="w-full max-w-md">
             <CardContent className="pt-6 text-center">
               <Shield className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Không có quyền truy cập</h3>
+              <h3 className="text-lg font-semibold mb-2">{t('users.noAccess')}</h3>
               <p className="text-muted-foreground">
-                Chỉ Admin mới có thể quản lý người dùng
+                {t('users.adminOnly')}
               </p>
             </CardContent>
           </Card>
@@ -309,13 +311,13 @@ export default function Users() {
   }
 
   return (
-    <DashboardLayout title="Quản lý người dùng" navItems={navItems}>
+    <DashboardLayout title={t('users.management')} navItems={navItems}>
       <div className="space-y-6">
         {/* Stats Cards */}
         <div className="grid gap-4 md:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Tổng người dùng</CardTitle>
+              <CardTitle className="text-sm font-medium">{t('users.totalUsers')}</CardTitle>
               <UsersIcon className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -335,7 +337,7 @@ export default function Users() {
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Đang hoạt động</CardTitle>
+              <CardTitle className="text-sm font-medium">{t('users.active')}</CardTitle>
               <UserCheck className="h-4 w-4 text-green-500" />
             </CardHeader>
             <CardContent>
@@ -346,7 +348,7 @@ export default function Users() {
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Vô hiệu hóa</CardTitle>
+              <CardTitle className="text-sm font-medium">{t('users.disabled')}</CardTitle>
               <UserX className="h-4 w-4 text-red-500" />
             </CardHeader>
             <CardContent>
@@ -362,17 +364,17 @@ export default function Users() {
           <CardHeader>
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
-                <CardTitle>Danh sách người dùng</CardTitle>
-                <CardDescription>Quản lý tài khoản người dùng hệ thống</CardDescription>
+                <CardTitle>{t('users.userList')}</CardTitle>
+                <CardDescription>{t('users.manageAccounts')}</CardDescription>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={() => refetchUsers()}>
                   <RefreshCw className="h-4 w-4 mr-2" />
-                  Làm mới
+                  {t('common.refresh')}
                 </Button>
                 <Button onClick={() => setCreateDialogOpen(true)}>
                   <Plus className="h-4 w-4 mr-2" />
-                  Thêm người dùng
+                  {t('users.addUser')}
                 </Button>
               </div>
             </div>
@@ -383,7 +385,7 @@ export default function Users() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Tìm kiếm theo tên, username, email..."
+                  placeholder={t('users.searchPlaceholder')}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
@@ -394,7 +396,7 @@ export default function Users() {
                   <SelectValue placeholder="Vai trò" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả vai trò</SelectItem>
+                  <SelectItem value="all">{t('users.allRoles')}</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
                   <SelectItem value="user">User</SelectItem>
                 </SelectContent>
@@ -404,9 +406,9 @@ export default function Users() {
                   <SelectValue placeholder="Trạng thái" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả</SelectItem>
-                  <SelectItem value="active">Hoạt động</SelectItem>
-                  <SelectItem value="inactive">Vô hiệu</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
+                  <SelectItem value="active">{t('common.active')}</SelectItem>
+                  <SelectItem value="inactive">{t('users.inactive')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -419,20 +421,20 @@ export default function Users() {
             ) : filteredUsers.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <UsersIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Không tìm thấy người dùng nào</p>
+                <p>{t('users.noUsersFound')}</p>
               </div>
             ) : (
               <div className="rounded-md border overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Người dùng</TableHead>
+                      <TableHead>{t('users.user')}</TableHead>
                       <TableHead>Username</TableHead>
-                      <TableHead>Phòng ban</TableHead>
-                      <TableHead>Vai trò</TableHead>
-                      <TableHead>Trạng thái</TableHead>
-                      <TableHead>Đăng nhập gần nhất</TableHead>
-                      <TableHead className="text-right">Thao tác</TableHead>
+                      <TableHead>{t('users.department')}</TableHead>
+                      <TableHead>{t('users.role')}</TableHead>
+                      <TableHead>{t('common.status')}</TableHead>
+                      <TableHead>{t('users.lastLogin')}</TableHead>
+                      <TableHead className="text-right">{t('common.actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -444,10 +446,10 @@ export default function Users() {
                               {user.name?.charAt(0).toUpperCase() || "U"}
                             </div>
                             <div>
-                              <div className="font-medium">{user.name || "Chưa đặt tên"}</div>
+                              <div className="font-medium">{user.name || t('users.unnamed')}</div>
                               <div className="text-sm text-muted-foreground flex items-center gap-1">
                                 <Mail className="h-3 w-3" />
-                                {user.email || "Chưa có email"}
+                                {user.email || t('users.noEmail')}
                               </div>
                             </div>
                           </div>
@@ -485,7 +487,7 @@ export default function Users() {
                         </TableCell>
                         <TableCell>
                           <Badge variant={user.isActive ? "outline" : "destructive"}>
-                            {user.isActive ? "Hoạt động" : "Vô hiệu"}
+                            {user.isActive ? t('common.active') : t('users.inactive')}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -537,15 +539,15 @@ export default function Users() {
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Thêm người dùng mới</DialogTitle>
+            <DialogTitle>{t('users.addNewUser')}</DialogTitle>
             <DialogDescription>
-              Tạo tài khoản nội bộ với username và mật khẩu
+              {t('users.createAccountDesc')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="username">Tên đăng nhập *</Label>
+                <Label htmlFor="username">{t('users.loginName')} *</Label>
                 <Input
                   id="username"
                   placeholder="username"
@@ -554,7 +556,7 @@ export default function Users() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="name">Họ tên *</Label>
+                <Label htmlFor="name">{t('users.fullName')} *</Label>
                 <Input
                   id="name"
                   placeholder="Nguyễn Văn A"
@@ -565,21 +567,21 @@ export default function Users() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="password">Mật khẩu *</Label>
+                <Label htmlFor="password">{t('users.password')} *</Label>
                 <Input
                   id="password"
                   type="password"
-                  placeholder="Ít nhất 6 ký tự"
+                  placeholder={t('users.minChars')}
                   value={createForm.password}
                   onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Xác nhận mật khẩu *</Label>
+                <Label htmlFor="confirmPassword">{t('users.confirmPassword')} *</Label>
                 <Input
                   id="confirmPassword"
                   type="password"
-                  placeholder="Nhập lại mật khẩu"
+                  placeholder={t('users.reenterPassword')}
                   value={createForm.confirmPassword}
                   onChange={(e) => setCreateForm({ ...createForm, confirmPassword: e.target.value })}
                 />
@@ -597,7 +599,7 @@ export default function Users() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="phone">Số điện thoại</Label>
+                <Label htmlFor="phone">{t('users.phone')}</Label>
                 <Input
                   id="phone"
                   placeholder="0123456789"
@@ -608,26 +610,26 @@ export default function Users() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="department">Phòng ban</Label>
+                <Label htmlFor="department">{t('users.department')}</Label>
                 <Input
                   id="department"
-                  placeholder="Phòng Sản xuất"
+                  placeholder={t('users.departmentPlaceholder')}
                   value={createForm.department}
                   onChange={(e) => setCreateForm({ ...createForm, department: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="position">Chức vụ</Label>
+                <Label htmlFor="position">{t('users.position')}</Label>
                 <Input
                   id="position"
-                  placeholder="Nhân viên QC"
+                  placeholder={t('users.positionPlaceholder')}
                   value={createForm.position}
                   onChange={(e) => setCreateForm({ ...createForm, position: e.target.value })}
                 />
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="role">Vai trò</Label>
+              <Label htmlFor="role">{t('users.role')}</Label>
               <Select
                 value={createForm.role}
                 onValueChange={(v) => setCreateForm({ ...createForm, role: v as "user" | "admin" })}
@@ -636,19 +638,19 @@ export default function Users() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="user">User - Người dùng thường</SelectItem>
-                  <SelectItem value="admin">Admin - Quản trị viên</SelectItem>
+                  <SelectItem value="user">{t('users.roleUser')}</SelectItem>
+                  <SelectItem value="admin">{t('users.roleAdmin')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleCreate} disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Tạo người dùng
+              {t('users.createUser')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -658,15 +660,15 @@ export default function Users() {
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Chỉnh sửa người dùng</DialogTitle>
+            <DialogTitle>{t('users.editUser')}</DialogTitle>
             <DialogDescription>
-              Cập nhật thông tin cho {editingUser?.name || editingUser?.username}
+              {t('users.updateInfoFor', { name: editingUser?.name || editingUser?.username })}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="editName">Họ tên</Label>
+                <Label htmlFor="editName">{t('users.fullName')}</Label>
                 <Input
                   id="editName"
                   value={editForm.name}
@@ -685,7 +687,7 @@ export default function Users() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="editPhone">Số điện thoại</Label>
+                <Label htmlFor="editPhone">{t('users.phone')}</Label>
                 <Input
                   id="editPhone"
                   value={editForm.phone}
@@ -693,7 +695,7 @@ export default function Users() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="editDepartment">Phòng ban</Label>
+                <Label htmlFor="editDepartment">{t('users.department')}</Label>
                 <Input
                   id="editDepartment"
                   value={editForm.department}
@@ -703,7 +705,7 @@ export default function Users() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="editPosition">Chức vụ</Label>
+                <Label htmlFor="editPosition">{t('users.position')}</Label>
                 <Input
                   id="editPosition"
                   value={editForm.position}
@@ -711,7 +713,7 @@ export default function Users() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="editRole">Vai trò</Label>
+                <Label htmlFor="editRole">{t('users.role')}</Label>
                 <Select
                   value={editForm.role}
                   onValueChange={(v) => setEditForm({ ...editForm, role: v as "user" | "admin" })}
@@ -728,7 +730,7 @@ export default function Users() {
               </div>
             </div>
             <div className="flex items-center justify-between">
-              <Label htmlFor="editIsActive">Trạng thái hoạt động</Label>
+              <Label htmlFor="editIsActive">{t('users.activeStatus')}</Label>
               <Switch
                 id="editIsActive"
                 checked={editForm.isActive}
@@ -739,11 +741,11 @@ export default function Users() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleUpdate} disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Cập nhật
+              {t('common.update')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -753,28 +755,28 @@ export default function Users() {
       <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Đổi mật khẩu</DialogTitle>
+            <DialogTitle>{t('users.changePassword')}</DialogTitle>
             <DialogDescription>
-              Đặt mật khẩu mới cho {editingUser?.name || editingUser?.username}
+              {t('users.setNewPasswordFor', { name: editingUser?.name || editingUser?.username })}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="newPassword">Mật khẩu mới</Label>
+              <Label htmlFor="newPassword">{t('users.newPassword')}</Label>
               <Input
                 id="newPassword"
                 type="password"
-                placeholder="Ít nhất 6 ký tự"
+                placeholder={t('users.minChars')}
                 value={passwordForm.newPassword}
                 onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="confirmNewPassword">Xác nhận mật khẩu</Label>
+              <Label htmlFor="confirmNewPassword">{t('users.confirmPassword')}</Label>
               <Input
                 id="confirmNewPassword"
                 type="password"
-                placeholder="Nhập lại mật khẩu mới"
+                placeholder={t('users.reenterNewPassword')}
                 value={passwordForm.confirmPassword}
                 onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
               />
@@ -782,11 +784,11 @@ export default function Users() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPasswordDialogOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleUpdatePassword} disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Đổi mật khẩu
+              {t('users.changePassword')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -796,19 +798,18 @@ export default function Users() {
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Xác nhận xóa người dùng</AlertDialogTitle>
+            <AlertDialogTitle>{t('users.confirmDeleteUser')}</AlertDialogTitle>
             <AlertDialogDescription>
-              Bạn có chắc muốn xóa người dùng "{userToDelete?.name || userToDelete?.username}"?
-              Hành động này không thể hoàn tác.
+              {t('users.confirmDeleteDesc', { name: userToDelete?.name || userToDelete?.username })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-red-500 hover:bg-red-600"
               onClick={confirmDelete}
             >
-              Xóa
+              {t('common.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

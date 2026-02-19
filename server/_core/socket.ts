@@ -1,5 +1,6 @@
 import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
+import { nanoid } from "nanoid";
 import * as db from "../db";
 
 let io: Server | null = null;
@@ -241,22 +242,91 @@ export function initializeSocket(server: HttpServer): Server {
     });
 
     // Admin approves registration
-    socket.on("admin:approve_registration", (data: { socketId: string; machineId: number; apiKey: string }) => {
+    socket.on("admin:approve_registration", async (data: { socketId: string; machineId: number; apiKey?: string }) => {
       const registration = pendingRegistrations.get(data.socketId);
-      if (registration) {
+      if (!registration) {
+        socket.emit("admin:approve_error", { message: "Registration not found or expired" });
+        return;
+      }
+
+      try {
+        // Step 2: Get or generate API Key
+        let apiKey = data.apiKey || "";
+        const existingMachine = await db.getMachineById(data.machineId);
+        if (!existingMachine) {
+          socket.emit("admin:approve_error", { message: `Machine ID ${data.machineId} not found in database` });
+          return;
+        }
+
+        // Generate new API Key if machine doesn't have one
+        if (!apiKey || apiKey.trim() === "") {
+          apiKey = existingMachine.apiKey || `mach_${nanoid(32)}`;
+        }
+
+        // Update machine in DB: set registrationStatus, serialNumber, firmwareVersion, apiKey
+        await db.updateMachine(data.machineId, {
+          registrationStatus: "approved",
+          serialNumber: registration.machineInfo.serialNumber || existingMachine.serialNumber,
+          firmwareVersion: registration.machineInfo.firmwareVersion || existingMachine.firmwareVersion,
+          apiKey,
+          lastSyncAt: new Date(),
+        });
+
         registration.status = "approved";
-        
-        // Notify the machine
+
+        // Step 3: Fetch machine config to send along with approval
+        const machineConfig: Record<string, any> = {
+          machineId: data.machineId,
+          machineCode: existingMachine.code,
+          machineName: existingMachine.name,
+          machineType: existingMachine.machineType,
+          stationId: existingMachine.stationId,
+        };
+
+        // Try to get station/line info for config
+        if (existingMachine.stationId) {
+          try {
+            const lineInfo = await db.getLineByStationId(existingMachine.stationId);
+            if (lineInfo) {
+              machineConfig.lineId = lineInfo.id;
+              machineConfig.lineName = lineInfo.name;
+            }
+          } catch (err) {
+            console.error("[Socket.io] Failed to get line info:", err);
+          }
+        }
+
+        // Notify the machine with API Key + config
         io?.to(data.socketId).emit("machine:registration_approved", {
           machineId: data.machineId,
-          apiKey: data.apiKey,
+          apiKey,
+          config: machineConfig,
           message: "Registration approved. You can now send inspection data.",
         });
-        
+
         // Remove from pending
         pendingRegistrations.delete(data.socketId);
-        
-        console.log(`[Socket.io] Registration approved for ${registration.machineInfo.code} -> Machine ID ${data.machineId}`);
+
+        // Log status change (use 'online' since machine is now approved and connecting)
+        db.createMachineStatusLog({
+          machineId: data.machineId,
+          status: "online",
+          ipAddress: registration.ipAddress,
+        }).catch(err => console.error("[Socket.io] Failed to log approval status:", err));
+
+        // Notify admin about successful approval (with generated apiKey for display)
+        socket.emit("admin:approve_success", {
+          machineId: data.machineId,
+          machineCode: existingMachine.code,
+          machineName: existingMachine.name,
+          apiKey,
+          registrationCode: registration.machineInfo.code,
+        });
+
+        console.log(`[Socket.io] Registration approved for ${registration.machineInfo.code} -> Machine ID ${data.machineId} (API Key: ${apiKey.substring(0, 10)}...)`);
+      } catch (error: any) {
+        console.error("[Socket.io] Error approving registration:", error);
+        socket.emit("admin:approve_error", { message: `Failed to approve: ${error.message}` });
       }
     });
 
@@ -276,6 +346,118 @@ export function initializeSocket(server: HttpServer): Server {
         pendingRegistrations.delete(data.socketId);
         
         console.log(`[Socket.io] Registration rejected for ${registration.machineInfo.code}: ${data.reason}`);
+      }
+    });
+
+    // ============ STEP 4: Machine requests config after approval ============
+    socket.on("machine:request_config", async (data: { machineId: number; apiKey: string }) => {
+      try {
+        // Verify machine and API Key
+        const machine = await db.getMachineById(data.machineId);
+        if (!machine || machine.apiKey !== data.apiKey) {
+          socket.emit("machine:config_error", {
+            message: "Invalid machine ID or API Key",
+          });
+          return;
+        }
+
+        // Build config object
+        const config: Record<string, any> = {
+          machineId: machine.id,
+          machineCode: machine.code,
+          machineName: machine.name,
+          machineType: machine.machineType,
+          stationId: machine.stationId,
+          syncMode: machine.syncMode || "realtime",
+          registrationStatus: machine.registrationStatus,
+        };
+
+        // Get station/line info
+        if (machine.stationId) {
+          try {
+            const lineInfo = await db.getLineByStationId(machine.stationId);
+            if (lineInfo) {
+              config.lineId = lineInfo.id;
+              config.lineName = lineInfo.name;
+            }
+          } catch (err) {
+            console.error("[Socket.io] Failed to get line info for config:", err);
+          }
+        }
+
+        // Send config to machine
+        socket.emit("machine:config_update", {
+          config,
+          timestamp: new Date(),
+          message: "Configuration loaded successfully.",
+        });
+
+        console.log(`[Socket.io] Config sent to machine ${data.machineId} (${machine.code})`);
+      } catch (error: any) {
+        console.error("[Socket.io] Error fetching machine config:", error);
+        socket.emit("machine:config_error", {
+          message: `Failed to load config: ${error.message}`,
+        });
+      }
+    });
+
+    // ============ STEP 5: Machine confirms sync started ============
+    socket.on("machine:sync_started", async (data: { machineId: number; machineCode: string; apiKey: string }) => {
+      try {
+        // Verify machine
+        const machine = await db.getMachineById(data.machineId);
+        if (!machine || machine.apiKey !== data.apiKey) {
+          socket.emit("machine:sync_error", { message: "Invalid machine ID or API Key" });
+          return;
+        }
+
+        const ipAddress = socket.handshake.address;
+
+        // Store in connected machines
+        connectedMachines.set(data.machineId, {
+          socketId: socket.id,
+          ipAddress,
+          lastHeartbeat: new Date(),
+          machineCode: data.machineCode,
+        });
+        onlineMachineCodesMap.set(data.machineId, data.machineCode);
+
+        // Join machine-specific room
+        socket.join(`machine:${data.machineId}`);
+
+        // Update lastSyncAt in DB
+        await db.updateMachine(data.machineId, {
+          lastSyncAt: new Date(),
+          syncMode: "online",
+        });
+
+        // Log status
+        db.createMachineStatusLog({
+          machineId: data.machineId,
+          status: "online",
+          ipAddress,
+        }).catch(err => console.error("[Socket.io] Failed to log sync status:", err));
+
+        // Confirm to machine
+        socket.emit("machine:sync_confirmed", {
+          message: "Sync started successfully. You can now send inspection data.",
+          timestamp: new Date(),
+        });
+
+        // Notify admin & global
+        io?.to("admin").emit("machine:sync_status", {
+          machineId: data.machineId,
+          machineCode: data.machineCode,
+          status: "syncing",
+          ipAddress,
+          timestamp: new Date(),
+        });
+        io?.emit("machine:status_change", { machineCode: data.machineCode, status: "syncing" });
+
+        console.log(`[Socket.io] Machine ${data.machineId} (${data.machineCode}) started real-time sync`);
+      } catch (error: any) {
+        console.error("[Socket.io] Error starting sync:", error);
+        socket.emit("machine:sync_error", { message: `Failed to start sync: ${error.message}` });
       }
     });
   });

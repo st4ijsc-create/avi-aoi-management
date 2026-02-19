@@ -572,7 +572,7 @@ export const annotationComparisonRouter = router({
 
       const trendData = await db
         .select({
-          period: sql<string>`TO_CHAR(${productInspections.inspectionTime}, ${dateFormat})`,
+          period: sql<string>`TO_CHAR(${productInspections.inspectionTime}, ${sql.raw(`'${dateFormat}'`)})`,
           totalInspections: sql<number>`COUNT(*)`,
           okCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'OK' THEN 1 ELSE 0 END)`,
           ngCount: sql<number>`SUM(CASE WHEN ${productInspections.overallResult} = 'NG' THEN 1 ELSE 0 END)`,
@@ -580,8 +580,8 @@ export const annotationComparisonRouter = router({
         })
         .from(productInspections)
         .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .groupBy(sql`TO_CHAR(${productInspections.inspectionTime}, ${dateFormat})`)
-        .orderBy(sql`TO_CHAR(${productInspections.inspectionTime}, ${dateFormat})`);
+        .groupBy(sql`TO_CHAR(${productInspections.inspectionTime}, ${sql.raw(`'${dateFormat}'`)})`)
+        .orderBy(sql`TO_CHAR(${productInspections.inspectionTime}, ${sql.raw(`'${dateFormat}'`)})`);
 
       // Calculate summary
       const summary = trendData.reduce((acc, item) => {

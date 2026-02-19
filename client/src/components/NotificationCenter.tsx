@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { useSocket, InspectionAlert } from "@/hooks/useSocket";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +23,7 @@ interface NotificationCenterProps {
 
 export function NotificationCenter({ factoryId, workshopId, machineId }: NotificationCenterProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const { t } = useTranslation();
 
   const handleAlert = (alert: InspectionAlert) => {
     // Show toast notification for important alerts
@@ -95,7 +97,7 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
           <div className="flex items-center justify-between">
             <SheetTitle className="flex items-center gap-2">
               <Bell className="h-5 w-5" />
-              Thông báo
+              {t('notifications.title')}
               {isConnected ? (
                 <Wifi className="h-4 w-4 text-green-500" />
               ) : (
@@ -104,14 +106,14 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
             </SheetTitle>
             {alerts.length > 0 && (
               <Button variant="ghost" size="sm" onClick={clearAlerts}>
-                Xóa tất cả
+                {t('notifications.clearAll')}
               </Button>
             )}
           </div>
           <SheetDescription>
             {isConnected
-              ? "Đang kết nối realtime - nhận thông báo tức thì"
-              : "Đang kết nối lại..."}
+              ? t('notifications.connectedRealtime')
+              : t('notifications.reconnecting')}
           </SheetDescription>
         </SheetHeader>
 
@@ -119,7 +121,7 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
           {alerts.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
               <Bell className="h-12 w-12 mb-2 opacity-20" />
-              <p>Không có thông báo mới</p>
+              <p>{t('notifications.noNew')}</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -133,10 +135,10 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
                     <div className="flex items-center gap-2 mb-1">
                       <Badge variant={getAlertBadgeVariant(alert.type) as "default" | "secondary" | "destructive"} className="text-xs">
                         {alert.type === "NG_ALERT"
-                          ? "Sản phẩm NG"
+                          ? t('notifications.ngAlert')
                           : alert.type === "YIELD_WARNING"
-                          ? "Cảnh báo Yield"
-                          : "Thông báo"}
+                          ? t('notifications.yieldWarning')
+                          : t('notifications.notification')}
                       </Badge>
                       <span className="text-xs text-muted-foreground">
                         {formatTime(alert.timestamp)}

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +44,7 @@ const processTypes = [
 ];
 
 export default function WorkstationManagement() {
+  const { t } = useTranslation();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingWorkstation, setEditingWorkstation] = useState<Workstation | null>(null);
@@ -66,7 +68,7 @@ export default function WorkstationManagement() {
   // Mutations
   const createMutation = trpc.workstation.create.useMutation({
     onSuccess: () => {
-      toast.success("Tạo công trạm thành công");
+      toast.success(t('workstations.created'));
       setDialogOpen(false);
       resetForm();
       refetch();
@@ -76,7 +78,7 @@ export default function WorkstationManagement() {
 
   const updateMutation = trpc.workstation.update.useMutation({
     onSuccess: () => {
-      toast.success("Cập nhật công trạm thành công");
+      toast.success(t('workstations.updated'));
       setEditDialogOpen(false);
       setEditingWorkstation(null);
       refetch();
@@ -86,7 +88,7 @@ export default function WorkstationManagement() {
 
   const deleteMutation = trpc.workstation.delete.useMutation({
     onSuccess: () => {
-      toast.success("Xóa công trạm thành công");
+      toast.success(t('workstations.deleted'));
       refetch();
     },
     onError: (err) => toast.error(err.message),
@@ -107,7 +109,7 @@ export default function WorkstationManagement() {
 
   const handleCreate = () => {
     if (!form.code || !form.name) {
-      toast.error("Vui lòng nhập mã và tên công trạm");
+      toast.error(t('workstations.enterCodeAndName'));
       return;
     }
 
@@ -176,59 +178,59 @@ export default function WorkstationManagement() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Cog className="h-5 w-5 text-orange-500" />
-                Quản lý công trạm (Workstation)
+                {t('workstations.title')}
               </CardTitle>
               <CardDescription>
-                {workstations?.length || 0} công trạm
+                {workstations?.length || 0} {t('workstations.workstation')}
               </CardDescription>
             </div>
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
                 <Button className="gap-2">
                   <Plus className="h-4 w-4" />
-                  Thêm công trạm
+                  {t('workstations.addWorkstation')}
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-lg">
                 <DialogHeader>
-                  <DialogTitle>Thêm công trạm mới</DialogTitle>
+                  <DialogTitle>{t('workstations.addNewWorkstation')}</DialogTitle>
                   <DialogDescription>
-                    Tạo công trạm mới trong hệ thống
+                    {t('workstations.addNewWorkstationDesc')}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Mã công trạm *</label>
+                      <label className="text-sm font-medium">{t('workstations.code')} *</label>
                       <Input
-                        placeholder="VD: WS001"
+                        placeholder={t('workstations.codePlaceholder')}
                         value={form.code}
                         onChange={(e) => setForm({ ...form, code: e.target.value })}
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Tên công trạm *</label>
+                      <label className="text-sm font-medium">{t('workstations.workstationName')} *</label>
                       <Input
-                        placeholder="VD: Công trạm SMT 1"
+                        placeholder={t('workstations.namePlaceholder')}
                         value={form.name}
                         onChange={(e) => setForm({ ...form, name: e.target.value })}
                       />
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Mô tả</label>
+                    <label className="text-sm font-medium">{t('common.description')}</label>
                     <Input
-                      placeholder="Mô tả công trạm"
+                      placeholder={t('workstations.descriptionPlaceholder')}
                       value={form.description}
                       onChange={(e) => setForm({ ...form, description: e.target.value })}
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Nhà máy</label>
+                      <label className="text-sm font-medium">{t('workstations.factory')}</label>
                       <Select value={form.factoryId} onValueChange={(v) => setForm({ ...form, factoryId: v })}>
                         <SelectTrigger>
-                          <SelectValue placeholder="Chọn nhà máy..." />
+                          <SelectValue placeholder={t('workstations.selectFactory')} />
                         </SelectTrigger>
                         <SelectContent>
                           {factories?.map((f) => (
@@ -240,10 +242,10 @@ export default function WorkstationManagement() {
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Nhà xưởng</label>
+                      <label className="text-sm font-medium">{t('workstations.workshop')}</label>
                       <Select value={form.workshopId} onValueChange={(v) => setForm({ ...form, workshopId: v })}>
                         <SelectTrigger>
-                          <SelectValue placeholder="Chọn nhà xưởng..." />
+                          <SelectValue placeholder={t('workstations.selectWorkshop')} />
                         </SelectTrigger>
                         <SelectContent>
                           {workshops?.map((w) => (
@@ -257,10 +259,10 @@ export default function WorkstationManagement() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Dây chuyền</label>
+                      <label className="text-sm font-medium">{t('workstations.line')}</label>
                       <Select value={form.lineId} onValueChange={(v) => setForm({ ...form, lineId: v })}>
                         <SelectTrigger>
-                          <SelectValue placeholder="Chọn dây chuyền..." />
+                          <SelectValue placeholder={t('workstations.selectLine')} />
                         </SelectTrigger>
                         <SelectContent>
                           {lines?.map((l) => (
@@ -272,10 +274,10 @@ export default function WorkstationManagement() {
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Loại công đoạn</label>
+                      <label className="text-sm font-medium">{t('workstations.processType')}</label>
                       <Select value={form.processType} onValueChange={(v) => setForm({ ...form, processType: v })}>
                         <SelectTrigger>
-                          <SelectValue placeholder="Chọn loại..." />
+                          <SelectValue placeholder={t('workstations.selectType')} />
                         </SelectTrigger>
                         <SelectContent>
                           {processTypes.map((pt) => (
@@ -288,7 +290,7 @@ export default function WorkstationManagement() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Thứ tự</label>
+                    <label className="text-sm font-medium">{t('workstations.order')}</label>
                     <Input
                       type="number"
                       placeholder="0"
@@ -299,11 +301,11 @@ export default function WorkstationManagement() {
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                    Hủy
+                    {t('common.cancel')}
                   </Button>
                   <Button onClick={handleCreate} disabled={createMutation.isPending}>
                     {createMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    Tạo
+                    {t('common.create')}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -315,13 +317,13 @@ export default function WorkstationManagement() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Mã</TableHead>
-                  <TableHead>Tên</TableHead>
-                  <TableHead>Loại</TableHead>
-                  <TableHead>Nhà máy</TableHead>
-                  <TableHead>Dây chuyền</TableHead>
-                  <TableHead>Trạng thái</TableHead>
-                  <TableHead className="text-right">Thao tác</TableHead>
+                  <TableHead>{t('workstations.code')}</TableHead>
+                  <TableHead>{t('common.name')}</TableHead>
+                  <TableHead>{t('workstations.type')}</TableHead>
+                  <TableHead>{t('workstations.factory')}</TableHead>
+                  <TableHead>{t('workstations.line')}</TableHead>
+                  <TableHead>{t('common.status')}</TableHead>
+                  <TableHead className="text-right">{t('common.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -348,7 +350,7 @@ export default function WorkstationManagement() {
                     </TableCell>
                     <TableCell>
                       <Badge variant={ws.isActive ? "default" : "secondary"}>
-                        {ws.isActive ? "Hoạt động" : "Tạm dừng"}
+                        {ws.isActive ? t('common.active') : t('common.paused')}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
@@ -365,7 +367,7 @@ export default function WorkstationManagement() {
                           variant="ghost"
                           className="text-destructive hover:text-destructive"
                           onClick={() => {
-                            if (confirm("Bạn có chắc muốn xóa công trạm này?")) {
+                            if (confirm(t('workstations.confirmDelete'))) {
                               deleteMutation.mutate(ws.id);
                             }
                           }}
@@ -379,7 +381,7 @@ export default function WorkstationManagement() {
                 {(!workstations || workstations.length === 0) && (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                      Chưa có công trạm nào. Nhấn "Thêm công trạm" để tạo mới.
+                      {t('workstations.emptyState')}
                     </TableCell>
                   </TableRow>
                 )}
@@ -393,20 +395,20 @@ export default function WorkstationManagement() {
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Chỉnh sửa công trạm</DialogTitle>
+            <DialogTitle>{t('workstations.editWorkstation')}</DialogTitle>
           </DialogHeader>
           {editingWorkstation && (
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Mã công trạm</label>
+                  <label className="text-sm font-medium">{t('workstations.code')}</label>
                   <Input
                     value={editingWorkstation.code}
                     onChange={(e) => setEditingWorkstation({ ...editingWorkstation, code: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Tên công trạm</label>
+                  <label className="text-sm font-medium">{t('workstations.workstationName')}</label>
                   <Input
                     value={editingWorkstation.name}
                     onChange={(e) => setEditingWorkstation({ ...editingWorkstation, name: e.target.value })}
@@ -414,7 +416,7 @@ export default function WorkstationManagement() {
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Mô tả</label>
+                <label className="text-sm font-medium">{t('common.description')}</label>
                 <Input
                   value={editingWorkstation.description || ""}
                   onChange={(e) => setEditingWorkstation({ ...editingWorkstation, description: e.target.value })}
@@ -422,13 +424,13 @@ export default function WorkstationManagement() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Nhà máy</label>
+                  <label className="text-sm font-medium">{t('workstations.factory')}</label>
                   <Select 
                     value={editingWorkstation.factoryId?.toString() || ""} 
                     onValueChange={(v) => setEditingWorkstation({ ...editingWorkstation, factoryId: v ? parseInt(v) : null })}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Chọn nhà máy..." />
+                      <SelectValue placeholder={t('workstations.selectFactory')} />
                     </SelectTrigger>
                     <SelectContent>
                       {factories?.map((f) => (
@@ -440,13 +442,13 @@ export default function WorkstationManagement() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Dây chuyền</label>
+                  <label className="text-sm font-medium">{t('workstations.line')}</label>
                   <Select 
                     value={editingWorkstation.lineId?.toString() || ""} 
                     onValueChange={(v) => setEditingWorkstation({ ...editingWorkstation, lineId: v ? parseInt(v) : null })}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Chọn dây chuyền..." />
+                      <SelectValue placeholder={t('workstations.selectLine')} />
                     </SelectTrigger>
                     <SelectContent>
                       {lines?.map((l) => (
@@ -460,13 +462,13 @@ export default function WorkstationManagement() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Loại công đoạn</label>
+                  <label className="text-sm font-medium">{t('workstations.processType')}</label>
                   <Select 
                     value={editingWorkstation.processType || ""} 
                     onValueChange={(v) => setEditingWorkstation({ ...editingWorkstation, processType: v })}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Chọn loại..." />
+                      <SelectValue placeholder={t('workstations.selectType')} />
                     </SelectTrigger>
                     <SelectContent>
                       {processTypes.map((pt) => (
@@ -478,7 +480,7 @@ export default function WorkstationManagement() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Thứ tự</label>
+                  <label className="text-sm font-medium">{t('workstations.order')}</label>
                   <Input
                     type="number"
                     value={editingWorkstation.orderIndex || 0}
@@ -487,7 +489,7 @@ export default function WorkstationManagement() {
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium">Trạng thái hoạt động</label>
+                <label className="text-sm font-medium">{t('workstations.activeStatus')}</label>
                 <Switch
                   checked={editingWorkstation.isActive}
                   onCheckedChange={(checked) => setEditingWorkstation({ ...editingWorkstation, isActive: checked })}
@@ -497,11 +499,11 @@ export default function WorkstationManagement() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleUpdate} disabled={updateMutation.isPending}>
               {updateMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Lưu
+              {t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>

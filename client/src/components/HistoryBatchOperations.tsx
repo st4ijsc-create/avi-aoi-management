@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,6 +47,7 @@ export default function HistoryBatchOperations({
   onClearSelection,
   onRefresh,
 }: HistoryBatchOperationsProps) {
+  const { t } = useTranslation();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [currentAction, setCurrentAction] = useState<BatchAction | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -62,7 +64,7 @@ export default function HistoryBatchOperations({
       setProgress(Math.round(((i + 1) / total) * 100));
       await new Promise(resolve => setTimeout(resolve, 100));
     }
-    toast.success("Đã " + actionLabel + " " + total + " mục");
+    toast.success(t('history.batch.processed', { action: actionLabel, count: total }));
     onClearSelection();
     onRefresh();
   };
@@ -86,26 +88,26 @@ export default function HistoryBatchOperations({
           await handleExport();
           break;
         case 'acknowledge':
-          await simulateBatchProcess('xác nhận');
+          await simulateBatchProcess(t('history.batch.actionAcknowledge'));
           break;
         case 'add-note':
           if (!noteText.trim()) {
-            toast.error("Vui lòng nhập nội dung ghi chú");
+            toast.error(t('history.batch.enterNote'));
             setIsProcessing(false);
             return;
           }
-          await simulateBatchProcess('thêm ghi chú cho');
+          await simulateBatchProcess(t('history.batch.actionAddNote'));
           break;
         case 'add-tag':
           if (!tagValue.trim()) {
-            toast.error("Vui lòng nhập tag");
+            toast.error(t('history.batch.enterTag'));
             setIsProcessing(false);
             return;
           }
-          await simulateBatchProcess('thêm tag cho');
+          await simulateBatchProcess(t('history.batch.actionAddTag'));
           break;
         case 'archive':
-          await simulateBatchProcess('lưu trữ');
+          await simulateBatchProcess(t('history.batch.actionArchive'));
           break;
         case 'delete':
           break;
@@ -173,18 +175,18 @@ export default function HistoryBatchOperations({
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    toast.success("Đã xuất " + selectedItems.length + " mục ra file " + filename);
+    toast.success(t('history.batch.exported', { count: selectedItems.length, filename }));
     onClearSelection();
   };
 
   const getActionTitle = (action: BatchAction) => {
     switch (action) {
-      case 'export': return 'Xuất dữ liệu';
-      case 'acknowledge': return 'Xác nhận đã xem';
-      case 'add-note': return 'Thêm ghi chú';
-      case 'add-tag': return 'Thêm tag';
-      case 'archive': return 'Lưu trữ';
-      case 'delete': return 'Xóa';
+      case 'export': return t('history.batch.exportData');
+      case 'acknowledge': return t('history.batch.acknowledgeViewed');
+      case 'add-note': return t('history.batch.addNote');
+      case 'add-tag': return t('history.batch.addTag');
+      case 'archive': return t('history.batch.archive');
+      case 'delete': return t('common.delete');
       default: return '';
     }
   };
@@ -224,29 +226,29 @@ export default function HistoryBatchOperations({
           <CardContent className="p-3">
             <div className="flex items-center gap-3">
               <Badge variant="secondary" className="text-sm">
-                {selectedItems.length} mục đã chọn
+                {selectedItems.length} {t('history.batch.itemsSelected')}
               </Badge>
               
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="outline" onClick={() => handleOpenAction('export')}>
-                  <Download className="h-4 w-4 mr-1" />Xuất
+                  <Download className="h-4 w-4 mr-1" />{t('common.export')}
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => handleOpenAction('acknowledge')}>
-                  <CheckSquare className="h-4 w-4 mr-1" />Xác nhận
+                  <CheckSquare className="h-4 w-4 mr-1" />{t('history.batch.acknowledge')}
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => handleOpenAction('add-note')}>
-                  <MessageSquare className="h-4 w-4 mr-1" />Ghi chú
+                  <MessageSquare className="h-4 w-4 mr-1" />{t('history.batch.note')}
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => handleOpenAction('add-tag')}>
-                  <Tag className="h-4 w-4 mr-1" />Tag
+                  <Tag className="h-4 w-4 mr-1" />{t('history.batch.tag')}
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => handleOpenAction('archive')}>
-                  <Archive className="h-4 w-4 mr-1" />Lưu trữ
+                  <Archive className="h-4 w-4 mr-1" />{t('history.batch.archive')}
                 </Button>
               </div>
               
               <Button size="sm" variant="ghost" onClick={onClearSelection}>
-                <RotateCcw className="h-4 w-4 mr-1" />Bỏ chọn
+                <RotateCcw className="h-4 w-4 mr-1" />{t('history.batch.deselect')}
               </Button>
             </div>
           </CardContent>
@@ -261,13 +263,13 @@ export default function HistoryBatchOperations({
               {currentAction && getActionTitle(currentAction)}
             </DialogTitle>
             <DialogDescription>
-              Thao tác sẽ được áp dụng cho {selectedItems.length} mục đã chọn
+              {t('history.batch.operationAppliedTo', { count: selectedItems.length })}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div>
-              <Label className="text-sm font-medium">Các mục đã chọn:</Label>
+              <Label className="text-sm font-medium">{t('history.batch.selectedItems')}:</Label>
               <ScrollArea className="h-32 mt-2 border rounded-md p-2">
                 <div className="space-y-1">
                   {selectedItems.slice(0, 10).map((item) => (
@@ -278,7 +280,7 @@ export default function HistoryBatchOperations({
                   ))}
                   {selectedItems.length > 10 && (
                     <div className="text-sm text-muted-foreground">
-                      ... và {selectedItems.length - 10} mục khác
+                      ... {t('history.batch.andMore', { count: selectedItems.length - 10 })}
                     </div>
                   )}
                 </div>
@@ -287,7 +289,7 @@ export default function HistoryBatchOperations({
 
             {currentAction === 'export' && (
               <div className="space-y-2">
-                <Label>Định dạng xuất:</Label>
+                <Label>{t('history.batch.exportFormat')}:</Label>
                 <Select value={exportFormat} onValueChange={(v: "csv" | "json" | "excel") => setExportFormat(v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -301,22 +303,22 @@ export default function HistoryBatchOperations({
 
             {currentAction === 'add-note' && (
               <div className="space-y-2">
-                <Label>Nội dung ghi chú:</Label>
-                <Textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Nhập nội dung ghi chú..." rows={3} />
+                <Label>{t('history.batch.noteContent')}:</Label>
+                <Textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder={t('history.batch.enterNoteContent')} rows={3} />
               </div>
             )}
 
             {currentAction === 'add-tag' && (
               <div className="space-y-2">
-                <Label>Tag:</Label>
-                <Input value={tagValue} onChange={(e) => setTagValue(e.target.value)} placeholder="Nhập tag..." />
+                <Label>{t('history.batch.tag')}:</Label>
+                <Input value={tagValue} onChange={(e) => setTagValue(e.target.value)} placeholder={t('history.batch.enterTag')} />
               </div>
             )}
 
             {isProcessing && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span>Đang xử lý...</span>
+                  <span>{t('history.batch.processing')}</span>
                   <span>{processedCount}/{selectedItems.length}</span>
                 </div>
                 <Progress value={progress} />
@@ -325,12 +327,13 @@ export default function HistoryBatchOperations({
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isProcessing}>Hủy</Button>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isProcessing}>{t('common.cancel')}</Button>
             <Button onClick={handleExecuteAction} disabled={isProcessing}>
               {isProcessing ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Đang xử lý...</>
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t('history.batch.processing')}</>
               ) : (
-                <><Send className="h-4 w-4 mr-2" />Thực hiện</>
+                <><Send className="h-4 w-4 mr-2" />{t('history.batch.execute')}</>
+              )}
               )}
             </Button>
           </DialogFooter>

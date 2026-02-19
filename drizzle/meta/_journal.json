@@ -22,6 +22,13 @@
       "when": 1770713767211,
       "tag": "0002_useful_tusk",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1770999426881,
+      "tag": "0003_noisy_ender_wiggin",
+      "breakpoints": true
     }
   ]
 }

@@ -26,6 +26,7 @@ import {
   X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 
 interface SuggestedAnnotation {
   id: string;
@@ -58,10 +59,10 @@ const severityColors = {
 };
 
 const qualityLabels = {
-  good: { label: 'Tốt', color: 'text-green-500', icon: CheckCircle2 },
-  acceptable: { label: 'Chấp nhận được', color: 'text-blue-500', icon: CheckCircle2 },
-  needs_review: { label: 'Cần xem xét', color: 'text-orange-500', icon: AlertTriangle },
-  defective: { label: 'Lỗi', color: 'text-red-500', icon: XCircle },
+  good: { label: 'ai.quality.good', color: 'text-green-500', icon: CheckCircle2 },
+  acceptable: { label: 'ai.quality.acceptable', color: 'text-blue-500', icon: CheckCircle2 },
+  needs_review: { label: 'ai.quality.needsReview', color: 'text-orange-500', icon: AlertTriangle },
+  defective: { label: 'ai.quality.defective', color: 'text-red-500', icon: XCircle },
 };
 
 const typeIcons = {
@@ -83,6 +84,7 @@ export function AIAnnotationAssistant({
   const [suggestedAnnotations, setSuggestedAnnotations] = useState<SuggestedAnnotation[]>([]);
   const [selectedAnnotations, setSelectedAnnotations] = useState<Set<string>>(new Set());
   const [showPreview, setShowPreview] = useState(true);
+  const { t } = useTranslation();
 
   const analyzeImage = trpc.annotation.analyzeImage.useMutation({
     onSuccess: (data) => {
@@ -92,7 +94,7 @@ export function AIAnnotationAssistant({
       setIsAnalyzing(false);
     },
     onError: (error) => {
-      toast.error(`Lỗi phân tích: ${error.message}`);
+      toast.error(`${t('ai.analysisError')}: ${error.message}`);
       setIsAnalyzing(false);
     },
   });
@@ -130,11 +132,11 @@ export function AIAnnotationAssistant({
   const handleApply = () => {
     const selected = suggestedAnnotations.filter(a => selectedAnnotations.has(a.id));
     if (selected.length === 0) {
-      toast.error('Vui lòng chọn ít nhất một annotation');
+      toast.error(t('ai.selectAtLeastOne'));
       return;
     }
     onApplyAnnotations(selected);
-    toast.success(`Đã áp dụng ${selected.length} annotation`);
+    toast.success(t('ai.appliedAnnotations', { count: selected.length }));
     setIsOpen(false);
   };
 
@@ -152,7 +154,7 @@ export function AIAnnotationAssistant({
           className="gap-2"
         >
           <Wand2 className="h-4 w-4" />
-          AI Phân tích
+          {t('ai.analyze')}
         </Button>
       )}
 
@@ -161,10 +163,10 @@ export function AIAnnotationAssistant({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-primary" />
-              AI Hỗ trợ Annotation
+              {t('ai.assistAnnotation')}
             </DialogTitle>
             <DialogDescription>
-              AI sẽ phân tích hình ảnh và gợi ý các annotation cho các vùng có thể có lỗi hoặc cần chú ý.
+              {t('ai.assistAnnotationDesc')}
             </DialogDescription>
           </DialogHeader>
 
@@ -276,7 +278,7 @@ export function AIAnnotationAssistant({
                   <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                     <div className="text-center text-white">
                       <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
-                      <p className="text-sm">Đang phân tích hình ảnh...</p>
+                      <p className="text-sm">{t('ai.analyzingImage')}</p>
                     </div>
                   </div>
                 )}
@@ -284,9 +286,9 @@ export function AIAnnotationAssistant({
 
               {/* Context input */}
               <div className="mt-3 space-y-2">
-                <label className="text-sm font-medium">Ngữ cảnh (tùy chọn)</label>
+                <label className="text-sm font-medium">{t('ai.contextOptional')}</label>
                 <Textarea
-                  placeholder="Mô tả thêm về hình ảnh, loại sản phẩm, hoặc các lỗi cần tìm..."
+                  placeholder={t('ai.contextPlaceholder')}
                   value={context}
                   onChange={(e) => setContext(e.target.value)}
                   rows={2}
@@ -303,12 +305,12 @@ export function AIAnnotationAssistant({
                 {isAnalyzing ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Đang phân tích...
+                    {t('ai.analyzing')}
                   </>
                 ) : (
                   <>
                     <Wand2 className="h-4 w-4" />
-                    Phân tích với AI
+                    {t('ai.analyzeWithAI')}
                   </>
                 )}
               </Button>
@@ -323,19 +325,19 @@ export function AIAnnotationAssistant({
                     <CardHeader className="py-3">
                       <CardTitle className="text-sm flex items-center gap-2">
                         <QualityIcon className={cn("h-4 w-4", qualityLabels[analysis.overallQuality].color)} />
-                        Kết quả phân tích
+                        {t('ai.analysisResult')}
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="py-2 space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Chất lượng:</span>
+                        <span className="text-sm text-muted-foreground">{t('ai.quality')}:</span>
                         <Badge variant="outline" className={qualityLabels[analysis.overallQuality].color}>
-                          {qualityLabels[analysis.overallQuality].label}
+                          {t(qualityLabels[analysis.overallQuality].label)}
                         </Badge>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Phát hiện:</span>
-                        <span className="font-medium">{analysis.findingsCount} vùng</span>
+                        <span className="text-sm text-muted-foreground">{t('ai.findings')}:</span>
+                        <span className="font-medium">{analysis.findingsCount} {t('ai.regions')}</span></span>
                       </div>
                       <p className="text-xs text-muted-foreground mt-2">{analysis.summary}</p>
                     </CardContent>
@@ -343,16 +345,16 @@ export function AIAnnotationAssistant({
 
                   {/* Suggested Annotations */}
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium">Gợi ý Annotation</span>
+                    <span className="text-sm font-medium">{t('ai.suggestedAnnotations')}</span>
                     <div className="flex items-center gap-2">
                       <Button variant="ghost" size="sm" onClick={() => setShowPreview(!showPreview)}>
                         {showPreview ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </Button>
                       <Button variant="ghost" size="sm" onClick={selectAll}>
-                        Chọn tất cả
+                        {t('common.selectAll')}
                       </Button>
                       <Button variant="ghost" size="sm" onClick={deselectAll}>
-                        Bỏ chọn
+                        {t('common.deselectAll')}
                       </Button>
                     </div>
                   </div>
@@ -381,7 +383,7 @@ export function AIAnnotationAssistant({
                                 <div className="flex items-center gap-2 mb-1">
                                   <TypeIcon className="h-3 w-3" style={{ color: ann.color }} />
                                   <Badge variant="outline" className={severityColors[ann.severity]}>
-                                    {ann.severity === 'high' ? 'Cao' : ann.severity === 'medium' ? 'Trung bình' : 'Thấp'}
+                                    {ann.severity === 'high' ? t('ai.severity.high') : ann.severity === 'medium' ? t('ai.severity.medium') : t('ai.severity.low')}
                                   </Badge>
                                   <span className="text-xs text-muted-foreground ml-auto">
                                     {ann.confidence}%
@@ -400,8 +402,8 @@ export function AIAnnotationAssistant({
                 <div className="flex-1 flex items-center justify-center text-muted-foreground text-center p-4">
                   <div>
                     <Sparkles className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                    <p className="text-sm">Nhấn "Phân tích với AI" để bắt đầu</p>
-                    <p className="text-xs mt-1">AI sẽ tự động phát hiện các vùng cần annotation</p>
+                    <p className="text-sm">{t('ai.clickToStart')}</p>
+                    <p className="text-xs mt-1">{t('ai.autoDetectDescription')}</p>
                   </div>
                 </div>
               )}
@@ -410,7 +412,7 @@ export function AIAnnotationAssistant({
 
           <DialogFooter className="mt-4">
             <Button variant="outline" onClick={() => setIsOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={handleApply}
@@ -418,7 +420,7 @@ export function AIAnnotationAssistant({
               className="gap-2"
             >
               <Check className="h-4 w-4" />
-              Áp dụng {selectedAnnotations.size > 0 && `(${selectedAnnotations.size})`}
+              {t('common.apply')} {selectedAnnotations.size > 0 && `(${selectedAnnotations.size})`}
             </Button>
           </DialogFooter>
         </DialogContent>

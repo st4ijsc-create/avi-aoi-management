@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
@@ -128,6 +129,7 @@ export function WidgetStyleEditor({
 }: WidgetStyleEditorProps) {
   const [style, setStyle] = useState<WidgetStyle>(currentStyle);
   const [previewStyle, setPreviewStyle] = useState<WidgetStyle>(currentStyle);
+  const { t } = useTranslation();
 
   useEffect(() => {
     setStyle(currentStyle);
@@ -148,7 +150,7 @@ export function WidgetStyleEditor({
 
   const handleApply = () => {
     onStyleChange(style);
-    toast.success('Đã áp dụng style cho widget');
+    toast.success(t('dashboard.styleApplied'));
     onOpenChange(false);
   };
 
@@ -184,17 +186,17 @@ export function WidgetStyleEditor({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Palette className="h-5 w-5" />
-            Tùy chỉnh style: {widgetName}
+            {t('dashboard.customizeStyle')}: {widgetName}
           </DialogTitle>
           <DialogDescription>
-            Thay đổi màu sắc, border và hiệu ứng của widget
+            {t('dashboard.customizeStyleDesc')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid grid-cols-2 gap-6">
           {/* Preview */}
           <div className="space-y-4">
-            <Label className="text-sm font-medium">Xem trước</Label>
+            <Label className="text-sm font-medium">{t('common.preview')}</Label>
             <div 
               className="h-48 p-4 transition-all duration-300"
               style={getPreviewStyles()}
@@ -234,7 +236,7 @@ export function WidgetStyleEditor({
                 </TabsTrigger>
                 <TabsTrigger value="advanced">
                   <Palette className="h-4 w-4 mr-2" />
-                  Nâng cao
+                  {t('dashboard.advanced')}
                 </TabsTrigger>
               </TabsList>
 
@@ -272,7 +274,7 @@ export function WidgetStyleEditor({
                 {/* Border Radius */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm">Bo góc</Label>
+                    <Label className="text-sm">{t('dashboard.borderRadius')}</Label>
                     <Badge variant="secondary">{style.borderRadius}px</Badge>
                   </div>
                   <Slider
@@ -286,7 +288,7 @@ export function WidgetStyleEditor({
 
                 {/* Shadow */}
                 <div className="space-y-2">
-                  <Label className="text-sm">Đổ bóng</Label>
+                  <Label className="text-sm">{t('dashboard.shadow')}</Label>
                   <div className="flex gap-2">
                     {(['none', 'sm', 'md', 'lg', 'xl'] as const).map((shadow) => (
                       <Button
@@ -295,7 +297,7 @@ export function WidgetStyleEditor({
                         size="sm"
                         onClick={() => handleStyleChange('shadow', shadow)}
                       >
-                        {shadow === 'none' ? 'Không' : shadow.toUpperCase()}
+                        {shadow === 'none' ? t('common.none') : shadow.toUpperCase()}
                       </Button>
                     ))}
                   </div>
@@ -304,7 +306,7 @@ export function WidgetStyleEditor({
                 {/* Opacity */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm">Độ trong suốt</Label>
+                    <Label className="text-sm">{t('dashboard.opacity')}</Label>
                     <Badge variant="secondary">{style.opacity}%</Badge>
                   </div>
                   <Slider
@@ -318,7 +320,7 @@ export function WidgetStyleEditor({
 
                 {/* Show Border */}
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm">Hiển thị viền</Label>
+                  <Label className="text-sm">{t('dashboard.showBorder')}</Label>
                   <Switch
                     checked={style.showBorder}
                     onCheckedChange={(checked) => handleStyleChange('showBorder', checked)}
@@ -332,15 +334,15 @@ export function WidgetStyleEditor({
         <DialogFooter className="flex justify-between">
           <Button variant="outline" onClick={handleReset}>
             <RotateCcw className="h-4 w-4 mr-2" />
-            Đặt lại
+            {t('common.reset')}
           </Button>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleApply}>
               <Check className="h-4 w-4 mr-2" />
-              Áp dụng
+              {t('common.apply')}
             </Button>
           </div>
         </DialogFooter>

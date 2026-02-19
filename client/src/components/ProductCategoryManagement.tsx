@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,6 +96,7 @@ type ImportPreview = {
 };
 
 export function ProductCategoryManagement() {
+  const { t } = useTranslation();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<CategoryWithChildren | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Set<number>>(new Set());
@@ -122,35 +124,35 @@ export function ProductCategoryManagement() {
   // Mutations
   const createMutation = trpc.productCategory.create.useMutation({
     onSuccess: () => {
-      toast.success("Đã tạo danh mục thành công");
+      toast.success(t('products.categoryCreated'));
       setIsDialogOpen(false);
       resetForm();
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message || "Không thể tạo danh mục");
+      toast.error(error.message || t('products.categoryCreateError'));
     },
   });
 
   const updateMutation = trpc.productCategory.update.useMutation({
     onSuccess: () => {
-      toast.success("Đã cập nhật danh mục thành công");
+      toast.success(t('products.categoryUpdated'));
       setIsDialogOpen(false);
       resetForm();
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message || "Không thể cập nhật danh mục");
+      toast.error(error.message || t('products.categoryUpdateError'));
     },
   });
 
   const deleteMutation = trpc.productCategory.delete.useMutation({
     onSuccess: () => {
-      toast.success("Đã xóa danh mục thành công");
+      toast.success(t('products.categoryDeleted'));
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message || "Không thể xóa danh mục");
+      toast.error(error.message || t('products.categoryDeleteError'));
     },
   });
 
@@ -185,7 +187,7 @@ export function ProductCategoryManagement() {
 
   const handleSubmit = () => {
     if (!formData.code || !formData.name) {
-      toast.error("Vui lòng nhập mã và tên danh mục");
+      toast.error(t('products.enterCodeAndName'));
       return;
     }
 
@@ -201,10 +203,10 @@ export function ProductCategoryManagement() {
 
   const handleDelete = (category: CategoryWithChildren) => {
     if (category.productCount > 0) {
-      toast.error("Không thể xóa danh mục có sản phẩm");
+      toast.error(t('products.cannotDeleteWithProducts'));
       return;
     }
-    if (confirm(`Bạn có chắc muốn xóa danh mục "${category.name}"?`)) {
+    if (confirm(t('products.confirmDeleteCategory', { name: category.name }))) {
       deleteMutation.mutate({ id: category.id });
     }
   };
@@ -224,7 +226,7 @@ export function ProductCategoryManagement() {
   // Export all categories to JSON
   const handleExportAll = () => {
     if (!categories || categories.length === 0) {
-      toast.error("Không có danh mục nào để xuất");
+      toast.error(t('products.noCategoryToExport'));
       return;
     }
 
@@ -249,13 +251,13 @@ export function ProductCategoryManagement() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    toast.success(`Đã xuất ${categories.length} danh mục`);
+    toast.success(t('products.exportedCategories', { count: categories.length }));
   };
 
   // Validate and preview import JSON
   const handlePreviewImport = () => {
     if (!importJsonText.trim()) {
-      toast.error("Vui lòng nhập hoặc dán nội dung JSON");
+      toast.error(t('products.enterOrPasteJson'));
       return;
     }
 
@@ -263,7 +265,7 @@ export function ProductCategoryManagement() {
       const data = JSON.parse(importJsonText);
       
       if (!Array.isArray(data)) {
-        toast.error("JSON phải là một mảng các danh mục");
+        toast.error(t('products.jsonMustBeArray'));
         return;
       }
 
@@ -278,11 +280,11 @@ export function ProductCategoryManagement() {
       data.forEach((item: any, index: number) => {
         // Validate required fields
         if (!item.code || typeof item.code !== 'string') {
-          preview.errors.push(`Dòng ${index + 1}: Thiếu hoặc sai định dạng mã (code)`);
+          preview.errors.push(t('products.importErrMissingCode', { line: index + 1 }));
           return;
         }
         if (!item.name || typeof item.name !== 'string') {
-          preview.errors.push(`Dòng ${index + 1}: Thiếu hoặc sai định dạng tên (name)`);
+          preview.errors.push(t('products.importErrMissingName', { line: index + 1 }));
           return;
         }
 
@@ -291,9 +293,9 @@ export function ProductCategoryManagement() {
           const existing = categories?.find(c => c.code === item.code);
           const changes: string[] = [];
           if (existing) {
-            if (item.name !== existing.name) changes.push(`Tên: ${existing.name} → ${item.name}`);
-            if (item.description !== existing.description) changes.push('Mô tả');
-            if (item.color !== existing.color) changes.push('Màu sắc');
+            if (item.name !== existing.name) changes.push(t('products.changeName', { from: existing.name, to: item.name }));
+            if (item.description !== existing.description) changes.push(t('common.description'));
+            if (item.color !== existing.color) changes.push(t('products.color'));
             if (item.icon !== existing.icon) changes.push('Icon');
           }
           if (changes.length > 0) {
@@ -311,14 +313,14 @@ export function ProductCategoryManagement() {
       setImportPreview(preview);
 
       if (preview.errors.length > 0) {
-        toast.error(`Có ${preview.errors.length} lỗi trong dữ liệu`);
+        toast.error(t('products.importErrors', { count: preview.errors.length }));
       } else if (preview.toCreate.length === 0 && preview.toUpdate.length === 0) {
-        toast.info("Không có thay đổi nào cần thực hiện");
+        toast.info(t('products.noChangesNeeded'));
       } else {
-        toast.success(`Sẵn sàng: ${preview.toCreate.length} tạo mới, ${preview.toUpdate.length} cập nhật`);
+        toast.success(t('products.importReady', { createCount: preview.toCreate.length, updateCount: preview.toUpdate.length }));
       }
     } catch (e) {
-      toast.error("JSON không hợp lệ. Vui lòng kiểm tra lại định dạng.");
+      toast.error(t('products.invalidJson'));
       setImportPreview(null);
     }
   };
@@ -366,13 +368,13 @@ export function ProductCategoryManagement() {
         }
       }
 
-      toast.success(`Import hoàn tất: ${created} tạo mới, ${updated} cập nhật`);
+      toast.success(t('products.importComplete', { createCount: created, updateCount: updated }));
       setIsImportDialogOpen(false);
       setImportJsonText("");
       setImportPreview(null);
       refetch();
     } catch (error: any) {
-      toast.error(error.message || "Lỗi khi import dữ liệu");
+      toast.error(error.message || t('products.importError'));
     } finally {
       setIsImporting(false);
     }
@@ -384,7 +386,7 @@ export function ProductCategoryManagement() {
     if (!file) return;
 
     if (!file.name.endsWith('.json')) {
-      toast.error("Vui lòng chọn file JSON");
+      toast.error(t('products.selectJsonFile'));
       return;
     }
 
@@ -445,7 +447,7 @@ export function ProductCategoryManagement() {
           </TableCell>
           <TableCell>
             <Badge variant={category.isActive ? "default" : "outline"}>
-              {category.isActive ? "Hoạt động" : "Tạm dừng"}
+              {category.isActive ? t('common.active') : t('common.paused')}
             </Badge>
           </TableCell>
           <TableCell>
@@ -494,24 +496,24 @@ export function ProductCategoryManagement() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <FolderTree className="h-5 w-5" />
-                Quản lý danh mục sản phẩm
+                {t('products.categoryManagement')}
               </CardTitle>
               <CardDescription>
-                Tạo và quản lý cấu trúc phân cấp danh mục sản phẩm
+                {t('products.categoryManagementDesc')}
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
               <Button variant="outline" onClick={handleExportAll} disabled={!categories || categories.length === 0}>
                 <Download className="h-4 w-4 mr-2" />
-                Xuất JSON
+                {t('products.exportJson')}
               </Button>
               <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
                 <Upload className="h-4 w-4 mr-2" />
-                Nhập JSON
+                {t('products.importJson')}
               </Button>
               <Button onClick={() => handleOpenDialog()}>
                 <Plus className="h-4 w-4 mr-2" />
-                Thêm danh mục
+                {t('products.addCategory')}
               </Button>
             </div>
           </div>
@@ -520,19 +522,19 @@ export function ProductCategoryManagement() {
           {rootCategories.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <FolderTree className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>Chưa có danh mục nào</p>
-              <p className="text-sm">Bắt đầu bằng cách tạo danh mục đầu tiên</p>
+              <p>{t('products.noCategories')}</p>
+              <p className="text-sm">{t('products.noCategoriesHint')}</p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[180px]">Mã</TableHead>
-                  <TableHead>Tên danh mục</TableHead>
-                  <TableHead>Mô tả</TableHead>
-                  <TableHead className="w-[100px]">Sản phẩm</TableHead>
-                  <TableHead className="w-[100px]">Trạng thái</TableHead>
-                  <TableHead className="w-[100px]">Thao tác</TableHead>
+                  <TableHead className="w-[180px]">{t('products.code')}</TableHead>
+                  <TableHead>{t('products.categoryName')}</TableHead>
+                  <TableHead>{t('common.description')}</TableHead>
+                  <TableHead className="w-[100px]">{t('products.products')}</TableHead>
+                  <TableHead className="w-[100px]">{t('common.status')}</TableHead>
+                  <TableHead className="w-[100px]">{t('common.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -548,19 +550,19 @@ export function ProductCategoryManagement() {
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>
-              {editingCategory ? "Chỉnh sửa danh mục" : "Thêm danh mục mới"}
+              {editingCategory ? t('products.editCategory') : t('products.addNewCategory')}
             </DialogTitle>
             <DialogDescription>
               {editingCategory
-                ? "Cập nhật thông tin danh mục sản phẩm"
-                : "Tạo danh mục mới để phân loại sản phẩm"}
+                ? t('products.editCategoryDesc')
+                : t('products.addNewCategoryDesc')}
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="code">Mã danh mục *</Label>
+                <Label htmlFor="code">{t('products.categoryCode')}</Label>
                 <Input
                   id="code"
                   value={formData.code}
@@ -569,7 +571,7 @@ export function ProductCategoryManagement() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="name">Tên danh mục *</Label>
+                <Label htmlFor="name">{t('products.categoryNameLabel')}</Label>
                 <Input
                   id="name"
                   value={formData.name}
@@ -580,7 +582,7 @@ export function ProductCategoryManagement() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="description">Mô tả</Label>
+              <Label htmlFor="description">{t('common.description')}</Label>
               <Textarea
                 id="description"
                 value={formData.description}
@@ -591,7 +593,7 @@ export function ProductCategoryManagement() {
             </div>
 
             <div className="space-y-2">
-              <Label>Danh mục cha</Label>
+              <Label>{t('products.parentCategory')}</Label>
               <Select
                 value={formData.parentId?.toString() || "none"}
                 onValueChange={(value) => 
@@ -599,10 +601,10 @@ export function ProductCategoryManagement() {
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Chọn danh mục cha (tùy chọn)" />
+                  <SelectValue placeholder={t('products.selectParentCategory')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Không có (danh mục gốc)</SelectItem>
+                  <SelectItem value="none">{t('products.noParent')}</SelectItem>
                   {categories?.filter(c => c.id !== editingCategory?.id).map((cat) => (
                     <SelectItem key={cat.id} value={cat.id.toString()}>
                       {cat.name}
@@ -616,7 +618,7 @@ export function ProductCategoryManagement() {
               <div className="space-y-2">
                 <Label className="flex items-center gap-2">
                   <Palette className="h-4 w-4" />
-                  Màu sắc
+                  {t('products.color')}
                 </Label>
                 <Select
                   value={formData.color}
@@ -664,7 +666,7 @@ export function ProductCategoryManagement() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={handleSubmit}
@@ -673,7 +675,7 @@ export function ProductCategoryManagement() {
               {(createMutation.isPending || updateMutation.isPending) && (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               )}
-              {editingCategory ? "Cập nhật" : "Tạo mới"}
+              {editingCategory ? t('common.update') : t('common.create')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -691,17 +693,17 @@ export function ProductCategoryManagement() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileJson className="h-5 w-5" />
-              Nhập danh mục từ JSON
+              {t('products.importFromJson')}
             </DialogTitle>
             <DialogDescription>
-              Tải lên file JSON hoặc dán nội dung JSON để nhập danh mục sản phẩm
+              {t('products.importJsonDesc')}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             {/* File upload */}
             <div className="space-y-2">
-              <Label>Tải file JSON</Label>
+              <Label>{t('products.uploadJsonFile')}</Label>
               <Input
                 type="file"
                 accept=".json"
@@ -712,7 +714,7 @@ export function ProductCategoryManagement() {
 
             {/* Or paste JSON */}
             <div className="space-y-2">
-              <Label>Hoặc dán nội dung JSON</Label>
+              <Label>{t('products.orPasteJson')}</Label>
               <Textarea
                 value={importJsonText}
                 onChange={(e) => {
@@ -732,20 +734,20 @@ export function ProductCategoryManagement() {
               disabled={!importJsonText.trim()}
               className="w-full"
             >
-              Kiểm tra và xem trước
+              {t('products.checkAndPreview')}
             </Button>
 
             {/* Preview results */}
             {importPreview && (
               <div className="space-y-3 border rounded-lg p-4">
-                <h4 className="font-medium">Kết quả kiểm tra:</h4>
+                <h4 className="font-medium">{t('products.checkResult')}</h4>
                 
                 {/* Errors */}
                 {importPreview.errors.length > 0 && (
                   <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
                     <div className="flex items-center gap-2 text-red-600 font-medium mb-2">
                       <AlertCircle className="h-4 w-4" />
-                      <span>{importPreview.errors.length} lỗi</span>
+                      <span>{importPreview.errors.length} {t('products.errors')}</span>
                     </div>
                     <ul className="text-sm text-red-600/80 list-disc list-inside max-h-32 overflow-y-auto">
                       {importPreview.errors.map((err, i) => (
@@ -760,13 +762,13 @@ export function ProductCategoryManagement() {
                   <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
                     <div className="flex items-center gap-2 text-green-600 font-medium mb-2">
                       <CheckCircle2 className="h-4 w-4" />
-                      <span>{importPreview.toCreate.length} danh mục mới</span>
+                      <span>{importPreview.toCreate.length} {t('products.newCategories')}</span>
                     </div>
                     <ul className="text-sm text-green-600/80 list-disc list-inside max-h-32 overflow-y-auto">
                       {importPreview.toCreate.map((item, i) => (
                         <li key={i}>
                           <span className="font-mono">{item.code}</span> - {item.name}
-                          {item.parentCode && <span className="text-muted-foreground"> (cha: {item.parentCode})</span>}
+                          {item.parentCode && <span className="text-muted-foreground"> ({t('products.parent')}: {item.parentCode})</span>}
                         </li>
                       ))}
                     </ul>
@@ -778,7 +780,7 @@ export function ProductCategoryManagement() {
                   <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
                     <div className="flex items-center gap-2 text-yellow-600 font-medium mb-2">
                       <Pencil className="h-4 w-4" />
-                      <span>{importPreview.toUpdate.length} danh mục cập nhật</span>
+                      <span>{importPreview.toUpdate.length} {t('products.categoriesToUpdate')}</span>
                     </div>
                     <ul className="text-sm text-yellow-600/80 list-disc list-inside max-h-32 overflow-y-auto">
                       {importPreview.toUpdate.map((item, i) => (
@@ -796,7 +798,7 @@ export function ProductCategoryManagement() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsImportDialogOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={handleExecuteImport}
@@ -808,7 +810,7 @@ export function ProductCategoryManagement() {
               }
             >
               {isImporting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Thực hiện nhập
+              {t('products.executeImport')}
             </Button>
           </DialogFooter>
         </DialogContent>

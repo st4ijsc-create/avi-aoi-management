@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import { WorkstationAnalysis } from "@/components/WorkstationAnalysis";
 import { trpc } from "@/lib/trpc";
@@ -37,6 +38,7 @@ function getDefaultDateRange() {
 }
 
 export default function SPCAnalysis() {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("pareto");
   const [dateRange, setDateRange] = useState(getDefaultDateRange);
   const [selectedMachine, setSelectedMachine] = useState<string>("all");
@@ -96,24 +98,24 @@ export default function SPCAnalysis() {
   }, [paretoData]);
 
   return (
-    <DashboardLayout title="SPC / AI Analysis">
+    <DashboardLayout title={t('spc.spcAiAnalysis')}>
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">SPC / AI Analysis</h1>
+          <h1 className="text-2xl font-bold">{t('spc.spcAiAnalysis')}</h1>
           <p className="text-muted-foreground">
-            Statistical Process Control and AI-powered quality analysis
+            {t('spc.spcAiAnalysisDesc')}
           </p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={handleRefresh}>
             <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
+            {t('common.refresh')}
           </Button>
           <Button variant="outline" size="sm">
             <Download className="h-4 w-4 mr-2" />
-            Export
+            {t('common.export')}
           </Button>
         </div>
       </div>
@@ -123,7 +125,7 @@ export default function SPCAnalysis() {
         <CardContent className="pt-6">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="space-y-2">
-              <Label>Start Date</Label>
+              <Label>{t('common.startDate')}</Label>
               <Input
                 type="date"
                 value={dateRange.startDate}
@@ -131,7 +133,7 @@ export default function SPCAnalysis() {
               />
             </div>
             <div className="space-y-2">
-              <Label>End Date</Label>
+              <Label>{t('common.endDate')}</Label>
               <Input
                 type="date"
                 value={dateRange.endDate}
@@ -139,27 +141,27 @@ export default function SPCAnalysis() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Factory</Label>
+              <Label>{t('common.factory')}</Label>
               <Select value={selectedFactory} onValueChange={setSelectedFactory}>
                 <SelectTrigger>
-                  <SelectValue placeholder="All Factories" />
+                  <SelectValue placeholder={t('common.allFactories')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Factories</SelectItem>
+                  <SelectItem value="all">{t('common.allFactories')}</SelectItem>
                   {factories?.map((f) => (
-                    <SelectItem key={f.id} value={f.code}>{f.name}</SelectItem>
+                    <SelectItem key={f.id} value={f.code || String(f.id)}>{f.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Machine</Label>
+              <Label>{t('common.machine')}</Label>
               <Select value={selectedMachine} onValueChange={setSelectedMachine}>
                 <SelectTrigger>
-                  <SelectValue placeholder="All Machines" />
+                  <SelectValue placeholder={t('common.allMachines')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Machines</SelectItem>
+                  <SelectItem value="all">{t('common.allMachines')}</SelectItem>
                   {machines?.map((m) => (
                     <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
                   ))}
@@ -167,16 +169,16 @@ export default function SPCAnalysis() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Interval</Label>
+              <Label>{t('spc.interval')}</Label>
               <Select value={interval} onValueChange={(v) => setInterval(v as typeof interval)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="hour">Hourly</SelectItem>
-                  <SelectItem value="day">Daily</SelectItem>
-                  <SelectItem value="week">Weekly</SelectItem>
-                  <SelectItem value="month">Monthly</SelectItem>
+                  <SelectItem value="hour">{t('spc.hourly')}</SelectItem>
+                  <SelectItem value="day">{t('spc.daily')}</SelectItem>
+                  <SelectItem value="week">{t('spc.weekly')}</SelectItem>
+                  <SelectItem value="month">{t('spc.monthly')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -189,23 +191,23 @@ export default function SPCAnalysis() {
         <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="pareto" className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
-            Pareto Analysis
+            {t('spc.paretoAnalysis')}
           </TabsTrigger>
           <TabsTrigger value="trend" className="flex items-center gap-2">
             <LineChart className="h-4 w-4" />
-            Trend & Prediction
+            {t('spc.trendAndPrediction')}
           </TabsTrigger>
           <TabsTrigger value="anomaly" className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4" />
-            Anomaly Detection
+            {t('spc.anomalyDetection')}
           </TabsTrigger>
           <TabsTrigger value="rootcause" className="flex items-center gap-2">
             <Lightbulb className="h-4 w-4" />
-            Root Cause
+            {t('spc.rootCause')}
           </TabsTrigger>
           <TabsTrigger value="workstation" className="flex items-center gap-2">
             <Wrench className="h-4 w-4" />
-            Workstation
+            {t('spc.workstation')}
           </TabsTrigger>
         </TabsList>
 
@@ -215,10 +217,10 @@ export default function SPCAnalysis() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Target className="h-5 w-5" />
-                Top NG Measurement Points (Pareto Chart)
+                {t('spc.topNgPoints')}
               </CardTitle>
               <CardDescription>
-                Identify the vital few measurement points causing the majority of defects
+                {t('spc.topNgPointsDesc')}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -272,13 +274,13 @@ export default function SPCAnalysis() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b">
-                          <th className="text-left py-2 px-2">Rank</th>
-                          <th className="text-left py-2 px-2">Point Code</th>
-                          <th className="text-left py-2 px-2">Point Name</th>
-                          <th className="text-left py-2 px-2">Type</th>
-                          <th className="text-right py-2 px-2">NG Count</th>
-                          <th className="text-right py-2 px-2">NG Rate</th>
-                          <th className="text-right py-2 px-2">Cumulative %</th>
+                          <th className="text-left py-2 px-2">{t('common.rank')}</th>
+                          <th className="text-left py-2 px-2">{t('spc.pointCode')}</th>
+                          <th className="text-left py-2 px-2">{t('spc.pointName')}</th>
+                          <th className="text-left py-2 px-2">{t('common.type')}</th>
+                          <th className="text-right py-2 px-2">{t('spc.ngCount')}</th>
+                          <th className="text-right py-2 px-2">{t('spc.ngRate')}</th>
+                          <th className="text-right py-2 px-2">{t('spc.cumulativePercent')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -309,7 +311,7 @@ export default function SPCAnalysis() {
                 </div>
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
-                  No NG data found for the selected period
+                  {t('spc.noNgData')}
                 </div>
               )}
             </CardContent>
@@ -322,7 +324,7 @@ export default function SPCAnalysis() {
             {/* Trend Direction Card */}
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Trend Direction</CardTitle>
+                <CardTitle className="text-sm font-medium">{t('spc.trendDirection')}</CardTitle>
               </CardHeader>
               <CardContent>
                 {trendLoading ? (
@@ -341,7 +343,7 @@ export default function SPCAnalysis() {
                     <div>
                       <p className="text-2xl font-bold capitalize">{trendData.trend.direction}</p>
                       <p className="text-xs text-muted-foreground">
-                        Slope: {trendData.trend.slope.toFixed(3)}
+                        {t('spc.slope')}: {trendData.trend.slope.toFixed(3)}
                       </p>
                     </div>
                   </div>
@@ -352,7 +354,7 @@ export default function SPCAnalysis() {
             {/* R² Score Card */}
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Model Fit (R²)</CardTitle>
+                <CardTitle className="text-sm font-medium">{t('spc.modelFitR2')}</CardTitle>
               </CardHeader>
               <CardContent>
                 {trendLoading ? (
@@ -361,7 +363,7 @@ export default function SPCAnalysis() {
                   <div>
                     <p className="text-2xl font-bold">{(trendData.trend.r2 * 100).toFixed(1)}%</p>
                     <p className="text-xs text-muted-foreground">
-                      {trendData.trend.r2 > 0.7 ? "Strong fit" : trendData.trend.r2 > 0.4 ? "Moderate fit" : "Weak fit"}
+                      {trendData.trend.r2 > 0.7 ? t('spc.strongFit') : trendData.trend.r2 > 0.4 ? t('spc.moderateFit') : t('spc.weakFit')}
                     </p>
                   </div>
                 ) : null}
@@ -371,7 +373,7 @@ export default function SPCAnalysis() {
             {/* Prediction Card */}
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">7-Day Prediction</CardTitle>
+                <CardTitle className="text-sm font-medium">{t('spc.sevenDayPrediction')}</CardTitle>
               </CardHeader>
               <CardContent>
                 {trendLoading ? (
@@ -382,7 +384,7 @@ export default function SPCAnalysis() {
                       {trendData.prediction[trendData.prediction.length - 1].predictedYield.toFixed(1)}%
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Confidence: {(trendData.prediction[trendData.prediction.length - 1].confidence * 100).toFixed(0)}%
+                      {t('spc.confidence')}: {(trendData.prediction[trendData.prediction.length - 1].confidence * 100).toFixed(0)}%
                     </p>
                   </div>
                 ) : null}
@@ -392,9 +394,9 @@ export default function SPCAnalysis() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Yield Trend with Moving Average</CardTitle>
+              <CardTitle>{t('spc.yieldTrendWithMA')}</CardTitle>
               <CardDescription>
-                Historical yield data with 5-point moving average and trend line
+                {t('spc.yieldTrendWithMADesc')}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -429,11 +431,11 @@ export default function SPCAnalysis() {
                     <div className="absolute bottom-2 right-2 flex gap-4 text-xs">
                       <span className="flex items-center gap-1">
                         <div className="w-3 h-0.5 bg-blue-500" />
-                        Yield
+                        {t('spc.yield')}
                       </span>
                       <span className="flex items-center gap-1">
                         <div className="w-3 h-0.5 bg-orange-500" style={{ borderStyle: 'dashed' }} />
-                        MA(5)
+                        {t('spc.ma5')}
                       </span>
                     </div>
                   </div>
@@ -441,7 +443,7 @@ export default function SPCAnalysis() {
                   {/* Prediction table */}
                   {trendData.prediction.length > 0 && (
                     <div>
-                      <h4 className="font-medium mb-2">Yield Predictions</h4>
+                      <h4 className="font-medium mb-2">{t('spc.yieldPredictions')}</h4>
                       <div className="grid grid-cols-7 gap-2">
                         {trendData.prediction.map((p, i) => (
                           <div key={i} className="text-center p-2 border rounded bg-muted/20">
@@ -458,7 +460,7 @@ export default function SPCAnalysis() {
                 </div>
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
-                  No trend data available
+                  {t('spc.noTrendData')}
                 </div>
               )}
             </CardContent>
@@ -470,7 +472,7 @@ export default function SPCAnalysis() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Mean Yield</CardTitle>
+                <CardTitle className="text-sm font-medium">{t('spc.meanYield')}</CardTitle>
               </CardHeader>
               <CardContent>
                 {anomalyLoading ? (
@@ -484,7 +486,7 @@ export default function SPCAnalysis() {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Std Deviation</CardTitle>
+                <CardTitle className="text-sm font-medium">{t('spc.stdDeviation')}</CardTitle>
               </CardHeader>
               <CardContent>
                 {anomalyLoading ? (
@@ -498,7 +500,7 @@ export default function SPCAnalysis() {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Control Limits</CardTitle>
+                <CardTitle className="text-sm font-medium">{t('spc.controlLimits')}</CardTitle>
               </CardHeader>
               <CardContent>
                 {anomalyLoading ? (
@@ -513,7 +515,7 @@ export default function SPCAnalysis() {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Anomalies Detected</CardTitle>
+                <CardTitle className="text-sm font-medium">{t('spc.anomaliesDetected')}</CardTitle>
               </CardHeader>
               <CardContent>
                 {anomalyLoading ? (
@@ -529,9 +531,9 @@ export default function SPCAnalysis() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Anomaly Detection Results</CardTitle>
+              <CardTitle>{t('spc.anomalyDetectionResults')}</CardTitle>
               <CardDescription>
-                Data points with Z-score beyond ±2 standard deviations are flagged as anomalies
+                {t('spc.anomalyDetectionResultsDesc')}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -542,7 +544,7 @@ export default function SPCAnalysis() {
                   {anomalyData.anomalies.map((anomaly) => (
                     <Alert key={`${anomaly.date}-${anomaly.zScore}`} variant="destructive">
                       <AlertTriangle className="h-4 w-4" />
-                      <AlertTitle>Anomaly Detected - {String(anomaly.date)}</AlertTitle>
+                      <AlertTitle>{t('spc.anomalyDetectedDate', { date: String(anomaly.date) })}</AlertTitle>
                       <AlertDescription>
                         Yield: {anomaly.yieldRate.toFixed(2)}% (Z-score: {anomaly.zScore.toFixed(2)})
                         <br />
@@ -554,7 +556,7 @@ export default function SPCAnalysis() {
               ) : (
                 <div className="text-center py-8">
                   <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-2" />
-                  <p className="text-muted-foreground">No anomalies detected in the selected period</p>
+                  <p className="text-muted-foreground">{t('spc.noAnomaliesDetected')}</p>
                 </div>
               )}
             </CardContent>
@@ -577,10 +579,10 @@ export default function SPCAnalysis() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Lightbulb className="h-5 w-5" />
-                AI-Powered Root Cause Suggestions
+                {t('spc.aiRootCauseSuggestions')}
               </CardTitle>
               <CardDescription>
-                Analysis and recommendations based on defect patterns
+                {t('spc.aiRootCauseSuggestionsDesc')}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -619,7 +621,7 @@ export default function SPCAnalysis() {
                           <AlertDescription className="mt-2">
                             <p className="mb-2">{suggestion.description}</p>
                             <p className="font-medium text-sm">
-                              💡 Recommendation: {suggestion.recommendation}
+                              💡 {t('spc.recommendation')}: {suggestion.recommendation}
                             </p>
                           </AlertDescription>
                         </div>
@@ -629,7 +631,7 @@ export default function SPCAnalysis() {
                 </div>
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
-                  No analysis data available
+                  {t('spc.noAnalysisData')}
                 </div>
               )}
             </CardContent>

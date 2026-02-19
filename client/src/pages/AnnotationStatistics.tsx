@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -49,12 +50,12 @@ import { vi } from 'date-fns/locale';
 
 const COLORS = ['#3b82f6', '#22c55e', '#f97316', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#eab308'];
 
-const annotationTypeLabels: Record<string, string> = {
-  rectangle: 'Hình chữ nhật',
-  circle: 'Hình tròn',
-  arrow: 'Mũi tên',
-  freehand: 'Vẽ tay',
-  text: 'Văn bản',
+const annotationTypeLabelKeys: Record<string, string> = {
+  rectangle: 'reports.annotationType.rectangle',
+  circle: 'reports.annotationType.circle',
+  arrow: 'reports.annotationType.arrow',
+  freehand: 'reports.annotationType.freehand',
+  text: 'reports.annotationType.text',
 };
 
 const annotationTypeIcons: Record<string, LucideIcon> = {
@@ -65,16 +66,17 @@ const annotationTypeIcons: Record<string, LucideIcon> = {
   text: Type,
 };
 
-const colorLabels: Record<string, string> = {
-  '#ef4444': 'Đỏ (Lỗi nghiêm trọng)',
-  '#f97316': 'Cam (Cảnh báo)',
-  '#eab308': 'Vàng (Chú ý)',
-  '#22c55e': 'Xanh lá (OK)',
-  '#3b82f6': 'Xanh dương (Đo lường)',
-  '#8b5cf6': 'Tím (Ghi chú)',
+const colorLabelKeys: Record<string, string> = {
+  '#ef4444': 'reports.colorLabel.red',
+  '#f97316': 'reports.colorLabel.orange',
+  '#eab308': 'reports.colorLabel.yellow',
+  '#22c55e': 'reports.colorLabel.green',
+  '#3b82f6': 'reports.colorLabel.blue',
+  '#8b5cf6': 'reports.colorLabel.purple',
 };
 
 export default function AnnotationStatistics() {
+  const { t } = useTranslation();
   const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d');
   const [selectedMachine, setSelectedMachine] = useState<string>('all');
   const [selectedProduct, setSelectedProduct] = useState<string>('all');
@@ -109,20 +111,20 @@ export default function AnnotationStatistics() {
   const typeChartData = useMemo(() => {
     if (!stats?.byType) return [];
     return stats.byType.map(item => ({
-      name: annotationTypeLabels[item.type] || item.type,
+      name: t(annotationTypeLabelKeys[item.type]) || item.type,
       value: item.count,
       type: item.type,
     }));
-  }, [stats]);
+  }, [stats, t]);
 
   const colorChartData = useMemo(() => {
     if (!stats?.byColor) return [];
     return stats.byColor.map(item => ({
-      name: colorLabels[item.color] || item.color,
+      name: t(colorLabelKeys[item.color]) || item.color,
       value: item.count,
       color: item.color,
     }));
-  }, [stats]);
+  }, [stats, t]);
 
   const machineChartData = useMemo(() => {
     if (!stats?.byMachine) return [];
@@ -162,23 +164,23 @@ export default function AnnotationStatistics() {
     if (!stats) return;
 
     const rows = [
-      ['Thống kê Annotation', ''],
-      ['Tổng số annotation', stats.totalAnnotations.toString()],
-      ['Tổng số hình ảnh', stats.totalImages.toString()],
+      [t('reports.annotationStatistics'), ''],
+      [t('reports.totalAnnotations'), stats.totalAnnotations.toString()],
+      [t('reports.totalImages'), stats.totalImages.toString()],
       [''],
-      ['Theo loại annotation', ''],
-      ...stats.byType.map(item => [annotationTypeLabels[item.type] || item.type, item.count.toString()]),
+      [t('reports.byAnnotationType'), ''],
+      ...stats.byType.map(item => [t(annotationTypeLabelKeys[item.type]) || item.type, item.count.toString()]),
       [''],
-      ['Theo màu sắc', ''],
-      ...stats.byColor.map(item => [colorLabels[item.color] || item.color, item.count.toString()]),
+      [t('reports.byColor'), ''],
+      ...stats.byColor.map(item => [t(colorLabelKeys[item.color]) || item.color, item.count.toString()]),
       [''],
-      ['Theo máy', ''],
+      [t('reports.byMachine'), ''],
       ...stats.byMachine.map(item => [item.name, item.count.toString()]),
       [''],
-      ['Theo sản phẩm', ''],
+      [t('reports.byProduct'), ''],
       ...stats.byProduct.map(item => [item.name, item.count.toString()]),
       [''],
-      ['Theo ngày', ''],
+      [t('reports.byDate'), ''],
       ...stats.byDate.map(item => [item.date, item.count.toString()]),
     ];
 
@@ -190,7 +192,7 @@ export default function AnnotationStatistics() {
     link.download = `annotation-statistics-${format(new Date(), 'yyyy-MM-dd')}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-    toast.success('Đã xuất file CSV');
+    toast.success(t('common.csvExported'));
   };
 
   return (
@@ -201,20 +203,20 @@ export default function AnnotationStatistics() {
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <BarChart3 className="h-6 w-6 text-primary" />
-              Thống Kê Annotation
+              {t('reports.annotationStatistics')}
             </h1>
             <p className="text-muted-foreground">
-              Phân tích xu hướng và phân bố annotation theo thời gian, máy, sản phẩm
+              {t('reports.annotationStatsDesc')}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => refetch()}>
               <RefreshCw className="h-4 w-4 mr-2" />
-              Làm mới
+              {t('common.refresh')}
             </Button>
             <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!stats}>
               <Download className="h-4 w-4 mr-2" />
-              Xuất CSV
+              {t('common.exportCSV')}
             </Button>
           </div>
         </div>
@@ -224,28 +226,28 @@ export default function AnnotationStatistics() {
           <CardContent className="pt-4">
             <div className="flex flex-wrap gap-4 items-end">
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Khoảng thời gian</label>
+                <label className="text-xs text-muted-foreground">{t('common.dateRange')}</label>
                 <Select value={dateRange} onValueChange={(v: any) => setDateRange(v)}>
                   <SelectTrigger className="w-[140px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="7d">7 ngày qua</SelectItem>
-                    <SelectItem value="30d">30 ngày qua</SelectItem>
-                    <SelectItem value="90d">90 ngày qua</SelectItem>
-                    <SelectItem value="all">Tất cả</SelectItem>
+                    <SelectItem value="7d">{t('common.last7Days')}</SelectItem>
+                    <SelectItem value="30d">{t('common.last30Days')}</SelectItem>
+                    <SelectItem value="90d">{t('common.last90Days')}</SelectItem>
+                    <SelectItem value="all">{t('common.all')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Máy</label>
+                <label className="text-xs text-muted-foreground">{t('common.machine')}</label>
                 <Select value={selectedMachine} onValueChange={setSelectedMachine}>
                   <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Tất cả máy" />
+                    <SelectValue placeholder={t('common.allMachines')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tất cả máy</SelectItem>
+                    <SelectItem value="all">{t('common.allMachines')}</SelectItem>
                     {machines?.map((m: any) => (
                       <SelectItem key={m.id} value={m.id.toString()}>
                         {m.code} - {m.name}
@@ -256,13 +258,13 @@ export default function AnnotationStatistics() {
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Sản phẩm</label>
+                <label className="text-xs text-muted-foreground">{t('common.product')}</label>
                 <Select value={selectedProduct} onValueChange={setSelectedProduct}>
                   <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Tất cả sản phẩm" />
+                    <SelectValue placeholder={t('common.allProducts')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tất cả sản phẩm</SelectItem>
+                    <SelectItem value="all">{t('common.allProducts')}</SelectItem>
                     {products?.map((p: any) => (
                       <SelectItem key={p.id} value={p.id.toString()}>
                         {p.code} - {p.name}
@@ -294,7 +296,7 @@ export default function AnnotationStatistics() {
                     </div>
                     <div>
                       <p className="text-2xl font-bold">{stats.totalAnnotations.toLocaleString()}</p>
-                      <p className="text-xs text-muted-foreground">Tổng annotation</p>
+                      <p className="text-xs text-muted-foreground">{t('reports.totalAnnotations')}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -308,7 +310,7 @@ export default function AnnotationStatistics() {
                     </div>
                     <div>
                       <p className="text-2xl font-bold">{stats.totalImages.toLocaleString()}</p>
-                      <p className="text-xs text-muted-foreground">Hình ảnh có annotation</p>
+                      <p className="text-xs text-muted-foreground">{t('reports.imagesWithAnnotation')}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -322,7 +324,7 @@ export default function AnnotationStatistics() {
                     </div>
                     <div>
                       <p className="text-2xl font-bold">{stats.byMachine.length}</p>
-                      <p className="text-xs text-muted-foreground">Máy có annotation</p>
+                      <p className="text-xs text-muted-foreground">{t('reports.machinesWithAnnotation')}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -336,7 +338,7 @@ export default function AnnotationStatistics() {
                     </div>
                     <div>
                       <p className="text-2xl font-bold">{stats.byProduct.length}</p>
-                      <p className="text-xs text-muted-foreground">Sản phẩm có annotation</p>
+                      <p className="text-xs text-muted-foreground">{t('reports.productsWithAnnotation')}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -346,10 +348,10 @@ export default function AnnotationStatistics() {
             {/* Charts */}
             <Tabs defaultValue="overview" className="space-y-4">
               <TabsList>
-                <TabsTrigger value="overview">Tổng quan</TabsTrigger>
-                <TabsTrigger value="trend">Xu hướng</TabsTrigger>
-                <TabsTrigger value="machine">Theo máy</TabsTrigger>
-                <TabsTrigger value="product">Theo sản phẩm</TabsTrigger>
+                <TabsTrigger value="overview">{t('dashboard.overview')}</TabsTrigger>
+                <TabsTrigger value="trend">{t('reports.trend')}</TabsTrigger>
+                <TabsTrigger value="machine">{t('reports.byMachine')}</TabsTrigger>
+                <TabsTrigger value="product">{t('reports.byProduct')}</TabsTrigger>
               </TabsList>
 
               <TabsContent value="overview" className="space-y-4">
@@ -359,7 +361,7 @@ export default function AnnotationStatistics() {
                     <CardHeader>
                       <CardTitle className="text-base flex items-center gap-2">
                         <PieChartIcon className="h-4 w-4" />
-                        Phân bố theo loại Annotation
+                        {t('reports.distByAnnotationType')}
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -387,7 +389,7 @@ export default function AnnotationStatistics() {
                         </div>
                       ) : (
                         <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                          Chưa có dữ liệu
+                          {t('common.noData')}
                         </div>
                       )}
                       <div className="mt-4 flex flex-wrap gap-2">
@@ -409,7 +411,7 @@ export default function AnnotationStatistics() {
                     <CardHeader>
                       <CardTitle className="text-base flex items-center gap-2">
                         <PieChartIcon className="h-4 w-4" />
-                        Phân bố theo màu sắc (Mức độ)
+                        {t('reports.distByColorSeverity')}
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -437,7 +439,7 @@ export default function AnnotationStatistics() {
                         </div>
                       ) : (
                         <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                          Chưa có dữ liệu
+                          {t('common.noData')}
                         </div>
                       )}
                       <div className="mt-4 flex flex-wrap gap-2">
@@ -458,10 +460,10 @@ export default function AnnotationStatistics() {
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
                       <TrendingUp className="h-4 w-4" />
-                      Xu hướng Annotation theo thời gian
+                      {t('reports.annotationTrendOverTime')}
                     </CardTitle>
                     <CardDescription>
-                      Số lượng annotation được tạo mỗi ngày
+                      {t('reports.annotationsCreatedPerDay')}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -482,7 +484,7 @@ export default function AnnotationStatistics() {
                             <Area
                               type="monotone"
                               dataKey="count"
-                              name="Số annotation"
+                              name={t('reports.annotationCount')}
                               stroke="#3b82f6"
                               fill="#3b82f6"
                               fillOpacity={0.2}
@@ -492,7 +494,7 @@ export default function AnnotationStatistics() {
                       </div>
                     ) : (
                       <div className="h-[400px] flex items-center justify-center text-muted-foreground">
-                        Chưa có dữ liệu
+                        {t('common.noData')}
                       </div>
                     )}
                   </CardContent>
@@ -504,10 +506,10 @@ export default function AnnotationStatistics() {
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
                       <Cpu className="h-4 w-4" />
-                      Top 10 Máy có nhiều Annotation nhất
+                      {t('reports.top10MachinesAnnotations')}
                     </CardTitle>
                     <CardDescription>
-                      Máy có nhiều annotation thường có nhiều vấn đề cần kiểm tra
+                      {t('reports.machinesAnnotationDesc')}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -529,13 +531,13 @@ export default function AnnotationStatistics() {
                                 props.payload.fullName || name
                               ]}
                             />
-                            <Bar dataKey="count" name="Số annotation" fill="#f97316" radius={[0, 4, 4, 0]} />
+                            <Bar dataKey="count" name={t('reports.annotationCount')} fill="#f97316" radius={[0, 4, 4, 0]} />
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
                     ) : (
                       <div className="h-[400px] flex items-center justify-center text-muted-foreground">
-                        Chưa có dữ liệu
+                        {t('common.noData')}
                       </div>
                     )}
                   </CardContent>
@@ -547,10 +549,10 @@ export default function AnnotationStatistics() {
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
                       <Package className="h-4 w-4" />
-                      Top 10 Sản phẩm có nhiều Annotation nhất
+                      {t('reports.top10ProductsAnnotations')}
                     </CardTitle>
                     <CardDescription>
-                      Sản phẩm có nhiều annotation có thể cần cải thiện quy trình sản xuất
+                      {t('reports.productsAnnotationDesc')}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -572,13 +574,13 @@ export default function AnnotationStatistics() {
                                 props.payload.fullName || name
                               ]}
                             />
-                            <Bar dataKey="count" name="Số annotation" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
+                            <Bar dataKey="count" name={t('reports.annotationCount')} fill="#8b5cf6" radius={[0, 4, 4, 0]} />
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
                     ) : (
                       <div className="h-[400px] flex items-center justify-center text-muted-foreground">
-                        Chưa có dữ liệu
+                        {t('common.noData')}
                       </div>
                     )}
                   </CardContent>

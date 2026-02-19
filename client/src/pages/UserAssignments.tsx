@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,6 +13,7 @@ import { UserPlus, X, Users, Building2, Factory } from 'lucide-react';
 import { navItems } from '@/lib/navigation';
 
 export default function UserAssignments() {
+  const { t } = useTranslation();
   const [selectedUser, setSelectedUser] = useState<number | null>(null);
   const [corporateCode, setCorporateCode] = useState<string>('');
   const [factoryCode, setFactoryCode] = useState<string>('');
@@ -24,7 +26,7 @@ export default function UserAssignments() {
 
   const handleAssignCorporate = async () => {
     if (!selectedUser || !corporateCode.trim()) {
-      toast.error('Please select user and enter corporate code');
+      toast.error(t('users.selectUserAndCorporateCode'));
       return;
     }
     
@@ -33,7 +35,7 @@ export default function UserAssignments() {
         userId: selectedUser,
         corporateCode: corporateCode.trim(),
       });
-      toast.success('Assigned corporate successfully');
+      toast.success(t('users.assignedCorporateSuccess'));
       setCorporateCode('');
       refetch();
     } catch (error: any) {
@@ -43,7 +45,7 @@ export default function UserAssignments() {
 
   const handleAssignFactory = async () => {
     if (!selectedUser || !factoryCode.trim()) {
-      toast.error('Please select user and enter factory code');
+      toast.error(t('users.selectUserAndFactoryCode'));
       return;
     }
     
@@ -52,7 +54,7 @@ export default function UserAssignments() {
         userId: selectedUser,
         factoryCode: factoryCode.trim(),
       });
-      toast.success('Assigned factory successfully');
+      toast.success(t('users.assignedFactorySuccess'));
       setFactoryCode('');
       refetch();
     } catch (error: any) {
@@ -63,7 +65,7 @@ export default function UserAssignments() {
   const handleRemoveCorporate = async (userId: number, corporateCode: string) => {
     try {
       await removeCorporate.mutateAsync({ userId, corporateCode });
-      toast.success('Removed corporate assignment');
+      toast.success(t('users.removedCorporateAssignment'));
       refetch();
     } catch (error: any) {
       toast.error(`Failed: ${error.message}`);
@@ -73,7 +75,7 @@ export default function UserAssignments() {
   const handleRemoveFactory = async (userId: number, factoryCode: string) => {
     try {
       await removeFactory.mutateAsync({ userId, factoryCode });
-      toast.success('Removed factory assignment');
+      toast.success(t('users.removedFactoryAssignment'));
       refetch();
     } catch (error: any) {
       toast.error(`Failed: ${error.message}`);
@@ -82,7 +84,7 @@ export default function UserAssignments() {
 
   return (
     <DashboardLayout
-      title="User Assignments"
+      title={t('users.userAssignments')}
       navItems={navItems}
       currentPath="/user-assignments"
     >
@@ -92,16 +94,16 @@ export default function UserAssignments() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <UserPlus className="h-5 w-5" />
-              Assign User to Corporate/Factory
+              {t('users.assignUserToCorporateFactory')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* User Selection */}
             <div>
-              <Label>Select User</Label>
+              <Label>{t('users.selectUser')}</Label>
               <Select value={selectedUser?.toString() || ''} onValueChange={(v) => setSelectedUser(Number(v))}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select User" />
+                  <SelectValue placeholder={t('users.selectUser')} />
                 </SelectTrigger>
                 <SelectContent>
                   {allAssignments?.map((item) => (
@@ -119,9 +121,9 @@ export default function UserAssignments() {
             {/* Corporate Assignment */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
               <div className="md:col-span-2">
-                <Label>Corporate Code</Label>
+                <Label>{t('users.corporateCode')}</Label>
                 <Input
-                  placeholder="Enter corporate code (e.g., CORP001)"
+                  placeholder={t('users.enterCorporateCode')}
                   value={corporateCode}
                   onChange={(e) => setCorporateCode(e.target.value)}
                 />
@@ -132,16 +134,16 @@ export default function UserAssignments() {
                 className="w-full"
               >
                 <Building2 className="h-4 w-4 mr-2" />
-                Assign Corporate
+                {t('users.assignCorporate')}
               </Button>
             </div>
 
             {/* Factory Assignment */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
               <div className="md:col-span-2">
-                <Label>Factory Code</Label>
+                <Label>{t('users.factoryCode')}</Label>
                 <Input
-                  placeholder="Enter factory code (e.g., FAC001)"
+                  placeholder={t('users.enterFactoryCode')}
                   value={factoryCode}
                   onChange={(e) => setFactoryCode(e.target.value)}
                 />
@@ -152,7 +154,7 @@ export default function UserAssignments() {
                 className="w-full"
               >
                 <Factory className="h-4 w-4 mr-2" />
-                Assign Factory
+                {t('users.assignFactory')}
               </Button>
             </div>
           </CardContent>
@@ -162,7 +164,7 @@ export default function UserAssignments() {
         <div className="space-y-4">
           <h3 className="text-lg font-semibold flex items-center gap-2">
             <Users className="h-5 w-5" />
-            User Assignments
+            {t('users.userAssignments')}
           </h3>
           
           {allAssignments?.map((item) => (
@@ -185,7 +187,7 @@ export default function UserAssignments() {
                 <div>
                   <h4 className="font-semibold mb-2 flex items-center gap-2">
                     <Building2 className="h-4 w-4" />
-                    Corporate Assignments:
+                    {t('users.corporateAssignments')}:
                   </h4>
                   <div className="flex flex-wrap gap-2">
                     {item.corporates.map((corp) => (
@@ -198,7 +200,7 @@ export default function UserAssignments() {
                       </Badge>
                     ))}
                     {item.corporates.length === 0 && (
-                      <span className="text-muted-foreground text-sm">No corporate assignments</span>
+                      <span className="text-muted-foreground text-sm">{t('users.noCorporateAssignments')}</span>
                     )}
                   </div>
                 </div>
@@ -207,7 +209,7 @@ export default function UserAssignments() {
                 <div>
                   <h4 className="font-semibold mb-2 flex items-center gap-2">
                     <Factory className="h-4 w-4" />
-                    Factory Assignments:
+                    {t('users.factoryAssignments')}:
                   </h4>
                   <div className="flex flex-wrap gap-2">
                     {item.factories.map((factory) => (
@@ -220,7 +222,7 @@ export default function UserAssignments() {
                       </Badge>
                     ))}
                     {item.factories.length === 0 && (
-                      <span className="text-muted-foreground text-sm">No factory assignments</span>
+                      <span className="text-muted-foreground text-sm">{t('users.noFactoryAssignments')}</span>
                     )}
                   </div>
                 </div>
@@ -231,7 +233,7 @@ export default function UserAssignments() {
           {allAssignments?.length === 0 && (
             <Card>
               <CardContent className="py-8 text-center text-muted-foreground">
-                No users found
+                {t('users.noUsersFound')}
               </CardContent>
             </Card>
           )}

@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -79,7 +80,7 @@ type Factory = { id: number; code: string; name: string; address?: string | null
 type Workshop = { id: number; factoryId: number; code: string; name: string; description?: string | null };
 type Line = { id: number; workshopId: number; code: string; name: string; description?: string | null };
 type Station = { id: number; lineId: number; code: string; name: string; orderIndex: number; description?: string | null };
-type Machine = { id: number; stationId: number; code: string; name: string; machineType: string; apiKey: string; model?: string | null; manufacturer?: string | null; image2DUrl?: string | null; image3DUrl?: string | null };
+type Machine = { id: number; stationId: number; code: string; name: string; machineType: string; apiKey: string | null; model?: string | null; manufacturer?: string | null; image2DUrl?: string | null; image3DUrl?: string | null; [key: string]: any };
 type ShiftConfig = { id: number; factoryId?: number | null; name: string; code: string; startHour: number; startMinute: number; endHour: number; endMinute: number; isActive: boolean; orderIndex: number };
 type LineStage = { id: number; lineId: number; code: string; name: string; orderIndex: number; description?: string | null; stationId?: number | null };
 type AlertSetting = { 
@@ -98,6 +99,7 @@ type AlertSetting = {
 };
 
 export default function Settings() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
@@ -242,9 +244,9 @@ export default function Settings() {
   }>({
     name: { required: true, minLength: 2, maxLength: 100 },
     threshold: { required: true, custom: (val) => {
-      if (!val || isNaN(Number(val))) return "Phải là số";
+      if (!val || isNaN(Number(val))) return t("validation.mustBeNumber");
       const num = Number(val);
-      if (num < 0 || num > 100) return "Giá trị từ 0-100";
+      if (num < 0 || num > 100) return t("validation.valueRange0to100");
       return null;
     }},
   });
@@ -276,7 +278,7 @@ export default function Settings() {
   // Alert Mutations
   const createAlertMutation = trpc.alert.create.useMutation({
     onSuccess: () => {
-      toast.success("Tạo cảnh báo thành công");
+      toast.success(t("settings.createAlertSuccess"));
       setAlertDialogOpen(false);
       setAlertForm({
         name: "",
@@ -296,7 +298,7 @@ export default function Settings() {
 
   const updateAlertMutation = trpc.alert.update.useMutation({
     onSuccess: () => {
-      toast.success("Cập nhật cảnh báo thành công");
+      toast.success(t("settings.updateAlertSuccess"));
       setEditAlertDialogOpen(false);
       setEditingAlert(null);
       refetchAlerts();
@@ -306,7 +308,7 @@ export default function Settings() {
 
   const deleteAlertMutation = trpc.alert.delete.useMutation({
     onSuccess: () => {
-      toast.success("Xóa cảnh báo thành công");
+      toast.success(t("settings.deleteAlertSuccess"));
       refetchAlerts();
     },
     onError: (err) => toast.error(err.message),
@@ -315,7 +317,7 @@ export default function Settings() {
   // Create Mutations
   const createFactoryMutation = trpc.factory.create.useMutation({
     onSuccess: () => {
-      toast.success("Tạo nhà máy thành công");
+      toast.success(t("settings.createFactorySuccess"));
       setFactoryDialogOpen(false);
       setFactoryForm({ code: "", name: "", description: "", address: "" });
       refetchFactories();
@@ -325,7 +327,7 @@ export default function Settings() {
 
   const createWorkshopMutation = trpc.workshop.create.useMutation({
     onSuccess: () => {
-      toast.success("Tạo nhà xưởng thành công");
+      toast.success(t("settings.createWorkshopSuccess"));
       setWorkshopDialogOpen(false);
       setWorkshopForm({ factoryId: "", code: "", name: "", description: "" });
       refetchWorkshops();
@@ -335,7 +337,7 @@ export default function Settings() {
 
   const createLineMutation = trpc.line.create.useMutation({
     onSuccess: () => {
-      toast.success("Tạo dây chuyền thành công");
+      toast.success(t("settings.createLineSuccess"));
       setLineDialogOpen(false);
       setLineForm({ workshopId: "", code: "", name: "", description: "" });
       refetchLines();
@@ -345,7 +347,7 @@ export default function Settings() {
 
   const createStationMutation = trpc.station.create.useMutation({
     onSuccess: () => {
-      toast.success("Tạo công trạm thành công");
+      toast.success(t("settings.createStationSuccess"));
       setStationDialogOpen(false);
       setStationForm({ lineId: "", code: "", name: "", description: "", orderIndex: "0" });
       refetchStations();
@@ -355,7 +357,7 @@ export default function Settings() {
 
   const createMachineMutation = trpc.machine.create.useMutation({
     onSuccess: (data) => {
-      toast.success(`Tạo máy thành công. API Key: ${data.apiKey}`);
+      toast.success(t("settings.createMachineSuccessWithKey", { apiKey: data.apiKey }));
       setMachineDialogOpen(false);
       setMachineForm({ stationId: "", code: "", name: "", machineType: "AVI", model: "", manufacturer: "", description: "" });
       refetchMachines();
@@ -365,7 +367,7 @@ export default function Settings() {
 
   const createShiftMutation = trpc.shiftConfig.create.useMutation({
     onSuccess: () => {
-      toast.success("Tạo ca làm việc thành công");
+      toast.success(t("settings.createShiftSuccess"));
       setShiftDialogOpen(false);
       setShiftForm({ factoryId: "", name: "", code: "", startHour: "6", startMinute: "0", endHour: "14", endMinute: "0", orderIndex: "0" });
       refetchShifts();
@@ -376,7 +378,7 @@ export default function Settings() {
   // Update Mutations
   const updateFactoryMutation = trpc.factory.update.useMutation({
     onSuccess: () => {
-      toast.success("Cập nhật nhà máy thành công");
+      toast.success(t("settings.updateFactorySuccess"));
       setEditFactoryDialogOpen(false);
       setEditingFactory(null);
       refetchFactories();
@@ -386,7 +388,7 @@ export default function Settings() {
 
   const updateWorkshopMutation = trpc.workshop.update.useMutation({
     onSuccess: () => {
-      toast.success("Cập nhật nhà xưởng thành công");
+      toast.success(t("settings.updateWorkshopSuccess"));
       setEditWorkshopDialogOpen(false);
       setEditingWorkshop(null);
       refetchWorkshops();
@@ -396,7 +398,7 @@ export default function Settings() {
 
   const updateLineMutation = trpc.line.update.useMutation({
     onSuccess: () => {
-      toast.success("Cập nhật dây chuyền thành công");
+      toast.success(t("settings.updateLineSuccess"));
       setEditLineDialogOpen(false);
       setEditingLine(null);
       refetchLines();
@@ -406,7 +408,7 @@ export default function Settings() {
 
   const updateStationMutation = trpc.station.update.useMutation({
     onSuccess: () => {
-      toast.success("Cập nhật công trạm thành công");
+      toast.success(t("settings.updateStationSuccess"));
       setEditStationDialogOpen(false);
       setEditingStation(null);
       refetchStations();
@@ -416,7 +418,7 @@ export default function Settings() {
 
   const updateMachineMutation = trpc.machine.update.useMutation({
     onSuccess: () => {
-      toast.success("Cập nhật máy thành công");
+      toast.success(t("settings.updateMachineSuccess"));
       setEditMachineDialogOpen(false);
       setEditingMachine(null);
       refetchMachines();
@@ -426,7 +428,7 @@ export default function Settings() {
 
   const uploadImageMutation = trpc.machine.uploadImage.useMutation({
     onSuccess: (data, variables) => {
-      toast.success(`Upload ảnh ${variables.imageType} thành công`);
+      toast.success(t("settings.uploadImageSuccess", { imageType: variables.imageType }));
       setUploadingImage(null);
       if (editingMachine) {
         const updatedMachine = { ...editingMachine };
@@ -452,13 +454,13 @@ export default function Settings() {
 
     // Validate file type
     if (!file.type.startsWith("image/")) {
-      toast.error("Vui lòng chọn file ảnh");
+      toast.error(t("settings.pleaseSelectImageFile"));
       return;
     }
 
     // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
-      toast.error("Kích thước file tối đa 5MB");
+      toast.error(t("settings.maxFileSize5mb"));
       return;
     }
 
@@ -479,14 +481,14 @@ export default function Settings() {
       };
       reader.readAsDataURL(file);
     } catch (error) {
-      toast.error("Lỗi khi upload ảnh");
+      toast.error(t("settings.uploadImageError"));
       setUploadingImage(null);
     }
   };
 
   const updateShiftMutation = trpc.shiftConfig.update.useMutation({
     onSuccess: () => {
-      toast.success("Cập nhật ca làm việc thành công");
+      toast.success(t("settings.updateShiftSuccess"));
       setEditShiftDialogOpen(false);
       setEditingShift(null);
       refetchShifts();
@@ -497,7 +499,7 @@ export default function Settings() {
   // Delete Mutations
   const deleteFactoryMutation = trpc.factory.delete.useMutation({
     onSuccess: () => {
-      toast.success("Xóa nhà máy thành công");
+      toast.success(t("settings.deleteFactorySuccess"));
       refetchFactories();
     },
     onError: (error) => toast.error(error.message),
@@ -505,7 +507,7 @@ export default function Settings() {
 
   const deleteWorkshopMutation = trpc.workshop.delete.useMutation({
     onSuccess: () => {
-      toast.success("Xóa nhà xưởng thành công");
+      toast.success(t("settings.deleteWorkshopSuccess"));
       refetchWorkshops();
     },
     onError: (error) => toast.error(error.message),
@@ -513,7 +515,7 @@ export default function Settings() {
 
   const deleteLineMutation = trpc.line.delete.useMutation({
     onSuccess: () => {
-      toast.success("Xóa dây chuyền thành công");
+      toast.success(t("settings.deleteLineSuccess"));
       refetchLines();
     },
     onError: (error) => toast.error(error.message),
@@ -521,7 +523,7 @@ export default function Settings() {
 
   const deleteStationMutation = trpc.station.delete.useMutation({
     onSuccess: () => {
-      toast.success("Xóa công trạm thành công");
+      toast.success(t("settings.deleteStationSuccess"));
       refetchStations();
     },
     onError: (error) => toast.error(error.message),
@@ -529,7 +531,7 @@ export default function Settings() {
 
   const deleteMachineMutation = trpc.machine.delete.useMutation({
     onSuccess: () => {
-      toast.success("Xóa máy thành công");
+      toast.success(t("settings.deleteMachineSuccess"));
       refetchMachines();
     },
     onError: (error) => toast.error(error.message),
@@ -537,7 +539,7 @@ export default function Settings() {
 
   const deleteShiftMutation = trpc.shiftConfig.delete.useMutation({
     onSuccess: () => {
-      toast.success("Xóa ca làm việc thành công");
+      toast.success(t("settings.deleteShiftSuccess"));
       refetchShifts();
     },
     onError: (error) => toast.error(error.message),
@@ -546,7 +548,7 @@ export default function Settings() {
   // Stage mutations
   const createStageMutation = trpc.lineStage.create.useMutation({
     onSuccess: () => {
-      toast.success("Tạo công đoạn thành công");
+      toast.success(t("settings.createStageSuccess"));
       refetchStages();
       setStageDialogOpen(false);
       setStageForm({ lineId: "", code: "", name: "", description: "", orderIndex: "0", stationId: "" });
@@ -556,7 +558,7 @@ export default function Settings() {
 
   const updateStageMutation = trpc.lineStage.update.useMutation({
     onSuccess: () => {
-      toast.success("Cập nhật công đoạn thành công");
+      toast.success(t("settings.updateStageSuccess"));
       refetchStages();
       setEditStageDialogOpen(false);
       setEditingStage(null);
@@ -566,7 +568,7 @@ export default function Settings() {
 
   const deleteStageMutation = trpc.lineStage.delete.useMutation({
     onSuccess: () => {
-      toast.success("Xóa công đoạn thành công");
+      toast.success(t("settings.deleteStageSuccess"));
       refetchStages();
     },
     onError: (error) => toast.error(error.message),
@@ -574,7 +576,7 @@ export default function Settings() {
 
   const reorderStageMutation = trpc.lineStage.reorder.useMutation({
     onSuccess: () => {
-      toast.success("Sắp xếp lại thành công");
+      toast.success(t("settings.reorderSuccess"));
       refetchStages();
     },
     onError: (error: { message: string }) => toast.error(error.message),
@@ -601,7 +603,7 @@ export default function Settings() {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    toast.success("Đã copy vào clipboard");
+    toast.success(t("settings.copiedToClipboard"));
   };
 
   // Edit handlers
@@ -632,23 +634,23 @@ export default function Settings() {
 
   if (!isAdmin) {
     return (
-      <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/settings">
+      <DashboardLayout title={t("settings.title")} navItems={navItems} currentPath="/settings">
         <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
           <SettingsIcon className="h-16 w-16 text-muted-foreground/50" />
-          <p className="text-xl font-medium text-foreground">Chỉ Admin mới có quyền truy cập</p>
-          <p className="text-muted-foreground">Liên hệ quản trị viên để được cấp quyền</p>
+          <p className="text-xl font-medium text-foreground">{t("settings.adminOnlyAccess")}</p>
+          <p className="text-muted-foreground">{t("settings.contactAdmin")}</p>
         </div>
       </DashboardLayout>
     );
   }
 
   return (
-    <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/settings">
+    <DashboardLayout title={t("settings.title")} navItems={navItems} currentPath="/settings">
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Cài đặt hệ thống</h1>
-            <p className="text-muted-foreground">Quản lý nhà máy, nhà xưởng, dây chuyền, công trạm và máy</p>
+            <h1 className="text-2xl font-bold text-foreground">{t("settings.systemSettings")}</h1>
+            <p className="text-muted-foreground">{t("settings.systemDescription")}</p>
           </div>
           <div className="flex gap-2">
             <Button 
@@ -658,7 +660,7 @@ export default function Settings() {
               disabled={seedDataMutation.isPending}
             >
               {seedDataMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Tạo dữ liệu mẫu
+              {t("settings.seedDataBtn")}
             </Button>
             <Button 
               variant="outline" 
@@ -667,7 +669,7 @@ export default function Settings() {
               disabled={seedInspectionsMutation.isPending}
             >
               {seedInspectionsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Tạo 100 inspection
+              {t("settings.seedInspectionsBtn")}
             </Button>
           </div>
         </div>
@@ -685,7 +687,7 @@ export default function Settings() {
                 >
                   <div className="flex items-center gap-2">
                     <LayoutDashboard className="h-4 w-4 text-purple-500" />
-                    <span>Dashboard Center</span>
+                    <span>{t("settings.cat.dashboardCenter")}</span>
                   </div>
                   {collapsedCategories['dashboardCenter'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </button>
@@ -698,7 +700,7 @@ export default function Settings() {
                       }`}
                     >
                       <LayoutDashboard className="h-4 w-4" />
-                      Custom Dashboard
+                      {t("settings.sidebar.customDashboard")}
                     </button>
                     <button
                       onClick={() => handleTabChange('dashboard-templates')}
@@ -707,7 +709,7 @@ export default function Settings() {
                       }`}
                     >
                       <FileText className="h-4 w-4" />
-                      Dashboard Templates
+                      {t("settings.sidebar.dashboardTemplates")}
                     </button>
                     <button
                       onClick={() => handleTabChange('dashboard-marketplace')}
@@ -716,7 +718,7 @@ export default function Settings() {
                       }`}
                     >
                       <ShoppingBag className="h-4 w-4" />
-                      Dashboard Marketplace
+                      {t("settings.sidebar.dashboardMarketplace")}
                     </button>
                   </div>
                 )}
@@ -730,7 +732,7 @@ export default function Settings() {
                 >
                   <div className="flex items-center gap-2">
                     <Factory className="h-4 w-4 text-blue-500" />
-                    <span>Cơ sở hạ tầng</span>
+                    <span>{t("settings.cat.infrastructure")}</span>
                   </div>
                   {collapsedCategories['infrastructure'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </button>
@@ -743,7 +745,7 @@ export default function Settings() {
                       }`}
                     >
                       <Building2 className="h-4 w-4" />
-                      Nhà máy
+                      {t("settings.sidebar.factory")}
                     </button>
                     <button
                       onClick={() => handleTabChange('workshops')}
@@ -752,7 +754,7 @@ export default function Settings() {
                       }`}
                     >
                       <Warehouse className="h-4 w-4" />
-                      Nhà xưởng
+                      {t("settings.sidebar.workshop")}
                     </button>
                     <button
                       onClick={() => handleTabChange('lines')}
@@ -761,7 +763,7 @@ export default function Settings() {
                       }`}
                     >
                       <GitBranch className="h-4 w-4" />
-                      Dây chuyền
+                      {t("settings.sidebar.line")}
                     </button>
                     <button
                       onClick={() => handleTabChange('stations')}
@@ -770,7 +772,7 @@ export default function Settings() {
                       }`}
                     >
                       <Cpu className="h-4 w-4" />
-                      Trạm kiểm tra
+                      {t("settings.sidebar.inspectionStation")}
                     </button>
                     <button
                       onClick={() => handleTabChange('machines')}
@@ -779,7 +781,7 @@ export default function Settings() {
                       }`}
                     >
                       <Cpu className="h-4 w-4" />
-                      Máy kiểm tra
+                      {t("settings.sidebar.inspectionMachine")}
                     </button>
                     <button
                       onClick={() => handleTabChange('workstations')}
@@ -788,7 +790,7 @@ export default function Settings() {
                       }`}
                     >
                       <Cog className="h-4 w-4" />
-                      Công trạm
+                      {t("settings.sidebar.workstation")}
                     </button>
                   </div>
                 )}
@@ -802,7 +804,7 @@ export default function Settings() {
                 >
                   <div className="flex items-center gap-2">
                     <Cog className="h-4 w-4 text-green-500" />
-                    <span>Sản xuất</span>
+                    <span>{t("settings.cat.production")}</span>
                   </div>
                   {collapsedCategories['production'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </button>
@@ -815,7 +817,7 @@ export default function Settings() {
                       }`}
                     >
                       <Clock className="h-4 w-4" />
-                      Ca làm việc
+                      {t("settings.sidebar.shift")}
                     </button>
                     <button
                       onClick={() => handleTabChange('stages')}
@@ -824,7 +826,7 @@ export default function Settings() {
                       }`}
                     >
                       <GitBranch className="h-4 w-4" />
-                      Công đoạn
+                      {t("settings.sidebar.stage")}
                     </button>
                     <button
                       onClick={() => handleTabChange('mapping')}
@@ -833,7 +835,7 @@ export default function Settings() {
                       }`}
                     >
                       <Wifi className="h-4 w-4" />
-                      Mapping
+                      {t("settings.sidebar.mapping")}
                     </button>
                   </div>
                 )}
@@ -847,7 +849,7 @@ export default function Settings() {
                 >
                   <div className="flex items-center gap-2">
                     <Award className="h-4 w-4 text-orange-500" />
-                    <span>Sản phẩm</span>
+                    <span>{t("settings.cat.products")}</span>
                   </div>
                   {collapsedCategories['products'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </button>
@@ -858,7 +860,7 @@ export default function Settings() {
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${activeTab === 'product-categories' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
                     >
                       <FolderTree className="h-4 w-4" />
-                      Danh mục sản phẩm
+                      {t("settings.sidebar.productCategory")}
                     </button>
                     <button
                       onClick={() => handleTabChange('product-models')}
@@ -867,7 +869,7 @@ export default function Settings() {
                       }`}
                     >
                       <Award className="h-4 w-4" />
-                      Mẫu sản phẩm
+                      {t("settings.sidebar.productModel")}
                     </button>
                     <button
                       onClick={() => handleTabChange('product-machine-mapping')}
@@ -876,7 +878,7 @@ export default function Settings() {
                       }`}
                     >
                       <Cpu className="h-4 w-4" />
-                      Mapping sản phẩm
+                      {t("settings.sidebar.productMapping")}
                     </button>
                   </div>
                 )}
@@ -890,7 +892,7 @@ export default function Settings() {
                 >
                   <div className="flex items-center gap-2">
                     <Award className="h-4 w-4 text-yellow-500" />
-                    <span>Chất lượng</span>
+                    <span>{t("settings.cat.quality")}</span>
                   </div>
                   {collapsedCategories['quality'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </button>
@@ -903,7 +905,7 @@ export default function Settings() {
                       }`}
                     >
                       <Target className="h-4 w-4" />
-                      Yield
+                      {t("settings.sidebar.yield")}
                     </button>
                     <button
                       onClick={() => handleTabChange('alerts')}
@@ -912,7 +914,7 @@ export default function Settings() {
                       }`}
                     >
                       <Bell className="h-4 w-4" />
-                      Cảnh báo
+                      {t("settings.sidebar.alert")}
                     </button>
                   </div>
                 )}
@@ -926,7 +928,7 @@ export default function Settings() {
                 >
                   <div className="flex items-center gap-2">
                     <SettingsIcon className="h-4 w-4 text-purple-500" />
-                    <span>Hệ thống</span>
+                    <span>{t("settings.cat.system")}</span>
                   </div>
                   {collapsedCategories['system'] ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </button>
@@ -939,7 +941,7 @@ export default function Settings() {
                       }`}
                     >
                       <FileText className="h-4 w-4" />
-                      Mẫu báo cáo
+                      {t("settings.sidebar.reportTemplate")}
                     </button>
                     <button
                       onClick={() => handleTabChange('scheduled-reports')}
@@ -948,7 +950,7 @@ export default function Settings() {
                       }`}
                     >
                       <Mail className="h-4 w-4" />
-                      Báo cáo tự động
+                      {t("settings.sidebar.scheduledReport")}
                     </button>
                     <button
                       onClick={() => handleTabChange('smtp-config')}
@@ -957,7 +959,7 @@ export default function Settings() {
                       }`}
                     >
                       <SettingsIcon className="h-4 w-4" />
-                      Cấu hình SMTP
+                      {t("settings.sidebar.smtpConfig")}
                     </button>
                     <button
                       onClick={() => handleTabChange('email-template')}
@@ -966,7 +968,7 @@ export default function Settings() {
                       }`}
                     >
                       <Mail className="h-4 w-4" />
-                      Email Template
+                      {t("settings.sidebar.emailTemplate")}
                     </button>
                     <button
                       onClick={() => handleTabChange('audit-logs')}
@@ -975,7 +977,7 @@ export default function Settings() {
                       }`}
                     >
                       <Activity className="h-4 w-4" />
-                      Audit Log
+                      {t("settings.sidebar.auditLog")}
                     </button>
                     <button
                       onClick={() => handleTabChange('cache-stats')}
@@ -984,7 +986,7 @@ export default function Settings() {
                       }`}
                     >
                       <Cpu className="h-4 w-4" />
-                      Cache Statistics
+                      {t("settings.sidebar.cacheStats")}
                     </button>
                     {isAdmin && (
                       <button
@@ -994,7 +996,7 @@ export default function Settings() {
                         }`}
                       >
                         <Users className="h-4 w-4" />
-                        Phân quyền dữ liệu
+                        {t("settings.sidebar.dataPermission")}
                       </button>
                     )}
                     {isAdmin && (
@@ -1005,7 +1007,7 @@ export default function Settings() {
                         }`}
                       >
                         <Shield className="h-4 w-4" />
-                        Phân quyền người dùng
+                        {t("settings.sidebar.userPermission")}
                       </button>
                     )}
                     {isAdmin && (
@@ -1016,7 +1018,7 @@ export default function Settings() {
                         }`}
                       >
                         <Users className="h-4 w-4" />
-                        Quản lý vai trò
+                        {t("settings.sidebar.roleManagement")}
                       </button>
                     )}
                   </div>
@@ -1033,54 +1035,54 @@ export default function Settings() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Danh sách nhà máy</CardTitle>
-                    <CardDescription>{factories?.length || 0} nhà máy</CardDescription>
+                    <CardTitle>{t("settings.factoryList")}</CardTitle>
+                    <CardDescription>{t("settings.factoryCount", { count: factories?.length || 0 })}</CardDescription>
                   </div>
                   <Dialog open={factoryDialogOpen} onOpenChange={setFactoryDialogOpen}>
                     <DialogTrigger asChild>
                       <Button className="gap-2">
                         <Plus className="h-4 w-4" />
-                        Thêm nhà máy
+                        {t("settings.addFactory")}
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
-                        <DialogTitle>Thêm nhà máy mới</DialogTitle>
+                        <DialogTitle>{t("settings.addFactoryNew")}</DialogTitle>
                       </DialogHeader>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Mã nhà máy *</label>
+                          <label className="text-sm font-medium">{t("settings.factoryCode")} *</label>
                           <Input
-                            placeholder="VD: FAC001"
+                            placeholder={t("settings.factoryCodePlaceholder")}
                             value={factoryForm.code}
                             onChange={(e) => setFactoryForm({ ...factoryForm, code: e.target.value })}
                           />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Tên nhà máy *</label>
+                          <label className="text-sm font-medium">{t("settings.factoryName")} *</label>
                           <Input
-                            placeholder="VD: Nhà máy Bắc Ninh"
+                            placeholder={t("settings.factoryNamePlaceholder")}
                             value={factoryForm.name}
                             onChange={(e) => setFactoryForm({ ...factoryForm, name: e.target.value })}
                           />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Địa chỉ</label>
+                          <label className="text-sm font-medium">{t("settings.address")}</label>
                           <Input
-                            placeholder="Địa chỉ nhà máy"
+                            placeholder={t("settings.addressPlaceholder")}
                             value={factoryForm.address}
                             onChange={(e) => setFactoryForm({ ...factoryForm, address: e.target.value })}
                           />
                         </div>
                       </div>
                       <DialogFooter>
-                        <Button variant="outline" onClick={() => setFactoryDialogOpen(false)}>Hủy</Button>
+                        <Button variant="outline" onClick={() => setFactoryDialogOpen(false)}>{t("common.cancel")}</Button>
                         <Button 
                           onClick={() => createFactoryMutation.mutate(factoryForm)}
                           disabled={createFactoryMutation.isPending}
                         >
                           {createFactoryMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                          Tạo
+                          {t("common.createBtn")}
                         </Button>
                       </DialogFooter>
                     </DialogContent>
@@ -1112,19 +1114,17 @@ export default function Settings() {
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
+                              <AlertDialogTitle>{t("settings.confirmDelete")}</AlertDialogTitle>
                               <AlertDialogDescription>
-                                Bạn có chắc muốn xóa nhà máy "{factory.name}"? Hành động này không thể hoàn tác.
+                                {t("settings.deleteFactoryConfirm", { name: factory.name })}
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>Hủy</AlertDialogCancel>
+                              <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
                               <AlertDialogAction 
                                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                 onClick={() => deleteFactoryMutation.mutate({ id: factory.id })}
-                              >
-                                Xóa
-                              </AlertDialogAction>
+                              >{t("common.delete")}</AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
                         </AlertDialog>
@@ -1132,7 +1132,7 @@ export default function Settings() {
                     </div>
                   ))}
                   {(!factories || factories.length === 0) && (
-                    <p className="text-center text-muted-foreground py-8">Chưa có nhà máy nào</p>
+                    <p className="text-center text-muted-foreground py-8">{t("settings.noFactory")}</p>
                   )}
                 </div>
               </CardContent>
@@ -1145,25 +1145,25 @@ export default function Settings() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Danh sách nhà xưởng</CardTitle>
-                    <CardDescription>{workshops?.length || 0} nhà xưởng</CardDescription>
+                    <CardTitle>{t("settings.workshopList")}</CardTitle>
+                    <CardDescription>{t("settings.workshopCount", { count: workshops?.length || 0 })}</CardDescription>
                   </div>
                   <Dialog open={workshopDialogOpen} onOpenChange={setWorkshopDialogOpen}>
                     <DialogTrigger asChild>
                       <Button className="gap-2">
                         <Plus className="h-4 w-4" />
-                        Thêm nhà xưởng
+                        {t("settings.addWorkshop")}
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
-                        <DialogTitle>Thêm nhà xưởng mới</DialogTitle>
+                        <DialogTitle>{t("settings.addWorkshopNew")}</DialogTitle>
                       </DialogHeader>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Nhà máy *</label>
+                          <label className="text-sm font-medium">{t("dashboard.factory")} *</label>
                           <Select value={workshopForm.factoryId} onValueChange={(v) => setWorkshopForm({ ...workshopForm, factoryId: v })}>
-                            <SelectTrigger><SelectValue placeholder="Chọn nhà máy" /></SelectTrigger>
+                            <SelectTrigger><SelectValue placeholder={t("settings.selectFactory")} /></SelectTrigger>
                             <SelectContent>
                               {factories?.map((f) => (
                                 <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
@@ -1172,30 +1172,30 @@ export default function Settings() {
                           </Select>
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Mã nhà xưởng *</label>
+                          <label className="text-sm font-medium">{t("settings.workshopCode")} *</label>
                           <Input
-                            placeholder="VD: WS001"
+                            placeholder={t("settings.workshopCodePlaceholder")}
                             value={workshopForm.code}
                             onChange={(e) => setWorkshopForm({ ...workshopForm, code: e.target.value })}
                           />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Tên nhà xưởng *</label>
+                          <label className="text-sm font-medium">{t("settings.workshopName")} *</label>
                           <Input
-                            placeholder="VD: Xưởng lắp ráp A"
+                            placeholder={t("settings.workshopNamePlaceholder")}
                             value={workshopForm.name}
                             onChange={(e) => setWorkshopForm({ ...workshopForm, name: e.target.value })}
                           />
                         </div>
                       </div>
                       <DialogFooter>
-                        <Button variant="outline" onClick={() => setWorkshopDialogOpen(false)}>Hủy</Button>
+                        <Button variant="outline" onClick={() => setWorkshopDialogOpen(false)}>{t("common.cancel")}</Button>
                         <Button 
                           onClick={() => createWorkshopMutation.mutate({ ...workshopForm, factoryId: parseInt(workshopForm.factoryId) })}
                           disabled={createWorkshopMutation.isPending}
                         >
                           {createWorkshopMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                          Tạo
+                          {t("common.createBtn")}
                         </Button>
                       </DialogFooter>
                     </DialogContent>
@@ -1214,7 +1214,7 @@ export default function Settings() {
                           </div>
                           <div>
                             <p className="font-medium text-foreground">{workshop.name}</p>
-                            <p className="text-sm text-muted-foreground">{workshop.code} • {factory?.name || "N/A"}</p>
+                            <p className="text-sm text-muted-foreground">{workshop.code} • {factory?.name || t("common.na")}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1229,19 +1229,17 @@ export default function Settings() {
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
+                                <AlertDialogTitle>{t("settings.confirmDelete")}</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  Bạn có chắc muốn xóa nhà xưởng "{workshop.name}"?
+                                  {t("settings.deleteWorkshopConfirm", { name: workshop.name })}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel>Hủy</AlertDialogCancel>
+                                <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
                                 <AlertDialogAction 
                                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                   onClick={() => deleteWorkshopMutation.mutate({ id: workshop.id })}
-                                >
-                                  Xóa
-                                </AlertDialogAction>
+                                >{t("common.delete")}</AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
@@ -1250,7 +1248,7 @@ export default function Settings() {
                     );
                   })}
                   {(!workshops || workshops.length === 0) && (
-                    <p className="text-center text-muted-foreground py-8">Chưa có nhà xưởng nào</p>
+                    <p className="text-center text-muted-foreground py-8">{t("settings.noWorkshop")}</p>
                   )}
                 </div>
               </CardContent>
@@ -1263,25 +1261,25 @@ export default function Settings() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Danh sách dây chuyền</CardTitle>
-                    <CardDescription>{lines?.length || 0} dây chuyền</CardDescription>
+                    <CardTitle>{t("settings.lineList")}</CardTitle>
+                    <CardDescription>{t("settings.lineCount", { count: lines?.length || 0 })}</CardDescription>
                   </div>
                   <Dialog open={lineDialogOpen} onOpenChange={setLineDialogOpen}>
                     <DialogTrigger asChild>
                       <Button className="gap-2">
                         <Plus className="h-4 w-4" />
-                        Thêm dây chuyền
+                        {t("settings.addLine")}
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
-                        <DialogTitle>Thêm dây chuyền mới</DialogTitle>
+                        <DialogTitle>{t("settings.addLineNew")}</DialogTitle>
                       </DialogHeader>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Nhà xưởng *</label>
+                          <label className="text-sm font-medium">{t("dashboard.workshop")} *</label>
                           <Select value={lineForm.workshopId} onValueChange={(v) => setLineForm({ ...lineForm, workshopId: v })}>
-                            <SelectTrigger><SelectValue placeholder="Chọn nhà xưởng" /></SelectTrigger>
+                            <SelectTrigger><SelectValue placeholder={t("settings.selectWorkshop")} /></SelectTrigger>
                             <SelectContent>
                               {workshops?.map((w) => (
                                 <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
@@ -1290,30 +1288,30 @@ export default function Settings() {
                           </Select>
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Mã dây chuyền *</label>
+                          <label className="text-sm font-medium">{t("settings.lineCode")} *</label>
                           <Input
-                            placeholder="VD: LINE001"
+                            placeholder={t("settings.lineCodePlaceholder")}
                             value={lineForm.code}
                             onChange={(e) => setLineForm({ ...lineForm, code: e.target.value })}
                           />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Tên dây chuyền *</label>
+                          <label className="text-sm font-medium">{t("settings.lineName")} *</label>
                           <Input
-                            placeholder="VD: Dây chuyền SMT 1"
+                            placeholder={t("settings.lineNamePlaceholder")}
                             value={lineForm.name}
                             onChange={(e) => setLineForm({ ...lineForm, name: e.target.value })}
                           />
                         </div>
                       </div>
                       <DialogFooter>
-                        <Button variant="outline" onClick={() => setLineDialogOpen(false)}>Hủy</Button>
+                        <Button variant="outline" onClick={() => setLineDialogOpen(false)}>{t("common.cancel")}</Button>
                         <Button 
                           onClick={() => createLineMutation.mutate({ ...lineForm, workshopId: parseInt(lineForm.workshopId) })}
                           disabled={createLineMutation.isPending}
                         >
                           {createLineMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                          Tạo
+                          {t("common.createBtn")}
                         </Button>
                       </DialogFooter>
                     </DialogContent>
@@ -1332,7 +1330,7 @@ export default function Settings() {
                           </div>
                           <div>
                             <p className="font-medium text-foreground">{line.name}</p>
-                            <p className="text-sm text-muted-foreground">{line.code} • {workshop?.name || "N/A"}</p>
+                            <p className="text-sm text-muted-foreground">{line.code} • {workshop?.name || t("common.na")}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1347,19 +1345,17 @@ export default function Settings() {
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
+                                <AlertDialogTitle>{t("settings.confirmDelete")}</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  Bạn có chắc muốn xóa dây chuyền "{line.name}"?
+                                  {t("settings.deleteLineConfirm", { name: line.name })}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel>Hủy</AlertDialogCancel>
+                                <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
                                 <AlertDialogAction 
                                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                   onClick={() => deleteLineMutation.mutate({ id: line.id })}
-                                >
-                                  Xóa
-                                </AlertDialogAction>
+                                >{t("common.delete")}</AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
@@ -1368,7 +1364,7 @@ export default function Settings() {
                     );
                   })}
                   {(!lines || lines.length === 0) && (
-                    <p className="text-center text-muted-foreground py-8">Chưa có dây chuyền nào</p>
+                    <p className="text-center text-muted-foreground py-8">{t("settings.noLine")}</p>
                   )}
                 </div>
               </CardContent>
@@ -1381,25 +1377,25 @@ export default function Settings() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Danh sách công trạm</CardTitle>
-                    <CardDescription>{stations?.length || 0} công trạm</CardDescription>
+                    <CardTitle>{t("settings.stationList")}</CardTitle>
+                    <CardDescription>{t("settings.stationCount", { count: stations?.length || 0 })}</CardDescription>
                   </div>
                   <Dialog open={stationDialogOpen} onOpenChange={setStationDialogOpen}>
                     <DialogTrigger asChild>
                       <Button className="gap-2">
                         <Plus className="h-4 w-4" />
-                        Thêm công trạm
+                        {t("settings.addStation")}
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
-                        <DialogTitle>Thêm công trạm mới</DialogTitle>
+                        <DialogTitle>{t("settings.addStationNew")}</DialogTitle>
                       </DialogHeader>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Dây chuyền *</label>
+                          <label className="text-sm font-medium">{t("dashboard.line")} *</label>
                           <Select value={stationForm.lineId} onValueChange={(v) => setStationForm({ ...stationForm, lineId: v })}>
-                            <SelectTrigger><SelectValue placeholder="Chọn dây chuyền" /></SelectTrigger>
+                            <SelectTrigger><SelectValue placeholder={t("settings.selectLine")} /></SelectTrigger>
                             <SelectContent>
                               {lines?.map((l) => (
                                 <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>
@@ -1408,23 +1404,23 @@ export default function Settings() {
                           </Select>
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Mã công trạm *</label>
+                          <label className="text-sm font-medium">{t("settings.stationCode")} *</label>
                           <Input
-                            placeholder="VD: ST001"
+                            placeholder={t("settings.stationCodePlaceholder")}
                             value={stationForm.code}
                             onChange={(e) => setStationForm({ ...stationForm, code: e.target.value })}
                           />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Tên công trạm *</label>
+                          <label className="text-sm font-medium">{t("settings.stationName")} *</label>
                           <Input
-                            placeholder="VD: Trạm kiểm tra AOI"
+                            placeholder={t("settings.stationNamePlaceholder")}
                             value={stationForm.name}
                             onChange={(e) => setStationForm({ ...stationForm, name: e.target.value })}
                           />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Thứ tự</label>
+                          <label className="text-sm font-medium">{t("settings.order")}</label>
                           <Input
                             type="number"
                             placeholder="0"
@@ -1434,7 +1430,7 @@ export default function Settings() {
                         </div>
                       </div>
                       <DialogFooter>
-                        <Button variant="outline" onClick={() => setStationDialogOpen(false)}>Hủy</Button>
+                        <Button variant="outline" onClick={() => setStationDialogOpen(false)}>{t("common.cancel")}</Button>
                         <Button 
                           onClick={() => createStationMutation.mutate({ 
                             ...stationForm, 
@@ -1444,7 +1440,7 @@ export default function Settings() {
                           disabled={createStationMutation.isPending}
                         >
                           {createStationMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                          Tạo
+                          {t("common.createBtn")}
                         </Button>
                       </DialogFooter>
                     </DialogContent>
@@ -1463,7 +1459,7 @@ export default function Settings() {
                           </div>
                           <div>
                             <p className="font-medium text-foreground">{station.name}</p>
-                            <p className="text-sm text-muted-foreground">{station.code} • {line?.name || "N/A"} • Thứ tự: {station.orderIndex}</p>
+                            <p className="text-sm text-muted-foreground">{station.code} • {line?.name || t("common.na")} • {t("settings.orderLabel")} {station.orderIndex}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1478,19 +1474,17 @@ export default function Settings() {
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
+                                <AlertDialogTitle>{t("settings.confirmDelete")}</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  Bạn có chắc muốn xóa công trạm "{station.name}"?
+                                  {t("settings.deleteStationConfirm", { name: station.name })}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel>Hủy</AlertDialogCancel>
+                                <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
                                 <AlertDialogAction 
                                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                   onClick={() => deleteStationMutation.mutate({ id: station.id })}
-                                >
-                                  Xóa
-                                </AlertDialogAction>
+                                >{t("common.delete")}</AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
@@ -1499,7 +1493,7 @@ export default function Settings() {
                     );
                   })}
                   {(!stations || stations.length === 0) && (
-                    <p className="text-center text-muted-foreground py-8">Chưa có công trạm nào</p>
+                    <p className="text-center text-muted-foreground py-8">{t("settings.noStation")}</p>
                   )}
                 </div>
               </CardContent>
@@ -1512,26 +1506,26 @@ export default function Settings() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Danh sách máy</CardTitle>
-                    <CardDescription>{machines?.length || 0} máy</CardDescription>
+                    <CardTitle>{t("settings.machineList")}</CardTitle>
+                    <CardDescription>{t("settings.machineCount", { count: machines?.length || 0 })}</CardDescription>
                   </div>
                   <Dialog open={machineDialogOpen} onOpenChange={setMachineDialogOpen}>
                     <DialogTrigger asChild>
                       <Button className="gap-2">
                         <Plus className="h-4 w-4" />
-                        Thêm máy
+                        {t("settings.addMachine")}
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
-                        <DialogTitle>Thêm máy mới</DialogTitle>
-                        <DialogDescription>Sau khi tạo, hệ thống sẽ cấp API Key để máy gửi dữ liệu</DialogDescription>
+                        <DialogTitle>{t("settings.addMachineNew")}</DialogTitle>
+                        <DialogDescription>{t("settings.addMachineDesc")}</DialogDescription>
                       </DialogHeader>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Công trạm *</label>
+                          <label className="text-sm font-medium">{t("settings.sidebar.workstation")} *</label>
                           <Select value={machineForm.stationId} onValueChange={(v) => setMachineForm({ ...machineForm, stationId: v })}>
-                            <SelectTrigger><SelectValue placeholder="Chọn công trạm" /></SelectTrigger>
+                            <SelectTrigger><SelectValue placeholder={t("settings.selectStation")} /></SelectTrigger>
                             <SelectContent>
                               {stations?.map((s) => (
                                 <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
@@ -1540,51 +1534,51 @@ export default function Settings() {
                           </Select>
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Mã máy *</label>
+                          <label className="text-sm font-medium">{t("settings.machineCode")} *</label>
                           <Input
-                            placeholder="VD: AVI001"
+                            placeholder={t("settings.machineCodePlaceholder")}
                             value={machineForm.code}
                             onChange={(e) => setMachineForm({ ...machineForm, code: e.target.value })}
                           />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Tên máy *</label>
+                          <label className="text-sm font-medium">{t("settings.machineName")} *</label>
                           <Input
-                            placeholder="VD: Máy AVI kiểm tra PCB"
+                            placeholder={t("settings.machineNamePlaceholder")}
                             value={machineForm.name}
                             onChange={(e) => setMachineForm({ ...machineForm, name: e.target.value })}
                           />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Loại máy *</label>
+                          <label className="text-sm font-medium">{t("settings.machineType")} *</label>
                           <Select value={machineForm.machineType} onValueChange={(v: "AVI" | "AOI" | "AUTOMATION") => setMachineForm({ ...machineForm, machineType: v })}>
                             <SelectTrigger><SelectValue /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="AVI">AVI (Automated Visual Inspection)</SelectItem>
-                              <SelectItem value="AOI">AOI (Automated Optical Inspection)</SelectItem>
-                              <SelectItem value="AUTOMATION">Automation</SelectItem>
+                              <SelectItem value="AVI">{t("settings.machineTypeAVI")}</SelectItem>
+                              <SelectItem value="AOI">{t("settings.machineTypeAOI")}</SelectItem>
+                              <SelectItem value="AUTOMATION">{t("settings.machineTypeAutomation")}</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Model</label>
+                          <label className="text-sm font-medium">{t("settings.model")}</label>
                           <Input
-                            placeholder="Model máy"
+                            placeholder={t("settings.modelPlaceholder")}
                             value={machineForm.model}
                             onChange={(e) => setMachineForm({ ...machineForm, model: e.target.value })}
                           />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Nhà sản xuất</label>
+                          <label className="text-sm font-medium">{t("settings.manufacturer")}</label>
                           <Input
-                            placeholder="Nhà sản xuất"
+                            placeholder={t("settings.manufacturerPlaceholder")}
                             value={machineForm.manufacturer}
                             onChange={(e) => setMachineForm({ ...machineForm, manufacturer: e.target.value })}
                           />
                         </div>
                       </div>
                       <DialogFooter>
-                        <Button variant="outline" onClick={() => setMachineDialogOpen(false)}>Hủy</Button>
+                        <Button variant="outline" onClick={() => setMachineDialogOpen(false)}>{t("common.cancel")}</Button>
                         <Button 
                           onClick={() => createMachineMutation.mutate({ 
                             ...machineForm, 
@@ -1593,7 +1587,7 @@ export default function Settings() {
                           disabled={createMachineMutation.isPending}
                         >
                           {createMachineMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                          Tạo
+                          {t("common.createBtn")}
                         </Button>
                       </DialogFooter>
                     </DialogContent>
@@ -1620,10 +1614,10 @@ export default function Settings() {
                             variant="outline"
                             size="sm"
                             className="gap-1"
-                            onClick={() => copyToClipboard(machine.apiKey)}
+                            onClick={() => copyToClipboard(machine.apiKey || '')}
                           >
                             <Key className="h-3 w-3" />
-                            Copy API Key
+                            {t("settings.copyApiKey")}
                           </Button>
                           <Button variant="ghost" size="icon" onClick={() => handleEditMachine(machine)}>
                             <Pencil className="h-4 w-4" />
@@ -1644,7 +1638,7 @@ export default function Settings() {
                     );
                   })}
                   {(!machines || machines.length === 0) && (
-                    <p className="text-center text-muted-foreground py-8">Chưa có máy nào</p>
+                    <p className="text-center text-muted-foreground py-8">{t("settings.noMachine")}</p>
                   )}
                 </div>
               </CardContent>
@@ -1662,27 +1656,27 @@ export default function Settings() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Cấu hình ca làm việc</CardTitle>
-                    <CardDescription>Quản lý các ca làm việc trong hệ thống</CardDescription>
+                    <CardTitle>{t("settings.shiftConfig")}</CardTitle>
+                    <CardDescription>{t("settings.shiftConfigDesc")}</CardDescription>
                   </div>
                   <Dialog open={shiftDialogOpen} onOpenChange={setShiftDialogOpen}>
                     <DialogTrigger asChild>
                       <Button className="gap-2">
                         <Plus className="h-4 w-4" />
-                        Thêm ca
+                        {t("settings.addShift")}
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
-                        <DialogTitle>Thêm ca làm việc mới</DialogTitle>
-                        <DialogDescription>Nhập thông tin ca làm việc</DialogDescription>
+                        <DialogTitle>{t("settings.addShiftNew")}</DialogTitle>
+                        <DialogDescription>{t("settings.addShiftDesc")}</DialogDescription>
                       </DialogHeader>
                       <div className="space-y-4 py-4">
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <label className="text-sm font-medium">Mã ca <span className="text-destructive">*</span></label>
+                            <label className="text-sm font-medium">{t("settings.shiftCode")}<span className="text-destructive">*</span></label>
                             <Input
-                              placeholder="VD: SHIFT_1"
+                              placeholder={t("settings.shiftCodePlaceholder")}
                               value={shiftForm.code}
                               onChange={(e) => setShiftForm({ ...shiftForm, code: e.target.value })}
                               onBlur={() => shiftValidation.handleBlur("code", shiftForm.code)}
@@ -1691,9 +1685,9 @@ export default function Settings() {
                             <ValidationMessage error={shiftValidation.getFieldError("code")} />
                           </div>
                           <div className="space-y-2">
-                            <label className="text-sm font-medium">Tên ca <span className="text-destructive">*</span></label>
+                            <label className="text-sm font-medium">{t("settings.shiftName")}<span className="text-destructive">*</span></label>
                             <Input
-                              placeholder="VD: Ca sáng"
+                              placeholder={t("settings.shiftNamePlaceholder")}
                               value={shiftForm.name}
                               onChange={(e) => setShiftForm({ ...shiftForm, name: e.target.value })}
                               onBlur={() => shiftValidation.handleBlur("name", shiftForm.name)}
@@ -1703,11 +1697,11 @@ export default function Settings() {
                           </div>
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Nhà máy (để trống = áp dụng toàn hệ thống)</label>
+                          <label className="text-sm font-medium">{t("settings.factoryOptional")}</label>
                           <Select value={shiftForm.factoryId} onValueChange={(v) => setShiftForm({ ...shiftForm, factoryId: v })}>
-                            <SelectTrigger><SelectValue placeholder="Tất cả nhà máy" /></SelectTrigger>
+                            <SelectTrigger><SelectValue placeholder={t("settings.allFactoriesShift")} /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="all">Tất cả nhà máy</SelectItem>
+                              <SelectItem value="all">{t("settings.allFactoriesShift")}</SelectItem>
                               {factories?.map((f) => (
                                 <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
                               ))}
@@ -1716,13 +1710,13 @@ export default function Settings() {
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <label className="text-sm font-medium">Giờ bắt đầu *</label>
+                            <label className="text-sm font-medium">{t("settings.startTime")} *</label>
                             <div className="flex gap-2">
                               <Input
                                 type="number"
                                 min="0"
                                 max="23"
-                                placeholder="Giờ"
+                                placeholder={t("settings.hourPlaceholder")}
                                 value={shiftForm.startHour}
                                 onChange={(e) => setShiftForm({ ...shiftForm, startHour: e.target.value })}
                                 className="w-20"
@@ -1732,7 +1726,7 @@ export default function Settings() {
                                 type="number"
                                 min="0"
                                 max="59"
-                                placeholder="Phút"
+                                placeholder={t("settings.minutePlaceholder")}
                                 value={shiftForm.startMinute}
                                 onChange={(e) => setShiftForm({ ...shiftForm, startMinute: e.target.value })}
                                 className="w-20"
@@ -1740,13 +1734,13 @@ export default function Settings() {
                             </div>
                           </div>
                           <div className="space-y-2">
-                            <label className="text-sm font-medium">Giờ kết thúc *</label>
+                            <label className="text-sm font-medium">{t("settings.endTime")} *</label>
                             <div className="flex gap-2">
                               <Input
                                 type="number"
                                 min="0"
                                 max="23"
-                                placeholder="Giờ"
+                                placeholder={t("settings.hourPlaceholder")}
                                 value={shiftForm.endHour}
                                 onChange={(e) => setShiftForm({ ...shiftForm, endHour: e.target.value })}
                                 className="w-20"
@@ -1756,7 +1750,7 @@ export default function Settings() {
                                 type="number"
                                 min="0"
                                 max="59"
-                                placeholder="Phút"
+                                placeholder={t("settings.minutePlaceholder")}
                                 value={shiftForm.endMinute}
                                 onChange={(e) => setShiftForm({ ...shiftForm, endMinute: e.target.value })}
                                 className="w-20"
@@ -1765,7 +1759,7 @@ export default function Settings() {
                           </div>
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Thứ tự hiển thị</label>
+                          <label className="text-sm font-medium">{t("settings.orderDisplay")}</label>
                           <Input
                             type="number"
                             value={shiftForm.orderIndex}
@@ -1775,7 +1769,7 @@ export default function Settings() {
                         </div>
                       </div>
                       <DialogFooter>
-                        <Button variant="outline" onClick={() => setShiftDialogOpen(false)}>Hủy</Button>
+                        <Button variant="outline" onClick={() => setShiftDialogOpen(false)}>{t("common.cancel")}</Button>
                         <Button 
                           onClick={() => createShiftMutation.mutate({
                             factoryId: shiftForm.factoryId && shiftForm.factoryId !== "all" ? parseInt(shiftForm.factoryId) : undefined,
@@ -1790,7 +1784,7 @@ export default function Settings() {
                           disabled={createShiftMutation.isPending || !shiftForm.code || !shiftForm.name}
                         >
                           {createShiftMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                          Tạo ca
+                          {t("settings.createShiftBtn")}
                         </Button>
                       </DialogFooter>
                     </DialogContent>
@@ -1802,12 +1796,12 @@ export default function Settings() {
                   <table className="w-full">
                     <thead>
                       <tr className="border-b bg-muted/50">
-                        <th className="p-3 text-left font-medium">Mã</th>
-                        <th className="p-3 text-left font-medium">Tên ca</th>
-                        <th className="p-3 text-left font-medium">Nhà máy</th>
-                        <th className="p-3 text-left font-medium">Thời gian</th>
-                        <th className="p-3 text-left font-medium">Trạng thái</th>
-                        <th className="p-3 text-right font-medium">Thao tác</th>
+                        <th className="p-3 text-left font-medium">{t("settings.tableCode")}</th>
+                        <th className="p-3 text-left font-medium">{t("settings.tableShiftName")}</th>
+                        <th className="p-3 text-left font-medium">{t("settings.tableFactory")}</th>
+                        <th className="p-3 text-left font-medium">{t("settings.tableTime")}</th>
+                        <th className="p-3 text-left font-medium">{t("settings.tableStatus")}</th>
+                        <th className="p-3 text-right font-medium">{t("settings.tableActions")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1817,8 +1811,8 @@ export default function Settings() {
                           <td className="p-3 font-medium">{shift.name}</td>
                           <td className="p-3">
                             {shift.factoryId 
-                              ? factories?.find(f => f.id === shift.factoryId)?.name || 'N/A'
-                              : <span className="text-muted-foreground">Toàn hệ thống</span>
+                              ? factories?.find(f => f.id === shift.factoryId)?.name || t('common.na')
+                              : <span className="text-muted-foreground">{t("settings.entireSystem")}</span>
                             }
                           </td>
                           <td className="p-3">
@@ -1830,7 +1824,7 @@ export default function Settings() {
                           </td>
                           <td className="p-3">
                             <span className={`px-2 py-1 rounded-full text-xs ${shift.isActive ? 'bg-green-500/20 text-green-500' : 'bg-gray-500/20 text-gray-500'}`}>
-                              {shift.isActive ? 'Hoạt động' : 'Tạm dừng'}
+                              {shift.isActive ? t('settings.shiftActive') : t('settings.shiftPaused')}
                             </span>
                           </td>
                           <td className="p-3 text-right">
@@ -1846,7 +1840,7 @@ export default function Settings() {
                                   setEditShiftDialogOpen(true);
                                 }}>
                                   <Pencil className="h-4 w-4 mr-2" />
-                                  Chỉnh sửa
+                                  {t("settings.edit")}
                                 </DropdownMenuItem>
                                 <DropdownMenuItem 
                                   className="text-destructive"
@@ -1856,7 +1850,7 @@ export default function Settings() {
                                   }}
                                 >
                                   <Trash2 className="h-4 w-4 mr-2" />
-                                  Xóa
+                                  {t("common.delete")}
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
@@ -1865,9 +1859,7 @@ export default function Settings() {
                       ))}
                       {(!shifts || shifts.length === 0) && (
                         <tr>
-                          <td colSpan={6} className="p-8 text-center text-muted-foreground">
-                            Chưa có ca làm việc nào. Hãy thêm ca mới.
-                          </td>
+                          <td colSpan={6} className="p-8 text-center text-muted-foreground">{t("settings.noShifts")}</td>
                         </tr>
                       )}
                     </tbody>
@@ -1883,30 +1875,30 @@ export default function Settings() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Công đoạn sản xuất</CardTitle>
-                    <CardDescription>{stages?.length || 0} công đoạn</CardDescription>
+                    <CardTitle>{t("settings.productionStages")}</CardTitle>
+                    <CardDescription>{t("settings.stageCount", { count: stages?.length || 0 })}</CardDescription>
                   </div>
                   {isAdmin && (
                     <Dialog open={stageDialogOpen} onOpenChange={setStageDialogOpen}>
                       <DialogTrigger asChild>
                         <Button className="gap-2">
                           <Plus className="h-4 w-4" />
-                          Thêm công đoạn
+                          {t("settings.addStage")}
                         </Button>
                       </DialogTrigger>
                       <DialogContent>
                         <DialogHeader>
-                          <DialogTitle>Thêm công đoạn mới</DialogTitle>
-                          <DialogDescription>Tạo công đoạn mới cho dây chuyền sản xuất</DialogDescription>
+                          <DialogTitle>{t("settings.addStageNew")}</DialogTitle>
+                          <DialogDescription>{t("settings.addStageDesc")}</DialogDescription>
                         </DialogHeader>
                         <div className="space-y-4 py-4">
                           <div className="space-y-2">
-                            <label className="text-sm font-medium">Dây chuyền <span className="text-destructive">*</span></label>
+                            <label className="text-sm font-medium">{t("dashboard.line")}<span className="text-destructive">*</span></label>
                             <Select value={stageForm.lineId} onValueChange={(v) => {
                               setStageForm({ ...stageForm, lineId: v });
                               stageValidation.validateSingleField("lineId", v);
                             }}>
-                              <SelectTrigger className={stageValidation.hasError("lineId") ? "border-destructive" : ""}><SelectValue placeholder="Chọn dây chuyền" /></SelectTrigger>
+                              <SelectTrigger className={stageValidation.hasError("lineId") ? "border-destructive" : ""}><SelectValue placeholder={t("settings.selectLine")} /></SelectTrigger>
                               <SelectContent>
                                 {lines?.map((line) => (
                                   <SelectItem key={line.id} value={String(line.id)}>{line.name}</SelectItem>
@@ -1917,9 +1909,9 @@ export default function Settings() {
                           </div>
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
-                              <label className="text-sm font-medium">Mã công đoạn <span className="text-destructive">*</span></label>
+                              <label className="text-sm font-medium">{t("settings.stageCode")}<span className="text-destructive">*</span></label>
                               <Input 
-                                placeholder="VD: A, B, C..." 
+                                placeholder={t("settings.stageCodePlaceholder")} 
                                 value={stageForm.code} 
                                 onChange={(e) => setStageForm({ ...stageForm, code: e.target.value })}
                                 onBlur={() => stageValidation.handleBlur("code", stageForm.code)}
@@ -1928,9 +1920,9 @@ export default function Settings() {
                               <ValidationMessage error={stageValidation.getFieldError("code")} />
                             </div>
                             <div className="space-y-2">
-                              <label className="text-sm font-medium">Tên công đoạn <span className="text-destructive">*</span></label>
+                              <label className="text-sm font-medium">{t("settings.stageName")}<span className="text-destructive">*</span></label>
                               <Input 
-                                placeholder="VD: Lắp ráp, Kiểm tra..." 
+                                placeholder={t("settings.stageNamePlaceholder")} 
                                 value={stageForm.name} 
                                 onChange={(e) => setStageForm({ ...stageForm, name: e.target.value })}
                                 onBlur={() => stageValidation.handleBlur("name", stageForm.name)}
@@ -1941,15 +1933,15 @@ export default function Settings() {
                           </div>
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
-                              <label className="text-sm font-medium">Thứ tự</label>
+                              <label className="text-sm font-medium">{t("settings.order")}</label>
                               <Input type="number" value={stageForm.orderIndex} onChange={(e) => setStageForm({ ...stageForm, orderIndex: e.target.value })} />
                             </div>
                             <div className="space-y-2">
-                              <label className="text-sm font-medium">Trạm liên kết</label>
+                              <label className="text-sm font-medium">{t("settings.linkedStation")}</label>
                               <Select value={stageForm.stationId} onValueChange={(v) => setStageForm({ ...stageForm, stationId: v })}>
-                                <SelectTrigger><SelectValue placeholder="Chọn trạm" /></SelectTrigger>
+                                <SelectTrigger><SelectValue placeholder={t("settings.selectStation2")} /></SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="none">Không liên kết</SelectItem>
+                                  <SelectItem value="none">{t("settings.noLink")}</SelectItem>
                                   {stations?.filter(s => {
                                     const line = lines?.find(l => l.id === Number(stageForm.lineId));
                                     return line && s.lineId === line.id;
@@ -1961,12 +1953,12 @@ export default function Settings() {
                             </div>
                           </div>
                           <div className="space-y-2">
-                            <label className="text-sm font-medium">Mô tả</label>
-                            <Input placeholder="Mô tả công đoạn" value={stageForm.description} onChange={(e) => setStageForm({ ...stageForm, description: e.target.value })} />
+                            <label className="text-sm font-medium">{t("common.description")}</label>
+                            <Input placeholder={t("settings.descriptionPlaceholder")} value={stageForm.description} onChange={(e) => setStageForm({ ...stageForm, description: e.target.value })} />
                           </div>
                         </div>
                         <DialogFooter>
-                          <Button variant="outline" onClick={() => setStageDialogOpen(false)}>Hủy</Button>
+                          <Button variant="outline" onClick={() => setStageDialogOpen(false)}>{t("common.cancel")}</Button>
                           <Button onClick={() => createStageMutation.mutate({
                             lineId: Number(stageForm.lineId),
                             code: stageForm.code,
@@ -1976,7 +1968,7 @@ export default function Settings() {
                             stationId: stageForm.stationId && stageForm.stationId !== "none" ? Number(stageForm.stationId) : undefined,
                           })} disabled={!stageForm.lineId || !stageForm.code || !stageForm.name || createStageMutation.isPending}>
                             {createStageMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                            Tạo công đoạn
+                            {t("settings.createStageBtn")}
                           </Button>
                         </DialogFooter>
                       </DialogContent>
@@ -1994,7 +1986,7 @@ export default function Settings() {
                         <div className="flex items-center gap-2 mb-3">
                           <GitBranch className="h-4 w-4 text-primary" />
                           <span className="font-medium">{line.name}</span>
-                          <span className="text-sm text-muted-foreground">({lineStages.length} công đoạn)</span>
+                          <span className="text-sm text-muted-foreground">({t("settings.stageCountLabel", { count: lineStages.length })})</span>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           {lineStages.map((stage, index) => (
@@ -2037,7 +2029,7 @@ export default function Settings() {
                                     setEditStageDialogOpen(true);
                                   }}>
                                     <Pencil className="h-4 w-4 mr-2" />
-                                    Chỉnh sửa
+                                    {t("settings.edit")}
                                   </DropdownMenuItem>
                                   <DropdownMenuItem 
                                     className="text-destructive"
@@ -2047,7 +2039,7 @@ export default function Settings() {
                                     }}
                                   >
                                     <Trash2 className="h-4 w-4 mr-2" />
-                                    Xóa
+                                    {t("common.delete")}
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
@@ -2058,9 +2050,7 @@ export default function Settings() {
                     );
                   })}
                   {(!stages || stages.length === 0) && (
-                    <div className="p-8 text-center text-muted-foreground">
-                      Chưa có công đoạn nào. Hãy thêm công đoạn mới.
-                    </div>
+                    <div className="p-8 text-center text-muted-foreground">{t("settings.noStages")}</div>
                   )}
                 </div>
               </CardContent>
@@ -2079,32 +2069,26 @@ export default function Settings() {
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle className="flex items-center gap-2">
-                      <Bell className="h-5 w-5 text-primary" />
-                      Cảnh báo ngưỡng chỉ số
-                    </CardTitle>
-                    <CardDescription>
-                      Cấu hình cảnh báo khi FPY, FY hoặc NTFY xuống dưới ngưỡng
-                    </CardDescription>
+                      <Bell className="h-5 w-5 text-primary" />{t("settings.alertThreshold")}</CardTitle>
+                    <CardDescription>{t("settings.alertThresholdDesc")}</CardDescription>
                   </div>
                   <Dialog open={alertDialogOpen} onOpenChange={setAlertDialogOpen}>
                     <DialogTrigger asChild>
                       <Button className="gap-2">
                         <Plus className="h-4 w-4" />
-                        Thêm cảnh báo
+                        {t("settings.addAlert")}
                       </Button>
                     </DialogTrigger>
                     <DialogContent className="sm:max-w-lg">
                       <DialogHeader>
-                        <DialogTitle>Tạo cảnh báo mới</DialogTitle>
-                        <DialogDescription>
-                          Cấu hình cảnh báo khi chỉ số xuống dưới ngưỡng
-                        </DialogDescription>
+                        <DialogTitle>{t("settings.createAlert")}</DialogTitle>
+                        <DialogDescription>{t("settings.createAlertDesc")}</DialogDescription>
                       </DialogHeader>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Tên cảnh báo <span className="text-destructive">*</span></label>
+                          <label className="text-sm font-medium">{t("settings.alertName")}<span className="text-destructive">*</span></label>
                           <Input
-                            placeholder="VD: Cảnh báo FPY thấp"
+                            placeholder={t("settings.alertNamePlaceholder")}
                             value={alertForm.name}
                             onChange={(e) => setAlertForm({ ...alertForm, name: e.target.value })}
                             onBlur={() => alertValidation.handleBlur("name", alertForm.name)}
@@ -2114,38 +2098,38 @@ export default function Settings() {
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <label className="text-sm font-medium">Loại chỉ số *</label>
+                            <label className="text-sm font-medium">{t("settings.metricType")} *</label>
                             <Select
                               value={alertForm.alertType}
                               onValueChange={(v) => setAlertForm({ ...alertForm, alertType: v as 'yield_rate' | 'ng_count' | 'machine_status' })}
                             >
                               <SelectTrigger><SelectValue /></SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="yield_rate">FPY/FY/NTFY (%)</SelectItem>
-                                <SelectItem value="ng_count">Số lượng NG</SelectItem>
-                                <SelectItem value="machine_status">Trạng thái máy</SelectItem>
+                                <SelectItem value="yield_rate">{t("settings.yieldRate")}</SelectItem>
+                                <SelectItem value="ng_count">{t("settings.ngCount")}</SelectItem>
+                                <SelectItem value="machine_status">{t("settings.machineStatus")}</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
                           <div className="space-y-2">
-                            <label className="text-sm font-medium">Điều kiện *</label>
+                            <label className="text-sm font-medium">{t("settings.condition")} *</label>
                             <Select
                               value={alertForm.comparisonOperator}
                               onValueChange={(v) => setAlertForm({ ...alertForm, comparisonOperator: v as 'lt' | 'lte' | 'gt' | 'gte' | 'eq' })}
                             >
                               <SelectTrigger><SelectValue /></SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="lt">Nhỏ hơn (&lt;)</SelectItem>
-                                <SelectItem value="lte">Nhỏ hơn hoặc bằng (≤)</SelectItem>
-                                <SelectItem value="gt">Lớn hơn (&gt;)</SelectItem>
-                                <SelectItem value="gte">Lớn hơn hoặc bằng (≥)</SelectItem>
-                                <SelectItem value="eq">Bằng (=)</SelectItem>
+                                <SelectItem value="lt">{t("settings.lessThan")}</SelectItem>
+                                <SelectItem value="lte">{t("settings.lessOrEqual")}</SelectItem>
+                                <SelectItem value="gt">{t("settings.greaterThan")}</SelectItem>
+                                <SelectItem value="gte">{t("settings.greaterOrEqual")}</SelectItem>
+                                <SelectItem value="eq">{t("settings.equalTo")}</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Ngưỡng cảnh báo <span className="text-destructive">*</span></label>
+                          <label className="text-sm font-medium">{t("settings.alertThresholdLabel")}<span className="text-destructive">*</span></label>
                           <div className="flex items-center gap-2">
                             <Input
                               type="number"
@@ -2156,24 +2140,24 @@ export default function Settings() {
                               className={`flex-1 ${alertValidation.hasError("threshold") ? "border-destructive" : ""}`}
                             />
                             <span className="text-muted-foreground">
-                              {alertForm.alertType === 'yield_rate' ? '%' : alertForm.alertType === 'ng_count' ? 'sản phẩm' : ''}
+                              {alertForm.alertType === 'yield_rate' ? '%' : alertForm.alertType === 'ng_count' ? t("settings.productUnit") : ''}
                             </span>
                           </div>
                           <ValidationMessage error={alertValidation.getFieldError("threshold")} />
                           <p className="text-xs text-muted-foreground">
-                            VD: FPY &lt; 90% sẽ gửi cảnh báo
+                            {t("settings.alertExample")}
                           </p>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <label className="text-sm font-medium">Nhà máy (để trống = tất cả)</label>
+                            <label className="text-sm font-medium">{t("settings.factoryOptionalAll")}</label>
                             <Select
                               value={alertForm.factoryId}
                               onValueChange={(v) => setAlertForm({ ...alertForm, factoryId: v })}
                             >
-                              <SelectTrigger><SelectValue placeholder="Tất cả nhà máy" /></SelectTrigger>
+                              <SelectTrigger><SelectValue placeholder={t("settings.allFactoriesShift")} /></SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="all">Tất cả nhà máy</SelectItem>
+                                <SelectItem value="all">{t("settings.allFactoriesShift")}</SelectItem>
                                 {factories?.map((f) => (
                                   <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
                                 ))}
@@ -2181,14 +2165,14 @@ export default function Settings() {
                             </Select>
                           </div>
                           <div className="space-y-2">
-                            <label className="text-sm font-medium">Máy (để trống = tất cả)</label>
+                            <label className="text-sm font-medium">{t("settings.machineOptionalAll")}</label>
                             <Select
                               value={alertForm.machineId}
                               onValueChange={(v) => setAlertForm({ ...alertForm, machineId: v })}
                             >
-                              <SelectTrigger><SelectValue placeholder="Tất cả máy" /></SelectTrigger>
+                              <SelectTrigger><SelectValue placeholder={t("settings.allMachines")} /></SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="all">Tất cả máy</SelectItem>
+                                <SelectItem value="all">{t("settings.allMachines")}</SelectItem>
                                 {machines?.map((m) => (
                                   <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
                                 ))}
@@ -2197,7 +2181,7 @@ export default function Settings() {
                           </div>
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-medium">Thời gian chờ giữa các cảnh báo (phút)</label>
+                          <label className="text-sm font-medium">{t("settings.cooldownMinutes")}</label>
                           <Input
                             type="number"
                             min="5"
@@ -2214,7 +2198,7 @@ export default function Settings() {
                               onChange={(e) => setAlertForm({ ...alertForm, notifyEmail: e.target.checked })}
                               className="rounded"
                             />
-                            <span className="text-sm">Gửi Email</span>
+                            <span className="text-sm">{t("settings.sendEmail")}</span>
                           </label>
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input
@@ -2223,12 +2207,12 @@ export default function Settings() {
                               onChange={(e) => setAlertForm({ ...alertForm, notifyInApp: e.target.checked })}
                               className="rounded"
                             />
-                            <span className="text-sm">Thông báo trong app</span>
+                            <span className="text-sm">{t("settings.inAppNotification")}</span>
                           </label>
                         </div>
                       </div>
                       <DialogFooter>
-                        <Button variant="outline" onClick={() => setAlertDialogOpen(false)}>Hủy</Button>
+                        <Button variant="outline" onClick={() => setAlertDialogOpen(false)}>{t("common.cancel")}</Button>
                         <Button
                           onClick={() => createAlertMutation.mutate({
                             name: alertForm.name,
@@ -2244,7 +2228,7 @@ export default function Settings() {
                           disabled={createAlertMutation.isPending || !alertForm.name || !alertForm.threshold}
                         >
                           {createAlertMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                          Tạo cảnh báo
+                          {t("settings.createAlertBtn")}
                         </Button>
                       </DialogFooter>
                     </DialogContent>
@@ -2276,8 +2260,8 @@ export default function Settings() {
                         <div>
                           <p className="font-medium">{alert.name}</p>
                           <p className="text-sm text-muted-foreground">
-                            {alert.alertType === 'yield_rate' ? 'FPY/FY/NTFY' : 
-                             alert.alertType === 'ng_count' ? 'Số lượng NG' : 'Trạng thái máy'}
+                            {alert.alertType === 'yield_rate' ? t("settings.yieldRateShort") : 
+                             alert.alertType === 'ng_count' ? t("settings.ngCount") : t("settings.machineStatus")}
                             {' '}
                             {alert.comparisonOperator === 'lt' ? '<' :
                              alert.comparisonOperator === 'lte' ? '≤' :
@@ -2294,7 +2278,7 @@ export default function Settings() {
                           size="sm"
                           onClick={() => updateAlertMutation.mutate({ id: alert.id, isActive: !alert.isActive })}
                         >
-                          {alert.isActive ? 'Đang bật' : 'Đã tắt'}
+                          {alert.isActive ? t("settings.alertOn") : t("settings.alertOff")}
                         </Button>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -2308,7 +2292,7 @@ export default function Settings() {
                               setEditAlertDialogOpen(true);
                             }}>
                               <Pencil className="h-4 w-4 mr-2" />
-                              Chỉnh sửa
+                              {t("settings.edit")}
                             </DropdownMenuItem>
                             <DropdownMenuItem 
                               className="text-destructive"
@@ -2318,7 +2302,7 @@ export default function Settings() {
                               }}
                             >
                               <Trash2 className="h-4 w-4 mr-2" />
-                              Xóa
+                              {t("common.delete")}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -2328,10 +2312,8 @@ export default function Settings() {
                   {(!alerts || alerts.length === 0) && (
                     <div className="text-center py-12">
                       <Bell className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                      <p className="text-muted-foreground">Chưa có cảnh báo nào</p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Tạo cảnh báo để nhận thông báo khi chỉ số xuống dưới ngưỡng
-                      </p>
+                      <p className="text-muted-foreground">{t("settings.noAlerts")}</p>
+                      <p className="text-sm text-muted-foreground mt-1">{t("settings.noAlertsDesc")}</p>
                     </div>
                   )}
                 </div>
@@ -2350,17 +2332,33 @@ export default function Settings() {
                       <Wifi className="h-6 w-6 text-blue-400" />
                     </div>
                     <div className="flex-1">
-                      <h3 className="font-semibold">Quản lý MQTT Clients</h3>
+                      <h3 className="font-semibold">{t("settings.mqttClientsTitle")}</h3>
                       <p className="text-sm text-muted-foreground">
-                        Phê duyệt, quản lý MQTT clients và kết nối thủ công đã được chuyển sang trang riêng
+                        {t("settings.mqttDescription")}
                       </p>
                     </div>
                     <Button asChild>
                       <a href="/mqtt-clients">
-                        Đi đến MQTT Clients →
+                        {t("settings.goToMqttClients")}
                       </a>
                     </Button>
                   </div>
+                </CardContent>
+              </Card>
+
+              {/* Manual Machine Registration and Sync Configuration */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Cpu className="h-5 w-5 text-primary" />
+                    {t("settings.manualRegistrationTitle")}
+                  </CardTitle>
+                  <CardDescription>
+                    {t("settings.manualRegistrationDesc")}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ManualMachineMapping />
                 </CardContent>
               </Card>
               
@@ -2369,10 +2367,10 @@ export default function Settings() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Wifi className="h-5 w-5 text-primary" />
-                    Đăng ký tự động (WebSocket) - Legacy
+                    {t("settings.autoRegistrationLegacy")}
                   </CardTitle>
                   <CardDescription>
-                    Quản lý đăng ký và kết nối máy qua WebSocket - máy tự động gửi yêu cầu đăng ký
+                    {t("settings.webSocketDescription")}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -2451,24 +2449,22 @@ export default function Settings() {
           <TabsContent value="product-models">
             <Card>
               <CardHeader>
-                <CardTitle>Mẫu sản phẩm</CardTitle>
-                <CardDescription>Quản lý các mẫu sản phẩm</CardDescription>
+                <CardTitle>{t("settings.productModels")}</CardTitle>
+                <CardDescription>{t("settings.productModelsDesc")}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-col items-center justify-center py-12 space-y-4">
                   <Package className="h-16 w-16 text-muted-foreground" />
                   <div className="text-center space-y-2">
-                    <p className="text-lg font-medium">Quản lý Mẫu sản phẩm</p>
-                    <p className="text-sm text-muted-foreground">
-                      Quản lý các mẫu sản phẩm và điểm đo
-                    </p>
+                    <p className="text-lg font-medium">{t("settings.manageProductModels")}</p>
+                    <p className="text-sm text-muted-foreground">{t("settings.manageProductModelsDesc")}</p>
                   </div>
                   <Button 
                     onClick={() => setLocation("/products")}
                     className="gap-2"
                   >
                     <Package className="h-4 w-4" />
-                    Mở trang Mẫu sản phẩm
+                    {t("settings.openProductModelsPage")}
                   </Button>
                 </div>
               </CardContent>
@@ -2484,15 +2480,15 @@ export default function Settings() {
           <TabsContent value="audit-logs">
             <Card>
               <CardHeader>
-                <CardTitle>Audit Log</CardTitle>
-                <CardDescription>Lịch sử thay đổi hệ thống</CardDescription>
+                <CardTitle>{t("settings.auditLogTitle")}</CardTitle>
+                <CardDescription>{t("settings.auditLogDesc")}</CardDescription>
               </CardHeader>
               <CardContent>
                 <iframe 
                   src="/audit-logs" 
                   className="w-full border-0" 
                   style={{ height: 'calc(100vh - 250px)' }}
-                  title="Audit Log"
+                  title={t("settings.auditLogTitle")}
                 />
               </CardContent>
             </Card>
@@ -2507,19 +2503,19 @@ export default function Settings() {
       <Dialog open={editAlertDialogOpen} onOpenChange={setEditAlertDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Chỉnh sửa cảnh báo</DialogTitle>
+            <DialogTitle>{t("settings.editAlert")}</DialogTitle>
           </DialogHeader>
           {editingAlert && (
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Tên cảnh báo</label>
+                <label className="text-sm font-medium">{t("settings.alertName")}</label>
                 <Input
                   value={editingAlert.name}
                   onChange={(e) => setEditingAlert({ ...editingAlert, name: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Ngưỡng cảnh báo</label>
+                <label className="text-sm font-medium">{t("settings.alertThresholdLabel")}</label>
                 <Input
                   type="number"
                   value={editingAlert.threshold}
@@ -2527,7 +2523,7 @@ export default function Settings() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Thời gian chờ (phút)</label>
+                <label className="text-sm font-medium">{t("settings.cooldownLabel")}</label>
                 <Input
                   type="number"
                   min="5"
@@ -2539,7 +2535,7 @@ export default function Settings() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditAlertDialogOpen(false)}>Hủy</Button>
+            <Button variant="outline" onClick={() => setEditAlertDialogOpen(false)}>{t("common.cancel")}</Button>
             <Button
               onClick={() => editingAlert && updateAlertMutation.mutate({
                 id: editingAlert.id,
@@ -2550,7 +2546,7 @@ export default function Settings() {
               disabled={updateAlertMutation.isPending}
             >
               {updateAlertMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              Lưu
+              {t("common.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2560,28 +2556,28 @@ export default function Settings() {
       <Dialog open={editStageDialogOpen} onOpenChange={setEditStageDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Chỉnh sửa công đoạn</DialogTitle>
+            <DialogTitle>{t("settings.editStage")}</DialogTitle>
           </DialogHeader>
           {editingStage && (
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Mã công đoạn</label>
+                  <label className="text-sm font-medium">{t("settings.stageCode")}</label>
                   <Input value={editingStage.code} onChange={(e) => setEditingStage({ ...editingStage, code: e.target.value })} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Tên công đoạn</label>
+                  <label className="text-sm font-medium">{t("settings.stageName")}</label>
                   <Input value={editingStage.name} onChange={(e) => setEditingStage({ ...editingStage, name: e.target.value })} />
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Mô tả</label>
+                <label className="text-sm font-medium">{t("common.description")}</label>
                 <Input value={editingStage.description || ''} onChange={(e) => setEditingStage({ ...editingStage, description: e.target.value })} />
               </div>
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditStageDialogOpen(false)}>Hủy</Button>
+            <Button variant="outline" onClick={() => setEditStageDialogOpen(false)}>{t("common.cancel")}</Button>
             <Button onClick={() => editingStage && updateStageMutation.mutate({
               id: editingStage.id,
               code: editingStage.code,
@@ -2589,7 +2585,7 @@ export default function Settings() {
               description: editingStage.description || undefined,
             })} disabled={updateStageMutation.isPending}>
               {updateStageMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              Lưu
+              {t("common.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2599,23 +2595,23 @@ export default function Settings() {
       <Dialog open={editFactoryDialogOpen} onOpenChange={setEditFactoryDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Chỉnh sửa nhà máy</DialogTitle>
+            <DialogTitle>{t("settings.editFactory")}</DialogTitle>
           </DialogHeader>
           {editingFactory && (
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Mã nhà máy</label>
+                <label className="text-sm font-medium">{t("settings.factoryCode")}</label>
                 <Input value={editingFactory.code} disabled className="bg-muted" />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Tên nhà máy *</label>
+                <label className="text-sm font-medium">{t("settings.factoryName")} *</label>
                 <Input
                   value={editingFactory.name}
                   onChange={(e) => setEditingFactory({ ...editingFactory, name: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Địa chỉ</label>
+                <label className="text-sm font-medium">{t("settings.address")}</label>
                 <Input
                   value={editingFactory.address || ""}
                   onChange={(e) => setEditingFactory({ ...editingFactory, address: e.target.value })}
@@ -2624,7 +2620,7 @@ export default function Settings() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditFactoryDialogOpen(false)}>Hủy</Button>
+            <Button variant="outline" onClick={() => setEditFactoryDialogOpen(false)}>{t("common.cancel")}</Button>
             <Button 
               onClick={() => editingFactory && updateFactoryMutation.mutate({ 
                 id: editingFactory.id, 
@@ -2634,7 +2630,7 @@ export default function Settings() {
               disabled={updateFactoryMutation.isPending}
             >
               {updateFactoryMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              Lưu
+              {t("common.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2644,12 +2640,12 @@ export default function Settings() {
       <Dialog open={editWorkshopDialogOpen} onOpenChange={setEditWorkshopDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Chỉnh sửa nhà xưởng</DialogTitle>
+            <DialogTitle>{t("settings.editWorkshop")}</DialogTitle>
           </DialogHeader>
           {editingWorkshop && (
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Nhà máy</label>
+                <label className="text-sm font-medium">{t("dashboard.factory")}</label>
                 <Select 
                   value={String(editingWorkshop.factoryId)} 
                   onValueChange={(v) => setEditingWorkshop({ ...editingWorkshop, factoryId: parseInt(v) })}
@@ -2663,11 +2659,11 @@ export default function Settings() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Mã nhà xưởng</label>
+                <label className="text-sm font-medium">{t("settings.workshopCode")}</label>
                 <Input value={editingWorkshop.code} disabled className="bg-muted" />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Tên nhà xưởng *</label>
+                <label className="text-sm font-medium">{t("settings.workshopName")} *</label>
                 <Input
                   value={editingWorkshop.name}
                   onChange={(e) => setEditingWorkshop({ ...editingWorkshop, name: e.target.value })}
@@ -2676,7 +2672,7 @@ export default function Settings() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditWorkshopDialogOpen(false)}>Hủy</Button>
+            <Button variant="outline" onClick={() => setEditWorkshopDialogOpen(false)}>{t("common.cancel")}</Button>
             <Button 
               onClick={() => editingWorkshop && updateWorkshopMutation.mutate({ 
                 id: editingWorkshop.id, 
@@ -2686,7 +2682,7 @@ export default function Settings() {
               disabled={updateWorkshopMutation.isPending}
             >
               {updateWorkshopMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              Lưu
+              {t("common.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2696,12 +2692,12 @@ export default function Settings() {
       <Dialog open={editLineDialogOpen} onOpenChange={setEditLineDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Chỉnh sửa dây chuyền</DialogTitle>
+            <DialogTitle>{t("settings.editLine")}</DialogTitle>
           </DialogHeader>
           {editingLine && (
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Nhà xưởng</label>
+                <label className="text-sm font-medium">{t("dashboard.workshop")}</label>
                 <Select 
                   value={String(editingLine.workshopId)} 
                   onValueChange={(v) => setEditingLine({ ...editingLine, workshopId: parseInt(v) })}
@@ -2715,11 +2711,11 @@ export default function Settings() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Mã dây chuyền</label>
+                <label className="text-sm font-medium">{t("settings.lineCode")}</label>
                 <Input value={editingLine.code} disabled className="bg-muted" />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Tên dây chuyền *</label>
+                <label className="text-sm font-medium">{t("settings.lineName")} *</label>
                 <Input
                   value={editingLine.name}
                   onChange={(e) => setEditingLine({ ...editingLine, name: e.target.value })}
@@ -2728,7 +2724,7 @@ export default function Settings() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditLineDialogOpen(false)}>Hủy</Button>
+            <Button variant="outline" onClick={() => setEditLineDialogOpen(false)}>{t("common.cancel")}</Button>
             <Button 
               onClick={() => editingLine && updateLineMutation.mutate({ 
                 id: editingLine.id, 
@@ -2738,7 +2734,7 @@ export default function Settings() {
               disabled={updateLineMutation.isPending}
             >
               {updateLineMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              Lưu
+              {t("common.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2748,12 +2744,12 @@ export default function Settings() {
       <Dialog open={editStationDialogOpen} onOpenChange={setEditStationDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Chỉnh sửa công trạm</DialogTitle>
+            <DialogTitle>{t("settings.editStation")}</DialogTitle>
           </DialogHeader>
           {editingStation && (
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Dây chuyền</label>
+                <label className="text-sm font-medium">{t("dashboard.line")}</label>
                 <Select 
                   value={String(editingStation.lineId)} 
                   onValueChange={(v) => setEditingStation({ ...editingStation, lineId: parseInt(v) })}
@@ -2767,18 +2763,18 @@ export default function Settings() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Mã công trạm</label>
+                <label className="text-sm font-medium">{t("settings.stationCode")}</label>
                 <Input value={editingStation.code} disabled className="bg-muted" />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Tên công trạm *</label>
+                <label className="text-sm font-medium">{t("settings.stationName")} *</label>
                 <Input
                   value={editingStation.name}
                   onChange={(e) => setEditingStation({ ...editingStation, name: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Thứ tự</label>
+                <label className="text-sm font-medium">{t("settings.order")}</label>
                 <Input
                   type="number"
                   value={editingStation.orderIndex}
@@ -2788,7 +2784,7 @@ export default function Settings() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditStationDialogOpen(false)}>Hủy</Button>
+            <Button variant="outline" onClick={() => setEditStationDialogOpen(false)}>{t("common.cancel")}</Button>
             <Button 
               onClick={() => editingStation && updateStationMutation.mutate({ 
                 id: editingStation.id, 
@@ -2799,7 +2795,7 @@ export default function Settings() {
               disabled={updateStationMutation.isPending}
             >
               {updateStationMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              Lưu
+              {t("common.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2809,20 +2805,20 @@ export default function Settings() {
       <Dialog open={editShiftDialogOpen} onOpenChange={setEditShiftDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Chỉnh sửa ca làm việc</DialogTitle>
+            <DialogTitle>{t("settings.editShift")}</DialogTitle>
           </DialogHeader>
           {editingShift && (
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Mã ca</label>
+                  <label className="text-sm font-medium">{t("settings.shiftCode")}</label>
                   <Input
                     value={editingShift.code}
                     onChange={(e) => setEditingShift({ ...editingShift, code: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Tên ca</label>
+                  <label className="text-sm font-medium">{t("settings.shiftName")}</label>
                   <Input
                     value={editingShift.name}
                     onChange={(e) => setEditingShift({ ...editingShift, name: e.target.value })}
@@ -2831,7 +2827,7 @@ export default function Settings() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Giờ bắt đầu</label>
+                  <label className="text-sm font-medium">{t("settings.startTime")}</label>
                   <div className="flex gap-2">
                     <Input
                       type="number"
@@ -2853,7 +2849,7 @@ export default function Settings() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Giờ kết thúc</label>
+                  <label className="text-sm font-medium">{t("settings.endTime")}</label>
                   <div className="flex gap-2">
                     <Input
                       type="number"
@@ -2883,12 +2879,12 @@ export default function Settings() {
                   onChange={(e) => setEditingShift({ ...editingShift, isActive: e.target.checked })}
                   className="h-4 w-4"
                 />
-                <label htmlFor="shiftActive" className="text-sm">Hoạt động</label>
+                <label htmlFor="shiftActive" className="text-sm">{t("settings.active")}</label>
               </div>
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditShiftDialogOpen(false)}>Hủy</Button>
+            <Button variant="outline" onClick={() => setEditShiftDialogOpen(false)}>{t("common.cancel")}</Button>
             <Button 
               onClick={() => editingShift && updateShiftMutation.mutate({ 
                 id: editingShift.id, 
@@ -2903,7 +2899,7 @@ export default function Settings() {
               disabled={updateShiftMutation.isPending}
             >
               {updateShiftMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              Lưu
+              {t("common.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2913,12 +2909,12 @@ export default function Settings() {
       <Dialog open={editMachineDialogOpen} onOpenChange={setEditMachineDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Chỉnh sửa máy</DialogTitle>
+            <DialogTitle>{t("settings.editMachine")}</DialogTitle>
           </DialogHeader>
           {editingMachine && (
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Công trạm</label>
+                <label className="text-sm font-medium">{t("settings.sidebar.workstation")}</label>
                 <Select 
                   value={String(editingMachine.stationId)} 
                   onValueChange={(v) => setEditingMachine({ ...editingMachine, stationId: parseInt(v) })}
@@ -2932,35 +2928,35 @@ export default function Settings() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Mã máy</label>
+                <label className="text-sm font-medium">{t("settings.machineCode")}</label>
                 <Input value={editingMachine.code} disabled className="bg-muted" />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Tên máy *</label>
+                <label className="text-sm font-medium">{t("settings.machineName")} *</label>
                 <Input
                   value={editingMachine.name}
                   onChange={(e) => setEditingMachine({ ...editingMachine, name: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Model</label>
+                <label className="text-sm font-medium">{t("settings.model")}</label>
                 <Input
                   value={editingMachine.model || ""}
                   onChange={(e) => setEditingMachine({ ...editingMachine, model: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Nhà sản xuất</label>
+                <label className="text-sm font-medium">{t("settings.manufacturer")}</label>
                 <Input
                   value={editingMachine.manufacturer || ""}
                   onChange={(e) => setEditingMachine({ ...editingMachine, manufacturer: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">API Key</label>
+                <label className="text-sm font-medium">{t("settings.apiKey")}</label>
                 <div className="flex gap-2">
-                  <Input value={editingMachine.apiKey} disabled className="bg-muted font-mono text-xs" />
-                  <Button variant="outline" size="icon" onClick={() => copyToClipboard(editingMachine.apiKey)}>
+                  <Input value={editingMachine.apiKey || ''} disabled className="bg-muted font-mono text-xs" />
+                  <Button variant="outline" size="icon" onClick={() => copyToClipboard(editingMachine.apiKey || '')}>
                     <Copy className="h-4 w-4" />
                   </Button>
                 </div>
@@ -2968,11 +2964,11 @@ export default function Settings() {
 
               {/* Image Upload Section */}
               <div className="border-t pt-4 mt-4">
-                <label className="text-sm font-medium block mb-3">Ảnh máy (cho Layout và Dashboard)</label>
+                <label className="text-sm font-medium block mb-3">{t("settings.machineImage")}</label>
                 <div className="grid grid-cols-2 gap-4">
                   {/* 2D Image */}
                   <div className="space-y-2">
-                    <label className="text-xs text-muted-foreground">Ảnh 2D</label>
+                    <label className="text-xs text-muted-foreground">{t("settings.image2D")}</label>
                     <div className="relative">
                       {editingMachine.image2DUrl ? (
                         <div className="relative group">
@@ -2997,7 +2993,7 @@ export default function Settings() {
                           ) : (
                             <>
                               <Upload className="h-6 w-6 text-muted-foreground mb-1" />
-                              <span className="text-xs text-muted-foreground">Upload 2D</span>
+                              <span className="text-xs text-muted-foreground">{t("settings.upload2D")}</span>
                             </>
                           )}
                           <input
@@ -3014,7 +3010,7 @@ export default function Settings() {
 
                   {/* 3D Image */}
                   <div className="space-y-2">
-                    <label className="text-xs text-muted-foreground">Ảnh 3D</label>
+                    <label className="text-xs text-muted-foreground">{t("settings.image3D")}</label>
                     <div className="relative">
                       {editingMachine.image3DUrl ? (
                         <div className="relative group">
@@ -3039,7 +3035,7 @@ export default function Settings() {
                           ) : (
                             <>
                               <Upload className="h-6 w-6 text-muted-foreground mb-1" />
-                              <span className="text-xs text-muted-foreground">Upload 3D</span>
+                              <span className="text-xs text-muted-foreground">{t("settings.upload3D")}</span>
                             </>
                           )}
                           <input
@@ -3055,13 +3051,13 @@ export default function Settings() {
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">
-                  Ảnh sẽ được hiển thị trong Layout và Dashboard. Tối đa 5MB.
+                  {t("settings.imageNote")}
                 </p>
               </div>
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditMachineDialogOpen(false)}>Hủy</Button>
+            <Button variant="outline" onClick={() => setEditMachineDialogOpen(false)}>{t("common.cancel")}</Button>
             <Button 
               onClick={() => editingMachine && updateMachineMutation.mutate({ 
                 id: editingMachine.id, 
@@ -3073,7 +3069,7 @@ export default function Settings() {
               disabled={updateMachineMutation.isPending}
             >
               {updateMachineMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              Lưu
+              {t("common.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3083,7 +3079,7 @@ export default function Settings() {
       <DeleteConfirmDialog
         open={deleteShiftDialogOpen}
         onOpenChange={setDeleteShiftDialogOpen}
-        itemType="ca làm việc"
+        itemType={t("settings.sidebar.shift")}
         itemName={shiftToDelete?.name}
         onConfirm={() => {
           if (shiftToDelete) {
@@ -3098,7 +3094,7 @@ export default function Settings() {
       <DeleteConfirmDialog
         open={deleteStageDialogOpen}
         onOpenChange={setDeleteStageDialogOpen}
-        itemType="công đoạn"
+        itemType={t("settings.sidebar.stage")}
         itemName={stageToDelete?.name}
         onConfirm={() => {
           if (stageToDelete) {
@@ -3113,7 +3109,7 @@ export default function Settings() {
       <DeleteConfirmDialog
         open={deleteAlertDialogOpen}
         onOpenChange={setDeleteAlertDialogOpen}
-        itemType="cảnh báo"
+        itemType={t("settings.sidebar.alert")}
         itemName={alertToDelete?.name}
         onConfirm={() => {
           if (alertToDelete) {
@@ -3128,7 +3124,7 @@ export default function Settings() {
       <DeleteConfirmDialog
         open={deleteMachineDialogOpen}
         onOpenChange={setDeleteMachineDialogOpen}
-        itemType="máy"
+        itemType={t("settings.machineCount")}
         itemName={machineToDelete?.name}
         onConfirm={() => {
           if (machineToDelete) {

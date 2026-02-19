@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -61,121 +62,115 @@ interface ExportLog {
   errorMessage?: string;
 }
 
-// Mock data
-const MOCK_SCHEDULES: Schedule[] = [
-  {
-    id: 1,
-    name: 'Báo cáo NG hàng ngày',
-    description: 'Xuất danh sách sản phẩm NG trong ngày',
-    scheduleType: 'DAILY',
-    scheduleTime: '08:00',
-    exportFormat: 'EXCEL',
-    resultFilter: 'NG',
+// Map server scheduled report to client Schedule interface
+function mapServerToSchedule(server: any): Schedule {
+  const formatMap: Record<string, ExportFormat> = { HTML: 'CSV', PDF: 'PDF', EXCEL: 'EXCEL' };
+  return {
+    id: server.id,
+    name: server.name,
+    description: server.description ?? undefined,
+    scheduleType: server.schedule as ScheduleType,
+    scheduleTime: server.scheduleTime ?? '08:00',
+    scheduleDayOfWeek: server.scheduleDayOfWeek ?? undefined,
+    scheduleDayOfMonth: server.scheduleDayOfMonth ?? undefined,
+    exportFormat: formatMap[server.reportFormat] ?? 'CSV',
+    resultFilter: 'ALL',
     timeRangeType: 'LAST_24H',
-    recipients: ['qa@company.com', 'manager@company.com'],
-    includeImages: true,
-    includeAnnotations: true,
-    includeMeasurements: true,
-    includeSummaryStats: true,
-    isActive: true,
-    lastRunAt: new Date(Date.now() - 86400000),
-    lastRunStatus: 'SUCCESS',
-    nextRunAt: new Date(Date.now() + 43200000),
-  },
-  {
-    id: 2,
-    name: 'Báo cáo tuần',
-    description: 'Tổng hợp kết quả kiểm tra hàng tuần',
-    scheduleType: 'WEEKLY',
-    scheduleTime: '09:00',
-    scheduleDayOfWeek: 1, // Monday
-    exportFormat: 'PDF',
-    resultFilter: 'ALL',
-    timeRangeType: 'LAST_7D',
-    recipients: ['director@company.com'],
-    includeImages: false,
-    includeAnnotations: true,
-    includeMeasurements: true,
-    includeSummaryStats: true,
-    isActive: true,
-    lastRunAt: new Date(Date.now() - 604800000),
-    lastRunStatus: 'SUCCESS',
-    nextRunAt: new Date(Date.now() + 259200000),
-  },
-  {
-    id: 3,
-    name: 'Báo cáo tháng',
-    description: 'Báo cáo chi tiết hàng tháng',
-    scheduleType: 'MONTHLY',
-    scheduleTime: '07:00',
-    scheduleDayOfMonth: 1,
-    exportFormat: 'EXCEL',
-    resultFilter: 'ALL',
-    timeRangeType: 'LAST_MONTH',
-    recipients: ['ceo@company.com', 'cfo@company.com'],
-    includeImages: false,
-    includeAnnotations: true,
-    includeMeasurements: true,
-    includeSummaryStats: true,
-    isActive: false,
-    lastRunAt: new Date(Date.now() - 2592000000),
-    lastRunStatus: 'FAILED',
-  },
-];
+    recipients: server.recipients ?? [],
+    includeImages: server.includeWorkstationHeatmap ?? false,
+    includeAnnotations: server.includeTopNGPoints ?? false,
+    includeMeasurements: server.includeTrendChart ?? false,
+    includeSummaryStats: server.includeComparison ?? false,
+    isActive: server.isActive ?? false,
+    lastRunAt: server.lastSentAt ? new Date(server.lastSentAt) : undefined,
+    lastRunStatus: undefined,
+    nextRunAt: server.nextScheduledAt ? new Date(server.nextScheduledAt) : undefined,
+  };
+}
 
-const MOCK_LOGS: ExportLog[] = [
-  {
-    id: 1,
-    scheduleId: 1,
-    scheduleName: 'Báo cáo NG hàng ngày',
-    status: 'SUCCESS',
-    recordCount: 45,
-    fileSize: 256000,
-    recipientCount: 2,
-    deliveredCount: 2,
-    startedAt: new Date(Date.now() - 86400000),
-    completedAt: new Date(Date.now() - 86400000 + 5000),
-  },
-  {
-    id: 2,
-    scheduleId: 2,
-    scheduleName: 'Báo cáo tuần',
-    status: 'SUCCESS',
-    recordCount: 312,
-    fileSize: 1024000,
-    recipientCount: 1,
-    deliveredCount: 1,
-    startedAt: new Date(Date.now() - 604800000),
-    completedAt: new Date(Date.now() - 604800000 + 15000),
-  },
-  {
-    id: 3,
-    scheduleId: 3,
-    scheduleName: 'Báo cáo tháng',
-    status: 'FAILED',
+// Map server log to client ExportLog interface
+function mapServerToLog(server: any, scheduleName: string): ExportLog {
+  return {
+    id: server.id,
+    scheduleId: server.reportId,
+    scheduleName,
+    status: server.status as ExportLog['status'],
     recordCount: 0,
     fileSize: 0,
-    recipientCount: 2,
-    deliveredCount: 0,
-    startedAt: new Date(Date.now() - 2592000000),
-    completedAt: new Date(Date.now() - 2592000000 + 3000),
-    errorMessage: 'SMTP connection timeout',
-  },
-];
+    recipientCount: server.recipientCount ?? 0,
+    deliveredCount: server.successCount ?? 0,
+    startedAt: new Date(server.sentAt),
+    completedAt: server.sentAt ? new Date(server.sentAt) : undefined,
+    errorMessage: server.errorMessage ?? undefined,
+  };
+}
 
 const DAYS_OF_WEEK = [
-  { value: 0, label: 'Chủ nhật' },
-  { value: 1, label: 'Thứ 2' },
-  { value: 2, label: 'Thứ 3' },
-  { value: 3, label: 'Thứ 4' },
-  { value: 4, label: 'Thứ 5' },
-  { value: 5, label: 'Thứ 6' },
-  { value: 6, label: 'Thứ 7' },
+  { value: 0, labelKey: 'reports.sunday' },
+  { value: 1, labelKey: 'reports.monday' },
+  { value: 2, labelKey: 'reports.tuesday' },
+  { value: 3, labelKey: 'reports.wednesday' },
+  { value: 4, labelKey: 'reports.thursday' },
+  { value: 5, labelKey: 'reports.friday' },
+  { value: 6, labelKey: 'reports.saturday' },
 ];
 
 export default function HistoryExportScheduling() {
-  const [schedules, setSchedules] = useState<Schedule[]>(MOCK_SCHEDULES);
-  const [logs] = useState<ExportLog[]>(MOCK_LOGS);
+  const { t } = useTranslation();
+  // tRPC queries & mutations
+  const utils = trpc.useUtils();
+  const schedulesQuery = trpc.scheduledReport.list.useQuery();
+
+  const schedules: Schedule[] = useMemo(() => {
+    return (schedulesQuery.data ?? []).map(mapServerToSchedule);
+  }, [schedulesQuery.data]);
+
+  // Fetch logs for all schedules
+  const [logs, setLogs] = useState<ExportLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  useEffect(() => {
+    if (!schedulesQuery.data?.length) {
+      setLogs([]);
+      return;
+    }
+    setLogsLoading(true);
+    const nameMap = new Map(schedulesQuery.data.map((s: any) => [s.id, s.name]));
+    Promise.all(
+      schedulesQuery.data.map((s: any) =>
+        utils.scheduledReport.getLogs.fetch({ reportId: s.id, limit: 50 })
+          .then((serverLogs: any[]) => serverLogs.map((l: any) => mapServerToLog(l, nameMap.get(s.id) ?? '')))
+          .catch(() => [] as ExportLog[])
+      )
+    ).then((results) => {
+      setLogs(results.flat().sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime()));
+      setLogsLoading(false);
+    });
+  }, [schedulesQuery.data]);
+
+  // Mutations
+  const updateMutation = trpc.scheduledReport.update.useMutation({
+    onSuccess: () => { utils.scheduledReport.list.invalidate(); },
+    onError: (error: any) => { toast.error(t('common.error') + ': ' + error.message); },
+  });
+  const deleteMutation = trpc.scheduledReport.delete.useMutation({
+    onSuccess: () => {
+      toast.success(t('reports.scheduleDeleted'));
+      utils.scheduledReport.list.invalidate();
+    },
+    onError: (error: any) => { toast.error(t('common.error') + ': ' + error.message); },
+  });
+  const createMutation = trpc.scheduledReport.create.useMutation({
+    onSuccess: () => {
+      toast.success(t('reports.scheduleCreated'));
+      utils.scheduledReport.list.invalidate();
+    },
+    onError: (error: any) => { toast.error(t('common.error') + ': ' + error.message); },
+  });
+  const sendTestMutation = trpc.scheduledReport.sendTest.useMutation({
+    onSuccess: () => { toast.success(t('reports.testEmailSent')); },
+    onError: (error: any) => { toast.error(t('reports.emailSendError') + ': ' + error.message); },
+  });
+
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
   const [formData, setFormData] = useState<Partial<Schedule>>({
@@ -212,13 +207,13 @@ export default function HistoryExportScheduling() {
   const getStatusBadge = (status?: string) => {
     switch (status) {
       case 'SUCCESS':
-        return <Badge className="bg-green-500/20 text-green-400 border-green-500/30"><CheckCircle className="w-3 h-3 mr-1" />Thành công</Badge>;
+        return <Badge className="bg-green-500/20 text-green-400 border-green-500/30"><CheckCircle className="w-3 h-3 mr-1" />{t('reports.success')}</Badge>;
       case 'FAILED':
-        return <Badge className="bg-red-500/20 text-red-400 border-red-500/30"><XCircle className="w-3 h-3 mr-1" />Thất bại</Badge>;
+        return <Badge className="bg-red-500/20 text-red-400 border-red-500/30"><XCircle className="w-3 h-3 mr-1" />{t('reports.failed')}</Badge>;
       case 'RUNNING':
-        return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30"><RefreshCw className="w-3 h-3 mr-1 animate-spin" />Đang chạy</Badge>;
+        return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30"><RefreshCw className="w-3 h-3 mr-1 animate-spin" />{t('reports.running')}</Badge>;
       case 'PENDING':
-        return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30"><Clock className="w-3 h-3 mr-1" />Đang chờ</Badge>;
+        return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30"><Clock className="w-3 h-3 mr-1" />{t('reports.pending')}</Badge>;
       default:
         return <Badge variant="outline">-</Badge>;
     }
@@ -237,19 +232,20 @@ export default function HistoryExportScheduling() {
   };
 
   const handleToggleActive = (id: number) => {
-    setSchedules(prev => prev.map(s => 
-      s.id === id ? { ...s, isActive: !s.isActive } : s
-    ));
-    toast.success('Đã cập nhật trạng thái lịch');
+    const schedule = schedules.find(s => s.id === id);
+    if (!schedule) return;
+    updateMutation.mutate(
+      { id, isActive: !schedule.isActive },
+      { onSuccess: () => toast.success(t('reports.statusUpdated')) }
+    );
   };
 
   const handleRunNow = (schedule: Schedule) => {
-    toast.success(`Đang chạy "${schedule.name}"...`);
+    sendTestMutation.mutate({ id: schedule.id });
   };
 
   const handleDelete = (id: number) => {
-    setSchedules(prev => prev.filter(s => s.id !== id));
-    toast.success('Đã xóa lịch xuất báo cáo');
+    deleteMutation.mutate({ id });
   };
 
   const handleAddRecipient = () => {
@@ -260,7 +256,7 @@ export default function HistoryExportScheduling() {
       }));
       setRecipientInput('');
     } else {
-      toast.error('Vui lòng nhập email hợp lệ');
+      toast.error(t('reports.pleaseEnterValidEmail'));
     }
   };
 
@@ -271,34 +267,59 @@ export default function HistoryExportScheduling() {
     }));
   };
 
+  const mapFormToServer = (data: Partial<Schedule>) => {
+    const formatMap: Record<string, string> = { CSV: 'HTML', JSON: 'HTML', EXCEL: 'EXCEL', PDF: 'PDF' };
+    return {
+      name: data.name!,
+      description: data.description,
+      schedule: data.scheduleType as 'DAILY' | 'WEEKLY' | 'MONTHLY',
+      scheduleTime: data.scheduleTime ?? '08:00',
+      scheduleDayOfWeek: data.scheduleDayOfWeek,
+      scheduleDayOfMonth: data.scheduleDayOfMonth,
+      recipients: data.recipients ?? [],
+      reportFormat: (formatMap[data.exportFormat ?? 'CSV'] ?? 'HTML') as 'HTML' | 'PDF' | 'EXCEL',
+      includeWorkstationHeatmap: data.includeImages ?? false,
+      includeTopNGPoints: data.includeAnnotations ?? true,
+      includeTrendChart: data.includeMeasurements ?? true,
+      includeComparison: data.includeSummaryStats ?? true,
+      isActive: data.isActive ?? true,
+      reportType: 'NG_VISUAL' as const,
+    };
+  };
+
   const handleSave = () => {
     if (!formData.name?.trim()) {
-      toast.error('Vui lòng nhập tên lịch');
+      toast.error(t('reports.pleaseEnterScheduleName'));
       return;
     }
     if (!formData.recipients?.length) {
-      toast.error('Vui lòng thêm ít nhất một người nhận');
+      toast.error(t('reports.pleaseAddRecipient'));
       return;
     }
 
     if (editingSchedule) {
-      setSchedules(prev => prev.map(s =>
-        s.id === editingSchedule.id ? { ...s, ...formData } as Schedule : s
-      ));
-      toast.success('Đã cập nhật lịch xuất báo cáo');
+      const serverData = mapFormToServer(formData);
+      updateMutation.mutate(
+        { id: editingSchedule.id, ...serverData },
+        {
+          onSuccess: () => {
+            toast.success(t('reports.scheduleUpdated'));
+            setShowCreateDialog(false);
+            setEditingSchedule(null);
+            resetForm();
+          },
+        }
+      );
     } else {
-      const newSchedule: Schedule = {
-        ...formData as Schedule,
-        id: Date.now(),
-        isActive: true,
-      };
-      setSchedules(prev => [...prev, newSchedule]);
-      toast.success('Đã tạo lịch xuất báo cáo mới');
+      const serverData = mapFormToServer(formData);
+      createMutation.mutate(serverData, {
+        onSuccess: () => {
+          setShowCreateDialog(false);
+          setEditingSchedule(null);
+          resetForm();
+        },
+      });
     }
-
-    setShowCreateDialog(false);
-    setEditingSchedule(null);
-    resetForm();
   };
 
   const resetForm = () => {
@@ -333,15 +354,15 @@ export default function HistoryExportScheduling() {
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Calendar className="h-6 w-6" />
-              Lịch xuất báo cáo tự động
+              {t('reports.autoExportSchedule')}
             </h1>
             <p className="text-muted-foreground">
-              Cấu hình xuất báo cáo lịch sử tự động theo lịch và gửi email
+              {t('reports.autoExportDescription')}
             </p>
           </div>
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
             <Plus className="h-4 w-4 mr-2" />
-            Tạo lịch mới
+            {t('reports.createNewSchedule')}
           </Button>
         </div>
 
@@ -349,13 +370,13 @@ export default function HistoryExportScheduling() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Tổng số lịch</CardDescription>
+              <CardDescription>{t('reports.totalSchedules')}</CardDescription>
               <CardTitle className="text-2xl">{schedules.length}</CardTitle>
             </CardHeader>
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Đang hoạt động</CardDescription>
+              <CardDescription>{t('reports.active')}</CardDescription>
               <CardTitle className="text-2xl text-green-500">
                 {schedules.filter(s => s.isActive).length}
               </CardTitle>
@@ -363,7 +384,7 @@ export default function HistoryExportScheduling() {
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Thành công (7 ngày)</CardDescription>
+              <CardDescription>{t('reports.success7days')}</CardDescription>
               <CardTitle className="text-2xl text-blue-500">
                 {logs.filter(l => l.status === 'SUCCESS').length}
               </CardTitle>
@@ -371,7 +392,7 @@ export default function HistoryExportScheduling() {
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Thất bại (7 ngày)</CardDescription>
+              <CardDescription>{t('reports.failed7days')}</CardDescription>
               <CardTitle className="text-2xl text-red-500">
                 {logs.filter(l => l.status === 'FAILED').length}
               </CardTitle>
@@ -383,25 +404,40 @@ export default function HistoryExportScheduling() {
           <TabsList>
             <TabsTrigger value="schedules">
               <Calendar className="h-4 w-4 mr-2" />
-              Danh sách lịch
+              {t('reports.scheduleList')}
             </TabsTrigger>
             <TabsTrigger value="logs">
               <History className="h-4 w-4 mr-2" />
-              Lịch sử chạy
+              {t('reports.runHistory')}
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="schedules" className="space-y-4">
-            {schedules.length === 0 ? (
+            {schedulesQuery.isLoading ? (
+              <Card className="p-12 text-center">
+                <RefreshCw className="h-12 w-12 mx-auto text-muted-foreground mb-4 animate-spin" />
+                <h3 className="text-lg font-medium mb-2">{t('reports.loadingData')}</h3>
+              </Card>
+            ) : schedulesQuery.isError ? (
+              <Card className="p-12 text-center">
+                <AlertTriangle className="h-12 w-12 mx-auto text-red-400 mb-4" />
+                <h3 className="text-lg font-medium mb-2">{t('reports.loadError')}</h3>
+                <p className="text-muted-foreground mb-4">{schedulesQuery.error?.message}</p>
+                <Button onClick={() => schedulesQuery.refetch()} variant="outline">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  {t('reports.retry')}
+                </Button>
+              </Card>
+            ) : schedules.length === 0 ? (
               <Card className="p-12 text-center">
                 <Calendar className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium mb-2">Chưa có lịch nào</h3>
+                <h3 className="text-lg font-medium mb-2">{t('reports.noSchedules')}</h3>
                 <p className="text-muted-foreground mb-4">
-                  Tạo lịch xuất báo cáo tự động để nhận email định kỳ
+                  {t('reports.noSchedulesDescription')}
                 </p>
                 <Button onClick={() => setShowCreateDialog(true)}>
                   <Plus className="h-4 w-4 mr-2" />
-                  Tạo lịch đầu tiên
+                  {t('reports.createFirstSchedule')}
                 </Button>
               </Card>
             ) : (
@@ -418,7 +454,7 @@ export default function HistoryExportScheduling() {
                             <CardTitle className="text-base flex items-center gap-2">
                               {schedule.name}
                               {!schedule.isActive && (
-                                <Badge variant="outline">Tạm dừng</Badge>
+                                <Badge variant="outline">{t('reports.paused')}</Badge>
                               )}
                             </CardTitle>
                             <CardDescription>{schedule.description}</CardDescription>
@@ -456,29 +492,29 @@ export default function HistoryExportScheduling() {
                     <CardContent>
                       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                         <div>
-                          <p className="text-muted-foreground">Lịch chạy</p>
+                          <p className="text-muted-foreground">{t('reports.runSchedule')}</p>
                           <p className="font-medium">
-                            {schedule.scheduleType === 'DAILY' && `Hàng ngày lúc ${schedule.scheduleTime}`}
-                            {schedule.scheduleType === 'WEEKLY' && `${DAYS_OF_WEEK.find(d => d.value === schedule.scheduleDayOfWeek)?.label} lúc ${schedule.scheduleTime}`}
-                            {schedule.scheduleType === 'MONTHLY' && `Ngày ${schedule.scheduleDayOfMonth} hàng tháng lúc ${schedule.scheduleTime}`}
+                            {schedule.scheduleType === 'DAILY' && t('reports.dailyAt', { time: schedule.scheduleTime })}
+                            {schedule.scheduleType === 'WEEKLY' && `${t(DAYS_OF_WEEK.find(d => d.value === schedule.scheduleDayOfWeek)?.labelKey || '')} ${t('reports.at')} ${schedule.scheduleTime}`}
+                            {schedule.scheduleType === 'MONTHLY' && t('reports.monthlyAt', { day: schedule.scheduleDayOfMonth, time: schedule.scheduleTime })}
                           </p>
                         </div>
                         <div>
-                          <p className="text-muted-foreground">Định dạng</p>
+                          <p className="text-muted-foreground">{t('reports.format')}</p>
                           <p className="font-medium">{schedule.exportFormat}</p>
                         </div>
                         <div>
-                          <p className="text-muted-foreground">Người nhận</p>
+                          <p className="text-muted-foreground">{t('reports.recipientsLabel')}</p>
                           <p className="font-medium">{schedule.recipients.length} email</p>
                         </div>
                         <div>
-                          <p className="text-muted-foreground">Lần chạy cuối</p>
+                          <p className="text-muted-foreground">{t('reports.lastRun')}</p>
                           <div className="flex items-center gap-2">
                             {getStatusBadge(schedule.lastRunStatus)}
                           </div>
                         </div>
                         <div>
-                          <p className="text-muted-foreground">Lần chạy tiếp</p>
+                          <p className="text-muted-foreground">{t('reports.nextRun')}</p>
                           <p className="font-medium">{formatDate(schedule.nextRunAt)}</p>
                         </div>
                       </div>
@@ -491,16 +527,26 @@ export default function HistoryExportScheduling() {
 
           <TabsContent value="logs">
             <Card>
+              {logsLoading ? (
+                <div className="p-8 text-center">
+                  <RefreshCw className="h-8 w-8 mx-auto text-muted-foreground animate-spin mb-2" />
+                  <p className="text-muted-foreground">{t('reports.loadingHistory')}</p>
+                </div>
+              ) : logs.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground">
+                  {t('reports.noRunHistory')}
+                </div>
+              ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Lịch</TableHead>
-                    <TableHead>Trạng thái</TableHead>
-                    <TableHead>Số bản ghi</TableHead>
-                    <TableHead>Kích thước</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Thời gian</TableHead>
-                    <TableHead>Lỗi</TableHead>
+                    <TableHead>{t('reports.schedule')}</TableHead>
+                    <TableHead>{t('common.status')}</TableHead>
+                    <TableHead>{t('reports.recordCount')}</TableHead>
+                    <TableHead>{t('reports.fileSize')}</TableHead>
+                    <TableHead>{t('reports.email')}</TableHead>
+                    <TableHead>{t('reports.time')}</TableHead>
+                    <TableHead>{t('reports.errorColumn')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -521,6 +567,7 @@ export default function HistoryExportScheduling() {
                   ))}
                 </TableBody>
               </Table>
+              )}
             </Card>
           </TabsContent>
         </Tabs>
@@ -530,10 +577,10 @@ export default function HistoryExportScheduling() {
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
-                {editingSchedule ? 'Chỉnh sửa lịch' : 'Tạo lịch xuất báo cáo mới'}
+                {editingSchedule ? t('reports.editSchedule') : t('reports.createExportSchedule')}
               </DialogTitle>
               <DialogDescription>
-                Cấu hình lịch xuất báo cáo tự động và gửi email
+                {t('reports.configAutoExport')}
               </DialogDescription>
             </DialogHeader>
 
@@ -541,15 +588,15 @@ export default function HistoryExportScheduling() {
               {/* Basic Info */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Tên lịch *</Label>
+                  <Label>{t('reports.scheduleName')} *</Label>
                   <Input
-                    placeholder="VD: Báo cáo NG hàng ngày"
+                    placeholder={t('reports.scheduleNameExample')}
                     value={formData.name || ''}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Định dạng xuất</Label>
+                  <Label>{t('reports.exportFormat')}</Label>
                   <Select
                     value={formData.exportFormat}
                     onValueChange={(v: ExportFormat) => setFormData({ ...formData, exportFormat: v })}
@@ -568,9 +615,9 @@ export default function HistoryExportScheduling() {
               </div>
 
               <div className="space-y-2">
-                <Label>Mô tả</Label>
+                <Label>{t('common.description')}</Label>
                 <Textarea
-                  placeholder="Mô tả về lịch xuất báo cáo..."
+                  placeholder={t('reports.descriptionPlaceholder')}
                   value={formData.description || ''}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 />
@@ -579,7 +626,7 @@ export default function HistoryExportScheduling() {
               {/* Schedule Config */}
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label>Tần suất</Label>
+                  <Label>{t('reports.frequency')}</Label>
                   <Select
                     value={formData.scheduleType}
                     onValueChange={(v: ScheduleType) => setFormData({ ...formData, scheduleType: v })}
@@ -588,16 +635,16 @@ export default function HistoryExportScheduling() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="DAILY">Hàng ngày</SelectItem>
-                      <SelectItem value="WEEKLY">Hàng tuần</SelectItem>
-                      <SelectItem value="MONTHLY">Hàng tháng</SelectItem>
+                      <SelectItem value="DAILY">{t('reports.daily')}</SelectItem>
+                      <SelectItem value="WEEKLY">{t('reports.weekly')}</SelectItem>
+                      <SelectItem value="MONTHLY">{t('reports.monthly')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
                 {formData.scheduleType === 'WEEKLY' && (
                   <div className="space-y-2">
-                    <Label>Ngày trong tuần</Label>
+                    <Label>{t('reports.dayOfWeek')}</Label>
                     <Select
                       value={String(formData.scheduleDayOfWeek ?? 1)}
                       onValueChange={(v) => setFormData({ ...formData, scheduleDayOfWeek: parseInt(v) })}
@@ -608,7 +655,7 @@ export default function HistoryExportScheduling() {
                       <SelectContent>
                         {DAYS_OF_WEEK.map((day) => (
                           <SelectItem key={day.value} value={String(day.value)}>
-                            {day.label}
+                            {t(day.labelKey)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -618,7 +665,7 @@ export default function HistoryExportScheduling() {
 
                 {formData.scheduleType === 'MONTHLY' && (
                   <div className="space-y-2">
-                    <Label>Ngày trong tháng</Label>
+                    <Label>{t('reports.dayOfMonth')}</Label>
                     <Select
                       value={String(formData.scheduleDayOfMonth ?? 1)}
                       onValueChange={(v) => setFormData({ ...formData, scheduleDayOfMonth: parseInt(v) })}
@@ -629,7 +676,7 @@ export default function HistoryExportScheduling() {
                       <SelectContent>
                         {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
                           <SelectItem key={day} value={String(day)}>
-                            Ngày {day}
+                            {t('reports.dayNumber', { day })}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -638,7 +685,7 @@ export default function HistoryExportScheduling() {
                 )}
 
                 <div className="space-y-2">
-                  <Label>Giờ chạy</Label>
+                  <Label>{t('reports.runTime')}</Label>
                   <Input
                     type="time"
                     value={formData.scheduleTime || '08:00'}
@@ -650,7 +697,7 @@ export default function HistoryExportScheduling() {
               {/* Filters */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Khoảng thời gian</Label>
+                  <Label>{t('reports.timeRange')}</Label>
                   <Select
                     value={formData.timeRangeType}
                     onValueChange={(v: TimeRangeType) => setFormData({ ...formData, timeRangeType: v })}
@@ -659,15 +706,15 @@ export default function HistoryExportScheduling() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="LAST_24H">24 giờ qua</SelectItem>
-                      <SelectItem value="LAST_7D">7 ngày qua</SelectItem>
-                      <SelectItem value="LAST_30D">30 ngày qua</SelectItem>
-                      <SelectItem value="LAST_MONTH">Tháng trước</SelectItem>
+                      <SelectItem value="LAST_24H">{t('reports.last24h')}</SelectItem>
+                      <SelectItem value="LAST_7D">{t('reports.last7d')}</SelectItem>
+                      <SelectItem value="LAST_30D">{t('reports.last30d')}</SelectItem>
+                      <SelectItem value="LAST_MONTH">{t('reports.lastMonth')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Lọc kết quả</Label>
+                  <Label>{t('reports.filterResults')}</Label>
                   <Select
                     value={formData.resultFilter}
                     onValueChange={(v: ResultFilter) => setFormData({ ...formData, resultFilter: v })}
@@ -676,10 +723,10 @@ export default function HistoryExportScheduling() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="ALL">Tất cả</SelectItem>
-                      <SelectItem value="OK">Chỉ OK</SelectItem>
-                      <SelectItem value="NG">Chỉ NG</SelectItem>
-                      <SelectItem value="NTF">Chỉ NTF</SelectItem>
+                      <SelectItem value="ALL">{t('common.all')}</SelectItem>
+                      <SelectItem value="OK">{t('reports.onlyOK')}</SelectItem>
+                      <SelectItem value="NG">{t('reports.onlyNG')}</SelectItem>
+                      <SelectItem value="NTF">{t('reports.onlyNTF')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -687,10 +734,10 @@ export default function HistoryExportScheduling() {
 
               {/* Include Options */}
               <div className="space-y-3">
-                <Label>Nội dung bao gồm</Label>
+                <Label>{t('reports.includeContent')}</Label>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="flex items-center justify-between">
-                    <Label className="font-normal">Hình ảnh</Label>
+                    <Label className="font-normal">{t('reports.images')}</Label>
                     <Switch
                       checked={formData.includeImages}
                       onCheckedChange={(v) => setFormData({ ...formData, includeImages: v })}
@@ -711,7 +758,7 @@ export default function HistoryExportScheduling() {
                     />
                   </div>
                   <div className="flex items-center justify-between">
-                    <Label className="font-normal">Thống kê tổng hợp</Label>
+                    <Label className="font-normal">{t('reports.summaryStats')}</Label>
                     <Switch
                       checked={formData.includeSummaryStats}
                       onCheckedChange={(v) => setFormData({ ...formData, includeSummaryStats: v })}
@@ -722,7 +769,7 @@ export default function HistoryExportScheduling() {
 
               {/* Recipients */}
               <div className="space-y-2">
-                <Label>Người nhận email *</Label>
+                <Label>{t('reports.emailRecipients')} *</Label>
                 <div className="flex gap-2">
                   <Input
                     placeholder="email@company.com"
@@ -753,15 +800,15 @@ export default function HistoryExportScheduling() {
 
             <DialogFooter>
               <Button variant="outline" onClick={() => { setShowCreateDialog(false); setEditingSchedule(null); }}>
-                Hủy
+                {t('common.cancel')}
               </Button>
               <Button variant="secondary" onClick={() => setShowPreviewDialog(true)}>
                 <Eye className="h-4 w-4 mr-2" />
-                Xem trước email
+                {t('reports.previewEmail')}
               </Button>
               <Button onClick={handleSave}>
                 <CheckCircle className="h-4 w-4 mr-2" />
-                {editingSchedule ? 'Cập nhật' : 'Tạo lịch'}
+                {editingSchedule ? t('common.update') : t('reports.createSchedule')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -773,10 +820,10 @@ export default function HistoryExportScheduling() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Eye className="h-5 w-5" />
-                Xem trước email
+                {t('reports.previewEmail')}
               </DialogTitle>
               <DialogDescription>
-                Đây là mẫu email sẽ được gửi đến người nhận
+                {t('reports.previewEmailDescription')}
               </DialogDescription>
             </DialogHeader>
 
@@ -784,24 +831,24 @@ export default function HistoryExportScheduling() {
               {/* Email Header */}
               <div className="bg-muted p-4 border-b space-y-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-muted-foreground w-16">Từ:</span>
+                  <span className="text-sm font-medium text-muted-foreground w-16">{t('reports.from')}:</span>
                   <span className="text-sm">AVI/AOI Management System &lt;noreply@avi-aoi.system&gt;</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-muted-foreground w-16">Đến:</span>
+                  <span className="text-sm font-medium text-muted-foreground w-16">{t('reports.to')}:</span>
                   <div className="flex flex-wrap gap-1">
                     {formData.recipients?.map((email) => (
                       <Badge key={email} variant="secondary" className="text-xs">{email}</Badge>
                     ))}
                     {(!formData.recipients || formData.recipients.length === 0) && (
-                      <span className="text-sm text-muted-foreground italic">Chưa có người nhận</span>
+                      <span className="text-sm text-muted-foreground italic">{t('reports.noRecipients')}</span>
                     )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-muted-foreground w-16">Tiêu đề:</span>
+                  <span className="text-sm font-medium text-muted-foreground w-16">{t('reports.subject')}:</span>
                   <span className="text-sm font-medium">
-                    [AVI/AOI] {formData.name || 'Báo cáo'} - {new Date().toLocaleDateString('vi-VN')}
+                    [AVI/AOI] {formData.name || t('reports.report')} - {new Date().toLocaleDateString('vi-VN')}
                   </span>
                 </div>
               </div>
@@ -812,40 +859,40 @@ export default function HistoryExportScheduling() {
                   {/* Logo/Header */}
                   <div className="text-center pb-4 border-b">
                     <h2 className="text-xl font-bold text-primary">AVI/AOI Management System</h2>
-                    <p className="text-sm text-muted-foreground">Báo cáo tự động</p>
+                    <p className="text-sm text-muted-foreground">{t('reports.autoReport')}</p>
                   </div>
 
                   {/* Greeting */}
                   <div>
-                    <p className="text-sm">Xin chào,</p>
+                    <p className="text-sm">{t('reports.greeting')},</p>
                     <p className="text-sm mt-2">
-                      Đây là báo cáo tự động <strong>"{formData.name || 'Báo cáo'}"</strong> được tạo vào lúc {formData.scheduleTime || '08:00'} ngày {new Date().toLocaleDateString('vi-VN')}.
+                      {t('reports.autoReportGreeting', { name: formData.name || t('reports.report'), time: formData.scheduleTime || '08:00', date: new Date().toLocaleDateString('vi-VN') })}
                     </p>
                   </div>
 
                   {/* Report Summary */}
                   <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-                    <h3 className="font-semibold text-sm">Thông tin báo cáo</h3>
+                    <h3 className="font-semibold text-sm">{t('reports.reportInfo')}</h3>
                     <div className="grid grid-cols-2 gap-2 text-sm">
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Tần suất:</span>
-                        <span>{formData.scheduleType === 'DAILY' ? 'Hàng ngày' : formData.scheduleType === 'WEEKLY' ? 'Hàng tuần' : 'Hàng tháng'}</span>
+                        <span className="text-muted-foreground">{t('reports.frequency')}:</span>
+                        <span>{formData.scheduleType === 'DAILY' ? t('reports.daily') : formData.scheduleType === 'WEEKLY' ? t('reports.weekly') : t('reports.monthly')}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Định dạng:</span>
+                        <span className="text-muted-foreground">{t('reports.format')}:</span>
                         <span>{formData.exportFormat || 'CSV'}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Lọc kết quả:</span>
-                        <span>{formData.resultFilter === 'ALL' ? 'Tất cả' : formData.resultFilter}</span>
+                        <span className="text-muted-foreground">{t('reports.filterResults')}:</span>
+                        <span>{formData.resultFilter === 'ALL' ? t('common.all') : formData.resultFilter}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Khoảng thời gian:</span>
+                        <span className="text-muted-foreground">{t('reports.timeRange')}:</span>
                         <span>
-                          {formData.timeRangeType === 'LAST_24H' ? '24 giờ qua' :
-                           formData.timeRangeType === 'LAST_7D' ? '7 ngày qua' :
-                           formData.timeRangeType === 'LAST_30D' ? '30 ngày qua' :
-                           formData.timeRangeType === 'LAST_MONTH' ? 'Tháng trước' : 'Tùy chỉnh'}
+                          {formData.timeRangeType === 'LAST_24H' ? t('reports.last24h') :
+                           formData.timeRangeType === 'LAST_7D' ? t('reports.last7d') :
+                           formData.timeRangeType === 'LAST_30D' ? t('reports.last30d') :
+                           formData.timeRangeType === 'LAST_MONTH' ? t('reports.lastMonth') : t('reports.custom')}
                         </span>
                       </div>
                     </div>
@@ -853,14 +900,14 @@ export default function HistoryExportScheduling() {
 
                   {/* Included Content */}
                   <div className="space-y-2">
-                    <h3 className="font-semibold text-sm">Nội dung bao gồm</h3>
+                    <h3 className="font-semibold text-sm">{t('reports.includeContent')}</h3>
                     <div className="flex flex-wrap gap-2">
-                      {formData.includeImages && <Badge variant="outline">Hình ảnh</Badge>}
+                      {formData.includeImages && <Badge variant="outline">{t('reports.images')}</Badge>}
                       {formData.includeAnnotations && <Badge variant="outline">Annotations</Badge>}
                       {formData.includeMeasurements && <Badge variant="outline">Measurements</Badge>}
-                      {formData.includeSummaryStats && <Badge variant="outline">Thống kê</Badge>}
+                      {formData.includeSummaryStats && <Badge variant="outline">{t('reports.stats')}</Badge>}
                       {!formData.includeImages && !formData.includeAnnotations && !formData.includeMeasurements && !formData.includeSummaryStats && (
-                        <span className="text-sm text-muted-foreground italic">Chưa chọn nội dung</span>
+                        <span className="text-sm text-muted-foreground italic">{t('reports.noContentSelected')}</span>
                       )}
                     </div>
                   </div>
@@ -868,11 +915,11 @@ export default function HistoryExportScheduling() {
                   {/* Sample Stats */}
                   {formData.includeSummaryStats && (
                     <div className="border rounded-lg p-4 space-y-3">
-                      <h3 className="font-semibold text-sm">Thống kê tổng hợp (mẫu)</h3>
+                      <h3 className="font-semibold text-sm">{t('reports.summaryStatsSample')}</h3>
                       <div className="grid grid-cols-4 gap-4 text-center">
                         <div className="bg-muted/50 rounded p-3">
                           <div className="text-2xl font-bold">1,234</div>
-                          <div className="text-xs text-muted-foreground">Tổng số</div>
+                          <div className="text-xs text-muted-foreground">{t('reports.total')}</div>
                         </div>
                         <div className="bg-green-500/10 rounded p-3">
                           <div className="text-2xl font-bold text-green-500">1,180</div>
@@ -884,7 +931,7 @@ export default function HistoryExportScheduling() {
                         </div>
                         <div className="bg-blue-500/10 rounded p-3">
                           <div className="text-2xl font-bold text-blue-500">95.6%</div>
-                          <div className="text-xs text-muted-foreground">Tỷ lệ OK</div>
+                          <div className="text-xs text-muted-foreground">{t('reports.okRate')}</div>
                         </div>
                       </div>
                     </div>
@@ -897,14 +944,14 @@ export default function HistoryExportScheduling() {
                       <p className="text-sm font-medium">
                         {formData.name || 'report'}_{new Date().toISOString().split('T')[0]}.{(formData.exportFormat || 'CSV').toLowerCase()}
                       </p>
-                      <p className="text-xs text-muted-foreground">File đính kèm</p>
+                      <p className="text-xs text-muted-foreground">{t('reports.attachment')}</p>
                     </div>
                   </div>
 
                   {/* Footer */}
                   <div className="pt-4 border-t text-center text-xs text-muted-foreground space-y-1">
-                    <p>Email này được gửi tự động từ hệ thống AVI/AOI Management.</p>
-                    <p>Để thay đổi cài đặt, vui lòng truy cập trang quản lý lịch xuất báo cáo.</p>
+                    <p>{t('reports.autoEmailFooter1')}</p>
+                    <p>{t('reports.autoEmailFooter2')}</p>
                   </div>
                 </div>
               </div>
@@ -912,14 +959,19 @@ export default function HistoryExportScheduling() {
 
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowPreviewDialog(false)}>
-                Đóng
+                {t('common.close')}
               </Button>
-              <Button onClick={() => {
-                setShowPreviewDialog(false);
-                toast.success('Đã gửi email test đến người nhận');
-              }}>
+              <Button
+                disabled={!editingSchedule || sendTestMutation.isPending}
+                onClick={() => {
+                  if (editingSchedule) {
+                    sendTestMutation.mutate({ id: editingSchedule.id });
+                    setShowPreviewDialog(false);
+                  }
+                }}
+              >
                 <Send className="h-4 w-4 mr-2" />
-                Gửi email test
+                {sendTestMutation.isPending ? t('reports.sending') : t('reports.sendTestEmail')}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -118,13 +119,14 @@ function OEEGauge({ value, label, color }: { value: number; label: string; color
 
 // Downtime Category Badge
 function DowntimeCategoryBadge({ category }: { category: DowntimeEvent['category'] }) {
+  const { t } = useTranslation();
   const config: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-    planned: { label: "Kế hoạch", variant: "secondary" },
-    unplanned: { label: "Ngoài kế hoạch", variant: "destructive" },
-    breakdown: { label: "Hỏng hóc", variant: "destructive" },
-    changeover: { label: "Đổi sản phẩm", variant: "outline" },
-    maintenance: { label: "Bảo trì", variant: "default" },
-    other: { label: "Khác", variant: "outline" },
+    planned: { label: t('oee.planned'), variant: "secondary" },
+    unplanned: { label: t('oee.unplanned'), variant: "destructive" },
+    breakdown: { label: t('oee.breakdown'), variant: "destructive" },
+    changeover: { label: t('oee.changeover'), variant: "outline" },
+    maintenance: { label: t('oee.maintenance'), variant: "default" },
+    other: { label: t('oee.other'), variant: "outline" },
   };
   
   const { label, variant } = config[category] || config.other;
@@ -132,6 +134,7 @@ function DowntimeCategoryBadge({ category }: { category: DowntimeEvent['category
 }
 
 export default function OEEDashboard() {
+  const { t } = useTranslation();
   const [selectedMachine, setSelectedMachine] = useState<number | null>(null);
   const [showCalculator, setShowCalculator] = useState(false);
   const [showDowntimeDialog, setShowDowntimeDialog] = useState(false);
@@ -171,7 +174,7 @@ export default function OEEDashboard() {
   // Mutations
   const calculateOEEMutation = trpc.mqttClient.calculateOEE.useMutation({
     onSuccess: () => {
-      toast.success("Đã tính toán OEE");
+      toast.success(t('oee.oeeCalculated'));
       refetchOEE();
       setShowCalculator(false);
     },
@@ -182,7 +185,7 @@ export default function OEEDashboard() {
 
   const startDowntimeMutation = trpc.mqttClient.startDowntime.useMutation({
     onSuccess: () => {
-      toast.success("Đã bắt đầu ghi nhận downtime");
+      toast.success(t('oee.downtimeStarted'));
       setShowDowntimeDialog(false);
     },
     onError: (error) => {
@@ -192,13 +195,13 @@ export default function OEEDashboard() {
 
   const endDowntimeMutation = trpc.mqttClient.endDowntime.useMutation({
     onSuccess: () => {
-      toast.success("Đã kết thúc downtime");
+      toast.success(t('oee.downtimeEnded'));
     },
   });
 
   const calculateHealthMutation = trpc.mqttClient.calculateMachineHealth.useMutation({
     onSuccess: () => {
-      toast.success("Đã tính toán health score");
+      toast.success(t('oee.healthCalculated'));
     },
   });
 
@@ -214,11 +217,11 @@ export default function OEEDashboard() {
   }, {} as Record<string, number>) || {};
 
   const downtimePieData = Object.entries(downtimeByCategory).map(([category, duration]) => ({
-    name: category === 'planned' ? 'Kế hoạch' :
-          category === 'unplanned' ? 'Ngoài KH' :
-          category === 'breakdown' ? 'Hỏng hóc' :
-          category === 'changeover' ? 'Đổi SP' :
-          category === 'maintenance' ? 'Bảo trì' : 'Khác',
+    name: category === 'planned' ? t('oee.planned') :
+          category === 'unplanned' ? t('oee.unplannedShort') :
+          category === 'breakdown' ? t('oee.breakdown') :
+          category === 'changeover' ? t('oee.changeoverShort') :
+          category === 'maintenance' ? t('oee.maintenance') : t('oee.other'),
     value: duration,
   }));
 
@@ -227,24 +230,24 @@ export default function OEEDashboard() {
   // Export OEE data to CSV
   const exportToCSV = () => {
     if (!allOEE || allOEE.length === 0) {
-      toast.error("Không có dữ liệu để xuất");
+      toast.error(t('oee.noDataToExport'));
       return;
     }
 
     const headers = [
-      'Máy',
-      'Mã máy',
-      'Thời gian',
+      t('oee.csvMachine'),
+      t('oee.csvMachineCode'),
+      t('oee.csvTime'),
       'Availability (%)',
       'Performance (%)',
       'Quality (%)',
       'OEE (%)',
-      'Thời gian kế hoạch (phút)',
-      'Thời gian chạy (phút)',
-      'Downtime (phút)',
-      'Tổng sản lượng',
-      'Sản lượng OK',
-      'Sản lượng NG'
+      t('oee.csvPlannedTime'),
+      t('oee.csvRunTime'),
+      t('oee.csvDowntime'),
+      t('oee.csvTotalOutput'),
+      t('oee.csvOkOutput'),
+      t('oee.csvNgOutput')
     ];
 
     const rows = allOEE.map(oee => [
@@ -274,31 +277,30 @@ export default function OEEDashboard() {
     link.download = `OEE_Report_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-    toast.success("Đã xuất báo cáo OEE ra CSV");
+    toast.success(t('oee.csvExported'));
   };
 
   // Export OEE data to Excel (XLSX format via CSV)
   const exportToExcel = () => {
     if (!allOEE || allOEE.length === 0) {
-      toast.error("Không có dữ liệu để xuất");
+      toast.error(t('oee.noDataToExport'));
       return;
     }
 
-    // Create workbook content
     const headers = [
-      'Máy',
-      'Mã máy',
-      'Thời gian',
+      t('oee.csvMachine'),
+      t('oee.csvMachineCode'),
+      t('oee.csvTime'),
       'Availability (%)',
       'Performance (%)',
       'Quality (%)',
       'OEE (%)',
-      'Thời gian kế hoạch (phút)',
-      'Thời gian chạy (phút)',
-      'Downtime (phút)',
-      'Tổng sản lượng',
-      'Sản lượng OK',
-      'Sản lượng NG'
+      t('oee.csvPlannedTime'),
+      t('oee.csvRunTime'),
+      t('oee.csvDowntime'),
+      t('oee.csvTotalOutput'),
+      t('oee.csvOkOutput'),
+      t('oee.csvNgOutput')
     ];
 
     const oeeRows = allOEE.map(oee => [
@@ -320,25 +322,25 @@ export default function OEEDashboard() {
     // Add summary section
     const summaryRows = [
       [],
-      ['TỔNG HỢP'],
-      ['OEE Trung bình', `${avgOEE.toFixed(2)}%`],
-      ['Số máy', allOEE.length],
-      ['Thời gian xuất báo cáo', new Date().toLocaleString('vi-VN')],
+      [t('oee.summaryTitle')],
+      [t('oee.avgOee'), `${avgOEE.toFixed(2)}%`],
+      [t('oee.machineCount'), allOEE.length],
+      [t('oee.exportTime'), new Date().toLocaleString('vi-VN')],
     ];
 
     // Add downtime summary if available
     if (downtimeHistory && downtimeHistory.length > 0) {
       summaryRows.push(
         [],
-        ['THỐNG KÊ DOWNTIME'],
-        ['Loại', 'Thời gian (phút)']
+        [t('oee.downtimeStats')],
+        [t('oee.categoryLabel'), t('oee.durationMinutes')]
       );
       Object.entries(downtimeByCategory).forEach(([category, duration]) => {
-        const categoryName = category === 'planned' ? 'Kế hoạch' :
-              category === 'unplanned' ? 'Ngoài kế hoạch' :
-              category === 'breakdown' ? 'Hỏng hóc' :
-              category === 'changeover' ? 'Đổi sản phẩm' :
-              category === 'maintenance' ? 'Bảo trì' : 'Khác';
+        const categoryName = category === 'planned' ? t('oee.planned') :
+              category === 'unplanned' ? t('oee.unplanned') :
+              category === 'breakdown' ? t('oee.breakdown') :
+              category === 'changeover' ? t('oee.changeover') :
+              category === 'maintenance' ? t('oee.maintenance') : t('oee.other');
         summaryRows.push([categoryName, duration]);
       });
     }
@@ -355,7 +357,7 @@ export default function OEEDashboard() {
     link.download = `OEE_Report_${new Date().toISOString().split('T')[0]}.xls`;
     link.click();
     URL.revokeObjectURL(url);
-    toast.success("Đã xuất báo cáo OEE ra Excel");
+    toast.success(t('oee.excelExported'));
   };
 
   return (
@@ -366,36 +368,36 @@ export default function OEEDashboard() {
           <div>
             <h1 className="text-xl sm:text-2xl font-bold">OEE Dashboard</h1>
             <p className="text-sm sm:text-base text-muted-foreground">
-              Theo dõi hiệu suất thiết bị tổng thể (Overall Equipment Effectiveness)
+              {t('oee.subtitle')}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={exportToCSV}>
               <Download className="h-4 w-4 mr-2" />
-              Xuất CSV
+              {t('oee.exportCsv')}
             </Button>
             <Button variant="outline" onClick={exportToExcel}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Xuất Excel
+              {t('oee.exportExcel')}
             </Button>
             <Button variant="outline" onClick={() => refetchOEE()}>
               <RefreshCw className="h-4 w-4 mr-2" />
-              Làm mới
+              {t('common.refresh')}
             </Button>
             <Dialog open={showCalculator} onOpenChange={setShowCalculator}>
               <DialogTrigger asChild>
                 <Button>
                   <Calculator className="h-4 w-4 mr-2" />
-                  Tính OEE
+                  {t('oee.calculateOee')}
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-md">
                 <DialogHeader>
-                  <DialogTitle>Tính toán OEE</DialogTitle>
+                  <DialogTitle>{t('oee.calculateOeeTitle')}</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div>
-                    <Label>Máy</Label>
+                    <Label>{t('oee.machine')}</Label>
                     <Select
                       value={calculatorData.machineId.toString()}
                       onValueChange={(v) => {
@@ -408,7 +410,7 @@ export default function OEEDashboard() {
                       }}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Chọn máy" />
+                        <SelectValue placeholder={t('oee.selectMachine')} />
                       </SelectTrigger>
                       <SelectContent>
                         {machines?.map(m => (
@@ -421,7 +423,7 @@ export default function OEEDashboard() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label>Thời gian kế hoạch (phút)</Label>
+                      <Label>{t('oee.plannedTimeMin')}</Label>
                       <Input
                         type="number"
                         value={calculatorData.plannedTime}
@@ -432,7 +434,7 @@ export default function OEEDashboard() {
                       />
                     </div>
                     <div>
-                      <Label>Thời gian chạy (phút)</Label>
+                      <Label>{t('oee.runTimeMin')}</Label>
                       <Input
                         type="number"
                         value={calculatorData.runTime}
@@ -444,7 +446,7 @@ export default function OEEDashboard() {
                     </div>
                   </div>
                   <div>
-                    <Label>Cycle Time lý tưởng (giây/sản phẩm)</Label>
+                    <Label>{t('oee.idealCycleTime')}</Label>
                     <Input
                       type="number"
                       value={calculatorData.idealCycleTime}
@@ -456,7 +458,7 @@ export default function OEEDashboard() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label>Tổng sản lượng</Label>
+                      <Label>{t('oee.totalOutput')}</Label>
                       <Input
                         type="number"
                         value={calculatorData.totalCount}
@@ -467,7 +469,7 @@ export default function OEEDashboard() {
                       />
                     </div>
                     <div>
-                      <Label>Sản phẩm đạt</Label>
+                      <Label>{t('oee.goodProducts')}</Label>
                       <Input
                         type="number"
                         value={calculatorData.goodCount}
@@ -481,13 +483,13 @@ export default function OEEDashboard() {
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setShowCalculator(false)}>
-                    Hủy
+                    {t('common.cancel')}
                   </Button>
                   <Button
                     onClick={() => calculateOEEMutation.mutate(calculatorData)}
                     disabled={!calculatorData.machineId || calculateOEEMutation.isPending}
                   >
-                    Tính toán
+                    {t('oee.calculate')}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -501,15 +503,15 @@ export default function OEEDashboard() {
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
                 <Gauge className="h-3 w-3 sm:h-4 sm:w-4 text-blue-500" />
-                <span className="hidden sm:inline">OEE Trung bình</span>
-                <span className="sm:hidden">OEE TB</span>
+                <span className="hidden sm:inline">{t('oee.avgOee')}</span>
+                <span className="sm:hidden">{t('oee.avgOeeShort')}</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 sm:p-4 pt-0">
               <div className="text-2xl sm:text-3xl font-bold">{avgOEE.toFixed(1)}%</div>
               <Progress value={avgOEE} className="mt-2" />
               <p className="text-xs text-muted-foreground mt-1">
-                {avgOEE >= 85 ? "World Class" : avgOEE >= 60 ? "Typical" : "Cần cải thiện"}
+                {avgOEE >= 85 ? "World Class" : avgOEE >= 60 ? "Typical" : t('oee.needsImprovement')}
               </p>
             </CardContent>
           </Card>
@@ -518,14 +520,14 @@ export default function OEEDashboard() {
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
                 <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-green-500" />
-                <span className="hidden sm:inline">Máy đang theo dõi</span>
-                <span className="sm:hidden">Máy</span>
+                <span className="hidden sm:inline">{t('oee.machinesMonitored')}</span>
+                <span className="sm:hidden">{t('oee.machinesShort')}</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 sm:p-4 pt-0">
               <div className="text-2xl sm:text-3xl font-bold">{allOEE?.length || 0}</div>
               <p className="text-xs text-muted-foreground mt-1">
-                / {machines?.length || 0} tổng số máy
+                / {machines?.length || 0} {t('oee.totalMachines')}
               </p>
             </CardContent>
           </Card>
@@ -534,16 +536,16 @@ export default function OEEDashboard() {
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
                 <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-orange-500" />
-                <span className="hidden sm:inline">Downtime hôm nay</span>
+                <span className="hidden sm:inline">{t('oee.downtimeToday')}</span>
                 <span className="sm:hidden">Downtime</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 sm:p-4 pt-0">
               <div className="text-2xl sm:text-3xl font-bold">
-                {Object.values(downtimeByCategory).reduce((a, b) => a + b, 0)} phút
+                {Object.values(downtimeByCategory).reduce((a, b) => a + b, 0)} {t('oee.minutes')}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                {Object.keys(downtimeByCategory).length} sự kiện
+                {Object.keys(downtimeByCategory).length} {t('oee.events')}
               </p>
             </CardContent>
           </Card>
@@ -552,7 +554,7 @@ export default function OEEDashboard() {
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium flex items-center gap-1 sm:gap-2">
                 <AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-red-500" />
-                Cảnh báo
+                {t('oee.alerts')}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 sm:p-4 pt-0">
@@ -560,7 +562,7 @@ export default function OEEDashboard() {
                 {allOEE?.filter(m => m.oee < 60).length || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                Máy có OEE thấp
+                {t('oee.lowOeeMachines')}
               </p>
             </CardContent>
           </Card>
@@ -579,7 +581,7 @@ export default function OEEDashboard() {
               {/* Machine List */}
               <Card className="lg:col-span-1">
                 <CardHeader>
-                  <CardTitle className="text-lg">Danh sách máy</CardTitle>
+                  <CardTitle className="text-lg">{t('oee.machineList')}</CardTitle>
                 </CardHeader>
                 <CardContent className="max-h-96 overflow-y-auto space-y-2">
                   {allOEE?.map((m) => (
@@ -605,7 +607,7 @@ export default function OEEDashboard() {
                   ))}
                   {(!allOEE || allOEE.length === 0) && (
                     <p className="text-center text-muted-foreground py-4">
-                      Chưa có dữ liệu OEE. Sử dụng nút "Tính OEE" để bắt đầu.
+                      {t('oee.noOeeData')}
                     </p>
                   )}
                 </CardContent>
@@ -615,7 +617,7 @@ export default function OEEDashboard() {
               <Card className="lg:col-span-2">
                 <CardHeader>
                   <CardTitle className="text-lg">
-                    {machineOEE ? `Chi tiết OEE - ${machineOEE.machineCode}` : "Chọn máy để xem chi tiết"}
+                    {machineOEE ? t('oee.oeeDetail', { code: machineOEE.machineCode }) : t('oee.selectMachineToView')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -649,29 +651,29 @@ export default function OEEDashboard() {
                       <div className="grid grid-cols-2 gap-4 text-sm">
                         <div className="space-y-2">
                           <div className="flex justify-between">
-                            <span className="text-muted-foreground">Thời gian kế hoạch:</span>
-                            <span className="font-medium">{machineOEE.details.plannedTime} phút</span>
+                            <span className="text-muted-foreground">{t('oee.plannedTime')}:</span>
+                            <span className="font-medium">{machineOEE.details.plannedTime} {t('oee.minutes')}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-muted-foreground">Thời gian chạy:</span>
-                            <span className="font-medium">{machineOEE.details.runTime} phút</span>
+                            <span className="text-muted-foreground">{t('oee.runTime')}:</span>
+                            <span className="font-medium">{machineOEE.details.runTime} {t('oee.minutes')}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Downtime:</span>
-                            <span className="font-medium text-red-500">{machineOEE.details.downtime} phút</span>
+                            <span className="font-medium text-red-500">{machineOEE.details.downtime} {t('oee.minutes')}</span>
                           </div>
                         </div>
                         <div className="space-y-2">
                           <div className="flex justify-between">
-                            <span className="text-muted-foreground">Tổng sản lượng:</span>
+                            <span className="text-muted-foreground">{t('oee.totalOutput')}:</span>
                             <span className="font-medium">{machineOEE.details.totalCount}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-muted-foreground">Sản phẩm đạt:</span>
+                            <span className="text-muted-foreground">{t('oee.goodProducts')}:</span>
                             <span className="font-medium text-green-500">{machineOEE.details.goodCount}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-muted-foreground">Phế phẩm:</span>
+                            <span className="text-muted-foreground">{t('oee.rejects')}:</span>
                             <span className="font-medium text-red-500">{machineOEE.details.rejectCount}</span>
                           </div>
                         </div>
@@ -693,7 +695,7 @@ export default function OEEDashboard() {
                           }}
                         >
                           <Pause className="h-4 w-4 mr-2" />
-                          Ghi nhận Downtime
+                          {t('oee.recordDowntime')}
                         </Button>
                         {activeDowntime && (
                           <Button
@@ -702,7 +704,7 @@ export default function OEEDashboard() {
                             onClick={() => endDowntimeMutation.mutate({ machineId: machineOEE.machineId })}
                           >
                             <Play className="h-4 w-4 mr-2" />
-                            Kết thúc Downtime
+                            {t('oee.endDowntime')}
                           </Button>
                         )}
                       </div>
@@ -710,7 +712,7 @@ export default function OEEDashboard() {
                   ) : (
                     <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
                       <Gauge className="h-12 w-12 mb-4" />
-                      <p>Chọn một máy từ danh sách để xem chi tiết OEE</p>
+                      <p>{t('oee.selectMachineForDetails')}</p>
                     </div>
                   )}
                 </CardContent>
@@ -721,7 +723,7 @@ export default function OEEDashboard() {
             {allOEE && allOEE.length > 0 && (
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">So sánh OEE giữa các máy</CardTitle>
+                  <CardTitle className="text-lg">{t('oee.oeeComparison')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="h-80">
@@ -749,7 +751,7 @@ export default function OEEDashboard() {
               {/* Downtime by Category */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">Downtime theo loại</CardTitle>
+                  <CardTitle className="text-lg">{t('oee.downtimeByCategory')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {downtimePieData.length > 0 ? (
@@ -776,7 +778,7 @@ export default function OEEDashboard() {
                     </div>
                   ) : (
                     <div className="flex items-center justify-center h-64 text-muted-foreground">
-                      Chưa có dữ liệu downtime
+                      {t('oee.noDowntimeData')}
                     </div>
                   )}
                 </CardContent>
@@ -785,7 +787,7 @@ export default function OEEDashboard() {
               {/* Recent Downtime Events */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">Sự kiện Downtime gần đây</CardTitle>
+                  <CardTitle className="text-lg">{t('oee.recentDowntime')}</CardTitle>
                 </CardHeader>
                 <CardContent className="max-h-80 overflow-y-auto">
                   <div className="space-y-3">
@@ -796,18 +798,18 @@ export default function OEEDashboard() {
                           <DowntimeCategoryBadge category={event.category} />
                         </div>
                         <div className="text-sm text-muted-foreground">
-                          <div>Bắt đầu: {new Date(event.startTime).toLocaleString('vi-VN')}</div>
+                          <div>{t('oee.startTime')}: {new Date(event.startTime).toLocaleString('vi-VN')}</div>
                           {event.endTime && (
-                            <div>Kết thúc: {new Date(event.endTime).toLocaleString('vi-VN')}</div>
+                            <div>{t('oee.endTime')}: {new Date(event.endTime).toLocaleString('vi-VN')}</div>
                           )}
-                          {event.duration && <div>Thời gian: {event.duration} phút</div>}
-                          {event.reason && <div>Lý do: {event.reason}</div>}
+                          {event.duration && <div>{t('oee.duration')}: {event.duration} {t('oee.minutes')}</div>}
+                          {event.reason && <div>{t('oee.reason')}: {event.reason}</div>}
                         </div>
                       </div>
                     ))}
                     {(!downtimeHistory || downtimeHistory.length === 0) && (
                       <p className="text-center text-muted-foreground py-4">
-                        Chưa có sự kiện downtime nào
+                        {t('oee.noDowntimeEvents')}
                       </p>
                     )}
                   </div>
@@ -819,11 +821,11 @@ export default function OEEDashboard() {
             <Dialog open={showDowntimeDialog} onOpenChange={setShowDowntimeDialog}>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Ghi nhận Downtime</DialogTitle>
+                  <DialogTitle>{t('oee.recordDowntime')}</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div>
-                    <Label>Máy</Label>
+                    <Label>{t('oee.machine')}</Label>
                     <Select
                       value={downtimeData.machineId.toString()}
                       onValueChange={(v) => {
@@ -836,7 +838,7 @@ export default function OEEDashboard() {
                       }}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Chọn máy" />
+                        <SelectValue placeholder={t('oee.selectMachine')} />
                       </SelectTrigger>
                       <SelectContent>
                         {machines?.map(m => (
@@ -848,7 +850,7 @@ export default function OEEDashboard() {
                     </Select>
                   </div>
                   <div>
-                    <Label>Loại Downtime</Label>
+                    <Label>{t('oee.downtimeType')}</Label>
                     <Select
                       value={downtimeData.category}
                       onValueChange={(v) => setDowntimeData({
@@ -860,36 +862,36 @@ export default function OEEDashboard() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="planned">Kế hoạch</SelectItem>
-                        <SelectItem value="unplanned">Ngoài kế hoạch</SelectItem>
-                        <SelectItem value="breakdown">Hỏng hóc</SelectItem>
-                        <SelectItem value="changeover">Đổi sản phẩm</SelectItem>
-                        <SelectItem value="maintenance">Bảo trì</SelectItem>
-                        <SelectItem value="other">Khác</SelectItem>
+                        <SelectItem value="planned">{t('oee.planned')}</SelectItem>
+                        <SelectItem value="unplanned">{t('oee.unplanned')}</SelectItem>
+                        <SelectItem value="breakdown">{t('oee.breakdown')}</SelectItem>
+                        <SelectItem value="changeover">{t('oee.changeover')}</SelectItem>
+                        <SelectItem value="maintenance">{t('oee.maintenance')}</SelectItem>
+                        <SelectItem value="other">{t('oee.other')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div>
-                    <Label>Lý do</Label>
+                    <Label>{t('oee.reason')}</Label>
                     <Input
                       value={downtimeData.reason}
                       onChange={(e) => setDowntimeData({
                         ...downtimeData,
                         reason: e.target.value,
                       })}
-                      placeholder="Nhập lý do downtime..."
+                      placeholder={t('oee.reasonPlaceholder')}
                     />
                   </div>
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setShowDowntimeDialog(false)}>
-                    Hủy
+                    {t('common.cancel')}
                   </Button>
                   <Button
                     onClick={() => startDowntimeMutation.mutate(downtimeData)}
                     disabled={!downtimeData.machineId || startDowntimeMutation.isPending}
                   >
-                    Bắt đầu
+                    {t('oee.start')}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -905,7 +907,7 @@ export default function OEEDashboard() {
                   Machine Health & Predictive Maintenance
                 </CardTitle>
                 <CardDescription>
-                  Theo dõi sức khỏe máy và cảnh báo bảo trì dự phòng
+                  {t('oee.machineHealthDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -946,15 +948,15 @@ export default function OEEDashboard() {
                       </div>
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      Cập nhật lần cuối: {new Date(machineHealth.lastUpdated).toLocaleString('vi-VN')}
+                      {t('oee.lastUpdated')}: {new Date(machineHealth.lastUpdated).toLocaleString('vi-VN')}
                     </div>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
                     <Settings2 className="h-12 w-12 mb-4" />
-                    <p>Chọn một máy từ tab OEE để xem thông tin sức khỏe</p>
+                    <p>{t('oee.selectMachineForHealth')}</p>
                     <p className="text-sm mt-2">
-                      Hoặc tính toán health score bằng cách cung cấp các metrics
+                      {t('oee.orCalculateHealth')}
                     </p>
                   </div>
                 )}

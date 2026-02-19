@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -61,6 +62,7 @@ interface ProductModel {
 }
 
 export default function ProductModels() {
+  const { t } = useTranslation();
   const { user, loading: authLoading } = useAuth();
   const [selectedProduct, setSelectedProduct] = useState<ProductModel | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -151,11 +153,11 @@ export default function ProductModels() {
     code: { required: true, minLength: 2, maxLength: 50, pattern: ValidationPatterns.code },
     name: { required: true, minLength: 2, maxLength: 255 },
     lowerLimit: { custom: (val) => {
-      if (val && isNaN(Number(val))) return "Phải là số";
+      if (val && isNaN(Number(val))) return t("validation.mustBeNumber");
       return null;
     }},
     upperLimit: { custom: (val) => {
-      if (val && isNaN(Number(val))) return "Phải là số";
+      if (val && isNaN(Number(val))) return t("validation.mustBeNumber");
       return null;
     }},
   });
@@ -210,19 +212,19 @@ export default function ProductModels() {
 
   const createProductMutation = trpc.productModel.create.useMutation({
     onSuccess: () => {
-      toast.success("Tạo sản phẩm thành công");
+      toast.success(t("products.createSuccess"));
       refetchProducts();
       setIsCreateDialogOpen(false);
       resetProductForm();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t("common.errorWithMessage", { message: error.message }));
     },
   });
 
   const updateProductMutation = trpc.productModel.update.useMutation({
     onSuccess: () => {
-      toast.success("Cập nhật sản phẩm thành công");
+      toast.success(t("products.updateSuccess"));
       refetchProducts();
       setIsEditProductDialogOpen(false);
       // Update selected product
@@ -237,26 +239,26 @@ export default function ProductModels() {
       }
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t("common.errorWithMessage", { message: error.message }));
     },
   });
 
   const deleteProductMutation = trpc.productModel.delete.useMutation({
     onSuccess: () => {
-      toast.success("Xóa sản phẩm thành công");
+      toast.success(t("products.deleteSuccess"));
       refetchProducts();
       setIsDeleteProductDialogOpen(false);
       setSelectedProduct(null);
     },
     onError: (error: { message: string }) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t("common.errorWithMessage", { message: error.message }));
     },
   });
 
   // Template mutations
   const createTemplateMutation = trpc.template.create.useMutation({
     onSuccess: () => {
-      toast.success("Lưu template thành công");
+      toast.success(t("products.templateSaveSuccess"));
       refetchTemplates();
       setIsTemplateDialogOpen(false);
       setTemplateName("");
@@ -265,59 +267,59 @@ export default function ProductModels() {
       setIsSavingTemplate(false);
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t("common.errorWithMessage", { message: error.message }));
       setIsSavingTemplate(false);
     },
   });
 
   const deleteTemplateMutation = trpc.template.delete.useMutation({
     onSuccess: () => {
-      toast.success("Xóa template thành công");
+      toast.success(t("products.templateDeleteSuccess"));
       refetchTemplates();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t("common.errorWithMessage", { message: error.message }));
     },
   });
 
   const createPointMutation = trpc.measurementPoint.create.useMutation({
     onSuccess: () => {
-      toast.success("Tạo điểm đo thành công");
+      toast.success(t("products.pointCreateSuccess"));
       refetchPoints();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t("common.errorWithMessage", { message: error.message }));
     },
   });
 
   const updatePointMutation = trpc.measurementPoint.update.useMutation({
     onSuccess: () => {
-      toast.success("Cập nhật điểm đo thành công");
+      toast.success(t("products.pointUpdateSuccess"));
       refetchPoints();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t("common.errorWithMessage", { message: error.message }));
     },
   });
 
   const deletePointMutation = trpc.measurementPoint.delete.useMutation({
     onSuccess: () => {
-      toast.success("Xóa điểm đo thành công");
+      toast.success(t("products.pointDeleteSuccess"));
       refetchPoints();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t("common.errorWithMessage", { message: error.message }));
     },
   });
 
   const uploadCroppedImageMutation = trpc.measurementPoint.uploadCroppedImage.useMutation({
     onSuccess: (data) => {
-      toast.success("Đã lưu ảnh mẫu vùng cắt thành công");
+      toast.success(t("products.croppedImageSaveSuccess"));
       setPointReferenceImageUrl(data.imageUrl);
       refetchPoints();
     },
     onError: (error) => {
-      toast.error(`Lỗi upload ảnh: ${error.message}`);
+      toast.error(t("products.uploadImageError", { message: error.message }));
     },
   });
 
@@ -510,7 +512,7 @@ export default function ProductModels() {
       // Add new point
       const newPoint: MeasurementPoint = {
         code: `MP-${String(measurementPoints.length + 1).padStart(3, "0")}`,
-        name: `Điểm đo ${measurementPoints.length + 1}`,
+        name: t("products.defaultPointName", { n: measurementPoints.length + 1 }),
         measurementType: "VISUAL",
         positionX: Math.round(x),
         positionY: Math.round(y),
@@ -612,7 +614,7 @@ export default function ProductModels() {
     });
     
     if (!isValid) {
-      toast.error("Vui lòng kiểm tra lại thông tin nhập");
+      toast.error(t("validation.pleaseCheckInput"));
       return;
     }
 
@@ -633,7 +635,7 @@ export default function ProductModels() {
 
   const handleUpdateProduct = () => {
     if (!selectedProduct || !editProductCode || !editProductName) {
-      toast.error("Vui lòng nhập mã và tên sản phẩm");
+      toast.error(t("validation.pleaseEnterCodeAndName"));
       return;
     }
 
@@ -813,17 +815,17 @@ export default function ProductModels() {
       orderIndex: measurementPoints.length,
     };
     setMeasurementPoints([...measurementPoints, newPoint]);
-    toast.success("Đã sao chép điểm đo");
+    toast.success(t("products.pointDuplicated"));
   };
 
   // Template handlers
   const handleSaveAsTemplate = async () => {
     if (!templateName.trim()) {
-      toast.error("Vui lòng nhập tên template");
+      toast.error(t("validation.pleaseEnterTemplateName"));
       return;
     }
     if (measurementPoints.length === 0) {
-      toast.error("Không có điểm đo nào để lưu");
+      toast.error(t("validation.noPointsToSave"));
       return;
     }
 
@@ -865,9 +867,9 @@ export default function ProductModels() {
         orderIndex: measurementPoints.length + idx,
       }));
       setMeasurementPoints([...measurementPoints, ...newPoints]);
-      toast.success(`Đã áp dụng template "${template.name}" với ${newPoints.length} điểm đo`);
+      toast.success(t("products.templateApplied", { name: template.name, count: newPoints.length }));
     } catch {
-      toast.error("Lỗi khi áp dụng template");
+      toast.error(t("products.templateApplyError"));
     }
   };
 
@@ -893,23 +895,23 @@ export default function ProductModels() {
 
   const handleBatchDelete = () => {
     if (selectedPointIds.size === 0) {
-      toast.error("Vui lòng chọn ít nhất một điểm đo");
+      toast.error(t("validation.pleaseSelectAtLeastOnePoint"));
       return;
     }
     const newPoints = measurementPoints.filter(p => !p.id || !selectedPointIds.has(p.id));
     setMeasurementPoints(newPoints);
     setSelectedPointIds(new Set());
-    toast.success(`Đã xóa ${selectedPointIds.size} điểm đo`);
+    toast.success(t("products.batchDeleted", { count: selectedPointIds.size }));
   };
 
   const handleBatchExport = () => {
     if (selectedPointIds.size === 0) {
-      toast.error("Vui lòng chọn ít nhất một điểm đo");
+      toast.error(t("validation.pleaseSelectAtLeastOnePoint"));
       return;
     }
     const selectedPoints = measurementPoints.filter(p => p.id && selectedPointIds.has(p.id));
     const csv = [
-      "Mã,Tên,Loại,Đơn vị,Giới hạn dưới,Giới hạn trên,Giá trị danh định",
+      [t("products.csvCode"), t("products.csvName"), t("products.csvType"), t("products.csvUnit"), t("products.csvLowerLimit"), t("products.csvUpperLimit"), t("products.csvNominalValue")].join(","),
       ...selectedPoints.map(p => `${p.code},${p.name},${p.measurementType},${p.unit || ''},${p.lowerLimit || ''},${p.upperLimit || ''},${p.nominalValue || ''}`)
     ].join("\n");
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -918,7 +920,7 @@ export default function ProductModels() {
     a.href = url;
     a.download = `measurement_points_${Date.now()}.csv`;
     a.click();
-    toast.success(`Đã xuất ${selectedPoints.length} điểm đo`);
+    toast.success(t("products.batchExported", { count: selectedPoints.length }));
   };
 
   // Validation function
@@ -927,10 +929,10 @@ export default function ProductModels() {
     
     // Required fields
     if (!point.code.trim()) {
-      errors.code = "Mã điểm đo là bắt buộc";
+      errors.code = t("validation.pointCodeRequired");
     }
     if (!point.name.trim()) {
-      errors.name = "Tên điểm đo là bắt buộc";
+      errors.name = t("validation.pointNameRequired");
     }
     
     // Duplicate code check
@@ -938,7 +940,7 @@ export default function ProductModels() {
       (p, idx) => p.code === point.code && idx !== selectedPointIndex
     );
     if (duplicateCode) {
-      errors.code = "Mã điểm đo đã tồn tại";
+      errors.code = t("validation.pointCodeDuplicate");
     }
     
     // Limit validation
@@ -946,7 +948,7 @@ export default function ProductModels() {
       const lower = parseFloat(point.lowerLimit);
       const upper = parseFloat(point.upperLimit);
       if (!isNaN(lower) && !isNaN(upper) && lower >= upper) {
-        errors.limits = "Giới hạn dưới phải nhỏ hơn giới hạn trên";
+        errors.limits = t("validation.lowerLimitLessThanUpper");
       }
     }
     
@@ -971,7 +973,7 @@ export default function ProductModels() {
 
     const point = measurementPoints[selectedPointIndex];
     if (!point.id) {
-      toast.error("Vui lòng lưu điểm đo trước khi upload ảnh");
+      toast.error(t("products.savePointBeforeUpload"));
       return;
     }
 
@@ -1015,66 +1017,64 @@ export default function ProductModels() {
 
   return (
     <>
-      <DashboardLayout title="Quản lý sản phẩm" navItems={navItems} currentPath="/products">
+      <DashboardLayout title={t("products.managementTitle")} navItems={navItems} currentPath="/products">
       <ErrorBoundary>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Product List */}
         <Card className="lg:col-span-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <div>
-              <CardTitle className="text-lg">Danh sách sản phẩm</CardTitle>
-              <CardDescription>Chọn sản phẩm để quản lý điểm đo</CardDescription>
+              <CardTitle className="text-lg">{t("products.productList")}</CardTitle>
+              <CardDescription>{t("products.selectToManage")}</CardDescription>
             </div>
             <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
               <DialogTrigger asChild>
                 <Button size="sm" className="gap-1">
                   <Plus className="h-4 w-4" />
-                  Thêm
+                  {t("common.add")}
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-md">
                 <DialogHeader>
-                  <DialogTitle>Tạo sản phẩm mới</DialogTitle>
-                  <DialogDescription>
-                    Thêm mẫu sản phẩm mới với ảnh tham chiếu
-                  </DialogDescription>
+                  <DialogTitle>{t("products.createNew")}</DialogTitle>
+                  <DialogDescription>{t("products.createNewDesc")}</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
-                    <Label htmlFor="productCode">Mã sản phẩm <span className="text-destructive">*</span></Label>
+                    <Label htmlFor="productCode">{t("products.productCodeLabel")}<span className="text-destructive">*</span></Label>
                     <Input
                       id="productCode"
                       value={newProductCode}
                       onChange={(e) => setNewProductCode(e.target.value)}
                       onBlur={() => productValidation.handleBlur("code", newProductCode)}
-                      placeholder="VD: PCB-001"
+                      placeholder={t('products.codeExample')}
                       className={productValidation.hasError("code") ? "border-destructive" : ""}
                     />
                     <ValidationMessage error={productValidation.getFieldError("code")} />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="productName">Tên sản phẩm <span className="text-destructive">*</span></Label>
+                    <Label htmlFor="productName">{t("products.productNameLabel")}<span className="text-destructive">*</span></Label>
                     <Input
                       id="productName"
                       value={newProductName}
                       onChange={(e) => setNewProductName(e.target.value)}
                       onBlur={() => productValidation.handleBlur("name", newProductName)}
-                      placeholder="VD: Main Board v1.0"
+                      placeholder={t('products.nameExample')}
                       className={productValidation.hasError("name") ? "border-destructive" : ""}
                     />
                     <ValidationMessage error={productValidation.getFieldError("name")} />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="productDescription">Mô tả</Label>
+                    <Label htmlFor="productDescription">{t("products.descriptionLabel")}</Label>
                     <Textarea
                       id="productDescription"
                       value={newProductDescription}
                       onChange={(e) => setNewProductDescription(e.target.value)}
-                      placeholder="Mô tả sản phẩm..."
+                      placeholder={t("products.descriptionPlaceholder")}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="productImage">Ảnh tham chiếu</Label>
+                    <Label htmlFor="productImage">{t("products.referenceImageLabel")}</Label>
                     <div className="flex items-center gap-2">
                       <Input
                         id="productImage"
@@ -1094,11 +1094,9 @@ export default function ProductModels() {
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-                    Hủy
-                  </Button>
+                  <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>{t("common.cancel")}</Button>
                   <Button onClick={handleCreateProduct} disabled={createProductMutation.isPending}>
-                    {createProductMutation.isPending ? "Đang tạo..." : "Tạo sản phẩm"}
+                    {createProductMutation.isPending ? t("products.creating") : t("products.createProduct")}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -1110,7 +1108,7 @@ export default function ProductModels() {
               {/* Search Bar */}
               <div className="relative">
                 <Input
-                  placeholder="Tìm theo mã hoặc tên sản phẩm..."
+                  placeholder={t("products.searchByCodeOrName")}
                   value={productSearchQuery}
                   onChange={(e) => setProductSearchQuery(e.target.value)}
                   className="pr-8"
@@ -1132,14 +1130,14 @@ export default function ProductModels() {
                 {/* Lifecycle Filter */}
                 <Select value={productLifecycleFilter} onValueChange={(val: any) => setProductLifecycleFilter(val)}>
                   <SelectTrigger className="w-[140px]">
-                    <SelectValue placeholder="Trạng thái" />
+                    <SelectValue placeholder={t("common.status")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tất cả</SelectItem>
-                    <SelectItem value="development">Phát triển</SelectItem>
-                    <SelectItem value="active">Đang dùng</SelectItem>
+                    <SelectItem value="all">{t("common.all")}</SelectItem>
+                    <SelectItem value="development">{t("products.development")}</SelectItem>
+                    <SelectItem value="active">{t("products.active")}</SelectItem>
                     <SelectItem value="eol">EOL</SelectItem>
-                    <SelectItem value="archived">Lưu trữ</SelectItem>
+                    <SelectItem value="archived">{t("products.archived")}</SelectItem>
                   </SelectContent>
                 </Select>
                 
@@ -1150,15 +1148,15 @@ export default function ProductModels() {
                   setProductSortOrder(sortOrder);
                 }}>
                   <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="Sắp xếp" />
+                    <SelectValue placeholder={t("products.sortPlaceholder")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="createdAt-desc">Mới nhất</SelectItem>
-                    <SelectItem value="createdAt-asc">Cũ nhất</SelectItem>
-                    <SelectItem value="name-asc">Tên A-Z</SelectItem>
-                    <SelectItem value="name-desc">Tên Z-A</SelectItem>
-                    <SelectItem value="code-asc">Mã A-Z</SelectItem>
-                    <SelectItem value="code-desc">Mã Z-A</SelectItem>
+                    <SelectItem value="createdAt-desc">{t("products.newestFirst")}</SelectItem>
+                    <SelectItem value="createdAt-asc">{t("products.oldestFirst")}</SelectItem>
+                    <SelectItem value="name-asc">{t("products.nameAZ")}</SelectItem>
+                    <SelectItem value="name-desc">{t("products.nameZA")}</SelectItem>
+                    <SelectItem value="code-asc">{t("products.codeAZ")}</SelectItem>
+                    <SelectItem value="code-desc">{t("products.codeZA")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1167,7 +1165,7 @@ export default function ProductModels() {
               {(productSearchQuery || productLifecycleFilter !== "all") && (
                 <div className="flex items-center gap-2 text-sm">
                   <Badge variant="secondary" className="gap-1">
-                    Đã lọc
+                    {t("common.filtered")}
                   </Badge>
                   <Button
                     variant="ghost"
@@ -1178,7 +1176,7 @@ export default function ProductModels() {
                       setProductLifecycleFilter("all");
                     }}
                   >
-                    Xóa bộ lọc
+                    {t("history.clearFilters")}
                   </Button>
                 </div>
               )}
@@ -1221,7 +1219,7 @@ export default function ProductModels() {
                             openEditProductDialog();
                           }}>
                             <Edit className="h-4 w-4 mr-2" />
-                            Chỉnh sửa
+                            {t("common.edit")}
                           </DropdownMenuItem>
                           <DropdownMenuItem 
                             className="text-destructive"
@@ -1232,7 +1230,7 @@ export default function ProductModels() {
                             }}
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
-                            Xóa
+                            {t("common.delete")}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -1242,8 +1240,8 @@ export default function ProductModels() {
                 {(!productModels || productModels.length === 0) && (
                   <div className="text-center py-8 text-muted-foreground">
                     <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p>Chưa có sản phẩm nào</p>
-                    <p className="text-sm">Nhấn "Thêm" để tạo sản phẩm mới</p>
+                    <p>{t("products.noProductsYet")}</p>
+                    <p className="text-sm">{t("products.clickAddToCreate")}</p>
                   </div>
                 )}
               </div>
@@ -1256,12 +1254,12 @@ export default function ProductModels() {
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <div>
               <CardTitle className="text-lg">
-                {selectedProduct ? `Điểm đo - ${selectedProduct.name}` : "Chọn sản phẩm"}
+                {selectedProduct ? `${t("products.measurementPointsFor")} - ${selectedProduct.name}` : t("products.selectProduct")}
               </CardTitle>
               <CardDescription>
                 {selectedProduct
-                  ? `${measurementPoints.length} điểm đo đã định nghĩa`
-                  : "Chọn một sản phẩm từ danh sách bên trái"}
+                  ? t("products.pointsDefined", { count: measurementPoints.length })
+                  : t("products.noProductSelectedDesc")}
               </CardDescription>
             </div>
             {selectedProduct && (
@@ -1275,7 +1273,7 @@ export default function ProductModels() {
                       className="gap-1"
                     >
                       <Circle className="h-4 w-4" />
-                      {isDrawing ? "Đang vẽ..." : "Thêm điểm"}
+                      {isDrawing ? t("products.drawing") : t("products.addPointBtn")}
                     </Button>
                     <Button
                       size="sm"
@@ -1287,18 +1285,18 @@ export default function ProductModels() {
                       }}
                     >
                       <X className="h-4 w-4 mr-1" />
-                      Đóng
+                      {t("common.close")}
                     </Button>
                   </>
                 ) : (
                   <div className="flex gap-2 flex-wrap">
                     <Button size="sm" variant="outline" onClick={() => setIsBulkImportDialogOpen(true)} className="gap-1">
                       <FileSpreadsheet className="h-4 w-4" />
-                      Import
+                      {t('common.import')}
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => setIsTemplateDialogOpen(true)} className="gap-1">
                       <Layers className="h-4 w-4" />
-                      Templates
+                      {t('products.templates')}
                     </Button>
                     <Button 
                       size="sm" 
@@ -1310,11 +1308,11 @@ export default function ProductModels() {
                       className="gap-1"
                     >
                       {isBatchMode ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
-                      {isBatchMode ? "Thoát" : "Chọn"}
+                      {isBatchMode ? t("products.exitMode") : t("products.selectMode")}
                     </Button>
                     <Button size="sm" onClick={() => setIsEditMode(true)} className="gap-1">
                       <Edit className="h-4 w-4" />
-                      Sửa
+                      {t("common.edit")}
                     </Button>
                   </div>
                 )}
@@ -1328,16 +1326,16 @@ export default function ProductModels() {
                 {isBatchMode && (
                   <div className="flex items-center gap-2 p-2 bg-accent/50 rounded-lg">
                     <span className="text-sm font-medium">
-                      Đã chọn: {selectedPointIds.size} điểm đo
+                      {t("products.selectedPoints", { count: selectedPointIds.size })}
                     </span>
                     <div className="flex gap-2 ml-auto">
                       <Button size="sm" variant="outline" onClick={selectAllPoints} className="gap-1">
                         <CheckSquare className="h-3 w-3" />
-                        Chọn tất cả
+                        {t("common.selectAll")}
                       </Button>
                       <Button size="sm" variant="outline" onClick={deselectAllPoints} className="gap-1">
                         <Square className="h-3 w-3" />
-                        Bỏ chọn
+                        {t("common.deselectAll")}
                       </Button>
                       <Button 
                         size="sm" 
@@ -1347,7 +1345,7 @@ export default function ProductModels() {
                         className="gap-1"
                       >
                         <Download className="h-3 w-3" />
-                        Xuất CSV
+                        {t("history.exportCsv")}
                       </Button>
                       <Button 
                         size="sm" 
@@ -1356,9 +1354,7 @@ export default function ProductModels() {
                         disabled={selectedPointIds.size === 0}
                         className="gap-1"
                       >
-                        <Trash2 className="h-3 w-3" />
-                        Xóa
-                      </Button>
+                        <Trash2 className="h-3 w-3" />{t("common.delete")}</Button>
                     </div>
                   </div>
                 )}
@@ -1366,30 +1362,30 @@ export default function ProductModels() {
                 {/* Search and Filter */}
                 <div className="flex gap-2 items-end">
                   <div className="flex-1">
-                    <Label htmlFor="pointSearch" className="text-xs">Tim kiem</Label>
+                    <Label htmlFor="pointSearch" className="text-xs">{t('common.search')}</Label>
                     <Input
                       id="pointSearch"
-                      placeholder="Tim theo ma hoac ten..."
+                      placeholder={t('products.searchPointPlaceholder')}
                       value={pointSearchQuery}
                       onChange={(e) => setPointSearchQuery(e.target.value)}
                       className="h-8"
                     />
                   </div>
                   <div className="w-40">
-                    <Label htmlFor="typeFilter" className="text-xs">Loai</Label>
+                    <Label htmlFor="typeFilter" className="text-xs">{t('common.type')}</Label>
                     <Select value={pointTypeFilter} onValueChange={(val) => setPointTypeFilter(val as any)}>
                       <SelectTrigger id="typeFilter" className="h-8">
-                        <SelectValue placeholder="Tat ca" />
+                        <SelectValue placeholder={t('common.all')} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">Tat ca</SelectItem>
-                        <SelectItem value="DIMENSION">Kich thuoc</SelectItem>
-                        <SelectItem value="VISUAL">Hinh anh</SelectItem>
-                        <SelectItem value="ELECTRICAL">Dien</SelectItem>
-                        <SelectItem value="POSITION">Vi tri</SelectItem>
-                        <SelectItem value="COLOR">Mau sac</SelectItem>
-                        <SelectItem value="SURFACE">Be mat</SelectItem>
-                        <SelectItem value="OTHER">Khac</SelectItem>
+                        <SelectItem value="all">{t('common.all')}</SelectItem>
+                        <SelectItem value="DIMENSION">{t('products.typeDimension')}</SelectItem>
+                        <SelectItem value="VISUAL">{t('products.typeVisual')}</SelectItem>
+                        <SelectItem value="ELECTRICAL">{t('products.typeElectrical')}</SelectItem>
+                        <SelectItem value="POSITION">{t('products.typePosition')}</SelectItem>
+                        <SelectItem value="COLOR">{t('products.typeColor')}</SelectItem>
+                        <SelectItem value="SURFACE">{t('products.typeSurface')}</SelectItem>
+                        <SelectItem value="OTHER">{t('products.typeOther')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -1416,7 +1412,7 @@ export default function ProductModels() {
                     </div>
                     {isEditMode && (
                       <div className="flex items-center gap-2 ml-4">
-                        <span className="text-sm text-muted-foreground">Bán kính:</span>
+                        <span className="text-sm text-muted-foreground">{t("products.radius")}:</span>
                         <Slider
                           value={[pointRadius]}
                           onValueChange={([value]) => setPointRadius(value)}
@@ -1445,27 +1441,27 @@ export default function ProductModels() {
                       <div className="flex items-center justify-center h-64 text-muted-foreground">
                         <div className="text-center">
                           <Upload className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                          <p>Chưa có ảnh tham chiếu</p>
-                          <p className="text-sm">Cập nhật ảnh trong phần chỉnh sửa sản phẩm</p>
+                          <p>{t("products.noReferenceImage")}</p>
+                          <p className="text-sm">{t("products.updateImageInEdit")}</p>
                         </div>
                       </div>
                     )}
                     {isDrawing && (
                       <div className="absolute top-2 left-2 bg-primary text-primary-foreground px-3 py-1 rounded-full text-sm">
-                        Click để đặt điểm đo
+                        {t("products.clickToPlace")}
                       </div>
                     )}
                     {isDragging && (
                       <div className="absolute top-2 left-2 bg-warning text-warning-foreground px-3 py-1 rounded-full text-sm">
                         <Move className="h-4 w-4 inline mr-1" />
-                        Đang di chuyển điểm
+                        {t("products.movingPoint")}
                       </div>
                     )}
                   </div>
 
                   {/* Point List */}
                   <div className="mt-4">
-                    <h4 className="text-sm font-medium mb-2">Danh sách điểm đo ({measurementPoints.length}/50)</h4>
+                    <h4 className="text-sm font-medium mb-2">{t("products.pointList")} ({measurementPoints.length}/50)</h4>
                     <div className="flex flex-wrap gap-2">
                       {measurementPoints.length === 0 ? (
                         <NoMeasurementPoints onAdd={() => setIsDrawing(true)} />
@@ -1504,7 +1500,7 @@ export default function ProductModels() {
                     <ScrollArea className="h-[550px]">
                       <div className="space-y-4 p-4 border rounded-lg bg-muted/20">
                         <div className="flex items-center justify-between">
-                          <h4 className="font-medium">Chi tiết điểm đo #{selectedPointIndex + 1}</h4>
+                          <h4 className="font-medium">{t("products.pointDetails")} #{selectedPointIndex + 1}</h4>
                           {isEditMode && (
                             <Button size="sm" variant="ghost" onClick={handleDuplicatePoint}>
                               <Copy className="h-4 w-4" />
@@ -1513,7 +1509,7 @@ export default function ProductModels() {
                         </div>
                         
                         <div className="space-y-2">
-                          <Label htmlFor="pointCode">Mã điểm đo <span className="text-destructive">*</span></Label>
+                          <Label htmlFor="pointCode">{t("products.pointCodeLabel")} <span className="text-destructive">*</span></Label>
                           <Input
                             id="pointCode"
                             value={pointCode}
@@ -1526,7 +1522,7 @@ export default function ProductModels() {
                         </div>
 
                         <div className="space-y-2">
-                          <Label htmlFor="pointName">Tên điểm đo <span className="text-destructive">*</span></Label>
+                          <Label htmlFor="pointName">{t("products.pointNameLabel")} <span className="text-destructive">*</span></Label>
                           <Input
                             id="pointName"
                             value={pointName}
@@ -1539,7 +1535,7 @@ export default function ProductModels() {
                         </div>
 
                         <div className="space-y-2">
-                          <Label htmlFor="pointType">Loại đo</Label>
+                          <Label htmlFor="pointType">{t("products.pointType")}</Label>
                           <Select
                             value={pointType}
                             onValueChange={(v) => setPointType(v as MeasurementPoint["measurementType"])}
@@ -1549,19 +1545,19 @@ export default function ProductModels() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="VISUAL">Kiểm tra hình ảnh</SelectItem>
-                              <SelectItem value="DIMENSION">Kích thước</SelectItem>
-                              <SelectItem value="POSITION">Vị trí</SelectItem>
-                              <SelectItem value="COLOR">Màu sắc</SelectItem>
-                              <SelectItem value="SURFACE">Bề mặt</SelectItem>
-                              <SelectItem value="ELECTRICAL">Điện</SelectItem>
-                              <SelectItem value="OTHER">Khác</SelectItem>
+                              <SelectItem value="VISUAL">{t("products.typeVisual")}</SelectItem>
+                              <SelectItem value="DIMENSION">{t("products.typeDimension")}</SelectItem>
+                              <SelectItem value="POSITION">{t("products.typePosition")}</SelectItem>
+                              <SelectItem value="COLOR">{t("products.typeColor")}</SelectItem>
+                              <SelectItem value="SURFACE">{t("products.typeSurface")}</SelectItem>
+                              <SelectItem value="ELECTRICAL">{t("products.typeElectrical")}</SelectItem>
+                              <SelectItem value="OTHER">{t("products.typeOther")}</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
 
                         <div className="space-y-2">
-                          <Label htmlFor="pointDescription">Mô tả</Label>
+                          <Label htmlFor="pointDescription">{t("products.descriptionLabel")}</Label>
                           <Textarea
                             id="pointDescription"
                             value={pointDescription}
@@ -1575,7 +1571,7 @@ export default function ProductModels() {
                           <>
                             <div className="grid grid-cols-2 gap-2">
                               <div className="space-y-2">
-                                <Label htmlFor="pointLowerLimit">Giới hạn dưới</Label>
+                                <Label htmlFor="pointLowerLimit">{t("products.lowerLimit")}</Label>
                                 <Input
                                   id="pointLowerLimit"
                                   value={pointLowerLimit}
@@ -1587,7 +1583,7 @@ export default function ProductModels() {
                                 <ValidationMessage error={pointValidation.getFieldError("lowerLimit")} />
                               </div>
                               <div className="space-y-2">
-                                <Label htmlFor="pointUpperLimit">Giới hạn trên</Label>
+                                <Label htmlFor="pointUpperLimit">{t("products.upperLimit")}</Label>
                                 <Input
                                   id="pointUpperLimit"
                                   value={pointUpperLimit}
@@ -1600,7 +1596,7 @@ export default function ProductModels() {
                               </div>
                             </div>
                             <div className="space-y-2">
-                              <Label htmlFor="pointNominalValue">Giá trị danh nghĩa</Label>
+                              <Label htmlFor="pointNominalValue">{t("products.nominalValue")}</Label>
                               <Input
                                 id="pointNominalValue"
                                 value={pointNominalValue}
@@ -1609,7 +1605,7 @@ export default function ProductModels() {
                               />
                             </div>
                             <div className="space-y-2">
-                              <Label htmlFor="pointUnit">Đơn vị</Label>
+                              <Label htmlFor="pointUnit">{t("products.unit")}</Label>
                               <Input
                                 id="pointUnit"
                                 value={pointUnit}
@@ -1623,7 +1619,7 @@ export default function ProductModels() {
 
                         {/* Reference Image for Point */}
                         <div className="space-y-2">
-                          <Label>Ảnh mẫu điểm đo</Label>
+                          <Label>{t("products.pointReferenceImage")}</Label>
                           {pointReferenceImageUrl && (
                             <div className="relative">
                               <img
@@ -1646,16 +1642,16 @@ export default function ProductModels() {
                           {!pointReferenceImageUrl && !isEditMode && (
                             <div className="flex items-center justify-center h-20 bg-muted/30 rounded border border-dashed text-muted-foreground text-sm">
                               <ImageIcon className="h-4 w-4 mr-1" />
-                              Chưa có ảnh mẫu
+                              {t("products.noReferenceImagePoint")}
                             </div>
                           )}
                         </div>
 
                         <div className="space-y-2">
-                          <Label htmlFor="pointWorkstation">Công trạm (tùy chọn)</Label>
+                          <Label htmlFor="pointWorkstation">{t("products.workstationOptional")}</Label>
                           <Select value={pointWorkstationId?.toString() || ""} onValueChange={(value) => setPointWorkstationId(value ? parseInt(value) : undefined)}>
                             <SelectTrigger id="pointWorkstation" disabled={!isEditMode}>
-                              <SelectValue placeholder="Chọn công trạm" />
+                              <SelectValue placeholder={t("products.selectWorkstation")} />
                             </SelectTrigger>
                             <SelectContent>
                               {workstations?.map((ws) => (
@@ -1663,7 +1659,7 @@ export default function ProductModels() {
                                   <div className="flex items-center gap-2">
                                     <span>{ws.code} - {ws.name}</span>
                                     <Badge variant={ws.isActive ? "default" : "secondary"} className="ml-2">
-                                      {ws.isActive ? "Active" : "Inactive"}
+                                      {ws.isActive ? t('common.active') : t('common.inactive')}
                                     </Badge>
                                   </div>
                                 </SelectItem>
@@ -1673,16 +1669,16 @@ export default function ProductModels() {
                         </div>
 
                         <div className="text-sm text-muted-foreground p-2 bg-muted/30 rounded">
-                          <p>Vị trí: ({measurementPoints[selectedPointIndex]?.positionX}, {measurementPoints[selectedPointIndex]?.positionY})</p>
-                          <p>Bán kính: {measurementPoints[selectedPointIndex]?.radius}px</p>
+                          <p>{t("products.position")}: ({measurementPoints[selectedPointIndex]?.positionX}, {measurementPoints[selectedPointIndex]?.positionY})</p>
+                          <p>{t("products.radius")}: {measurementPoints[selectedPointIndex]?.radius}px</p>
                         </div>
 
                         {/* Vùng cắt ảnh mẫu */}
                         <div className="space-y-2 border-t pt-3 mt-3">
-                          <Label className="text-sm font-medium">Vùng cắt ảnh mẫu (tâm là điểm đo)</Label>
+                          <Label className="text-sm font-medium">{t("products.cropAreaLabel")}</Label>
                           <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <Label htmlFor="cropWidth" className="text-xs text-muted-foreground">Rộng (px)</Label>
+                              <Label htmlFor="cropWidth" className="text-xs text-muted-foreground">{t("products.width")} (px)</Label>
                               <Input
                                 id="cropWidth"
                                 type="number"
@@ -1694,7 +1690,7 @@ export default function ProductModels() {
                               />
                             </div>
                             <div>
-                              <Label htmlFor="cropHeight" className="text-xs text-muted-foreground">Cao (px)</Label>
+                              <Label htmlFor="cropHeight" className="text-xs text-muted-foreground">{t("products.height")} (px)</Label>
                               <Input
                                 id="cropHeight"
                                 type="number"
@@ -1716,7 +1712,7 @@ export default function ProductModels() {
                               className="flex-1 text-xs"
                               disabled={!isEditMode}
                             >
-                              Tự động cắt
+                              {t("products.autoCrop")}
                             </Button>
                             <Button
                               type="button"
@@ -1726,17 +1722,17 @@ export default function ProductModels() {
                               className="flex-1 text-xs"
                               disabled={!isEditMode}
                             >
-                              Upload ảnh
+                              {t("products.uploadImage")}
                             </Button>
                           </div>
                           <p className="text-xs text-muted-foreground">
                             {imageSourceMode === "auto-crop" 
-                              ? "Hệ thống sẽ tự động cắt ảnh mẫu từ ảnh sản phẩm với tâm là vị trí điểm đo."
-                              : "Upload ảnh mẫu riêng cho điểm đo này."}
+                              ? t("products.autoCropDesc")
+                              : t("products.uploadDesc")}
                           </p>
                           {imageSourceMode === "upload" && isEditMode && (
                             <div className="mt-2">
-                              <Label htmlFor="pointImageUpload" className="text-xs text-muted-foreground">Upload ảnh mẫu</Label>
+                              <Label htmlFor="pointImageUpload" className="text-xs text-muted-foreground">{t("products.uploadPointImage")}</Label>
                               <Input
                                 id="pointImageUpload"
                                 type="file"
@@ -1759,12 +1755,12 @@ export default function ProductModels() {
                               {isSavingPoint ? (
                                 <>
                                   <div className="h-4 w-4 mr-1 animate-spin rounded-full border-2 border-background border-t-transparent" />
-                                  Đang lưu...
+                                  {t("products.saving")}
                                 </>
                               ) : (
                                 <>
                                   <Save className="h-4 w-4 mr-1" />
-                                  Lưu
+                                  {t("common.save")}
                                 </>
                               )}
                             </Button>
@@ -1779,9 +1775,9 @@ export default function ProductModels() {
                     <div className="flex items-center justify-center h-64 text-muted-foreground border rounded-lg bg-muted/20">
                       <div className="text-center">
                         <MousePointer className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">Chọn một điểm đo để xem chi tiết</p>
+                        <p className="text-sm">{t("products.selectPointToView")}</p>
                         {isEditMode && (
-                          <p className="text-xs mt-1">Hoặc click "Thêm điểm" rồi click trên ảnh</p>
+                          <p className="text-xs mt-1">{t("products.orClickAddPoint")}</p>
                         )}
                       </div>
                     </div>
@@ -1793,7 +1789,7 @@ export default function ProductModels() {
               <div className="flex items-center justify-center h-64 text-muted-foreground">
                 <div className="text-center">
                   <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                  <p>Chon mot san pham de quan ly diem do</p>
+                  <p>{t("products.selectToManage")}</p>
                 </div>
               </div>
             )}
@@ -1807,14 +1803,12 @@ export default function ProductModels() {
       <Dialog open={isEditProductDialogOpen} onOpenChange={setIsEditProductDialogOpen}>
           <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Chỉnh sửa sản phẩm</DialogTitle>
-            <DialogDescription>
-              Cập nhật thông tin sản phẩm
-            </DialogDescription>
+            <DialogTitle>{t("products.editTitle")}</DialogTitle>
+            <DialogDescription>{t("products.editDesc")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="editProductCode">Mã sản phẩm</Label>
+              <Label htmlFor="editProductCode">{t("products.productCodeLabel")}</Label>
               <Input
                 id="editProductCode"
                 value={editProductCode}
@@ -1822,7 +1816,7 @@ export default function ProductModels() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="editProductName">Tên sản phẩm</Label>
+              <Label htmlFor="editProductName">{t("products.productNameLabel")}</Label>
               <Input
                 id="editProductName"
                 value={editProductName}
@@ -1830,7 +1824,7 @@ export default function ProductModels() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="editProductDescription">Mô tả</Label>
+              <Label htmlFor="editProductDescription">{t("products.descriptionLabel")}</Label>
               <Textarea
                 id="editProductDescription"
                 value={editProductDescription}
@@ -1839,52 +1833,52 @@ export default function ProductModels() {
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-2">
-                <Label htmlFor="editProductCategory">Danh mục</Label>
+                <Label htmlFor="editProductCategory">{t("common.category")}</Label>
                 <Input
                   id="editProductCategory"
                   value={editProductCategory}
                   onChange={(e) => setEditProductCategory(e.target.value)}
-                  placeholder="VD: Điện tử"
+                  placeholder={t("products.categoryPlaceholder")}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="editProductLine">Dòng sản phẩm</Label>
+                <Label htmlFor="editProductLine">{t("products.productLine")}</Label>
                 <Input
                   id="editProductLine"
                   value={editProductLine}
                   onChange={(e) => setEditProductLine(e.target.value)}
-                  placeholder="VD: Premium"
+                  placeholder={t("products.linePlaceholder")}
                 />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-2">
-                <Label htmlFor="editProductVariant">Biến thể</Label>
+                <Label htmlFor="editProductVariant">{t("products.variant")}</Label>
                 <Input
                   id="editProductVariant"
                   value={editProductVariant}
                   onChange={(e) => setEditProductVariant(e.target.value)}
-                  placeholder="VD: Color"
+                  placeholder={t('products.variantExample')}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="editProductLifecycle">Trạng thái</Label>
+                <Label htmlFor="editProductLifecycle">{t("common.status")}</Label>
                 <Select value={editProductLifecycle} onValueChange={(value: any) => setEditProductLifecycle(value)}>
                   <SelectTrigger id="editProductLifecycle">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="development">Phát triển</SelectItem>
-                    <SelectItem value="active">Hoạt động</SelectItem>
-                    <SelectItem value="eol">Kết thúc vòng đời</SelectItem>
-                    <SelectItem value="archived">Lưu trữ</SelectItem>
+                    <SelectItem value="development">{t("products.development")}</SelectItem>
+                    <SelectItem value="active">{t("products.activeStatus")}</SelectItem>
+                    <SelectItem value="eol">{t("products.endOfLife")}</SelectItem>
+                    <SelectItem value="archived">{t("products.archived")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-2">
-                <Label htmlFor="editProductTargetYield">Mục tiêu Yield (%)</Label>
+                <Label htmlFor="editProductTargetYield">{t("products.targetYieldLabel")}</Label>
                 <Input
                   id="editProductTargetYield"
                   type="number"
@@ -1897,7 +1891,7 @@ export default function ProductModels() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="editProductMinYield">Yield tối thiểu (%)</Label>
+                <Label htmlFor="editProductMinYield">{t("products.minYieldLabel")}</Label>
                 <Input
                   id="editProductMinYield"
                   type="number"
@@ -1911,7 +1905,7 @@ export default function ProductModels() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="editProductImage">Ảnh tham chiếu mới (tùy chọn)</Label>
+              <Label htmlFor="editProductImage">{t("products.newReferenceImage")}</Label>
               <Input
                 id="editProductImage"
                 type="file"
@@ -1927,7 +1921,7 @@ export default function ProductModels() {
               )}
               {!editProductImageUrl && selectedProduct?.referenceImageUrl && (
                 <div className="mt-2">
-                  <p className="text-sm text-muted-foreground mb-1">Ảnh hiện tại:</p>
+                  <p className="text-sm text-muted-foreground mb-1">{t("products.currentImage")}:</p>
                   <img
                     src={selectedProduct.referenceImageUrl}
                     alt="Current"
@@ -1938,11 +1932,9 @@ export default function ProductModels() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditProductDialogOpen(false)}>
-              Hủy
-            </Button>
+            <Button variant="outline" onClick={() => setIsEditProductDialogOpen(false)}>{t("common.cancel")}</Button>
             <Button onClick={handleUpdateProduct} disabled={updateProductMutation.isPending}>
-              {updateProductMutation.isPending ? "Đang lưu..." : "Lưu thay đổi"}
+              {updateProductMutation.isPending ? t("products.saving") : t("products.saveChanges")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1952,7 +1944,7 @@ export default function ProductModels() {
       <DeleteConfirmDialog
         open={isDeleteProductDialogOpen}
         onOpenChange={setIsDeleteProductDialogOpen}
-        itemType="sản phẩm"
+        itemType={t("products.productItemType")}
         itemName={selectedProduct?.name}
         onConfirm={handleDeleteProduct}
         isLoading={deleteProductMutation.isPending}
@@ -1962,7 +1954,7 @@ export default function ProductModels() {
       <DeleteConfirmDialog
         open={isDeletePointDialogOpen}
         onOpenChange={setIsDeletePointDialogOpen}
-        itemType="điểm đo"
+        itemType={t("products.pointItemType")}
         itemName={selectedPointIndex !== null ? measurementPoints[selectedPointIndex]?.name : undefined}
         onConfirm={handleDeletePoint}
         isLoading={deletePointMutation.isPending}
@@ -1987,47 +1979,47 @@ export default function ProductModels() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Layers className="h-5 w-5" />
-              Quản lý Templates
+              {t("products.manageTemplates")}
             </DialogTitle>
             <DialogDescription>
-              Lưu hoặc áp dụng template điểm đo cho sản phẩm
+              {t("products.templateDialogDesc")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-6">
             {/* Save as Template Section */}
             <div className="space-y-4 border-b pb-4">
-              <h4 className="font-medium">Lưu thành Template mới</h4>
+              <h4 className="font-medium">{t("products.saveAsNewTemplate")}</h4>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Tên template *</Label>
+                  <Label>{t("products.templateNameLabel")}</Label>
                   <Input
                     value={templateName}
                     onChange={(e) => setTemplateName(e.target.value)}
-                    placeholder="VD: Template điện tử cơ bản"
+                    placeholder={t('products.templateNameExample')}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Danh mục</Label>
+                  <Label>{t("common.category")}</Label>
                   <Select value={templateCategory} onValueChange={setTemplateCategory}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Chọn danh mục" />
+                      <SelectValue placeholder={t("products.selectCategory")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="electronics">Điện tử</SelectItem>
-                      <SelectItem value="mechanical">Cơ khí</SelectItem>
-                      <SelectItem value="assembly">Lắp ráp</SelectItem>
-                      <SelectItem value="general">Chung</SelectItem>
+                      <SelectItem value="electronics">{t("products.catElectronics")}</SelectItem>
+                      <SelectItem value="mechanical">{t("products.catMechanical")}</SelectItem>
+                      <SelectItem value="assembly">{t("products.catAssembly")}</SelectItem>
+                      <SelectItem value="general">{t("products.catGeneral")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Mô tả</Label>
+                <Label>{t("products.descriptionLabel")}</Label>
                 <Textarea
                   value={templateDescription}
                   onChange={(e) => setTemplateDescription(e.target.value)}
-                  placeholder="Mô tả template..."
+                  placeholder={t("products.templateDescPlaceholder")}
                   rows={2}
                 />
               </div>
@@ -2037,13 +2029,13 @@ export default function ProductModels() {
                 className="gap-2"
               >
                 <Save className="h-4 w-4" />
-                Lưu {measurementPoints.length} điểm đo thành template
+                {t("products.savePointsAsTemplate", { count: measurementPoints.length })}
               </Button>
             </div>
 
             {/* Apply Template Section */}
             <div className="space-y-4">
-              <h4 className="font-medium">Áp dụng Template có sẵn</h4>
+              <h4 className="font-medium">{t("products.applyExistingTemplate")}</h4>
               <ScrollArea className="h-[200px] border rounded-md p-2">
                 {templates && templates.length > 0 ? (
                   <div className="space-y-2">
@@ -2055,7 +2047,7 @@ export default function ProductModels() {
                         <div>
                           <div className="font-medium">{template.name}</div>
                           <div className="text-sm text-muted-foreground">
-                            {template.category} • {template.description || 'Không có mô tả'}
+                            {template.category} • {template.description || t("products.noDescription")}
                           </div>
                         </div>
                         <div className="flex gap-2">
@@ -2066,7 +2058,7 @@ export default function ProductModels() {
                             className="gap-1"
                           >
                             <Download className="h-3 w-3" />
-                            Áp dụng
+                            {t("common.apply")}
                           </Button>
                           <Button
                             size="sm"
@@ -2082,7 +2074,7 @@ export default function ProductModels() {
                   </div>
                 ) : (
                   <div className="flex items-center justify-center h-full text-muted-foreground">
-                    Chưa có template nào
+                    {t("products.noTemplatesYet")}
                   </div>
                 )}
               </ScrollArea>
@@ -2091,7 +2083,7 @@ export default function ProductModels() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsTemplateDialogOpen(false)}>
-              Đóng
+              {t("common.close")}
             </Button>
           </DialogFooter>
         </DialogContent>

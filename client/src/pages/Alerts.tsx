@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,29 +36,30 @@ const ALERT_TYPE_LABELS: Record<string, { label: string; icon: React.ReactNode; 
   yield_rate: { 
     label: "Yield Rate", 
     icon: <TrendingDown className="h-4 w-4" />,
-    description: "Cảnh báo khi Yield Rate giảm dưới ngưỡng"
+    description: "alerts.yieldRateDesc"
   },
   ng_count: { 
-    label: "Số lượng NG", 
+    label: "alerts.ngCountLabel", 
     icon: <Hash className="h-4 w-4" />,
-    description: "Cảnh báo khi số lượng NG vượt ngưỡng"
+    description: "alerts.ngCountDesc"
   },
   machine_status: { 
-    label: "Trạng thái máy", 
+    label: "alerts.machineStatusLabel", 
     icon: <Cpu className="h-4 w-4" />,
-    description: "Cảnh báo khi máy offline hoặc lỗi"
+    description: "alerts.machineStatusDesc"
   },
 };
 
 const COMPARISON_LABELS: Record<string, string> = {
-  lt: "Nhỏ hơn (<)",
-  lte: "Nhỏ hơn hoặc bằng (≤)",
-  gt: "Lớn hơn (>)",
-  gte: "Lớn hơn hoặc bằng (≥)",
-  eq: "Bằng (=)",
+  lt: "alerts.lessThan",
+  lte: "alerts.lessThanOrEqual",
+  gt: "alerts.greaterThan",
+  gte: "alerts.greaterThanOrEqual",
+  eq: "alerts.equal",
 };
 
 export default function Alerts() {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("settings");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingAlert, setEditingAlert] = useState<any>(null);
@@ -81,7 +83,7 @@ export default function Alerts() {
 
   const createMutation = trpc.alert.create.useMutation({
     onSuccess: () => {
-      toast.success("Đã tạo cảnh báo mới");
+      toast.success(t('alerts.createSuccess'));
       utils.alert.list.invalidate();
       setIsCreateOpen(false);
       resetForm();
@@ -93,7 +95,7 @@ export default function Alerts() {
 
   const updateMutation = trpc.alert.update.useMutation({
     onSuccess: () => {
-      toast.success("Đã cập nhật cảnh báo");
+      toast.success(t('alerts.updateSuccess'));
       utils.alert.list.invalidate();
       setEditingAlert(null);
     },
@@ -104,7 +106,7 @@ export default function Alerts() {
 
   const deleteMutation = trpc.alert.delete.useMutation({
     onSuccess: () => {
-      toast.success("Đã xóa cảnh báo");
+      toast.success(t('alerts.deleteSuccess'));
       utils.alert.list.invalidate();
     },
     onError: (error) => {
@@ -115,10 +117,10 @@ export default function Alerts() {
   const testMutation = trpc.alert.test.useMutation({
     onSuccess: (data) => {
       if (data.success) {
-        toast.success("Đã gửi thông báo kiểm tra");
+        toast.success(t('alerts.testSent'));
         utils.alert.history.invalidate();
       } else {
-        toast.error("Không thể gửi thông báo kiểm tra");
+        toast.error(t('alerts.testFailed'));
       }
     },
     onError: (error) => {
@@ -128,7 +130,7 @@ export default function Alerts() {
 
   const acknowledgeMutation = trpc.alert.acknowledge.useMutation({
     onSuccess: () => {
-      toast.success("Đã xác nhận cảnh báo");
+      toast.success(t('alerts.acknowledged'));
       utils.alert.history.invalidate();
     },
   });
@@ -165,37 +167,37 @@ export default function Alerts() {
           <div>
             <h1 className="text-2xl font-bold text-foreground flex items-center gap-3">
               <Bell className="h-7 w-7 text-primary" />
-              Quản lý cảnh báo
+              {t('alerts.title')}
             </h1>
             <p className="text-muted-foreground mt-1">
-              Thiết lập và quản lý các cảnh báo tự động khi có sự cố
+              {t('alerts.subtitle')}
             </p>
           </div>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
               <Button className="gap-2">
                 <Plus className="h-4 w-4" />
-                Tạo cảnh báo mới
+                {t('alerts.createNew')}
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader>
-                <DialogTitle>Tạo cảnh báo mới</DialogTitle>
+                <DialogTitle>{t('alerts.createNew')}</DialogTitle>
                 <DialogDescription>
-                  Thiết lập điều kiện và phương thức thông báo
+                  {t('alerts.createDesc')}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label>Tên cảnh báo</Label>
+                  <Label>{t('alerts.alertName')}</Label>
                   <Input
-                    placeholder="VD: Yield Rate thấp"
+                    placeholder={t('alerts.alertNamePlaceholder')}
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Loại cảnh báo</Label>
+                  <Label>{t('alerts.alertType')}</Label>
                   <Select
                     value={formData.alertType}
                     onValueChange={(v: any) => setFormData({ ...formData, alertType: v })}
@@ -208,7 +210,7 @@ export default function Alerts() {
                         <SelectItem key={key} value={key}>
                           <div className="flex items-center gap-2">
                             {icon}
-                            {label}
+                            {label.startsWith('alerts.') ? t(label) : label}
                           </div>
                         </SelectItem>
                       ))}
@@ -217,7 +219,7 @@ export default function Alerts() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Điều kiện</Label>
+                    <Label>{t('alerts.condition')}</Label>
                     <Select
                       value={formData.comparisonOperator}
                       onValueChange={(v: any) => setFormData({ ...formData, comparisonOperator: v })}
@@ -227,13 +229,13 @@ export default function Alerts() {
                       </SelectTrigger>
                       <SelectContent>
                         {Object.entries(COMPARISON_LABELS).map(([key, label]) => (
-                          <SelectItem key={key} value={key}>{label}</SelectItem>
+                          <SelectItem key={key} value={key}>{t(label)}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Ngưỡng {formData.alertType === "yield_rate" ? "(%)" : ""}</Label>
+                    <Label>{t('alerts.threshold')} {formData.alertType === "yield_rate" ? "(%)" : ""}</Label>
                     <Input
                       type="number"
                       value={formData.threshold}
@@ -242,7 +244,7 @@ export default function Alerts() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Thời gian chờ giữa các cảnh báo (phút)</Label>
+                  <Label>{t('alerts.cooldown')}</Label>
                   <Input
                     type="number"
                     min={5}
@@ -252,7 +254,7 @@ export default function Alerts() {
                   />
                 </div>
                 <div className="space-y-3">
-                  <Label>Phương thức thông báo</Label>
+                  <Label>{t('alerts.notifyMethod')}</Label>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/30">
                       <div className="flex items-center gap-2">
@@ -267,7 +269,7 @@ export default function Alerts() {
                     <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/30">
                       <div className="flex items-center gap-2">
                         <Bell className="h-4 w-4 text-primary" />
-                        <span>Thông báo trong ứng dụng</span>
+                        <span>{t('alerts.inAppNotify')}</span>
                       </div>
                       <Switch
                         checked={formData.notifyInApp}
@@ -277,7 +279,7 @@ export default function Alerts() {
                     <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/30 opacity-50">
                       <div className="flex items-center gap-2">
                         <Smartphone className="h-4 w-4 text-muted-foreground" />
-                        <span>SMS (Sắp ra mắt)</span>
+                        <span>{t('alerts.smsComing')}</span>
                       </div>
                       <Switch disabled checked={false} />
                     </div>
@@ -286,14 +288,14 @@ export default function Alerts() {
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
-                  Hủy
+                  {t('common.cancel')}
                 </Button>
                 <Button 
                   onClick={handleCreate}
                   disabled={!formData.name || createMutation.isPending}
                 >
                   {createMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Tạo cảnh báo
+                  {t('alerts.createAlert')}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -305,11 +307,11 @@ export default function Alerts() {
           <TabsList>
             <TabsTrigger value="settings" className="gap-2">
               <Settings className="h-4 w-4" />
-              Cài đặt
+              {t('alerts.tabSettings')}
             </TabsTrigger>
             <TabsTrigger value="history" className="gap-2">
               <History className="h-4 w-4" />
-              Lịch sử
+              {t('alerts.tabHistory')}
             </TabsTrigger>
           </TabsList>
 
@@ -319,7 +321,7 @@ export default function Alerts() {
               <Card className="glass-card">
                 <CardContent className="py-12 text-center">
                   <Loader2 className="h-8 w-8 mx-auto animate-spin text-primary" />
-                  <p className="text-muted-foreground mt-2">Đang tải...</p>
+                  <p className="text-muted-foreground mt-2">{t('alerts.loading')}</p>
                 </CardContent>
               </Card>
             ) : alerts && alerts.length > 0 ? (
@@ -336,11 +338,11 @@ export default function Alerts() {
                             <h3 className="font-semibold text-foreground flex items-center gap-2">
                               {alert.name}
                               {!alert.isActive && (
-                                <Badge variant="secondary">Tạm dừng</Badge>
+                                <Badge variant="secondary">{t('alerts.paused')}</Badge>
                               )}
                             </h3>
                             <p className="text-sm text-muted-foreground mt-1">
-                              {ALERT_TYPE_LABELS[alert.alertType]?.label} {COMPARISON_LABELS[alert.comparisonOperator]} {alert.threshold}
+                              {ALERT_TYPE_LABELS[alert.alertType]?.label && ALERT_TYPE_LABELS[alert.alertType].label.startsWith('alerts.') ? t(ALERT_TYPE_LABELS[alert.alertType].label) : ALERT_TYPE_LABELS[alert.alertType]?.label} {t(COMPARISON_LABELS[alert.comparisonOperator])} {alert.threshold}
                               {alert.alertType === 'yield_rate' ? '%' : ''}
                             </p>
                             <div className="flex items-center gap-3 mt-2">
@@ -357,7 +359,7 @@ export default function Alerts() {
                                 </Badge>
                               )}
                               <span className="text-xs text-muted-foreground">
-                                Cooldown: {alert.cooldownMinutes} phút
+                                Cooldown: {alert.cooldownMinutes} {t('alerts.minutes')}
                               </span>
                             </div>
                           </div>
@@ -392,9 +394,9 @@ export default function Alerts() {
               <Card className="glass-card">
                 <CardContent className="py-12 text-center">
                   <Bell className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                  <p className="text-muted-foreground">Chưa có cảnh báo nào</p>
+                  <p className="text-muted-foreground">{t('alerts.noAlerts')}</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Tạo cảnh báo đầu tiên để nhận thông báo khi có sự cố
+                    {t('alerts.noAlertsDesc')}
                   </p>
                 </CardContent>
               </Card>
@@ -420,7 +422,7 @@ export default function Alerts() {
                           <div>
                             <p className="text-foreground">{item.message}</p>
                             <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
-                              <span>Giá trị: {item.triggeredValue}</span>
+                              <span>{t('alerts.triggeredValue')}: {item.triggeredValue}</span>
                               <span>•</span>
                               <span>{new Date(item.createdAt).toLocaleString('vi-VN')}</span>
                             </div>
@@ -432,7 +434,7 @@ export default function Alerts() {
                             size="sm"
                             onClick={() => acknowledgeMutation.mutate({ id: item.id })}
                           >
-                            Xác nhận
+                            {t('alerts.acknowledge')}
                           </Button>
                         )}
                       </div>
@@ -444,7 +446,7 @@ export default function Alerts() {
               <Card className="glass-card">
                 <CardContent className="py-12 text-center">
                   <History className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                  <p className="text-muted-foreground">Chưa có lịch sử cảnh báo</p>
+                  <p className="text-muted-foreground">{t('alerts.noHistory')}</p>
                 </CardContent>
               </Card>
             )}

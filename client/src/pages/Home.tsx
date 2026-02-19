@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useTranslation } from 'react-i18next';
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { useEffect } from "react";
@@ -22,6 +23,7 @@ import {
 import { Link } from "wouter";
 
 export default function Home() {
+  const { t } = useTranslation();
   const { user, loading, isAuthenticated } = useAuth();
   const [, setLocation] = useLocation();
   const { data: setupCheck } = trpc.auth.checkSetupRequired.useQuery();
@@ -36,41 +38,41 @@ export default function Home() {
   const features = [
     {
       icon: <Activity className="h-8 w-8" />,
-      title: "Dashboard Realtime",
-      description: "Theo dõi trực tiếp Total Product, OK/NG/NTF và Yield Rate từ tất cả máy kết nối"
+      title: t('home.featureDashboardTitle'),
+      description: t('home.featureDashboardDesc')
     },
     {
       icon: <History className="h-8 w-8" />,
-      title: "Lịch sử & Tìm kiếm",
-      description: "Tìm kiếm dữ liệu theo mã nhà máy, nhà xưởng, SN sản phẩm, dây chuyền, công trạm"
+      title: t('home.featureHistoryTitle'),
+      description: t('home.featureHistoryDesc')
     },
     {
       icon: <Eye className="h-8 w-8" />,
-      title: "Chi tiết Điểm đo",
-      description: "Xem ảnh, giá trị đo, so sánh với ảnh mẫu và xác nhận NTF khi cần"
+      title: t('home.featureDetailTitle'),
+      description: t('home.featureDetailDesc')
     },
     {
       icon: <Brain className="h-8 w-8" />,
-      title: "AI Phân tích",
-      description: "Hỗ trợ AI phân tích hình ảnh và đưa ra đánh giá chất lượng tự động"
+      title: t('home.featureAITitle'),
+      description: t('home.featureAIDesc')
     },
     {
       icon: <LayoutGrid className="h-8 w-8" />,
-      title: "Layout 2D/3D",
-      description: "Trực quan hóa nhà xưởng với layout 2D/3D hiển thị thông tin máy realtime"
+      title: t('home.featureLayoutTitle'),
+      description: t('home.featureLayoutDesc')
     },
     {
       icon: <Cpu className="h-8 w-8" />,
-      title: "API Tích hợp",
-      description: "API chuẩn để máy AVI/AOI gửi dữ liệu kiểm tra vào hệ thống"
+      title: t('home.featureAPITitle'),
+      description: t('home.featureAPIDesc')
     }
   ];
 
   const stats = [
-    { label: "Máy kết nối", value: "50+", icon: <Cpu className="h-5 w-5" /> },
-    { label: "Sản phẩm/ngày", value: "100K+", icon: <Box className="h-5 w-5" /> },
-    { label: "Yield Rate", value: "99.5%", icon: <CheckCircle2 className="h-5 w-5" /> },
-    { label: "Uptime", value: "99.9%", icon: <Zap className="h-5 w-5" /> }
+    { label: t('home.statMachines'), value: "50+", icon: <Cpu className="h-5 w-5" /> },
+    { label: t('home.statProductsPerDay'), value: "100K+", icon: <Box className="h-5 w-5" /> },
+    { label: t('home.statYieldRate'), value: "99.5%", icon: <CheckCircle2 className="h-5 w-5" /> },
+    { label: t('home.statUptime'), value: "99.9%", icon: <Zap className="h-5 w-5" /> }
   ];
 
   return (
@@ -95,7 +97,7 @@ export default function Home() {
                   Dashboard
                 </Link>
                 <Link href="/history" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                  Lịch sử
+                  {t('home.navHistory')}
                 </Link>
                 <Link href="/layout" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                   Layout
@@ -126,7 +128,7 @@ export default function Home() {
               <a href={getLoginUrl()}>
                 <Button variant="default" size="sm" className="gap-2">
                   <LogIn className="h-4 w-4" />
-                  Đăng nhập
+                  {t('auth.login')}
                 </Button>
               </a>
             )}
@@ -143,7 +145,7 @@ export default function Home() {
           <div className="max-w-3xl mx-auto text-center">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-8">
               <Zap className="h-4 w-4 text-primary" />
-              <span className="text-sm text-primary font-medium">Hệ thống quản lý chất lượng thông minh</span>
+              <span className="text-sm text-primary font-medium">{t('home.heroTagline')}</span>
             </div>
             
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-6">
@@ -153,8 +155,7 @@ export default function Home() {
             </h1>
             
             <p className="text-lg text-muted-foreground mb-10 max-w-2xl mx-auto">
-              Hệ thống quản lý và giám sát dữ liệu chất lượng sản xuất từ các máy AVI, AOI 
-              và thiết bị tự động hóa trong nhà xưởng với giao diện hiện đại và phân tích AI.
+              {t('home.heroDescription')}
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -163,7 +164,7 @@ export default function Home() {
                   <Link href="/dashboard">
                     <Button size="lg" className="gap-2 glow-primary">
                       <BarChart3 className="h-5 w-5" />
-                      Xem Dashboard
+                      {t('home.viewDashboard')}
                     </Button>
                   </Link>
                   <Link href="/api-docs">
@@ -178,13 +179,13 @@ export default function Home() {
                   <a href={getLoginUrl()}>
                     <Button size="lg" className="gap-2 glow-primary">
                       <LogIn className="h-5 w-5" />
-                      Bắt đầu ngay
+                      {t('home.getStarted')}
                     </Button>
                   </a>
                   <Link href="/api-docs">
                     <Button size="lg" variant="outline" className="gap-2">
                       <Cpu className="h-5 w-5" />
-                      Xem API Docs
+                      {t('home.viewAPIDocs')}
                     </Button>
                   </Link>
                 </>
@@ -216,10 +217,10 @@ export default function Home() {
         <div className="container">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">
-              Tính năng <span className="gradient-text">nổi bật</span>
+              {t('home.featuresHeading')} <span className="gradient-text">{t('home.featuresHighlight')}</span>
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              Hệ thống toàn diện để quản lý và giám sát chất lượng sản xuất với các công cụ mạnh mẽ
+              {t('home.featuresSubheading')}
             </p>
           </div>
 
@@ -248,23 +249,23 @@ export default function Home() {
         <div className="container">
           <div className="max-w-3xl mx-auto text-center">
             <h2 className="text-3xl md:text-4xl font-bold mb-6">
-              Sẵn sàng nâng cao chất lượng sản xuất?
+              {t('home.ctaHeading')}
             </h2>
             <p className="text-muted-foreground mb-8">
-              Kết nối máy AVI/AOI của bạn ngay hôm nay và bắt đầu theo dõi chất lượng sản xuất realtime
+              {t('home.ctaDescription')}
             </p>
             {isAuthenticated ? (
               <Link href="/settings">
                 <Button size="lg" className="gap-2">
                   <Settings className="h-5 w-5" />
-                  Cấu hình hệ thống
+                  {t('home.configureSystem')}
                 </Button>
               </Link>
             ) : (
               <a href={getLoginUrl()}>
                 <Button size="lg" className="gap-2 glow-primary">
                   <LogIn className="h-5 w-5" />
-                  Đăng nhập để bắt đầu
+                  {t('home.loginToStart')}
                 </Button>
               </a>
             )}

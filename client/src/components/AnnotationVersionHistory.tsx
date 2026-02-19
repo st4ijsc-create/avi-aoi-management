@@ -22,6 +22,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 
 interface AnnotationVersionHistoryProps {
   annotationId?: number;
@@ -37,6 +38,7 @@ export function AnnotationVersionHistory({
   const [open, setOpen] = useState(false);
   const [selectedVersions, setSelectedVersions] = useState<number[]>([]);
   const [compareMode, setCompareMode] = useState(false);
+  const { t } = useTranslation();
 
   const { data: versions, isLoading, refetch } = trpc.annotationHistory.list.useQuery(
     { annotationId, imageUrl, limit: 50 },
@@ -50,12 +52,12 @@ export function AnnotationVersionHistory({
 
   const rollbackMutation = trpc.annotationHistory.rollback.useMutation({
     onSuccess: () => {
-      toast.success("Đã rollback thành công");
+      toast.success(t('annotation.rollbackSuccess'));
       refetch();
       onRollback?.();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(`${t('common.error')}: ${error.message}`);
     },
   });
 
@@ -82,10 +84,10 @@ export function AnnotationVersionHistory({
       'ROLLBACK': 'outline',
     };
     const labels: Record<string, string> = {
-      'CREATE': 'Tạo mới',
-      'UPDATE': 'Cập nhật',
-      'DELETE': 'Xóa',
-      'ROLLBACK': 'Rollback',
+      'CREATE': t('annotation.changeType.create'),
+      'UPDATE': t('annotation.changeType.update'),
+      'DELETE': t('annotation.changeType.delete'),
+      'ROLLBACK': t('annotation.changeType.rollback'),
     };
     return (
       <Badge variant={variants[changeType] || 'secondary'}>
@@ -109,7 +111,7 @@ export function AnnotationVersionHistory({
   };
 
   const handleRollback = (historyId: number) => {
-    if (confirm("Bạn có chắc muốn rollback về phiên bản này?")) {
+    if (confirm(t('annotation.confirmRollback'))) {
       rollbackMutation.mutate({ historyId });
     }
   };
@@ -119,17 +121,17 @@ export function AnnotationVersionHistory({
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
           <History className="h-4 w-4 mr-2" />
-          Lịch sử
+          {t('annotation.history')}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-3xl max-h-[80vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <History className="h-5 w-5" />
-            Lịch sử Annotation
+            {t('annotation.versionHistory')}
           </DialogTitle>
           <DialogDescription>
-            Xem lịch sử thay đổi và rollback về phiên bản trước
+            {t('annotation.versionHistoryDesc')}
           </DialogDescription>
         </DialogHeader>
 
@@ -143,11 +145,11 @@ export function AnnotationVersionHistory({
             }}
           >
             <GitCompare className="h-4 w-4 mr-2" />
-            {compareMode ? "Tắt So sánh" : "So sánh"}
+            {compareMode ? t('annotation.disableCompare') : t('annotation.compare')}
           </Button>
           {compareMode && selectedVersions.length === 2 && (
             <span className="text-sm text-muted-foreground">
-              Đang so sánh 2 phiên bản
+              {t('annotation.comparing2Versions')}
             </span>
           )}
         </div>
@@ -155,7 +157,7 @@ export function AnnotationVersionHistory({
         <div className="grid gap-4 md:grid-cols-2">
           {/* Version List */}
           <div className="space-y-2">
-            <h4 className="font-medium text-sm">Các phiên bản</h4>
+            <h4 className="font-medium text-sm">{t('annotation.versions')}</h4>
             <ScrollArea className="h-[400px] pr-4">
               {isLoading ? (
                 <div className="flex items-center justify-center py-8">
@@ -164,7 +166,7 @@ export function AnnotationVersionHistory({
               ) : versions?.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                   <AlertCircle className="h-8 w-8 mb-2" />
-                  <p>Chưa có lịch sử</p>
+                  <p>{t('annotation.noHistory')}</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -231,7 +233,7 @@ export function AnnotationVersionHistory({
           {/* Comparison View */}
           <div className="space-y-2">
             <h4 className="font-medium text-sm">
-              {compareMode ? "So sánh" : "Chi tiết"}
+              {compareMode ? t('annotation.compare') : t('common.details')}
             </h4>
             <ScrollArea className="h-[400px] pr-4">
               {compareMode && selectedVersions.length === 2 && comparison ? (
@@ -241,17 +243,17 @@ export function AnnotationVersionHistory({
                     <div className="p-3 rounded-lg bg-green-500/10 text-center">
                       <Plus className="h-4 w-4 mx-auto text-green-500" />
                       <div className="text-lg font-bold text-green-500">{comparison.diff.added}</div>
-                      <div className="text-xs text-muted-foreground">Thêm mới</div>
+                      <div className="text-xs text-muted-foreground">{t('annotation.added')}</div>
                     </div>
                     <div className="p-3 rounded-lg bg-blue-500/10 text-center">
                       <Pencil className="h-4 w-4 mx-auto text-blue-500" />
                       <div className="text-lg font-bold text-blue-500">{comparison.diff.modified}</div>
-                      <div className="text-xs text-muted-foreground">Sửa đổi</div>
+                      <div className="text-xs text-muted-foreground">{t('annotation.modified')}</div>
                     </div>
                     <div className="p-3 rounded-lg bg-red-500/10 text-center">
                       <Trash2 className="h-4 w-4 mx-auto text-red-500" />
                       <div className="text-lg font-bold text-red-500">{comparison.diff.removed}</div>
-                      <div className="text-xs text-muted-foreground">Xóa</div>
+                      <div className="text-xs text-muted-foreground">{t('common.delete')}</div>
                     </div>
                   </div>
 
@@ -267,7 +269,7 @@ export function AnnotationVersionHistory({
                   {/* Added Items */}
                   {comparison.diff.addedItems?.length > 0 && (
                     <div>
-                      <h5 className="text-sm font-medium text-green-500 mb-2">Thêm mới</h5>
+                      <h5 className="text-sm font-medium text-green-500 mb-2">{t('annotation.added')}</h5>
                       <div className="space-y-1">
                         {comparison.diff.addedItems.map((item: any, index: number) => (
                           <div key={index} className="p-2 rounded bg-green-500/10 text-xs">
@@ -282,7 +284,7 @@ export function AnnotationVersionHistory({
                   {/* Modified Items */}
                   {comparison.diff.modifiedItems?.length > 0 && (
                     <div>
-                      <h5 className="text-sm font-medium text-blue-500 mb-2">Sửa đổi</h5>
+                      <h5 className="text-sm font-medium text-blue-500 mb-2">{t('annotation.modified')}</h5>
                       <div className="space-y-1">
                         {comparison.diff.modifiedItems.map((item: any, index: number) => (
                           <div key={index} className="p-2 rounded bg-blue-500/10 text-xs">
@@ -297,7 +299,7 @@ export function AnnotationVersionHistory({
                   {/* Removed Items */}
                   {comparison.diff.removedItems?.length > 0 && (
                     <div>
-                      <h5 className="text-sm font-medium text-red-500 mb-2">Đã xóa</h5>
+                      <h5 className="text-sm font-medium text-red-500 mb-2">{t('annotation.deleted')}</h5>
                       <div className="space-y-1">
                         {comparison.diff.removedItems.map((item: any, index: number) => (
                           <div key={index} className="p-2 rounded bg-red-500/10 text-xs">
@@ -312,13 +314,13 @@ export function AnnotationVersionHistory({
               ) : compareMode ? (
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                   <GitCompare className="h-8 w-8 mb-2 opacity-50" />
-                  <p className="text-sm">Chọn 2 phiên bản để so sánh</p>
+                  <p className="text-sm">{t('annotation.select2Versions')}</p>
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                   <History className="h-8 w-8 mb-2 opacity-50" />
-                  <p className="text-sm">Chọn một phiên bản để xem chi tiết</p>
-                  <p className="text-xs mt-1">hoặc bật chế độ so sánh</p>
+                  <p className="text-sm">{t('annotation.selectVersionDetail')}</p>
+                  <p className="text-xs mt-1">{t('annotation.orEnableCompare')}</p>
                 </div>
               )}
             </ScrollArea>

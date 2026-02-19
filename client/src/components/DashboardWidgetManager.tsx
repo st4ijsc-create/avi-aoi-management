@@ -346,9 +346,9 @@ export function DashboardWidgetManager({
       </DialogTrigger>
       <DialogContent className="max-w-md max-h-[80vh] overflow-hidden flex flex-col">
         <DialogHeader>
-          <DialogTitle>Dashboard Widgets</DialogTitle>
+          <DialogTitle>{t('dashboard.widgetManager')}</DialogTitle>
           <DialogDescription>
-            Drag to reorder, toggle to show/hide widgets
+            {t('dashboard.widgetManagerDesc')}
           </DialogDescription>
         </DialogHeader>
         <div className="flex-1 overflow-y-auto py-4">

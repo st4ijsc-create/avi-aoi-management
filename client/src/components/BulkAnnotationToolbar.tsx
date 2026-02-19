@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -40,6 +41,7 @@ export function BulkAnnotationToolbar({
   totalImages = 0,
   onRefresh,
 }: BulkAnnotationToolbarProps) {
+  const { t } = useTranslation();
   const [isApplyTemplateOpen, setIsApplyTemplateOpen] = useState(false);
   const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -54,7 +56,7 @@ export function BulkAnnotationToolbar({
   // Mutations
   const bulkApplyTemplate = trpc.annotation.bulkApplyTemplate.useMutation({
     onSuccess: (data) => {
-      toast.success(`Đã áp dụng template cho ${data.appliedCount} hình ảnh`);
+      toast.success(t('annotation.bulk.templateApplied', { count: data.appliedCount }));
       setIsApplyTemplateOpen(false);
       onClearSelection();
       onRefresh?.();
@@ -66,31 +68,31 @@ export function BulkAnnotationToolbar({
 
   const copyAnnotations = trpc.annotation.copyAnnotations.useMutation({
     onSuccess: (data) => {
-      toast.success(`Đã sao chép annotation đến ${data.copiedCount} hình ảnh`);
+      toast.success(t('annotation.bulk.annotationsCopied', { count: data.copiedCount }));
       setIsCopyDialogOpen(false);
       onClearSelection();
       onRefresh?.();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(`${t('common.error')}: ${error.message}`);
     },
   });
 
   const bulkDelete = trpc.annotation.bulkDelete.useMutation({
     onSuccess: (data) => {
-      toast.success(`Đã xóa annotation từ ${data.deletedCount} hình ảnh`);
+      toast.success(t('annotation.bulk.annotationsDeleted', { count: data.deletedCount }));
       setIsDeleteDialogOpen(false);
       onClearSelection();
       onRefresh?.();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(`${t('common.error')}: ${error.message}`);
     },
   });
 
   const handleApplyTemplate = async () => {
     if (!selectedTemplateId) {
-      toast.error('Vui lòng chọn template');
+      toast.error(t('annotation.bulk.selectTemplate'));
       return;
     }
 
@@ -111,13 +113,13 @@ export function BulkAnnotationToolbar({
 
   const handleCopyAnnotations = async () => {
     if (!sourceImageUrl) {
-      toast.error('Vui lòng chọn hình ảnh nguồn');
+      toast.error(t('annotation.bulk.selectSourceImage'));
       return;
     }
 
     const targetImages = selectedImages.filter(img => img.url !== sourceImageUrl);
     if (targetImages.length === 0) {
-      toast.error('Không có hình ảnh đích để sao chép');
+      toast.error(t('annotation.bulk.noTargetImages'));
       return;
     }
 
@@ -161,7 +163,7 @@ export function BulkAnnotationToolbar({
         <div className="flex items-center gap-2 pr-3 border-r">
           <Badge variant="secondary" className="gap-1">
             <CheckSquare className="h-3 w-3" />
-            {selectedImages.length} đã chọn
+            {selectedImages.length} {t('annotation.bulk.selected')}
           </Badge>
           {totalImages > 0 && (
             <span className="text-xs text-muted-foreground">
@@ -174,7 +176,7 @@ export function BulkAnnotationToolbar({
           {onSelectAll && (
             <Button variant="ghost" size="sm" onClick={onSelectAll}>
               <Square className="h-4 w-4 mr-1" />
-              Chọn tất cả
+              {t('common.selectAll')}
             </Button>
           )}
 
@@ -195,7 +197,7 @@ export function BulkAnnotationToolbar({
             className="gap-1"
           >
             <Copy className="h-4 w-4" />
-            Sao chép
+            {t('annotation.bulk.copy')}
           </Button>
 
           <Button 
@@ -205,7 +207,7 @@ export function BulkAnnotationToolbar({
             className="gap-1 text-destructive hover:text-destructive"
           >
             <Trash2 className="h-4 w-4" />
-            Xóa
+            {t('common.delete')}
           </Button>
 
           <Button 
@@ -215,7 +217,7 @@ export function BulkAnnotationToolbar({
             className="gap-1"
           >
             <X className="h-4 w-4" />
-            Bỏ chọn
+            {t('annotation.bulk.deselect')}
           </Button>
         </div>
       </div>
@@ -226,20 +228,19 @@ export function BulkAnnotationToolbar({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <LayoutTemplate className="h-5 w-5" />
-              Áp dụng Template Annotation
+              {t('annotation.bulk.applyTemplateTitle')}
             </DialogTitle>
             <DialogDescription>
-              Áp dụng template annotation cho {selectedImages.length} hình ảnh đã chọn.
-              Annotation mới sẽ được thêm vào các annotation hiện có.
+              {t('annotation.bulk.applyTemplateDesc', { count: selectedImages.length })}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Chọn Template</label>
+              <label className="text-sm font-medium">{t('annotation.bulk.chooseTemplate')}</label>
               <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Chọn template..." />
+                  <SelectValue placeholder={t('annotation.bulk.selectTemplatePlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
                   {templates?.map((template: any) => (
@@ -269,7 +270,7 @@ export function BulkAnnotationToolbar({
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsApplyTemplateOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button 
               onClick={handleApplyTemplate} 
@@ -278,12 +279,12 @@ export function BulkAnnotationToolbar({
               {isProcessing ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Đang xử lý...
+                  {t('annotation.bulk.processing')}
                 </>
               ) : (
                 <>
                   <Wand2 className="h-4 w-4 mr-2" />
-                  Áp dụng
+                  {t('common.apply')}
                 </>
               )}
             </Button>
@@ -297,19 +298,19 @@ export function BulkAnnotationToolbar({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Copy className="h-5 w-5" />
-              Sao chép Annotation
+              {t('annotation.bulk.copyAnnotation')}
             </DialogTitle>
             <DialogDescription>
-              Sao chép annotation từ một hình ảnh nguồn đến {selectedImages.length - 1} hình ảnh còn lại.
+              {t('annotation.bulk.copyAnnotationDesc', { count: selectedImages.length - 1 })}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Chọn hình ảnh nguồn</label>
+              <label className="text-sm font-medium">{t('annotation.bulk.selectSource')}</label>
               <Select value={sourceImageUrl} onValueChange={setSourceImageUrl}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Chọn hình ảnh nguồn..." />
+                  <SelectValue placeholder={t('annotation.bulk.selectSourcePlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
                   {selectedImages.map((img) => (
@@ -332,7 +333,7 @@ export function BulkAnnotationToolbar({
               <div className="space-y-2">
                 <Progress value={progress} />
                 <p className="text-xs text-muted-foreground text-center">
-                  Đang sao chép...
+                  {t('annotation.bulk.copying')}
                 </p>
               </div>
             )}
@@ -340,7 +341,7 @@ export function BulkAnnotationToolbar({
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCopyDialogOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button 
               onClick={handleCopyAnnotations} 
@@ -349,12 +350,12 @@ export function BulkAnnotationToolbar({
               {isProcessing ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Đang sao chép...
+                  {t('annotation.bulk.copying')}
                 </>
               ) : (
                 <>
                   <Copy className="h-4 w-4 mr-2" />
-                  Sao chép
+                  {t('annotation.bulk.copy')}
                 </>
               )}
             </Button>
@@ -368,11 +369,10 @@ export function BulkAnnotationToolbar({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-destructive">
               <Trash2 className="h-5 w-5" />
-              Xác nhận xóa Annotation
+              {t('annotation.bulk.confirmDeleteTitle')}
             </DialogTitle>
             <DialogDescription>
-              Bạn có chắc chắn muốn xóa tất cả annotation từ {selectedImages.length} hình ảnh đã chọn?
-              Hành động này không thể hoàn tác.
+              {t('annotation.bulk.confirmDeleteDesc', { count: selectedImages.length })}
             </DialogDescription>
           </DialogHeader>
 
@@ -380,14 +380,14 @@ export function BulkAnnotationToolbar({
             <div className="space-y-2 py-4">
               <Progress value={progress} />
               <p className="text-xs text-muted-foreground text-center">
-                Đang xóa...
+                {t('annotation.bulk.deleting')}
               </p>
             </div>
           )}
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button 
               variant="destructive"
@@ -397,12 +397,12 @@ export function BulkAnnotationToolbar({
               {isProcessing ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Đang xóa...
+                  {t('annotation.bulk.deleting')}
                 </>
               ) : (
                 <>
                   <Trash2 className="h-4 w-4 mr-2" />
-                  Xóa tất cả
+                  {t('annotation.bulk.deleteAll')}
                 </>
               )}
             </Button>

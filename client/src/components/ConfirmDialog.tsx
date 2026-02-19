@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Loader2, AlertTriangle, Trash2, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslation } from 'react-i18next';
 
 export type ConfirmDialogVariant = "danger" | "warning" | "info";
 
@@ -51,14 +52,17 @@ export function ConfirmDialog({
   onOpenChange,
   title,
   description,
-  confirmText = "Xác nhận",
-  cancelText = "Hủy",
+  confirmText,
+  cancelText,
   onConfirm,
   onCancel,
   isLoading = false,
   variant = "danger",
   itemName,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation();
+  const resolvedConfirmText = confirmText ?? t('common.confirm');
+  const resolvedCancelText = cancelText ?? t('common.cancel');
   const config = variantConfig[variant];
   const Icon = config.icon;
 
@@ -92,7 +96,7 @@ export function ConfirmDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel onClick={handleCancel} disabled={isLoading}>
-            {cancelText}
+            {resolvedCancelText}
           </AlertDialogCancel>
           <Button
             onClick={handleConfirm}
@@ -100,7 +104,7 @@ export function ConfirmDialog({
             className={config.buttonClass}
           >
             {isLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-            {confirmText}
+            {resolvedConfirmText}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -126,14 +130,15 @@ export function DeleteConfirmDialog({
   onConfirm,
   isLoading,
 }: DeleteConfirmDialogProps) {
+  const { t } = useTranslation();
   return (
     <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={`Xóa ${itemType}?`}
-      description={`Bạn có chắc chắn muốn xóa ${itemType} này? Hành động này không thể hoàn tác.`}
-      confirmText="Xóa"
-      cancelText="Hủy"
+      title={t('common.deleteItemTitle', { item: itemType })}
+      description={t('common.deleteItemConfirm', { item: itemType })}
+      confirmText={t('common.delete')}
+      cancelText={t('common.cancel')}
       onConfirm={onConfirm}
       isLoading={isLoading}
       variant="danger"

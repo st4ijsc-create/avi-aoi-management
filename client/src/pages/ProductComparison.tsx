@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +11,7 @@ import { toast } from "sonner";
 import { ArrowRight, Plus, Minus } from "lucide-react";
 
 export function ProductComparison() {
+  const { t } = useTranslation();
   const [product1Id, setProduct1Id] = useState<number | null>(null);
   const [product2Id, setProduct2Id] = useState<number | null>(null);
 
@@ -52,25 +54,25 @@ export function ProductComparison() {
     <DashboardLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold">So sánh Sản phẩm</h1>
+          <h1 className="text-3xl font-bold">{t('products.comparison')}</h1>
           <p className="text-muted-foreground mt-2">
-            So sánh điểm đo giữa hai sản phẩm để xác định điểm đo cần bổ sung
+            {t('products.comparisonDescription')}
           </p>
         </div>
 
         {/* Product Selection */}
         <Card>
           <CardHeader>
-            <CardTitle>Chọn Sản phẩm</CardTitle>
-            <CardDescription>Chọn 2 sản phẩm để so sánh</CardDescription>
+            <CardTitle>{t('products.selectProducts')}</CardTitle>
+            <CardDescription>{t('products.selectTwoProducts')}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex gap-4 items-end">
               <div className="flex-1">
-                <label className="text-sm font-medium">Sản phẩm 1</label>
+                <label className="text-sm font-medium">{t('products.product1')}</label>
                 <Select value={product1Id?.toString() || ""} onValueChange={(val) => setProduct1Id(parseInt(val))}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Chọn sản phẩm" />
+                    <SelectValue placeholder={t('products.selectProduct')} />
                   </SelectTrigger>
                   <SelectContent>
                     {products?.map((p) => (
@@ -87,10 +89,10 @@ export function ProductComparison() {
               </Button>
 
               <div className="flex-1">
-                <label className="text-sm font-medium">Sản phẩm 2</label>
+                <label className="text-sm font-medium">{t('products.product2')}</label>
                 <Select value={product2Id?.toString() || ""} onValueChange={(val) => setProduct2Id(parseInt(val))}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Chọn sản phẩm" />
+                    <SelectValue placeholder={t('products.selectProduct')} />
                   </SelectTrigger>
                   <SelectContent>
                     {products?.map((p) => (
@@ -111,7 +113,7 @@ export function ProductComparison() {
             <div className="grid grid-cols-3 gap-4">
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium">Tổng điểm đo</CardTitle>
+                  <CardTitle className="text-sm font-medium">{t('products.totalPoints')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{comparison.totalPoints1}</div>
@@ -121,17 +123,17 @@ export function ProductComparison() {
 
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium">Điểm đo chung</CardTitle>
+                  <CardTitle className="text-sm font-medium">{t('products.commonPoints')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-green-600">{comparison.common.length}</div>
-                  <p className="text-xs text-muted-foreground">Giống nhau</p>
+                  <p className="text-xs text-muted-foreground">{t('products.identical')}</p>
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium">Tổng điểm đo</CardTitle>
+                  <CardTitle className="text-sm font-medium">{t('products.totalPoints')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{comparison.totalPoints2}</div>
@@ -147,15 +149,15 @@ export function ProductComparison() {
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     <Minus className="h-4 w-4 text-red-500" />
-                    Chỉ có trong {product1?.code}
+                    {t('products.onlyIn')} {product1?.code}
                   </CardTitle>
                   <CardDescription>
-                    {comparison.onlyInProduct1.length} điểm đo cần bổ sung vào {product2?.code}
+                    {comparison.onlyInProduct1.length} {t('products.pointsToAdd')} {product2?.code}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   {comparison.onlyInProduct1.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Không có điểm đo riêng</p>
+                    <p className="text-sm text-muted-foreground">{t('products.noExclusivePoints')}</p>
                   ) : (
                     <div className="space-y-2 max-h-96 overflow-y-auto">
                       {comparison.onlyInProduct1.map((point) => (
@@ -174,15 +176,15 @@ export function ProductComparison() {
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     <Plus className="h-4 w-4 text-blue-500" />
-                    Chỉ có trong {product2?.code}
+                    {t('products.onlyIn')} {product2?.code}
                   </CardTitle>
                   <CardDescription>
-                    {comparison.onlyInProduct2.length} điểm đo cần bổ sung vào {product1?.code}
+                    {comparison.onlyInProduct2.length} {t('products.pointsToAdd')} {product1?.code}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   {comparison.onlyInProduct2.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Không có điểm đo riêng</p>
+                    <p className="text-sm text-muted-foreground">{t('products.noExclusivePoints')}</p>
                   ) : (
                     <div className="space-y-2 max-h-96 overflow-y-auto">
                       {comparison.onlyInProduct2.map((point) => (
@@ -201,20 +203,20 @@ export function ProductComparison() {
             {comparison.common.length > 0 && (
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Điểm đo chung</CardTitle>
-                  <CardDescription>{comparison.common.length} điểm đo giống nhau</CardDescription>
+                  <CardTitle className="text-base">{t('products.commonPoints')}</CardTitle>
+                  <CardDescription>{comparison.common.length} {t('products.identicalPoints')}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Mã</TableHead>
-                          <TableHead>Tên</TableHead>
-                          <TableHead>Loại</TableHead>
-                          <TableHead>Đơn vị</TableHead>
-                          <TableHead>Giới hạn dưới</TableHead>
-                          <TableHead>Giới hạn trên</TableHead>
+                          <TableHead>{t('products.code')}</TableHead>
+                          <TableHead>{t('products.name')}</TableHead>
+                          <TableHead>{t('products.type')}</TableHead>
+                          <TableHead>{t('products.unit')}</TableHead>
+                          <TableHead>{t('products.lowerLimit')}</TableHead>
+                          <TableHead>{t('products.upperLimit')}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>

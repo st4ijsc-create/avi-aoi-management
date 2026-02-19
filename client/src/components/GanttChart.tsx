@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useCallback } from "react";
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -126,7 +127,7 @@ function DraggableOrder({
         ...dragStyle,
       }}
       onClick={() => onOrderClick?.(order)}
-      title={`${order.orderCode} - ${getProductName(order.productModelId)} (${getProgress(order)}%)\nKéo để thay đổi lịch`}
+      title={`${order.orderCode} - ${getProductName(order.productModelId)} (${getProgress(order)}%)`}
       {...attributes}
       {...listeners}
     >
@@ -192,6 +193,7 @@ export default function GanttChart({
   onOrderReschedule,
 }: GanttChartProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("day");
+  const { t } = useTranslation();
   const [zoomLevel, setZoomLevel] = useState<number>(1); // 0.5, 1, 1.5, 2;
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedLineId, setSelectedLineId] = useState<string>("all");
@@ -508,7 +510,7 @@ export default function GanttChart({
       if (concurrentOrders.length >= maxConcurrent) {
         capacityWarning = {
           type: 'concurrent',
-          message: `Dây chuyền chỉ hỗ trợ tối đa ${maxConcurrent} lệnh cùng lúc. Hiện đã có ${concurrentOrders.length} lệnh trong khoảng thời gian này.`
+          message: t('gantt.concurrentWarning', { max: maxConcurrent, current: concurrentOrders.length })
         };
       }
       
@@ -520,7 +522,7 @@ export default function GanttChart({
         if (order.targetQuantity > maxCapacity) {
           capacityWarning = {
             type: 'capacity',
-            message: `Số lượng ${order.targetQuantity} vượt quá năng lực dây chuyền (${Math.floor(maxCapacity)} sản phẩm trong ${durationHours.toFixed(1)} giờ với ${lineInfo.capacityPerHour} sp/giờ).`
+            message: t('gantt.capacityWarning', { quantity: order.targetQuantity, maxCapacity: Math.floor(maxCapacity), hours: durationHours.toFixed(1), rate: lineInfo.capacityPerHour })
           };
         }
       }
@@ -575,12 +577,12 @@ export default function GanttChart({
           confirmDialog.newEndDate,
           confirmDialog.newLineId || undefined
         );
-        toast.success(`Đã cập nhật lịch cho ${order.orderCode}`);
+        toast.success(t('gantt.scheduleUpdated', { orderCode: order.orderCode }));
       } else {
-        toast.info("Chức năng cập nhật lịch chưa được kết nối");
+        toast.info(t('gantt.scheduleNotConnected'));
       }
     } catch (error) {
-      toast.error("Không thể cập nhật lịch");
+      toast.error(t('gantt.cannotUpdateSchedule'));
       // Remove from undo stack on error
       setUndoStack(prev => prev.slice(0, -1));
     } finally {
@@ -604,9 +606,9 @@ export default function GanttChart({
       );
       setUndoStack(prev => prev.slice(0, -1));
       setRedoStack(prev => [...prev, lastChange]);
-      toast.success("Đã hoàn tác thay đổi");
+      toast.success(t('gantt.undoSuccess'));
     } catch (error) {
-      toast.error("Không thể hoàn tác");
+      toast.error(t('gantt.cannotUndo'));
     } finally {
       setIsRescheduling(false);
     }
@@ -627,9 +629,9 @@ export default function GanttChart({
       );
       setRedoStack(prev => prev.slice(0, -1));
       setUndoStack(prev => [...prev, lastUndo]);
-      toast.success("Đã làm lại thay đổi");
+      toast.success(t('gantt.redoSuccess'));
     } catch (error) {
-      toast.error("Không thể làm lại");
+      toast.error(t('gantt.cannotRedo'));
     } finally {
       setIsRescheduling(false);
     }
@@ -638,35 +640,35 @@ export default function GanttChart({
   // Export to Excel (CSV)
   const handleExportExcel = () => {
     const headers = [
-      'Mã lệnh',
-      'Mã công ty',
-      'Dây chuyền',
-      'Sản phẩm',
-      'Số lượng mục tiêu',
-      'Đã hoàn thành',
+      t('gantt.csv.orderCode'),
+      t('gantt.csv.companyCode'),
+      t('gantt.csv.productionLine'),
+      t('gantt.csv.product'),
+      t('gantt.csv.targetQuantity'),
+      t('gantt.csv.completed'),
       'OK',
       'NG',
       'NTF',
-      'Trạng thái',
-      'Ngày bắt đầu',
-      'Ngày kết thúc',
-      'Độ ưu tiên',
+      t('gantt.csv.status'),
+      t('gantt.csv.startDate'),
+      t('gantt.csv.endDate'),
+      t('gantt.csv.priority'),
     ];
 
     const getLineName = (lineId: number) => lines.find(l => l.id === lineId)?.name || '-';
     const getProductName = (productId: number) => products.find(p => p.id === productId)?.name || '-';
     const getStatusLabel = (status: string) => {
       const map: Record<string, string> = {
-        pending: 'Chờ xử lý',
-        in_progress: 'Đang sản xuất',
-        completed: 'Hoàn thành',
-        cancelled: 'Đã hủy',
-        paused: 'Tạm dừng',
+        pending: t('gantt.status.pending'),
+        in_progress: t('gantt.status.inProgress'),
+        completed: t('gantt.status.completed'),
+        cancelled: t('gantt.status.cancelled'),
+        paused: t('gantt.status.paused'),
       };
       return map[status] || status;
     };
     const getPriorityLabel = (priority: number) => {
-      const map: Record<number, string> = { 0: 'Bình thường', 1: 'Cao', 2: 'Khẩn cấp' };
+      const map: Record<number, string> = { 0: t('gantt.priority.normal'), 1: t('gantt.priority.high'), 2: t('gantt.priority.urgent') };
       return map[priority] || priority.toString();
     };
 
@@ -696,7 +698,7 @@ export default function GanttChart({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    toast.success('Xuất Excel thành công');
+    toast.success(t('gantt.exportExcelSuccess'));
   };
 
   // Export to PDF (HTML print)
@@ -705,11 +707,11 @@ export default function GanttChart({
     const getProductName = (productId: number) => products.find(p => p.id === productId)?.name || '-';
     const getStatusLabel = (status: string) => {
       const map: Record<string, string> = {
-        pending: 'Chờ xử lý',
-        in_progress: 'Đang sản xuất',
-        completed: 'Hoàn thành',
-        cancelled: 'Đã hủy',
-        paused: 'Tạm dừng',
+        pending: t('gantt.status.pending'),
+        in_progress: t('gantt.status.inProgress'),
+        completed: t('gantt.status.completed'),
+        cancelled: t('gantt.status.cancelled'),
+        paused: t('gantt.status.paused'),
       };
       return map[status] || status;
     };
@@ -726,7 +728,7 @@ export default function GanttChart({
 
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
-      toast.error('Không thể mở cửa sổ in. Vui lòng cho phép popup.');
+      toast.error(t('gantt.cannotOpenPrintWindow'));
       return;
     }
 
@@ -734,7 +736,7 @@ export default function GanttChart({
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Gantt Chart - Lịch sản xuất</title>
+        <title>${t('gantt.title')}</title>
         <style>
           body { font-family: Arial, sans-serif; padding: 20px; }
           h1 { text-align: center; margin-bottom: 10px; }
@@ -752,22 +754,22 @@ export default function GanttChart({
         </style>
       </head>
       <body>
-        <h1>Gantt Chart - Lịch sản xuất</h1>
+        <h1>${t('gantt.title')}</h1>
         <div class="info">
-          Xuất ngày: ${format(new Date(), 'dd/MM/yyyy HH:mm')}<br/>
-          Khoảng thời gian: ${format(dateRange.start, 'dd/MM/yyyy')} - ${format(dateRange.end, 'dd/MM/yyyy')}
+          ${t('gantt.pdf.exportDate')}: ${format(new Date(), 'dd/MM/yyyy HH:mm')}<br/>
+          ${t('gantt.pdf.timeRange')}: ${format(dateRange.start, 'dd/MM/yyyy')} - ${format(dateRange.end, 'dd/MM/yyyy')}
         </div>
         <table>
           <thead>
             <tr>
-              <th>Mã lệnh</th>
-              <th>Dây chuyền</th>
-              <th>Sản phẩm</th>
-              <th>Tiến độ</th>
+              <th>${t('gantt.csv.orderCode')}</th>
+              <th>${t('gantt.csv.productionLine')}</th>
+              <th>${t('gantt.csv.product')}</th>
+              <th>${t('gantt.pdf.progress')}</th>
               <th>OK/NG/NTF</th>
-              <th>Trạng thái</th>
-              <th>Ngày bắt đầu</th>
-              <th>Ngày kết thúc</th>
+              <th>${t('gantt.csv.status')}</th>
+              <th>${t('gantt.csv.startDate')}</th>
+              <th>${t('gantt.csv.endDate')}</th>
             </tr>
           </thead>
           <tbody>
@@ -798,7 +800,7 @@ export default function GanttChart({
           </tbody>
         </table>
         <div style="margin-top: 20px; text-align: center;">
-          <button onclick="window.print()" style="padding: 10px 20px; cursor: pointer;">In / Lưu PDF</button>
+          <button onclick="window.print()" style="padding: 10px 20px; cursor: pointer;">${t('gantt.pdf.printSave')}</button>
         </div>
       </body>
       </html>
@@ -806,7 +808,7 @@ export default function GanttChart({
 
     printWindow.document.write(html);
     printWindow.document.close();
-    toast.success('Mở cửa sổ xuất PDF');
+    toast.success(t('gantt.exportPdfSuccess'));
   };
 
   return (
@@ -815,7 +817,7 @@ export default function GanttChart({
         <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle className="flex items-center gap-2">
             <Calendar className="w-5 h-5" />
-            Gantt Chart - Tiến độ sản xuất
+            {t('gantt.title')}
           </CardTitle>
           <div className="flex items-center gap-2 flex-wrap">
             {/* Undo/Redo */}
@@ -826,7 +828,7 @@ export default function GanttChart({
                   size="icon" 
                   onClick={handleUndo}
                   disabled={undoStack.length === 0 || isRescheduling}
-                  title="Hoàn tác (Undo)"
+                  title={t('gantt.undo')}
                 >
                   <Undo2 className="w-4 h-4" />
                 </Button>
@@ -835,7 +837,7 @@ export default function GanttChart({
                   size="icon" 
                   onClick={handleRedo}
                   disabled={redoStack.length === 0 || isRescheduling}
-                  title="Làm lại (Redo)"
+                  title={t('gantt.redo')}
                 >
                   <Redo2 className="w-4 h-4" />
                 </Button>
@@ -845,10 +847,10 @@ export default function GanttChart({
             {/* Factory Filter */}
             <Select value={selectedFactoryId} onValueChange={setSelectedFactoryId}>
               <SelectTrigger className="w-40">
-                <SelectValue placeholder="Nhà máy" />
+                <SelectValue placeholder={t('gantt.factory')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tất cả nhà máy</SelectItem>
+                <SelectItem value="all">{t('gantt.allFactories')}</SelectItem>
                 {factories.map(f => (
                   <SelectItem key={f.id} value={f.id.toString()}>{f.name}</SelectItem>
                 ))}
@@ -858,10 +860,10 @@ export default function GanttChart({
             {/* Line Filter */}
             <Select value={selectedLineId} onValueChange={setSelectedLineId}>
               <SelectTrigger className="w-40">
-                <SelectValue placeholder="Dây chuyền" />
+                <SelectValue placeholder={t('gantt.productionLine')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tất cả dây chuyền</SelectItem>
+                <SelectItem value="all">{t('gantt.allLines')}</SelectItem>
                 {filteredLines.map(l => (
                   <SelectItem key={l.id} value={l.id.toString()}>{l.name}</SelectItem>
                 ))}
@@ -874,9 +876,9 @@ export default function GanttChart({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="day">Theo ngày</SelectItem>
-                <SelectItem value="week">Theo tuần</SelectItem>
-                <SelectItem value="month">Theo tháng</SelectItem>
+                <SelectItem value="day">{t('gantt.byDay')}</SelectItem>
+                <SelectItem value="week">{t('gantt.byWeek')}</SelectItem>
+                <SelectItem value="month">{t('gantt.byMonth')}</SelectItem>
               </SelectContent>
             </Select>
             
@@ -900,7 +902,7 @@ export default function GanttChart({
                 <ChevronLeft className="w-4 h-4" />
               </Button>
               <Button variant="outline" size="sm" onClick={scrollToToday}>
-                Hôm nay
+                {t('gantt.today')}
               </Button>
               <Button variant="outline" size="icon" onClick={() => navigateTimeline("next")}>
                 <ChevronRight className="w-4 h-4" />
@@ -912,17 +914,17 @@ export default function GanttChart({
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm">
                   <Download className="w-4 h-4 mr-2" />
-                  Xuất
+                  {t('common.export')}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={handleExportExcel}>
                   <FileSpreadsheet className="w-4 h-4 mr-2" />
-                  Xuất Excel (CSV)
+                  {t('gantt.exportExcel')}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleExportPDF}>
                   <FileText className="w-4 h-4 mr-2" />
-                  Xuất PDF
+                  {t('gantt.exportPdf')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -932,7 +934,7 @@ export default function GanttChart({
         {/* Drag hint */}
         {onOrderReschedule && (
           <p className="text-xs text-muted-foreground mt-2">
-            💡 Kéo thả các lệnh sản xuất để thay đổi lịch. Có thể kéo sang dây chuyền khác.
+            💡 {t('gantt.dragHint')}
           </p>
         )}
       </CardHeader>
@@ -948,7 +950,7 @@ export default function GanttChart({
             <div className="flex border-b bg-muted/50">
               {/* Line name column */}
               <div className="w-48 min-w-48 p-2 border-r font-medium bg-muted sticky left-0 z-10">
-                Dây chuyền
+                {t('gantt.productionLine')}
               </div>
               
               {/* Date columns */}
@@ -982,7 +984,7 @@ export default function GanttChart({
             <div className="max-h-[500px] overflow-y-auto">
               {filteredLines.length === 0 ? (
                 <div className="p-8 text-center text-muted-foreground">
-                  Không có dây chuyền nào
+                  {t('gantt.noLines')}
                 </div>
               ) : (
                 filteredLines.map(line => {
@@ -1008,12 +1010,12 @@ export default function GanttChart({
                         {capacityInfo && (
                           <div 
                             className={`w-2 h-2 rounded-full ${capacityStatusColors[capacityInfo.status]}`}
-                            title={`Tải: ${capacityInfo.utilization}%`}
+                            title={`${t('gantt.load')}: ${capacityInfo.utilization}%`}
                           />
                         )}
                       </div>
                       <div className="text-xs text-muted-foreground flex items-center gap-2">
-                        <span>{ordersByLine[line.id]?.length || 0} lệnh</span>
+                        <span>{ordersByLine[line.id]?.length || 0} {t('gantt.orders')}</span>
                         {capacityInfo && capacityInfo.utilization > 0 && (
                           <span className={`px-1.5 py-0.5 rounded text-[10px] border ${
                             capacityInfo.status === 'overload' ? 'text-red-600 ' + capacityStatusBg.overload :
@@ -1038,12 +1040,12 @@ export default function GanttChart({
                           {capacityInfo.maxConcurrent > 1 && (
                             <div className="flex items-center gap-1">
                               <Gauge className="w-2.5 h-2.5" />
-                              <span>{capacityInfo.currentConcurrent}/{capacityInfo.maxConcurrent} đồng thời</span>
+                              <span>{capacityInfo.currentConcurrent}/{capacityInfo.maxConcurrent} {t('gantt.concurrent')}</span>
                             </div>
                           )}
                           {capacityInfo.capacityPerHour && (
                             <div className="flex items-center gap-1">
-                              <span>{capacityInfo.capacityPerHour} sp/giờ</span>
+                              <span>{capacityInfo.capacityPerHour} {t('gantt.unitsPerHour')}</span>
                             </div>
                           )}
                         </div>
@@ -1116,23 +1118,23 @@ export default function GanttChart({
         <div className="flex items-center gap-4 mt-4 text-xs flex-wrap">
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-yellow-500/80 border border-yellow-600" />
-            <span>Chờ xử lý</span>
+            <span>{t('gantt.status.pending')}</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-blue-500/80 border border-blue-600" />
-            <span>Đang sản xuất</span>
+            <span>{t('gantt.status.inProgress')}</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-green-500/80 border border-green-600" />
-            <span>Hoàn thành</span>
+            <span>{t('gantt.status.completed')}</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-orange-500/80 border border-orange-600" />
-            <span>Tạm dừng</span>
+            <span>{t('gantt.status.paused')}</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-red-500/80 border border-red-600" />
-            <span>Đã hủy</span>
+            <span>{t('gantt.status.cancelled')}</span>
           </div>
         </div>
       </CardContent>
@@ -1141,25 +1143,25 @@ export default function GanttChart({
       <Dialog open={confirmDialog.open} onOpenChange={(open) => !open && setConfirmDialog({ open: false, order: null, newStartDate: null, newEndDate: null, newLineId: null, hasOverlap: false, overlappingOrders: [], capacityWarning: null })}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Xác nhận thay đổi lịch</DialogTitle>
+            <DialogTitle>{t('gantt.confirmScheduleChange')}</DialogTitle>
           </DialogHeader>
           <div className="py-4 space-y-3">
             <p>
-              Bạn có muốn thay đổi lịch cho lệnh <strong>{confirmDialog.order?.orderCode}</strong>?
+              {t('gantt.confirmChangeQuestion', { orderCode: confirmDialog.order?.orderCode })}
             </p>
             {confirmDialog.newStartDate && confirmDialog.newEndDate && (
               <div className="bg-muted p-3 rounded-lg space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Ngày bắt đầu mới:</span>
+                  <span className="text-muted-foreground">{t('gantt.newStartDate')}:</span>
                   <span className="font-medium">{format(confirmDialog.newStartDate, "dd/MM/yyyy", { locale: vi })}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Ngày kết thúc mới:</span>
+                  <span className="text-muted-foreground">{t('gantt.newEndDate')}:</span>
                   <span className="font-medium">{format(confirmDialog.newEndDate, "dd/MM/yyyy", { locale: vi })}</span>
                 </div>
                 {confirmDialog.newLineId && (
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Dây chuyền mới:</span>
+                    <span className="text-muted-foreground">{t('gantt.newLine')}:</span>
                     <span className="font-medium">{getLineName(confirmDialog.newLineId)}</span>
                   </div>
                 )}
@@ -1173,10 +1175,10 @@ export default function GanttChart({
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                   </svg>
-                  <span>Cảnh báo: Trùng lịch!</span>
+                  <span>{t('gantt.overlapWarning')}</span>
                 </div>
                 <p className="text-sm text-yellow-600/80">
-                  Lịch này trùng với {confirmDialog.overlappingOrders.length} lệnh sản xuất khác:
+                  {t('gantt.overlapDescription', { count: confirmDialog.overlappingOrders.length })}
                 </p>
                 <ul className="text-sm text-yellow-600/80 list-disc list-inside">
                   {confirmDialog.overlappingOrders.map((o, i) => (
@@ -1184,7 +1186,7 @@ export default function GanttChart({
                   ))}
                 </ul>
                 <p className="text-sm text-yellow-600/80 italic">
-                  Bạn vẫn có thể tiếp tục nếu chấp nhận lịch trùng.
+                  {t('gantt.overlapContinue')}
                 </p>
               </div>
             )}
@@ -1195,14 +1197,14 @@ export default function GanttChart({
                 <div className="flex items-center gap-2 text-red-600 font-medium">
                   <AlertTriangle className="h-5 w-5" />
                   <span>
-                    Cảnh báo: {confirmDialog.capacityWarning.type === 'concurrent' ? 'Vượt số lệnh đồng thời!' : 'Vượt năng lực sản xuất!'}
+                    {t('gantt.capacityWarningLabel')}: {confirmDialog.capacityWarning.type === 'concurrent' ? t('gantt.exceedConcurrent') : t('gantt.exceedCapacity')}
                   </span>
                 </div>
                 <p className="text-sm text-red-600/80">
                   {confirmDialog.capacityWarning.message}
                 </p>
                 <p className="text-sm text-red-600/80 italic">
-                  Bạn vẫn có thể tiếp tục nhưng có thể gây quá tải cho dây chuyền.
+                  {t('gantt.capacityContinue')}
                 </p>
               </div>
             )}
@@ -1213,7 +1215,7 @@ export default function GanttChart({
               onClick={() => setConfirmDialog({ open: false, order: null, newStartDate: null, newEndDate: null, newLineId: null, hasOverlap: false, overlappingOrders: [], capacityWarning: null })}
               disabled={isRescheduling}
             >
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button 
               onClick={confirmReschedule} 
@@ -1221,10 +1223,10 @@ export default function GanttChart({
               variant={(confirmDialog.hasOverlap || confirmDialog.capacityWarning) ? "destructive" : "default"}
             >
               {isRescheduling 
-                ? "Đang xử lý..." 
+                ? t('gantt.processing')
                 : (confirmDialog.hasOverlap || confirmDialog.capacityWarning) 
-                  ? "Xác nhận (bỏ qua cảnh báo)" 
-                  : "Xác nhận"
+                  ? t('gantt.confirmIgnoreWarning')
+                  : t('common.confirm')
               }
             </Button>
           </DialogFooter>

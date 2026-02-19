@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import DashboardWidgetLibrary, { WidgetConfig, widgetDefinitions } from "./DashboardWidgetLibrary";
+import DashboardWidgetRenderer from "./DashboardWidgetRenderer";
 import { 
   GripVertical, 
   Settings, 
@@ -49,6 +51,7 @@ export default function DashboardLayoutEditor({
   onSave,
   onCancel,
 }: DashboardLayoutEditorProps) {
+  const { t } = useTranslation();
   const [layout, setLayout] = useState<DashboardLayout>(initialLayout);
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
@@ -64,7 +67,7 @@ export default function DashboardLayoutEditor({
       widgets: [...prev.widgets, widget],
       updatedAt: new Date(),
     }));
-    toast.success(`Đã thêm widget: ${widget.title}`);
+    toast.success(t('dashboard.widgetAdded', { name: widget.title }));
   }, []);
 
   const handleRemoveWidget = useCallback((widgetId: string) => {
@@ -74,7 +77,7 @@ export default function DashboardLayoutEditor({
       updatedAt: new Date(),
     }));
     setSelectedWidgetId(null);
-    toast.success("Đã xóa widget");
+    toast.success(t('dashboard.widgetDeleted'));
   }, []);
 
   const handleDuplicateWidget = useCallback((widgetId: string) => {
@@ -93,7 +96,7 @@ export default function DashboardLayoutEditor({
       widgets: [...prev.widgets, newWidget],
       updatedAt: new Date(),
     }));
-    toast.success("Đã sao chép widget");
+    toast.success(t('dashboard.widgetDuplicated'));
   }, [layout.widgets]);
 
   const handleResizeWidget = useCallback((widgetId: string, size: 'small' | 'medium' | 'large' | 'full') => {
@@ -134,12 +137,12 @@ export default function DashboardLayoutEditor({
 
   const handleSave = () => {
     onSave(layout);
-    toast.success("Đã lưu layout");
+    toast.success(t('dashboard.layoutSaved'));
   };
 
   const handleReset = () => {
     setLayout(initialLayout);
-    toast.info("Đã reset về layout ban đầu");
+    toast.info(t('dashboard.layoutReset'));
   };
 
   const getWidgetIcon = (type: string) => {
@@ -159,10 +162,10 @@ export default function DashboardLayoutEditor({
 
   const getSizeLabel = (size: string) => {
     switch (size) {
-      case 'small': return '1 cột';
-      case 'medium': return '2 cột';
-      case 'large': return '3 cột';
-      case 'full': return '4 cột';
+      case 'small': return t('dashboard.columns', { count: 1 });
+      case 'medium': return t('dashboard.columns', { count: 2 });
+      case 'large': return t('dashboard.columns', { count: 3 });
+      case 'full': return t('dashboard.columns', { count: 4 });
       default: return size;
     }
   };
@@ -177,7 +180,7 @@ export default function DashboardLayoutEditor({
               value={layout.name}
               onChange={(e) => setLayout(prev => ({ ...prev, name: e.target.value }))}
               className="font-semibold text-lg border-none p-0 h-auto focus-visible:ring-0"
-              placeholder="Tên layout..."
+              placeholder={t('dashboard.layoutNamePlaceholder')}
             />
           </div>
           <Badge variant="outline">
@@ -190,7 +193,7 @@ export default function DashboardLayoutEditor({
             variant="ghost"
             size="icon"
             onClick={() => setIsPreviewMode(!isPreviewMode)}
-            title={isPreviewMode ? "Tắt preview" : "Bật preview"}
+            title={isPreviewMode ? t('dashboard.disablePreview') : t('dashboard.enablePreview')}
           >
             {isPreviewMode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </Button>
@@ -198,7 +201,7 @@ export default function DashboardLayoutEditor({
             variant="ghost"
             size="icon"
             onClick={() => setIsLocked(!isLocked)}
-            title={isLocked ? "Mở khóa" : "Khóa layout"}
+            title={isLocked ? t('dashboard.unlock') : t('dashboard.lockLayout')}
           >
             {isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
           </Button>
@@ -211,10 +214,10 @@ export default function DashboardLayoutEditor({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="2">2 cột</SelectItem>
-              <SelectItem value="3">3 cột</SelectItem>
-              <SelectItem value="4">4 cột</SelectItem>
-              <SelectItem value="6">6 cột</SelectItem>
+              <SelectItem value="2">{t('dashboard.columns', { count: 2 })}</SelectItem>
+              <SelectItem value="3">{t('dashboard.columns', { count: 3 })}</SelectItem>
+              <SelectItem value="4">{t('dashboard.columns', { count: 4 })}</SelectItem>
+              <SelectItem value="6">{t('dashboard.columns', { count: 6 })}</SelectItem>
             </SelectContent>
           </Select>
 
@@ -228,11 +231,11 @@ export default function DashboardLayoutEditor({
               Reset
             </Button>
             <Button variant="outline" onClick={onCancel}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleSave}>
               <Save className="w-4 h-4 mr-2" />
-              Lưu
+              {t('common.save')}
             </Button>
           </div>
         </div>
@@ -246,9 +249,9 @@ export default function DashboardLayoutEditor({
             <div className="h-full flex items-center justify-center">
               <div className="text-center">
                 <LayoutGrid className="w-16 h-16 mx-auto mb-4 text-muted-foreground/50" />
-                <h3 className="text-lg font-medium mb-2">Chưa có widget</h3>
+                <h3 className="text-lg font-medium mb-2">{t('dashboard.noWidgets')}</h3>
                 <p className="text-muted-foreground mb-4">
-                  Thêm widgets để bắt đầu thiết kế dashboard
+                  {t('dashboard.addWidgetsToStart')}
                 </p>
                 <DashboardWidgetLibrary 
                   onAddWidget={handleAddWidget}
@@ -300,9 +303,19 @@ export default function DashboardLayoutEditor({
                     </Badge>
                   </CardHeader>
                   <CardContent>
-                    <div className="h-24 bg-muted/50 rounded flex items-center justify-center text-muted-foreground text-sm">
-                      {widget.type} preview
-                    </div>
+                    {isPreviewMode ? (
+                      <div className="h-32">
+                        <DashboardWidgetRenderer
+                          type={widget.type}
+                          config={widget.config}
+                          size={widget.size}
+                        />
+                      </div>
+                    ) : (
+                      <div className="h-24 bg-muted/50 rounded flex items-center justify-center text-muted-foreground text-sm">
+                        {widget.type} preview
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               ))}
@@ -338,7 +351,7 @@ export default function DashboardLayoutEditor({
 
                 {/* Title */}
                 <div className="space-y-2">
-                  <Label>Tiêu đề</Label>
+                  <Label>{t('common.title')}</Label>
                   <Input
                     value={selectedWidget.title}
                     onChange={(e) => {
@@ -354,7 +367,7 @@ export default function DashboardLayoutEditor({
 
                 {/* Size */}
                 <div className="space-y-2">
-                  <Label>Kích thước</Label>
+                  <Label>{t('dashboard.size')}</Label>
                   <div className="grid grid-cols-4 gap-1">
                     {(['small', 'medium', 'large', 'full'] as const).map(size => (
                       <Button
@@ -371,7 +384,7 @@ export default function DashboardLayoutEditor({
 
                 {/* Position */}
                 <div className="space-y-2">
-                  <Label>Vị trí</Label>
+                  <Label>{t('dashboard.position')}</Label>
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
@@ -379,7 +392,7 @@ export default function DashboardLayoutEditor({
                       className="flex-1"
                       onClick={() => handleMoveWidget(selectedWidget.id, 'up')}
                     >
-                      ↑ Lên
+                      {t('dashboard.moveUp')}
                     </Button>
                     <Button
                       variant="outline"
@@ -387,7 +400,7 @@ export default function DashboardLayoutEditor({
                       className="flex-1"
                       onClick={() => handleMoveWidget(selectedWidget.id, 'down')}
                     >
-                      ↓ Xuống
+                      {t('dashboard.moveDown')}
                     </Button>
                   </div>
                 </div>
@@ -412,21 +425,21 @@ export default function DashboardLayoutEditor({
                       onClick={() => handleRemoveWidget(selectedWidget.id)}
                     >
                       <Trash2 className="w-3 h-3 mr-1" />
-                      Xóa
+                      {t('common.delete')}
                     </Button>
                   </div>
                 </div>
 
                 {/* Widget Config */}
                 <div className="space-y-2">
-                  <Label>Cấu hình widget</Label>
+                  <Label>{t('dashboard.widgetConfig')}</Label>
                   <Button
                     variant="outline"
                     className="w-full"
                     onClick={() => setIsConfigOpen(true)}
                   >
                     <Settings className="w-4 h-4 mr-2" />
-                    Mở cấu hình
+                    {t('dashboard.openConfig')}
                   </Button>
                 </div>
               </div>
@@ -439,9 +452,9 @@ export default function DashboardLayoutEditor({
       <Dialog open={isConfigOpen} onOpenChange={setIsConfigOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cấu hình Widget</DialogTitle>
+            <DialogTitle>{t('dashboard.widgetConfig')}</DialogTitle>
             <DialogDescription>
-              Tùy chỉnh cài đặt cho widget
+              {t('dashboard.customizeWidgetSettings')}
             </DialogDescription>
           </DialogHeader>
           {selectedWidget && (
@@ -459,7 +472,7 @@ export default function DashboardLayoutEditor({
           )}
           <DialogFooter>
             <Button onClick={() => setIsConfigOpen(false)}>
-              Đóng
+              {t('common.close')}
             </Button>
           </DialogFooter>
         </DialogContent>

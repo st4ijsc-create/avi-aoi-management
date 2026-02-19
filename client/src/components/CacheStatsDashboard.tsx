@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -49,6 +50,7 @@ function CacheWarmingSection() {
   const [configEnabled, setConfigEnabled] = useState(true);
   const [configInterval, setConfigInterval] = useState(30);
   const [configWarmOnStartup, setConfigWarmOnStartup] = useState(true);
+  const { t } = useTranslation();
 
   const { data: warmingStats, refetch } = trpc.corporateFactoryStats.warmingStats.useQuery(undefined, {
     refetchInterval: 30000, // Refresh every 30 seconds
@@ -75,12 +77,12 @@ function CacheWarmingSection() {
 
   const updateConfigMutation = trpc.corporateFactoryStats.updateWarmingConfig.useMutation({
     onSuccess: () => {
-      toast.success('Cấu hình đã được lưu');
+      toast.success(t('cache.warming.configSaved'));
       refetch();
       setShowConfig(false);
     },
     onError: (error) => {
-      toast.error('Lỗi lưu cấu hình', { description: error.message });
+      toast.error(t('cache.warming.configSaveError'), { description: error.message });
     },
   });
 
@@ -107,7 +109,7 @@ function CacheWarmingSection() {
               Cache Warming
             </CardTitle>
             <CardDescription>
-              Pre-cache statistics phổ biến để giảm cold start latency
+              {t('cache.warming.description')}
             </CardDescription>
           </div>
           <Button 
@@ -116,7 +118,7 @@ function CacheWarmingSection() {
             onClick={() => setShowConfig(!showConfig)}
           >
             <Settings className="h-4 w-4 mr-2" />
-            Cấu hình
+            {t('cache.warming.config')}
           </Button>
         </div>
       </CardHeader>
@@ -124,11 +126,11 @@ function CacheWarmingSection() {
         {/* Configuration Panel */}
         {showConfig && (
           <div className="mb-6 p-4 bg-secondary/50 rounded-lg space-y-4">
-            <h4 className="font-medium text-foreground">Cấu hình Cache Warming</h4>
+            <h4 className="font-medium text-foreground">{t('cache.warming.configTitle')}</h4>
             
             <div className="flex items-center justify-between">
               <Label htmlFor="warming-enabled" className="text-sm">
-                Kích hoạt Cache Warming
+                {t('cache.warming.enableWarming')}
               </Label>
               <Switch
                 id="warming-enabled"
@@ -139,7 +141,7 @@ function CacheWarmingSection() {
 
             <div className="flex items-center justify-between">
               <Label htmlFor="warm-on-startup" className="text-sm">
-                Warm khi khởi động server
+                {t('cache.warming.warmOnStartup')}
               </Label>
               <Switch
                 id="warm-on-startup"
@@ -150,7 +152,7 @@ function CacheWarmingSection() {
 
             <div className="space-y-2">
               <Label htmlFor="interval" className="text-sm">
-                Interval (phút) - Tối thiểu 5, tối đa 1440
+                {t('cache.warming.intervalLabel')}
               </Label>
               <Input
                 id="interval"
@@ -170,14 +172,14 @@ function CacheWarmingSection() {
                 disabled={updateConfigMutation.isPending}
               >
                 <Save className="h-4 w-4 mr-2" />
-                {updateConfigMutation.isPending ? 'Đang lưu...' : 'Lưu cấu hình'}
+                {updateConfigMutation.isPending ? t('common.saving') : t('cache.warming.saveConfig')}
               </Button>
               <Button 
                 variant="outline" 
                 size="sm" 
                 onClick={() => setShowConfig(false)}
               >
-                Hủy
+                {t('common.cancel')}
               </Button>
             </div>
           </div>
@@ -187,7 +189,7 @@ function CacheWarmingSection() {
           {/* Warming Status */}
           <div className="space-y-4">
             <div className="flex items-center justify-between py-2 border-b">
-              <span className="text-muted-foreground">Trạng thái</span>
+              <span className="text-muted-foreground">{t('cache.warming.status')}</span>
               <Badge variant={warmingStats?.isWarming ? 'default' : 'secondary'}>
                 {warmingStats?.isWarming ? 'Warming...' : 'Idle'}
               </Badge>
@@ -200,14 +202,14 @@ function CacheWarmingSection() {
             </div>
             <div className="flex items-center justify-between py-2 border-b">
               <span className="text-muted-foreground">Interval</span>
-              <span className="font-medium">{warmingStats?.config.intervalMinutes || 30} phút</span>
+              <span className="font-medium">{warmingStats?.config.intervalMinutes || 30} {t('cache.warming.minutes')}</span>
             </div>
             <div className="flex items-center justify-between py-2 border-b">
-              <span className="text-muted-foreground">Lần warm cuối</span>
+              <span className="text-muted-foreground">{t('cache.warming.lastWarm')}</span>
               <span className="font-medium">
                 {warmingStats?.lastWarmingTime 
                   ? new Date(warmingStats.lastWarmingTime).toLocaleString('vi-VN')
-                  : 'Chưa có'
+                  : t('cache.warming.none')
                 }
               </span>
             </div>
@@ -220,21 +222,21 @@ function CacheWarmingSection() {
                 <p className="text-2xl font-bold text-green-600">
                   {warmingStats?.stats.successfulWarms || 0}
                 </p>
-                <p className="text-xs text-muted-foreground">Thành công</p>
+                <p className="text-xs text-muted-foreground">{t('cache.warming.successful')}</p>
               </div>
               <div className="text-center p-3 bg-red-500/10 rounded-lg">
                 <p className="text-2xl font-bold text-red-600">
                   {warmingStats?.stats.failedWarms || 0}
                 </p>
-                <p className="text-xs text-muted-foreground">Thất bại</p>
+                <p className="text-xs text-muted-foreground">{t('cache.warming.failed')}</p>
               </div>
             </div>
             <div className="flex items-center justify-between py-2 border-b">
-              <span className="text-muted-foreground">Tổng số lần warm</span>
+              <span className="text-muted-foreground">{t('cache.warming.totalWarms')}</span>
               <span className="font-medium">{warmingStats?.stats.totalWarms || 0}</span>
             </div>
             <div className="flex items-center justify-between py-2 border-b">
-              <span className="text-muted-foreground">Thời gian lần cuối</span>
+              <span className="text-muted-foreground">{t('cache.warming.lastDuration')}</span>
               <span className="font-medium">
                 {warmingStats?.stats.lastDuration 
                   ? formatDuration(warmingStats.stats.lastDuration)
@@ -262,6 +264,7 @@ function CacheWarmingSection() {
 
 export function CacheStatsDashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const { t } = useTranslation();
   
   const { data: stats, refetch: refetchStats, isLoading: statsLoading } = 
     trpc.corporateFactoryStats.cacheStats.useQuery(undefined, {
@@ -281,11 +284,11 @@ export function CacheStatsDashboard() {
 
   const clearCacheMutation = trpc.corporateFactoryStats.clearCache.useMutation({
     onSuccess: () => {
-      toast.success('Cache đã được xóa thành công');
+      toast.success(t('cache.clearSuccess'));
       refetchStats();
     },
     onError: (error) => {
-      toast.error('Lỗi xóa cache', { description: error.message });
+      toast.error(t('cache.clearError'), { description: error.message });
     },
   });
 
@@ -293,11 +296,11 @@ export function CacheStatsDashboard() {
     setIsRefreshing(true);
     await Promise.all([refetchStats(), refetchHealth()]);
     setIsRefreshing(false);
-    toast.success('Đã cập nhật thông tin cache');
+    toast.success(t('cache.refreshSuccess'));
   };
 
   const handleClearCache = () => {
-    if (confirm('Bạn có chắc muốn xóa toàn bộ cache thống kê? Điều này có thể làm chậm các queries tiếp theo.')) {
+    if (confirm(t('cache.confirmClear'))) {
       clearCacheMutation.mutate();
     }
   };
@@ -367,7 +370,7 @@ export function CacheStatsDashboard() {
             Cache Statistics
           </h2>
           <p className="text-muted-foreground">
-            Giám sát hiệu suất cache của hệ thống
+            {t('cache.monitorDescription')}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -399,7 +402,7 @@ export function CacheStatsDashboard() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <Activity className="h-4 w-4" />
-              Trạng thái
+              {t('cache.warming.status')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -491,7 +494,7 @@ export function CacheStatsDashboard() {
               Cache Hit Rate
             </CardTitle>
             <CardDescription>
-              Tỷ lệ cache hit so với tổng số requests
+              {t('cache.hitRateDescription')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -535,7 +538,7 @@ export function CacheStatsDashboard() {
               Cache Configuration
             </CardTitle>
             <CardDescription>
-              Thông tin cấu hình cache hiện tại
+              {t('cache.configDescription')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -580,29 +583,29 @@ export function CacheStatsDashboard() {
             Redis Connection Monitoring
           </CardTitle>
           <CardDescription>
-            Theo dõi trạng thái kết nối Redis và lịch sử sự kiện
+            {t('cache.redisMonitorDescription')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Current Status */}
             <div className="space-y-4">
-              <h4 className="font-medium text-foreground">Trạng thái hiện tại</h4>
+              <h4 className="font-medium text-foreground">{t('cache.currentStatus')}</h4>
               <div className="flex items-center justify-between py-2 border-b">
-                <span className="text-muted-foreground">Kết nối</span>
+                <span className="text-muted-foreground">{t('cache.connection')}</span>
                 <Badge variant={redisStatus?.isConnected ? 'default' : 'secondary'}>
                   {redisStatus?.isConnected ? 'Connected' : 'Disconnected'}
                 </Badge>
               </div>
               <div className="flex items-center justify-between py-2 border-b">
-                <span className="text-muted-foreground">Chế độ</span>
+                <span className="text-muted-foreground">{t('cache.mode')}</span>
                 <Badge variant={redisStatus?.mode === 'redis' ? 'default' : 'outline'}>
                   {redisStatus?.mode === 'redis' ? 'Redis' : 'In-Memory Fallback'}
                 </Badge>
               </div>
               {redisStatus?.lastError && (
                 <div className="p-3 bg-red-500/10 rounded-lg">
-                  <p className="text-sm font-medium text-red-600">Lỗi gần nhất</p>
+                  <p className="text-sm font-medium text-red-600">{t('cache.latestError')}</p>
                   <p className="text-xs text-red-500 mt-1">{redisStatus.lastError}</p>
                 </div>
               )}
@@ -610,10 +613,10 @@ export function CacheStatsDashboard() {
                 <div className="p-3 bg-yellow-500/10 rounded-lg">
                   <p className="text-sm font-medium text-yellow-600">
                     <AlertTriangle className="h-4 w-4 inline mr-1" />
-                    Redis chưa được cấu hình
+                    {t('cache.redisNotConfigured')}
                   </p>
                   <p className="text-xs text-yellow-600 mt-1">
-                    Thêm REDIS_URL vào Secrets để kích hoạt Redis cache
+                    {t('cache.addRedisUrl')}
                   </p>
                 </div>
               )}
@@ -621,7 +624,7 @@ export function CacheStatsDashboard() {
 
             {/* Recent Events */}
             <div className="space-y-4">
-              <h4 className="font-medium text-foreground">Sự kiện gần đây</h4>
+              <h4 className="font-medium text-foreground">{t('cache.recentEvents')}</h4>
               {redisStatus?.recentEvents && redisStatus.recentEvents.length > 0 ? (
                 <div className="space-y-2 max-h-48 overflow-y-auto">
                   {redisStatus.recentEvents.slice().reverse().map((event, idx) => (
@@ -654,7 +657,7 @@ export function CacheStatsDashboard() {
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground italic">
-                  Chưa có sự kiện nào
+                  {t('cache.noEvents')}
                 </p>
               )}
             </div>
@@ -672,19 +675,19 @@ export function CacheStatsDashboard() {
             <div className="p-4 bg-blue-500/10 rounded-lg">
               <h4 className="font-medium text-blue-600 mb-2">High Hit Rate</h4>
               <p className="text-sm text-muted-foreground">
-                Hit rate trên 80% cho thấy cache đang hoạt động hiệu quả, giảm tải cho database.
+                {t('cache.tipHighHitRate')}
               </p>
             </div>
             <div className="p-4 bg-green-500/10 rounded-lg">
               <h4 className="font-medium text-green-600 mb-2">Auto Invalidation</h4>
               <p className="text-sm text-muted-foreground">
-                Cache tự động được xóa khi có inspection mới để đảm bảo dữ liệu luôn chính xác.
+                {t('cache.tipAutoInvalidation')}
               </p>
             </div>
             <div className="p-4 bg-purple-500/10 rounded-lg">
               <h4 className="font-medium text-purple-600 mb-2">Redis Fallback</h4>
               <p className="text-sm text-muted-foreground">
-                Khi Redis không khả dụng, hệ thống tự động chuyển sang in-memory cache.
+                {t('cache.tipRedisFallback')}
               </p>
             </div>
           </div>

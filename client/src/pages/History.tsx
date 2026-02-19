@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -68,6 +69,7 @@ import { vi } from "date-fns/locale";
 import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LineChart, Line, ScatterChart, Scatter, ZAxis } from "recharts";
 
 export default function History() {
+  const { t } = useTranslation();
   const [filters, setFilters] = useState({
     factoryCode: "",
     workshopCode: "",
@@ -115,8 +117,8 @@ export default function History() {
     name: string;
     filters: typeof filters;
   }>>([
-    { name: "NG hôm nay", filters: { ...filters, result: "NG" as const, dateRange: "today" as const } },
-    { name: "Tuần này", filters: { ...filters, dateRange: "week" as const } },
+    { name: t("history.filterNgToday"), filters: { ...filters, result: "NG" as const, dateRange: "today" as const } },
+    { name: t("history.filterThisWeek"), filters: { ...filters, dateRange: "week" as const } },
   ]);
   const limit = pageSize;
 
@@ -291,7 +293,7 @@ export default function History() {
     // Group by product model
     const productStats: Record<string, { ok: number; ng: number; ntf: number; total: number }> = {};
     inspections.forEach((i: any) => {
-      const model = i.productModel || "Unknown";
+      const model = i.productModel || t("common.unknown");
       if (!productStats[model]) {
         productStats[model] = { ok: 0, ng: 0, ntf: 0, total: 0 };
       }
@@ -362,30 +364,30 @@ export default function History() {
 
   const handleExportExcel = async () => {
     if (!data?.data || data.data.length === 0) {
-      toast.error("Không có dữ liệu để xuất");
+      toast.error(t("history.noDataToExport"));
       return;
     }
 
     setIsExporting(true);
     try {
       const headers = [
-        "STT",
-        "Mã SN",
-        "Mã nhà máy",
-        "Mã nhà xưởng",
-        "Dây chuyền",
-        "Công trạm",
-        "Máy",
-        "Loại máy",
-        "Mã sản phẩm",
-        "Kết quả",
-        "Tổng điểm đo",
+        t("history.csvStt"),
+        t("history.csvSnCode"),
+        t("history.csvFactoryCode"),
+        t("history.csvWorkshopCode"),
+        t("history.csvLine"),
+        t("history.csvWorkstation"),
+        t("history.csvMachine"),
+        t("history.csvMachineType"),
+        t("history.csvProductCode"),
+        t("history.csvResult"),
+        t("history.csvTotalPoints"),
         "OK",
         "NG",
         "NTF",
-        "Yield Rate (%)",
-        "Thời gian kiểm tra",
-        "Ghi chú"
+        t("history.csvYieldRate"),
+        t("history.csvInspectionTime"),
+        t("history.csvRemarks")
       ];
 
       const rows = data.data.map((inspection: any, index: number) => {
@@ -432,10 +434,10 @@ export default function History() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      toast.success(`Đã xuất ${data.data.length} bản ghi thành công`);
+      toast.success(t("history.exportedRecords", { count: data.data.length }));
     } catch (error) {
       console.error("Export error:", error);
-      toast.error("Lỗi khi xuất dữ liệu");
+      toast.error(t("history.exportError"));
     } finally {
       setIsExporting(false);
     }
@@ -474,7 +476,7 @@ export default function History() {
   // Bulk Export function
   const handleBulkExport = async () => {
     if (selectedIds.size === 0) {
-      toast.error("Vui lòng chọn ít nhất 1 bản ghi");
+      toast.error(t("history.pleaseSelectAtLeast1"));
       return;
     }
 
@@ -483,23 +485,23 @@ export default function History() {
       const selectedData = data?.data?.filter((i: any) => selectedIds.has(i.id)) || [];
       
       const headers = [
-        "STT",
-        "Mã SN",
-        "Mã nhà máy",
-        "Mã nhà xưởng",
-        "Dây chuyền",
-        "Công trạm",
-        "Máy",
-        "Loại máy",
-        "Mã sản phẩm",
-        "Kết quả",
-        "Tổng điểm đo",
+        t("history.csvStt"),
+        t("history.csvSnCode"),
+        t("history.csvFactoryCode"),
+        t("history.csvWorkshopCode"),
+        t("history.csvLine"),
+        t("history.csvWorkstation"),
+        t("history.csvMachine"),
+        t("history.csvMachineType"),
+        t("history.csvProductCode"),
+        t("history.csvResult"),
+        t("history.csvTotalPoints"),
         "OK",
         "NG",
         "NTF",
-        "Yield Rate (%)",
-        "Thời gian kiểm tra",
-        "Ghi chú"
+        t("history.csvYieldRate"),
+        t("history.csvInspectionTime"),
+        t("history.csvRemarks")
       ];
 
       const rows = selectedData.map((inspection: any, index: number) => {
@@ -546,11 +548,11 @@ export default function History() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      toast.success(`Đã xuất ${selectedIds.size} bản ghi thành công`);
+      toast.success(t("history.exportedRecords", { count: selectedIds.size }));
       handleClearSelection();
     } catch (error) {
       console.error("Bulk export error:", error);
-      toast.error("Lỗi khi xuất dữ liệu hàng loạt");
+      toast.error(t("history.bulkExportError"));
     } finally {
       setIsBulkExporting(false);
     }
@@ -559,7 +561,7 @@ export default function History() {
   // Bulk Acknowledge function
   const handleBulkAcknowledge = async () => {
     if (selectedIds.size === 0) {
-      toast.error("Vui lòng chọn ít nhất 1 bản ghi");
+      toast.error(t("history.pleaseSelectAtLeast1"));
       return;
     }
 
@@ -568,12 +570,12 @@ export default function History() {
       // Simulate acknowledge action - in real app, this would call an API
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      toast.success(`Đã xác nhận ${selectedIds.size} bản ghi thành công`);
+      toast.success(t("history.acknowledgedRecords", { count: selectedIds.size }));
       handleClearSelection();
       refetch();
     } catch (error) {
       console.error("Bulk acknowledge error:", error);
-      toast.error("Lỗi khi xác nhận hàng loạt");
+      toast.error(t("history.acknowledgeError"));
     } finally {
       setIsBulkAcknowledging(false);
     }
@@ -582,7 +584,7 @@ export default function History() {
   // Export Yield Report function
   const exportYieldReport = async (format: 'pdf' | 'excel' | 'csv') => {
     if (!analysisStats) {
-      toast.error("Không có dữ liệu Yield để xuất");
+      toast.error(t("history.noYieldData"));
       return;
     }
 
@@ -593,8 +595,8 @@ export default function History() {
 
       // Prepare data
       const headers = [
-        "Ngày",
-        "Tổng sản phẩm",
+        t("history.yieldDate"),
+        t("history.yieldTotalProducts"),
         "OK",
         "NG", 
         "NTF",
@@ -618,7 +620,7 @@ export default function History() {
 
       // Summary row
       const summaryRow = [
-        "Tổng cộng",
+        t("history.yieldSummary"),
         analysisStats.total,
         analysisStats.okCount,
         analysisStats.ngCount,
@@ -647,7 +649,7 @@ export default function History() {
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
 
-        toast.success(`Đã xuất báo cáo Yield thành công (${format.toUpperCase()})`);
+        toast.success(t('history.yieldExportSuccess', { format: format.toUpperCase() }));
       } else if (format === 'pdf') {
         // Create PDF using jsPDF
         const { jsPDF } = await import('jspdf');
@@ -657,19 +659,19 @@ export default function History() {
         
         // Title
         doc.setFontSize(18);
-        doc.text('BÁO CÁO YIELD - FPY/FY/NTF/UPH', 14, 20);
+        doc.text(t('history.yieldReportTitle'), 14, 20);
         
         doc.setFontSize(10);
-        doc.text(`Ngày xuất: ${formatDate(new Date(), 'dd/MM/yyyy')}`, 14, 30);
+        doc.text(`${t('history.dateExport')}: ${formatDate(new Date(), 'dd/MM/yyyy')}`, 14, 30);
         
         // Summary KPIs
         doc.setFontSize(12);
-        doc.text('Tổng quan:', 14, 45);
+        doc.text(t('history.overviewLabel') + ':', 14, 45);
         doc.setFontSize(10);
-        doc.text(`- First Pass Yield (FPY): ${analysisStats.yieldRate.toFixed(2)}%`, 20, 52);
-        doc.text(`- Fail Yield: ${(100 - analysisStats.yieldRate).toFixed(2)}%`, 20, 59);
-        doc.text(`- NTF Rate: ${((analysisStats.ntfCount / Math.max(analysisStats.total, 1)) * 100).toFixed(2)}%`, 20, 66);
-        doc.text(`- Avg UPH: ${Math.round(analysisStats.total / Math.max(analysisStats.dateStats.length, 1) * 24)}`, 20, 73);
+        doc.text(`- ${t('history.firstPassYield')}: ${analysisStats.yieldRate.toFixed(2)}%`, 20, 52);
+        doc.text(`- ${t('history.failYield')}: ${(100 - analysisStats.yieldRate).toFixed(2)}%`, 20, 59);
+        doc.text(`- ${t('history.ntfRate')}: ${((analysisStats.ntfCount / Math.max(analysisStats.total, 1)) * 100).toFixed(2)}%`, 20, 66);
+        doc.text(`- ${t('history.avgUph')}: ${Math.round(analysisStats.total / Math.max(analysisStats.dateStats.length, 1) * 24)}`, 20, 73);
         
         // Table
         autoTable(doc, {
@@ -682,11 +684,11 @@ export default function History() {
         });
         
         doc.save(`${filename}.pdf`);
-        toast.success('Đã xuất báo cáo Yield thành công (PDF)');
+        toast.success(t('history.yieldExportSuccess', { format: 'PDF' }));
       }
     } catch (error) {
       console.error("Export Yield error:", error);
-      toast.error("Lỗi khi xuất báo cáo Yield");
+      toast.error(t("history.yieldExportError"));
     } finally {
       setIsExporting(false);
     }
@@ -717,7 +719,7 @@ export default function History() {
       const rows = summaryData.map((ws: any) => {
         const yieldRate = ws.totalCount > 0 ? ((ws.okCount + ws.ntfCount) / ws.totalCount * 100) : 0;
         return [
-          ws.workstationName || 'Unknown',
+          ws.workstationName || t('common.unknown'),
           ws.workstationCode,
           ws.totalCount,
           ws.okCount,
@@ -727,7 +729,7 @@ export default function History() {
         ];
       });
 
-      const headers = ['Công trạm', 'Mã', 'Tổng', 'OK', 'NG', 'NTF', 'Yield'];
+      const headers = [t('history.wsWorkstation'), t('history.wsCode'), t('history.wsTotal'), 'OK', 'NG', 'NTF', 'Yield'];
 
       if (format === 'csv') {
         const csvContent = [
@@ -742,14 +744,14 @@ export default function History() {
         link.download = `${filename}.csv`;
         link.click();
         URL.revokeObjectURL(url);
-        toast.success('Đã xuất báo cáo công trạm thành công (CSV)');
+        toast.success(t('history.workstationExportSuccess', { format: 'CSV' }));
       } else if (format === 'excel') {
         const XLSX = await import('xlsx');
         const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Công trạm');
+        XLSX.utils.book_append_sheet(wb, ws, t('history.wsWorkstation'));
         XLSX.writeFile(wb, `${filename}.xlsx`);
-        toast.success('Đã xuất báo cáo công trạm thành công (Excel)');
+        toast.success(t('history.workstationExportSuccess', { format: 'Excel' }));
       } else if (format === 'pdf') {
         const { jsPDF } = await import('jspdf');
         const autoTable = (await import('jspdf-autotable')).default;
@@ -758,20 +760,20 @@ export default function History() {
         
         // Title
         doc.setFontSize(18);
-        doc.text('BÁO CÁO PHÂN TÍCH CÔNG TRẠM', 14, 20);
+        doc.text(t('history.workstationReportTitle'), 14, 20);
         
         doc.setFontSize(10);
-        doc.text(`Ngày xuất: ${formatDate(new Date(), 'dd/MM/yyyy')}`, 14, 30);
+        doc.text(`${t('history.dateExport')}: ${formatDate(new Date(), 'dd/MM/yyyy')}`, 14, 30);
         
         // Summary
         doc.setFontSize(12);
-        doc.text('Tóm tắt:', 14, 45);
+        doc.text(t('history.summaryLabel') + ':', 14, 45);
         doc.setFontSize(10);
         const totalDefects = summaryData.reduce((sum: number, ws: any) => sum + (ws.ngCount || 0), 0);
         const avgYield = summaryData.length > 0 ? summaryData.reduce((sum: number, ws: any) => sum + ((ws.okCount + ws.ntfCount) / Math.max(ws.totalCount, 1) * 100), 0) / summaryData.length : 0;
-        doc.text(`- Tổng công trạm: ${summaryData.length}`, 20, 52);
-        doc.text(`- Tổng lỗi NG: ${totalDefects}`, 20, 59);
-        doc.text(`- Yield trung bình: ${avgYield.toFixed(2)}%`, 20, 66);
+        doc.text(`- ${t('history.totalWorkstations')}: ${summaryData.length}`, 20, 52);
+        doc.text(`- ${t('history.totalNgDefects')}: ${totalDefects}`, 20, 59);
+        doc.text(`- ${t('history.avgYield')}: ${avgYield.toFixed(2)}%`, 20, 66);
         
         // Table
         autoTable(doc, {
@@ -783,11 +785,11 @@ export default function History() {
         });
         
         doc.save(`${filename}.pdf`);
-        toast.success('Đã xuất báo cáo công trạm thành công (PDF)');
+        toast.success(t('history.workstationExportSuccess', { format: 'PDF' }));
       }
     } catch (error) {
       console.error('Export workstation report error:', error);
-      toast.error('Lỗi khi xuất báo cáo công trạm');
+      toast.error(t('history.workstationExportError'));
     } finally {
       setIsExportingWorkstation(false);
     }
@@ -840,15 +842,15 @@ export default function History() {
 
   return (
     <DashboardLayout 
-      title="AVI/AOI Management" 
+      title={t("history.title")} 
       navItems={navItems}
       currentPath="/history"
     >
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Lịch sử kiểm tra</h1>
-          <p className="text-muted-foreground">Tìm kiếm và phân tích kết quả kiểm tra từ tất cả máy</p>
+          <h1 className="text-2xl font-bold text-foreground">{t("history.title")}</h1>
+          <p className="text-muted-foreground">{t("history.subtitle")}</p>
         </div>
 
         {/* Search Filters */}
@@ -856,14 +858,14 @@ export default function History() {
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Filter className="h-5 w-5 text-primary" />
-              Bộ lọc tìm kiếm
+              {t("history.searchFilter")}
             </CardTitle>
-            <CardDescription>Lọc theo mã nhà máy, nhà xưởng, SN sản phẩm, dây chuyền, công trạm, máy</CardDescription>
+            <CardDescription>{t("history.filterDescription")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="space-y-2">
-                <label className="text-sm text-muted-foreground">Mã nhà máy</label>
+                <label className="text-sm text-muted-foreground">{t("history.factoryCodeLabel")}</label>
                 <Input
                   placeholder="VD: FAC001"
                   value={filters.factoryCode}
@@ -871,7 +873,7 @@ export default function History() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-muted-foreground">Mã nhà xưởng</label>
+                <label className="text-sm text-muted-foreground">{t("history.workshopCodeLabel")}</label>
                 <Input
                   placeholder="VD: WS001"
                   value={filters.workshopCode}
@@ -879,7 +881,7 @@ export default function History() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-muted-foreground">Mã dây chuyền</label>
+                <label className="text-sm text-muted-foreground">{t("history.lineCodeLabel")}</label>
                 <Input
                   placeholder="VD: LINE01"
                   value={filters.lineCode}
@@ -887,7 +889,7 @@ export default function History() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-muted-foreground">Mã công trạm</label>
+                <label className="text-sm text-muted-foreground">{t("history.stationCodeLabel")}</label>
                 <Input
                   placeholder="VD: ST001"
                   value={filters.stationCode}
@@ -895,7 +897,7 @@ export default function History() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-muted-foreground">Mã máy</label>
+                <label className="text-sm text-muted-foreground">{t("history.machineCodeLabel")}</label>
                 <Input
                   placeholder="VD: AVI001"
                   value={filters.machineCode}
@@ -903,7 +905,7 @@ export default function History() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-muted-foreground">Serial Number</label>
+                <label className="text-sm text-muted-foreground">{t("history.serialNumberLabel")}</label>
                 <div className="flex gap-2">
                   <Input
                     placeholder="VD: SN123456789"
@@ -915,14 +917,14 @@ export default function History() {
                     variant="outline"
                     size="icon"
                     onClick={() => setIsScannerOpen(true)}
-                    title="Quét mã vạch/QR"
+                    title={t("history.scanBarcode")}
                   >
                     <QrCode className="w-4 h-4" />
                   </Button>
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-muted-foreground">Mã sản phẩm</label>
+                <label className="text-sm text-muted-foreground">{t("history.productCodeLabel")}</label>
                 <Input
                   placeholder="VD: MODEL-A, PRODUCT-001"
                   value={filters.productModel}
@@ -930,7 +932,7 @@ export default function History() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-muted-foreground">Kết quả</label>
+                <label className="text-sm text-muted-foreground">{t("history.resultLabel")}</label>
                 <Select 
                   value={filters.result} 
                   onValueChange={(value) => setFilters({ ...filters, result: value as typeof filters.result })}
@@ -939,7 +941,7 @@ export default function History() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tất cả</SelectItem>
+                    <SelectItem value="all">{t("common.all")}</SelectItem>
                     <SelectItem value="OK">OK</SelectItem>
                     <SelectItem value="NG">NG</SelectItem>
                     <SelectItem value="NTF">NTF</SelectItem>
@@ -947,7 +949,7 @@ export default function History() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-muted-foreground">Khoảng thời gian</label>
+                <label className="text-sm text-muted-foreground">{t("history.dateRangeLabel")}</label>
                 <Select 
                   value={filters.dateRange} 
                   onValueChange={(value) => setFilters({ ...filters, dateRange: value as typeof filters.dateRange })}
@@ -956,18 +958,18 @@ export default function History() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tất cả</SelectItem>
-                    <SelectItem value="today">Hôm nay</SelectItem>
-                    <SelectItem value="week">7 ngày qua</SelectItem>
-                    <SelectItem value="month">30 ngày qua</SelectItem>
-                    <SelectItem value="custom">Tùy chọn</SelectItem>
+                    <SelectItem value="all">{t("common.all")}</SelectItem>
+                    <SelectItem value="today">{t("dashboard.today")}</SelectItem>
+                    <SelectItem value="week">{t("dashboard.last7Days")}</SelectItem>
+                    <SelectItem value="month">{t("dashboard.last30Days")}</SelectItem>
+                    <SelectItem value="custom">{t("dashboard.customRange")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               {filters.dateRange === "custom" && (
                 <>
                   <div className="space-y-2">
-                    <label className="text-sm text-muted-foreground">Từ ngày</label>
+                    <label className="text-sm text-muted-foreground">{t("history.fromDate")}</label>
                     <Input
                       type="date"
                       value={filters.startDate}
@@ -975,7 +977,7 @@ export default function History() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm text-muted-foreground">Đến ngày</label>
+                    <label className="text-sm text-muted-foreground">{t("history.toDate")}</label>
                     <Input
                       type="date"
                       value={filters.endDate}
@@ -987,17 +989,17 @@ export default function History() {
               <div className="flex items-end gap-2">
                 <Button onClick={handleSearch} className="gap-2">
                   <Search className="h-4 w-4" />
-                  Tìm kiếm
+                  {t("common.search")}
                 </Button>
                 <Button variant="outline" onClick={handleClearFilters}>
-                  Xóa bộ lọc
+                  {t("history.clearFilters")}
                 </Button>
                 {/* Saved Filters */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" className="gap-2">
                       <Save className="h-4 w-4" />
-                      Bộ lọc đã lưu
+                      {t("history.savedFiltersBtn")}
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
@@ -1007,7 +1009,7 @@ export default function History() {
                         onClick={() => {
                           setFilters(sf.filters);
                           setPage(1);
-                          toast.success(`Đã áp dụng bộ lọc: ${sf.name}`);
+                          toast.success(t("history.filterApplied", { name: sf.name }));
                         }}
                       >
                         <Clock className="h-4 w-4 mr-2" />
@@ -1017,15 +1019,15 @@ export default function History() {
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onClick={() => {
-                        const name = prompt("Nhập tên bộ lọc:");
+                        const name = prompt(t("history.enterFilterName"));
                         if (name) {
                           setSavedFilters(prev => [...prev, { name, filters: { ...filters } }]);
-                          toast.success(`Đã lưu bộ lọc: ${name}`);
+                          toast.success(t("history.filterSaved", { name }));
                         }
                       }}
                     >
                       <Save className="h-4 w-4 mr-2" />
-                      Lưu bộ lọc hiện tại
+                      {t("history.saveCurrentFilter")}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -1038,41 +1040,23 @@ export default function History() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList className="grid w-full max-w-5xl grid-cols-9">
             <TabsTrigger value="list" className="gap-2">
-              <HistoryIcon className="h-4 w-4" />
-              Danh sách
-            </TabsTrigger>
+              <HistoryIcon className="h-4 w-4" />{t("history.listTab")}</TabsTrigger>
             <TabsTrigger value="infinite" className="gap-2">
-              <RefreshCw className="h-4 w-4" />
-              Infinite
-            </TabsTrigger>
+              <RefreshCw className="h-4 w-4" />{t("history.infiniteTab")}</TabsTrigger>
             <TabsTrigger value="yield" className="gap-2">
-              <Target className="h-4 w-4" />
-              Yield Stats
-            </TabsTrigger>
+              <Target className="h-4 w-4" />{t("history.yieldStatsTab")}</TabsTrigger>
             <TabsTrigger value="analysis" className="gap-2">
-              <BarChart3 className="h-4 w-4" />
-              Phân tích
-            </TabsTrigger>
+              <BarChart3 className="h-4 w-4" />{t("history.analysisTab")}</TabsTrigger>
             <TabsTrigger value="workstation" className="gap-2">
-              <Factory className="h-4 w-4" />
-              Công trạm
-            </TabsTrigger>
+              <Factory className="h-4 w-4" />{t("history.workstationTab")}</TabsTrigger>
             <TabsTrigger value="spc" className="gap-2">
-              <TrendingUp className="h-4 w-4" />
-              SPC
-            </TabsTrigger>
+              <TrendingUp className="h-4 w-4" />{t("history.spcTab")}</TabsTrigger>
             <TabsTrigger value="ai" className="gap-2">
-              <Activity className="h-4 w-4" />
-              AI Analysis
-            </TabsTrigger>
+              <Activity className="h-4 w-4" />{t("history.aiAnalysisTab")}</TabsTrigger>
             <TabsTrigger value="compare" className="gap-2">
-              <GitCompare className="h-4 w-4" />
-              So sánh
-            </TabsTrigger>
+              <GitCompare className="h-4 w-4" />{t("history.comparisonTab")}</TabsTrigger>
             <TabsTrigger value="gallery" className="gap-2">
-              <Image className="h-4 w-4" />
-              Gallery
-            </TabsTrigger>
+              <Image className="h-4 w-4" />{t("history.galleryTab")}</TabsTrigger>
           </TabsList>
 
           {/* List Tab */}
@@ -1081,9 +1065,9 @@ export default function History() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle className="text-lg">Kết quả tìm kiếm</CardTitle>
+                    <CardTitle className="text-lg">{t("history.searchResults")}</CardTitle>
                     <CardDescription>
-                      {data?.total ? `Tìm thấy ${data.total} kết quả` : "Chưa có dữ liệu"}
+                      {data?.total ? t("history.foundResults", { count: data.total }) : t("dashboard.noDataYet")}
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1093,10 +1077,10 @@ export default function History() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="10">10/trang</SelectItem>
-                        <SelectItem value="20">20/trang</SelectItem>
-                        <SelectItem value="50">50/trang</SelectItem>
-                        <SelectItem value="100">100/trang</SelectItem>
+                        <SelectItem value="10">{t("history.perPage", { count: 10 })}</SelectItem>
+                        <SelectItem value="20">{t("history.perPage", { count: 20 })}</SelectItem>
+                        <SelectItem value="50">{t("history.perPage", { count: 50 })}</SelectItem>
+                        <SelectItem value="100">{t("history.perPage", { count: 100 })}</SelectItem>
                       </SelectContent>
                     </Select>
 
@@ -1109,20 +1093,20 @@ export default function History() {
                       </PopoverTrigger>
                       <PopoverContent className="w-56" align="end">
                         <div className="space-y-2">
-                          <h4 className="font-medium text-sm">Hiển thị cột</h4>
+                          <h4 className="font-medium text-sm">{t("history.showColumns")}</h4>
                           {Object.entries({
-                            serialNumber: "Serial Number",
-                            machine: "Máy",
-                            result: "Kết quả",
-                            time: "Thời gian",
-                            productModel: "Model",
-                            factory: "Nhà máy",
-                            workshop: "Nhà xưởng",
-                            line: "Dây chuyền",
-                            station: "Công trạm",
-                            okCount: "OK Count",
-                            ngCount: "NG Count",
-                            ntfCount: "NTF Count",
+                            serialNumber: t("history.serialNumberLabel"),
+                            machine: t("history.machine"),
+                            result: t("history.result"),
+                            time: t("common.time"),
+                            productModel: t("history.model"),
+                            factory: t("history.factory"),
+                            workshop: t("history.workshopLabel"),
+                            line: t("dashboard.productionLine"),
+                            station: t("history.station"),
+                            okCount: t("history.okCount"),
+                            ngCount: t("history.ngCount"),
+                            ntfCount: t("history.ntfCount"),
                           }).map(([key, label]) => (
                             <div key={key} className="flex items-center gap-2">
                               <Checkbox
@@ -1151,7 +1135,7 @@ export default function History() {
                       ) : (
                         <Download className="h-4 w-4" />
                       )}
-                      Xuất Excel
+                      {t("history.exportExcelBtn")}
                     </Button>
                   </div>
                 </div>
@@ -1166,12 +1150,12 @@ export default function History() {
                         id="select-all"
                       />
                       <label htmlFor="select-all" className="text-sm cursor-pointer">
-                        Chọn tất cả ({data.data.length})
+                        {t("common.selectAll")} ({data.data.length})
                       </label>
                       {selectedIds.size > 0 && (
                         <Badge variant="secondary" className="gap-1">
                           <SquareCheck className="h-3 w-3" />
-                          Đã chọn {selectedIds.size}
+                          {t("history.selectedCount")} {selectedIds.size}
                         </Badge>
                       )}
                     </div>
@@ -1189,7 +1173,7 @@ export default function History() {
                           ) : (
                             <Download className="h-4 w-4" />
                           )}
-                          Xuất ({selectedIds.size})
+                          {t("common.export")} ({selectedIds.size})
                         </Button>
                         <Button
                           variant="outline"
@@ -1203,7 +1187,7 @@ export default function History() {
                           ) : (
                             <CheckCheck className="h-4 w-4" />
                           )}
-                          Xác nhận ({selectedIds.size})
+                          {t("common.confirm")} ({selectedIds.size})
                         </Button>
                         <Button
                           variant="ghost"
@@ -1262,7 +1246,7 @@ export default function History() {
                                 {formatDate(new Date(inspection.inspectionTime), "dd/MM/yyyy HH:mm:ss")}
                               </span>
                               {inspection.productModel && (
-                                <span>Model: {inspection.productModel}</span>
+                                <span>{t("history.model")}: {inspection.productModel}</span>
                               )}
                             </div>
                           </div>
@@ -1270,7 +1254,7 @@ export default function History() {
                         <Link href={`/inspection/${inspection.id}`}>
                           <Button variant="outline" size="sm" className="gap-2">
                             <Eye className="h-4 w-4" />
-                            Chi tiết
+                            {t("common.details")}
                           </Button>
                         </Link>
                       </div>
@@ -1280,7 +1264,7 @@ export default function History() {
                     {totalPages > 1 && (
                       <div className="flex items-center justify-between pt-4 border-t border-border">
                         <p className="text-sm text-muted-foreground">
-                          Trang {page} / {totalPages}
+                          {t("common.page")} {page} / {totalPages}
                         </p>
                         <div className="flex items-center gap-2">
                           <Button
@@ -1306,8 +1290,8 @@ export default function History() {
                 ) : (
                   <div className="py-12 text-center">
                     <HistoryIcon className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                    <p className="text-muted-foreground">Không tìm thấy kết quả nào</p>
-                    <p className="text-sm text-muted-foreground mt-1">Thử thay đổi bộ lọc hoặc từ khóa tìm kiếm</p>
+                    <p className="text-muted-foreground">{t("common.noResults")}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{t("history.tryChangingFilters")}</p>
                   </div>
                 )}
               </CardContent>
@@ -1342,7 +1326,7 @@ export default function History() {
                           <Activity className="h-6 w-6 text-primary" />
                         </div>
                         <div>
-                          <p className="text-sm text-muted-foreground">Tổng sản phẩm</p>
+                          <p className="text-sm text-muted-foreground">{t("history.totalProducts")}</p>
                           <p className="text-2xl font-bold text-foreground">{analysisStats.total}</p>
                         </div>
                       </div>
@@ -1394,7 +1378,7 @@ export default function History() {
                           <TrendingUp className="h-6 w-6 text-primary" />
                         </div>
                         <div>
-                          <p className="text-sm text-muted-foreground">Yield Rate</p>
+                          <p className="text-sm text-muted-foreground">{t("history.yieldRate")}</p>
                           <p className="text-2xl font-bold text-primary">{analysisStats.yieldRate.toFixed(1)}%</p>
                         </div>
                       </div>
@@ -1408,9 +1392,7 @@ export default function History() {
                   <Card className="glass-card">
                     <CardHeader>
                       <CardTitle className="text-lg flex items-center gap-2">
-                        <PieChart className="h-5 w-5 text-primary" />
-                        Phân bố kết quả
-                      </CardTitle>
+                        <PieChart className="h-5 w-5 text-primary" />{t("history.resultDistribution")}</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="h-[300px]">
@@ -1442,9 +1424,7 @@ export default function History() {
                   <Card className="glass-card">
                     <CardHeader>
                       <CardTitle className="text-lg flex items-center gap-2">
-                        <TrendingUp className="h-5 w-5 text-primary" />
-                        Xu hướng theo ngày
-                      </CardTitle>
+                        <TrendingUp className="h-5 w-5 text-primary" />{t("history.trendByDay")}</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="h-[300px]">
@@ -1475,21 +1455,19 @@ export default function History() {
                 <Card className="glass-card">
                   <CardHeader>
                     <CardTitle className="text-lg flex items-center gap-2">
-                      <Cpu className="h-5 w-5 text-primary" />
-                      Thống kê theo máy
-                    </CardTitle>
+                      <Cpu className="h-5 w-5 text-primary" />{t("history.statsByMachine")}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead>
                           <tr className="border-b border-border">
-                            <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Máy</th>
-                            <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">Tổng</th>
+                            <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">{t("history.machine")}</th>
+                            <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">{t("common.total")}</th>
                             <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">OK</th>
                             <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">NG</th>
                             <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">NTF</th>
-                            <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">Yield Rate</th>
+                            <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">{t("history.yieldRate")}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1527,7 +1505,7 @@ export default function History() {
                       ) : (
                         <Download className="h-4 w-4" />
                       )}
-                      Tải thêm dữ liệu ({analysisLimit}/{allData?.total || 0})
+                      {t("history.loadMoreData")} ({analysisLimit}/{allData?.total || 0})
                     </Button>
                   </div>
                 )}
@@ -1537,11 +1515,9 @@ export default function History() {
                   <Card className="glass-card">
                     <CardHeader>
                       <CardTitle className="text-lg flex items-center gap-2">
-                        <AlertCircle className="h-5 w-5 text-destructive" />
-                        Top Điểm Đo Lỗi Nhiều Nhất
-                      </CardTitle>
+                        <AlertCircle className="h-5 w-5 text-destructive" />{t("history.topErrorPoints")}</CardTitle>
                       <CardDescription>
-                        Những điểm đo có tỷ lệ NG cao nhất cần ưu tiên cải thiện
+                        {t("history.topNgPointsDesc")}
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -1566,7 +1542,7 @@ export default function History() {
                               </div>
                               <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
                                 <span className="text-destructive font-medium">{point.ngCount} NG</span>
-                                <span>{point.percentage.toFixed(1)}% của tổng NG</span>
+                                <span>{point.percentage.toFixed(1)}% {t("history.ofTotalNg")}</span>
                               </div>
                             </div>
                             <div className="w-24">
@@ -1589,21 +1565,19 @@ export default function History() {
                   <Card className="glass-card">
                     <CardHeader>
                       <CardTitle className="text-lg flex items-center gap-2">
-                        <Target className="h-5 w-5 text-primary" />
-                        Thống kê theo sản phẩm
-                      </CardTitle>
+                        <Target className="h-5 w-5 text-primary" />{t("history.statsByProduct")}</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="overflow-x-auto">
                         <table className="w-full">
                           <thead>
                             <tr className="border-b border-border">
-                              <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Model sản phẩm</th>
-                              <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">Tổng</th>
+                              <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">{t("products.productModel")}</th>
+                              <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">{t("common.total")}</th>
                               <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">OK</th>
                               <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">NG</th>
                               <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">NTF</th>
-                              <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">Yield Rate</th>
+                              <th className="text-center py-3 px-4 text-sm font-medium text-muted-foreground">{t("history.yieldRate")}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1632,8 +1606,8 @@ export default function History() {
               <Card className="glass-card">
                 <CardContent className="py-12 text-center">
                   <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                  <p className="text-muted-foreground">Không có dữ liệu để phân tích</p>
-                  <p className="text-sm text-muted-foreground mt-1">Thử tìm kiếm với bộ lọc khác</p>
+                  <p className="text-muted-foreground">{t("history.noDataToAnalyze")}</p>
+                  <p className="text-sm text-muted-foreground mt-1">{t("history.tryDifferentFilters")}</p>
                 </CardContent>
               </Card>
             )}
@@ -1646,11 +1620,9 @@ export default function History() {
               <Card className="glass-card bg-gradient-to-r from-blue-500/10 to-cyan-500/10">
                 <CardHeader>
                   <CardTitle className="text-xl flex items-center gap-3">
-                    <Factory className="h-6 w-6 text-blue-500" />
-                    Phân tích theo Công trạm
-                  </CardTitle>
+                    <Factory className="h-6 w-6 text-blue-500" />{t("history.workstationAnalysis")}</CardTitle>
                   <CardDescription>
-                    Thống kê lỗi theo công trạm sản xuất và điểm đo để xác định nguyên nhân lỗi
+                    {t("history.workstationAnalysisDesc")}
                   </CardDescription>
                 </CardHeader>
               </Card>
@@ -1659,13 +1631,11 @@ export default function History() {
               <Card className="glass-card">
                 <CardHeader>
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg">Bộ lọc theo thời gian</CardTitle>
+                    <CardTitle className="text-lg">{t("history.timeFilter")}</CardTitle>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="outline" size="sm" disabled={isExportingWorkstation}>
-                          <Download className="h-4 w-4 mr-2" />
-                          Xuất báo cáo
-                        </Button>
+                          <Download className="h-4 w-4 mr-2" />{t("history.exportReport")}</Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => handleExportWorkstationReport('pdf')}>
@@ -1692,34 +1662,34 @@ export default function History() {
                         onClick={() => setWorkstationDateRange("all")}
                         className="w-full"
                       >
-                        Tất cả
+                        {t("common.all")}
                       </Button>
                       <Button
                         variant={workstationDateRange === "today" ? "default" : "outline"}
                         onClick={() => setWorkstationDateRange("today")}
                         className="w-full"
                       >
-                        Hôm nay
+                        {t("history.today")}
                       </Button>
                       <Button
                         variant={workstationDateRange === "week" ? "default" : "outline"}
                         onClick={() => setWorkstationDateRange("week")}
                         className="w-full"
                       >
-                        Tuần này
+                        {t("history.thisWeek")}
                       </Button>
                       <Button
                         variant={workstationDateRange === "month" ? "default" : "outline"}
                         onClick={() => setWorkstationDateRange("month")}
                         className="w-full"
                       >
-                        Tháng này
+                        {t("history.thisMonth")}
                       </Button>
                     </div>
                     {workstationDateRange === "custom" && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
-                          <label className="text-sm font-medium">Từ ngày</label>
+                          <label className="text-sm font-medium">{t("history.fromDate")}</label>
                           <Input
                             type="date"
                             value={workstationStartDate}
@@ -1728,7 +1698,7 @@ export default function History() {
                           />
                         </div>
                         <div>
-                          <label className="text-sm font-medium">Đến ngày</label>
+                          <label className="text-sm font-medium">{t("history.toDate")}</label>
                           <Input
                             type="date"
                             value={workstationEndDate}
@@ -1745,11 +1715,11 @@ export default function History() {
               {/* Workstation Summary */}
               <Card className="glass-card">
                 <CardHeader>
-                  <CardTitle className="text-lg">Tóm tắt theo Công trạm</CardTitle>
+                  <CardTitle className="text-lg">{t("history.summaryByWorkstation")}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    <p className="text-sm text-muted-foreground">Danh sách các công trạm sản xuất và thống kê lỗi</p>
+                    <p className="text-sm text-muted-foreground">{t("history.workstationListDesc")}</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {workstationData && workstationData.length > 0 ? (
                         workstationData.reduce((acc: any[], ws: any) => {
@@ -1769,8 +1739,8 @@ export default function History() {
                             <Card key={ws.workstationId} className="border-l-4 border-l-blue-500">
                               <CardContent className="pt-4">
                                 <div className="space-y-2">
-                                  <div className="font-semibold text-sm">{ws.workstationName || 'Unknown'}</div>
-                                  <div className="text-xs text-muted-foreground">Mã: {ws.workstationCode}</div>
+                                  <div className="font-semibold text-sm">{ws.workstationName || t('common.unknown')}</div>
+                                  <div className="text-xs text-muted-foreground">{t("common.code")}: {ws.workstationCode}</div>
                                   <div className="grid grid-cols-2 gap-2 text-xs mt-3">
                                     <div>
                                       <div className="text-muted-foreground">OK</div>
@@ -1805,7 +1775,7 @@ export default function History() {
               {/* Defects by Workstation Chart */}
               <Card className="glass-card">
                 <CardHeader>
-                  <CardTitle className="text-lg">Lỗi theo Công trạm</CardTitle>
+                  <CardTitle className="text-lg">{t("history.defectsByWorkstation")}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ChartErrorBoundary>
@@ -1846,8 +1816,8 @@ export default function History() {
               {/* Top NG Measurement Points */}
               <Card className="glass-card">
                 <CardHeader>
-                  <CardTitle className="text-lg">Top 10 Điểm đo có lỗi cao nhất</CardTitle>
-                  <CardDescription>Các điểm đo cần ưu tiên cải thiện</CardDescription>
+                  <CardTitle className="text-lg">{t("history.top10HighestDefectPoints")}</CardTitle>
+                  <CardDescription>{t("history.pointsNeedImprovement")}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
@@ -1859,7 +1829,7 @@ export default function History() {
                               {index + 1}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="font-medium text-sm">{point.workstationName || 'Unknown'} - {point.measurementPointName}</p>
+                              <p className="font-medium text-sm">{point.workstationName || t('common.unknown')} - {point.measurementPointName}</p>
                               <p className="text-xs text-muted-foreground">{point.workstationCode} / {point.measurementPointCode}</p>
                             </div>
                           </div>
@@ -1878,8 +1848,8 @@ export default function History() {
                     ) : (
                       <EmptyState
                         variant="no-analytics"
-                        title="Chưa có dữ liệu điểm đo"
-                        description="Dữ liệu sẽ hiển thị khi có kết quả kiểm tra từ các điểm đo."
+                        title={t("history.noPointData")}
+                        description={t("history.noPointDataDesc")}
                         compact
                       />
                     )}
@@ -1890,16 +1860,16 @@ export default function History() {
               {/* Measurement Points by Workstation */}
               <Card className="glass-card">
                 <CardHeader>
-                  <CardTitle className="text-lg">Điểm đo theo Công trạm</CardTitle>
+                  <CardTitle className="text-lg">{t("history.pointsByWorkstation")}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead className="border-b">
                         <tr>
-                          <th className="text-left py-2 px-2">Công trạm</th>
-                          <th className="text-left py-2 px-2">Mã</th>
-                          <th className="text-center py-2 px-2">Số điểm đo</th>
+                          <th className="text-left py-2 px-2">{t("history.workstationTab")}</th>
+                          <th className="text-left py-2 px-2">{t("common.code")}</th>
+                          <th className="text-center py-2 px-2">{t("history.pointCount")}</th>
                           <th className="text-center py-2 px-2">OK</th>
                           <th className="text-center py-2 px-2">NG</th>
                           <th className="text-center py-2 px-2">NTF</th>
@@ -1924,7 +1894,7 @@ export default function History() {
                             const yieldRate = ws.totalCount > 0 ? ((ws.okCount + ws.ntfCount) / ws.totalCount * 100) : 0;
                             return (
                               <tr key={ws.workstationId} className="border-b hover:bg-muted/50">
-                                <td className="py-2 px-2">{ws.workstationName || 'Unknown'}</td>
+                                <td className="py-2 px-2">{ws.workstationName || t('common.unknown')}</td>
                                 <td className="py-2 px-2 text-xs text-muted-foreground">{ws.workstationCode}</td>
                                 <td className="text-center py-2 px-2">{ws.pointCount || 0}</td>
                                 <td className="text-center py-2 px-2"><Badge variant="outline" className="bg-green-500/10">{ws.okCount || 0}</Badge></td>
@@ -1939,8 +1909,8 @@ export default function History() {
                             <td colSpan={7}>
                               <EmptyState
                                 variant="no-data"
-                                title="Chưa có dữ liệu công trạm"
-                                description="Dữ liệu sẽ hiển thị khi có kết quả kiểm tra từ các điểm đo được gán công trạm."
+                                title={t("dashboard.noWorkstationData")}
+                                description={t("dashboard.noWorkstationDataDesc")}
                                 compact
                               />
                             </td>
@@ -1961,11 +1931,9 @@ export default function History() {
               <Card className="glass-card">
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-primary" />
-                    Statistical Process Control (SPC)
-                  </CardTitle>
+                    <TrendingUp className="h-5 w-5 text-primary" />{t("history.spcTitle")}</CardTitle>
                   <CardDescription>
-                    Phân tích thống kê quá trình sản xuất - Control Charts, Histogram, Pareto
+                    {t("history.spcDescription")}
                   </CardDescription>
                 </CardHeader>
               </Card>
@@ -1976,11 +1944,9 @@ export default function History() {
                   <Card className="glass-card">
                     <CardHeader>
                       <CardTitle className="text-lg flex items-center gap-2">
-                        <Activity className="h-5 w-5 text-primary" />
-                        Control Chart - Yield Rate
-                      </CardTitle>
+                        <Activity className="h-5 w-5 text-primary" />{t("history.controlChartYield")}</CardTitle>
                       <CardDescription>
-                        Biểu đồ kiểm soát Yield Rate theo ngày với UCL, CL, LCL
+                        {t("history.controlChartDesc")}
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -2002,32 +1968,32 @@ export default function History() {
                                 borderRadius: '8px'
                               }}
                               formatter={(value: number, name: string) => {
-                                if (name === 'yieldRate') return [`${value.toFixed(1)}%`, 'Yield Rate'];
-                                if (name === 'ucl') return ['99%', 'UCL'];
-                                if (name === 'cl') return ['95%', 'CL'];
-                                if (name === 'lcl') return ['90%', 'LCL'];
+                                if (name === 'yieldRate') return [`${value.toFixed(1)}%`, t('history.yieldRate')];
+                                if (name === 'ucl') return ['99%', t('history.ucl')];
+                                if (name === 'cl') return ['95%', t('history.cl')];
+                                if (name === 'lcl') return ['90%', t('history.lcl')];
                                 return [value, name];
                               }}
                             />
                             <Legend />
-                            <Bar dataKey="yieldRate" name="Yield Rate" fill="#10b981" />
-                            <Bar dataKey="ucl" name="UCL (99%)" fill="#ef4444" opacity={0.3} />
-                            <Bar dataKey="cl" name="CL (95%)" fill="#3b82f6" opacity={0.3} />
-                            <Bar dataKey="lcl" name="LCL (90%)" fill="#f59e0b" opacity={0.3} />
+                            <Bar dataKey="yieldRate" name={t('history.yieldRate')} fill="#10b981" />
+                            <Bar dataKey="ucl" name={t('history.uclLabel')} fill="#ef4444" opacity={0.3} />
+                            <Bar dataKey="cl" name={t('history.clLabel')} fill="#3b82f6" opacity={0.3} />
+                            <Bar dataKey="lcl" name={t('history.lclLabel')} fill="#f59e0b" opacity={0.3} />
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
                       <div className="mt-4 grid grid-cols-3 gap-4 text-center">
                         <div className="p-3 rounded-lg bg-destructive/10">
-                          <p className="text-sm text-muted-foreground">UCL (Upper Control Limit)</p>
+                          <p className="text-sm text-muted-foreground">{t("history.uclFull")}</p>
                           <p className="text-xl font-bold text-destructive">99%</p>
                         </div>
                         <div className="p-3 rounded-lg bg-primary/10">
-                          <p className="text-sm text-muted-foreground">CL (Center Line)</p>
+                          <p className="text-sm text-muted-foreground">{t("history.clFull")}</p>
                           <p className="text-xl font-bold text-primary">95%</p>
                         </div>
                         <div className="p-3 rounded-lg bg-warning/10">
-                          <p className="text-sm text-muted-foreground">LCL (Lower Control Limit)</p>
+                          <p className="text-sm text-muted-foreground">{t("history.lclFull")}</p>
                           <p className="text-xl font-bold text-warning">90%</p>
                         </div>
                       </div>
@@ -2040,9 +2006,7 @@ export default function History() {
                     <Card className="glass-card">
                       <CardHeader>
                         <CardTitle className="text-lg flex items-center gap-2">
-                          <BarChart3 className="h-5 w-5 text-primary" />
-                          Histogram - Phân bố kết quả
-                        </CardTitle>
+                          <BarChart3 className="h-5 w-5 text-primary" />{t("history.histogramResults")}</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="h-[300px]">
@@ -2062,7 +2026,7 @@ export default function History() {
                                   borderRadius: '8px'
                                 }}
                               />
-                              <Bar dataKey="value" name="Số lượng">
+                              <Bar dataKey="value" name={t("history.quantity")}>
                                 {[
                                   { name: 'OK', fill: '#10b981' },
                                   { name: 'NG', fill: '#ef4444' },
@@ -2081,9 +2045,7 @@ export default function History() {
                     <Card className="glass-card">
                       <CardHeader>
                         <CardTitle className="text-lg flex items-center gap-2">
-                          <Target className="h-5 w-5 text-primary" />
-                          Pareto Chart - Top lỗi
-                        </CardTitle>
+                          <Target className="h-5 w-5 text-primary" />{t("history.paretoTopErrors")}</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="h-[300px]">
@@ -2116,13 +2078,13 @@ export default function History() {
                                     }}
                                   />
                                   <Legend />
-                                  <Bar yAxisId="left" dataKey="ng" name="Số lỗi NG" fill="#ef4444" />
-                                  <Bar yAxisId="right" dataKey="cumulative" name="Tích lũy %" fill="#3b82f6" />
+                                  <Bar yAxisId="left" dataKey="ng" name={t("history.ngErrorCount")} fill="#ef4444" />
+                                  <Bar yAxisId="right" dataKey="cumulative" name={t("history.cumulativePercent")} fill="#3b82f6" />
                                 </BarChart>
                               </ResponsiveContainer>
                             ) : (
                               <div className="h-full flex items-center justify-center text-muted-foreground">
-                                Không có dữ liệu lỗi để hiển thị
+                                {t("history.noErrorDataToShow")}
                               </div>
                             );
                           })()}
@@ -2136,11 +2098,9 @@ export default function History() {
                     <CardHeader>
                       <CardTitle className="text-lg flex items-center gap-2">
                         <Target className="h-5 w-5 text-primary" />
-                        Process Capability - Cp/Cpk
+                        {t("history.processCapabilityCpCpk")}
                       </CardTitle>
-                      <CardDescription>
-                        Đánh giá năng lực quá trình sản xuất
-                      </CardDescription>
+                      <CardDescription>{t("history.processCapabilityTitle")}</CardDescription>
                     </CardHeader>
                     <CardContent>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -2161,11 +2121,11 @@ export default function History() {
                           return (
                             <>
                               <div className="p-4 rounded-lg bg-secondary/30 text-center">
-                                <p className="text-sm text-muted-foreground">Mean (μ)</p>
+                                <p className="text-sm text-muted-foreground">{t("history.mean")}</p>
                                 <p className="text-2xl font-bold text-foreground">{mean.toFixed(2)}%</p>
                               </div>
                               <div className="p-4 rounded-lg bg-secondary/30 text-center">
-                                <p className="text-sm text-muted-foreground">Std Dev (σ)</p>
+                                <p className="text-sm text-muted-foreground">{t("history.stdDev")}</p>
                                 <p className="text-2xl font-bold text-foreground">{stdDev.toFixed(2)}</p>
                               </div>
                               <div className={`p-4 rounded-lg text-center ${cp >= 1.33 ? 'bg-success/20' : cp >= 1 ? 'bg-warning/20' : 'bg-destructive/20'}`}>
@@ -2174,7 +2134,7 @@ export default function History() {
                                   {cp.toFixed(2)}
                                 </p>
                                 <p className="text-xs text-muted-foreground mt-1">
-                                  {cp >= 1.33 ? 'Excellent' : cp >= 1 ? 'Capable' : 'Not Capable'}
+                                  {cp >= 1.33 ? t('history.excellent') : cp >= 1 ? t('history.capable') : t('history.notCapable')}
                                 </p>
                               </div>
                               <div className={`p-4 rounded-lg text-center ${cpk >= 1.33 ? 'bg-success/20' : cpk >= 1 ? 'bg-warning/20' : 'bg-destructive/20'}`}>
@@ -2183,7 +2143,7 @@ export default function History() {
                                   {cpk.toFixed(2)}
                                 </p>
                                 <p className="text-xs text-muted-foreground mt-1">
-                                  {cpk >= 1.33 ? 'Excellent' : cpk >= 1 ? 'Capable' : 'Not Capable'}
+                                  {cpk >= 1.33 ? t('history.excellent') : cpk >= 1 ? t('history.capable') : t('history.notCapable')}
                                 </p>
                               </div>
                             </>
@@ -2192,8 +2152,7 @@ export default function History() {
                       </div>
                       <div className="mt-4 p-4 rounded-lg bg-muted/50">
                         <p className="text-sm text-muted-foreground">
-                          <strong>Giải thích:</strong> Cp đo lường khả năng tiềm năng của quá trình, Cpk đo lường khả năng thực tế có tính đến độ lệch tâm.
-                          Giá trị ≥ 1.33 được coi là xuất sắc, ≥ 1.0 là chấp nhận được, &lt; 1.0 cần cải thiện.
+                          <strong>{t("history.processCapabilityExplanation")}</strong> {t("history.cpCpkExplanation")}
                         </p>
                       </div>
                     </CardContent>
@@ -2204,10 +2163,10 @@ export default function History() {
                     <CardHeader>
                       <CardTitle className="text-lg flex items-center gap-2">
                         <Activity className="h-5 w-5 text-primary" />
-                        Heatmap - Phân bố NG theo giờ và ngày
+                        {t("history.heatmapTitle")}
                       </CardTitle>
                       <CardDescription>
-                        Biểu đồ nhiệt thể hiện mật độ lỗi theo thời gian trong ngày
+                        {t("history.heatmapDesc")}
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -2289,7 +2248,7 @@ export default function History() {
                             
                             {/* Legend */}
                             <div className="flex items-center justify-center gap-4 pt-2">
-                              <span className="text-xs text-muted-foreground">Ít NG</span>
+                              <span className="text-xs text-muted-foreground">{t("history.lowNg")}</span>
                               <div className="flex gap-1">
                                 <div className="w-6 h-4 rounded bg-secondary/30" />
                                 <div className="w-6 h-4 rounded bg-success/30" />
@@ -2297,7 +2256,7 @@ export default function History() {
                                 <div className="w-6 h-4 rounded bg-warning/60" />
                                 <div className="w-6 h-4 rounded bg-destructive/60" />
                               </div>
-                              <span className="text-xs text-muted-foreground">Nhiều NG</span>
+                              <span className="text-xs text-muted-foreground">{t("history.highNg")}</span>
                             </div>
                           </div>
                         );
@@ -2310,11 +2269,9 @@ export default function History() {
                     <CardHeader>
                       <CardTitle className="text-lg flex items-center gap-2">
                         <AlertTriangle className="h-5 w-5 text-warning" />
-                        Western Electric Rules - Cảnh báo
+                        {t("history.westernElectricRules")}
                       </CardTitle>
-                      <CardDescription>
-                        Phát hiện các điểm ngoài tầm kiểm soát
-                      </CardDescription>
+                      <CardDescription>{t("history.outOfControlPoints")}</CardDescription>
                     </CardHeader>
                     <CardContent>
                       {(() => {
@@ -2331,7 +2288,7 @@ export default function History() {
                         if (beyond3Sigma.length > 0) {
                           violations.push({
                             rule: 'Rule 1',
-                            description: `${beyond3Sigma.length} điểm vượt quá 3σ - Cần kiểm tra ngay`,
+                            description: t("history.rule1Violation", { count: beyond3Sigma.length }),
                             severity: 'high'
                           });
                         }
@@ -2343,7 +2300,7 @@ export default function History() {
                           if (beyond2Sigma.length >= 2) {
                             violations.push({
                               rule: 'Rule 2',
-                              description: '2 trong 3 điểm liên tiếp vượt 2σ',
+                              description: t("history.rule2Violation"),
                               severity: 'medium'
                             });
                             break;
@@ -2357,7 +2314,7 @@ export default function History() {
                           if (beyond1Sigma.length >= 4) {
                             violations.push({
                               rule: 'Rule 3',
-                              description: '4 trong 5 điểm liên tiếp vượt 1σ',
+                              description: t("history.rule3Violation"),
                               severity: 'low'
                             });
                             break;
@@ -2372,7 +2329,7 @@ export default function History() {
                           if (allAbove || allBelow) {
                             violations.push({
                               rule: 'Rule 4',
-                              description: '8 điểm liên tiếp cùng phía với đường tâm',
+                              description: t("history.rule4Violation"),
                               severity: 'medium'
                             });
                             break;
@@ -2403,8 +2360,8 @@ export default function History() {
                         ) : (
                           <div className="p-6 rounded-lg bg-success/20 text-center">
                             <CheckCircle2 className="h-8 w-8 text-success mx-auto mb-2" />
-                            <span className="font-medium text-success block">Quá trình ổn định</span>
-                            <span className="text-sm text-muted-foreground mt-1 block">Không phát hiện vi phạm quy tắc Western Electric</span>
+                            <span className="font-medium text-success block">{t("history.processStable")}</span>
+                            <span className="text-sm text-muted-foreground mt-1 block">{t("history.noWesternElectricViolation")}</span>
                           </div>
                         );
                       })()}
@@ -2415,8 +2372,8 @@ export default function History() {
                 <Card className="glass-card">
                   <CardContent className="py-12 text-center">
                     <TrendingUp className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                    <p className="text-muted-foreground">Không có dữ liệu để phân tích SPC</p>
-                    <p className="text-sm text-muted-foreground mt-1">Thử tìm kiếm với bộ lọc khác</p>
+                    <p className="text-muted-foreground">{t("history.noSPCData")}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{t("history.tryDifferentFilters")}</p>
                   </CardContent>
                 </Card>
               )}
@@ -2430,12 +2387,8 @@ export default function History() {
               <Card className="glass-card bg-gradient-to-r from-primary/10 to-purple-500/10">
                 <CardHeader>
                   <CardTitle className="text-xl flex items-center gap-3">
-                    <Brain className="h-6 w-6 text-primary" />
-                    Phân tích AI
-                  </CardTitle>
-                  <CardDescription>
-                    Dự đoán xu hướng và phát hiện bất thường bằng machine learning
-                  </CardDescription>
+                    <Brain className="h-6 w-6 text-primary" />{t("history.aiAnalysisTitle")}</CardTitle>
+                  <CardDescription>{t("history.aiAnalysisDesc")}</CardDescription>
                 </CardHeader>
               </Card>
 
@@ -2474,31 +2427,31 @@ export default function History() {
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                       <Card className="glass-card">
                         <CardContent className="pt-6 text-center">
-                          <p className="text-sm text-muted-foreground">Trung bình</p>
+                          <p className="text-sm text-muted-foreground">{t("history.mean")}</p>
                           <p className="text-2xl font-bold text-foreground">{aiAnalysis.statistics.mean.toFixed(1)}%</p>
                         </CardContent>
                       </Card>
                       <Card className="glass-card">
                         <CardContent className="pt-6 text-center">
-                          <p className="text-sm text-muted-foreground">Độ lệch chuẩn</p>
+                          <p className="text-sm text-muted-foreground">{t("history.stdDev")}</p>
                           <p className="text-2xl font-bold text-foreground">{aiAnalysis.statistics.stdDev.toFixed(2)}</p>
                         </CardContent>
                       </Card>
                       <Card className="glass-card">
                         <CardContent className="pt-6 text-center">
-                          <p className="text-sm text-muted-foreground">Thấp nhất</p>
+                          <p className="text-sm text-muted-foreground">{t("history.lowest")}</p>
                           <p className="text-2xl font-bold text-destructive">{aiAnalysis.statistics.min.toFixed(1)}%</p>
                         </CardContent>
                       </Card>
                       <Card className="glass-card">
                         <CardContent className="pt-6 text-center">
-                          <p className="text-sm text-muted-foreground">Cao nhất</p>
+                          <p className="text-sm text-muted-foreground">{t("history.highest")}</p>
                           <p className="text-2xl font-bold text-success">{aiAnalysis.statistics.max.toFixed(1)}%</p>
                         </CardContent>
                       </Card>
                       <Card className="glass-card">
                         <CardContent className="pt-6 text-center">
-                          <p className="text-sm text-muted-foreground">Hiện tại</p>
+                          <p className="text-sm text-muted-foreground">{t("history.current")}</p>
                           <p className={`text-2xl font-bold ${
                             aiAnalysis.statistics.current >= 95 ? 'text-success' :
                             aiAnalysis.statistics.current >= 90 ? 'text-warning' : 'text-destructive'
@@ -2520,15 +2473,15 @@ export default function History() {
                           ) : (
                             <Minus className="h-5 w-5 text-muted-foreground" />
                           )}
-                          Dự đoán xu hướng
+                          {t("history.trendPrediction")}
                           <Badge variant={aiAnalysis.trendPrediction.trend === 'increasing' ? 'default' : 
                             aiAnalysis.trendPrediction.trend === 'decreasing' ? 'destructive' : 'secondary'}>
-                            {aiAnalysis.trendPrediction.trend === 'increasing' ? 'Tăng' :
-                             aiAnalysis.trendPrediction.trend === 'decreasing' ? 'Giảm' : 'Ổn định'}
+                            {aiAnalysis.trendPrediction.trend === 'increasing' ? t('history.increasing') :
+                             aiAnalysis.trendPrediction.trend === 'decreasing' ? t('history.decreasing') : t('history.stable')}
                           </Badge>
                         </CardTitle>
                         <CardDescription>
-                          Dự đoán Yield Rate cho 7 ngày tới (Linear Regression, độ tin cậy: {aiAnalysis.trendPrediction.confidence.toFixed(0)}%)
+                          {t("history.predictionDesc", { confidence: aiAnalysis.trendPrediction.confidence.toFixed(0) })}
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
@@ -2544,9 +2497,9 @@ export default function History() {
                                   border: '1px solid #374151',
                                   borderRadius: '8px'
                                 }}
-                                formatter={(value: number) => [`${value.toFixed(1)}%`, 'Dự đoán Yield']}
+                                formatter={(value: number) => [`${value.toFixed(1)}%`, t('history.predictedYield')]}
                               />
-                              <Bar dataKey="predictedYield" name="Dự đoán" fill="#14b8a6" radius={[4, 4, 0, 0]} />
+                              <Bar dataKey="predictedYield" name={t("history.prediction")} fill="#14b8a6" radius={[4, 4, 0, 0]} />
                             </BarChart>
                           </ResponsiveContainer>
                         </div>
@@ -2560,11 +2513,11 @@ export default function History() {
                       <CardHeader>
                         <CardTitle className="text-lg flex items-center gap-2">
                           <AlertTriangle className="h-5 w-5 text-warning" />
-                          Phát hiện bất thường
-                          <Badge variant="outline" className="ml-2">{aiAnalysis.anomalies.length} điểm</Badge>
+                          {t("history.anomalyDetection")}
+                          <Badge variant="outline" className="ml-2">{aiAnalysis.anomalies.length} {t("history.points")}</Badge>
                         </CardTitle>
                         <CardDescription>
-                          Các ngày có Yield Rate bất thường (vượt 2σ)
+                          {t("history.anomalyDesc")}
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
@@ -2587,12 +2540,12 @@ export default function History() {
                                 <div>
                                   <span className="font-medium text-foreground block">{anomaly.date}</span>
                                   <span className="text-sm text-muted-foreground block">
-                                    Yield: {anomaly.yieldRate.toFixed(1)}% ({anomaly.deviation > 0 ? '+' : ''}{anomaly.deviation.toFixed(1)}% so với TB)
+                                    Yield: {anomaly.yieldRate.toFixed(1)}% ({anomaly.deviation > 0 ? '+' : ''}{anomaly.deviation.toFixed(1)}% {t("history.vsAverage")})
                                   </span>
                                 </div>
                               </div>
                               <Badge variant={anomaly.severity === 'critical' ? 'destructive' : 'secondary'}>
-                                {anomaly.severity === 'critical' ? 'Nghiêm trọng' : 'Cảnh báo'}
+                                {anomaly.severity === 'critical' ? t('history.critical') : t('history.warningLabel')}
                               </Badge>
                             </div>
                           ))}
@@ -2606,9 +2559,7 @@ export default function History() {
                     <Card className="glass-card">
                       <CardHeader>
                         <CardTitle className="text-lg flex items-center gap-2">
-                          <Lightbulb className="h-5 w-5 text-yellow-500" />
-                          Khuyến nghị cải thiện
-                        </CardTitle>
+                          <Lightbulb className="h-5 w-5 text-yellow-500" />{t("history.improvementRecommendations")}</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="space-y-3">
@@ -2627,8 +2578,8 @@ export default function History() {
                 <Card className="glass-card">
                   <CardContent className="py-12 text-center">
                     <Brain className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                    <p className="text-muted-foreground">Không có dữ liệu để phân tích AI</p>
-                    <p className="text-sm text-muted-foreground mt-1">Cần tối thiểu 3 ngày dữ liệu để dự đoán xu hướng</p>
+                    <p className="text-muted-foreground">{t("history.noAIData")}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{t("history.minDataRequired")}</p>
                   </CardContent>
                 </Card>
               )}
@@ -2644,35 +2595,25 @@ export default function History() {
                   <div className="flex items-center justify-between">
                     <div>
                       <CardTitle className="text-lg flex items-center gap-2">
-                        <Target className="h-5 w-5 text-primary" />
-                        Thống kê Yield - FPY, FY, NTF, UPH
-                      </CardTitle>
+                        <Target className="h-5 w-5 text-primary" />{t("history.yieldStatsTitle")}</CardTitle>
                       <CardDescription>
-                        Biểu đồ và chỉ số hiệu suất sản xuất theo thời gian
+                        {t("history.yieldStatsDesc")}
                       </CardDescription>
                     </div>
                     {analysisStats && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="outline" className="gap-2">
-                            <Download className="h-4 w-4" />
-                            Xuất báo cáo
-                          </Button>
+                            <Download className="h-4 w-4" />{t("history.exportReport")}</Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => exportYieldReport('pdf')}>
-                            <FileText className="h-4 w-4 mr-2" />
-                            Xuất PDF
-                          </DropdownMenuItem>
+                            <FileText className="h-4 w-4 mr-2" />{t("history.exportPdf")}</DropdownMenuItem>
                           <DropdownMenuItem onClick={() => exportYieldReport('excel')}>
-                            <FileSpreadsheet className="h-4 w-4 mr-2" />
-                            Xuất Excel
-                          </DropdownMenuItem>
+                            <FileSpreadsheet className="h-4 w-4 mr-2" />{t("history.exportExcelBtn")}</DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem onClick={() => exportYieldReport('csv')}>
-                            <Download className="h-4 w-4 mr-2" />
-                            Xuất CSV
-                          </DropdownMenuItem>
+                            <Download className="h-4 w-4 mr-2" />{t("history.exportCsv")}</DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     )}
@@ -2688,7 +2629,7 @@ export default function History() {
                     <Card className="glass-card border-l-4 border-l-primary">
                       <CardContent className="pt-6">
                         <div className="space-y-2">
-                          <p className="text-sm text-muted-foreground">Current First Pass Yield</p>
+                          <p className="text-sm text-muted-foreground">{t("history.currentFpy")}</p>
                           <div className="flex items-baseline gap-2">
                             <span className="text-3xl font-bold text-primary">
                               {analysisStats.yieldRate.toFixed(2)}%
@@ -2697,7 +2638,7 @@ export default function History() {
                               {analysisStats.yieldRate >= 98.5 ? '↑' : '↓'}{Math.abs(analysisStats.yieldRate - 98.5).toFixed(2)}%
                             </span>
                           </div>
-                          <p className="text-xs text-muted-foreground">Target: &gt;98.50%</p>
+                          <p className="text-xs text-muted-foreground">{t("history.targetFpy")}</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -2706,7 +2647,7 @@ export default function History() {
                     <Card className="glass-card border-l-4 border-l-warning">
                       <CardContent className="pt-6">
                         <div className="space-y-2">
-                          <p className="text-sm text-muted-foreground">Daily Fail Yield</p>
+                          <p className="text-sm text-muted-foreground">{t("history.dailyFailYield")}</p>
                           <div className="flex items-baseline gap-2">
                             <span className="text-3xl font-bold text-warning">
                               {(100 - analysisStats.yieldRate).toFixed(2)}%
@@ -2715,7 +2656,7 @@ export default function History() {
                               {(100 - analysisStats.yieldRate) <= 1.5 ? '↓' : '↑'}{Math.abs((100 - analysisStats.yieldRate) - 1.5).toFixed(2)}%
                             </span>
                           </div>
-                          <p className="text-xs text-muted-foreground">Threshold: &lt; 1.50%</p>
+                          <p className="text-xs text-muted-foreground">{t("history.thresholdFail")}</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -2724,7 +2665,7 @@ export default function History() {
                     <Card className="glass-card border-l-4 border-l-cyan-500">
                       <CardContent className="pt-6">
                         <div className="space-y-2">
-                          <p className="text-sm text-muted-foreground">Avg NTF Yield</p>
+                          <p className="text-sm text-muted-foreground">{t("history.avgNtfYield")}</p>
                           <div className="flex items-baseline gap-2">
                             <span className="text-3xl font-bold text-cyan-500">
                               {((analysisStats.ntfCount / Math.max(analysisStats.total, 1)) * 100).toFixed(2)}%
@@ -2733,7 +2674,7 @@ export default function History() {
                               {((analysisStats.ntfCount / Math.max(analysisStats.total, 1)) * 100) <= 1.0 ? '↓' : '↑'}0.01%
                             </span>
                           </div>
-                          <p className="text-xs text-muted-foreground">Target: &lt; 1.00%</p>
+                          <p className="text-xs text-muted-foreground">{t("history.targetNtf")}</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -2742,7 +2683,7 @@ export default function History() {
                     <Card className="glass-card border-l-4 border-l-success">
                       <CardContent className="pt-6">
                         <div className="space-y-2">
-                          <p className="text-sm text-muted-foreground">Avg UPH</p>
+                          <p className="text-sm text-muted-foreground">{t("history.avgUph")}</p>
                           <div className="flex items-baseline gap-2">
                             <span className="text-3xl font-bold text-success">
                               {Math.round(analysisStats.total / Math.max(analysisStats.dateStats.length, 1) * 24)}
@@ -2751,7 +2692,7 @@ export default function History() {
                               ↓{Math.round(1500 - (analysisStats.total / Math.max(analysisStats.dateStats.length, 1) * 24))}%
                             </span>
                           </div>
-                          <p className="text-xs text-muted-foreground">Capacity: 1,500/hr</p>
+                          <p className="text-xs text-muted-foreground">{t("history.capacityUph")}</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -2762,8 +2703,8 @@ export default function History() {
                     {/* FPY Trend Chart */}
                     <Card className="glass-card">
                       <CardHeader>
-                        <CardTitle className="text-lg">First Pass Yield (FPY) Trend</CardTitle>
-                        <CardDescription>Daily micro-fluctuations (Scale: 98% - 99.5%)</CardDescription>
+                        <CardTitle className="text-lg">{t("history.fpyTrendTitle")}</CardTitle>
+                        <CardDescription>{t("history.fpyTrendDesc")}</CardDescription>
                       </CardHeader>
                       <CardContent>
                         <div className="h-[280px]">
@@ -2796,8 +2737,8 @@ export default function History() {
                     {/* Fail Yield Trend Chart */}
                     <Card className="glass-card">
                       <CardHeader>
-                        <CardTitle className="text-lg">Fail Yield Trend</CardTitle>
-                        <CardDescription>Production reject rates (Scale: 0.5% - 2.0%)</CardDescription>
+                        <CardTitle className="text-lg">{t("history.failYieldTrend")}</CardTitle>
+                        <CardDescription>{t("history.failYieldTrendDesc")}</CardDescription>
                       </CardHeader>
                       <CardContent>
                         <div className="h-[280px]">
@@ -2834,8 +2775,8 @@ export default function History() {
                     {/* NTF Yield Trend Chart */}
                     <Card className="glass-card">
                       <CardHeader>
-                        <CardTitle className="text-lg">NTF (No Trouble Found) Yield</CardTitle>
-                        <CardDescription>Re-test pass rates (Scale: 0.5% - 2.0%)</CardDescription>
+                        <CardTitle className="text-lg">{t("history.ntfYieldTitle")}</CardTitle>
+                        <CardDescription>{t("history.ntfYieldDesc")}</CardDescription>
                       </CardHeader>
                       <CardContent>
                         <div className="h-[280px]">
@@ -2869,8 +2810,8 @@ export default function History() {
                     {/* UPH Trend Chart */}
                     <Card className="glass-card">
                       <CardHeader>
-                        <CardTitle className="text-lg">UPH (Units Per Hour) Trend</CardTitle>
-                        <CardDescription>Hourly throughput volume per day</CardDescription>
+                        <CardTitle className="text-lg">{t("history.uphTrendTitle")}</CardTitle>
+                        <CardDescription>{t("history.uphTrendDesc")}</CardDescription>
                       </CardHeader>
                       <CardContent>
                         <div className="h-[280px]">
@@ -2903,17 +2844,15 @@ export default function History() {
                   <Card className="glass-card">
                     <CardHeader>
                       <CardTitle className="text-lg flex items-center gap-2">
-                        <BarChart3 className="h-5 w-5 text-primary" />
-                        Bảng tổng hợp Yield theo ngày
-                      </CardTitle>
+                        <BarChart3 className="h-5 w-5 text-primary" />{t("history.yieldSummaryByDay")}</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="overflow-x-auto">
                         <table className="w-full">
                           <thead>
                             <tr className="border-b border-border">
-                              <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">Ngày</th>
-                              <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">Tổng</th>
+                              <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">{t("common.date")}</th>
+                              <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">{t("common.total")}</th>
                               <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">OK</th>
                               <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">NG</th>
                               <th className="text-right py-3 px-4 text-sm font-medium text-muted-foreground">NTF</th>
@@ -2959,8 +2898,8 @@ export default function History() {
                 <Card className="glass-card">
                   <CardContent className="py-12 text-center">
                     <Target className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                    <p className="text-muted-foreground">Không có dữ liệu để thống kê Yield</p>
-                    <p className="text-sm text-muted-foreground mt-1">Thử tìm kiếm với bộ lọc khác</p>
+                    <p className="text-muted-foreground">{t("history.noYieldData")}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{t("history.tryDifferentFilters")}</p>
                   </CardContent>
                 </Card>
               )}
@@ -2978,11 +2917,9 @@ export default function History() {
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle className="flex items-center gap-2">
-                    <Image className="h-5 w-5" />
-                    Gallery Hình Ảnh Kiểm Tra
-                  </CardTitle>
+                    <Image className="h-5 w-5" />{t("history.galleryTitle")}</CardTitle>
                   <CardDescription>
-                    Xem tất cả hình ảnh từ các điểm đo trong kết quả kiểm tra
+                    {t("history.galleryDesc")}
                   </CardDescription>
                 </div>
                 <AnnotationSearch />
@@ -2995,11 +2932,11 @@ export default function History() {
                         id: `${inspection.id}-${result.measurementPointDefId || idx}`,
                         url: result.imageUrl || inspection.productModel?.referenceImageUrl || '',
                         thumbnailUrl: result.imageUrl || inspection.productModel?.referenceImageUrl || '',
-                        title: `${inspection.serialNumber} - Điểm ${result.measurementPointDefId || idx + 1}`,
+                        title: `${inspection.serialNumber} - ${t("history.pointLabel")} ${result.measurementPointDefId || idx + 1}`,
                         description: result.remark || '',
                         result: result.result as "OK" | "NG" | "NTF",
                         measurementPointId: result.measurementPointDefId,
-                        measurementPointName: result.measurementPointDef?.name || `Điểm đo ${result.measurementPointDefId || idx + 1}`,
+                        measurementPointName: result.measurementPointDef?.name || `${t("history.measurementPoint")} ${result.measurementPointDefId || idx + 1}`,
                         value: result.value,
                         standardValue: result.measurementPointDef?.standardValue,
                         upperLimit: result.measurementPointDef?.upperLimit,
@@ -3007,7 +2944,7 @@ export default function History() {
                         timestamp: new Date(inspection.inspectedAt),
                       } as GalleryImage)).filter((img: GalleryImage) => img.url)
                     )}
-                    title="Hình ảnh điểm đo"
+                    title={t("history.measurementImages")}
                     showFilters={true}
                     showSearch={true}
                     columns={5}
@@ -3015,8 +2952,8 @@ export default function History() {
                 ) : (
                   <EmptyState
                     icon={Image}
-                    title="Chưa có hình ảnh"
-                    description="Không có hình ảnh nào trong kết quả tìm kiếm hiện tại"
+                    title={t("history.noImages")}
+                    description={t("history.noImagesDesc")}
                   />
                 )}
               </CardContent>
@@ -3032,7 +2969,7 @@ export default function History() {
         onScan={(serialNumber) => {
           setFilters({ ...filters, serialNumber });
           setPage(1);
-          toast.success(`Đã tìm kiếm: ${serialNumber}`);
+          toast.success(t("history.searchedFor", { serialNumber: serialNumber }));
         }}
       />
     </DashboardLayout>

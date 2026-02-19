@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
@@ -49,13 +50,14 @@ type Workstation = {
 const PROCESS_TYPES = [
   { value: "SMT", label: "SMT", color: "bg-blue-500" },
   { value: "DIP", label: "DIP", color: "bg-green-500" },
-  { value: "ASSEMBLY", label: "Lắp ráp", color: "bg-yellow-500" },
-  { value: "TESTING", label: "Kiểm tra", color: "bg-purple-500" },
-  { value: "PACKAGING", label: "Đóng gói", color: "bg-orange-500" },
-  { value: "OTHER", label: "Khác", color: "bg-gray-500" },
+  { value: "ASSEMBLY", label: "machines.assembly", color: "bg-yellow-500" },
+  { value: "TESTING", label: "machines.testing", color: "bg-purple-500" },
+  { value: "PACKAGING", label: "machines.packaging", color: "bg-orange-500" },
+  { value: "OTHER", label: "machines.other", color: "bg-gray-500" },
 ];
 
 export default function WorkstationManagement() {
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState("");
   const [filterLineId, setFilterLineId] = useState<string>("all");
   const [filterFactoryId, setFilterFactoryId] = useState<string>("all");
@@ -89,7 +91,7 @@ export default function WorkstationManagement() {
   // Mutations
   const createMutation = trpc.workstation.create.useMutation({
     onSuccess: () => {
-      toast.success("Đã tạo công trạm mới");
+      toast.success(t('machines.createSuccess'));
       refetch();
       setIsCreateDialogOpen(false);
       resetForm();
@@ -99,7 +101,7 @@ export default function WorkstationManagement() {
 
   const updateMutation = trpc.workstation.update.useMutation({
     onSuccess: () => {
-      toast.success("Đã cập nhật công trạm");
+      toast.success(t('machines.updateSuccess'));
       refetch();
       setEditingWorkstation(null);
       resetForm();
@@ -109,7 +111,7 @@ export default function WorkstationManagement() {
 
   const deleteMutation = trpc.workstation.delete.useMutation({
     onSuccess: () => {
-      toast.success("Đã xóa công trạm");
+      toast.success(t('machines.deleteSuccess'));
       refetch();
       setDeleteConfirmId(null);
     },
@@ -229,14 +231,14 @@ export default function WorkstationManagement() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Quản lý Công trạm</h1>
+            <h1 className="text-2xl font-bold">{t('machines.title')}</h1>
             <p className="text-muted-foreground">
-              Quản lý danh sách công trạm trong các dây chuyền sản xuất
+              {t('machines.subtitle')}
             </p>
           </div>
           <Button onClick={() => setIsCreateDialogOpen(true)}>
             <Plus className="w-4 h-4 mr-2" />
-            Thêm công trạm
+            {t('machines.addWorkstation')}
           </Button>
         </div>
 
@@ -245,7 +247,7 @@ export default function WorkstationManagement() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Tổng công trạm
+                {t('machines.totalWorkstations')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -256,7 +258,7 @@ export default function WorkstationManagement() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-green-500" />
-                Đang hoạt động
+                {t('machines.activeStatus')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -267,7 +269,7 @@ export default function WorkstationManagement() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                 <XCircle className="w-4 h-4 text-red-500" />
-                Tạm dừng
+                {t('machines.pausedStatus')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -278,7 +280,7 @@ export default function WorkstationManagement() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-blue-500" />
-                Theo loại
+                {t('machines.byType')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -287,7 +289,7 @@ export default function WorkstationManagement() {
                   const info = getProcessTypeInfo(type);
                   return (
                     <Badge key={type} variant="secondary" className="text-xs">
-                      {info.label}: {count}
+                      {info.label.startsWith('machines.') ? t(info.label) : info.label}: {count}
                     </Badge>
                   );
                 })}
@@ -299,7 +301,7 @@ export default function WorkstationManagement() {
         {/* Filters */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Bộ lọc</CardTitle>
+            <CardTitle className="text-lg">{t('machines.filters')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-4">
@@ -307,7 +309,7 @@ export default function WorkstationManagement() {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
-                    placeholder="Tìm theo mã hoặc tên..."
+                    placeholder={t('machines.searchPlaceholder')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-9"
@@ -316,10 +318,10 @@ export default function WorkstationManagement() {
               </div>
               <Select value={filterFactoryId} onValueChange={setFilterFactoryId}>
                 <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Nhà máy" />
+                  <SelectValue placeholder={t('machines.factory')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả nhà máy</SelectItem>
+                  <SelectItem value="all">{t('machines.allFactories')}</SelectItem>
                   {factories?.map((f) => (
                     <SelectItem key={f.id} value={f.id.toString()}>
                       {f.name}
@@ -329,10 +331,10 @@ export default function WorkstationManagement() {
               </Select>
               <Select value={filterLineId} onValueChange={setFilterLineId}>
                 <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Dây chuyền" />
+                  <SelectValue placeholder={t('machines.line')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả dây chuyền</SelectItem>
+                  <SelectItem value="all">{t('machines.allLines')}</SelectItem>
                   {lines?.map((l) => (
                     <SelectItem key={l.id} value={l.id.toString()}>
                       {l.name}
@@ -342,13 +344,13 @@ export default function WorkstationManagement() {
               </Select>
               <Select value={filterProcessType} onValueChange={setFilterProcessType}>
                 <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Loại công đoạn" />
+                  <SelectValue placeholder={t('machines.processType')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả loại</SelectItem>
+                  <SelectItem value="all">{t('machines.allTypes')}</SelectItem>
                   {PROCESS_TYPES.map((pt) => (
                     <SelectItem key={pt.value} value={pt.value}>
-                      {pt.label}
+                      {pt.label.startsWith('machines.') ? t(pt.label) : pt.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -360,22 +362,22 @@ export default function WorkstationManagement() {
         {/* Table */}
         <Card>
           <CardHeader>
-            <CardTitle>Danh sách công trạm</CardTitle>
+            <CardTitle>{t('machines.workstationList')}</CardTitle>
             <CardDescription>
-              {filteredWorkstations.length} công trạm
+              {t('machines.workstationCount', { count: filteredWorkstations.length })}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Mã</TableHead>
-                  <TableHead>Tên</TableHead>
-                  <TableHead>Loại</TableHead>
-                  <TableHead>Nhà máy</TableHead>
-                  <TableHead>Dây chuyền</TableHead>
-                  <TableHead>Thứ tự</TableHead>
-                  <TableHead>Trạng thái</TableHead>
+                  <TableHead>{t('machines.code')}</TableHead>
+                  <TableHead>{t('machines.name')}</TableHead>
+                  <TableHead>{t('machines.type')}</TableHead>
+                  <TableHead>{t('machines.factory')}</TableHead>
+                  <TableHead>{t('machines.line')}</TableHead>
+                  <TableHead>{t('machines.order')}</TableHead>
+                  <TableHead>{t('common.status')}</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -383,13 +385,13 @@ export default function WorkstationManagement() {
                 {isLoading ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-8">
-                      Đang tải...
+                      {t('machines.loading')}
                     </TableCell>
                   </TableRow>
                 ) : filteredWorkstations.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                      Không có công trạm nào
+                      {t('machines.noWorkstations')}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -401,7 +403,7 @@ export default function WorkstationManagement() {
                         <TableCell className="font-medium">{ws.name}</TableCell>
                         <TableCell>
                           <Badge className={`${processInfo.color} text-white`}>
-                            {processInfo.label}
+                            {processInfo.label.startsWith('machines.') ? t(processInfo.label) : processInfo.label}
                           </Badge>
                         </TableCell>
                         <TableCell>{getFactoryName(ws.factoryId)}</TableCell>
@@ -409,7 +411,7 @@ export default function WorkstationManagement() {
                         <TableCell>{ws.orderIndex}</TableCell>
                         <TableCell>
                           <Badge variant={ws.isActive ? "default" : "secondary"}>
-                            {ws.isActive ? "Hoạt động" : "Tạm dừng"}
+                            {ws.isActive ? t('machines.active') : t('machines.paused')}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -422,14 +424,14 @@ export default function WorkstationManagement() {
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => openEditDialog(ws)}>
                                 <Edit className="w-4 h-4 mr-2" />
-                                Chỉnh sửa
+                                {t('machines.edit')}
                               </DropdownMenuItem>
                               <DropdownMenuItem 
                                 className="text-red-600"
                                 onClick={() => setDeleteConfirmId(ws.id)}
                               >
                                 <Trash2 className="w-4 h-4 mr-2" />
-                                Xóa
+                                {t('machines.delete')}
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -457,51 +459,51 @@ export default function WorkstationManagement() {
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>
-                {editingWorkstation ? "Chỉnh sửa công trạm" : "Thêm công trạm mới"}
+                {editingWorkstation ? t('machines.editWorkstation') : t('machines.addNewWorkstation')}
               </DialogTitle>
               <DialogDescription>
                 {editingWorkstation 
-                  ? "Cập nhật thông tin công trạm" 
-                  : "Điền thông tin để tạo công trạm mới"}
+                  ? t('machines.editDesc') 
+                  : t('machines.createDesc')}
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="code">Mã công trạm *</Label>
+                  <Label htmlFor="code">{t('machines.workstationCode')}</Label>
                   <Input
                     id="code"
                     value={formData.code}
                     onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                    placeholder="VD: WS001"
+                    placeholder={t('machines.codePlaceholder')}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="name">Tên công trạm *</Label>
+                  <Label htmlFor="name">{t('machines.workstationName')}</Label>
                   <Input
                     id="name"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="VD: Công trạm SMT 1"
+                    placeholder={t('machines.namePlaceholder')}
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="description">Mô tả</Label>
+                <Label htmlFor="description">{t('machines.description')}</Label>
                 <Textarea
                   id="description"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Mô tả công trạm..."
+                  placeholder={t('machines.descriptionPlaceholder')}
                   rows={2}
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Loại công đoạn</Label>
+                  <Label>{t('machines.processType')}</Label>
                   <Select 
                     value={formData.processType} 
                     onValueChange={(v) => setFormData({ ...formData, processType: v })}
@@ -512,14 +514,14 @@ export default function WorkstationManagement() {
                     <SelectContent>
                       {PROCESS_TYPES.map((pt) => (
                         <SelectItem key={pt.value} value={pt.value}>
-                          {pt.label}
+                          {pt.label.startsWith('machines.') ? t(pt.label) : pt.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="orderIndex">Thứ tự</Label>
+                  <Label htmlFor="orderIndex">{t('machines.order')}</Label>
                   <Input
                     id="orderIndex"
                     type="number"
@@ -531,16 +533,16 @@ export default function WorkstationManagement() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Nhà máy</Label>
+                  <Label>{t('machines.factory')}</Label>
                   <Select 
                     value={formData.factoryId} 
                     onValueChange={(v) => setFormData({ ...formData, factoryId: v })}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Chọn nhà máy" />
+                      <SelectValue placeholder={t('machines.selectFactory')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Không chọn</SelectItem>
+                      <SelectItem value="none">{t('machines.noSelection')}</SelectItem>
                       {factories?.map((f) => (
                         <SelectItem key={f.id} value={f.id.toString()}>
                           {f.name}
@@ -550,16 +552,16 @@ export default function WorkstationManagement() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Dây chuyền</Label>
+                  <Label>{t('machines.line')}</Label>
                   <Select 
                     value={formData.lineId} 
                     onValueChange={(v) => setFormData({ ...formData, lineId: v })}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Chọn dây chuyền" />
+                      <SelectValue placeholder={t('machines.selectLine')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Không chọn</SelectItem>
+                      <SelectItem value="none">{t('machines.noSelection')}</SelectItem>
                       {lines?.map((l) => (
                         <SelectItem key={l.id} value={l.id.toString()}>
                           {l.name}
@@ -571,7 +573,7 @@ export default function WorkstationManagement() {
               </div>
 
               <div className="flex items-center justify-between">
-                <Label htmlFor="isActive">Trạng thái hoạt động</Label>
+                <Label htmlFor="isActive">{t('machines.activeStatusLabel')}</Label>
                 <Switch
                   id="isActive"
                   checked={formData.isActive}
@@ -589,13 +591,13 @@ export default function WorkstationManagement() {
                   resetForm();
                 }}
               >
-                Hủy
+                {t('common.cancel')}
               </Button>
               <Button 
                 onClick={editingWorkstation ? handleUpdate : handleCreate}
                 disabled={!formData.code || !formData.name || createMutation.isPending || updateMutation.isPending}
               >
-                {editingWorkstation ? "Cập nhật" : "Tạo mới"}
+                {editingWorkstation ? t('machines.update') : t('machines.createNew')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -607,22 +609,22 @@ export default function WorkstationManagement() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-red-600">
                 <AlertTriangle className="w-5 h-5" />
-                Xác nhận xóa
+                {t('machines.confirmDelete')}
               </DialogTitle>
               <DialogDescription>
-                Bạn có chắc chắn muốn xóa công trạm này? Hành động này không thể hoàn tác.
+                {t('machines.deleteConfirmMessage')}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
               <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>
-                Hủy
+                {t('common.cancel')}
               </Button>
               <Button 
                 variant="destructive" 
                 onClick={() => deleteConfirmId && deleteMutation.mutate(deleteConfirmId)}
                 disabled={deleteMutation.isPending}
               >
-                Xóa
+                {t('machines.delete')}
               </Button>
             </DialogFooter>
           </DialogContent>

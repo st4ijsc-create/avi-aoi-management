@@ -61,6 +61,21 @@ import CorporateDashboard from "./pages/CorporateDashboard";
 import AIPerformanceDashboard from "./pages/AIPerformanceDashboard";
 import TestAnnotationPage from "./pages/TestAnnotationPage";
 import AOIPackages from "./pages/AOIPackages";
+import MqttBulletin from "./pages/MqttBulletin";
+import SPCAdvanced from "./pages/SPCAdvanced";
+import CorrelationAnalysis from "./pages/CorrelationAnalysis";
+import QualityGates from "./pages/QualityGates";
+import RoleBuilder from "./pages/RoleBuilder";
+import EnhancedAuditLogs from "./pages/EnhancedAuditLogs";
+import PdfReports from "./pages/PdfReports";
+import DataComparison from "./pages/DataComparison";
+import ReportBuilder from "./pages/ReportBuilder";
+import PowerPointExport from "./pages/PowerPointExport";
+import EnhancedScheduledReports from "./pages/EnhancedScheduledReports";
+import ParetoAnalysis from "./pages/ParetoAnalysis";
+import QualityGateTemplates from "./pages/QualityGateTemplates";
+import ProductionScheduling from "./pages/ProductionScheduling";
+import MachineRegistration from "./pages/MachineRegistration";
 
 function Router() {
   return (
@@ -123,6 +138,21 @@ function Router() {
       <Route path="/ai-performance" component={AIPerformanceDashboard} />
       <Route path="/test-annotation" component={TestAnnotationPage} />
       <Route path="/aoi-packages" component={AOIPackages} />
+      <Route path="/mqtt-bulletin" component={MqttBulletin} />
+      <Route path="/spc-advanced" component={SPCAdvanced} />
+      <Route path="/correlation-analysis" component={CorrelationAnalysis} />
+      <Route path="/quality-gates" component={QualityGates} />
+      <Route path="/role-builder" component={RoleBuilder} />
+      <Route path="/enhanced-audit" component={EnhancedAuditLogs} />
+      <Route path="/pdf-reports" component={PdfReports} />
+      <Route path="/data-comparison" component={DataComparison} />
+      <Route path="/report-builder" component={ReportBuilder} />
+      <Route path="/powerpoint-export" component={PowerPointExport} />
+      <Route path="/enhanced-scheduled-reports" component={EnhancedScheduledReports} />
+      <Route path="/pareto-analysis" component={ParetoAnalysis} />
+      <Route path="/quality-gate-templates" component={QualityGateTemplates} />
+      <Route path="/production-scheduling" component={ProductionScheduling} />
+      <Route path="/machine-registration" component={MachineRegistration} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

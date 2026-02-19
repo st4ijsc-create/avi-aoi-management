@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,7 +53,13 @@ export type WidgetType =
   | 'activity-feed'
   | 'trend-indicator'
   | 'clock'
-  | 'target-progress';
+  | 'target-progress'
+  | 'production-volume'
+  | 'machine-status'
+  | 'top-ng-points'
+  | 'throughput'
+  | 'yield-rate'
+  | 'recent-alerts';
 
 interface WidgetDefinition {
   type: WidgetType;
@@ -77,191 +84,314 @@ interface ConfigField {
 const widgetDefinitions: WidgetDefinition[] = [
   {
     type: 'kpi-card',
-    name: 'KPI Card',
-    description: 'Hiển thị một chỉ số KPI với trend',
+    name: 'widgets.kpiCard.name',
+    description: 'widgets.kpiCard.description',
     icon: <TrendingUp className="w-6 h-6" />,
     category: 'metrics',
     defaultSize: 'small',
     configFields: [
-      { key: 'title', label: 'Tiêu đề', type: 'text', default: 'KPI' },
-      { key: 'dataSource', label: 'Nguồn dữ liệu', type: 'select', options: [
-        { value: 'yield_rate', label: 'Tỷ lệ Yield' },
-        { value: 'ng_rate', label: 'Tỷ lệ NG' },
-        { value: 'oee', label: 'OEE' },
-        { value: 'inspection_count', label: 'Số lượng kiểm tra' },
-        { value: 'machine_uptime', label: 'Uptime máy' },
+      { key: 'title', label: 'widgets.fields.title', type: 'text', default: 'KPI' },
+      { key: 'dataSource', label: 'widgets.fields.dataSource', type: 'select', options: [
+        { value: 'yield_rate', label: 'widgets.options.yieldRate' },
+        { value: 'ng_rate', label: 'widgets.options.ngRate' },
+        { value: 'oee', label: 'widgets.options.oee' },
+        { value: 'inspection_count', label: 'widgets.options.inspectionCount' },
+        { value: 'machine_uptime', label: 'widgets.options.machineUptime' },
       ]},
-      { key: 'showTrend', label: 'Hiển thị trend', type: 'boolean', default: true },
-      { key: 'color', label: 'Màu sắc', type: 'color', default: '#3b82f6' },
+      { key: 'showTrend', label: 'widgets.fields.showTrend', type: 'boolean', default: true },
+      { key: 'color', label: 'widgets.fields.color', type: 'color', default: '#3b82f6' },
     ],
   },
   {
     type: 'bar-chart',
-    name: 'Bar Chart',
-    description: 'Biểu đồ cột so sánh dữ liệu',
+    name: 'widgets.barChart.name',
+    description: 'widgets.barChart.description',
     icon: <BarChart3 className="w-6 h-6" />,
     category: 'charts',
     defaultSize: 'medium',
     configFields: [
-      { key: 'title', label: 'Tiêu đề', type: 'text', default: 'Bar Chart' },
-      { key: 'dataSource', label: 'Nguồn dữ liệu', type: 'select', options: [
-        { value: 'ng_by_machine', label: 'NG theo máy' },
-        { value: 'yield_by_product', label: 'Yield theo sản phẩm' },
-        { value: 'inspection_by_line', label: 'Kiểm tra theo line' },
+      { key: 'title', label: 'widgets.fields.title', type: 'text', default: 'Bar Chart' },
+      { key: 'dataSource', label: 'widgets.fields.dataSource', type: 'select', options: [
+        { value: 'ng_by_machine', label: 'widgets.options.ngByMachine' },
+        { value: 'yield_by_product', label: 'widgets.options.yieldByProduct' },
+        { value: 'inspection_by_line', label: 'widgets.options.inspectionByLine' },
       ]},
-      { key: 'orientation', label: 'Hướng', type: 'select', options: [
-        { value: 'vertical', label: 'Dọc' },
-        { value: 'horizontal', label: 'Ngang' },
+      { key: 'orientation', label: 'widgets.fields.orientation', type: 'select', options: [
+        { value: 'vertical', label: 'widgets.options.vertical' },
+        { value: 'horizontal', label: 'widgets.options.horizontal' },
       ]},
-      { key: 'showLegend', label: 'Hiển thị legend', type: 'boolean', default: true },
+      { key: 'showLegend', label: 'widgets.fields.showLegend', type: 'boolean', default: true },
     ],
   },
   {
     type: 'line-chart',
-    name: 'Line Chart',
-    description: 'Biểu đồ đường theo thời gian',
+    name: 'widgets.lineChart.name',
+    description: 'widgets.lineChart.description',
     icon: <LineChart className="w-6 h-6" />,
     category: 'charts',
     defaultSize: 'large',
     configFields: [
-      { key: 'title', label: 'Tiêu đề', type: 'text', default: 'Trend Chart' },
-      { key: 'dataSource', label: 'Nguồn dữ liệu', type: 'select', options: [
-        { value: 'yield_trend', label: 'Xu hướng Yield' },
-        { value: 'ng_trend', label: 'Xu hướng NG' },
-        { value: 'oee_trend', label: 'Xu hướng OEE' },
-        { value: 'inspection_trend', label: 'Xu hướng kiểm tra' },
+      { key: 'title', label: 'widgets.fields.title', type: 'text', default: 'Trend Chart' },
+      { key: 'dataSource', label: 'widgets.fields.dataSource', type: 'select', options: [
+        { value: 'yield_trend', label: 'widgets.options.yieldTrend' },
+        { value: 'ng_trend', label: 'widgets.options.ngTrend' },
+        { value: 'oee_trend', label: 'widgets.options.oeeTrend' },
+        { value: 'inspection_trend', label: 'widgets.options.inspectionTrend' },
       ]},
-      { key: 'timeRange', label: 'Khoảng thời gian', type: 'select', options: [
-        { value: '7d', label: '7 ngày' },
-        { value: '30d', label: '30 ngày' },
-        { value: '90d', label: '90 ngày' },
+      { key: 'timeRange', label: 'widgets.fields.timeRange', type: 'select', options: [
+        { value: '7d', label: 'common.7days' },
+        { value: '30d', label: 'common.30days' },
+        { value: '90d', label: 'common.90days' },
       ]},
-      { key: 'showArea', label: 'Hiển thị area', type: 'boolean', default: false },
+      { key: 'showArea', label: 'widgets.fields.showArea', type: 'boolean', default: false },
     ],
   },
   {
     type: 'pie-chart',
-    name: 'Pie Chart',
-    description: 'Biểu đồ tròn phân bố dữ liệu',
+    name: 'widgets.pieChart.name',
+    description: 'widgets.pieChart.description',
     icon: <PieChart className="w-6 h-6" />,
     category: 'charts',
     defaultSize: 'medium',
     configFields: [
-      { key: 'title', label: 'Tiêu đề', type: 'text', default: 'Distribution' },
-      { key: 'dataSource', label: 'Nguồn dữ liệu', type: 'select', options: [
-        { value: 'result_distribution', label: 'Phân bố kết quả' },
-        { value: 'defect_distribution', label: 'Phân bố lỗi' },
-        { value: 'machine_distribution', label: 'Phân bố theo máy' },
+      { key: 'title', label: 'widgets.fields.title', type: 'text', default: 'Distribution' },
+      { key: 'dataSource', label: 'widgets.fields.dataSource', type: 'select', options: [
+        { value: 'result_distribution', label: 'widgets.options.resultDistribution' },
+        { value: 'defect_distribution', label: 'widgets.options.defectDistribution' },
+        { value: 'machine_distribution', label: 'widgets.options.machineDistribution' },
       ]},
-      { key: 'showLabels', label: 'Hiển thị labels', type: 'boolean', default: true },
-      { key: 'donut', label: 'Dạng donut', type: 'boolean', default: false },
+      { key: 'showLabels', label: 'widgets.fields.showLabels', type: 'boolean', default: true },
+      { key: 'donut', label: 'widgets.fields.donut', type: 'boolean', default: false },
     ],
   },
   {
     type: 'gauge',
-    name: 'Gauge',
-    description: 'Đồng hồ đo hiển thị giá trị',
+    name: 'widgets.gauge.name',
+    description: 'widgets.gauge.description',
     icon: <Gauge className="w-6 h-6" />,
     category: 'metrics',
     defaultSize: 'small',
     configFields: [
-      { key: 'title', label: 'Tiêu đề', type: 'text', default: 'Gauge' },
-      { key: 'dataSource', label: 'Nguồn dữ liệu', type: 'select', options: [
-        { value: 'current_yield', label: 'Yield hiện tại' },
-        { value: 'current_oee', label: 'OEE hiện tại' },
-        { value: 'machine_health', label: 'Sức khỏe máy' },
+      { key: 'title', label: 'widgets.fields.title', type: 'text', default: 'Gauge' },
+      { key: 'dataSource', label: 'widgets.fields.dataSource', type: 'select', options: [
+        { value: 'current_yield', label: 'widgets.options.currentYield' },
+        { value: 'current_oee', label: 'widgets.options.currentOee' },
+        { value: 'machine_health', label: 'widgets.options.machineHealth' },
       ]},
-      { key: 'min', label: 'Giá trị min', type: 'number', default: 0 },
-      { key: 'max', label: 'Giá trị max', type: 'number', default: 100 },
-      { key: 'thresholds', label: 'Ngưỡng cảnh báo', type: 'range', min: 0, max: 100 },
+      { key: 'min', label: 'widgets.fields.minValue', type: 'number', default: 0 },
+      { key: 'max', label: 'widgets.fields.maxValue', type: 'number', default: 100 },
+      { key: 'thresholds', label: 'widgets.fields.threshold', type: 'range', min: 0, max: 100 },
     ],
   },
   {
     type: 'table',
-    name: 'Data Table',
-    description: 'Bảng dữ liệu với sorting và filtering',
+    name: 'widgets.dataTable.name',
+    description: 'widgets.dataTable.description',
     icon: <Table2 className="w-6 h-6" />,
     category: 'data',
     defaultSize: 'large',
     configFields: [
-      { key: 'title', label: 'Tiêu đề', type: 'text', default: 'Data Table' },
-      { key: 'dataSource', label: 'Nguồn dữ liệu', type: 'select', options: [
-        { value: 'recent_inspections', label: 'Kiểm tra gần đây' },
-        { value: 'top_ng_points', label: 'Top điểm NG' },
-        { value: 'machine_status', label: 'Trạng thái máy' },
+      { key: 'title', label: 'widgets.fields.title', type: 'text', default: 'Data Table' },
+      { key: 'dataSource', label: 'widgets.fields.dataSource', type: 'select', options: [
+        { value: 'recent_inspections', label: 'widgets.options.recentInspections' },
+        { value: 'top_ng_points', label: 'widgets.options.topNgPoints' },
+        { value: 'machine_status', label: 'widgets.options.machineStatus' },
       ]},
-      { key: 'pageSize', label: 'Số dòng/trang', type: 'number', default: 10 },
-      { key: 'showPagination', label: 'Hiển thị phân trang', type: 'boolean', default: true },
+      { key: 'pageSize', label: 'widgets.fields.pageSize', type: 'number', default: 10 },
+      { key: 'showPagination', label: 'widgets.fields.showPagination', type: 'boolean', default: true },
     ],
   },
   {
     type: 'alert-list',
-    name: 'Alert List',
-    description: 'Danh sách cảnh báo real-time',
+    name: 'widgets.alertList.name',
+    description: 'widgets.alertList.description',
     icon: <Bell className="w-6 h-6" />,
     category: 'data',
     defaultSize: 'medium',
     configFields: [
-      { key: 'title', label: 'Tiêu đề', type: 'text', default: 'Alerts' },
-      { key: 'maxItems', label: 'Số items tối đa', type: 'number', default: 5 },
-      { key: 'severity', label: 'Mức độ', type: 'select', options: [
-        { value: 'all', label: 'Tất cả' },
-        { value: 'critical', label: 'Critical' },
-        { value: 'warning', label: 'Warning' },
-        { value: 'info', label: 'Info' },
+      { key: 'title', label: 'widgets.fields.title', type: 'text', default: 'Alerts' },
+      { key: 'maxItems', label: 'widgets.fields.maxItems', type: 'number', default: 5 },
+      { key: 'severity', label: 'widgets.fields.severity', type: 'select', options: [
+        { value: 'all', label: 'common.all' },
+        { value: 'critical', label: 'common.critical' },
+        { value: 'warning', label: 'common.warning' },
+        { value: 'info', label: 'common.info' },
       ]},
-      { key: 'autoRefresh', label: 'Tự động làm mới', type: 'boolean', default: true },
+      { key: 'autoRefresh', label: 'widgets.fields.autoRefresh', type: 'boolean', default: true },
     ],
   },
   {
     type: 'activity-feed',
-    name: 'Activity Feed',
-    description: 'Feed hoạt động hệ thống',
+    name: 'widgets.activityFeed.name',
+    description: 'widgets.activityFeed.description',
     icon: <Activity className="w-6 h-6" />,
     category: 'data',
     defaultSize: 'medium',
     configFields: [
-      { key: 'title', label: 'Tiêu đề', type: 'text', default: 'Activity' },
-      { key: 'maxItems', label: 'Số items tối đa', type: 'number', default: 10 },
-      { key: 'activityTypes', label: 'Loại hoạt động', type: 'select', options: [
-        { value: 'all', label: 'Tất cả' },
-        { value: 'inspections', label: 'Kiểm tra' },
-        { value: 'alerts', label: 'Cảnh báo' },
-        { value: 'system', label: 'Hệ thống' },
+      { key: 'title', label: 'widgets.fields.title', type: 'text', default: 'Activity' },
+      { key: 'maxItems', label: 'widgets.fields.maxItems', type: 'number', default: 10 },
+      { key: 'activityTypes', label: 'widgets.fields.activityTypes', type: 'select', options: [
+        { value: 'all', label: 'common.all' },
+        { value: 'inspections', label: 'widgets.options.inspections' },
+        { value: 'alerts', label: 'widgets.options.alerts' },
+        { value: 'system', label: 'widgets.options.system' },
       ]},
     ],
   },
   {
     type: 'target-progress',
-    name: 'Target Progress',
-    description: 'Tiến độ đạt mục tiêu',
+    name: 'widgets.targetProgress.name',
+    description: 'widgets.targetProgress.description',
     icon: <Target className="w-6 h-6" />,
     category: 'metrics',
     defaultSize: 'small',
     configFields: [
-      { key: 'title', label: 'Tiêu đề', type: 'text', default: 'Target' },
-      { key: 'dataSource', label: 'Nguồn dữ liệu', type: 'select', options: [
-        { value: 'daily_target', label: 'Mục tiêu ngày' },
-        { value: 'weekly_target', label: 'Mục tiêu tuần' },
-        { value: 'monthly_target', label: 'Mục tiêu tháng' },
+      { key: 'title', label: 'widgets.fields.title', type: 'text', default: 'Target' },
+      { key: 'dataSource', label: 'widgets.fields.dataSource', type: 'select', options: [
+        { value: 'daily_target', label: 'widgets.options.dailyTarget' },
+        { value: 'weekly_target', label: 'widgets.options.weeklyTarget' },
+        { value: 'monthly_target', label: 'widgets.options.monthlyTarget' },
       ]},
-      { key: 'showPercentage', label: 'Hiển thị %', type: 'boolean', default: true },
+      { key: 'showPercentage', label: 'widgets.fields.showPercentage', type: 'boolean', default: true },
     ],
   },
   {
     type: 'clock',
-    name: 'Clock',
-    description: 'Đồng hồ thời gian thực',
+    name: 'widgets.clock.name',
+    description: 'widgets.clock.description',
     icon: <Clock className="w-6 h-6" />,
     category: 'utility',
     defaultSize: 'small',
     configFields: [
-      { key: 'format', label: 'Định dạng', type: 'select', options: [
-        { value: '24h', label: '24 giờ' },
-        { value: '12h', label: '12 giờ' },
+      { key: 'format', label: 'widgets.fields.format', type: 'select', options: [
+        { value: '24h', label: 'widgets.options.24h' },
+        { value: '12h', label: 'widgets.options.12h' },
       ]},
-      { key: 'showDate', label: 'Hiển thị ngày', type: 'boolean', default: true },
-      { key: 'showSeconds', label: 'Hiển thị giây', type: 'boolean', default: false },
+      { key: 'showDate', label: 'widgets.fields.showDate', type: 'boolean', default: true },
+      { key: 'showSeconds', label: 'widgets.fields.showSeconds', type: 'boolean', default: false },
+    ],
+  },
+  // ============ REQUIRED WIDGET TYPES ============
+  {
+    type: 'yield-rate',
+    name: 'widgets.yieldRate.name',
+    description: 'widgets.yieldRate.description',
+    icon: <TrendingUp className="w-6 h-6" />,
+    category: 'metrics',
+    defaultSize: 'medium',
+    configFields: [
+      { key: 'title', label: 'widgets.fields.title', type: 'text', default: 'Yield Rate' },
+      { key: 'timeRange', label: 'widgets.fields.timeRange', type: 'select', options: [
+        { value: 'today', label: 'common.today' },
+        { value: '7d', label: 'common.7days' },
+        { value: '30d', label: 'common.30days' },
+      ]},
+      { key: 'showTrend', label: 'widgets.fields.showTrend', type: 'boolean', default: true },
+      { key: 'targetYield', label: 'widgets.fields.targetYield', type: 'number', default: 95, min: 0, max: 100 },
+      { key: 'color', label: 'widgets.fields.color', type: 'color', default: '#22c55e' },
+    ],
+  },
+  {
+    type: 'production-volume',
+    name: 'widgets.productionVolume.name',
+    description: 'widgets.productionVolume.description',
+    icon: <BarChart3 className="w-6 h-6" />,
+    category: 'metrics',
+    defaultSize: 'large',
+    configFields: [
+      { key: 'title', label: 'widgets.fields.title', type: 'text', default: 'Production Volume' },
+      { key: 'timeRange', label: 'widgets.fields.timeRange', type: 'select', options: [
+        { value: 'today', label: 'common.today' },
+        { value: '7d', label: 'common.7days' },
+        { value: '30d', label: 'common.30days' },
+      ]},
+      { key: 'groupBy', label: 'widgets.fields.groupBy', type: 'select', options: [
+        { value: 'hour', label: 'common.hour' },
+        { value: 'day', label: 'common.day' },
+        { value: 'week', label: 'common.week' },
+      ]},
+      { key: 'showStacked', label: 'widgets.fields.showStacked', type: 'boolean', default: true },
+      { key: 'showTotal', label: 'widgets.fields.showTotal', type: 'boolean', default: true },
+    ],
+  },
+  {
+    type: 'machine-status',
+    name: 'widgets.machineStatus.name',
+    description: 'widgets.machineStatus.description',
+    icon: <Zap className="w-6 h-6" />,
+    category: 'data',
+    defaultSize: 'large',
+    configFields: [
+      { key: 'title', label: 'widgets.fields.title', type: 'text', default: 'Machine Status' },
+      { key: 'displayMode', label: 'widgets.fields.displayMode', type: 'select', options: [
+        { value: 'grid', label: 'widgets.options.grid' },
+        { value: 'list', label: 'widgets.options.list' },
+        { value: 'compact', label: 'widgets.options.compact' },
+      ]},
+      { key: 'showLastActive', label: 'widgets.fields.showTime', type: 'boolean', default: true },
+      { key: 'autoRefresh', label: 'widgets.fields.autoRefresh', type: 'boolean', default: true },
+    ],
+  },
+  {
+    type: 'recent-alerts',
+    name: 'widgets.recentAlerts.name',
+    description: 'widgets.recentAlerts.description',
+    icon: <Bell className="w-6 h-6" />,
+    category: 'data',
+    defaultSize: 'medium',
+    configFields: [
+      { key: 'title', label: 'widgets.fields.title', type: 'text', default: 'Recent Alerts' },
+      { key: 'maxItems', label: 'widgets.fields.maxItems', type: 'number', default: 10 },
+      { key: 'severity', label: 'widgets.fields.severity', type: 'select', options: [
+        { value: 'all', label: 'common.all' },
+        { value: 'critical', label: 'common.critical' },
+        { value: 'warning', label: 'common.warning' },
+        { value: 'info', label: 'common.info' },
+      ]},
+      { key: 'showTimestamp', label: 'widgets.fields.showTime', type: 'boolean', default: true },
+      { key: 'autoRefresh', label: 'widgets.fields.autoRefresh', type: 'boolean', default: true },
+    ],
+  },
+  {
+    type: 'top-ng-points',
+    name: 'widgets.topNgPoints.name',
+    description: 'widgets.topNgPoints.description',
+    icon: <BarChart3 className="w-6 h-6" />,
+    category: 'charts',
+    defaultSize: 'large',
+    configFields: [
+      { key: 'title', label: 'widgets.fields.title', type: 'text', default: 'Top NG Points' },
+      { key: 'topN', label: 'widgets.fields.topN', type: 'number', default: 10, min: 3, max: 50 },
+      { key: 'timeRange', label: 'widgets.fields.timeRange', type: 'select', options: [
+        { value: 'today', label: 'common.today' },
+        { value: '7d', label: 'common.7days' },
+        { value: '30d', label: 'common.30days' },
+      ]},
+      { key: 'showPareto', label: 'widgets.fields.paretoLine', type: 'boolean', default: true },
+      { key: 'showPercentage', label: 'widgets.fields.showPercentage', type: 'boolean', default: true },
+    ],
+  },
+  {
+    type: 'throughput',
+    name: 'widgets.throughput.name',
+    description: 'widgets.throughput.description',
+    icon: <Activity className="w-6 h-6" />,
+    category: 'metrics',
+    defaultSize: 'medium',
+    configFields: [
+      { key: 'title', label: 'widgets.fields.title', type: 'text', default: 'Throughput' },
+      { key: 'timeRange', label: 'widgets.fields.timeRange', type: 'select', options: [
+        { value: 'today', label: 'common.today' },
+        { value: '7d', label: 'common.7days' },
+        { value: '30d', label: 'common.30days' },
+      ]},
+      { key: 'unit', label: 'widgets.fields.unit', type: 'select', options: [
+        { value: 'per_hour', label: 'widgets.options.perHour' },
+        { value: 'per_shift', label: 'widgets.options.perShift' },
+        { value: 'per_day', label: 'widgets.options.perDay' },
+      ]},
+      { key: 'showTarget', label: 'widgets.fields.showTarget', type: 'boolean', default: true },
+      { key: 'targetValue', label: 'widgets.fields.targetValue', type: 'number', default: 1000 },
     ],
   },
 ];
@@ -275,17 +405,18 @@ export default function DashboardWidgetLibrary({
   onAddWidget, 
   existingWidgets 
 }: DashboardWidgetLibraryProps) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [selectedWidget, setSelectedWidget] = useState<WidgetDefinition | null>(null);
   const [configValues, setConfigValues] = useState<Record<string, any>>({});
   const [activeCategory, setActiveCategory] = useState<string>("all");
 
   const categories = [
-    { id: 'all', label: 'Tất cả' },
-    { id: 'metrics', label: 'Metrics' },
-    { id: 'charts', label: 'Charts' },
-    { id: 'data', label: 'Data' },
-    { id: 'utility', label: 'Utility' },
+    { id: 'all', label: t('common.all') },
+    { id: 'metrics', label: t('dashboard.categories.metrics') },
+    { id: 'charts', label: t('dashboard.categories.charts') },
+    { id: 'data', label: t('dashboard.categories.data') },
+    { id: 'utility', label: t('dashboard.categories.utility') },
   ];
 
   const filteredWidgets = activeCategory === 'all' 
@@ -349,12 +480,12 @@ export default function DashboardWidgetLibrary({
         return (
           <Select value={value || ''} onValueChange={(v) => handleConfigChange(field.key, v)}>
             <SelectTrigger>
-              <SelectValue placeholder="Chọn..." />
+              <SelectValue placeholder={t('common.select')} />
             </SelectTrigger>
             <SelectContent>
               {field.options?.map(opt => (
                 <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
+                  {t(opt.label)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -402,15 +533,15 @@ export default function DashboardWidgetLibrary({
     <>
       <Button onClick={() => setIsOpen(true)}>
         <Plus className="w-4 h-4 mr-2" />
-        Thêm Widget
+        {t('dashboard.addWidget')}
       </Button>
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogContent className="max-w-4xl max-h-[80vh]">
           <DialogHeader>
-            <DialogTitle>Widget Library</DialogTitle>
+            <DialogTitle>{t('dashboard.widgetLibrary')}</DialogTitle>
             <DialogDescription>
-              Chọn widget để thêm vào dashboard
+              {t('dashboard.selectWidgetDescription')}
             </DialogDescription>
           </DialogHeader>
 
@@ -446,9 +577,9 @@ export default function DashboardWidgetLibrary({
                           {widget.icon}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-medium">{widget.name}</h4>
+                          <h4 className="font-medium">{t(widget.name)}</h4>
                           <p className="text-sm text-muted-foreground truncate">
-                            {widget.description}
+                            {t(widget.description)}
                           </p>
                           <Badge variant="outline" className="mt-1 text-xs">
                             {widget.category}
@@ -465,7 +596,7 @@ export default function DashboardWidgetLibrary({
             <div className="border rounded-lg overflow-hidden">
               <div className="p-3 border-b bg-muted">
                 <h3 className="font-medium">
-                  {selectedWidget ? `Cấu hình: ${selectedWidget.name}` : 'Chọn widget'}
+                  {selectedWidget ? t('dashboard.configureWidget', { name: t(selectedWidget.name) }) : t('dashboard.selectWidget')}
                 </h3>
               </div>
               <ScrollArea className="h-[calc(100%-48px)]">
@@ -478,7 +609,7 @@ export default function DashboardWidgetLibrary({
                           {selectedWidget.icon}
                         </div>
                         <p className="text-sm font-medium">
-                          {configValues.title || selectedWidget.name}
+                          {configValues.title || t(selectedWidget.name)}
                         </p>
                         <Badge variant="secondary" className="mt-1">
                           {selectedWidget.defaultSize}
@@ -490,7 +621,7 @@ export default function DashboardWidgetLibrary({
                     {selectedWidget.configFields.map(field => (
                       <div key={field.key} className="space-y-2">
                         <Label className="flex items-center justify-between">
-                          {field.label}
+                          {t(field.label)}
                           {field.type === 'boolean' && renderConfigField(field)}
                         </Label>
                         {field.type !== 'boolean' && renderConfigField(field)}
@@ -500,7 +631,7 @@ export default function DashboardWidgetLibrary({
                 ) : (
                   <div className="p-8 text-center text-muted-foreground">
                     <Settings className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p>Chọn một widget từ danh sách bên trái để cấu hình</p>
+                    <p>{t('dashboard.selectWidgetHint')}</p>
                   </div>
                 )}
               </ScrollArea>
@@ -509,11 +640,11 @@ export default function DashboardWidgetLibrary({
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleAddWidget} disabled={!selectedWidget}>
               <Plus className="w-4 h-4 mr-2" />
-              Thêm Widget
+              {t('dashboard.addWidget')}
             </Button>
           </DialogFooter>
         </DialogContent>

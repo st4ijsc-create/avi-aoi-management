@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { useTranslation } from 'react-i18next';
 import { 
   Package,
   Cpu,
@@ -22,6 +23,7 @@ import { navItems } from "@/lib/navigation";
 import { useState } from "react";
 
 export default function ProductMachineMapping() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
@@ -37,7 +39,7 @@ export default function ProductMachineMapping() {
   // Mutations
   const createMappingMutation = trpc.productMachineMapping.create.useMutation({
     onSuccess: () => {
-      toast.success("Gán sản phẩm cho máy thành công");
+      toast.success(t('products.mappingCreateSuccess'));
       setDialogOpen(false);
       setSelectedMachineId("");
       setSelectedProductId("");
@@ -48,7 +50,7 @@ export default function ProductMachineMapping() {
 
   const deleteMappingMutation = trpc.productMachineMapping.delete.useMutation({
     onSuccess: () => {
-      toast.success("Xóa gán sản phẩm thành công");
+      toast.success(t('products.mappingDeleteSuccess'));
       refetchMappings();
     },
     onError: (error) => toast.error(error.message),
@@ -56,7 +58,7 @@ export default function ProductMachineMapping() {
 
   const toggleActiveMutation = trpc.productMachineMapping.update.useMutation({
     onSuccess: () => {
-      toast.success("Cập nhật trạng thái thành công");
+      toast.success(t('products.statusUpdateSuccess'));
       refetchMappings();
     },
     onError: (error: any) => toast.error(error.message),
@@ -74,38 +76,38 @@ export default function ProductMachineMapping() {
 
   return (
     <DashboardLayout
-      title="Gán sản phẩm - Máy"
+      title={t('products.mappingTitle')}
       navItems={navItems}
     >
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Gán sản phẩm cho máy</h1>
+            <h1 className="text-2xl font-bold">{t('products.assignProductToMachine')}</h1>
             <p className="text-muted-foreground">
-              Cấu hình sản phẩm nào được phép chạy trên máy nào
+              {t('products.assignDescription')}
             </p>
           </div>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button className="gap-2" disabled={!isAdmin}>
                 <Plus className="h-4 w-4" />
-                Thêm gán mới
+                {t('products.addNewMapping')}
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Gán sản phẩm cho máy</DialogTitle>
+                <DialogTitle>{t('products.assignProductToMachine')}</DialogTitle>
                 <DialogDescription>
-                  Chọn máy và sản phẩm để tạo liên kết
+                  {t('products.selectMachineAndProduct')}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Máy *</label>
+                  <label className="text-sm font-medium">{t('products.machine')} *</label>
                   <Select value={selectedMachineId} onValueChange={setSelectedMachineId}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Chọn máy" />
+                      <SelectValue placeholder={t('products.selectMachine')} />
                     </SelectTrigger>
                     <SelectContent>
                       {machines?.map((machine) => (
@@ -117,10 +119,10 @@ export default function ProductMachineMapping() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Sản phẩm *</label>
+                  <label className="text-sm font-medium">{t('products.product')} *</label>
                   <Select value={selectedProductId} onValueChange={setSelectedProductId}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Chọn sản phẩm" />
+                      <SelectValue placeholder={t('products.selectProduct')} />
                     </SelectTrigger>
                     <SelectContent>
                       {products?.map((product) => (
@@ -132,7 +134,7 @@ export default function ProductMachineMapping() {
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setDialogOpen(false)}>Hủy</Button>
+                <Button variant="outline" onClick={() => setDialogOpen(false)}>{t('common.cancel')}</Button>
                 <Button 
                   onClick={() => createMappingMutation.mutate({
                     machineId: parseInt(selectedMachineId),
@@ -141,7 +143,7 @@ export default function ProductMachineMapping() {
                   disabled={createMappingMutation.isPending || !selectedMachineId || !selectedProductId}
                 >
                   {createMappingMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                  Tạo liên kết
+                  {t('products.createLink')}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -163,7 +165,7 @@ export default function ProductMachineMapping() {
                     <div>
                       <CardTitle className="text-lg">{machine.name}</CardTitle>
                       <CardDescription>
-                        {machine.code} • {machine.machineType} • {machineMappings.length} sản phẩm được gán
+                        {machine.code} • {machine.machineType} • {machineMappings.length} {t('products.productsAssigned')}
                       </CardDescription>
                     </div>
                   </div>
@@ -219,15 +221,15 @@ export default function ProductMachineMapping() {
                                 </AlertDialogTrigger>
                                 <AlertDialogContent>
                                   <AlertDialogHeader>
-                                    <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
+                                    <AlertDialogTitle>{t('products.confirmDeleteTitle')}</AlertDialogTitle>
                                     <AlertDialogDescription>
-                                      Bạn có chắc chắn muốn xóa liên kết giữa máy "{machine.name}" và sản phẩm "{product?.name}"?
+                                      {t('products.confirmDeleteDescription', { machine: machine.name, product: product?.name })}
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
-                                    <AlertDialogCancel>Hủy</AlertDialogCancel>
+                                    <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                                     <AlertDialogAction onClick={() => deleteMappingMutation.mutate({ id: mapping.id })}>
-                                      Xóa
+                                      {t('common.delete')}
                                     </AlertDialogAction>
                                   </AlertDialogFooter>
                                 </AlertDialogContent>
@@ -241,7 +243,7 @@ export default function ProductMachineMapping() {
                     <div className="flex flex-col items-center justify-center py-8 text-center">
                       <Unlink className="h-8 w-8 text-muted-foreground mb-2" />
                       <p className="text-sm text-muted-foreground">
-                        Chưa có sản phẩm nào được gán cho máy này
+                        {t('products.noProductsAssigned')}
                       </p>
                       <Button 
                         variant="outline" 
@@ -254,7 +256,7 @@ export default function ProductMachineMapping() {
                         disabled={!isAdmin}
                       >
                         <Link className="h-4 w-4" />
-                        Gán sản phẩm
+                        {t('products.assignProduct')}
                       </Button>
                     </div>
                   )}
@@ -268,7 +270,7 @@ export default function ProductMachineMapping() {
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <Cpu className="h-12 w-12 text-muted-foreground mb-4" />
                 <p className="text-muted-foreground">
-                  Chưa có máy nào trong hệ thống. Vui lòng thêm máy trước.
+                  {t('products.noMachinesInSystem')}
                 </p>
               </CardContent>
             </Card>

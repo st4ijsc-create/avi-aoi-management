@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,6 +59,7 @@ type MachineWithStats = {
 };
 
 export default function Layout() {
+  const { t } = useTranslation();
   const params = useParams<{ id?: string }>();
   const [selectedWorkshop, setSelectedWorkshop] = useState<string>("");
   const [selectedLayout, setSelectedLayout] = useState<string>(params.id || "");
@@ -99,7 +101,7 @@ export default function Layout() {
       const newIndex = historyIndex - 1;
       setHistoryIndex(newIndex);
       setMachinePositions(positionHistory[newIndex]);
-      toast.info("Hoàn tác thành công");
+      toast.info(t('layout.undoSuccess'));
     }
   };
   
@@ -109,7 +111,7 @@ export default function Layout() {
       const newIndex = historyIndex + 1;
       setHistoryIndex(newIndex);
       setMachinePositions(positionHistory[newIndex]);
-      toast.info("Làm lại thành công");
+      toast.info(t('layout.redoSuccess'));
     }
   };
   
@@ -136,7 +138,7 @@ export default function Layout() {
 
   const createLayoutMutation = trpc.layout.create.useMutation({
     onSuccess: (data) => {
-      toast.success("Đã tạo layout mới");
+      toast.success(t('layout.layoutCreated'));
       refetchLayouts();
       setSelectedLayout(String(data.id));
       setIsCreateLayoutOpen(false);
@@ -148,7 +150,7 @@ export default function Layout() {
   // Mutation to save machine layout position
   const updateMachinePositionMutation = trpc.machine.updateLayoutPosition.useMutation({
     onSuccess: () => {
-      toast.success("Đã lưu vị trí máy");
+      toast.success(t('layout.positionSaved'));
     },
     onError: (err) => toast.error(err.message),
   });
@@ -289,7 +291,7 @@ export default function Layout() {
   // Export layout as image
   const handleExportImage = async () => {
     if (!containerRef.current) {
-      toast.error("Không thể xuất hình ảnh");
+      toast.error(t('layout.cannotExportImage'));
       return;
     }
 
@@ -300,7 +302,7 @@ export default function Layout() {
       const ctx = canvas.getContext('2d');
       
       if (!ctx) {
-        toast.error("Trình duyệt không hỗ trợ xuất hình ảnh");
+        toast.error(t('layout.browserNotSupportExport'));
         return;
       }
 
@@ -367,10 +369,10 @@ export default function Layout() {
       link.href = canvas.toDataURL('image/png');
       link.click();
 
-      toast.success("Đã xuất hình ảnh layout");
+      toast.success(t('layout.imageExported'));
     } catch (error) {
       console.error('Export error:', error);
-      toast.error("Lỗi khi xuất hình ảnh");
+      toast.error(t('layout.exportImageError'));
     }
   };
 
@@ -388,7 +390,7 @@ export default function Layout() {
 
   const handleCreateLayout = () => {
     if (!selectedWorkshop || !newLayoutName.trim()) {
-      toast.error("Vui lòng nhập tên layout");
+      toast.error(t('layout.pleaseEnterLayoutName'));
       return;
     }
     createLayoutMutation.mutate({
@@ -410,8 +412,8 @@ export default function Layout() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Layout nhà xưởng</h1>
-            <p className="text-muted-foreground">Trực quan hóa và quản lý vị trí máy trong nhà xưởng</p>
+            <h1 className="text-2xl font-bold text-foreground">{t('layout.workshopLayout')}</h1>
+            <p className="text-muted-foreground">{t('layout.workshopLayoutDescription')}</p>
           </div>
           
           <div className="flex items-center gap-3">
@@ -420,7 +422,7 @@ export default function Layout() {
               setSelectedLayout("");
             }}>
               <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Chọn nhà xưởng" />
+                <SelectValue placeholder={t('layout.selectWorkshop')} />
               </SelectTrigger>
               <SelectContent>
                 {workshops?.map((workshop) => (
@@ -434,7 +436,7 @@ export default function Layout() {
             {layouts && layouts.length > 0 && (
               <Select value={selectedLayout} onValueChange={setSelectedLayout}>
                 <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Chọn layout" />
+                  <SelectValue placeholder={t('layout.selectLayout')} />
                 </SelectTrigger>
                 <SelectContent>
                   {layouts.map((layout) => (
@@ -451,44 +453,44 @@ export default function Layout() {
                 <DialogTrigger asChild>
                   <Button variant="outline">
                     <Plus className="h-4 w-4 mr-1" />
-                    Tạo Layout
+                    {t('layout.createLayout')}
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Tạo Layout mới</DialogTitle>
+                    <DialogTitle>{t('layout.createNewLayout')}</DialogTitle>
                     <DialogDescription>
-                      Tạo layout mới cho nhà xưởng
+                      {t('layout.createLayoutDescription')}
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label>Tên Layout</Label>
+                      <Label>{t('layout.layoutName')}</Label>
                       <Input
                         value={newLayoutName}
                         onChange={(e) => setNewLayoutName(e.target.value)}
-                        placeholder="VD: Layout Dây chuyền SMT"
+                        placeholder={t('layout.layoutNamePlaceholder')}
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Loại Layout</Label>
+                      <Label>{t('layout.layoutType')}</Label>
                       <Select value={newLayoutType} onValueChange={(v: "2D" | "3D") => setNewLayoutType(v)}>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="2D">Layout 2D</SelectItem>
-                          <SelectItem value="3D">Layout 3D</SelectItem>
+                          <SelectItem value="2D">{t('layout.layout2D')}</SelectItem>
+                          <SelectItem value="3D">{t('layout.layout3D')}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setIsCreateLayoutOpen(false)}>
-                      Hủy
+                      {t('common.cancel')}
                     </Button>
                     <Button onClick={handleCreateLayout} disabled={createLayoutMutation.isPending}>
-                      {createLayoutMutation.isPending ? "Đang tạo..." : "Tạo Layout"}
+                      {createLayoutMutation.isPending ? t('layout.creating') : t('layout.createLayout')}
                     </Button>
                   </DialogFooter>
                 </DialogContent>
@@ -503,11 +505,11 @@ export default function Layout() {
             <TabsList>
               <TabsTrigger value="view" className="flex items-center gap-2">
                 <Eye className="h-4 w-4" />
-                Xem Layout
+                {t('layout.viewLayout')}
               </TabsTrigger>
               <TabsTrigger value="edit" className="flex items-center gap-2">
                 <Edit className="h-4 w-4" />
-                Chỉnh sửa
+                {t('layout.edit')}
               </TabsTrigger>
             </TabsList>
 
@@ -542,7 +544,7 @@ export default function Layout() {
                         {layoutData?.layout?.name || "Layout"}
                       </CardTitle>
                       <CardDescription>
-                        {machinesWithStats.length} máy được hiển thị • {layoutType}
+                        {t('layout.machinesDisplayed', { count: machinesWithStats.length, type: layoutType })}
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
@@ -552,7 +554,7 @@ export default function Layout() {
                         size="icon" 
                         onClick={handleUndo}
                         disabled={historyIndex <= 0}
-                        title="Hoàn tác (Ctrl+Z)"
+                        title={t('layout.undoTooltip')}
                       >
                         <Undo2 className="h-4 w-4" />
                       </Button>
@@ -561,7 +563,7 @@ export default function Layout() {
                         size="icon" 
                         onClick={handleRedo}
                         disabled={historyIndex >= positionHistory.length - 1}
-                        title="Làm lại (Ctrl+Y)"
+                        title={t('layout.redoTooltip')}
                       >
                         <Redo2 className="h-4 w-4" />
                       </Button>
@@ -573,7 +575,7 @@ export default function Layout() {
                         variant={snapToGrid ? "default" : "outline"} 
                         size="icon" 
                         onClick={() => setSnapToGrid(!snapToGrid)}
-                        title={snapToGrid ? "Tắt căn lưới" : "Bật căn lưới"}
+                        title={snapToGrid ? t('layout.disableGrid') : t('layout.enableGrid')}
                       >
                         <Grid3X3 className="h-4 w-4" />
                       </Button>
@@ -597,7 +599,7 @@ export default function Layout() {
                         variant="outline" 
                         size="icon" 
                         onClick={() => setIsFullscreen(!isFullscreen)}
-                        title={isFullscreen ? "Thoát toàn màn hình" : "Toàn màn hình"}
+                        title={isFullscreen ? t('layout.exitFullscreen') : t('layout.fullscreen')}
                       >
                         {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
                       </Button>
@@ -609,7 +611,7 @@ export default function Layout() {
                         variant="outline" 
                         size="icon" 
                         onClick={handleExportImage}
-                        title="Xuất hình ảnh"
+                        title={t('layout.exportImage')}
                       >
                         <Download className="h-4 w-4" />
                       </Button>
@@ -717,8 +719,8 @@ export default function Layout() {
                       ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground">
                           <LayoutGrid className="h-16 w-16 mb-4 opacity-50" />
-                          <p className="text-lg font-medium">Chưa có máy trong layout</p>
-                          <p className="text-sm">Chuyển sang tab Chỉnh sửa để thêm máy</p>
+                          <p className="text-lg font-medium">{t('layout.noMachinesInLayout')}</p>
+                          <p className="text-sm">{t('layout.switchToEditTab')}</p>
                         </div>
                       )}
                     </div>
@@ -726,7 +728,7 @@ export default function Layout() {
                     {/* Controls hint */}
                     <div className="absolute bottom-4 left-4 text-xs text-muted-foreground bg-card/80 backdrop-blur px-3 py-2 rounded-lg">
                       <Move className="h-3 w-3 inline mr-1" />
-                      Kéo để di chuyển • Cuộn để zoom • Kéo máy để thay đổi vị trí
+                      {t('layout.controlsHint')}
                     </div>
 
                     {/* Mini-map for fullscreen mode */}
@@ -803,11 +805,11 @@ export default function Layout() {
           <Card className="glass-card">
             <CardContent className="py-12 text-center">
               <LayoutGrid className="h-16 w-16 mx-auto text-muted-foreground mb-4 opacity-50" />
-              <p className="text-lg font-medium text-foreground">Chưa chọn layout</p>
+              <p className="text-lg font-medium text-foreground">{t('layout.noLayoutSelected')}</p>
               <p className="text-muted-foreground mt-2">
                 {selectedWorkshop 
-                  ? "Chọn layout từ danh sách hoặc tạo layout mới"
-                  : "Chọn nhà xưởng để xem danh sách layout"}
+                  ? t('layout.selectLayoutOrCreate')
+                  : t('layout.selectWorkshopToViewLayouts')}
               </p>
             </CardContent>
           </Card>

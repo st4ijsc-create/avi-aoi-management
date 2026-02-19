@@ -3,6 +3,7 @@
  * Quản lý upload ảnh AOI: tra cứu, xem ảnh, tải ZIP
  */
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -51,15 +52,16 @@ import {
 // Status badge helper
 // ============================================================
 function StatusBadge({ status }: { status: string }) {
-  const variants: Record<string, { label: string; className: string }> = {
-    pending: { label: "Đang chờ", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" },
-    uploading: { label: "Đang upload", className: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" },
-    uploaded: { label: "Đã upload", className: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200" },
-    committed: { label: "Hoàn tất", className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
-    failed: { label: "Lỗi", className: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200" },
+  const { t } = useTranslation();
+  const variants: Record<string, { labelKey: string; className: string }> = {
+    pending: { labelKey: "packages.pending", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" },
+    uploading: { labelKey: "packages.uploading", className: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" },
+    uploaded: { labelKey: "packages.uploaded", className: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200" },
+    committed: { labelKey: "packages.committed", className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
+    failed: { labelKey: "common.error", className: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200" },
   };
-  const v = variants[status] || { label: status, className: "bg-gray-100 text-gray-800" };
-  return <Badge className={v.className}>{v.label}</Badge>;
+  const v = variants[status] || { labelKey: "", className: "bg-gray-100 text-gray-800" };
+  return <Badge className={v.className}>{v.labelKey ? t(v.labelKey) : status}</Badge>;
 }
 
 function ResultBadge({ result }: { result: string | null }) {
@@ -80,6 +82,7 @@ function formatBytes(bytes: number | null): string {
 // Main Page Component
 // ============================================================
 export default function AOIPackages() {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("packages");
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
@@ -135,10 +138,10 @@ export default function AOIPackages() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
               <Camera className="h-8 w-8 text-primary" />
-              AOI Image Packages
+              {t('packages.title')}
             </h1>
             <p className="text-muted-foreground mt-1">
-              Quản lý upload ảnh kiểm tra từ máy AOI/AVI - Traceability & Audit
+              {t('packages.description')}
             </p>
           </div>
           <Button
@@ -151,7 +154,7 @@ export default function AOIPackages() {
             }}
           >
             <RefreshCcw className="h-4 w-4 mr-2" />
-            Làm mới
+            {t('common.refresh')}
           </Button>
         </div>
 
@@ -162,7 +165,7 @@ export default function AOIPackages() {
               <div className="flex items-center gap-3">
                 <Package className="h-8 w-8 text-blue-500" />
                 <div>
-                  <p className="text-sm text-muted-foreground">Tổng packages</p>
+                  <p className="text-sm text-muted-foreground">{t('packages.totalPackages')}</p>
                   <p className="text-2xl font-bold">{statsQuery.data?.summary?.total || 0}</p>
                 </div>
               </div>
@@ -173,7 +176,7 @@ export default function AOIPackages() {
               <div className="flex items-center gap-3">
                 <CheckCircle2 className="h-8 w-8 text-green-500" />
                 <div>
-                  <p className="text-sm text-muted-foreground">Committed</p>
+                  <p className="text-sm text-muted-foreground">{t('packages.committedCount')}</p>
                   <p className="text-2xl font-bold">{statsQuery.data?.summary?.committed || 0}</p>
                 </div>
               </div>
@@ -184,7 +187,7 @@ export default function AOIPackages() {
               <div className="flex items-center gap-3">
                 <XCircle className="h-8 w-8 text-red-500" />
                 <div>
-                  <p className="text-sm text-muted-foreground">Failed</p>
+                  <p className="text-sm text-muted-foreground">{t('packages.failedCount')}</p>
                   <p className="text-2xl font-bold">{statsQuery.data?.summary?.failed || 0}</p>
                 </div>
               </div>
@@ -195,7 +198,7 @@ export default function AOIPackages() {
               <div className="flex items-center gap-3">
                 <ImageIcon className="h-8 w-8 text-purple-500" />
                 <div>
-                  <p className="text-sm text-muted-foreground">Tổng ảnh</p>
+                  <p className="text-sm text-muted-foreground">{t('packages.totalImages')}</p>
                   <p className="text-2xl font-bold">{statsQuery.data?.summary?.totalImages || 0}</p>
                 </div>
               </div>
@@ -206,7 +209,7 @@ export default function AOIPackages() {
               <div className="flex items-center gap-3">
                 <HardDrive className="h-8 w-8 text-orange-500" />
                 <div>
-                  <p className="text-sm text-muted-foreground">Tổng dung lượng</p>
+                  <p className="text-sm text-muted-foreground">{t('packages.totalSize')}</p>
                   <p className="text-2xl font-bold">{formatBytes(statsQuery.data?.summary?.totalSize || 0)}</p>
                 </div>
               </div>
@@ -218,13 +221,13 @@ export default function AOIPackages() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="packages" className="gap-2">
-              <Package className="h-4 w-4" /> Packages
+              <Package className="h-4 w-4" /> {t('packages.packagesTab')}
             </TabsTrigger>
             <TabsTrigger value="queue" className="gap-2">
-              <Activity className="h-4 w-4" /> Upload Queue
+              <Activity className="h-4 w-4" /> {t('packages.uploadQueueTab')}
             </TabsTrigger>
             <TabsTrigger value="stats" className="gap-2">
-              <BarChart3 className="h-4 w-4" /> Thống kê
+              <BarChart3 className="h-4 w-4" /> {t('packages.statisticsTab')}
             </TabsTrigger>
           </TabsList>
 
@@ -239,7 +242,7 @@ export default function AOIPackages() {
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
-                        placeholder="Tìm theo serial..."
+                        placeholder={t('packages.searchBySerial')}
                         className="pl-10"
                         value={searchSerial}
                         onChange={(e) => { setSearchSerial(e.target.value); setPage(1); }}
@@ -247,43 +250,43 @@ export default function AOIPackages() {
                     </div>
                   </div>
                   <div className="min-w-[130px]">
-                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Machine Code</label>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('packages.machineCode')}</label>
                     <Input
-                      placeholder="Mã máy"
+                      placeholder={t('packages.machineCodePlaceholder')}
                       value={filterMachineCode}
                       onChange={(e) => { setFilterMachineCode(e.target.value); setPage(1); }}
                     />
                   </div>
                   <div className="min-w-[130px]">
-                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Trạng thái</label>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.status')}</label>
                     <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v); setPage(1); }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">Tất cả</SelectItem>
-                        <SelectItem value="committed">Hoàn tất</SelectItem>
-                        <SelectItem value="uploaded">Đã upload</SelectItem>
-                        <SelectItem value="pending">Đang chờ</SelectItem>
-                        <SelectItem value="failed">Lỗi</SelectItem>
+                        <SelectItem value="all">{t('common.all')}</SelectItem>
+                        <SelectItem value="committed">{t('packages.committed')}</SelectItem>
+                        <SelectItem value="uploaded">{t('packages.uploaded')}</SelectItem>
+                        <SelectItem value="pending">{t('packages.pending')}</SelectItem>
+                        <SelectItem value="failed">{t('common.error')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="min-w-[120px]">
-                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Kết quả</label>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('packages.result')}</label>
                     <Select value={filterResult} onValueChange={(v) => { setFilterResult(v); setPage(1); }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">Tất cả</SelectItem>
+                        <SelectItem value="all">{t('common.all')}</SelectItem>
                         <SelectItem value="OK">OK</SelectItem>
                         <SelectItem value="NG">NG</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="min-w-[140px]">
-                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Từ ngày</label>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('packages.fromDate')}</label>
                     <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} />
                   </div>
                   <div className="min-w-[140px]">
-                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Đến ngày</label>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('packages.toDate')}</label>
                     <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} />
                   </div>
                 </div>
@@ -301,19 +304,19 @@ export default function AOIPackages() {
                         <th className="text-left p-3 font-medium">Serial Number</th>
                         <th className="text-left p-3 font-medium">Product Model</th>
                         <th className="text-left p-3 font-medium">Machine</th>
-                        <th className="text-left p-3 font-medium">Kết quả</th>
-                        <th className="text-center p-3 font-medium">Ảnh</th>
-                        <th className="text-right p-3 font-medium">Dung lượng</th>
-                        <th className="text-left p-3 font-medium">Trạng thái</th>
-                        <th className="text-left p-3 font-medium">Thời gian</th>
-                        <th className="text-center p-3 font-medium">Thao tác</th>
+                        <th className="text-left p-3 font-medium">{t('packages.result')}</th>
+                        <th className="text-center p-3 font-medium">{t('packages.images')}</th>
+                        <th className="text-right p-3 font-medium">{t('packages.fileSize')}</th>
+                        <th className="text-left p-3 font-medium">{t('common.status')}</th>
+                        <th className="text-left p-3 font-medium">{t('packages.time')}</th>
+                        <th className="text-center p-3 font-medium">{t('common.actions')}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {packagesQuery.isLoading ? (
-                        <tr><td colSpan={10} className="text-center p-8 text-muted-foreground">Đang tải...</td></tr>
+                        <tr><td colSpan={10} className="text-center p-8 text-muted-foreground">{t('common.loading')}</td></tr>
                       ) : packagesQuery.data?.data.length === 0 ? (
-                        <tr><td colSpan={10} className="text-center p-8 text-muted-foreground">Không có dữ liệu</td></tr>
+                        <tr><td colSpan={10} className="text-center p-8 text-muted-foreground">{t('packages.noData')}</td></tr>
                       ) : (
                         packagesQuery.data?.data.map((pkg) => (
                           <tr
@@ -358,7 +361,7 @@ export default function AOIPackages() {
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => setSelectedPackageId(pkg.packageId)}
-                                  title="Xem chi tiết"
+                                  title={t('packages.viewDetail')}
                                 >
                                   <Eye className="h-4 w-4" />
                                 </Button>
@@ -369,7 +372,7 @@ export default function AOIPackages() {
                                     onClick={() => {
                                       window.open(`/api/aoi/download/${pkg.packageId}`, "_blank");
                                     }}
-                                    title="Tải ZIP gốc"
+                                    title={t('packages.downloadZip')}
                                   >
                                     <Download className="h-4 w-4" />
                                   </Button>
@@ -387,7 +390,7 @@ export default function AOIPackages() {
                 {packagesQuery.data && packagesQuery.data.totalPages > 1 && (
                   <div className="flex items-center justify-between p-3 border-t">
                     <span className="text-sm text-muted-foreground">
-                      Trang {page} / {packagesQuery.data.totalPages} ({packagesQuery.data.total} kết quả)
+                      {t('packages.pagination', { page, totalPages: packagesQuery.data.totalPages, total: packagesQuery.data.total })}
                     </span>
                     <div className="flex gap-1">
                       <Button
@@ -419,20 +422,20 @@ export default function AOIPackages() {
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Activity className="h-5 w-5" />
-                  Upload Queue - Trạng thái hàng đợi theo máy
+                  {t('packages.uploadQueueTitle')}
                 </CardTitle>
                 <CardDescription>
-                  Theo dõi hàng đợi upload từ các máy AOI/AVI (cập nhật bởi Agent)
+                  {t('packages.uploadQueueDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 {queueQuery.isLoading ? (
-                  <p className="text-center text-muted-foreground py-8">Đang tải...</p>
+                  <p className="text-center text-muted-foreground py-8">{t('common.loading')}</p>
                 ) : !queueQuery.data || queueQuery.data.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
                     <Activity className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                    <p>Chưa có dữ liệu từ Agent</p>
-                    <p className="text-xs mt-1">Agent sẽ gửi metrics định kỳ khi kết nối</p>
+                    <p>{t('packages.noAgentData')}</p>
+                    <p className="text-xs mt-1">{t('packages.agentMetricsHint')}</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -511,24 +514,24 @@ export default function AOIPackages() {
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <BarChart3 className="h-5 w-5" />
-                  Thống kê upload theo máy
+                  {t('packages.uploadStatsByMachine')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {statsQuery.isLoading ? (
-                  <p className="text-center text-muted-foreground py-8">Đang tải...</p>
+                  <p className="text-center text-muted-foreground py-8">{t('common.loading')}</p>
                 ) : !statsQuery.data?.perMachine || statsQuery.data.perMachine.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">Chưa có dữ liệu</p>
+                  <p className="text-center text-muted-foreground py-8">{t('packages.noData')}</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b bg-muted/50">
                           <th className="text-left p-3 font-medium">Machine</th>
-                          <th className="text-right p-3 font-medium">Tổng</th>
-                          <th className="text-right p-3 font-medium">Committed</th>
-                          <th className="text-right p-3 font-medium">Failed</th>
-                          <th className="text-right p-3 font-medium">Tỷ lệ thành công</th>
+                          <th className="text-right p-3 font-medium">{t('packages.total')}</th>
+                          <th className="text-right p-3 font-medium">{t('packages.committedCount')}</th>
+                          <th className="text-right p-3 font-medium">{t('packages.failedCount')}</th>
+                          <th className="text-right p-3 font-medium">{t('packages.successRate')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -564,7 +567,7 @@ export default function AOIPackages() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <FileArchive className="h-5 w-5" />
-                Chi tiết Package
+                {t('packages.packageDetail')}
               </DialogTitle>
               <DialogDescription>
                 {selectedPackageId && (
@@ -574,18 +577,18 @@ export default function AOIPackages() {
             </DialogHeader>
 
             {packageDetailQuery.isLoading ? (
-              <div className="text-center py-8 text-muted-foreground">Đang tải...</div>
+              <div className="text-center py-8 text-muted-foreground">{t('common.loading')}</div>
             ) : packageDetailQuery.data ? (
               <Tabs value={detailTab} onValueChange={setDetailTab} className="flex-1 flex flex-col overflow-hidden">
                 <TabsList className="w-full justify-start">
                   <TabsTrigger value="info" className="gap-1.5">
-                    <Info className="h-4 w-4" /> Thông tin
+                    <Info className="h-4 w-4" /> {t('packages.infoTab')}
                   </TabsTrigger>
                   <TabsTrigger value="images" className="gap-1.5">
-                    <ImageIcon className="h-4 w-4" /> Ảnh ({packageDetailQuery.data.images?.length || 0})
+                    <ImageIcon className="h-4 w-4" /> {t('packages.imagesTab', { count: packageDetailQuery.data.images?.length || 0 })}
                   </TabsTrigger>
                   <TabsTrigger value="logs" className="gap-1.5">
-                    <ScrollText className="h-4 w-4" /> Nhật ký
+                    <ScrollText className="h-4 w-4" /> {t('packages.logsTab')}
                     {packageDetailQuery.data.status === "failed" && (
                       <span className="ml-1 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
                     )}
@@ -602,7 +605,7 @@ export default function AOIPackages() {
                           <div className="flex items-start gap-3">
                             <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
                             <div>
-                              <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Lỗi Upload</h4>
+                              <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">{t('packages.uploadError')}</h4>
                               <p className="text-sm text-red-700 dark:text-red-300 mt-1 whitespace-pre-wrap break-all">
                                 {packageDetailQuery.data.errorMessage}
                               </p>
@@ -628,19 +631,19 @@ export default function AOIPackages() {
                           </Badge>
                         </div>
                         <div>
-                          <span className="text-muted-foreground block text-xs">Kết quả</span>
+                          <span className="text-muted-foreground block text-xs">{t('packages.result')}</span>
                           <ResultBadge result={packageDetailQuery.data.overallResult} />
                         </div>
                         <div>
-                          <span className="text-muted-foreground block text-xs">Trạng thái</span>
+                          <span className="text-muted-foreground block text-xs">{t('common.status')}</span>
                           <StatusBadge status={packageDetailQuery.data.status} />
                         </div>
                         <div>
-                          <span className="text-muted-foreground block text-xs">Dung lượng</span>
+                          <span className="text-muted-foreground block text-xs">{t('packages.fileSize')}</span>
                           <span>{formatBytes(packageDetailQuery.data.fileSizeBytes)}</span>
                         </div>
                         <div>
-                          <span className="text-muted-foreground block text-xs">Thời gian kiểm tra</span>
+                          <span className="text-muted-foreground block text-xs">{t('packages.inspectionTime')}</span>
                           <span>
                             {packageDetailQuery.data.inspectionTime
                               ? format(new Date(packageDetailQuery.data.inspectionTime), "dd/MM/yyyy HH:mm:ss")
@@ -648,7 +651,7 @@ export default function AOIPackages() {
                           </span>
                         </div>
                         <div>
-                          <span className="text-muted-foreground block text-xs">Upload lúc</span>
+                          <span className="text-muted-foreground block text-xs">{t('packages.uploadedAt')}</span>
                           <span>
                             {packageDetailQuery.data.uploadedAt
                               ? format(new Date(packageDetailQuery.data.uploadedAt), "dd/MM/yyyy HH:mm:ss")
@@ -656,7 +659,7 @@ export default function AOIPackages() {
                           </span>
                         </div>
                         <div>
-                          <span className="text-muted-foreground block text-xs">Điểm đo</span>
+                          <span className="text-muted-foreground block text-xs">{t('packages.measurementPoints')}</span>
                           <span>
                             {packageDetailQuery.data.totalPoints || 0} ({packageDetailQuery.data.okCount || 0} OK / {packageDetailQuery.data.ngCount || 0} NG)
                           </span>
@@ -672,13 +675,13 @@ export default function AOIPackages() {
                             onClick={() => window.open(`/api/aoi/download/${selectedPackageId}`, "_blank")}
                           >
                             <Download className="h-4 w-4 mr-2" />
-                            Tải ZIP gốc (Audit)
+                            {t('packages.downloadZipAudit')}
                           </Button>
                           {packageDetailQuery.data.inspectionId && (
                             <Link href={`/inspection/${packageDetailQuery.data.inspectionId}`}>
                               <Button variant="outline" size="sm">
                                 <Eye className="h-4 w-4 mr-2" />
-                                Xem Inspection
+                                {t('packages.viewInspection')}
                               </Button>
                             </Link>
                           )}
@@ -738,8 +741,8 @@ export default function AOIPackages() {
                     ) : (
                       <div className="text-center py-8 text-muted-foreground">
                         <ImageIcon className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                        <p>Chưa có thông tin ảnh</p>
-                        <p className="text-xs mt-1">Dữ liệu ảnh sẽ có sau khi commit thành công</p>
+                        <p>{t('packages.noImageInfo')}</p>
+                        <p className="text-xs mt-1">{t('packages.imageAvailableAfterCommit')}</p>
                       </div>
                     )}
                   </ScrollArea>
@@ -749,7 +752,7 @@ export default function AOIPackages() {
                 <TabsContent value="logs" className="flex-1 overflow-auto mt-4">
                   <ScrollArea className="h-full pr-4">
                     {logsQuery.isLoading ? (
-                      <div className="text-center py-8 text-muted-foreground">Đang tải nhật ký...</div>
+                      <div className="text-center py-8 text-muted-foreground">{t('packages.loadingLogs')}</div>
                     ) : logsQuery.data?.logs && logsQuery.data.logs.length > 0 ? (
                       <div className="relative">
                         {/* Timeline line */}
@@ -757,17 +760,17 @@ export default function AOIPackages() {
                         <div className="space-y-0">
                           {logsQuery.data.logs.map((log: any, i: number) => {
                             const eventConfig: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
-                              presign: { icon: <Clock className="h-3.5 w-3.5" />, color: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300", label: "Khởi tạo" },
-                              upload_start: { icon: <ArrowUpCircle className="h-3.5 w-3.5" />, color: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900 dark:text-cyan-300", label: "Bắt đầu upload" },
-                              upload_success: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, color: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300", label: "Upload thành công" },
-                              upload_fail: { icon: <XCircle className="h-3.5 w-3.5" />, color: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300", label: "Upload lỗi" },
-                              commit_start: { icon: <Activity className="h-3.5 w-3.5" />, color: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300", label: "Bắt đầu commit" },
-                              commit_success: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, color: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300", label: "Commit thành công" },
-                              commit_fail: { icon: <XCircle className="h-3.5 w-3.5" />, color: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300", label: "Commit lỗi" },
-                              retry: { icon: <RefreshCcw className="h-3.5 w-3.5" />, color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300", label: "Retry" },
-                              image_view: { icon: <Eye className="h-3.5 w-3.5" />, color: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300", label: "Xem ảnh" },
-                              zip_download: { icon: <ArrowDownCircle className="h-3.5 w-3.5" />, color: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300", label: "Tải ZIP" },
-                              status_change: { icon: <Activity className="h-3.5 w-3.5" />, color: "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300", label: "Đổi trạng thái" },
+                              presign: { icon: <Clock className="h-3.5 w-3.5" />, color: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300", label: t('packages.logInit') },
+                              upload_start: { icon: <ArrowUpCircle className="h-3.5 w-3.5" />, color: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900 dark:text-cyan-300", label: t('packages.logUploadStart') },
+                              upload_success: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, color: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300", label: t('packages.logUploadSuccess') },
+                              upload_fail: { icon: <XCircle className="h-3.5 w-3.5" />, color: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300", label: t('packages.logUploadFail') },
+                              commit_start: { icon: <Activity className="h-3.5 w-3.5" />, color: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300", label: t('packages.logCommitStart') },
+                              commit_success: { icon: <CheckCircle2 className="h-3.5 w-3.5" />, color: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300", label: t('packages.logCommitSuccess') },
+                              commit_fail: { icon: <XCircle className="h-3.5 w-3.5" />, color: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300", label: t('packages.logCommitFail') },
+                              retry: { icon: <RefreshCcw className="h-3.5 w-3.5" />, color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300", label: t('packages.logRetry') },
+                              image_view: { icon: <Eye className="h-3.5 w-3.5" />, color: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300", label: t('packages.logImageView') },
+                              zip_download: { icon: <ArrowDownCircle className="h-3.5 w-3.5" />, color: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300", label: t('packages.logZipDownload') },
+                              status_change: { icon: <Activity className="h-3.5 w-3.5" />, color: "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300", label: t('packages.logStatusChange') },
                             };
                             const cfg = eventConfig[log.event] || { icon: <Info className="h-3.5 w-3.5" />, color: "bg-gray-100 text-gray-700", label: log.event };
                             const levelColors: Record<string, string> = {
@@ -811,7 +814,7 @@ export default function AOIPackages() {
                                   {log.detail && (
                                     <details className="text-xs">
                                       <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                                        Chi tiết lỗi / Stack trace
+                                        {t('packages.errorDetailStackTrace')}
                                       </summary>
                                       <pre className="mt-2 p-2 bg-muted rounded text-xs overflow-x-auto whitespace-pre-wrap break-all max-h-40">
                                         {log.detail}
@@ -856,15 +859,15 @@ export default function AOIPackages() {
                     ) : (
                       <div className="text-center py-8 text-muted-foreground">
                         <ScrollText className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                        <p>Chưa có nhật ký hoạt động</p>
-                        <p className="text-xs mt-1">Nhật ký sẽ được ghi tự động khi upload, commit, tải ảnh...</p>
+                        <p>{t('packages.noLogs')}</p>
+                        <p className="text-xs mt-1">{t('packages.logsAutoRecorded')}</p>
                       </div>
                     )}
                   </ScrollArea>
                 </TabsContent>
               </Tabs>
             ) : (
-              <div className="text-center py-8 text-muted-foreground">Package không tìm thấy</div>
+              <div className="text-center py-8 text-muted-foreground">{t('packages.packageNotFound')}</div>
             )}
           </DialogContent>
         </Dialog>
@@ -890,7 +893,7 @@ export default function AOIPackages() {
                   onError={(e) => {
                     (e.target as HTMLImageElement).style.display = "none";
                     (e.target as HTMLImageElement).parentElement!.innerHTML =
-                      '<div class="text-center text-muted-foreground py-8"><p>Không thể tải ảnh</p><p class="text-xs">Có thể ZIP chưa được upload hoặc ảnh không tồn tại</p></div>';
+                      '<div class="text-center text-muted-foreground py-8"><p>Cannot load image</p><p class="text-xs">ZIP may not be uploaded or image does not exist</p></div>';
                   }}
                 />
               )}
@@ -906,7 +909,7 @@ export default function AOIPackages() {
                 }}
               >
                 <ImageIcon className="h-4 w-4 mr-2" />
-                Mở ảnh gốc
+                {t('packages.openOriginalImage')}
               </Button>
             </div>
           </DialogContent>

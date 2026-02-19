@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -82,6 +83,7 @@ function SortableProcessItem({
   onDelete: (id: number) => void;
   getProcessTypeInfo: (type: string) => { value: string; label: string; color: string };
 }) {
+  const { t } = useTranslation();
   const {
     attributes,
     listeners,
@@ -130,7 +132,7 @@ function SortableProcessItem({
             {typeInfo.label}
           </Badge>
           {!process.isActive && (
-            <Badge variant="secondary">Inactive</Badge>
+            <Badge variant="secondary">{t('process.inactive')}</Badge>
           )}
         </div>
         {process.description && (
@@ -140,7 +142,7 @@ function SortableProcessItem({
         )}
         {process.cycleTimeTarget && (
           <p className="text-xs text-muted-foreground mt-1">
-            Target Cycle Time: {process.cycleTimeTarget}s
+            {t('process.targetCycleTimeLabel')}: {process.cycleTimeTarget}s
           </p>
         )}
       </div>
@@ -166,6 +168,7 @@ function SortableProcessItem({
 }
 
 export default function ProcessManagement() {
+  const { t } = useTranslation();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedProcess, setSelectedProcess] = useState<number | null>(null);
@@ -182,7 +185,7 @@ export default function ProcessManagement() {
   // Mutations
   const createMutation = trpc.process.create.useMutation({
     onSuccess: () => {
-      toast.success("Process created successfully");
+      toast.success(t('process.createSuccess'));
       setIsCreateDialogOpen(false);
       setFormData(defaultFormData);
       utils.process.list.invalidate();
@@ -194,7 +197,7 @@ export default function ProcessManagement() {
 
   const updateMutation = trpc.process.update.useMutation({
     onSuccess: () => {
-      toast.success("Process updated successfully");
+      toast.success(t('process.updateSuccess'));
       setIsEditDialogOpen(false);
       setSelectedProcess(null);
       setFormData(defaultFormData);
@@ -207,7 +210,7 @@ export default function ProcessManagement() {
 
   const deleteMutation = trpc.process.delete.useMutation({
     onSuccess: () => {
-      toast.success("Process deleted successfully");
+      toast.success(t('process.deleteSuccess'));
       utils.process.list.invalidate();
     },
     onError: (error) => {
@@ -217,7 +220,7 @@ export default function ProcessManagement() {
 
   const reorderMutation = trpc.process.reorder.useMutation({
     onSuccess: () => {
-      toast.success("Đã cập nhật thứ tự công đoạn");
+      toast.success(t('process.reorderSuccess'));
       utils.process.list.invalidate();
     },
     onError: (error) => {
@@ -285,7 +288,7 @@ export default function ProcessManagement() {
   };
 
   const handleDelete = (id: number) => {
-    if (confirm("Are you sure you want to delete this process?")) {
+    if (confirm(t('process.deleteConfirm'))) {
       deleteMutation.mutate({ id });
     }
   };
@@ -309,31 +312,31 @@ export default function ProcessManagement() {
   };
 
   return (
-    <DashboardLayout title="Process Management">
+    <DashboardLayout title={t('process.title')}>
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Workflow className="h-6 w-6" />
-            Process Management
+            {t('process.title')}
           </h1>
           <p className="text-muted-foreground">
-            Define and manage production processes and stages
+            {t('process.subtitle')}
           </p>
         </div>
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="h-4 w-4 mr-2" />
-              Add Process
+              {t('process.addProcess')}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Create New Process</DialogTitle>
+              <DialogTitle>{t('process.createTitle')}</DialogTitle>
               <DialogDescription>
-                Add a new production process to your workflow
+                {t('process.createDesc')}
               </DialogDescription>
             </DialogHeader>
             <ProcessForm 
@@ -342,10 +345,10 @@ export default function ProcessManagement() {
             />
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button onClick={handleCreate} disabled={createMutation.isPending}>
-                {createMutation.isPending ? "Creating..." : "Create"}
+                {createMutation.isPending ? t('process.creating') : t('process.create')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -356,13 +359,13 @@ export default function ProcessManagement() {
       <Card>
         <CardContent className="pt-6">
           <div className="flex items-center gap-4">
-            <Label>Filter by Type:</Label>
+            <Label>{t('process.filterByType')}:</Label>
             <Select value={filterType} onValueChange={setFilterType}>
               <SelectTrigger className="w-48">
-                <SelectValue placeholder="All Types" />
+                <SelectValue placeholder={t('process.allTypes')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="all">{t('process.allTypes')}</SelectItem>
                 {PROCESS_TYPES.map((type) => (
                   <SelectItem key={type.value} value={type.value}>
                     {type.label}
@@ -377,9 +380,9 @@ export default function ProcessManagement() {
       {/* Process List */}
       <Card>
         <CardHeader>
-          <CardTitle>Production Processes</CardTitle>
+          <CardTitle>{t('process.productionProcesses')}</CardTitle>
           <CardDescription>
-            Kéo thả để sắp xếp thứ tự công đoạn trong quy trình sản xuất
+            {t('process.dragDropDesc')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -416,8 +419,8 @@ export default function ProcessManagement() {
           ) : (
             <div className="text-center py-12 text-muted-foreground">
               <Factory className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No processes defined yet</p>
-              <p className="text-sm">Click "Add Process" to create your first production process</p>
+              <p>{t('process.noProcesses')}</p>
+              <p className="text-sm">{t('process.noProcessesDesc')}</p>
             </div>
           )}
         </CardContent>
@@ -427,9 +430,9 @@ export default function ProcessManagement() {
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Edit Process</DialogTitle>
+            <DialogTitle>{t('process.editTitle')}</DialogTitle>
             <DialogDescription>
-              Update process details
+              {t('process.editDesc')}
             </DialogDescription>
           </DialogHeader>
           <ProcessForm 
@@ -438,10 +441,10 @@ export default function ProcessManagement() {
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleUpdate} disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? "Saving..." : "Save Changes"}
+              {updateMutation.isPending ? t('process.saving') : t('process.saveChanges')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -459,20 +462,21 @@ function ProcessForm({
   formData: ProcessFormData; 
   setFormData: React.Dispatch<React.SetStateAction<ProcessFormData>>;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="code">Code *</Label>
+          <Label htmlFor="code">{t('process.code')}</Label>
           <Input
             id="code"
             value={formData.code}
             onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value }))}
-            placeholder="e.g., SMT-01"
+            placeholder={t('process.codePlaceholder')}
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="processType">Type *</Label>
+          <Label htmlFor="processType">{t('process.type')}</Label>
           <Select 
             value={formData.processType} 
             onValueChange={(v) => setFormData(prev => ({ ...prev, processType: v as ProcessType }))}
@@ -492,38 +496,38 @@ function ProcessForm({
       </div>
       
       <div className="space-y-2">
-        <Label htmlFor="name">Name *</Label>
+        <Label htmlFor="name">{t('process.name')}</Label>
         <Input
           id="name"
           value={formData.name}
           onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-          placeholder="e.g., SMT Line 1"
+          placeholder={t('process.namePlaceholder')}
         />
       </div>
       
       <div className="space-y-2">
-        <Label htmlFor="description">Description</Label>
+        <Label htmlFor="description">{t('process.description')}</Label>
         <Input
           id="description"
           value={formData.description}
           onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-          placeholder="Optional description"
+          placeholder={t('process.descriptionPlaceholder')}
         />
       </div>
       
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="cycleTimeTarget">Target Cycle Time (s)</Label>
+          <Label htmlFor="cycleTimeTarget">{t('process.targetCycleTime')}</Label>
           <Input
             id="cycleTimeTarget"
             type="number"
             value={formData.cycleTimeTarget}
             onChange={(e) => setFormData(prev => ({ ...prev, cycleTimeTarget: e.target.value }))}
-            placeholder="e.g., 30"
+            placeholder={t('process.cycleTimePlaceholder')}
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="color">Color</Label>
+          <Label htmlFor="color">{t('process.color')}</Label>
           <div className="flex gap-2">
             <Input
               id="color"

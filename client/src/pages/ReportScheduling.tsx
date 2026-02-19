@@ -1,14 +1,16 @@
 import DashboardLayout from '@/components/DashboardLayout';
 import { ReportScheduler } from '@/components/ReportScheduler';
+import { useTranslation } from 'react-i18next';
 
 export default function ReportSchedulingPage() {
+  const { t } = useTranslation();
   return (
     <DashboardLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold">Lịch báo cáo tự động</h1>
+          <h1 className="text-2xl font-bold">{t('reports.autoReportSchedule')}</h1>
           <p className="text-muted-foreground">
-            Cấu hình và quản lý các báo cáo được gửi tự động qua email
+            {t('reports.autoReportDescription')}
           </p>
         </div>
         

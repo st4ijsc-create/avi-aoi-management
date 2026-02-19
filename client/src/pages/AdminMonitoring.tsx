@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -7,6 +8,7 @@ import { AlertCircle, Zap, TrendingUp, RefreshCw, Trash2 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
 
 export default function AdminMonitoring() {
+  const { t } = useTranslation();
   const [autoRefresh, setAutoRefresh] = useState(true);
 
   // Query monitoring APIs
@@ -29,7 +31,7 @@ export default function AdminMonitoring() {
   }, [autoRefresh, slowQueries, stats, recentQueries, patterns]);
 
   const handleClearHistory = () => {
-    if (confirm('Are you sure you want to clear all query metrics history?')) {
+    if (confirm(t('admin.confirmClearHistory'))) {
       clearHistoryMutation.mutate(undefined, {
         onSuccess: () => {
           slowQueries.refetch();
@@ -49,12 +51,12 @@ export default function AdminMonitoring() {
   };
 
   return (
-    <DashboardLayout title="Query Performance Monitoring">
+    <DashboardLayout title={t('admin.queryPerformanceMonitoring')}>
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold">Query Performance Monitoring</h1>
-          <p className="text-gray-500">Monitor slow queries and database performance</p>
+          <h1 className="text-3xl font-bold">{t('admin.queryPerformanceMonitoring')}</h1>
+          <p className="text-gray-500">{t('admin.monitorSlowQueries')}</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -64,14 +66,14 @@ export default function AdminMonitoring() {
             className={autoRefresh ? 'bg-green-50' : ''}
           >
             <RefreshCw className="w-4 h-4 mr-2" />
-            {autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF'}
+            {autoRefresh ? t('admin.autoRefreshOn') : t('admin.autoRefreshOff')}
           </Button>
           <Button variant="outline" size="sm" onClick={handleRefresh}>
             <RefreshCw className="w-4 h-4" />
           </Button>
           <Button variant="destructive" size="sm" onClick={handleClearHistory}>
             <Trash2 className="w-4 h-4 mr-2" />
-            Clear History
+            {t('admin.clearHistory')}
           </Button>
         </div>
       </div>
@@ -81,7 +83,7 @@ export default function AdminMonitoring() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Total Queries</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">{t('admin.totalQueries')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.data.totalQueries}</div>
@@ -90,17 +92,17 @@ export default function AdminMonitoring() {
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Slow Queries</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">{t('admin.slowQueries')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-red-600">{stats.data.slowQueries}</div>
-              <p className="text-xs text-gray-500 mt-1">{stats.data.slowQueryPercentage}% of total</p>
+              <p className="text-xs text-gray-500 mt-1">{stats.data.slowQueryPercentage}% {t('admin.ofTotal')}</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Avg Execution Time</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">{t('admin.avgExecutionTime')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.data.averageExecutionTime}ms</div>
@@ -109,7 +111,7 @@ export default function AdminMonitoring() {
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Max Execution Time</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">{t('admin.maxExecutionTime')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-orange-600">{stats.data.maxExecutionTime}ms</div>
@@ -120,22 +122,22 @@ export default function AdminMonitoring() {
 
       <Tabs defaultValue="slow-queries" className="w-full">
         <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="slow-queries">Slow Queries</TabsTrigger>
-          <TabsTrigger value="recent">Recent Queries</TabsTrigger>
-          <TabsTrigger value="patterns">Query Patterns</TabsTrigger>
-          <TabsTrigger value="analysis">Analysis</TabsTrigger>
+          <TabsTrigger value="slow-queries">{t('admin.slowQueries')}</TabsTrigger>
+          <TabsTrigger value="recent">{t('admin.recentQueries')}</TabsTrigger>
+          <TabsTrigger value="patterns">{t('admin.queryPatterns')}</TabsTrigger>
+          <TabsTrigger value="analysis">{t('admin.analysis')}</TabsTrigger>
         </TabsList>
 
         {/* Slow Queries Tab */}
         <TabsContent value="slow-queries" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Slow Queries ({'>'}1000ms)</CardTitle>
-              <CardDescription>Queries that took longer than 1 second to execute</CardDescription>
+              <CardTitle>{t('admin.slowQueriesThreshold')}</CardTitle>
+              <CardDescription>{t('admin.slowQueriesDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
               {slowQueries.isLoading ? (
-                <div className="text-center py-8">Loading...</div>
+                <div className="text-center py-8">{t('common.loading')}</div>
               ) : slowQueries.data && (slowQueries.data.length > 0) ? (
                 <div className="space-y-3">
                   {slowQueries.data.map((query, idx) => (
@@ -155,11 +157,11 @@ export default function AdminMonitoring() {
                     </div>
                   ))}
                   {slowQueries.data.length === 0 && (
-                    <div className="text-center py-8 text-gray-500">No slow queries detected</div>
+                    <div className="text-center py-8 text-gray-500">{t('admin.noSlowQueries')}</div>
                   )}
                 </div>
               ) : (
-                <div className="text-center py-8 text-gray-500">No slow queries detected</div>
+                <div className="text-center py-8 text-gray-500">{t('admin.noSlowQueries')}</div>
               )}
             </CardContent>
           </Card>
@@ -169,12 +171,12 @@ export default function AdminMonitoring() {
         <TabsContent value="recent" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Recent Queries</CardTitle>
-              <CardDescription>Last 50 executed queries</CardDescription>
+              <CardTitle>{t('admin.recentQueries')}</CardTitle>
+              <CardDescription>{t('admin.last50Queries')}</CardDescription>
             </CardHeader>
             <CardContent>
               {recentQueries.isLoading ? (
-                <div className="text-center py-8">Loading...</div>
+                <div className="text-center py-8">{t('common.loading')}</div>
               ) : recentQueries.data && recentQueries.data.length > 0 ? (
                 <div className="space-y-2">
                   {recentQueries.data.map((query, idx) => (
@@ -200,7 +202,7 @@ export default function AdminMonitoring() {
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-8 text-gray-500">No recent queries</div>
+                <div className="text-center py-8 text-gray-500">{t('admin.noRecentQueries')}</div>
               )}
             </CardContent>
           </Card>
@@ -210,12 +212,12 @@ export default function AdminMonitoring() {
         <TabsContent value="patterns" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Query Patterns</CardTitle>
-              <CardDescription>Most frequently executed query patterns and their performance</CardDescription>
+              <CardTitle>{t('admin.queryPatterns')}</CardTitle>
+              <CardDescription>{t('admin.queryPatternsDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
               {patterns.isLoading ? (
-                <div className="text-center py-8">Loading...</div>
+                <div className="text-center py-8">{t('common.loading')}</div>
               ) : patterns.data && patterns.data.length > 0 ? (
                 <div className="space-y-3">
                   {patterns.data.map((pattern, idx) => (
@@ -223,10 +225,10 @@ export default function AdminMonitoring() {
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <TrendingUp className="w-5 h-5 text-blue-600" />
-                          <span className="font-semibold text-sm">Pattern #{idx + 1}</span>
+                          <span className="font-semibold text-sm">{t('admin.pattern')} #{idx + 1}</span>
                         </div>
                         <div className="text-right">
-                          <div className="text-sm font-semibold">{pattern.count} executions</div>
+                          <div className="text-sm font-semibold">{pattern.count} {t('admin.executions')}</div>
                           <div className="text-xs text-gray-500">{pattern.avgTime.toFixed(2)}ms avg</div>
                         </div>
                       </div>
@@ -235,15 +237,15 @@ export default function AdminMonitoring() {
                       </p>
                       <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
                         <div>
-                          <span className="text-gray-600">Total Time:</span>
+                          <span className="text-gray-600">{t('admin.totalTime')}:</span>
                           <span className="font-semibold ml-1">{pattern.totalTime.toFixed(2)}ms</span>
                         </div>
                         <div>
-                          <span className="text-gray-600">Avg Time:</span>
+                          <span className="text-gray-600">{t('admin.avgTime')}:</span>
                           <span className="font-semibold ml-1">{pattern.avgTime.toFixed(2)}ms</span>
                         </div>
                         <div>
-                          <span className="text-gray-600">Count:</span>
+                          <span className="text-gray-600">{t('admin.count')}:</span>
                           <span className="font-semibold ml-1">{pattern.count}</span>
                         </div>
                       </div>
@@ -251,7 +253,7 @@ export default function AdminMonitoring() {
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-8 text-gray-500">No query patterns detected</div>
+                <div className="text-center py-8 text-gray-500">{t('admin.noQueryPatterns')}</div>
               )}
             </CardContent>
           </Card>
@@ -261,26 +263,26 @@ export default function AdminMonitoring() {
         <TabsContent value="analysis" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Performance Analysis</CardTitle>
-              <CardDescription>Recommendations for query optimization</CardDescription>
+              <CardTitle>{t('admin.performanceAnalysis')}</CardTitle>
+              <CardDescription>{t('admin.recommendationsDescription')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {stats.data && (
                 <>
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <h3 className="font-semibold text-blue-900 mb-2">Key Metrics</h3>
+                    <h3 className="font-semibold text-blue-900 mb-2">{t('admin.keyMetrics')}</h3>
                     <ul className="space-y-2 text-sm text-blue-800">
                       <li>
-                        • <strong>Total Queries:</strong> {stats.data.totalQueries}
+                        • <strong>{t('admin.totalQueries')}:</strong> {stats.data.totalQueries}
                       </li>
                       <li>
-                        • <strong>Slow Query Rate:</strong> {stats.data.slowQueryPercentage}%
+                        • <strong>{t('admin.slowQueryRate')}:</strong> {stats.data.slowQueryPercentage}%
                       </li>
                       <li>
-                        • <strong>Average Response Time:</strong> {stats.data.averageExecutionTime}ms
+                        • <strong>{t('admin.averageResponseTime')}:</strong> {stats.data.averageExecutionTime}ms
                       </li>
                       <li>
-                        • <strong>Max Response Time:</strong> {stats.data.maxExecutionTime}ms
+                        • <strong>{t('admin.maxResponseTime')}:</strong> {stats.data.maxExecutionTime}ms
                       </li>
                     </ul>
                   </div>
@@ -289,20 +291,20 @@ export default function AdminMonitoring() {
                     <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
                       <h3 className="font-semibold text-orange-900 mb-2 flex items-center gap-2">
                         <Zap className="w-4 h-4" />
-                        Optimization Recommendations
+                        {t('admin.optimizationRecommendations')}
                       </h3>
                       <ul className="space-y-2 text-sm text-orange-800">
                         <li>
-                          • Review slow queries above - consider adding database indexes for frequently filtered columns
+                          • {t('admin.recommendation1')}
                         </li>
                         <li>
-                          • Analyze query patterns to identify opportunities for query consolidation
+                          • {t('admin.recommendation2')}
                         </li>
                         <li>
-                          • Consider implementing query result caching for frequently accessed data
+                          • {t('admin.recommendation3')}
                         </li>
                         <li>
-                          • Review GROUP BY and JOIN operations for potential optimization
+                          • {t('admin.recommendation4')}
                         </li>
                       </ul>
                     </div>

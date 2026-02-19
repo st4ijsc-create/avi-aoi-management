@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -45,6 +46,7 @@ export function BulkImportDialog({
   productModelName,
   onSuccess 
 }: BulkImportDialogProps) {
+  const { t } = useTranslation();
   const [file, setFile] = useState<File | null>(null);
   const [parsedPoints, setParsedPoints] = useState<ParsedPoint[]>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
@@ -56,16 +58,16 @@ export function BulkImportDialog({
     onSuccess: (result) => {
       setImportResult(result);
       if (result.success > 0) {
-        toast.success(`Đã import thành công ${result.success} điểm đo`);
+        toast.success(t('products.bulkImport.importSuccess', { count: result.success }));
         onSuccess?.();
       }
       if (result.failed > 0) {
-        toast.error(`${result.failed} điểm đo import thất bại`);
+        toast.error(t('products.bulkImport.importFailed', { count: result.failed }));
       }
       setIsImporting(false);
     },
     onError: (error) => {
-      toast.error(`Import thất bại: ${error.message}`);
+      toast.error(t('products.bulkImport.importError', { message: error.message }));
       setIsImporting(false);
     },
   });
@@ -75,7 +77,7 @@ export function BulkImportDialog({
     if (!selectedFile) return;
 
     if (!selectedFile.name.match(/\.(xlsx|xls)$/i)) {
-      toast.error("Vui lòng chọn file Excel (.xlsx hoặc .xls)");
+      toast.error(t('products.bulkImport.selectExcelFile'));
       return;
     }
 
@@ -93,7 +95,7 @@ export function BulkImportDialog({
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
 
       if (jsonData.length < 2) {
-        setParseErrors(["File Excel không có dữ liệu hoặc thiếu header"]);
+        setParseErrors([t('products.bulkImport.noDataOrHeader')]);
         setParsedPoints([]);
         return;
       }
@@ -121,10 +123,10 @@ export function BulkImportDialog({
       };
 
       // Validate required columns
-      if (colMap.code === -1) errors.push("Thiếu cột 'code' hoặc 'mã'");
-      if (colMap.name === -1) errors.push("Thiếu cột 'name' hoặc 'tên'");
-      if (colMap.positionX === -1) errors.push("Thiếu cột 'posX' hoặc 'x' hoặc 'tọa độ x'");
-      if (colMap.positionY === -1) errors.push("Thiếu cột 'posY' hoặc 'y' hoặc 'tọa độ y'");
+      if (colMap.code === -1) errors.push(t('products.bulkImport.missingCodeCol'));
+      if (colMap.name === -1) errors.push(t('products.bulkImport.missingNameCol'));
+      if (colMap.positionX === -1) errors.push(t('products.bulkImport.missingPosXCol'));
+      if (colMap.positionY === -1) errors.push(t('products.bulkImport.missingPosYCol'));
 
       if (errors.length > 0) {
         setParseErrors(errors);
@@ -141,13 +143,13 @@ export function BulkImportDialog({
         const name = String(row[colMap.name] || "").trim();
         
         if (!code || !name) {
-          errors.push(`Dòng ${i + 1}: Thiếu code hoặc name`);
+          errors.push(t('products.bulkImport.missingCodeOrName', { row: i + 1 }));
           continue;
         }
 
         const measurementType = String(row[colMap.measurementType] || "VISUAL").toUpperCase().trim();
         if (!MEASUREMENT_TYPES.includes(measurementType)) {
-          errors.push(`Dòng ${i + 1}: Loại đo "${measurementType}" không hợp lệ`);
+          errors.push(t('products.bulkImport.invalidMeasurementType', { row: i + 1, type: measurementType }));
           continue;
         }
 
@@ -155,7 +157,7 @@ export function BulkImportDialog({
         const posY = Number(row[colMap.positionY]);
 
         if (isNaN(posX) || isNaN(posY)) {
-          errors.push(`Dòng ${i + 1}: Tọa độ X hoặc Y không hợp lệ`);
+          errors.push(t('products.bulkImport.invalidCoordinates', { row: i + 1 }));
           continue;
         }
 
@@ -180,14 +182,14 @@ export function BulkImportDialog({
       setParseErrors(errors);
       setParsedPoints(points);
     } catch (error: any) {
-      setParseErrors([`Lỗi đọc file: ${error.message}`]);
+      setParseErrors([t('products.bulkImport.readError', { message: error.message })]);
       setParsedPoints([]);
     }
   };
 
   const handleImport = () => {
     if (parsedPoints.length === 0) {
-      toast.error("Không có điểm đo hợp lệ để import");
+      toast.error(t('products.bulkImport.noValidPoints'));
       return;
     }
 
@@ -209,7 +211,7 @@ export function BulkImportDialog({
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Template");
     XLSX.writeFile(wb, "measurement_points_template.xlsx");
-    toast.success("Đã tải file template");
+    toast.success(t('products.bulkImport.templateDownloaded'));
   };
 
   const resetDialog = () => {
@@ -233,10 +235,10 @@ export function BulkImportDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5" />
-            Import điểm đo từ Excel
+            {t('products.bulkImport.title')}
           </DialogTitle>
           <DialogDescription>
-            Import hàng loạt điểm đo cho sản phẩm <strong>{productModelName}</strong>
+            {t('products.bulkImport.description', { name: productModelName })}
           </DialogDescription>
         </DialogHeader>
 
@@ -244,8 +246,8 @@ export function BulkImportDialog({
           {/* Template Download */}
           <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
             <div className="text-sm">
-              <p className="font-medium">Tải file mẫu</p>
-              <p className="text-muted-foreground">File Excel với các cột: code, name, positionX, positionY, ...</p>
+              <p className="font-medium">{t('products.bulkImport.downloadTemplate')}</p>
+              <p className="text-muted-foreground">{t('products.bulkImport.templateDescription')}</p>
             </div>
             <Button variant="outline" size="sm" onClick={downloadTemplate}>
               <Download className="h-4 w-4 mr-2" />
@@ -266,10 +268,10 @@ export function BulkImportDialog({
             <label htmlFor="excel-upload" className="cursor-pointer">
               <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-2" />
               <p className="text-sm font-medium">
-                {file ? file.name : "Chọn file Excel để upload"}
+                {file ? file.name : t('products.bulkImport.selectFile')}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Hỗ trợ .xlsx và .xls
+                {t('products.bulkImport.supportedFormats')}
               </p>
             </label>
           </div>
@@ -278,14 +280,14 @@ export function BulkImportDialog({
           {parseErrors.length > 0 && (
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Lỗi khi đọc file</AlertTitle>
+              <AlertTitle>{t('products.bulkImport.readErrors')}</AlertTitle>
               <AlertDescription>
                 <ul className="list-disc list-inside mt-2 text-sm">
                   {parseErrors.slice(0, 10).map((err, i) => (
                     <li key={i}>{err}</li>
                   ))}
                   {parseErrors.length > 10 && (
-                    <li>... và {parseErrors.length - 10} lỗi khác</li>
+                    <li>... {t('products.bulkImport.andMoreErrors', { count: parseErrors.length - 10 })}</li>
                   )}
                 </ul>
               </AlertDescription>
@@ -297,17 +299,17 @@ export function BulkImportDialog({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-medium">
-                  Xem trước ({parsedPoints.length} điểm đo)
+                  {t('products.bulkImport.preview', { count: parsedPoints.length })}
                 </h4>
-                <Badge variant="secondary">{parsedPoints.length} điểm</Badge>
+                <Badge variant="secondary">{parsedPoints.length} {t('products.bulkImport.points')}</Badge>
               </div>
               <ScrollArea className="h-48 border rounded-lg">
                 <table className="w-full text-sm">
                   <thead className="bg-muted sticky top-0">
                     <tr>
                       <th className="p-2 text-left">Code</th>
-                      <th className="p-2 text-left">Tên</th>
-                      <th className="p-2 text-left">Loại</th>
+                      <th className="p-2 text-left">{t('products.bulkImport.colName')}</th>
+                      <th className="p-2 text-left">{t('products.bulkImport.colType')}</th>
                       <th className="p-2 text-center">X</th>
                       <th className="p-2 text-center">Y</th>
                       <th className="p-2 text-center">Crop</th>
@@ -340,12 +342,12 @@ export function BulkImportDialog({
               ) : (
                 <CheckCircle className="h-4 w-4" />
               )}
-              <AlertTitle>Kết quả import</AlertTitle>
+              <AlertTitle>{t('products.bulkImport.importResult')}</AlertTitle>
               <AlertDescription>
                 <div className="flex gap-4 mt-2">
-                  <span className="text-emerald-600">✓ Thành công: {importResult.success}</span>
+                  <span className="text-emerald-600">✓ {t('products.bulkImport.successCount')}: {importResult.success}</span>
                   {importResult.failed > 0 && (
-                    <span className="text-red-600">✗ Thất bại: {importResult.failed}</span>
+                    <span className="text-red-600">✗ {t('products.bulkImport.failedCount')}: {importResult.failed}</span>
                   )}
                 </div>
                 {importResult.errors.length > 0 && (
@@ -362,7 +364,7 @@ export function BulkImportDialog({
 
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={handleClose}>
-            Đóng
+            {t('common.close')}
           </Button>
           <Button 
             onClick={handleImport} 
@@ -371,12 +373,12 @@ export function BulkImportDialog({
             {isImporting ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Đang import...
+                {t('products.bulkImport.importing')}
               </>
             ) : (
               <>
                 <Upload className="h-4 w-4 mr-2" />
-                Import {parsedPoints.length} điểm đo
+                {t('products.bulkImport.importCount', { count: parsedPoints.length })}
               </>
             )}
           </Button>

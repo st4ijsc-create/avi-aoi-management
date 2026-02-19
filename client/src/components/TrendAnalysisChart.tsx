@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -30,6 +31,7 @@ interface TrendAnalysisChartProps {
 }
 
 export function TrendAnalysisChart({ machineId, productModelId, className }: TrendAnalysisChartProps) {
+  const { t } = useTranslation();
   const [selectedMachineId, setSelectedMachineId] = useState<number | undefined>(machineId);
   const [selectedProductModelId, setSelectedProductModelId] = useState<number | undefined>(productModelId);
   const [groupBy, setGroupBy] = useState<'day' | 'week' | 'month'>('day');
@@ -117,7 +119,7 @@ export function TrendAnalysisChart({ machineId, productModelId, className }: Tre
     if (isIncreasing && recentDefectRates[recentDefectRates.length - 1] > 5) {
       detected.push({
         type: 'Increasing Defect Rate',
-        description: 'Tỷ lệ lỗi đang tăng liên tục trong 5 kỳ gần nhất',
+        description: t('dashboard.defectRateIncreasing'),
         severity: 'warning',
       });
     }
@@ -127,7 +129,7 @@ export function TrendAnalysisChart({ machineId, productModelId, className }: Tre
     if (avgDefectRate > 10) {
       detected.push({
         type: 'High Defect Rate',
-        description: `Tỷ lệ lỗi trung bình ${avgDefectRate.toFixed(1)}% vượt ngưỡng cho phép`,
+        description: t('dashboard.highDefectRate', { rate: avgDefectRate.toFixed(1) }),
         severity: 'critical',
       });
     }
@@ -140,7 +142,7 @@ export function TrendAnalysisChart({ machineId, productModelId, className }: Tre
     if (hasSpike) {
       detected.push({
         type: 'Defect Spike Detected',
-        description: 'Phát hiện đột biến tỷ lệ lỗi trong khoảng thời gian',
+        description: t('dashboard.defectSpikeDetected'),
         severity: 'warning',
       });
     }
@@ -158,15 +160,15 @@ export function TrendAnalysisChart({ machineId, productModelId, className }: Tre
           <div>
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5" />
-              Phân tích xu hướng Defect
+              {t('dashboard.defectTrendAnalysis')}
             </CardTitle>
             <CardDescription>
-              Biểu đồ xu hướng defect theo thời gian
+              {t('dashboard.defectTrendDescription')}
             </CardDescription>
           </div>
           <Button variant="outline" size="sm" onClick={() => refetch()}>
             <RefreshCw className="h-4 w-4 mr-2" />
-            Làm mới
+            {t('common.refresh')}
           </Button>
         </div>
       </CardHeader>
@@ -174,16 +176,16 @@ export function TrendAnalysisChart({ machineId, productModelId, className }: Tre
         {/* Filters */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <div className="space-y-2">
-            <Label>Máy</Label>
+            <Label>{t('machines.machine')}</Label>
             <Select
               value={selectedMachineId?.toString() || 'all'}
               onValueChange={(v) => setSelectedMachineId(v === 'all' ? undefined : parseInt(v))}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Tất cả máy" />
+                <SelectValue placeholder={t('machines.allMachines')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tất cả máy</SelectItem>
+                <SelectItem value="all">{t('machines.allMachines')}</SelectItem>
                 {machines?.map((machine) => (
                   <SelectItem key={machine.id} value={machine.id.toString()}>
                     {machine.name}
@@ -194,16 +196,16 @@ export function TrendAnalysisChart({ machineId, productModelId, className }: Tre
           </div>
 
           <div className="space-y-2">
-            <Label>Sản phẩm</Label>
+            <Label>{t('products.product')}</Label>
             <Select
               value={selectedProductModelId?.toString() || 'all'}
               onValueChange={(v) => setSelectedProductModelId(v === 'all' ? undefined : parseInt(v))}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Tất cả sản phẩm" />
+                <SelectValue placeholder={t('products.allProducts')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tất cả sản phẩm</SelectItem>
+                <SelectItem value="all">{t('products.allProducts')}</SelectItem>
                 {productModels?.map((model) => (
                   <SelectItem key={model.id} value={model.id.toString()}>
                     {model.name}
@@ -214,43 +216,43 @@ export function TrendAnalysisChart({ machineId, productModelId, className }: Tre
           </div>
 
           <div className="space-y-2">
-            <Label>Nhóm theo</Label>
+            <Label>{t('dashboard.groupBy')}</Label>
             <Select value={groupBy} onValueChange={(v: 'day' | 'week' | 'month') => setGroupBy(v)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="day">Ngày</SelectItem>
-                <SelectItem value="week">Tuần</SelectItem>
-                <SelectItem value="month">Tháng</SelectItem>
+                <SelectItem value="day">{t('common.day')}</SelectItem>
+                <SelectItem value="week">{t('common.week')}</SelectItem>
+                <SelectItem value="month">{t('common.month')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-2">
-            <Label>Khoảng thời gian</Label>
+            <Label>{t('dashboard.timeRange')}</Label>
             <Select value={dateRange} onValueChange={(v: '7d' | '30d' | '90d' | '1y') => setDateRange(v)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="7d">7 ngày</SelectItem>
-                <SelectItem value="30d">30 ngày</SelectItem>
-                <SelectItem value="90d">90 ngày</SelectItem>
-                <SelectItem value="1y">1 năm</SelectItem>
+                <SelectItem value="7d">7 {t('common.days')}</SelectItem>
+                <SelectItem value="30d">30 {t('common.days')}</SelectItem>
+                <SelectItem value="90d">90 {t('common.days')}</SelectItem>
+                <SelectItem value="1y">1 {t('common.year')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-2">
-            <Label>Loại biểu đồ</Label>
+            <Label>{t('dashboard.chartType')}</Label>
             <Select value={chartType} onValueChange={(v: 'bar' | 'line') => setChartType(v)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="bar">Cột</SelectItem>
-                <SelectItem value="line">Đường</SelectItem>
+                <SelectItem value="bar">{t('dashboard.barChart')}</SelectItem>
+                <SelectItem value="line">{t('dashboard.lineChart')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -262,28 +264,28 @@ export function TrendAnalysisChart({ machineId, productModelId, className }: Tre
             <Card>
               <CardContent className="pt-4">
                 <div className="text-2xl font-bold">{trendData.summary.totalInspections.toLocaleString()}</div>
-                <div className="text-sm text-muted-foreground">Tổng kiểm tra</div>
+                <div className="text-sm text-muted-foreground">{t('dashboard.totalInspections')}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
                 <div className="text-2xl font-bold text-red-500">{trendData.summary.totalDefects.toLocaleString()}</div>
-                <div className="text-sm text-muted-foreground">Tổng NG</div>
+                <div className="text-sm text-muted-foreground">{t('dashboard.totalNG')}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
                 <div className="text-2xl font-bold">{trendData.summary.avgDefectRate.toFixed(2)}%</div>
-                <div className="text-sm text-muted-foreground">Tỷ lệ NG trung bình</div>
+                <div className="text-sm text-muted-foreground">{t('dashboard.avgNGRate')}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
                 <div className={cn("text-2xl font-bold flex items-center gap-2", trendColor)}>
                   <TrendIcon className="h-5 w-5" />
-                  {trendDirection === 'up' ? 'Tăng' : trendDirection === 'down' ? 'Giảm' : 'Ổn định'}
+                  {trendDirection === 'up' ? t('dashboard.increasing') : trendDirection === 'down' ? t('dashboard.decreasing') : t('dashboard.stable')}
                 </div>
-                <div className="text-sm text-muted-foreground">Xu hướng</div>
+                <div className="text-sm text-muted-foreground">{t('dashboard.trend')}</div>
               </CardContent>
             </Card>
           </div>
@@ -294,7 +296,7 @@ export function TrendAnalysisChart({ machineId, productModelId, className }: Tre
           <div className="space-y-2">
             <h4 className="font-medium flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-yellow-500" />
-              Cảnh báo phát hiện
+              {t('dashboard.alertsDetected')}
             </h4>
             <div className="space-y-2">
               {patterns.map((pattern, idx) => (
@@ -397,7 +399,7 @@ export function TrendAnalysisChart({ machineId, productModelId, className }: Tre
                           <span>NTF: {item.ntfCount}</span>
                         </div>
                         <div className="mt-1 pt-1 border-t">
-                          <span>Tỷ lệ NG: {item.defectRate}%</span>
+                          <span>{t('dashboard.ngRate')}: {item.defectRate}%</span>
                         </div>
                         <div>
                           <span>Yield: {item.yieldRate}%</span>
@@ -429,7 +431,7 @@ export function TrendAnalysisChart({ machineId, productModelId, className }: Tre
           <div className="h-[300px] flex items-center justify-center text-muted-foreground">
             <div className="text-center">
               <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-50" />
-              <p>Không có dữ liệu trong khoảng thời gian đã chọn</p>
+              <p>{t('dashboard.noDataInRange')}</p>
             </div>
           </div>
         )}

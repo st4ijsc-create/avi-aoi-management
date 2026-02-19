@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import {
@@ -54,6 +55,7 @@ const roleColors: Record<string, string> = {
 };
 
 export function RoleManagement() {
+  const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [selectedUser, setSelectedUser] = useState<any>(null);
@@ -71,7 +73,7 @@ export function RoleManagement() {
   // Mutations
   const updateUserRole = trpc.permissions.updateUserRole.useMutation({
     onSuccess: () => {
-      toast.success("User role updated successfully");
+      toast.success(t('roles.roleUpdated'));
       refetchUsers();
       setIsChangeRoleDialogOpen(false);
       setSelectedUser(null);
@@ -83,7 +85,7 @@ export function RoleManagement() {
 
   const applyRolePermissions = trpc.permissions.applyRolePermissions.useMutation({
     onSuccess: (data) => {
-      toast.success(`Role updated and ${data.permissionsApplied} permissions applied`);
+      toast.success(t('roles.roleUpdatedWithPermissions', { count: data.permissionsApplied }));
       refetchUsers();
       setIsChangeRoleDialogOpen(false);
       setSelectedUser(null);
@@ -128,16 +130,16 @@ export function RoleManagement() {
   });
 
   if (usersLoading) {
-    return <div className="flex items-center justify-center h-64">Loading...</div>;
+    return <div className="flex items-center justify-center h-64">{t('common.loading')}</div>;
   }
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">Role Management</h2>
+        <h2 className="text-3xl font-bold tracking-tight">{t('roles.title')}</h2>
         <p className="text-muted-foreground">
-          Manage user roles and their associated permissions
+          {t('roles.description')}
         </p>
       </div>
 
@@ -171,7 +173,7 @@ export function RoleManagement() {
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search users by name, email, or username..."
+            placeholder={t('roles.searchPlaceholder')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-9"
@@ -181,10 +183,10 @@ export function RoleManagement() {
           <Select value={roleFilter} onValueChange={setRoleFilter}>
             <SelectTrigger>
               <Filter className="mr-2 h-4 w-4" />
-              <SelectValue placeholder="Filter by role" />
+              <SelectValue placeholder={t('roles.filterByRole')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Roles</SelectItem>
+              <SelectItem value="all">{t('roles.allRoles')}</SelectItem>
               {roleTypes?.map((role) => (
                 <SelectItem key={role.value} value={role.value}>
                   {role.label}
@@ -198,9 +200,9 @@ export function RoleManagement() {
       {/* Users Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Users ({filteredUsers?.length || 0})</CardTitle>
+          <CardTitle>{t('roles.users')} ({filteredUsers?.length || 0})</CardTitle>
           <CardDescription>
-            Click on a user to change their role
+            {t('roles.clickToChangeRole')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -236,10 +238,10 @@ export function RoleManagement() {
                       {roleType?.label}
                     </Badge>
                     <Badge variant={user.isActive ? "default" : "secondary"}>
-                      {user.isActive ? "Active" : "Inactive"}
+                      {user.isActive ? t('common.active') : t('common.inactive')}
                     </Badge>
                     <div className="text-sm text-muted-foreground">
-                      {user.permissions?.length || 0} permissions
+                      {user.permissions?.length || 0} {t('roles.permissions')}
                     </div>
                   </div>
                 </div>
@@ -248,7 +250,7 @@ export function RoleManagement() {
             
             {filteredUsers?.length === 0 && (
               <div className="text-center py-12 text-muted-foreground">
-                No users found matching your filters
+                {t('roles.noUsersFound')}
               </div>
             )}
           </div>
@@ -259,7 +261,7 @@ export function RoleManagement() {
       <Dialog open={isChangeRoleDialogOpen} onOpenChange={setIsChangeRoleDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Change User Role</DialogTitle>
+            <DialogTitle>{t('roles.changeUserRole')}</DialogTitle>
             <DialogDescription>
               Update role for: <strong>{selectedUser?.name || selectedUser?.username}</strong>
             </DialogDescription>
@@ -267,7 +269,7 @@ export function RoleManagement() {
           
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Current Role</Label>
+              <Label>{t('roles.currentRole')}</Label>
               <div>
                 <Badge className={roleColors[selectedUser?.role]} variant="secondary">
                   {roleTypes?.find((r) => r.value === selectedUser?.role)?.label}
@@ -276,10 +278,10 @@ export function RoleManagement() {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="new-role">New Role</Label>
+              <Label htmlFor="new-role">{t('roles.newRole')}</Label>
               <Select value={newRole} onValueChange={setNewRole}>
                 <SelectTrigger id="new-role">
-                  <SelectValue placeholder="Select new role" />
+                  <SelectValue placeholder={t('roles.selectNewRole')} />
                 </SelectTrigger>
                 <SelectContent>
                   {roleTypes?.map((role) => {
@@ -304,10 +306,10 @@ export function RoleManagement() {
             
             {newRole && newRole !== selectedUser?.role && (
               <div className="rounded-lg bg-muted p-3 text-sm">
-                <p className="font-medium mb-1">⚠️ Permission Options:</p>
+                <p className="font-medium mb-1">⚠️ {t('roles.permissionOptions')}:</p>
                 <ul className="space-y-1 text-muted-foreground">
-                  <li>• <strong>Apply default permissions:</strong> Replace all existing permissions with role defaults</li>
-                  <li>• <strong>Keep existing permissions:</strong> Only change role, keep custom permissions</li>
+                  <li>• <strong>{t('roles.applyDefaultPermissionsLabel')}:</strong> {t('roles.applyDefaultPermissionsDesc')}</li>
+                  <li>• <strong>{t('roles.keepExistingPermissionsLabel')}:</strong> {t('roles.keepExistingPermissionsDesc')}</li>
                 </ul>
               </div>
             )}
@@ -321,20 +323,20 @@ export function RoleManagement() {
                 setSelectedUser(null);
               }}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               variant="secondary"
               onClick={() => handleConfirmRoleChange(false)}
               disabled={!newRole || newRole === selectedUser?.role || updateUserRole.isPending}
             >
-              {updateUserRole.isPending ? "Updating..." : "Keep Permissions"}
+              {updateUserRole.isPending ? t('common.updating') : t('roles.keepPermissions')}
             </Button>
             <Button
               onClick={() => handleConfirmRoleChange(true)}
               disabled={!newRole || newRole === selectedUser?.role || applyRolePermissions.isPending}
             >
-              {applyRolePermissions.isPending ? "Applying..." : "Apply Default Permissions"}
+              {applyRolePermissions.isPending ? t('common.applying') : t('roles.applyDefaultPermissions')}
             </Button>
           </DialogFooter>
         </DialogContent>

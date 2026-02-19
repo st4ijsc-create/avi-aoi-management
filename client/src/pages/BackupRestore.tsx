@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -36,43 +37,43 @@ import {
 const BACKUP_CATEGORIES = [
   {
     id: "corporate",
-    name: "Corporate & Factory",
-    description: "Cấu trúc tổ chức, nhà máy, workshop, dây chuyền",
+    nameKey: "backup.categoryCorporateName",
+    descKey: "backup.categoryCorporateDesc",
     icon: Building2,
     tables: ["corporates", "factories", "workshops", "productionLines", "lineStages", "workstations"],
   },
   {
     id: "products",
-    name: "Sản phẩm & Mapping",
-    description: "Model sản phẩm, category, measurement points, machine mapping",
+    nameKey: "backup.categoryProductsName",
+    descKey: "backup.categoryProductsDesc",
     icon: Package,
     tables: ["productModels", "productCategories", "measurementPointDefs", "productMachineMappings"],
   },
   {
     id: "processes",
-    name: "Quy trình sản xuất",
-    description: "Công đoạn, quy trình, cấu hình ca làm việc",
+    nameKey: "backup.categoryProcessesName",
+    descKey: "backup.categoryProcessesDesc",
     icon: Workflow,
     tables: ["processes", "shiftConfigs"],
   },
   {
     id: "alerts",
-    name: "Cảnh báo & Rules",
-    description: "Quy tắc cảnh báo MQTT, cấu hình thông báo",
+    nameKey: "backup.categoryAlertsName",
+    descKey: "backup.categoryAlertsDesc",
     icon: AlertTriangle,
     tables: ["mqttAlertRules"],
   },
   {
     id: "users",
-    name: "Người dùng & Phân quyền",
-    description: "Tài khoản, vai trò, phân quyền truy cập",
+    nameKey: "backup.categoryUsersName",
+    descKey: "backup.categoryUsersDesc",
     icon: Users,
     tables: ["users", "userAssignments"],
   },
   {
     id: "reports",
-    name: "Báo cáo định kỳ",
-    description: "Lịch gửi báo cáo, cấu hình SMTP",
+    nameKey: "backup.categoryReportsName",
+    descKey: "backup.categoryReportsDesc",
     icon: Calendar,
     tables: ["scheduledReports", "smtpConfig"],
   },
@@ -90,6 +91,7 @@ interface BackupHistory {
 }
 
 export default function BackupRestore() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   
@@ -112,7 +114,7 @@ export default function BackupRestore() {
     {
       id: 1,
       name: "Full System Backup",
-      description: "Sao lưu toàn bộ cấu hình hệ thống",
+      description: t('backup.mockFullSystemDesc'),
       categories: ["corporate", "products", "processes", "alerts", "users", "reports"],
       createdAt: new Date(Date.now() - 86400000),
       createdBy: "admin",
@@ -122,7 +124,7 @@ export default function BackupRestore() {
     {
       id: 2,
       name: "Products Only",
-      description: "Sao lưu cấu hình sản phẩm",
+      description: t('backup.mockProductsOnlyDesc'),
       categories: ["products"],
       createdAt: new Date(Date.now() - 172800000),
       createdBy: "admin",
@@ -154,7 +156,7 @@ export default function BackupRestore() {
 
   const handleExport = async () => {
     if (selectedCategories.length === 0) {
-      toast.error("Vui lòng chọn ít nhất một danh mục để sao lưu");
+      toast.error(t('backup.selectAtLeastOneCategory'));
       return;
     }
 
@@ -181,10 +183,10 @@ export default function BackupRestore() {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        toast.success("Đã xuất file backup thành công");
+        toast.success(t('backup.exportSuccess'));
       }
     } catch (error) {
-      toast.error("Lỗi khi xuất backup: " + (error as Error).message);
+      toast.error(t('backup.exportError') + (error as Error).message);
     } finally {
       setIsExporting(false);
     }
@@ -213,7 +215,7 @@ export default function BackupRestore() {
           version: parsed.version || "Unknown",
         });
       } catch {
-        toast.error("File không hợp lệ. Vui lòng chọn file JSON backup.");
+        toast.error(t('backup.invalidFile'));
         setImportData("");
         setImportPreview(null);
       }
@@ -223,19 +225,19 @@ export default function BackupRestore() {
 
   const importConfigMutation = trpc.system.importConfig.useMutation({
     onSuccess: (result) => {
-      toast.success(`Đã khôi phục ${result.imported} bản ghi thành công`);
+      toast.success(t('backup.restoreSuccess', { count: result.imported }));
       setImportDialogOpen(false);
       setImportData("");
       setImportPreview(null);
     },
     onError: (error) => {
-      toast.error("Lỗi khi khôi phục: " + error.message);
+      toast.error(t('backup.restoreError') + error.message);
     },
   });
 
   const handleImport = () => {
     if (!importData) {
-      toast.error("Vui lòng chọn file backup");
+      toast.error(t('backup.selectBackupFile'));
       return;
     }
 
@@ -247,7 +249,7 @@ export default function BackupRestore() {
         overwrite: false,
       });
     } catch {
-      toast.error("Dữ liệu backup không hợp lệ");
+      toast.error(t('backup.invalidBackupData'));
     }
   };
 
@@ -257,9 +259,9 @@ export default function BackupRestore() {
         <div className="flex items-center justify-center h-[60vh]">
           <Card className="p-8 text-center">
             <AlertTriangle className="h-12 w-12 mx-auto text-yellow-500 mb-4" />
-            <h2 className="text-xl font-semibold mb-2">Không có quyền truy cập</h2>
+            <h2 className="text-xl font-semibold mb-2">{t('backup.accessDenied')}</h2>
             <p className="text-muted-foreground">
-              Chỉ admin mới có thể truy cập tính năng Backup/Restore
+              {t('backup.adminOnlyMessage')}
             </p>
           </Card>
         </div>
@@ -278,7 +280,7 @@ export default function BackupRestore() {
               Backup & Restore
             </h1>
             <p className="text-muted-foreground mt-1">
-              Sao lưu và khôi phục cấu hình hệ thống
+              {t('backup.description')}
             </p>
           </div>
         </div>
@@ -287,15 +289,15 @@ export default function BackupRestore() {
           <TabsList>
             <TabsTrigger value="backup" className="flex items-center gap-2">
               <Download className="h-4 w-4" />
-              Sao lưu
+              {t('backup.tabBackup')}
             </TabsTrigger>
             <TabsTrigger value="restore" className="flex items-center gap-2">
               <Upload className="h-4 w-4" />
-              Khôi phục
+              {t('backup.tabRestore')}
             </TabsTrigger>
             <TabsTrigger value="history" className="flex items-center gap-2">
               <History className="h-4 w-4" />
-              Lịch sử
+              {t('backup.tabHistory')}
             </TabsTrigger>
           </TabsList>
 
@@ -305,17 +307,17 @@ export default function BackupRestore() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Settings className="h-5 w-5" />
-                  Cấu hình Backup
+                  {t('backup.configTitle')}
                 </CardTitle>
                 <CardDescription>
-                  Chọn các danh mục cần sao lưu và nhập thông tin mô tả
+                  {t('backup.configDescription')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Backup info */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="backupName">Tên backup</Label>
+                    <Label htmlFor="backupName">{t('backup.backupName')}</Label>
                     <Input
                       id="backupName"
                       value={backupName}
@@ -324,12 +326,12 @@ export default function BackupRestore() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="backupDescription">Mô tả</Label>
+                    <Label htmlFor="backupDescription">{t('backup.backupDescription')}</Label>
                     <Input
                       id="backupDescription"
                       value={backupDescription}
                       onChange={(e) => setBackupDescription(e.target.value)}
-                      placeholder="Mô tả ngắn về backup..."
+                      placeholder={t('backup.descriptionPlaceholder')}
                     />
                   </div>
                 </div>
@@ -337,13 +339,13 @@ export default function BackupRestore() {
                 {/* Category selection */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <Label>Chọn danh mục</Label>
+                    <Label>{t('backup.selectCategories')}</Label>
                     <div className="flex gap-2">
                       <Button variant="outline" size="sm" onClick={selectAllCategories}>
-                        Chọn tất cả
+                        {t('backup.selectAll')}
                       </Button>
                       <Button variant="outline" size="sm" onClick={deselectAllCategories}>
-                        Bỏ chọn
+                        {t('backup.deselectAll')}
                       </Button>
                     </div>
                   </div>
@@ -369,13 +371,13 @@ export default function BackupRestore() {
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-1">
                                   <Icon className="h-4 w-4 text-muted-foreground" />
-                                  <span className="font-medium">{category.name}</span>
+                                  <span className="font-medium">{t(category.nameKey)}</span>
                                 </div>
                                 <p className="text-sm text-muted-foreground">
-                                  {category.description}
+                                  {t(category.descKey)}
                                 </p>
                                 <p className="text-xs text-muted-foreground mt-1">
-                                  {category.tables.length} bảng
+                                  {category.tables.length} {t('backup.tables')}
                                 </p>
                               </div>
                             </div>
@@ -396,12 +398,12 @@ export default function BackupRestore() {
                     {isExporting ? (
                       <>
                         <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                        Đang xuất...
+                        {t('backup.exporting')}
                       </>
                     ) : (
                       <>
                         <Download className="h-4 w-4 mr-2" />
-                        Xuất Backup
+                        {t('backup.exportBackup')}
                       </>
                     )}
                   </Button>
@@ -416,10 +418,10 @@ export default function BackupRestore() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Upload className="h-5 w-5" />
-                  Khôi phục từ Backup
+                  {t('backup.restoreFromBackup')}
                 </CardTitle>
                 <CardDescription>
-                  Tải lên file backup JSON để khôi phục cấu hình hệ thống
+                  {t('backup.restoreDescription')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -428,7 +430,7 @@ export default function BackupRestore() {
                   <div className="border-2 border-dashed rounded-lg p-8 text-center">
                     <FileJson className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                     <p className="text-muted-foreground mb-4">
-                      Kéo thả file backup hoặc click để chọn file
+                      {t('backup.dragDropOrClick')}
                     </p>
                     <Input
                       type="file"
@@ -451,7 +453,7 @@ export default function BackupRestore() {
                             <span className="ml-2 font-medium">{importPreview.version}</span>
                           </div>
                           <div>
-                            <span className="text-muted-foreground">Ngày tạo:</span>
+                            <span className="text-muted-foreground">{t('backup.createdDate')}:</span>
                             <span className="ml-2 font-medium">
                               {new Date(importPreview.createdAt).toLocaleString("vi-VN")}
                             </span>
@@ -459,7 +461,7 @@ export default function BackupRestore() {
                         </div>
                         
                         <div>
-                          <span className="text-sm text-muted-foreground">Danh mục:</span>
+                          <span className="text-sm text-muted-foreground">{t('backup.categoriesLabel')}:</span>
                           <div className="flex flex-wrap gap-2 mt-2">
                             {importPreview.categories.map((cat) => (
                               <Badge key={cat} variant="secondary">{cat}</Badge>
@@ -468,7 +470,7 @@ export default function BackupRestore() {
                         </div>
 
                         <div>
-                          <span className="text-sm text-muted-foreground">Số bản ghi:</span>
+                          <span className="text-sm text-muted-foreground">{t('backup.recordCount')}:</span>
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2">
                             {Object.entries(importPreview.recordCounts).map(([table, count]) => (
                               <div key={table} className="text-sm">
@@ -487,12 +489,12 @@ export default function BackupRestore() {
                             {importConfigMutation.isPending ? (
                               <>
                                 <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                                Đang khôi phục...
+                                {t('backup.restoring')}
                               </>
                             ) : (
                               <>
                                 <Upload className="h-4 w-4 mr-2" />
-                                Khôi phục
+                                {t('backup.restore')}
                               </>
                             )}
                           </Button>
@@ -511,10 +513,10 @@ export default function BackupRestore() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <History className="h-5 w-5" />
-                  Lịch sử Backup
+                  {t('backup.historyTitle')}
                 </CardTitle>
                 <CardDescription>
-                  Xem lịch sử các lần sao lưu trước đó
+                  {t('backup.historyDescription')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -544,14 +546,14 @@ export default function BackupRestore() {
                             ))}
                           </div>
                           <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                            <span>Bởi: {backup.createdBy}</span>
-                            <span>Kích thước: {backup.size}</span>
+                            <span>{t('backup.by')}: {backup.createdBy}</span>
+                            <span>{t('backup.size')}: {backup.size}</span>
                             <span>{backup.createdAt.toLocaleString("vi-VN")}</span>
                           </div>
                         </div>
                         <Button variant="outline" size="sm">
                           <Download className="h-4 w-4 mr-1" />
-                          Tải về
+                          {t('backup.download')}
                         </Button>
                       </div>
                     </Card>

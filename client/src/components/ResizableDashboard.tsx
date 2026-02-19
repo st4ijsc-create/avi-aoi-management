@@ -1140,7 +1140,7 @@ export function ResizableDashboard({ children, onRefreshWidget, widgetCacheStatu
                         setEditingWidgetStyle(item.i);
                         setStyleEditorOpen(true);
                       }}
-                      title="Tùy chỉnh style"
+                      title={t('dashboard.customizeStyle')}
                     >
                       <Palette className="h-3 w-3" />
                     </Button>

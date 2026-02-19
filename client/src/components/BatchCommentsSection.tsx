@@ -2,6 +2,7 @@
  * BatchCommentsSection - Component hiển thị nhận xét và gắn thẻ cho training batch
  */
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +36,7 @@ interface BatchCommentsSectionProps {
 }
 
 export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectionProps) {
+  const { t } = useTranslation();
   const [newComment, setNewComment] = useState("");
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
   const [editContent, setEditContent] = useState("");
@@ -62,7 +64,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
     onSuccess: () => {
       setNewComment("");
       utils.trainingBatchComments.listComments.invalidate({ batchId });
-      toast.success("Đã thêm nhận xét");
+      toast.success(t('annotation.comments.added'));
     },
     onError: (error) => {
       toast.error(error.message);
@@ -74,7 +76,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
       setEditingCommentId(null);
       setEditContent("");
       utils.trainingBatchComments.listComments.invalidate({ batchId });
-      toast.success("Đã cập nhật nhận xét");
+      toast.success(t('annotation.comments.updated'));
     },
     onError: (error) => {
       toast.error(error.message);
@@ -84,7 +86,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
   const deleteCommentMutation = trpc.trainingBatchComments.deleteComment.useMutation({
     onSuccess: () => {
       utils.trainingBatchComments.listComments.invalidate({ batchId });
-      toast.success("Đã xóa nhận xét");
+      toast.success(t('annotation.comments.deleted'));
     },
     onError: (error) => {
       toast.error(error.message);
@@ -97,7 +99,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
       setNewTagColor("#3b82f6");
       setIsTagDialogOpen(false);
       utils.trainingBatchComments.listTags.invalidate();
-      toast.success("Đã tạo thẻ mới");
+      toast.success(t('annotation.tags.created'));
     },
     onError: (error) => {
       toast.error(error.message);
@@ -108,7 +110,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
     onSuccess: () => {
       utils.trainingBatchComments.getBatchTags.invalidate({ batchId });
       setTagPopoverOpen(false);
-      toast.success("Đã gắn thẻ");
+      toast.success(t('annotation.tags.assigned'));
     },
     onError: (error) => {
       toast.error(error.message);
@@ -118,7 +120,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
   const removeTagMutation = trpc.trainingBatchComments.removeTag.useMutation({
     onSuccess: () => {
       utils.trainingBatchComments.getBatchTags.invalidate({ batchId });
-      toast.success("Đã bỏ thẻ");
+      toast.success(t('annotation.tags.removed'));
     },
     onError: (error) => {
       toast.error(error.message);
@@ -142,7 +144,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
   };
 
   const handleDeleteComment = (commentId: number) => {
-    if (confirm("Bạn có chắc muốn xóa nhận xét này?")) {
+    if (confirm(t('annotation.comments.confirmDelete'))) {
       deleteCommentMutation.mutate({ commentId });
     }
   };
@@ -179,7 +181,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Tag className="h-4 w-4" />
-            Thẻ phân loại
+            {t('annotation.tags.title')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -204,7 +206,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
                 </Badge>
               ))
             ) : (
-              <span className="text-sm text-muted-foreground">Chưa có thẻ nào</span>
+              <span className="text-sm text-muted-foreground">{t('annotation.tags.noTags')}</span>
             )}
 
             {/* Add Tag Popover */}
@@ -212,38 +214,38 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm" className="h-6 px-2">
                   <Plus className="h-3 w-3 mr-1" />
-                  Thêm thẻ
+                  {t('annotation.tags.addTag')}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-64 p-0" align="start">
                 <Command>
-                  <CommandInput placeholder="Tìm thẻ..." />
+                  <CommandInput placeholder={t('annotation.tags.searchTags')} />
                   <CommandList>
                     <CommandEmpty>
                       <div className="p-2 text-center">
-                        <p className="text-sm text-muted-foreground mb-2">Không tìm thấy thẻ</p>
+                        <p className="text-sm text-muted-foreground mb-2">{t('annotation.tags.notFound')}</p>
                         <Dialog open={isTagDialogOpen} onOpenChange={setIsTagDialogOpen}>
                           <DialogTrigger asChild>
                             <Button variant="outline" size="sm">
                               <Plus className="h-3 w-3 mr-1" />
-                              Tạo thẻ mới
+                              {t('annotation.tags.createNew')}
                             </Button>
                           </DialogTrigger>
                           <DialogContent>
                             <DialogHeader>
-                              <DialogTitle>Tạo thẻ mới</DialogTitle>
+                              <DialogTitle>{t('annotation.tags.createNew')}</DialogTitle>
                             </DialogHeader>
                             <div className="space-y-4 py-4">
                               <div>
-                                <label className="text-sm font-medium">Tên thẻ</label>
+                                <label className="text-sm font-medium">{t('annotation.tags.tagName')}</label>
                                 <Input
                                   value={newTagName}
                                   onChange={(e) => setNewTagName(e.target.value)}
-                                  placeholder="Nhập tên thẻ..."
+                                  placeholder={t('annotation.tags.enterTagName')}
                                 />
                               </div>
                               <div>
-                                <label className="text-sm font-medium">Màu sắc</label>
+                                <label className="text-sm font-medium">{t('annotation.tags.color')}</label>
                                 <div className="flex gap-2 mt-2">
                                   {colorOptions.map((color) => (
                                     <button
@@ -263,7 +265,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
                                 onClick={handleCreateTag}
                                 disabled={!newTagName.trim() || createTagMutation.isPending}
                               >
-                                {createTagMutation.isPending ? "Đang tạo..." : "Tạo thẻ"}
+                                {createTagMutation.isPending ? t('annotation.tags.creating') : t('annotation.tags.createTag')}
                               </Button>
                             </DialogFooter>
                           </DialogContent>
@@ -298,7 +300,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <MessageSquare className="h-4 w-4" />
-            Nhận xét ({comments?.total || 0})
+            {t('annotation.comments.title')} ({comments?.total || 0})
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -307,7 +309,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
             <Textarea
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Thêm nhận xét..."
+              placeholder={t('annotation.comments.addComment')}
               className="min-h-[60px] resize-none"
             />
             <Button
@@ -339,7 +341,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="font-medium text-sm">
-                            {comment.userName || "Ẩn danh"}
+                            {comment.userName || t('annotation.comments.anonymous')}
                           </span>
                           <span className="text-xs text-muted-foreground">
                             {formatDistanceToNow(new Date(comment.createdAt), {
@@ -348,7 +350,7 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
                             })}
                           </span>
                           {comment.updatedAt > comment.createdAt && (
-                            <span className="text-xs text-muted-foreground">(đã sửa)</span>
+                            <span className="text-xs text-muted-foreground">({t('annotation.comments.edited')})</span>
                           )}
                         </div>
                         
@@ -416,8 +418,8 @@ export function BatchCommentsSection({ batchId, batchName }: BatchCommentsSectio
             ) : (
               <div className="text-center py-8 text-muted-foreground">
                 <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">Chưa có nhận xét nào</p>
-                <p className="text-xs">Hãy là người đầu tiên nhận xét!</p>
+                <p className="text-sm">{t('annotation.comments.noComments')}</p>
+                <p className="text-xs">{t('annotation.comments.beFirst')}</p>
               </div>
             )}
           </ScrollArea>

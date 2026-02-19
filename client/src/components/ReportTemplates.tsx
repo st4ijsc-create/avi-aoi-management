@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +24,7 @@ interface ReportTemplate {
 }
 
 export function ReportTemplates() {
+  const { t } = useTranslation();
   const [selectedTemplate, setSelectedTemplate] = useState<ReportTemplate | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -40,13 +42,13 @@ export function ReportTemplates() {
   
   const createFromTemplateMutation = trpc.scheduledReport.createFromTemplate.useMutation({
     onSuccess: (data) => {
-      toast.success(`Đã tạo báo cáo từ template ${data.templateUsed}`);
+      toast.success(t('reports.createdFromTemplate', { template: data.templateUsed }));
       setIsCreateDialogOpen(false);
       setSelectedTemplate(null);
       resetForm();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t('common.errorMessage', { message: error.message }));
     },
   });
 
@@ -67,7 +69,7 @@ export function ReportTemplates() {
     
     const recipients = formData.recipients.split(",").map(e => e.trim()).filter(e => e);
     if (recipients.length === 0) {
-      toast.error("Vui lòng nhập ít nhất một email người nhận");
+      toast.error(t('reports.enterAtLeastOneEmail'));
       return;
     }
 
@@ -99,11 +101,11 @@ export function ReportTemplates() {
   const getTemplateTypeLabel = (type: string) => {
     switch (type) {
       case "DAILY":
-        return "Hàng ngày";
+        return t('reports.daily');
       case "WEEKLY":
-        return "Hàng tuần";
+        return t('reports.weekly');
       case "MONTHLY":
-        return "Hàng tháng";
+        return t('reports.monthly');
       default:
         return type;
     }
@@ -134,9 +136,9 @@ export function ReportTemplates() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold">Mẫu Báo Cáo</h2>
+          <h2 className="text-2xl font-bold">{t('reports.reportTemplates')}</h2>
           <p className="text-muted-foreground">
-            Sử dụng các mẫu báo cáo có sẵn để tạo báo cáo định kỳ nhanh chóng
+            {t('reports.reportTemplatesDesc')}
           </p>
         </div>
       </div>
@@ -158,22 +160,22 @@ export function ReportTemplates() {
               <div className="space-y-4">
                 {/* Sections included */}
                 <div>
-                  <p className="text-sm font-medium mb-2">Nội dung bao gồm:</p>
+                  <p className="text-sm font-medium mb-2">{t('reports.sectionsIncluded')}</p>
                   <div className="flex flex-wrap gap-1">
                     {(template.sections as any)?.includeYieldRate && (
-                      <Badge variant="outline" className="text-xs">Tỷ lệ Yield</Badge>
+                      <Badge variant="outline" className="text-xs">{t('reports.yieldRate')}</Badge>
                     )}
                     {(template.sections as any)?.includeNGAnalysis && (
-                      <Badge variant="outline" className="text-xs">Phân tích NG</Badge>
+                      <Badge variant="outline" className="text-xs">{t('reports.ngAnalysis')}</Badge>
                     )}
                     {(template.sections as any)?.includeTopNGPoints && (
-                      <Badge variant="outline" className="text-xs">Top NG Points</Badge>
+                      <Badge variant="outline" className="text-xs">{t('reports.topNgPoints')}</Badge>
                     )}
                     {(template.sections as any)?.includeTrendCharts && (
-                      <Badge variant="outline" className="text-xs">Biểu đồ xu hướng</Badge>
+                      <Badge variant="outline" className="text-xs">{t('reports.trendCharts')}</Badge>
                     )}
                     {(template.sections as any)?.includeMachineComparison && (
-                      <Badge variant="outline" className="text-xs">So sánh máy</Badge>
+                      <Badge variant="outline" className="text-xs">{t('reports.machineComparison')}</Badge>
                     )}
                     {(template.sections as any)?.includeOEE && (
                       <Badge variant="outline" className="text-xs">OEE</Badge>
@@ -196,7 +198,7 @@ export function ReportTemplates() {
                   }}
                 >
                   <Plus className="h-4 w-4 mr-2" />
-                  Sử dụng mẫu này
+                  {t('reports.useThisTemplate')}
                 </Button>
               </div>
             </CardContent>
@@ -207,7 +209,7 @@ export function ReportTemplates() {
           <Card className="col-span-full">
             <CardContent className="flex flex-col items-center justify-center py-12">
               <FileText className="h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">Chưa có mẫu báo cáo nào</p>
+              <p className="text-muted-foreground">{t('reports.noTemplates')}</p>
             </CardContent>
           </Card>
         )}
@@ -217,7 +219,7 @@ export function ReportTemplates() {
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Tạo báo cáo từ mẫu</DialogTitle>
+            <DialogTitle>{t('reports.createFromTemplate')}</DialogTitle>
             <DialogDescription>
               {selectedTemplate?.name} - {selectedTemplate?.description}
             </DialogDescription>
@@ -225,17 +227,17 @@ export function ReportTemplates() {
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Tên báo cáo</Label>
+              <Label htmlFor="name">{t('reports.reportName')}</Label>
               <Input
                 id="name"
                 value={formData.name}
                 onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                placeholder="Nhập tên báo cáo"
+                placeholder={t('reports.enterReportName')}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="recipients">Email người nhận (phân cách bằng dấu phẩy)</Label>
+              <Label htmlFor="recipients">{t('reports.recipientEmails')}</Label>
               <Input
                 id="recipients"
                 value={formData.recipients}
@@ -246,7 +248,7 @@ export function ReportTemplates() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="scheduleTime">Giờ gửi</Label>
+                <Label htmlFor="scheduleTime">{t('reports.sendTime')}</Label>
                 <Input
                   id="scheduleTime"
                   type="time"
@@ -257,22 +259,22 @@ export function ReportTemplates() {
 
               {selectedTemplate?.templateType === "WEEKLY" && (
                 <div className="space-y-2">
-                  <Label>Ngày trong tuần</Label>
+                  <Label>{t('reports.dayOfWeek')}</Label>
                   <Select
                     value={formData.scheduleDayOfWeek?.toString()}
                     onValueChange={(v) => setFormData(prev => ({ ...prev, scheduleDayOfWeek: parseInt(v) }))}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Chọn ngày" />
+                      <SelectValue placeholder={t('reports.selectDay')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="0">Chủ nhật</SelectItem>
-                      <SelectItem value="1">Thứ 2</SelectItem>
-                      <SelectItem value="2">Thứ 3</SelectItem>
-                      <SelectItem value="3">Thứ 4</SelectItem>
-                      <SelectItem value="4">Thứ 5</SelectItem>
-                      <SelectItem value="5">Thứ 6</SelectItem>
-                      <SelectItem value="6">Thứ 7</SelectItem>
+                      <SelectItem value="0">{t('reports.sunday')}</SelectItem>
+                      <SelectItem value="1">{t('reports.monday')}</SelectItem>
+                      <SelectItem value="2">{t('reports.tuesday')}</SelectItem>
+                      <SelectItem value="3">{t('reports.wednesday')}</SelectItem>
+                      <SelectItem value="4">{t('reports.thursday')}</SelectItem>
+                      <SelectItem value="5">{t('reports.friday')}</SelectItem>
+                      <SelectItem value="6">{t('reports.saturday')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -280,18 +282,18 @@ export function ReportTemplates() {
 
               {selectedTemplate?.templateType === "MONTHLY" && (
                 <div className="space-y-2">
-                  <Label>Ngày trong tháng</Label>
+                  <Label>{t('reports.dayOfMonth')}</Label>
                   <Select
                     value={formData.scheduleDayOfMonth?.toString()}
                     onValueChange={(v) => setFormData(prev => ({ ...prev, scheduleDayOfMonth: parseInt(v) }))}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Chọn ngày" />
+                      <SelectValue placeholder={t('reports.selectDay')} />
                     </SelectTrigger>
                     <SelectContent>
                       {Array.from({ length: 28 }, (_, i) => (
                         <SelectItem key={i + 1} value={(i + 1).toString()}>
-                          Ngày {i + 1}
+                          {t('reports.dayN', { day: i + 1 })}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -301,7 +303,7 @@ export function ReportTemplates() {
             </div>
 
             <div className="space-y-2">
-              <Label>Nhà máy (tùy chọn)</Label>
+              <Label>{t('reports.factoryOptional')}</Label>
               <Select
                 value={formData.factoryId?.toString() || "all"}
                 onValueChange={(v) => setFormData(prev => ({ 
@@ -310,10 +312,10 @@ export function ReportTemplates() {
                 }))}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Tất cả nhà máy" />
+                  <SelectValue placeholder={t('reports.allFactories')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả nhà máy</SelectItem>
+                  <SelectItem value="all">{t('reports.allFactories')}</SelectItem>
                   {factories?.map((factory) => (
                     <SelectItem key={factory.id} value={factory.id.toString()}>
                       {factory.name}
@@ -326,7 +328,7 @@ export function ReportTemplates() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button 
               onClick={handleCreateFromTemplate}
@@ -335,12 +337,12 @@ export function ReportTemplates() {
               {createFromTemplateMutation.isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Đang tạo...
+                  {t('reports.creating')}
                 </>
               ) : (
                 <>
                   <CheckCircle className="h-4 w-4 mr-2" />
-                  Tạo báo cáo
+                  {t('reports.createReport')}
                 </>
               )}
             </Button>

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,28 +33,28 @@ import {
 const METRIC_INFO = {
   FPY: {
     name: "First Pass Yield",
-    description: "Tỷ lệ đạt lần đầu - Sản phẩm đạt chất lượng ngay lần kiểm tra đầu tiên",
+    descriptionKey: 'settings.fpyDescription',
     icon: TrendingUp,
     color: "text-primary",
     unit: "%"
   },
   FY: {
     name: "Fail Yield",
-    description: "Tỷ lệ lỗi - Tỷ lệ sản phẩm không đạt chất lượng",
+    descriptionKey: 'settings.fyDescription',
     icon: TrendingDown,
     color: "text-destructive",
     unit: "%"
   },
   NTF: {
     name: "No Trouble Found",
-    description: "Tỷ lệ không tìm thấy lỗi - Sản phẩm ban đầu NG nhưng kiểm tra lại OK",
+    descriptionKey: 'settings.ntfDescription',
     icon: Activity,
     color: "text-warning",
     unit: "%"
   },
   UPH: {
     name: "Units Per Hour",
-    description: "Số lượng sản phẩm mỗi giờ - Năng suất sản xuất",
+    descriptionKey: 'settings.uphDescription',
     icon: Gauge,
     color: "text-success",
     unit: "units/hr"
@@ -61,17 +62,18 @@ const METRIC_INFO = {
 };
 
 export default function YieldThresholdSettings() {
+  const { t } = useTranslation();
   const { data: thresholds, isLoading, refetch } = trpc.yieldThreshold.list.useQuery();
   const { data: history, refetch: refetchHistory } = trpc.yieldThreshold.getHistory.useQuery({ limit: 50 });
   
   const updateMutation = trpc.yieldThreshold.updateWithHistory.useMutation({
     onSuccess: () => {
-      toast.success("Đã cập nhật ngưỡng cảnh báo");
+      toast.success(t('settings.thresholdUpdated'));
       refetch();
       refetchHistory();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(`${t('common.error')}: ${error.message}`);
     }
   });
 
@@ -148,10 +150,10 @@ export default function YieldThresholdSettings() {
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Target className="h-5 w-5 text-primary" />
-            Cấu hình ngưỡng cảnh báo Yield
+            {t('settings.yieldThresholdConfig')}
           </CardTitle>
           <CardDescription>
-            Thiết lập ngưỡng cảnh báo cho các chỉ số FPY, FY, NTF và UPH. Hệ thống sẽ gửi thông báo khi vượt ngưỡng.
+            {t('settings.yieldThresholdConfigDescription')}
           </CardDescription>
         </CardHeader>
       </Card>
@@ -160,11 +162,11 @@ export default function YieldThresholdSettings() {
         <TabsList className="grid w-full max-w-md grid-cols-2">
           <TabsTrigger value="settings" className="flex items-center gap-2">
             <Target className="h-4 w-4" />
-            Cấu hình ngưỡng
+            {t('settings.thresholdConfig')}
           </TabsTrigger>
           <TabsTrigger value="history" className="flex items-center gap-2">
             <History className="h-4 w-4" />
-            Lịch sử thay đổi
+            {t('settings.changeHistory')}
           </TabsTrigger>
         </TabsList>
 
@@ -187,12 +189,12 @@ export default function YieldThresholdSettings() {
                     <div>
                       <CardTitle className="text-base">{metricInfo.name}</CardTitle>
                       <CardDescription className="text-xs mt-1">
-                        {metricInfo.description}
+                        {t(metricInfo.descriptionKey)}
                       </CardDescription>
                     </div>
                   </div>
                   <Badge variant={threshold.isEnabled ? "default" : "secondary"}>
-                    {threshold.isEnabled ? "Đang bật" : "Đã tắt"}
+                    {threshold.isEnabled ? t('settings.enabled') : t('settings.disabled')}
                   </Badge>
                 </div>
               </CardHeader>
@@ -202,7 +204,7 @@ export default function YieldThresholdSettings() {
                     {/* Edit Mode */}
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label className="text-xs">Ngưỡng cảnh báo ({metricInfo.unit})</Label>
+                        <Label className="text-xs">{t('settings.warningThreshold')} ({metricInfo.unit})</Label>
                         <Input
                           type="number"
                           step="0.01"
@@ -212,7 +214,7 @@ export default function YieldThresholdSettings() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-xs">Ngưỡng nghiêm trọng ({metricInfo.unit})</Label>
+                        <Label className="text-xs">{t('settings.criticalThreshold')} ({metricInfo.unit})</Label>
                         <Input
                           type="number"
                           step="0.01"
@@ -225,7 +227,7 @@ export default function YieldThresholdSettings() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label className="text-xs">Giá trị mục tiêu ({metricInfo.unit})</Label>
+                        <Label className="text-xs">{t('settings.targetValue')} ({metricInfo.unit})</Label>
                         <Input
                           type="number"
                           step="0.01"
@@ -235,7 +237,7 @@ export default function YieldThresholdSettings() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-xs">Toán tử so sánh</Label>
+                        <Label className="text-xs">{t('settings.comparisonOperator')}</Label>
                         <Select
                           value={editForm.comparisonOperator}
                           onValueChange={(v) => setEditForm({ ...editForm, comparisonOperator: v })}
@@ -244,10 +246,10 @@ export default function YieldThresholdSettings() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="gte">≥ Lớn hơn hoặc bằng</SelectItem>
-                            <SelectItem value="gt">&gt; Lớn hơn</SelectItem>
-                            <SelectItem value="lte">≤ Nhỏ hơn hoặc bằng</SelectItem>
-                            <SelectItem value="lt">&lt; Nhỏ hơn</SelectItem>
+                            <SelectItem value="gte">≥ {t('settings.greaterOrEqual')}</SelectItem>
+                            <SelectItem value="gt">&gt; {t('settings.greaterThan')}</SelectItem>
+                            <SelectItem value="lte">≤ {t('settings.lessOrEqual')}</SelectItem>
+                            <SelectItem value="lt">&lt; {t('settings.lessThan')}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -255,7 +257,7 @@ export default function YieldThresholdSettings() {
 
                     <div className="space-y-3 pt-2">
                       <div className="flex items-center justify-between">
-                        <Label className="text-sm">Bật cảnh báo</Label>
+                        <Label className="text-sm">{t('settings.enableAlert')}</Label>
                         <Switch
                           checked={editForm.isEnabled}
                           onCheckedChange={(v) => setEditForm({ ...editForm, isEnabled: v })}
@@ -264,7 +266,7 @@ export default function YieldThresholdSettings() {
                       <div className="flex items-center justify-between">
                         <Label className="text-sm flex items-center gap-2">
                           <Bell className="h-4 w-4 text-warning" />
-                          Thông báo khi cảnh báo
+                          {t('settings.notifyOnWarning')}
                         </Label>
                         <Switch
                           checked={editForm.notifyOnWarning}
@@ -274,7 +276,7 @@ export default function YieldThresholdSettings() {
                       <div className="flex items-center justify-between">
                         <Label className="text-sm flex items-center gap-2">
                           <AlertTriangle className="h-4 w-4 text-destructive" />
-                          Thông báo khi nghiêm trọng
+                          {t('settings.notifyOnCritical')}
                         </Label>
                         <Switch
                           checked={editForm.notifyOnCritical}
@@ -295,7 +297,7 @@ export default function YieldThresholdSettings() {
                         ) : (
                           <Save className="h-4 w-4 mr-2" />
                         )}
-                        Lưu
+                        {t('common.save')}
                       </Button>
                       <Button 
                         size="sm" 
@@ -303,7 +305,7 @@ export default function YieldThresholdSettings() {
                         onClick={handleCancel}
                         className="flex-1"
                       >
-                        Hủy
+                        {t('common.cancel')}
                       </Button>
                     </div>
                   </>
@@ -312,20 +314,20 @@ export default function YieldThresholdSettings() {
                     {/* View Mode */}
                     <div className="grid grid-cols-3 gap-4 text-sm">
                       <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground">Mục tiêu</p>
+                        <p className="text-xs text-muted-foreground">{t('settings.target')}</p>
                         <p className="font-medium text-primary">
                           {threshold.targetValue || "-"} {metricInfo.unit}
                         </p>
                       </div>
                       <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground">Cảnh báo</p>
+                        <p className="text-xs text-muted-foreground">{t('settings.warning')}</p>
                         <p className="font-medium text-warning">
                           {threshold.comparisonOperator === 'gte' || threshold.comparisonOperator === 'gt' ? '< ' : '> '}
                           {threshold.warningThreshold} {metricInfo.unit}
                         </p>
                       </div>
                       <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground">Nghiêm trọng</p>
+                        <p className="text-xs text-muted-foreground">{t('settings.critical')}</p>
                         <p className="font-medium text-destructive">
                           {threshold.comparisonOperator === 'gte' || threshold.comparisonOperator === 'gt' ? '< ' : '> '}
                           {threshold.criticalThreshold} {metricInfo.unit}
@@ -340,7 +342,7 @@ export default function YieldThresholdSettings() {
                         ) : (
                           <BellOff className="h-4 w-4 text-muted-foreground" />
                         )}
-                        <span className="text-muted-foreground">Cảnh báo</span>
+                        <span className="text-muted-foreground">{t('settings.warning')}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         {threshold.notifyOnCritical ? (
@@ -348,7 +350,7 @@ export default function YieldThresholdSettings() {
                         ) : (
                           <BellOff className="h-4 w-4 text-muted-foreground" />
                         )}
-                        <span className="text-muted-foreground">Nghiêm trọng</span>
+                        <span className="text-muted-foreground">{t('settings.critical')}</span>
                       </div>
                     </div>
 
@@ -358,7 +360,7 @@ export default function YieldThresholdSettings() {
                       onClick={() => handleEdit(threshold)}
                       className="w-full mt-2"
                     >
-                      Chỉnh sửa
+                      {t('common.edit')}
                     </Button>
                   </>
                 )}
@@ -376,12 +378,12 @@ export default function YieldThresholdSettings() {
               <AlertTriangle className="h-5 w-5 text-primary" />
             </div>
             <div className="space-y-2">
-              <h4 className="font-medium">Hướng dẫn cấu hình ngưỡng</h4>
+              <h4 className="font-medium">{t('settings.thresholdGuide')}</h4>
               <ul className="text-sm text-muted-foreground space-y-1">
-                <li>• <strong>FPY (First Pass Yield)</strong>: Nên đặt ngưỡng cảnh báo ≥ 97%, nghiêm trọng ≥ 95%</li>
-                <li>• <strong>FY (Fail Yield)</strong>: Nên đặt ngưỡng cảnh báo ≤ 2%, nghiêm trọng ≤ 3%</li>
-                <li>• <strong>NTF (No Trouble Found)</strong>: Nên đặt ngưỡng cảnh báo ≤ 1.5%, nghiêm trọng ≤ 2%</li>
-                <li>• <strong>UPH (Units Per Hour)</strong>: Tùy thuộc vào năng lực sản xuất của nhà máy</li>
+                <li>• <strong>FPY (First Pass Yield)</strong>: {t('settings.fpyGuide')}</li>
+                <li>• <strong>FY (Fail Yield)</strong>: {t('settings.fyGuide')}</li>
+                <li>• <strong>NTF (No Trouble Found)</strong>: {t('settings.ntfGuide')}</li>
+                <li>• <strong>UPH (Units Per Hour)</strong>: {t('settings.uphGuide')}</li>
               </ul>
             </div>
           </div>
@@ -394,17 +396,17 @@ export default function YieldThresholdSettings() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <History className="h-5 w-5 text-primary" />
-                Lịch sử thay đổi ngưỡng
+                {t('settings.thresholdChangeHistory')}
               </CardTitle>
               <CardDescription>
-                Theo dõi các thay đổi ngưỡng cảnh báo theo thời gian
+                {t('settings.trackThresholdChanges')}
               </CardDescription>
             </CardHeader>
             <CardContent>
               {!history || history.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Chưa có lịch sử thay đổi</p>
+                  <p>{t('settings.noChangeHistory')}</p>
                 </div>
               ) : (
                 <ScrollArea className="h-[500px]">
@@ -427,7 +429,7 @@ export default function YieldThresholdSettings() {
                             </div>
                             <div className="grid grid-cols-2 gap-4 text-sm">
                               <div>
-                                <p className="text-xs text-muted-foreground mb-1">Ngưỡng cảnh báo</p>
+                                <p className="text-xs text-muted-foreground mb-1">{t('settings.warningThreshold')}</p>
                                 <div className="flex items-center gap-2">
                                   <span className="text-warning">{item.previousWarning}%</span>
                                   <ArrowRight className="h-3 w-3" />
@@ -435,7 +437,7 @@ export default function YieldThresholdSettings() {
                                 </div>
                               </div>
                               <div>
-                                <p className="text-xs text-muted-foreground mb-1">Ngưỡng nghiêm trọng</p>
+                                <p className="text-xs text-muted-foreground mb-1">{t('settings.criticalThreshold')}</p>
                                 <div className="flex items-center gap-2">
                                   <span className="text-destructive">{item.previousCritical}%</span>
                                   <ArrowRight className="h-3 w-3" />
@@ -445,13 +447,13 @@ export default function YieldThresholdSettings() {
                             </div>
                             {item.changeReason && (
                               <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
-                                <strong>Lý do:</strong> {item.changeReason}
+                                <strong>{t('settings.reason')}:</strong> {item.changeReason}
                               </div>
                             )}
                             {item.changedByName && (
                               <div className="text-xs text-muted-foreground flex items-center gap-1">
                                 <User className="h-3 w-3" />
-                                Thay đổi bởi: {item.changedByName}
+                                {t('settings.changedBy')}: {item.changedByName}
                               </div>
                             )}
                           </div>
@@ -470,14 +472,14 @@ export default function YieldThresholdSettings() {
       <Dialog open={changeReasonDialog} onOpenChange={setChangeReasonDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Lý do thay đổi ngưỡng</DialogTitle>
+            <DialogTitle>{t('settings.changeReasonTitle')}</DialogTitle>
             <DialogDescription>
-              Nhập lý do thay đổi ngưỡng cảnh báo (để theo dõi lịch sử)
+              {t('settings.changeReasonDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <Textarea
-              placeholder="Ví dụ: Điều chỉnh theo yêu cầu của QC, Cải thiện chất lượng sản xuất..."
+              placeholder={t('settings.changeReasonPlaceholder')}
               value={changeReason}
               onChange={(e) => setChangeReason(e.target.value)}
               rows={3}
@@ -485,13 +487,13 @@ export default function YieldThresholdSettings() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setChangeReasonDialog(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleConfirmSave} disabled={updateMutation.isPending}>
               {updateMutation.isPending ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Đang lưu...</>
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> {t('common.saving')}</>
               ) : (
-                <><Save className="h-4 w-4 mr-2" /> Lưu thay đổi</>
+                <><Save className="h-4 w-4 mr-2" /> {t('common.saveChanges')}</>
               )}
             </Button>
           </DialogFooter>

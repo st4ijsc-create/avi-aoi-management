@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +28,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 export function TwoFactorSetup() {
+  const { t } = useTranslation();
   const [showSetupDialog, setShowSetupDialog] = useState(false);
   const [showDisableDialog, setShowDisableDialog] = useState(false);
   const [showBackupCodesDialog, setShowBackupCodesDialog] = useState(false);
@@ -43,7 +45,7 @@ export function TwoFactorSetup() {
   // Mutations
   const generateSecretMutation = trpc.twoFactor.generateSecret.useMutation({
     onSuccess: () => {
-      toast.success("Đã tạo mã QR. Vui lòng quét bằng ứng dụng xác thực.");
+      toast.success(t('auth.qrCodeGenerated'));
     },
     onError: (error) => {
       toast.error(error.message);
@@ -57,7 +59,7 @@ export function TwoFactorSetup() {
       setShowBackupCodesDialog(true);
       setVerificationCode("");
       refetchStatus();
-      toast.success("Đã bật xác thực 2 yếu tố!");
+      toast.success(t('auth.twoFactorEnabled'));
     },
     onError: (error) => {
       toast.error(error.message);
@@ -69,7 +71,7 @@ export function TwoFactorSetup() {
       setShowDisableDialog(false);
       setDisableCode("");
       refetchStatus();
-      toast.success("Đã tắt xác thực 2 yếu tố");
+      toast.success(t('auth.twoFactorDisabled'));
     },
     onError: (error) => {
       toast.error(error.message);
@@ -83,7 +85,7 @@ export function TwoFactorSetup() {
       setShowBackupCodesDialog(true);
       setRegenerateCode("");
       refetchStatus();
-      toast.success("Đã tạo lại mã dự phòng!");
+      toast.success(t('auth.backupCodesRegenerated'));
     },
     onError: (error) => {
       toast.error(error.message);
@@ -98,7 +100,7 @@ export function TwoFactorSetup() {
 
   const handleEnable = () => {
     if (verificationCode.length !== 6) {
-      toast.error("Vui lòng nhập mã 6 số");
+      toast.error(t('auth.enterSixDigitCode'));
       return;
     }
     enableMutation.mutate({ code: verificationCode });
@@ -106,7 +108,7 @@ export function TwoFactorSetup() {
 
   const handleDisable = () => {
     if (!disableCode) {
-      toast.error("Vui lòng nhập mã xác thực hoặc mã dự phòng");
+      toast.error(t('auth.enterAuthOrBackupCode'));
       return;
     }
     disableMutation.mutate({ code: disableCode });
@@ -114,7 +116,7 @@ export function TwoFactorSetup() {
 
   const handleRegenerate = () => {
     if (regenerateCode.length !== 6) {
-      toast.error("Vui lòng nhập mã 6 số từ ứng dụng xác thực");
+      toast.error(t('auth.enterSixDigitFromApp'));
       return;
     }
     regenerateMutation.mutate({ code: regenerateCode });
@@ -122,21 +124,21 @@ export function TwoFactorSetup() {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    toast.success("Đã sao chép!");
+    toast.success(t('common.copied'));
   };
 
   const downloadBackupCodes = () => {
-    const content = `AVI-AOI Management - Mã dự phòng 2FA
+    const content = `AVI-AOI Management - ${t('auth.backupCodes2FA')}
 =====================================
-Ngày tạo: ${new Date().toLocaleString("vi-VN")}
+${t('auth.createdAt')}: ${new Date().toLocaleString("vi-VN")}
 
-Mã dự phòng (mỗi mã chỉ dùng được 1 lần):
+${t('auth.backupCodesOneTime')}:
 ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
 
-⚠️ Lưu ý:
-- Lưu trữ các mã này ở nơi an toàn
-- Mỗi mã chỉ có thể sử dụng một lần
-- Khi hết mã, bạn cần tạo lại từ trang cài đặt
+⚠️ ${t('auth.backupCodesNote')}:
+- ${t('auth.storeSecurely')}
+- ${t('auth.eachCodeOnce')}
+- ${t('auth.regenerateWhenEmpty')}
 `;
     const blob = new Blob([content], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
@@ -145,7 +147,7 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
     a.download = "avi-aoi-backup-codes.txt";
     a.click();
     URL.revokeObjectURL(url);
-    toast.success("Đã tải xuống mã dự phòng");
+    toast.success(t('auth.backupCodesDownloaded'));
   };
 
   return (
@@ -153,10 +155,10 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Shield className="h-5 w-5" />
-          Xác thực 2 yếu tố (2FA)
+          {t('auth.twoFactorAuth')}
         </CardTitle>
         <CardDescription>
-          Bảo vệ tài khoản với lớp bảo mật bổ sung bằng ứng dụng xác thực
+          {t('auth.twoFactorAuthDescription')}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -170,17 +172,17 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
             )}
             <div>
               <p className="font-medium">
-                {status?.enabled ? "Đã bật 2FA" : "Chưa bật 2FA"}
+                {status?.enabled ? t('auth.twoFactorOn') : t('auth.twoFactorOff')}
               </p>
               {status?.enabled && (
                 <p className="text-sm text-muted-foreground">
-                  Còn {status.backupCodesRemaining} mã dự phòng
+                  {t('auth.backupCodesRemaining', { count: status.backupCodesRemaining })}
                 </p>
               )}
             </div>
           </div>
           <Badge variant={status?.enabled ? "default" : "secondary"}>
-            {status?.enabled ? "Đang hoạt động" : "Chưa kích hoạt"}
+            {status?.enabled ? t('auth.active') : t('auth.notActivated')}
           </Badge>
         </div>
 
@@ -192,20 +194,20 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
               onClick={() => setShowRegenerateDialog(true)}
             >
               <RefreshCw className="h-4 w-4 mr-2" />
-              Tạo lại mã dự phòng
+              {t('auth.regenerateBackupCodes')}
             </Button>
             <Button
               variant="destructive"
               onClick={() => setShowDisableDialog(true)}
             >
               <ShieldOff className="h-4 w-4 mr-2" />
-              Tắt 2FA
+              {t('auth.disable2FA')}
             </Button>
           </div>
         ) : (
           <Button onClick={handleStartSetup}>
             <ShieldCheck className="h-4 w-4 mr-2" />
-            Bật xác thực 2 yếu tố
+            {t('auth.enable2FA')}
           </Button>
         )}
 
@@ -213,10 +215,9 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
         {status?.enabled && status.backupCodesRemaining <= 3 && (
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Cảnh báo</AlertTitle>
+            <AlertTitle>{t('common.warning')}</AlertTitle>
             <AlertDescription>
-              Bạn chỉ còn {status.backupCodesRemaining} mã dự phòng. 
-              Hãy tạo lại mã mới để đảm bảo bạn có thể khôi phục tài khoản khi cần.
+              {t('auth.lowBackupCodesWarning', { count: status.backupCodesRemaining })}
             </AlertDescription>
           </Alert>
         )}
@@ -226,9 +227,9 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
       <Dialog open={showSetupDialog} onOpenChange={setShowSetupDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Thiết lập xác thực 2 yếu tố</DialogTitle>
+            <DialogTitle>{t('auth.setup2FA')}</DialogTitle>
             <DialogDescription>
-              Quét mã QR bằng ứng dụng xác thực (Google Authenticator, Authy, Microsoft Authenticator)
+              {t('auth.setup2FADescription')}
             </DialogDescription>
           </DialogHeader>
 
@@ -250,7 +251,7 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
               {/* Manual entry */}
               <div className="space-y-2">
                 <Label className="text-sm text-muted-foreground">
-                  Hoặc nhập mã thủ công:
+                  {t('auth.orEnterManually')}:
                 </Label>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 p-2 bg-muted rounded text-sm font-mono break-all">
@@ -279,7 +280,7 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
 
               {/* Verification */}
               <div className="space-y-2">
-                <Label>Nhập mã 6 số từ ứng dụng xác thực</Label>
+                <Label>{t('auth.enterSixDigitFromApp')}</Label>
                 <Input
                   value={verificationCode}
                   onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
@@ -293,7 +294,7 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowSetupDialog(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={handleEnable}
@@ -304,7 +305,7 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
               ) : (
                 <CheckCircle2 className="h-4 w-4 mr-2" />
               )}
-              Xác nhận
+              {t('common.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -314,34 +315,33 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
       <Dialog open={showDisableDialog} onOpenChange={setShowDisableDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Tắt xác thực 2 yếu tố</DialogTitle>
+            <DialogTitle>{t('auth.disable2FA')}</DialogTitle>
             <DialogDescription>
-              Nhập mã 6 số từ ứng dụng xác thực hoặc mã dự phòng để tắt 2FA
+              {t('auth.disable2FADescription')}
             </DialogDescription>
           </DialogHeader>
 
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Cảnh báo</AlertTitle>
+            <AlertTitle>{t('common.warning')}</AlertTitle>
             <AlertDescription>
-              Tắt 2FA sẽ làm giảm bảo mật tài khoản của bạn. 
-              Bạn có chắc chắn muốn tiếp tục?
+              {t('auth.disable2FAWarning')}
             </AlertDescription>
           </Alert>
 
           <div className="space-y-2">
-            <Label>Mã xác thực hoặc mã dự phòng</Label>
+            <Label>{t('auth.authOrBackupCode')}</Label>
             <Input
               value={disableCode}
               onChange={(e) => setDisableCode(e.target.value.toUpperCase())}
-              placeholder="Nhập mã..."
+              placeholder={t('auth.enterCode')}
               className="text-center font-mono"
             />
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDisableDialog(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -353,7 +353,7 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
               ) : (
                 <ShieldOff className="h-4 w-4 mr-2" />
               )}
-              Tắt 2FA
+              {t('auth.disable2FA')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -365,19 +365,18 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Key className="h-5 w-5" />
-              Mã dự phòng
+              {t('auth.backupCodes')}
             </DialogTitle>
             <DialogDescription>
-              Lưu các mã này ở nơi an toàn. Mỗi mã chỉ có thể sử dụng một lần.
+              {t('auth.backupCodesDescription')}
             </DialogDescription>
           </DialogHeader>
 
           <Alert>
             <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Quan trọng</AlertTitle>
+            <AlertTitle>{t('auth.important')}</AlertTitle>
             <AlertDescription>
-              Đây là lần duy nhất bạn có thể xem các mã này. 
-              Hãy lưu lại ngay bây giờ!
+              {t('auth.backupCodesViewOnce')}
             </AlertDescription>
           </Alert>
 
@@ -407,7 +406,7 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
               onClick={() => copyToClipboard(backupCodes.join("\n"))}
             >
               <Copy className="h-4 w-4 mr-2" />
-              Sao chép tất cả
+              {t('auth.copyAll')}
             </Button>
             <Button
               variant="outline"
@@ -415,13 +414,13 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
               onClick={downloadBackupCodes}
             >
               <Download className="h-4 w-4 mr-2" />
-              Tải xuống
+              {t('common.download')}
             </Button>
             <Button
               className="w-full sm:w-auto"
               onClick={() => setShowBackupCodesDialog(false)}
             >
-              Đã lưu xong
+              {t('auth.doneSaving')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -431,15 +430,14 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
       <Dialog open={showRegenerateDialog} onOpenChange={setShowRegenerateDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Tạo lại mã dự phòng</DialogTitle>
+            <DialogTitle>{t('auth.regenerateBackupCodes')}</DialogTitle>
             <DialogDescription>
-              Các mã dự phòng cũ sẽ bị vô hiệu hóa. 
-              Nhập mã 6 số từ ứng dụng xác thực để xác nhận.
+              {t('auth.regenerateBackupCodesDescription')}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-2">
-            <Label>Mã xác thực</Label>
+            <Label>{t('auth.verificationCode')}</Label>
             <Input
               value={regenerateCode}
               onChange={(e) => setRegenerateCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
@@ -451,7 +449,7 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowRegenerateDialog(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={handleRegenerate}
@@ -462,7 +460,7 @@ ${backupCodes.map((code, i) => `${i + 1}. ${code}`).join("\n")}
               ) : (
                 <RefreshCw className="h-4 w-4 mr-2" />
               )}
-              Tạo lại
+              {t('auth.regenerate')}
             </Button>
           </DialogFooter>
         </DialogContent>

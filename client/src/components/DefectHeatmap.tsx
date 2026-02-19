@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -78,11 +79,11 @@ const annotationTypeIcons: Record<string, React.ComponentType<{ className?: stri
 };
 
 const annotationTypeLabels: Record<string, string> = {
-  rectangle: 'Hình chữ nhật',
-  circle: 'Hình tròn',
-  arrow: 'Mũi tên',
-  freehand: 'Vẽ tay',
-  text: 'Văn bản',
+  rectangle: 'defects.heatmap.typeRectangle',
+  circle: 'defects.heatmap.typeCircle',
+  arrow: 'defects.heatmap.typeArrow',
+  freehand: 'defects.heatmap.typeFreehand',
+  text: 'defects.heatmap.typeText',
 };
 
 // Default factory layout dimensions
@@ -118,6 +119,7 @@ export function DefectHeatmap() {
   const [newDefectsCount, setNewDefectsCount] = useState(0);
   const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
   const previousDefectCount = useRef<number>(0);
+  const { t } = useTranslation();
 
   // Fetch heatmap data
   const { data: heatmapData, isLoading, refetch } = trpc.annotation.heatmapData.useQuery({
@@ -245,7 +247,7 @@ export function DefectHeatmap() {
         setNewDefectsCount(prev => prev + newCount);
         
         // Show notification for new defects
-        toast.error(`+${newCount} defects mới phát hiện từ lần cập nhật trước`);
+        toast.error(t('defects.heatmap.newDefectsDetected', { count: newCount }));
       }
       previousDefectCount.current = currentCount;
       setLastRefreshTime(new Date());
@@ -308,25 +310,25 @@ export function DefectHeatmap() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Map className="h-5 w-5" />
-            Bản đồ nhiệt Defects
+            {t('defects.heatmap.title')}
           </CardTitle>
           <CardDescription>
-            Hiển thị mật độ defects trên layout nhà máy theo vị trí máy
+            {t('defects.heatmap.description')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="space-y-2">
-              <Label>Máy</Label>
+              <Label>{t('defects.heatmap.machine')}</Label>
               <Select
                 value={machineId?.toString() || 'all'}
                 onValueChange={(v) => setMachineId(v && v !== 'all' ? parseInt(v) : undefined)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Tất cả máy" />
+                  <SelectValue placeholder={t('defects.heatmap.allMachines')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
                   {machines?.map((m: any) => (
                     <SelectItem key={m.id} value={m.id.toString()}>
                       {m.name}
@@ -337,16 +339,16 @@ export function DefectHeatmap() {
             </div>
 
             <div className="space-y-2">
-              <Label>Model sản phẩm</Label>
+              <Label>{t('defects.heatmap.productModel')}</Label>
               <Select
                 value={productModelId?.toString() || 'all'}
                 onValueChange={(v) => setProductModelId(v && v !== 'all' ? parseInt(v) : undefined)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Tất cả model" />
+                  <SelectValue placeholder={t('defects.heatmap.allModels')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
                   {productModels?.map((pm: any) => (
                     <SelectItem key={pm.id} value={pm.id.toString()}>
                       {pm.name}
@@ -357,19 +359,19 @@ export function DefectHeatmap() {
             </div>
 
             <div className="space-y-2">
-              <Label>Loại annotation</Label>
+              <Label>{t('defects.heatmap.annotationType')}</Label>
               <Select
                 value={annotationType || 'all'}
                 onValueChange={(v) => setAnnotationType(v && v !== 'all' ? v : undefined)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Tất cả loại" />
+                  <SelectValue placeholder={t('defects.heatmap.allTypes')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
                   {Object.entries(annotationTypeLabels).map(([type, label]) => (
                     <SelectItem key={type} value={type}>
-                      {label}
+                      {t(label)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -377,7 +379,7 @@ export function DefectHeatmap() {
             </div>
 
             <div className="space-y-2">
-              <Label>Từ ngày</Label>
+              <Label>{t('defects.heatmap.dateFrom')}</Label>
               <Input
                 type="date"
                 value={dateFrom}
@@ -386,7 +388,7 @@ export function DefectHeatmap() {
             </div>
 
             <div className="space-y-2">
-              <Label>Đến ngày</Label>
+              <Label>{t('defects.heatmap.dateTo')}</Label>
               <Input
                 type="date"
                 value={dateTo}
@@ -398,18 +400,18 @@ export function DefectHeatmap() {
           <div className="flex flex-wrap items-center gap-4 mt-4">
             <Button onClick={() => refetch()} variant="outline" className="gap-2">
               <RefreshCw className="h-4 w-4" />
-              Làm mới
+              {t('common.refresh')}
             </Button>
             <Button onClick={() => setShowUploadDialog(true)} variant="outline" className="gap-2">
               <Upload className="h-4 w-4" />
-              Tải layout nhà máy
+              {t('defects.heatmap.uploadLayout')}
             </Button>
             
             {/* Auto-refresh controls */}
             <div className="flex items-center gap-2 ml-auto border rounded-lg px-3 py-2 bg-muted/50">
               <Radio className={cn("h-4 w-4", autoRefresh && "text-green-500 animate-pulse")} />
               <Label htmlFor="auto-refresh" className="text-sm cursor-pointer">
-                Tự động cập nhật
+                {t('defects.heatmap.autoRefresh')}
               </Label>
               <Switch
                 id="auto-refresh"
@@ -425,10 +427,10 @@ export function DefectHeatmap() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="10">10 giây</SelectItem>
-                    <SelectItem value="30">30 giây</SelectItem>
-                    <SelectItem value="60">1 phút</SelectItem>
-                    <SelectItem value="300">5 phút</SelectItem>
+                    <SelectItem value="10">{t('defects.heatmap.10seconds')}</SelectItem>
+                    <SelectItem value="30">{t('defects.heatmap.30seconds')}</SelectItem>
+                    <SelectItem value="60">{t('defects.heatmap.1minute')}</SelectItem>
+                    <SelectItem value="300">{t('defects.heatmap.5minutes')}</SelectItem>
                   </SelectContent>
                 </Select>
               )}
@@ -438,14 +440,14 @@ export function DefectHeatmap() {
             {newDefectsCount > 0 && (
               <Badge variant="destructive" className="gap-1 animate-pulse">
                 <Sparkles className="h-3 w-3" />
-                +{newDefectsCount} mới
+                +{newDefectsCount} {t('defects.heatmap.new')}
               </Badge>
             )}
             
             {/* Last refresh time */}
             {lastRefreshTime && (
               <span className="text-xs text-muted-foreground">
-                Cập nhật: {format(lastRefreshTime, 'HH:mm:ss', { locale: vi })}
+                {t('defects.heatmap.lastUpdate')}: {format(lastRefreshTime, 'HH:mm:ss', { locale: vi })}
               </span>
             )}
           </div>
@@ -458,7 +460,7 @@ export function DefectHeatmap() {
         <Card className="lg:col-span-3">
           <CardHeader className="py-3">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm">Layout nhà máy</CardTitle>
+              <CardTitle className="text-sm">{t('defects.heatmap.factoryLayout')}</CardTitle>
               <div className="flex items-center gap-2">
                 {/* Zoom Controls */}
                 <div className="flex items-center gap-1 border rounded-md">
@@ -514,7 +516,7 @@ export function DefectHeatmap() {
                 
                 {/* Color Legend */}
                 <div className="absolute bottom-4 right-4 bg-background/90 backdrop-blur-sm rounded-lg p-3">
-                  <p className="text-xs font-medium mb-2">Mật độ defects</p>
+                  <p className="text-xs font-medium mb-2">{t('defects.heatmap.defectDensity')}</p>
                   <div className="flex items-center gap-1">
                     <div className="w-4 h-4 rounded" style={{ backgroundColor: getHeatmapColor(0.1) }} />
                     <div className="w-4 h-4 rounded" style={{ backgroundColor: getHeatmapColor(0.3) }} />
@@ -523,8 +525,8 @@ export function DefectHeatmap() {
                     <div className="w-4 h-4 rounded" style={{ backgroundColor: getHeatmapColor(0.9) }} />
                   </div>
                   <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                    <span>Thấp</span>
-                    <span>Cao</span>
+                    <span>{t('defects.heatmap.low')}</span>
+                    <span>{t('defects.heatmap.high')}</span>
                   </div>
                 </div>
 
@@ -533,7 +535,7 @@ export function DefectHeatmap() {
                   <div className="absolute top-4 left-4 bg-background/90 backdrop-blur-sm rounded-lg p-3 flex items-center gap-2">
                     <Info className="h-4 w-4 text-muted-foreground" />
                     <span className="text-xs text-muted-foreground">
-                      Tải lên layout nhà máy để hiển thị chính xác vị trí máy
+                      {t('defects.heatmap.uploadLayoutHint')}
                     </span>
                   </div>
                 )}
@@ -549,7 +551,7 @@ export function DefectHeatmap() {
             <CardHeader className="py-3">
               <CardTitle className="text-sm flex items-center gap-2">
                 <TrendingUp className="h-4 w-4" />
-                Tổng quan
+                {t('defects.heatmap.overview')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -558,20 +560,20 @@ export function DefectHeatmap() {
                   <p className="text-2xl font-bold text-red-500">
                     {heatmapData?.summary.totalDefects || 0}
                   </p>
-                  <p className="text-xs text-muted-foreground">Tổng defects</p>
+                  <p className="text-xs text-muted-foreground">{t('defects.heatmap.totalDefects')}</p>
                 </div>
                 <div className="text-center p-3 bg-muted rounded-lg">
                   <p className="text-2xl font-bold text-orange-500">
                     {heatmapData?.summary.machinesWithDefects || 0}
                   </p>
-                  <p className="text-xs text-muted-foreground">Máy có defects</p>
+                  <p className="text-xs text-muted-foreground">{t('defects.heatmap.machinesWithDefects')}</p>
                 </div>
               </div>
 
               {/* Top Defect Types */}
               {heatmapData?.summary.topDefectTypes && heatmapData.summary.topDefectTypes.length > 0 && (
                 <div>
-                  <p className="text-xs font-medium mb-2">Top loại defects</p>
+                  <p className="text-xs font-medium mb-2">{t('defects.heatmap.topDefectTypes')}</p>
                   <div className="space-y-2">
                     {heatmapData.summary.topDefectTypes.map(([type, count]) => {
                       const Icon = annotationTypeIcons[type] || Square;
@@ -580,7 +582,7 @@ export function DefectHeatmap() {
                       return (
                         <div key={type} className="flex items-center gap-2">
                           <Icon className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-xs flex-1">{annotationTypeLabels[type] || type}</span>
+                          <span className="text-xs flex-1">{t(annotationTypeLabels[type] || type)}</span>
                           <Badge variant="secondary" className="text-xs">
                             {count} ({percentage}%)
                           </Badge>
@@ -598,7 +600,7 @@ export function DefectHeatmap() {
             <CardHeader className="py-3">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Cpu className="h-4 w-4" />
-                Máy ({heatmapData?.machines.length || 0})
+                {t('defects.heatmap.machinesCount', { count: heatmapData?.machines.length || 0 })}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
@@ -631,7 +633,7 @@ export function DefectHeatmap() {
                             <div className="text-xs space-y-1">
                               {Object.entries(machine.defectsByType).map(([type, count]) => (
                                 <div key={type} className="flex items-center gap-2">
-                                  <span>{annotationTypeLabels[type] || type}:</span>
+                                  <span>{t(annotationTypeLabels[type] || type)}:</span>
                                   <span className="font-medium">{count}</span>
                                 </div>
                               ))}
@@ -656,7 +658,7 @@ export function DefectHeatmap() {
               {selectedMachine?.machineName}
             </DialogTitle>
             <DialogDescription>
-              Chi tiết defects của máy
+              {t('defects.heatmap.machineDefectDetail')}
             </DialogDescription>
           </DialogHeader>
           
@@ -668,19 +670,19 @@ export function DefectHeatmap() {
                   <p className="text-2xl font-bold" style={{ color: getHeatmapColor(selectedMachine.intensity) }}>
                     {selectedMachine.defectCount}
                   </p>
-                  <p className="text-xs text-muted-foreground">Tổng defects</p>
+                  <p className="text-xs text-muted-foreground">{t('defects.heatmap.totalDefects')}</p>
                 </div>
                 <div className="text-center p-3 bg-muted rounded-lg">
                   <p className="text-2xl font-bold text-blue-500">
                     {Object.keys(selectedMachine.defectsByType).length}
                   </p>
-                  <p className="text-xs text-muted-foreground">Loại defects</p>
+                  <p className="text-xs text-muted-foreground">{t('defects.heatmap.defectTypes')}</p>
                 </div>
               </div>
 
               {/* Defects by Type */}
               <div>
-                <p className="text-sm font-medium mb-2">Phân bố theo loại</p>
+                <p className="text-sm font-medium mb-2">{t('defects.heatmap.distributionByType')}</p>
                 <div className="space-y-2">
                   {Object.entries(selectedMachine.defectsByType).map(([type, count]) => {
                     const Icon = annotationTypeIcons[type] || Square;
@@ -688,7 +690,7 @@ export function DefectHeatmap() {
                     return (
                       <div key={type} className="flex items-center gap-2">
                         <Icon className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm flex-1">{annotationTypeLabels[type] || type}</span>
+                        <span className="text-sm flex-1">{t(annotationTypeLabels[type] || type)}</span>
                         <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
                           <div 
                             className="h-full bg-primary"
@@ -707,7 +709,7 @@ export function DefectHeatmap() {
               {/* Recent Defects */}
               {selectedMachine.recentDefects.length > 0 && (
                 <div>
-                  <p className="text-sm font-medium mb-2">Defects gần đây</p>
+                  <p className="text-sm font-medium mb-2">{t('defects.heatmap.recentDefects')}</p>
                   <ScrollArea className="h-[150px]">
                     <div className="space-y-2">
                       {selectedMachine.recentDefects.map((defect, idx) => {
@@ -722,7 +724,7 @@ export function DefectHeatmap() {
                               <div className="flex items-center gap-2">
                                 <Icon className="h-3 w-3" />
                                 <span className="text-xs font-medium">
-                                  {annotationTypeLabels[defect.type] || defect.type}
+                                  {t(annotationTypeLabels[defect.type] || defect.type)}
                                 </span>
                               </div>
                               {defect.text && (
@@ -754,9 +756,9 @@ export function DefectHeatmap() {
       <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Tải layout nhà máy</DialogTitle>
+            <DialogTitle>{t('defects.heatmap.uploadLayout')}</DialogTitle>
             <DialogDescription>
-              Tải lên hình ảnh layout nhà máy để hiển thị vị trí máy chính xác hơn
+              {t('defects.heatmap.uploadLayoutDescription')}
             </DialogDescription>
           </DialogHeader>
           
@@ -764,7 +766,7 @@ export function DefectHeatmap() {
             <div className="border-2 border-dashed rounded-lg p-8 text-center">
               <Upload className="h-10 w-10 mx-auto mb-4 text-muted-foreground" />
               <p className="text-sm text-muted-foreground mb-4">
-                Kéo thả hoặc click để chọn file
+                {t('defects.heatmap.dragOrClick')}
               </p>
               <Input
                 type="file"
@@ -775,8 +777,8 @@ export function DefectHeatmap() {
             </div>
             
             <div className="text-xs text-muted-foreground">
-              <p>Hỗ trợ: PNG, JPG, SVG</p>
-              <p>Kích thước khuyến nghị: 800x600 pixels</p>
+              <p>{t('defects.heatmap.supportedFormats')}</p>
+              <p>{t('defects.heatmap.recommendedSize')}</p>
             </div>
 
             {layoutImage && (
@@ -785,7 +787,7 @@ export function DefectHeatmap() {
                 onClick={() => setLayoutImage(null)}
                 className="w-full"
               >
-                Xóa layout hiện tại
+                {t('defects.heatmap.removeLayout')}
               </Button>
             )}
           </div>

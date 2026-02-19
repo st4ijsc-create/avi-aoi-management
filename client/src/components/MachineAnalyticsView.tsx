@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +25,7 @@ export function MachineAnalyticsView({
   startDate,
   endDate,
 }: MachineAnalyticsViewProps) {
+  const { t } = useTranslation();
   const { data: machineStats, isLoading } = trpc.corporateFactoryStats.machineStats.useQuery({
     machineId,
     startDate,
@@ -82,7 +84,7 @@ export function MachineAnalyticsView({
         <div className="flex items-center gap-4">
           <Button variant="outline" size="sm" onClick={onBack}>
             <ArrowLeft className="h-4 w-4 mr-1" />
-            Quay lại
+            {t('common.goBack')}
           </Button>
           <Skeleton className="h-8 w-64" />
         </div>
@@ -103,7 +105,7 @@ export function MachineAnalyticsView({
         <div className="flex items-center gap-4">
           <Button variant="outline" size="sm" onClick={onBack}>
             <ArrowLeft className="h-4 w-4 mr-1" />
-            Quay lại
+            {t('common.goBack')}
           </Button>
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-purple-500/10">
@@ -111,11 +113,11 @@ export function MachineAnalyticsView({
             </div>
             <div>
               <h2 className="text-lg font-semibold">
-                {machineName || machine?.name || `Máy #${machineId}`}
+                {machineName || machine?.name || `${t('machines.machine')} #${machineId}`}
               </h2>
               <p className="text-sm text-muted-foreground">
                 {factoryCode && `${factoryCode} • `}
-                {machine?.code && `Mã: ${machine.code}`}
+                {machine?.code && `${t('common.code')}: ${machine.code}`}
               </p>
             </div>
           </div>
@@ -123,8 +125,8 @@ export function MachineAnalyticsView({
         <div className="flex items-center gap-2">
           {getTrendIcon()}
           <span className="text-sm text-muted-foreground">
-            {trendDirection === 'up' ? 'Đang cải thiện' : 
-             trendDirection === 'down' ? 'Cần chú ý' : 'Ổn định'}
+            {trendDirection === 'up' ? t('dashboard.improving') : 
+             trendDirection === 'down' ? t('dashboard.needsAttention') : t('dashboard.stable')}
           </span>
         </div>
       </div>
@@ -133,17 +135,17 @@ export function MachineAnalyticsView({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Tổng kiểm tra</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t('dashboard.totalInspections')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{machineStats?.total || 0}</div>
-            <p className="text-xs text-muted-foreground mt-1">sản phẩm</p>
+            <p className="text-xs text-muted-foreground mt-1">{t('products.products')}</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Tỷ lệ đạt</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t('dashboard.yieldRate')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold ${getYieldColor(machineStats?.yieldRate || '0')}`}>
@@ -188,8 +190,8 @@ export function MachineAnalyticsView({
       {/* Yield Trend Chart */}
       <Card>
         <CardHeader>
-          <CardTitle>Xu hướng Yield Rate</CardTitle>
-          <CardDescription>Tỷ lệ đạt theo ngày</CardDescription>
+          <CardTitle>{t('dashboard.yieldTrend')}</CardTitle>
+          <CardDescription>{t('dashboard.yieldByDay')}</CardDescription>
         </CardHeader>
         <CardContent>
           {machineStats?.trend && machineStats.trend.length > 0 ? (
@@ -225,7 +227,7 @@ export function MachineAnalyticsView({
             </ResponsiveContainer>
           ) : (
             <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-              Không có dữ liệu xu hướng
+              {t('dashboard.noTrendData')}
             </div>
           )}
         </CardContent>
@@ -234,8 +236,8 @@ export function MachineAnalyticsView({
       {/* Daily Production Chart */}
       <Card>
         <CardHeader>
-          <CardTitle>Sản lượng theo ngày</CardTitle>
-          <CardDescription>Phân bố OK/NG/NTF theo ngày</CardDescription>
+          <CardTitle>{t('dashboard.dailyProduction')}</CardTitle>
+          <CardDescription>{t('dashboard.dailyProductionDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           {machineStats?.trend && machineStats.trend.length > 0 ? (
@@ -261,7 +263,7 @@ export function MachineAnalyticsView({
             </ResponsiveContainer>
           ) : (
             <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-              Không có dữ liệu sản lượng
+              {t('dashboard.noProductionData')}
             </div>
           )}
         </CardContent>
@@ -270,16 +272,16 @@ export function MachineAnalyticsView({
       {/* Recent Inspections */}
       <Card>
         <CardHeader>
-          <CardTitle>Kiểm tra gần đây</CardTitle>
-          <CardDescription>20 kết quả kiểm tra mới nhất</CardDescription>
+          <CardTitle>{t('dashboard.recentInspections')}</CardTitle>
+          <CardDescription>{t('dashboard.recentInspectionsDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           {machineStats?.recentInspections && machineStats.recentInspections.length > 0 ? (
             <div className="space-y-2">
               <div className="grid grid-cols-4 gap-4 text-sm font-medium text-muted-foreground pb-2 border-b">
                 <div>Serial Number</div>
-                <div>Kết quả</div>
-                <div>Thời gian</div>
+                <div>{t('history.result')}</div>
+                <div>{t('common.time')}</div>
                 <div>ID</div>
               </div>
               {machineStats.recentInspections.map((inspection) => (
@@ -299,7 +301,7 @@ export function MachineAnalyticsView({
             </div>
           ) : (
             <div className="py-8 text-center text-muted-foreground">
-              Chưa có dữ liệu kiểm tra
+              {t('dashboard.noInspectionData')}
             </div>
           )}
         </CardContent>

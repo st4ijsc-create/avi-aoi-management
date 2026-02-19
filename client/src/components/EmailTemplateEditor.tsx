@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,46 +99,47 @@ export function EmailTemplateEditor() {
   const [showPreview, setShowPreview] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState('');
+  const { t } = useTranslation();
 
   const { data: templates, refetch } = trpc.smtp.getEmailTemplates.useQuery();
   const createMutation = trpc.smtp.createEmailTemplate.useMutation({
     onSuccess: () => {
-      toast.success('Tạo template thành công');
+      toast.success(t('settings.email.createSuccess'));
       refetch();
       setShowCreateDialog(false);
       setNewTemplateName('');
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t('common.errorWithMessage', { message: error.message }));
     },
   });
   const updateMutation = trpc.smtp.updateEmailTemplate.useMutation({
     onSuccess: () => {
-      toast.success('Cập nhật template thành công');
+      toast.success(t('settings.email.updateSuccess'));
       refetch();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t('common.errorWithMessage', { message: error.message }));
     },
   });
   const deleteMutation = trpc.smtp.deleteEmailTemplate.useMutation({
     onSuccess: () => {
-      toast.success('Xóa template thành công');
+      toast.success(t('settings.email.deleteSuccess'));
       setSelectedTemplateId(null);
       setEditingTemplate(defaultTemplate);
       refetch();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t('common.errorWithMessage', { message: error.message }));
     },
   });
   const setDefaultMutation = trpc.smtp.setDefaultEmailTemplate.useMutation({
     onSuccess: () => {
-      toast.success('Đã đặt làm template mặc định');
+      toast.success(t('settings.email.setDefaultSuccess'));
       refetch();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t('common.errorWithMessage', { message: error.message }));
     },
   });
 
@@ -178,7 +180,7 @@ export function EmailTemplateEditor() {
 
   const handleCreate = () => {
     if (!newTemplateName.trim()) {
-      toast.error('Vui lòng nhập tên template');
+      toast.error(t('settings.email.nameRequired'));
       return;
     }
     createMutation.mutate({
@@ -203,7 +205,7 @@ export function EmailTemplateEditor() {
   };
 
   const handleDelete = () => {
-    if (editingTemplate.id && confirm('Bạn có chắc muốn xóa template này?')) {
+    if (editingTemplate.id && confirm(t('settings.email.confirmDelete'))) {
       deleteMutation.mutate({ id: editingTemplate.id });
     }
   };
@@ -250,10 +252,10 @@ export function EmailTemplateEditor() {
           borderRadius: '0 0 8px 8px',
         }}>
           <h2 style={{ color: editingTemplate.primaryColor || '#2563eb' }}>
-            Báo cáo thống kê
+            {t('settings.email.reportStats')}
           </h2>
           <p style={{ color: editingTemplate.secondaryColor || '#64748b' }}>
-            Đây là nội dung email báo cáo mẫu.
+            {t('settings.email.sampleContent')}
           </p>
 
           {/* Stats example */}
@@ -327,7 +329,7 @@ export function EmailTemplateEditor() {
             Email Template Configuration
           </CardTitle>
           <CardDescription>
-            Tùy chỉnh giao diện email báo cáo
+            {t('settings.email.customizeDescription')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -337,7 +339,7 @@ export function EmailTemplateEditor() {
               onValueChange={(value) => setSelectedTemplateId(Number(value))}
             >
               <SelectTrigger className="w-[300px]">
-                <SelectValue placeholder="Chọn template..." />
+                <SelectValue placeholder={t('settings.email.selectTemplate')} />
               </SelectTrigger>
               <SelectContent>
                 {templates?.map((template) => (
@@ -349,7 +351,7 @@ export function EmailTemplateEditor() {
             </Select>
             <Button variant="outline" onClick={() => setShowCreateDialog(true)}>
               <Plus className="h-4 w-4 mr-2" />
-              Tạo mới
+              {t('settings.email.createNew')}
             </Button>
             <Button variant="outline" onClick={() => refetch()}>
               <RefreshCw className="h-4 w-4" />
@@ -371,7 +373,7 @@ export function EmailTemplateEditor() {
                   </TabsTrigger>
                   <TabsTrigger value="colors">
                     <Palette className="h-4 w-4 mr-2" />
-                    Màu sắc
+                    {t('settings.email.colors')}
                   </TabsTrigger>
                   <TabsTrigger value="typography">
                     <Type className="h-4 w-4 mr-2" />
@@ -379,14 +381,14 @@ export function EmailTemplateEditor() {
                   </TabsTrigger>
                   <TabsTrigger value="contact">
                     <Phone className="h-4 w-4 mr-2" />
-                    Liên hệ
+                    {t('settings.email.contact')}
                   </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="branding" className="space-y-4 mt-4">
                   <div className="grid gap-4">
                     <div className="space-y-2">
-                      <Label>Tên Template</Label>
+                      <Label>{t('settings.email.templateName')}</Label>
                       <Input
                         value={editingTemplate.name}
                         onChange={(e) => setEditingTemplate({ ...editingTemplate, name: e.target.value })}
@@ -401,7 +403,7 @@ export function EmailTemplateEditor() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Tên công ty</Label>
+                      <Label>{t('settings.email.companyName')}</Label>
                       <Input
                         value={editingTemplate.companyName || ''}
                         onChange={(e) => setEditingTemplate({ ...editingTemplate, companyName: e.target.value || null })}
@@ -413,7 +415,7 @@ export function EmailTemplateEditor() {
                 <TabsContent value="colors" className="space-y-4 mt-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>Màu chính (Primary)</Label>
+                      <Label>{t('settings.email.primaryColor')}</Label>
                       <div className="flex gap-2">
                         <Input
                           type="color"
@@ -428,7 +430,7 @@ export function EmailTemplateEditor() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label>Màu phụ (Secondary)</Label>
+                      <Label>{t('settings.email.secondaryColor')}</Label>
                       <div className="flex gap-2">
                         <Input
                           type="color"
@@ -443,7 +445,7 @@ export function EmailTemplateEditor() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label>Màu nhấn (Accent/Success)</Label>
+                      <Label>{t('settings.email.accentColor')}</Label>
                       <div className="flex gap-2">
                         <Input
                           type="color"
@@ -458,7 +460,7 @@ export function EmailTemplateEditor() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label>Màu cảnh báo (Warning)</Label>
+                      <Label>{t('settings.email.warningColor')}</Label>
                       <div className="flex gap-2">
                         <Input
                           type="color"
@@ -473,7 +475,7 @@ export function EmailTemplateEditor() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label>Màu nguy hiểm (Danger)</Label>
+                      <Label>{t('settings.email.dangerColor')}</Label>
                       <div className="flex gap-2">
                         <Input
                           type="color"
@@ -488,7 +490,7 @@ export function EmailTemplateEditor() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label>Màu nền (Background)</Label>
+                      <Label>{t('settings.email.backgroundColor')}</Label>
                       <div className="flex gap-2">
                         <Input
                           type="color"
@@ -541,7 +543,7 @@ export function EmailTemplateEditor() {
                     <div className="space-y-2">
                       <Label className="flex items-center gap-2">
                         <Mail className="h-4 w-4" />
-                        Email liên hệ
+                        {t('settings.email.contactEmail')}
                       </Label>
                       <Input
                         type="email"
@@ -553,7 +555,7 @@ export function EmailTemplateEditor() {
                     <div className="space-y-2">
                       <Label className="flex items-center gap-2">
                         <Phone className="h-4 w-4" />
-                        Số điện thoại
+                        {t('settings.email.contactPhone')}
                       </Label>
                       <Input
                         placeholder="+84 xxx xxx xxx"
@@ -564,7 +566,7 @@ export function EmailTemplateEditor() {
                     <div className="space-y-2">
                       <Label className="flex items-center gap-2">
                         <MapPin className="h-4 w-4" />
-                        Địa chỉ
+                        {t('settings.email.address')}
                       </Label>
                       <Textarea
                         placeholder="123 Street, City, Country"
@@ -585,25 +587,25 @@ export function EmailTemplateEditor() {
                       checked={editingTemplate.isActive}
                       onCheckedChange={(checked) => setEditingTemplate({ ...editingTemplate, isActive: checked })}
                     />
-                    <Label>Kích hoạt</Label>
+                    <Label>{t('settings.email.activate')}</Label>
                   </div>
                 </div>
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={() => setShowPreview(true)}>
                     <Eye className="h-4 w-4 mr-2" />
-                    Xem trước
+                    {t('settings.email.preview')}
                   </Button>
                   <Button variant="outline" onClick={handleSetDefault} disabled={editingTemplate.isDefault}>
                     <Star className="h-4 w-4 mr-2" />
-                    Đặt mặc định
+                    {t('settings.email.setDefault')}
                   </Button>
                   <Button variant="destructive" onClick={handleDelete}>
                     <Trash2 className="h-4 w-4 mr-2" />
-                    Xóa
+                    {t('common.delete')}
                   </Button>
                   <Button onClick={handleSave} disabled={updateMutation.isPending}>
                     <Save className="h-4 w-4 mr-2" />
-                    {updateMutation.isPending ? 'Đang lưu...' : 'Lưu'}
+                    {updateMutation.isPending ? t('common.saving') : t('common.save')}
                   </Button>
                 </div>
               </div>
@@ -614,9 +616,9 @@ export function EmailTemplateEditor() {
           <Dialog open={showPreview} onOpenChange={setShowPreview}>
             <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Xem trước Email Template</DialogTitle>
+                <DialogTitle>{t('settings.email.previewTitle')}</DialogTitle>
                 <DialogDescription>
-                  Đây là giao diện email sẽ được gửi đi
+                  {t('settings.email.previewDescription')}
                 </DialogDescription>
               </DialogHeader>
               {renderPreview()}
@@ -629,16 +631,16 @@ export function EmailTemplateEditor() {
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Tạo Email Template mới</DialogTitle>
+            <DialogTitle>{t('settings.email.createTitle')}</DialogTitle>
             <DialogDescription>
-              Nhập tên cho template mới
+              {t('settings.email.createDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Tên Template</Label>
+              <Label>{t('settings.email.templateName')}</Label>
               <Input
-                placeholder="VD: Template Báo cáo Hàng tuần"
+                placeholder={t('settings.email.namePlaceholder')}
                 value={newTemplateName}
                 onChange={(e) => setNewTemplateName(e.target.value)}
               />
@@ -646,10 +648,10 @@ export function EmailTemplateEditor() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleCreate} disabled={createMutation.isPending}>
-              {createMutation.isPending ? 'Đang tạo...' : 'Tạo'}
+              {createMutation.isPending ? t('settings.email.creating') : t('settings.email.create')}
             </Button>
           </DialogFooter>
         </DialogContent>

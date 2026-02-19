@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useTranslation } from 'react-i18next';
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -69,6 +70,7 @@ export function ImageGallery({
   enableMultiSelect = true,
   onRefresh,
 }: ImageGalleryProps) {
+  const { t } = useTranslation();
   const [viewMode, setViewMode] = useState<"grid" | "list">(initialViewMode);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [filter, setFilter] = useState<"all" | "OK" | "NG" | "NTF">("all");
@@ -297,7 +299,7 @@ export function ImageGallery({
         <div>
           <h3 className="text-lg font-semibold">{title}</h3>
           <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
-            <span>Tổng: {stats.total}</span>
+            <span>{t('common.total')}: {stats.total}</span>
             <span className="text-green-500">OK: {stats.ok}</span>
             <span className="text-red-500">NG: {stats.ng}</span>
             <span className="text-orange-500">NTF: {stats.ntf}</span>
@@ -310,7 +312,7 @@ export function ImageGallery({
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Tìm kiếm..."
+                placeholder={t('common.search') + '...'}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-8 w-48"
@@ -326,7 +328,7 @@ export function ImageGallery({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tất cả</SelectItem>
+                <SelectItem value="all">{t('common.all')}</SelectItem>
                 <SelectItem value="OK">OK</SelectItem>
                 <SelectItem value="NG">NG</SelectItem>
                 <SelectItem value="NTF">NTF</SelectItem>
@@ -348,7 +350,7 @@ export function ImageGallery({
               className="gap-1"
             >
               <CheckSquare className="h-4 w-4" />
-              {isMultiSelectMode ? 'Thoát chọn' : 'Chọn nhiều'}
+              {isMultiSelectMode ? t('common.exitSelect') : t('common.multiSelect')}
             </Button>
           )}
 
@@ -378,7 +380,7 @@ export function ImageGallery({
       {filteredImages.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
           <ImageIcon className="h-12 w-12 mb-4" />
-          <p>Không có hình ảnh nào</p>
+          <p>{t('common.noImages')}</p>
         </div>
       ) : viewMode === "grid" ? (
         <div className={cn("grid gap-4", getColumnClass())}>
@@ -506,8 +508,8 @@ export function ImageGallery({
                   )}
                   {image.value !== undefined && (
                     <p className="text-sm text-muted-foreground">
-                      Giá trị: {image.value} 
-                      {image.standardValue !== undefined && ` / Chuẩn: ${image.standardValue}`}
+                      {t('common.value')}: {image.value} 
+                      {image.standardValue !== undefined && ` / ${t('common.standard')}: ${image.standardValue}`}
                     </p>
                   )}
                 </div>
@@ -540,20 +542,20 @@ export function ImageGallery({
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="ghost" size="icon" onClick={handleZoomOut} title="Thu nhỏ (-)">
+                <Button variant="ghost" size="icon" onClick={handleZoomOut} title={t('common.zoomOut') + ' (-)'}>
                   <ZoomOut className="h-4 w-4" />
                 </Button>
                 <span className="text-sm w-12 text-center">{Math.round(zoom * 100)}%</span>
-                <Button variant="ghost" size="icon" onClick={handleZoomIn} title="Phóng to (+)">
+                <Button variant="ghost" size="icon" onClick={handleZoomIn} title={t('common.zoomIn') + ' (+)'}>
                   <ZoomIn className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="icon" onClick={handleRotate} title="Xoay (R)">
+                <Button variant="ghost" size="icon" onClick={handleRotate} title={t('common.rotate') + ' (R)'}>
                   <RotateCw className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="icon" onClick={handleDownload} title="Tải xuống">
+                <Button variant="ghost" size="icon" onClick={handleDownload} title={t('common.download')}>
                   <Download className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="icon" onClick={closeLightbox} title="Đóng (ESC)">
+                <Button variant="ghost" size="icon" onClick={closeLightbox} title={t('common.close') + ' (ESC)'}>
                   <X className="h-4 w-4" />
                 </Button>
               </div>
@@ -609,25 +611,25 @@ export function ImageGallery({
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                   {selectedImage.measurementPointName && (
                     <div>
-                      <span className="text-muted-foreground">Điểm đo:</span>
+                      <span className="text-muted-foreground">{t('products.measurementPoint')}:</span>
                       <p className="font-medium">{selectedImage.measurementPointName}</p>
                     </div>
                   )}
                   {selectedImage.value !== undefined && (
                     <div>
-                      <span className="text-muted-foreground">Giá trị:</span>
+                      <span className="text-muted-foreground">{t('common.value')}:</span>
                       <p className="font-medium">{selectedImage.value}</p>
                     </div>
                   )}
                   {selectedImage.standardValue !== undefined && (
                     <div>
-                      <span className="text-muted-foreground">Giá trị chuẩn:</span>
+                      <span className="text-muted-foreground">{t('common.standardValue')}:</span>
                       <p className="font-medium">{selectedImage.standardValue}</p>
                     </div>
                   )}
                   {(selectedImage.upperLimit !== undefined || selectedImage.lowerLimit !== undefined) && (
                     <div>
-                      <span className="text-muted-foreground">Giới hạn:</span>
+                      <span className="text-muted-foreground">{t('common.limit')}:</span>
                       <p className="font-medium">
                         {selectedImage.lowerLimit ?? "-"} ~ {selectedImage.upperLimit ?? "-"}
                       </p>
@@ -635,7 +637,7 @@ export function ImageGallery({
                   )}
                   {selectedImage.description && (
                     <div className="col-span-2">
-                      <span className="text-muted-foreground">Mô tả:</span>
+                      <span className="text-muted-foreground">{t('common.description')}:</span>
                       <p className="font-medium">{selectedImage.description}</p>
                     </div>
                   )}

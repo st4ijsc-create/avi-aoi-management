@@ -19,6 +19,7 @@ import { initializeScheduledReports, shutdownScheduledReports } from "../service
 import { initMqttBroker, shutdownMqttBroker } from "../services/mqttService";
 import { startAlertEvaluationJob, stopAlertEvaluationJob } from "../services/alertEvaluationService";
 import { initSummaryScheduler, stopSummaryScheduler } from "../services/mqttSummaryScheduler";
+import { initBulletinScheduler, stopBulletinScheduler } from "../services/mqttBulletinService";
 import { cacheWarmingService } from "../services/cacheWarmingService";
 
 const HTTPS_ENABLED = process.env.HTTPS_ENABLED === "true";
@@ -147,6 +148,94 @@ async function startServer() {
     } catch (error: any) {
       console.error("[MachineAPI] upload-image error:", error);
       res.status(400).json({ success: false, message: error?.message || "Upload image failed" });
+    }
+  });
+
+  // POST /api/machine/sync-points — Machine client pushes (PUT) measurement point definitions to server
+  app.post("/api/machine/sync-points", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res });
+      const caller = appRouter.createCaller(ctx);
+
+      const apiKey = req.header("x-api-key") || req.body.apiKey;
+      const input = { ...req.body, apiKey };
+
+      const result = await caller.machineApi.syncMeasurementPoints(input as any);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[MachineAPI] sync-points error:", error);
+      res.status(400).json({ success: false, message: error?.message || "Sync points failed" });
+    }
+  });
+
+  // GET /api/machine/get-points — Machine client pulls (GET) measurement point definitions from server
+  app.get("/api/machine/get-points", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res });
+      const caller = appRouter.createCaller(ctx);
+
+      const apiKey = req.header("x-api-key") || (req.query.apiKey as string);
+      const machineCode = req.query.machineCode as string | undefined;
+      const productModelCode = req.query.productModelCode as string | undefined;
+
+      const input = { apiKey, machineCode, productModelCode };
+
+      const result = await caller.machineApi.getPoints(input as any);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[MachineAPI] get-points error:", error);
+      res.status(400).json({ success: false, message: error?.message || "Get points failed" });
+    }
+  });
+
+  // ============================================================
+  // REST proxy: Machine self-registration (public, no API key)
+  // ============================================================
+  app.post("/api/machine/register", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res });
+      const caller = appRouter.createCaller(ctx);
+      const result = await caller.machine.register(req.body as any);
+      res.json({ success: true, ...result });
+    } catch (error: any) {
+      console.error("[MachineAPI] register error:", error);
+      const status = error?.code === 'BAD_REQUEST' ? 400 : error?.code === 'NOT_FOUND' ? 404 : 500;
+      res.status(status).json({ success: false, message: error?.message || "Registration failed" });
+    }
+  });
+
+  // REST proxy: Machine config polling (public, no API key)
+  app.get("/api/machine/config", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res });
+      const caller = appRouter.createCaller(ctx);
+      const serialNumber = req.query.serialNumber as string;
+      if (!serialNumber) {
+        return res.status(400).json({ success: false, message: "serialNumber query parameter is required" });
+      }
+      const result = await caller.machine.config({ serialNumber } as any);
+      res.json({ success: true, ...result });
+    } catch (error: any) {
+      console.error("[MachineAPI] config error:", error);
+      const status = error?.code === 'NOT_FOUND' ? 404 : 500;
+      res.status(status).json({ success: false, message: error?.message || "Config fetch failed" });
+    }
+  });
+
+  // REST proxy: Machine heartbeat
+  app.post("/api/machine/heartbeat", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res });
+      const caller = appRouter.createCaller(ctx);
+      const apiKey = req.header("x-api-key") || req.body.apiKey;
+      if (!apiKey) {
+        return res.status(400).json({ success: false, message: "API key is required (header X-API-Key or body.apiKey)" });
+      }
+      const result = await caller.machineApi.heartbeat({ apiKey } as any);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[MachineAPI] heartbeat error:", error);
+      res.status(400).json({ success: false, message: error?.message || "Heartbeat failed" });
     }
   });
 
@@ -308,6 +397,40 @@ async function startServer() {
     } catch (error: any) {
       console.error("[External] list-machines error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to list machines" });
+    }
+  });
+
+  // ============================================================
+  // AOI Package - REST proxy for presign (create upload URL)
+  // ============================================================
+  app.post("/api/aoi/presign", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res });
+      const caller = appRouter.createCaller(ctx);
+      const apiKey = req.header("x-api-key") || req.body.apiKey;
+      const input = { ...req.body, apiKey };
+      const result = await caller.aoiPackage.presign(input as any);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[AOI] presign error:", error);
+      res.status(400).json({ success: false, message: error?.message || "Presign failed" });
+    }
+  });
+
+  // ============================================================
+  // AOI Package - REST proxy for commit (confirm upload)
+  // ============================================================
+  app.post("/api/aoi/commit", async (req, res) => {
+    try {
+      const ctx = await createContext({ req, res });
+      const caller = appRouter.createCaller(ctx);
+      const apiKey = req.header("x-api-key") || req.body.apiKey;
+      const input = { ...req.body, apiKey };
+      const result = await caller.aoiPackage.commit(input as any);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[AOI] commit error:", error);
+      res.status(400).json({ success: false, message: error?.message || "Commit failed" });
     }
   });
 
@@ -652,15 +775,18 @@ async function startServer() {
   // Initialize email transporter
   initializeEmailTransporter();
   
-  // Initialize scheduled reports
-  await initializeScheduledReports();
+  // Initialize scheduled reports (non-blocking with retry)
+  initializeScheduledReports().catch((err) => {
+    console.error("[ReportScheduler] Initialization failed, server continues without scheduled reports:", err?.message || err);
+  });
   
   // Initialize MQTT broker (if enabled)
   if (process.env.MQTT_ENABLED === 'true') {
     initMqttBroker();
     initSummaryScheduler();
     startAlertEvaluationJob(1); // Run every 1 minute
-    console.log('[MQTT] MQTT broker and alert evaluation enabled');
+    await initBulletinScheduler(); // Initialize periodic bulletin scheduler
+    console.log('[MQTT] MQTT broker, alert evaluation, and bulletin scheduler enabled');
   } else {
     console.log('[MQTT] MQTT broker disabled (set MQTT_ENABLED=true to enable)');
   }

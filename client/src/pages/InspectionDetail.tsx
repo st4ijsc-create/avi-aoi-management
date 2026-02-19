@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +50,7 @@ interface MeasurementPoint {
 }
 
 export default function InspectionDetail() {
+  const { t } = useTranslation();
   const params = useParams<{ id: string }>();
   const inspectionId = parseInt(params.id || "0");
   
@@ -79,36 +81,36 @@ export default function InspectionDetail() {
 
   const confirmNTFMutation = trpc.inspection.confirmNTF.useMutation({
     onSuccess: () => {
-      toast.success("Đã xác nhận NTF thành công");
+      toast.success(t('inspection.ntfConfirmedSuccess'));
       setNtfDialogOpen(false);
       setNtfReason("");
       refetch();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t('common.error') + ': ' + error.message);
     },
   });
 
   const correctResultMutation = trpc.measurementResult.correctResult.useMutation({
     onSuccess: () => {
-      toast.success("Đã cập nhật kết quả thành công");
+      toast.success(t('inspection.resultUpdatedSuccess'));
       setCorrectDialogOpen(false);
       setCorrectReason("");
       setSelectedMeasurement(null);
       refetch();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t('common.error') + ': ' + error.message);
     },
   });
 
   const analyzeWithAIMutation = trpc.measurementResult.analyzeWithAI.useMutation({
     onSuccess: () => {
-      toast.success("Phân tích AI hoàn tất");
+      toast.success(t('inspection.aiAnalysisComplete'));
       refetch();
     },
     onError: (error) => {
-      toast.error(`Lỗi phân tích: ${error.message}`);
+      toast.error(t('inspection.analysisError') + ': ' + error.message);
     },
     onSettled: () => {
       setAnalyzingId(null);
@@ -117,7 +119,7 @@ export default function InspectionDetail() {
 
   const handleConfirmNTF = () => {
     if (!ntfReason.trim()) {
-      toast.error("Vui lòng nhập lý do xác nhận NTF");
+      toast.error(t('inspection.pleaseEnterNtfReason'));
       return;
     }
     confirmNTFMutation.mutate({ id: inspectionId, reason: ntfReason });
@@ -223,11 +225,11 @@ export default function InspectionDetail() {
     return (
       <DashboardLayout title="AVI/AOI Management" navItems={navItems} currentPath="/history">
         <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
-          <p className="text-muted-foreground">Không tìm thấy kết quả kiểm tra</p>
+          <p className="text-muted-foreground">{t('inspection.notFound')}</p>
           <Link href="/history">
             <Button variant="outline" className="gap-2">
               <ArrowLeft className="h-4 w-4" />
-              Quay lại
+              {t('inspection.goBack')}
             </Button>
           </Link>
         </div>
@@ -256,7 +258,7 @@ export default function InspectionDetail() {
               </Button>
             </Link>
             <div>
-              <h1 className="text-2xl font-bold text-foreground">Chi tiết kiểm tra</h1>
+              <h1 className="text-2xl font-bold text-foreground">{t('inspection.inspectionDetail')}</h1>
               <p className="text-muted-foreground">SN: {inspection.serialNumber}</p>
             </div>
           </div>
@@ -266,21 +268,21 @@ export default function InspectionDetail() {
               <DialogTrigger asChild>
                 <Button variant="outline" className="gap-2 border-warning text-warning hover:bg-warning/10">
                   <AlertTriangle className="h-4 w-4" />
-                  Xác nhận NTF
+                  {t('inspection.confirmNTF')}
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Xác nhận Not True Fail (NTF)</DialogTitle>
+                  <DialogTitle>{t('inspection.confirmNTFTitle')}</DialogTitle>
                   <DialogDescription>
-                    Xác nhận rằng kết quả NG này là do máy bắt sai (sản phẩm thực tế OK)
+                    {t('inspection.confirmNTFDescription')}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Lý do xác nhận NTF</label>
+                    <label className="text-sm font-medium">{t('inspection.ntfReasonLabel')}</label>
                     <Textarea
-                      placeholder="Nhập lý do xác nhận NTF..."
+                      placeholder={t('inspection.ntfReasonPlaceholder')}
                       value={ntfReason}
                       onChange={(e) => setNtfReason(e.target.value)}
                       rows={4}
@@ -289,7 +291,7 @@ export default function InspectionDetail() {
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setNtfDialogOpen(false)}>
-                    Hủy
+                    {t('common.cancel')}
                   </Button>
                   <Button 
                     onClick={handleConfirmNTF}
@@ -297,7 +299,7 @@ export default function InspectionDetail() {
                     className="gap-2"
                   >
                     {confirmNTFMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                    Xác nhận NTF
+                    {t('inspection.confirmNTF')}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -309,7 +311,7 @@ export default function InspectionDetail() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Card className="glass-card lg:col-span-2">
             <CardHeader>
-              <CardTitle className="text-lg">Thông tin kiểm tra</CardTitle>
+              <CardTitle className="text-lg">{t('inspection.inspectionInfo')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
@@ -318,22 +320,21 @@ export default function InspectionDetail() {
                   <p className="font-semibold text-foreground">{inspection.serialNumber}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Kết quả</p>
-                  <div className="mt-1">{getResultBadge(inspection.overallResult, "lg")}</div>
+                  <p className="text-sm text-muted-foreground">{t('inspection.result')}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Kết quả gốc</p>
+                  <p className="text-sm text-muted-foreground">{t('inspection.originalResult')}</p>
                   <div className="mt-1">{getResultBadge(inspection.originalResult)}</div>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Thời gian kiểm tra</p>
+                  <p className="text-sm text-muted-foreground">{t('inspection.inspectionTime')}</p>
                   <p className="font-medium text-foreground flex items-center gap-1">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
                     {format(new Date(inspection.inspectionTime), "dd/MM/yyyy HH:mm:ss")}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Model sản phẩm</p>
+                  <p className="text-sm text-muted-foreground">{t('inspection.productModel')}</p>
                   <p className="font-medium text-foreground">{inspection.productModel || "-"}</p>
                 </div>
                 <div>
@@ -344,11 +345,11 @@ export default function InspectionDetail() {
 
               {inspection.ntfReason && (
                 <div className="mt-6 p-4 rounded-lg bg-warning/10 border border-warning/30">
-                  <p className="text-sm font-medium text-warning mb-2">Lý do NTF:</p>
+                  <p className="text-sm font-medium text-warning mb-2">{t('inspection.ntfReason')}:</p>
                   <p className="text-foreground">{inspection.ntfReason}</p>
                   {inspection.ntfConfirmedAt && (
                     <p className="text-xs text-muted-foreground mt-2">
-                      Xác nhận lúc: {format(new Date(inspection.ntfConfirmedAt), "dd/MM/yyyy HH:mm:ss")}
+                      {t('inspection.confirmedAt')}: {format(new Date(inspection.ntfConfirmedAt), "dd/MM/yyyy HH:mm:ss")}
                     </p>
                   )}
                 </div>
@@ -360,20 +361,20 @@ export default function InspectionDetail() {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Cpu className="h-5 w-5 text-primary" />
-                Thông tin máy
+                                {t('inspection.machineInfo')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <p className="text-sm text-muted-foreground">Tên máy</p>
+                <p className="text-sm text-muted-foreground">{t('inspection.machineName')}</p>
                 <p className="font-semibold text-foreground">{machine?.name || "-"}</p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Mã máy</p>
+                <p className="text-sm text-muted-foreground">{t('inspection.machineCode')}</p>
                 <p className="font-medium text-foreground">{machine?.code || "-"}</p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Loại máy</p>
+                <p className="text-sm text-muted-foreground">{t('inspection.machineType')}</p>
                 <Badge variant="secondary">{machine?.machineType || "-"}</Badge>
               </div>
               <div>
@@ -391,10 +392,10 @@ export default function InspectionDetail() {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Target className="h-5 w-5 text-primary" />
-                Ảnh sản phẩm với điểm đo
+                                {t('inspection.productImageWithPoints')}
               </CardTitle>
               <CardDescription>
-                Click vào điểm đo để xem chi tiết và so sánh với ảnh mẫu
+                {t('inspection.clickPointToCompare')}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -470,11 +471,11 @@ export default function InspectionDetail() {
                                 <span className="font-semibold">{m.pointCode || `Point ${index + 1}`}</span>
                                 {getResultBadge(m.result)}
                               </div>
-                              <p className="text-sm text-muted-foreground">{m.pointName || "Điểm đo"}</p>
+                              <p className="text-sm text-muted-foreground">{m.pointName || t('inspection.measurementPoint')}</p>
                               {m.measuredValue && (
-                                <p className="text-sm mt-1">Giá trị: {m.measuredValue}</p>
+                                <p className="text-sm mt-1">{t('inspection.value')}: {m.measuredValue}</p>
                               )}
-                              <p className="text-xs text-primary mt-2">Click để xem chi tiết</p>
+                              <p className="text-xs text-primary mt-2">{t('inspection.clickForDetails')}</p>
                             </div>
                           )}
                         </div>
@@ -508,8 +509,8 @@ export default function InspectionDetail() {
                 <div className="h-64 flex items-center justify-center text-muted-foreground border border-dashed rounded-lg">
                   <div className="text-center">
                     <ImageIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p>Chưa có ảnh mẫu sản phẩm</p>
-                    <p className="text-xs mt-1">Vui lòng cấu hình trong module Sản phẩm</p>
+                    <p>{t('inspection.noReferenceImage')}</p>
+                    <p className="text-xs mt-1">{t('inspection.configureInProductModule')}</p>
                   </div>
                 </div>
               )}
@@ -521,9 +522,9 @@ export default function InspectionDetail() {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <List className="h-5 w-5 text-primary" />
-                Danh sách điểm đo ({measurements.length})
+                                {t('inspection.measurementList')} ({measurements.length})
               </CardTitle>
-              <CardDescription>Chi tiết từng điểm đo với giá trị và kết quả</CardDescription>
+              <CardDescription>{t('inspection.measurementListDescription')}</CardDescription>
             </CardHeader>
             <CardContent className="p-0">
               <ScrollArea className="h-[500px]">
@@ -563,16 +564,13 @@ export default function InspectionDetail() {
                                 {getResultBadge(measurement.result)}
                               </div>
                               <p className="text-sm text-muted-foreground">
-                                {measurement.pointName || "Điểm đo"}
+                                {measurement.pointName || t('inspection.measurementPoint')}
                               </p>
                             </div>
                           </div>
                           
                           <div className="text-right">
-                            <p className="text-sm text-muted-foreground">Giá trị đo</p>
-                            <p className="font-medium text-foreground">
-                              {measurement.measuredValue || "-"}
-                            </p>
+                            <p className="text-sm text-muted-foreground">{t('inspection.measuredValue')}</p>
                           </div>
                         </div>
 
@@ -597,7 +595,7 @@ export default function InspectionDetail() {
                     ))
                   ) : (
                     <div className="py-12 text-center">
-                      <p className="text-muted-foreground">Không có dữ liệu điểm đo</p>
+                      <p className="text-muted-foreground">{t('inspection.noMeasurementData')}</p>
                     </div>
                   )}
                 </div>
@@ -627,7 +625,7 @@ export default function InspectionDetail() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <SplitSquareVertical className="h-5 w-5" /> 
-              So sánh ảnh thực tế với ảnh mẫu
+                            {t('inspection.compareImages')}
             </DialogTitle>
             <DialogDescription asChild>
               {selectedMeasurement && (
@@ -647,7 +645,7 @@ export default function InspectionDetail() {
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                     <Target className="h-4 w-4" />
-                    Ảnh mẫu (Reference)
+                                        {t('inspection.referenceImage')}
                   </div>
                   <div className="border rounded-lg p-2 bg-secondary/20 min-h-[300px] flex items-center justify-center">
                     {selectedMeasurement.referenceImageUrl ? (
@@ -659,8 +657,8 @@ export default function InspectionDetail() {
                     ) : (
                       <div className="text-center text-muted-foreground">
                         <ImageIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                        <p>Chưa có ảnh mẫu</p>
-                        <p className="text-xs">Vui lòng cấu hình trong module Sản phẩm</p>
+                        <p>{t('inspection.noReferenceImageShort')}</p>
+                        <p className="text-xs">{t('inspection.configureInProductModule')}</p>
                       </div>
                     )}
                   </div>
@@ -668,7 +666,7 @@ export default function InspectionDetail() {
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                     <ImageIcon className="h-4 w-4" />
-                    Ảnh thực tế (Actual)
+                                        {t('inspection.actualImage')}
                   </div>
                   <div className="border rounded-lg p-2 bg-secondary/20 min-h-[300px] flex items-center justify-center">
                     {selectedMeasurement.imageUrl ? (
@@ -680,7 +678,7 @@ export default function InspectionDetail() {
                     ) : (
                       <div className="text-center text-muted-foreground">
                         <ImageIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                        <p>Không có ảnh</p>
+                        <p>{t('inspection.noImage')}</p>
                       </div>
                     )}
                   </div>
@@ -690,15 +688,15 @@ export default function InspectionDetail() {
               {/* Measurement Details */}
               <div className="grid grid-cols-3 gap-4 p-4 bg-secondary/30 rounded-lg">
                 <div>
-                  <p className="text-sm text-muted-foreground">Giá trị đo</p>
+                  <p className="text-sm text-muted-foreground">{t('inspection.measuredValue')}</p>
                   <p className="font-semibold text-foreground">{selectedMeasurement.measuredValue || "-"}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Kết quả</p>
+                  <p className="text-sm text-muted-foreground">{t('inspection.result')}</p>
                   <div className="mt-1">{getResultBadge(selectedMeasurement.result, "lg")}</div>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Ghi chú</p>
+                  <p className="text-sm text-muted-foreground">{t('inspection.remark')}</p>
                   <p className="font-medium text-foreground">{selectedMeasurement.remark || "-"}</p>
                 </div>
               </div>
@@ -708,10 +706,10 @@ export default function InspectionDetail() {
                 <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
                   <p className="text-sm font-medium text-primary flex items-center gap-2 mb-2">
                     <Brain className="h-4 w-4" />
-                    Kết quả phân tích AI
+                    {t('inspection.aiAnalysisResult')}
                     {selectedMeasurement.aiConfidence && (
                       <Badge variant="secondary">
-                        Độ tin cậy: {(parseFloat(selectedMeasurement.aiConfidence) * 100).toFixed(1)}%
+                        {t('inspection.confidence')}: {(parseFloat(selectedMeasurement.aiConfidence) * 100).toFixed(1)}%
                       </Badge>
                     )}
                   </p>
@@ -737,7 +735,7 @@ export default function InspectionDetail() {
                       ) : (
                         <Brain className="h-4 w-4" />
                       )}
-                      AI Phân tích
+                      {t('inspection.aiAnalyze')}
                     </Button>
                   )}
                 </div>
@@ -789,7 +787,7 @@ export default function InspectionDetail() {
       <Dialog open={!!selectedImage} onOpenChange={() => setSelectedImage(null)}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
-            <DialogTitle>Xem ảnh điểm đo</DialogTitle>
+            <DialogTitle>{t('inspection.viewMeasurementImage')}</DialogTitle>
           </DialogHeader>
           {selectedImage && (
             <div className="flex justify-center">
@@ -809,15 +807,15 @@ export default function InspectionDetail() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Edit3 className="h-5 w-5" />
-              Sửa kết quả điểm đo
+                            {t('inspection.correctResult')}
             </DialogTitle>
             <DialogDescription>
-              Điều chỉnh kết quả nếu máy kiểm tra bắt sai
+              {t('inspection.correctResultDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Kết quả mới</label>
+              <label className="text-sm font-medium">{t('inspection.newResult')}</label>
               <Select value={correctResult} onValueChange={(v) => setCorrectResult(v as "OK" | "NG" | "NTF")}>
                 <SelectTrigger>
                   <SelectValue />
@@ -845,9 +843,9 @@ export default function InspectionDetail() {
               </Select>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Lý do sửa đổi</label>
+              <label className="text-sm font-medium">{t('inspection.correctionReasonLabel')}</label>
               <Textarea
-                placeholder="Nhập lý do sửa đổi kết quả..."
+                placeholder={t('inspection.correctionReasonPlaceholder')}
                 value={correctReason}
                 onChange={(e) => setCorrectReason(e.target.value)}
                 rows={3}
@@ -856,7 +854,7 @@ export default function InspectionDetail() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCorrectDialogOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button 
               onClick={handleCorrectResult}
@@ -865,7 +863,7 @@ export default function InspectionDetail() {
             >
               {correctResultMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               <Save className="h-4 w-4" />
-              Lưu thay đổi
+              {t('common.saveChanges')}
             </Button>
           </DialogFooter>
         </DialogContent>

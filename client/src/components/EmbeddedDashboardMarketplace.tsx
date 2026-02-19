@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -16,13 +17,13 @@ import {
 } from 'lucide-react';
 
 const CATEGORIES = [
-  { value: 'all', label: 'Tất cả' },
-  { value: 'production', label: 'Sản xuất' },
-  { value: 'quality', label: 'Chất lượng' },
-  { value: 'maintenance', label: 'Bảo trì' },
-  { value: 'analytics', label: 'Phân tích' },
-  { value: 'oee', label: 'OEE' },
-  { value: 'custom', label: 'Tùy chỉnh' },
+  { value: 'all', label: 'common.all' },
+  { value: 'production', label: 'dashboard.categoryProduction' },
+  { value: 'quality', label: 'dashboard.categoryQuality' },
+  { value: 'maintenance', label: 'dashboard.categoryMaintenance' },
+  { value: 'analytics', label: 'dashboard.categoryAnalytics' },
+  { value: 'oee', label: 'dashboard.categoryOEE' },
+  { value: 'custom', label: 'dashboard.categoryCustom' },
 ];
 
 const WIDGET_ICONS: Record<string, React.ReactNode> = {
@@ -120,6 +121,7 @@ const MOCK_TEMPLATES = [
 ];
 
 export default function EmbeddedDashboardMarketplace() {
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [sortBy, setSortBy] = useState('popular');
@@ -153,16 +155,16 @@ export default function EmbeddedDashboardMarketplace() {
   const featuredTemplates = MOCK_TEMPLATES.filter(t => t.isFeatured);
 
   const handleDownload = (template: typeof MOCK_TEMPLATES[0]) => {
-    toast.success(`Đã tải template "${template.name}" thành công!`);
+    toast.success(t('dashboard.templateDownloaded', { name: template.name }));
     setSelectedTemplate(null);
   };
 
   const handlePublish = () => {
     if (!publishForm.name.trim()) {
-      toast.error('Vui lòng nhập tên template');
+      toast.error(t('dashboard.enterTemplateName'));
       return;
     }
-    toast.success('Template đã được gửi để xét duyệt!');
+    toast.success(t('dashboard.templateSubmitted'));
     setShowPublishDialog(false);
     setPublishForm({ name: '', description: '', category: 'custom' });
   };
@@ -191,12 +193,12 @@ export default function EmbeddedDashboardMarketplace() {
             Dashboard Marketplace
           </h2>
           <p className="text-sm text-muted-foreground">
-            Khám phá và tải các dashboard templates từ cộng đồng
+            {t('dashboard.exploreTemplates')}
           </p>
         </div>
         <Button onClick={() => setShowPublishDialog(true)}>
           <Upload className="mr-2 h-4 w-4" />
-          Chia sẻ Template
+          {t('dashboard.shareTemplate')}
         </Button>
       </div>
 
@@ -205,7 +207,7 @@ export default function EmbeddedDashboardMarketplace() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Tìm kiếm templates..."
+            placeholder={t('dashboard.searchTemplates')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -213,24 +215,24 @@ export default function EmbeddedDashboardMarketplace() {
         </div>
         <Select value={selectedCategory} onValueChange={setSelectedCategory}>
           <SelectTrigger className="w-full sm:w-48">
-            <SelectValue placeholder="Danh mục" />
+            <SelectValue placeholder={t('dashboard.category')} />
           </SelectTrigger>
           <SelectContent>
             {CATEGORIES.map((cat) => (
               <SelectItem key={cat.value} value={cat.value}>
-                {cat.label}
+                {t(cat.label)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         <Select value={sortBy} onValueChange={setSortBy}>
           <SelectTrigger className="w-full sm:w-48">
-            <SelectValue placeholder="Sắp xếp" />
+            <SelectValue placeholder={t('dashboard.sortBy')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="popular">Phổ biến nhất</SelectItem>
-            <SelectItem value="rating">Đánh giá cao</SelectItem>
-            <SelectItem value="newest">Mới nhất</SelectItem>
+            <SelectItem value="popular">{t('dashboard.mostPopular')}</SelectItem>
+            <SelectItem value="rating">{t('dashboard.highestRated')}</SelectItem>
+            <SelectItem value="newest">{t('dashboard.newest')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -240,7 +242,7 @@ export default function EmbeddedDashboardMarketplace() {
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Star className="h-5 w-5 fill-yellow-400 text-yellow-400" />
-            <h3 className="text-lg font-semibold">Templates nổi bật</h3>
+            <h3 className="text-lg font-semibold">{t('dashboard.featuredTemplates')}</h3>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {featuredTemplates.slice(0, 3).map((template) => (
@@ -287,7 +289,7 @@ export default function EmbeddedDashboardMarketplace() {
                     onClick={() => setSelectedTemplate(template)}
                   >
                     <Eye className="mr-1 h-3 w-3" />
-                    Xem
+                    {t('common.view')}
                   </Button>
                   <Button
                     size="sm"
@@ -295,7 +297,7 @@ export default function EmbeddedDashboardMarketplace() {
                     onClick={() => handleDownload(template)}
                   >
                     <Download className="mr-1 h-3 w-3" />
-                    Tải về
+                    {t('common.download')}
                   </Button>
                 </CardFooter>
               </Card>
@@ -307,7 +309,7 @@ export default function EmbeddedDashboardMarketplace() {
       {/* All Templates */}
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">
-          Tất cả templates ({filteredTemplates.length})
+          {t('dashboard.allTemplates')} ({filteredTemplates.length})
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredTemplates.map((template) => (
@@ -358,7 +360,7 @@ export default function EmbeddedDashboardMarketplace() {
                   onClick={() => setSelectedTemplate(template)}
                 >
                   <Eye className="mr-1 h-3 w-3" />
-                  Xem
+                  {t('common.view')}
                 </Button>
                 <Button
                   size="sm"
@@ -366,7 +368,7 @@ export default function EmbeddedDashboardMarketplace() {
                   onClick={() => handleDownload(template)}
                 >
                   <Download className="mr-1 h-3 w-3" />
-                  Tải về
+                  {t('common.download')}
                 </Button>
                 <Button variant="ghost" size="sm">
                   <Heart className="h-3 w-3" />
@@ -390,7 +392,7 @@ export default function EmbeddedDashboardMarketplace() {
                       <Badge variant="secondary">{selectedTemplate.category}</Badge>
                       {renderStars(selectedTemplate.rating)}
                       <span className="text-xs text-muted-foreground">
-                        ({selectedTemplate.reviewCount} đánh giá)
+                        ({selectedTemplate.reviewCount} {t('dashboard.reviews')})
                       </span>
                     </div>
                   </div>
@@ -401,15 +403,15 @@ export default function EmbeddedDashboardMarketplace() {
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <h4 className="text-sm font-semibold mb-2">Thông tin</h4>
+                  <h4 className="text-sm font-semibold mb-2">{t('dashboard.information')}</h4>
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div className="flex items-center gap-2">
                       <Users className="h-4 w-4 text-muted-foreground" />
-                      <span>Tác giả: {selectedTemplate.author}</span>
+                      <span>{t('dashboard.author')}: {selectedTemplate.author}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Download className="h-4 w-4 text-muted-foreground" />
-                      <span>{selectedTemplate.downloadCount} lượt tải</span>
+                      <span>{selectedTemplate.downloadCount} {t('dashboard.downloads')}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Clock className="h-4 w-4 text-muted-foreground" />
@@ -431,11 +433,11 @@ export default function EmbeddedDashboardMarketplace() {
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setSelectedTemplate(null)}>
-                  Đóng
+                  {t('common.close')}
                 </Button>
                 <Button onClick={() => handleDownload(selectedTemplate)}>
                   <Download className="mr-2 h-4 w-4" />
-                  Tải về
+                  {t('common.download')}
                 </Button>
               </DialogFooter>
             </>
@@ -447,33 +449,33 @@ export default function EmbeddedDashboardMarketplace() {
       <Dialog open={showPublishDialog} onOpenChange={setShowPublishDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Chia sẻ Template</DialogTitle>
+            <DialogTitle>{t('dashboard.shareTemplate')}</DialogTitle>
             <DialogDescription>
-              Chia sẻ template của bạn với cộng đồng
+              {t('dashboard.shareTemplateDesc')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="publish-name">Tên Template</Label>
+              <Label htmlFor="publish-name">{t('dashboard.templateName')}</Label>
               <Input
                 id="publish-name"
-                placeholder="Nhập tên template"
+                placeholder={t('dashboard.enterTemplateName')}
                 value={publishForm.name}
                 onChange={(e) => setPublishForm({ ...publishForm, name: e.target.value })}
               />
             </div>
             <div>
-              <Label htmlFor="publish-desc">Mô tả</Label>
+              <Label htmlFor="publish-desc">{t('common.description')}</Label>
               <Textarea
                 id="publish-desc"
-                placeholder="Mô tả template của bạn"
+                placeholder={t('dashboard.describeTemplate')}
                 value={publishForm.description}
                 onChange={(e) => setPublishForm({ ...publishForm, description: e.target.value })}
                 rows={3}
               />
             </div>
             <div>
-              <Label htmlFor="publish-category">Danh mục</Label>
+              <Label htmlFor="publish-category">{t('dashboard.category')}</Label>
               <Select value={publishForm.category} onValueChange={(value) => setPublishForm({ ...publishForm, category: value })}>
                 <SelectTrigger id="publish-category">
                   <SelectValue />
@@ -490,11 +492,11 @@ export default function EmbeddedDashboardMarketplace() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowPublishDialog(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button onClick={handlePublish}>
               <Share2 className="mr-2 h-4 w-4" />
-              Chia sẻ
+              {t('dashboard.share')}
             </Button>
           </DialogFooter>
         </DialogContent>

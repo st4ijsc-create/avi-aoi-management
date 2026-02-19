@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,6 +14,7 @@ import { Target, TrendingUp, AlertTriangle, CheckCircle2, Edit, Trash2, Plus } f
 import { toast } from 'sonner';
 
 export default function OEETargetSettings() {
+  const { t } = useTranslation();
   const [selectedMachineId, setSelectedMachineId] = useState<number | null>(null);
   const [selectedLineId, setSelectedLineId] = useState<number | null>(null);
   const [editingTargetId, setEditingTargetId] = useState<number | null>(null);
@@ -34,34 +36,34 @@ export default function OEETargetSettings() {
   
   const createTarget = trpc.oee.createTarget.useMutation({
     onSuccess: () => {
-      toast.success('OEE target created successfully');
+      toast.success(t('oee.targetCreatedSuccess'));
       refetchTargets();
       resetForm();
     },
     onError: (error) => {
-      toast.error(`Failed to create target: ${error.message}`);
+      toast.error(`${t('oee.targetCreateError')}: ${error.message}`);
     },
   });
 
   const updateTarget = trpc.oee.updateTarget.useMutation({
     onSuccess: () => {
-      toast.success('OEE target updated successfully');
+      toast.success(t('oee.targetUpdatedSuccess'));
       refetchTargets();
       setEditingTargetId(null);
       resetForm();
     },
     onError: (error) => {
-      toast.error(`Failed to update target: ${error.message}`);
+      toast.error(`${t('oee.targetUpdateError')}: ${error.message}`);
     },
   });
 
   const deleteTarget = trpc.oee.deleteTarget.useMutation({
     onSuccess: () => {
-      toast.success('OEE target deleted successfully');
+      toast.success(t('oee.targetDeletedSuccess'));
       refetchTargets();
     },
     onError: (error) => {
-      toast.error(`Failed to delete target: ${error.message}`);
+      toast.error(`${t('oee.targetDeleteError')}: ${error.message}`);
     },
   });
 
@@ -84,7 +86,7 @@ export default function OEETargetSettings() {
     e.preventDefault();
     
     if (!selectedMachineId && !selectedLineId) {
-      toast.error('Please select either a machine or a line');
+      toast.error(t('oee.selectMachineOrLine'));
       return;
     }
 
@@ -123,7 +125,7 @@ export default function OEETargetSettings() {
   };
 
   const handleDelete = (id: number) => {
-    if (confirm('Are you sure you want to delete this target?')) {
+    if (confirm(t('oee.confirmDeleteTarget'))) {
       deleteTarget.mutate({ id });
     }
   };
@@ -135,13 +137,13 @@ export default function OEETargetSettings() {
     const criticalThreshold = target.criticalThreshold / 100;
 
     if (oee >= targetOEE) {
-      return <Badge className="bg-green-500"><CheckCircle2 className="w-3 h-3 mr-1" />On Target</Badge>;
+      return <Badge className="bg-green-500"><CheckCircle2 className="w-3 h-3 mr-1" />{t('oee.onTarget')}</Badge>;
     } else if (oee >= alertThreshold) {
-      return <Badge className="bg-yellow-500"><TrendingUp className="w-3 h-3 mr-1" />Below Target</Badge>;
+      return <Badge className="bg-yellow-500"><TrendingUp className="w-3 h-3 mr-1" />{t('oee.belowTarget')}</Badge>;
     } else if (oee >= criticalThreshold) {
-      return <Badge className="bg-orange-500"><AlertTriangle className="w-3 h-3 mr-1" />Alert</Badge>;
+      return <Badge className="bg-orange-500"><AlertTriangle className="w-3 h-3 mr-1" />{t('oee.alert')}</Badge>;
     } else {
-      return <Badge className="bg-red-500"><AlertTriangle className="w-3 h-3 mr-1" />Critical</Badge>;
+      return <Badge className="bg-red-500"><AlertTriangle className="w-3 h-3 mr-1" />{t('oee.critical')}</Badge>;
     }
   };
 
@@ -150,35 +152,35 @@ export default function OEETargetSettings() {
       <div className="flex items-center gap-3 mb-6">
         <Target className="w-8 h-8 text-primary" />
         <div>
-          <h1 className="text-3xl font-bold">OEE Target Settings</h1>
-          <p className="text-muted-foreground">Set and manage OEE targets for machines and production lines</p>
+          <h1 className="text-3xl font-bold">{t('oee.targetSettings')}</h1>
+          <p className="text-muted-foreground">{t('oee.targetSettingsDescription')}</p>
         </div>
       </div>
 
       <Tabs defaultValue="targets" className="space-y-6">
         <TabsList>
-          <TabsTrigger value="targets">Active Targets</TabsTrigger>
-          <TabsTrigger value="create">Create/Edit Target</TabsTrigger>
+          <TabsTrigger value="targets">{t('oee.activeTargets')}</TabsTrigger>
+          <TabsTrigger value="create">{t('oee.createEditTarget')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="targets" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Active OEE Targets</CardTitle>
-              <CardDescription>Current OEE targets and their status</CardDescription>
+              <CardTitle>{t('oee.activeOEETargets')}</CardTitle>
+              <CardDescription>{t('oee.currentTargetsStatus')}</CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Target For</TableHead>
-                    <TableHead>OEE Target</TableHead>
-                    <TableHead>Availability</TableHead>
-                    <TableHead>Performance</TableHead>
-                    <TableHead>Quality</TableHead>
-                    <TableHead>Alert Threshold</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead>{t('oee.targetFor')}</TableHead>
+                    <TableHead>{t('oee.oeeTarget')}</TableHead>
+                    <TableHead>{t('oee.availability')}</TableHead>
+                    <TableHead>{t('oee.performance')}</TableHead>
+                    <TableHead>{t('oee.quality')}</TableHead>
+                    <TableHead>{t('oee.alertThreshold')}</TableHead>
+                    <TableHead>{t('common.status')}</TableHead>
+                    <TableHead>{t('common.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -193,7 +195,7 @@ export default function OEETargetSettings() {
                       <TableCell>{(target.targetQuality / 100).toFixed(1)}%</TableCell>
                       <TableCell>{(target.alertThreshold / 100).toFixed(1)}%</TableCell>
                       <TableCell>
-                        <Badge className="bg-green-500">Active</Badge>
+                        <Badge className="bg-green-500">{t('oee.active')}</Badge>
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-2">
@@ -218,7 +220,7 @@ export default function OEETargetSettings() {
                   {(!targets || targets.length === 0) && (
                     <TableRow>
                       <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                        No OEE targets configured. Create one to get started.
+                        {t('oee.noTargetsConfigured')}
                       </TableCell>
                     </TableRow>
                   )}
@@ -231,16 +233,16 @@ export default function OEETargetSettings() {
         <TabsContent value="create" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>{editingTargetId ? 'Edit' : 'Create'} OEE Target</CardTitle>
+              <CardTitle>{editingTargetId ? t('oee.editTarget') : t('oee.createTarget')}</CardTitle>
               <CardDescription>
-                Set OEE targets for a specific machine or production line
+                {t('oee.setTargetDescription')}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="machine">Target Machine (Optional)</Label>
+                    <Label htmlFor="machine">{t('oee.targetMachine')}</Label>
                     <Select
                       value={selectedMachineId?.toString() || 'none'}
                       onValueChange={(value) => {
@@ -249,10 +251,10 @@ export default function OEETargetSettings() {
                       }}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select machine" />
+                        <SelectValue placeholder={t('oee.selectMachine')} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
+                        <SelectItem value="none">{t('common.none')}</SelectItem>
                         {machines?.map((machine: any) => (
                           <SelectItem key={machine.id} value={machine.id.toString()}>
                             {machine.name} ({machine.code})
@@ -263,7 +265,7 @@ export default function OEETargetSettings() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="line">Target Line (Optional)</Label>
+                    <Label htmlFor="line">{t('oee.targetLine')}</Label>
                     <Select
                       value={selectedLineId?.toString() || 'none'}
                       onValueChange={(value) => {
@@ -272,10 +274,10 @@ export default function OEETargetSettings() {
                       }}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select line" />
+                        <SelectValue placeholder={t('oee.selectLine')} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
+                        <SelectItem value="none">{t('common.none')}</SelectItem>
                         {lines?.map((line: any) => (
                           <SelectItem key={line.id} value={line.id.toString()}>
                             {line.name} ({line.code})
@@ -288,7 +290,7 @@ export default function OEETargetSettings() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="targetOEE">Target OEE (%)</Label>
+                    <Label htmlFor="targetOEE">{t('oee.targetOeePercent')}</Label>
                     <Input
                       id="targetOEE"
                       type="number"
@@ -302,7 +304,7 @@ export default function OEETargetSettings() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="targetAvailability">Target Availability (%)</Label>
+                    <Label htmlFor="targetAvailability">{t('oee.targetAvailabilityPercent')}</Label>
                     <Input
                       id="targetAvailability"
                       type="number"
@@ -316,7 +318,7 @@ export default function OEETargetSettings() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="targetPerformance">Target Performance (%)</Label>
+                    <Label htmlFor="targetPerformance">{t('oee.targetPerformancePercent')}</Label>
                     <Input
                       id="targetPerformance"
                       type="number"
@@ -330,7 +332,7 @@ export default function OEETargetSettings() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="targetQuality">Target Quality (%)</Label>
+                    <Label htmlFor="targetQuality">{t('oee.targetQualityPercent')}</Label>
                     <Input
                       id="targetQuality"
                       type="number"
@@ -344,7 +346,7 @@ export default function OEETargetSettings() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="alertThreshold">Alert Threshold (%)</Label>
+                    <Label htmlFor="alertThreshold">{t('oee.alertThresholdPercent')}</Label>
                     <Input
                       id="alertThreshold"
                       type="number"
@@ -358,7 +360,7 @@ export default function OEETargetSettings() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="criticalThreshold">Critical Threshold (%)</Label>
+                    <Label htmlFor="criticalThreshold">{t('oee.criticalThresholdPercent')}</Label>
                     <Input
                       id="criticalThreshold"
                       type="number"
@@ -373,12 +375,12 @@ export default function OEETargetSettings() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="notes">Notes (Optional)</Label>
+                  <Label htmlFor="notes">{t('oee.notes')}</Label>
                   <Textarea
                     id="notes"
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    placeholder="Additional notes about this target..."
+                    placeholder={t('oee.notesPlaceholder')}
                     rows={3}
                   />
                 </div>
@@ -386,11 +388,11 @@ export default function OEETargetSettings() {
                 <div className="flex gap-2">
                   <Button type="submit" disabled={createTarget.isPending || updateTarget.isPending}>
                     <Plus className="w-4 h-4 mr-2" />
-                    {editingTargetId ? 'Update' : 'Create'} Target
+                    {editingTargetId ? t('oee.updateTarget') : t('oee.createTarget')}
                   </Button>
                   {editingTargetId && (
                     <Button type="button" variant="outline" onClick={resetForm}>
-                      Cancel
+                      {t('common.cancel')}
                     </Button>
                   )}
                 </div>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import JSZip from 'jszip';
 import { jsPDF } from 'jspdf';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,7 @@ interface BatchImageExportProps {
 }
 
 export function BatchImageExport({ images, onSelectionChange }: BatchImageExportProps) {
+  const { t } = useTranslation();
   const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
@@ -70,12 +72,7 @@ export function BatchImageExport({ images, onSelectionChange }: BatchImageExport
   const exportToZip = async () => {
     const selectedImages = getSelectedImages();
     if (selectedImages.length === 0) {
-      toast.error('Vui lòng chọn ít nhất một ảnh');
-      return;
-    }
-
-    setIsExporting(true);
-    setExportType('zip');
+      toast.error(t('export.selectAtLeastOne'));
     setExportProgress(0);
 
     try {
@@ -106,10 +103,10 @@ export function BatchImageExport({ images, onSelectionChange }: BatchImageExport
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
 
-      toast.success(`Đã xuất ${selectedImages.length} ảnh thành công`);
+      toast.success(t('export.zipSuccess', { count: selectedImages.length }));
     } catch (error) {
       console.error('Export failed:', error);
-      toast.error('Lỗi khi xuất ảnh');
+      toast.error(t('export.zipError'));
     } finally {
       setIsExporting(false);
       setExportType(null);
@@ -120,12 +117,7 @@ export function BatchImageExport({ images, onSelectionChange }: BatchImageExport
   const exportToPdf = async () => {
     const selectedImages = getSelectedImages();
     if (selectedImages.length === 0) {
-      toast.error('Vui lòng chọn ít nhất một ảnh');
-      return;
-    }
-
-    setIsExporting(true);
-    setExportType('pdf');
+      toast.error(t('export.selectAtLeastOne'));
     setExportProgress(0);
 
     try {
@@ -138,12 +130,12 @@ export function BatchImageExport({ images, onSelectionChange }: BatchImageExport
       // Title page
       pdf.setFontSize(24);
       pdf.setFont('helvetica', 'bold');
-      pdf.text('Báo Cáo Hình Ảnh Kiểm Tra', pageWidth / 2, 40, { align: 'center' });
+      pdf.text(t('export.pdfTitle'), pageWidth / 2, 40, { align: 'center' });
 
       pdf.setFontSize(12);
       pdf.setFont('helvetica', 'normal');
-      pdf.text(`Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`, pageWidth / 2, 55, { align: 'center' });
-      pdf.text(`Tổng số ảnh: ${selectedImages.length}`, pageWidth / 2, 65, { align: 'center' });
+      pdf.text(`${t('export.exportDate')}: ${new Date().toLocaleDateString('vi-VN')}`, pageWidth / 2, 55, { align: 'center' });
+      pdf.text(`${t('export.totalImages')}: ${selectedImages.length}`, pageWidth / 2, 65, { align: 'center' });
 
       // Summary stats
       const okCount = selectedImages.filter((img) => img.result === 'OK').length;
@@ -151,7 +143,7 @@ export function BatchImageExport({ images, onSelectionChange }: BatchImageExport
       const ntfCount = selectedImages.filter((img) => img.result === 'NTF').length;
 
       pdf.setFontSize(14);
-      pdf.text('Thống kê:', margin, 85);
+      pdf.text(`${t('export.statistics')}:`, margin, 85);
       pdf.setFontSize(11);
       pdf.setTextColor(34, 197, 94); // green
       pdf.text(`OK: ${okCount}`, margin + 10, 95);
@@ -169,51 +161,51 @@ export function BatchImageExport({ images, onSelectionChange }: BatchImageExport
         // Header
         pdf.setFontSize(14);
         pdf.setFont('helvetica', 'bold');
-        pdf.text(`Ảnh ${i + 1}/${selectedImages.length}`, margin, 20);
+        pdf.text(`${t('export.imageNumber', { current: i + 1, total: selectedImages.length })}`, margin, 20);
 
         // Image info
         pdf.setFontSize(10);
         pdf.setFont('helvetica', 'normal');
         let yPos = 30;
 
-        pdf.text(`Tiêu đề: ${img.title}`, margin, yPos);
+        pdf.text(`${t('export.imageTitle')}: ${img.title}`, margin, yPos);
         yPos += 6;
 
         if (img.measurementPointName) {
-          pdf.text(`Điểm đo: ${img.measurementPointName}`, margin, yPos);
+          pdf.text(`${t('export.measurementPoint')}: ${img.measurementPointName}`, margin, yPos);
           yPos += 6;
         }
 
         if (img.result) {
           const resultColor = img.result === 'OK' ? [34, 197, 94] : img.result === 'NG' ? [239, 68, 68] : [234, 179, 8];
           pdf.setTextColor(resultColor[0], resultColor[1], resultColor[2]);
-          pdf.text(`Kết quả: ${img.result}`, margin, yPos);
+          pdf.text(`${t('export.result')}: ${img.result}`, margin, yPos);
           pdf.setTextColor(0, 0, 0);
           yPos += 6;
         }
 
         if (img.value !== undefined) {
-          pdf.text(`Giá trị đo: ${img.value}`, margin, yPos);
+          pdf.text(`${t('export.measuredValue')}: ${img.value}`, margin, yPos);
           yPos += 6;
         }
 
         if (img.standardValue !== undefined) {
-          pdf.text(`Giá trị chuẩn: ${img.standardValue}`, margin, yPos);
+          pdf.text(`${t('export.standardValue')}: ${img.standardValue}`, margin, yPos);
           yPos += 6;
         }
 
         if (img.upperLimit !== undefined && img.lowerLimit !== undefined) {
-          pdf.text(`Giới hạn: ${img.lowerLimit} - ${img.upperLimit}`, margin, yPos);
+          pdf.text(`${t('export.limits')}: ${img.lowerLimit} - ${img.upperLimit}`, margin, yPos);
           yPos += 6;
         }
 
         if (img.timestamp) {
-          pdf.text(`Thời gian: ${new Date(img.timestamp).toLocaleString('vi-VN')}`, margin, yPos);
+          pdf.text(`${t('export.timestamp')}: ${new Date(img.timestamp).toLocaleString('vi-VN')}`, margin, yPos);
           yPos += 6;
         }
 
         if (img.description) {
-          pdf.text(`Ghi chú: ${img.description}`, margin, yPos);
+          pdf.text(`${t('export.notes')}: ${img.description}`, margin, yPos);
           yPos += 6;
         }
 
@@ -251,7 +243,7 @@ export function BatchImageExport({ images, onSelectionChange }: BatchImageExport
         } catch (error) {
           console.error(`Failed to add image to PDF: ${img.url}`, error);
           pdf.setTextColor(239, 68, 68);
-          pdf.text('Không thể tải hình ảnh', margin, yPos + 20);
+          pdf.text(t('export.cannotLoadImage'), margin, yPos + 20);
           pdf.setTextColor(0, 0, 0);
         }
 
@@ -265,7 +257,7 @@ export function BatchImageExport({ images, onSelectionChange }: BatchImageExport
         pdf.setFontSize(8);
         pdf.setTextColor(128, 128, 128);
         pdf.text(
-          `Trang ${i}/${totalPages} - AVI/AOI Management System`,
+          `${t('export.page')} ${i}/${totalPages} - AVI/AOI Management System`,
           pageWidth / 2,
           pageHeight - 10,
           { align: 'center' }
@@ -273,10 +265,10 @@ export function BatchImageExport({ images, onSelectionChange }: BatchImageExport
       }
 
       pdf.save(`inspection_report_${new Date().toISOString().slice(0, 10)}.pdf`);
-      toast.success(`Đã xuất báo cáo PDF với ${selectedImages.length} ảnh`);
+      toast.success(t('export.pdfSuccess', { count: selectedImages.length }));
     } catch (error) {
       console.error('PDF export failed:', error);
-      toast.error('Lỗi khi xuất PDF');
+      toast.error(t('export.pdfError'));
     } finally {
       setIsExporting(false);
       setExportType(null);
@@ -299,7 +291,7 @@ export function BatchImageExport({ images, onSelectionChange }: BatchImageExport
             className="gap-1"
           >
             <CheckSquare className="h-4 w-4" />
-            Chọn tất cả
+            {t('common.selectAll')}
           </Button>
           <Button
             variant="outline"
@@ -309,13 +301,13 @@ export function BatchImageExport({ images, onSelectionChange }: BatchImageExport
             className="gap-1"
           >
             <Square className="h-4 w-4" />
-            Bỏ chọn
+            {t('common.deselectAll')}
           </Button>
         </div>
 
         <div className="flex-1 text-center">
           <Badge variant={hasSelection ? 'default' : 'secondary'}>
-            {selectedCount} / {images.length} ảnh đã chọn
+            {selectedCount} / {images.length} {t('export.imagesSelected')}
           </Badge>
         </div>
 
@@ -328,7 +320,7 @@ export function BatchImageExport({ images, onSelectionChange }: BatchImageExport
             className="gap-1"
           >
             <Download className="h-4 w-4" />
-            Xuất ({selectedCount})
+            {t('common.export')} ({selectedCount})
           </Button>
         </div>
       </div>
@@ -400,9 +392,9 @@ export function BatchImageExport({ images, onSelectionChange }: BatchImageExport
       <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Xuất hình ảnh</DialogTitle>
+            <DialogTitle>{t('export.exportImages')}</DialogTitle>
             <DialogDescription>
-              Chọn định dạng xuất cho {selectedCount} ảnh đã chọn
+              {t('export.chooseFormat', { count: selectedCount })}
             </DialogDescription>
           </DialogHeader>
 
@@ -411,7 +403,7 @@ export function BatchImageExport({ images, onSelectionChange }: BatchImageExport
               <div className="flex items-center gap-2">
                 <Loader2 className="h-5 w-5 animate-spin" />
                 <span>
-                  Đang xuất {exportType === 'zip' ? 'ZIP' : 'PDF'}...
+                  {t('export.exporting', { type: exportType === 'zip' ? 'ZIP' : 'PDF' })}
                 </span>
               </div>
               <Progress value={exportProgress} />
@@ -427,9 +419,9 @@ export function BatchImageExport({ images, onSelectionChange }: BatchImageExport
               >
                 <CardContent className="flex flex-col items-center justify-center p-6">
                   <FileArchive className="h-12 w-12 text-muted-foreground mb-2" />
-                  <h3 className="font-medium">Xuất ZIP</h3>
+                  <h3 className="font-medium">{t('export.exportZip')}</h3>
                   <p className="text-xs text-muted-foreground text-center mt-1">
-                    Tải tất cả ảnh gốc trong file nén
+                    {t('export.zipDescription')}
                   </p>
                 </CardContent>
               </Card>
@@ -440,9 +432,9 @@ export function BatchImageExport({ images, onSelectionChange }: BatchImageExport
               >
                 <CardContent className="flex flex-col items-center justify-center p-6">
                   <FileText className="h-12 w-12 text-muted-foreground mb-2" />
-                  <h3 className="font-medium">Xuất PDF</h3>
+                  <h3 className="font-medium">{t('export.exportPdf')}</h3>
                   <p className="text-xs text-muted-foreground text-center mt-1">
-                    Báo cáo với ảnh và thông tin chi tiết
+                    {t('export.pdfDescription')}
                   </p>
                 </CardContent>
               </Card>
@@ -455,13 +447,4 @@ export function BatchImageExport({ images, onSelectionChange }: BatchImageExport
               onClick={() => setShowExportDialog(false)}
               disabled={isExporting}
             >
-              Hủy
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-
-export default BatchImageExport;
+              {t('common.cancel')}

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -29,16 +30,17 @@ import {
 } from "lucide-react";
 
 const CATEGORIES = [
-  { value: "all", label: "Tất cả", icon: LayoutDashboard },
-  { value: "production", label: "Sản xuất", icon: Activity },
-  { value: "quality", label: "Chất lượng", icon: TrendingUp },
-  { value: "monitoring", label: "Giám sát", icon: Eye },
-  { value: "alerts", label: "Cảnh báo", icon: Bell },
-  { value: "analytics", label: "Phân tích", icon: BarChart3 },
-  { value: "management", label: "Quản lý", icon: Settings },
+  { value: "all", labelKey: "dashboard.catAll", icon: LayoutDashboard },
+  { value: "production", labelKey: "dashboard.catProduction", icon: Activity },
+  { value: "quality", labelKey: "dashboard.catQuality", icon: TrendingUp },
+  { value: "monitoring", labelKey: "dashboard.catMonitoring", icon: Eye },
+  { value: "alerts", labelKey: "dashboard.catAlerts", icon: Bell },
+  { value: "analytics", labelKey: "dashboard.catAnalytics", icon: BarChart3 },
+  { value: "management", labelKey: "dashboard.catManagement", icon: Settings },
 ];
 
 export default function TemplateMarketplace() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
@@ -71,22 +73,22 @@ export default function TemplateMarketplace() {
 
   const publishMutation = trpc.system.marketplace.publish.useMutation({
     onSuccess: () => {
-      toast.success("Template đã được publish lên marketplace!");
+      toast.success(t('dashboard.templatePublishedSuccess'));
       setPublishDialogOpen(false);
       refetch();
     },
     onError: (error) => {
-      toast.error("Lỗi: " + error.message);
+      toast.error(t('common.error') + ": " + error.message);
     },
   });
 
   const downloadMutation = trpc.system.marketplace.download.useMutation({
     onSuccess: (template) => {
-      toast.success("Đã tải template thành công! Bạn có thể áp dụng từ Dashboard Templates.");
+      toast.success(t('dashboard.templateDownloaded'));
       refetch();
     },
     onError: (error) => {
-      toast.error("Lỗi: " + error.message);
+      toast.error(t('common.error') + ": " + error.message);
     },
   });
 
@@ -136,15 +138,15 @@ export default function TemplateMarketplace() {
         {/* Header */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Template Marketplace</h1>
+            <h1 className="text-2xl font-bold">{t('dashboard.templateMarketplace')}</h1>
             <p className="text-muted-foreground">
-              Khám phá và tải các template dashboard từ cộng đồng
+              {t('dashboard.marketplaceDescription')}
             </p>
           </div>
           {user?.role === "admin" && (
             <Button onClick={() => setPublishDialogOpen(true)}>
               <Upload className="mr-2 h-4 w-4" />
-              Publish Template
+              {t('dashboard.publishTemplate')}
             </Button>
           )}
         </div>
@@ -174,7 +176,7 @@ export default function TemplateMarketplace() {
                     </CardHeader>
                     <CardContent className="pb-2">
                       <p className="text-sm text-muted-foreground line-clamp-2">
-                        {template.description || "Không có mô tả"}
+                        {template.description || t('dashboard.noDescription')}
                       </p>
                       <div className="mt-2 flex items-center gap-4 text-sm text-muted-foreground">
                         {renderStars(Number(template.rating) || 0)}
@@ -192,7 +194,7 @@ export default function TemplateMarketplace() {
                         disabled={downloadMutation.isPending}
                       >
                         <Download className="mr-2 h-4 w-4" />
-                        Tải về
+                        {t('dashboard.download')}
                       </Button>
                     </CardFooter>
                   </Card>
@@ -209,7 +211,7 @@ export default function TemplateMarketplace() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Tìm kiếm template..."
+                  placeholder={t('dashboard.searchTemplates')}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="pl-10"
@@ -218,14 +220,14 @@ export default function TemplateMarketplace() {
               <Select value={category} onValueChange={setCategory}>
                 <SelectTrigger className="w-[180px]">
                   <Filter className="mr-2 h-4 w-4" />
-                  <SelectValue placeholder="Danh mục" />
+                  <SelectValue placeholder={t('dashboard.category')} />
                 </SelectTrigger>
                 <SelectContent>
                   {CATEGORIES.map((cat) => (
                     <SelectItem key={cat.value} value={cat.value}>
                       <div className="flex items-center gap-2">
                         <cat.icon className="h-4 w-4" />
-                        {cat.label}
+                        {t(cat.labelKey)}
                       </div>
                     </SelectItem>
                   ))}
@@ -233,12 +235,12 @@ export default function TemplateMarketplace() {
               </Select>
               <Select value={sortBy} onValueChange={(v: any) => setSortBy(v)}>
                 <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Sắp xếp" />
+                  <SelectValue placeholder={t('dashboard.sortBy')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="newest">Mới nhất</SelectItem>
-                  <SelectItem value="rating">Đánh giá cao</SelectItem>
-                  <SelectItem value="downloads">Tải nhiều nhất</SelectItem>
+                  <SelectItem value="newest">{t('dashboard.newest')}</SelectItem>
+                  <SelectItem value="rating">{t('dashboard.highestRated')}</SelectItem>
+                  <SelectItem value="downloads">{t('dashboard.mostDownloaded')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -274,7 +276,7 @@ export default function TemplateMarketplace() {
                 </CardHeader>
                 <CardContent className="pb-2">
                   <p className="text-sm text-muted-foreground line-clamp-2 min-h-[40px]">
-                    {template.description || "Không có mô tả"}
+                    {template.description || t('dashboard.noDescription')}
                   </p>
                   <div className="mt-3 flex items-center gap-4 text-sm text-muted-foreground">
                     {renderStars(Number(template.rating) || 0)}
@@ -283,7 +285,7 @@ export default function TemplateMarketplace() {
                   <div className="mt-2 flex items-center gap-4 text-sm text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Download className="h-3 w-3" />
-                      {template.downloadCount} lượt tải
+                      {template.downloadCount} {t('dashboard.downloads')}
                     </span>
                   </div>
                   {template.tags && template.tags.length > 0 && (
@@ -306,7 +308,7 @@ export default function TemplateMarketplace() {
                     }}
                   >
                     <Eye className="mr-2 h-4 w-4" />
-                    Chi tiết
+                    {t('corporate.details')}
                   </Button>
                   <Button 
                     className="flex-1"
@@ -314,7 +316,7 @@ export default function TemplateMarketplace() {
                     disabled={downloadMutation.isPending}
                   >
                     <Download className="mr-2 h-4 w-4" />
-                    Tải về
+                    {t('dashboard.download')}
                   </Button>
                 </CardFooter>
               </Card>
@@ -322,9 +324,9 @@ export default function TemplateMarketplace() {
           ) : (
             <div className="col-span-full text-center py-12">
               <LayoutDashboard className="mx-auto h-12 w-12 text-muted-foreground" />
-              <h3 className="mt-4 text-lg font-semibold">Chưa có template nào</h3>
+              <h3 className="mt-4 text-lg font-semibold">{t('dashboard.noTemplatesYet')}</h3>
               <p className="text-muted-foreground">
-                Hãy là người đầu tiên publish template lên marketplace!
+                {t('dashboard.beFirstToPublish')}
               </p>
             </div>
           )}
@@ -334,20 +336,20 @@ export default function TemplateMarketplace() {
         <Dialog open={publishDialogOpen} onOpenChange={setPublishDialogOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Publish Template lên Marketplace</DialogTitle>
+              <DialogTitle>{t('dashboard.publishToMarketplace')}</DialogTitle>
               <DialogDescription>
-                Chia sẻ template dashboard của bạn với cộng đồng
+                {t('dashboard.shareWithCommunity')}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Chọn Template</Label>
+                <Label>{t('dashboard.selectTemplate')}</Label>
                 <Select 
                   value={publishForm.templateId.toString()} 
                   onValueChange={(v) => setPublishForm({ ...publishForm, templateId: parseInt(v) })}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Chọn template để publish" />
+                    <SelectValue placeholder={t('dashboard.selectTemplateToPublish')} />
                   </SelectTrigger>
                   <SelectContent>
                     {myTemplates?.filter((t: any) => t.templateType !== "system").map((t: any) => (
@@ -359,24 +361,24 @@ export default function TemplateMarketplace() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Tiêu đề</Label>
+                <Label>{t('dashboard.title')}</Label>
                 <Input
                   value={publishForm.title}
                   onChange={(e) => setPublishForm({ ...publishForm, title: e.target.value })}
-                  placeholder="Tên hiển thị trên marketplace"
+                  placeholder={t('dashboard.displayNameOnMarketplace')}
                 />
               </div>
               <div className="space-y-2">
-                <Label>Mô tả</Label>
+                <Label>{t('common.description')}</Label>
                 <Textarea
                   value={publishForm.description}
                   onChange={(e) => setPublishForm({ ...publishForm, description: e.target.value })}
-                  placeholder="Mô tả về template này..."
+                  placeholder={t('dashboard.describeYourTemplate')}
                   rows={3}
                 />
               </div>
               <div className="space-y-2">
-                <Label>Danh mục</Label>
+                <Label>{t('dashboard.category')}</Label>
                 <Select 
                   value={publishForm.category} 
                   onValueChange={(v) => setPublishForm({ ...publishForm, category: v })}
@@ -389,7 +391,7 @@ export default function TemplateMarketplace() {
                       <SelectItem key={cat.value} value={cat.value}>
                         <div className="flex items-center gap-2">
                           <cat.icon className="h-4 w-4" />
-                          {cat.label}
+                          {t(cat.labelKey)}
                         </div>
                       </SelectItem>
                     ))}
@@ -397,7 +399,7 @@ export default function TemplateMarketplace() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Tags (phân cách bằng dấu phẩy)</Label>
+                <Label>{t('dashboard.tags')}</Label>
                 <Input
                   value={publishForm.tags}
                   onChange={(e) => setPublishForm({ ...publishForm, tags: e.target.value })}
@@ -407,13 +409,13 @@ export default function TemplateMarketplace() {
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setPublishDialogOpen(false)}>
-                Hủy
+                {t('common.cancel')}
               </Button>
               <Button 
                 onClick={handlePublish}
                 disabled={!publishForm.templateId || !publishForm.title || publishMutation.isPending}
               >
-                {publishMutation.isPending ? "Đang publish..." : "Publish"}
+                {publishMutation.isPending ? t('dashboard.publishing') : t('dashboard.publish')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -425,7 +427,7 @@ export default function TemplateMarketplace() {
             <DialogHeader>
               <DialogTitle>{selectedTemplate?.title}</DialogTitle>
               <DialogDescription>
-                Chi tiết template
+                {t('dashboard.templateDetails')}
               </DialogDescription>
             </DialogHeader>
             {selectedTemplate && (
@@ -435,16 +437,16 @@ export default function TemplateMarketplace() {
                   <Badge>{selectedTemplate.category}</Badge>
                   <span className="text-sm text-muted-foreground">v{selectedTemplate.version}</span>
                 </div>
-                <p className="text-sm">{selectedTemplate.description || "Không có mô tả"}</p>
+                <p className="text-sm">{selectedTemplate.description || t('dashboard.noDescription')}</p>
                 <div className="flex items-center gap-4">
                   {renderStars(Number(selectedTemplate.rating) || 0)}
                   <span className="text-sm text-muted-foreground">
-                    ({selectedTemplate.ratingCount} đánh giá)
+                    ({selectedTemplate.ratingCount} {t('dashboard.reviews')})
                   </span>
                 </div>
                 <div className="text-sm text-muted-foreground">
                   <Download className="inline h-4 w-4 mr-1" />
-                  {selectedTemplate.downloadCount} lượt tải
+                  {selectedTemplate.downloadCount} {t('dashboard.downloads')}
                 </div>
                 {selectedTemplate.tags && selectedTemplate.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1">
@@ -457,7 +459,7 @@ export default function TemplateMarketplace() {
             )}
             <DialogFooter>
               <Button variant="outline" onClick={() => setDetailDialogOpen(false)}>
-                Đóng
+                {t('common.close')}
               </Button>
               <Button 
                 onClick={() => {
@@ -469,7 +471,7 @@ export default function TemplateMarketplace() {
                 disabled={downloadMutation.isPending}
               >
                 <Download className="mr-2 h-4 w-4" />
-                Tải về
+                {t('dashboard.download')}
               </Button>
             </DialogFooter>
           </DialogContent>

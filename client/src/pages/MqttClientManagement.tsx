@@ -19,11 +19,13 @@ import {
   Heart, Server, MessageSquare,
   Search, Filter, Link2Off
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 type ConnectionStatus = 'all' | 'ONLINE' | 'OFFLINE' | 'DISCONNECTED' | 'connected' | 'disconnected' | 'error' | 'pending';
 type ApprovalFilter = 'all' | 'PENDING' | 'APPROVED' | 'REJECTED';
 
 export default function MqttClientManagement() {
+  const { t } = useTranslation();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<any>(null);
   const [selectedClient, setSelectedClient] = useState<number | null>(null);
@@ -75,7 +77,7 @@ export default function MqttClientManagement() {
   // MQTT Client Mutations
   const createMutation = trpc.mqttClient.create.useMutation({
     onSuccess: () => {
-      toast.success('Đã tạo MQTT client');
+      toast.success(t('mqtt.clientMgmt.clientCreated'));
       setIsCreateDialogOpen(false);
       resetForm();
       refetchClients();
@@ -85,7 +87,7 @@ export default function MqttClientManagement() {
 
   const updateMutation = trpc.mqttClient.updateSettings.useMutation({
     onSuccess: () => {
-      toast.success('Đã cập nhật client');
+      toast.success(t('mqtt.clientMgmt.clientUpdated'));
       setEditingClient(null);
       resetForm();
       refetchClients();
@@ -95,7 +97,7 @@ export default function MqttClientManagement() {
 
   const deleteMutation = trpc.mqttClient.delete.useMutation({
     onSuccess: () => {
-      toast.success('Đã xóa client');
+      toast.success(t('mqtt.clientMgmt.clientDeleted'));
       refetchClients();
     },
     onError: (error) => toast.error(error.message),
@@ -103,7 +105,7 @@ export default function MqttClientManagement() {
 
   const approveMutation = trpc.mqttClient.approve.useMutation({
     onSuccess: () => {
-      toast.success('Đã phê duyệt thiết bị');
+      toast.success(t('mqtt.clientMgmt.deviceApproved'));
       refetchClients();
       setApproveDialog({ open: false, client: null });
     },
@@ -112,7 +114,7 @@ export default function MqttClientManagement() {
 
   const rejectMutation = trpc.mqttClient.reject.useMutation({
     onSuccess: () => {
-      toast.success('Đã từ chối thiết bị');
+      toast.success(t('mqtt.clientMgmt.deviceRejected'));
       refetchClients();
     },
     onError: (error) => toast.error(error.message),
@@ -120,7 +122,7 @@ export default function MqttClientManagement() {
 
   const updateMappingMutation = trpc.mqttClient.updateMapping.useMutation({
     onSuccess: () => {
-      toast.success('Đã cập nhật mapping');
+      toast.success(t('mqtt.clientMgmt.mappingUpdated'));
       refetchClients();
       setEditingClient(null);
     },
@@ -129,7 +131,7 @@ export default function MqttClientManagement() {
 
   const disconnectMutation = trpc.mqttClient.disconnectAndReset.useMutation({
     onSuccess: () => {
-      toast.success('Đã ngắt kết nối và reset mapping');
+      toast.success(t('mqtt.clientMgmt.disconnectResetDone'));
       refetchClients();
     },
     onError: (error) => toast.error(error.message),
@@ -138,7 +140,7 @@ export default function MqttClientManagement() {
   // Manual Connection Mutations
   const createManualMutation = trpc.manualMapping.create.useMutation({
     onSuccess: () => {
-      toast.success('Đã tạo kết nối thủ công');
+      toast.success(t('mqtt.clientMgmt.manualConnectionCreated'));
       refetchManual();
       setCreateManualDialog(false);
       setManualForm({ machineId: '', ipAddress: '', port: '8080', protocol: 'websocket' });
@@ -148,7 +150,7 @@ export default function MqttClientManagement() {
 
   const deleteManualMutation = trpc.manualMapping.delete.useMutation({
     onSuccess: () => {
-      toast.success('Đã xóa kết nối');
+      toast.success(t('mqtt.clientMgmt.connectionDeleted'));
       refetchManual();
     },
     onError: (error) => toast.error(error.message),
@@ -157,9 +159,9 @@ export default function MqttClientManagement() {
   const testManualMutation = trpc.manualMapping.testConnection.useMutation({
     onSuccess: (result) => {
       if (result.success) {
-        toast.success(`Kết nối thành công (${result.latencyMs}ms)`);
+        toast.success(t('mqtt.clientMgmt.connectionSuccess', { latency: result.latencyMs }));
       } else {
-        toast.error(`Kết nối thất bại: ${result.message}`);
+        toast.error(t('mqtt.clientMgmt.connectionFailed', { message: result.message }));
       }
       refetchManual();
     },
@@ -182,7 +184,7 @@ export default function MqttClientManagement() {
 
   const handleCreate = () => {
     if (!formData.deviceId || !formData.deviceName) {
-      toast.error('Vui lòng nhập Device ID và Device Name');
+      toast.error(t('mqtt.clientMgmt.enterDeviceIdAndName'));
       return;
     }
     createMutation.mutate({
@@ -287,35 +289,35 @@ export default function MqttClientManagement() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
-              Quản lý MQTT Clients
+              {t('mqtt.clientMgmt.title')}
               {pendingCount > 0 && (
                 <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
-                  {pendingCount} chờ duyệt
+                  {pendingCount} {t('mqtt.clientMgmt.pendingApproval')}
                 </Badge>
               )}
             </h1>
-            <p className="text-muted-foreground">Quản lý thiết bị MQTT, kết nối thủ công và theo dõi trạng thái</p>
+            <p className="text-muted-foreground">{t('mqtt.clientMgmt.description')}</p>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => { refetchClients(); refetchManual(); }}>
               <RefreshCw className="w-4 h-4 mr-2" />
-              Làm mới
+              {t('common.refresh')}
             </Button>
             <Button variant="outline" onClick={() => setCreateManualDialog(true)}>
               <Server className="w-4 h-4 mr-2" />
-              Thêm kết nối thủ công
+              {t('mqtt.clientMgmt.addManualConnection')}
             </Button>
             <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
               <DialogTrigger asChild>
                 <Button>
                   <Plus className="w-4 h-4 mr-2" />
-                  Thêm MQTT Client
+                  {t('mqtt.clientMgmt.addClient')}
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Thêm MQTT Client</DialogTitle>
-                  <DialogDescription>Tạo client thủ công để kết nối với hệ thống</DialogDescription>
+                  <DialogTitle>{t('mqtt.addClient')}</DialogTitle>
+                  <DialogDescription>{t('mqtt.clientMgmt.createClientDesc')}</DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                   <div className="grid gap-2">
@@ -323,7 +325,7 @@ export default function MqttClientManagement() {
                     <Input
                       value={formData.deviceId}
                       onChange={(e) => setFormData({ ...formData, deviceId: e.target.value })}
-                      placeholder="Nhập Device ID (unique)"
+                      placeholder={t('mqtt.clientMgmt.enterDeviceId')}
                     />
                   </div>
                   <div className="grid gap-2">
@@ -331,7 +333,7 @@ export default function MqttClientManagement() {
                     <Input
                       value={formData.deviceName}
                       onChange={(e) => setFormData({ ...formData, deviceName: e.target.value })}
-                      placeholder="Tên hiển thị của thiết bị"
+                      placeholder={t('mqtt.clientMgmt.enterDeviceName')}
                     />
                   </div>
                   <div className="grid gap-2">
@@ -352,16 +354,16 @@ export default function MqttClientManagement() {
                     </Select>
                   </div>
                   <div className="grid gap-2">
-                    <Label>Công trạm</Label>
+                    <Label>{t('mqtt.clientMgmt.workstation')}</Label>
                     <Select
                       value={formData.stationId?.toString() || "none"}
                       onValueChange={(value) => setFormData({ ...formData, stationId: value === "none" ? null : parseInt(value) })}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Chọn công trạm" />
+                        <SelectValue placeholder={t('mqtt.clientMgmt.selectWorkstation')} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">Không chọn</SelectItem>
+                        <SelectItem value="none">{t('mqtt.clientMgmt.noSelection')}</SelectItem>
                         {stations?.map((station) => (
                           <SelectItem key={station.id} value={station.id.toString()}>
                             {station.name} ({station.code})
@@ -371,21 +373,21 @@ export default function MqttClientManagement() {
                     </Select>
                   </div>
                   <div className="flex items-center justify-between">
-                    <Label>Nhận NG Alerts</Label>
+                    <Label>{t('mqtt.clientMgmt.receiveNgAlerts')}</Label>
                     <Switch
                       checked={formData.receiveNGAlerts}
                       onCheckedChange={(checked) => setFormData({ ...formData, receiveNGAlerts: checked })}
                     />
                   </div>
                   <div className="flex items-center justify-between">
-                    <Label>Nhận Daily Summary</Label>
+                    <Label>{t('mqtt.clientMgmt.receiveDailySummary')}</Label>
                     <Switch
                       checked={formData.receiveDailySummary}
                       onCheckedChange={(checked) => setFormData({ ...formData, receiveDailySummary: checked })}
                     />
                   </div>
                   <div className="flex items-center justify-between">
-                    <Label>Nhận Weekly Summary</Label>
+                    <Label>{t('mqtt.clientMgmt.receiveWeeklySummary')}</Label>
                     <Switch
                       checked={formData.receiveWeeklySummary}
                       onCheckedChange={(checked) => setFormData({ ...formData, receiveWeeklySummary: checked })}
@@ -393,9 +395,9 @@ export default function MqttClientManagement() {
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Hủy</Button>
+                  <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>{t('common.cancel')}</Button>
                   <Button onClick={handleCreate} disabled={createMutation.isPending}>
-                    {createMutation.isPending ? 'Đang tạo...' : 'Tạo Client'}
+                    {createMutation.isPending ? t('mqtt.clientMgmt.creating') : t('mqtt.clientMgmt.createClient')}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -410,7 +412,7 @@ export default function MqttClientManagement() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
-                  placeholder="Tìm kiếm theo tên, Device ID, IP..."
+                  placeholder={t('mqtt.clientMgmt.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10"
@@ -419,10 +421,10 @@ export default function MqttClientManagement() {
               <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as ConnectionStatus)}>
                 <SelectTrigger className="w-[180px]">
                   <Wifi className="w-4 h-4 mr-2" />
-                  <SelectValue placeholder="Trạng thái kết nối" />
+                  <SelectValue placeholder={t('mqtt.clientMgmt.connectionStatus')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả trạng thái</SelectItem>
+                  <SelectItem value="all">{t('mqtt.clientMgmt.allStatuses')}</SelectItem>
                   <SelectItem value="ONLINE">Online</SelectItem>
                   <SelectItem value="OFFLINE">Offline</SelectItem>
                   <SelectItem value="DISCONNECTED">Disconnected</SelectItem>
@@ -431,13 +433,13 @@ export default function MqttClientManagement() {
               <Select value={approvalFilter} onValueChange={(v) => setApprovalFilter(v as ApprovalFilter)}>
                 <SelectTrigger className="w-[180px]">
                   <Filter className="w-4 h-4 mr-2" />
-                  <SelectValue placeholder="Trạng thái duyệt" />
+                  <SelectValue placeholder={t('mqtt.clientMgmt.approvalStatus')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả</SelectItem>
-                  <SelectItem value="PENDING">Chờ duyệt</SelectItem>
-                  <SelectItem value="APPROVED">Đã duyệt</SelectItem>
-                  <SelectItem value="REJECTED">Từ chối</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
+                  <SelectItem value="PENDING">{t('mqtt.clientMgmt.pendingFilter')}</SelectItem>
+                  <SelectItem value="APPROVED">{t('mqtt.clientMgmt.approvedFilter')}</SelectItem>
+                  <SelectItem value="REJECTED">{t('mqtt.clientMgmt.rejectedFilter')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -453,15 +455,15 @@ export default function MqttClientManagement() {
             </TabsTrigger>
             <TabsTrigger value="manual" className="gap-2">
               <Server className="w-4 h-4" />
-              Kết nối thủ công ({manualConnections.length})
+              {t('mqtt.clientMgmt.manualConnections')} ({manualConnections.length})
             </TabsTrigger>
             <TabsTrigger value="health" className="gap-2">
               <Heart className="w-4 h-4" />
-              Sức khỏe
+              {t('mqtt.clientMgmt.health')}
             </TabsTrigger>
             <TabsTrigger value="history" className="gap-2">
               <History className="w-4 h-4" />
-              Lịch sử
+              {t('mqtt.clientMgmt.historyTab')}
             </TabsTrigger>
           </TabsList>
 
@@ -469,21 +471,21 @@ export default function MqttClientManagement() {
           <TabsContent value="clients">
             <Card>
               <CardHeader>
-                <CardTitle>Danh sách MQTT Clients</CardTitle>
-                <CardDescription>Thiết bị Android/iOS kết nối qua MQTT protocol</CardDescription>
+                <CardTitle>{t('mqtt.clientMgmt.clientList')}</CardTitle>
+                <CardDescription>{t('mqtt.clientMgmt.deviceDesc')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Thiết bị</TableHead>
+                      <TableHead>{t('mqtt.clientMgmt.device')}</TableHead>
                       <TableHead>Device ID</TableHead>
-                      <TableHead>Kết nối</TableHead>
-                      <TableHead>Phê duyệt</TableHead>
-                      <TableHead>Công trạm</TableHead>
-                      <TableHead>Thông báo</TableHead>
+                      <TableHead>{t('mqtt.clientMgmt.connection')}</TableHead>
+                      <TableHead>{t('mqtt.clientMgmt.approvalHeader')}</TableHead>
+                      <TableHead>{t('mqtt.clientMgmt.workstationHeader')}</TableHead>
+                      <TableHead>{t('mqtt.clientMgmt.notifications')}</TableHead>
                       <TableHead>Last Seen</TableHead>
-                      <TableHead className="text-right">Thao tác</TableHead>
+                      <TableHead className="text-right">{t('common.actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -533,7 +535,7 @@ export default function MqttClientManagement() {
                                     setApproveDialog({ open: true, client });
                                   }}
                                   className="text-green-400 hover:text-green-300"
-                                  title="Phê duyệt"
+                                  title={t('mqtt.clientMgmt.approve')}
                                 >
                                   <CheckCircle className="w-4 h-4" />
                                 </Button>
@@ -542,7 +544,7 @@ export default function MqttClientManagement() {
                                   size="sm"
                                   onClick={() => rejectMutation.mutate({ id: client.id })}
                                   className="text-red-400 hover:text-red-300"
-                                  title="Từ chối"
+                                  title={t('mqtt.clientMgmt.reject')}
                                 >
                                   <XCircle className="w-4 h-4" />
                                 </Button>
@@ -568,7 +570,7 @@ export default function MqttClientManagement() {
                                       receiveWeeklySummary: client.receiveWeeklySummary,
                                     });
                                   }}
-                                  title="Chỉnh sửa"
+                                  title={t('common.edit')}
                                 >
                                   <Settings className="w-4 h-4" />
                                 </Button>
@@ -577,7 +579,7 @@ export default function MqttClientManagement() {
                                   size="sm"
                                   onClick={() => disconnectMutation.mutate({ id: client.id })}
                                   className="text-orange-400 hover:text-orange-300"
-                                  title="Ngắt kết nối & Reset"
+                                  title={t('mqtt.clientMgmt.disconnectReset')}
                                 >
                                   <Link2Off className="w-4 h-4" />
                                 </Button>
@@ -589,11 +591,11 @@ export default function MqttClientManagement() {
                               size="sm"
                               className="text-destructive"
                               onClick={() => {
-                                if (confirm('Xác nhận xóa client này?')) {
+                                if (confirm(t('mqtt.clientMgmt.confirmDeleteClient'))) {
                                   deleteMutation.mutate({ id: client.id });
                                 }
                               }}
-                              title="Xóa"
+                              title={t('common.delete')}
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
@@ -604,7 +606,7 @@ export default function MqttClientManagement() {
                     {filteredClients.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                          {clients.length === 0 ? 'Chưa có MQTT client nào' : 'Không tìm thấy client phù hợp'}
+                          {clients.length === 0 ? t('mqtt.clientMgmt.noClients') : t('mqtt.clientMgmt.noMatchingClients')}
                         </TableCell>
                       </TableRow>
                     )}
@@ -618,20 +620,20 @@ export default function MqttClientManagement() {
           <TabsContent value="manual">
             <Card>
               <CardHeader>
-                <CardTitle>Kết nối thủ công</CardTitle>
-                <CardDescription>Kết nối trực tiếp tới máy qua IP/Port</CardDescription>
+                <CardTitle>{t('mqtt.clientMgmt.manualConnections')}</CardTitle>
+                <CardDescription>{t('mqtt.clientMgmt.manualConnectionsDesc')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Máy</TableHead>
+                      <TableHead>{t('mqtt.clientMgmt.machine')}</TableHead>
                       <TableHead>IP Address</TableHead>
                       <TableHead>Port</TableHead>
                       <TableHead>Protocol</TableHead>
-                      <TableHead>Trạng thái</TableHead>
+                      <TableHead>{t('common.status')}</TableHead>
                       <TableHead>Retry</TableHead>
-                      <TableHead className="text-right">Thao tác</TableHead>
+                      <TableHead className="text-right">{t('common.actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -659,7 +661,7 @@ export default function MqttClientManagement() {
                               size="sm"
                               onClick={() => testManualMutation.mutate({ id: conn.id })}
                               disabled={testManualMutation.isPending}
-                              title="Test kết nối"
+                              title={t('mqtt.testConnection')}
                             >
                               <Wifi className="w-4 h-4" />
                             </Button>
@@ -668,7 +670,7 @@ export default function MqttClientManagement() {
                               size="sm"
                               onClick={() => deleteManualMutation.mutate({ id: conn.id })}
                               className="text-red-400 hover:text-red-300"
-                              title="Xóa"
+                              title={t('common.delete')}
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
@@ -679,7 +681,7 @@ export default function MqttClientManagement() {
                     {manualConnections.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                          Chưa có kết nối thủ công nào
+                          {t('mqtt.clientMgmt.noManualConnections')}
                         </TableCell>
                       </TableRow>
                     )}
@@ -738,7 +740,7 @@ export default function MqttClientManagement() {
               {(!clientsHealth || clientsHealth.length === 0) && (
                 <Card className="col-span-full">
                   <CardContent className="py-8 text-center text-muted-foreground">
-                    Chưa có dữ liệu sức khỏe clients
+                    {t('mqtt.clientMgmt.noHealthData')}
                   </CardContent>
                 </Card>
               )}
@@ -750,7 +752,7 @@ export default function MqttClientManagement() {
             <div className="grid gap-4 lg:grid-cols-3">
               <Card className="lg:col-span-1">
                 <CardHeader>
-                  <CardTitle className="text-base">Chọn Client</CardTitle>
+                  <CardTitle className="text-base">{t('mqtt.clientMgmt.selectClient')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2 max-h-96 overflow-auto">
@@ -777,9 +779,9 @@ export default function MqttClientManagement() {
 
               <Card className="lg:col-span-2">
                 <CardHeader>
-                  <CardTitle className="text-base">Lịch sử kết nối</CardTitle>
+                  <CardTitle className="text-base">{t('mqtt.clientMgmt.connectionHistory')}</CardTitle>
                   <CardDescription>
-                    {selectedClient ? `Client ID: ${selectedClient}` : 'Chọn client để xem lịch sử'}
+                    {selectedClient ? `Client ID: ${selectedClient}` : t('mqtt.clientMgmt.selectClientForHistory')}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -808,9 +810,9 @@ export default function MqttClientManagement() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Thời gian</TableHead>
-                        <TableHead>Loại</TableHead>
-                        <TableHead>Trạng thái</TableHead>
+                        <TableHead>{t('mqtt.clientMgmt.timeHeader')}</TableHead>
+                        <TableHead>{t('mqtt.clientMgmt.typeHeader')}</TableHead>
+                        <TableHead>{t('common.status')}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -830,7 +832,7 @@ export default function MqttClientManagement() {
                       {(!connectionHistory || connectionHistory.length === 0) && (
                         <TableRow>
                           <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
-                            {selectedClient ? 'Chưa có lịch sử' : 'Chọn client để xem lịch sử'}
+                            {selectedClient ? t('mqtt.clientMgmt.noHistory') : t('mqtt.clientMgmt.selectClientForHistory')}
                           </TableCell>
                         </TableRow>
                       )}
@@ -846,20 +848,20 @@ export default function MqttClientManagement() {
         <Dialog open={approveDialog.open} onOpenChange={(open) => setApproveDialog({ open, client: open ? approveDialog.client : null })}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Phê duyệt thiết bị</DialogTitle>
+              <DialogTitle>{t('mqtt.clientMgmt.approveDevice')}</DialogTitle>
               <DialogDescription>
-                Phê duyệt thiết bị "{approveDialog.client?.deviceName || approveDialog.client?.deviceId}" để nhận thông báo
+                {t('mqtt.clientMgmt.approveDeviceDesc', { device: approveDialog.client?.deviceName || approveDialog.client?.deviceId })}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Công trạm (tùy chọn)</Label>
+                <Label>{t('mqtt.clientMgmt.workstationOptional')}</Label>
                 <Select value={approveForm.stationId} onValueChange={(v) => setApproveForm(f => ({ ...f, stationId: v }))}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Chọn công trạm" />
+                    <SelectValue placeholder={t('mqtt.clientMgmt.selectWorkstation')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Không chọn</SelectItem>
+                    <SelectItem value="none">{t('mqtt.clientMgmt.noSelection')}</SelectItem>
                     {stations.map(station => (
                       <SelectItem key={station.id} value={station.id.toString()}>{station.name}</SelectItem>
                     ))}
@@ -867,20 +869,20 @@ export default function MqttClientManagement() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Loại mapping</Label>
+                <Label>{t('mqtt.clientMgmt.mappingType')}</Label>
                 <Select value={approveForm.mappingType} onValueChange={(v) => setApproveForm(f => ({ ...f, mappingType: v as 'AUTO' | 'MANUAL' }))}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="MANUAL">Thủ công - Giữ mapping khi reconnect</SelectItem>
-                    <SelectItem value="AUTO">Tự động - Cho phép reset mapping</SelectItem>
+                    <SelectItem value="MANUAL">{t('mqtt.clientMgmt.manualMapping')}</SelectItem>
+                    <SelectItem value="AUTO">{t('mqtt.clientMgmt.autoMapping')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setApproveDialog({ open: false, client: null })}>Hủy</Button>
+              <Button variant="outline" onClick={() => setApproveDialog({ open: false, client: null })}>{t('common.cancel')}</Button>
               <Button 
                 onClick={() => {
                   if (approveDialog.client) {
@@ -893,7 +895,7 @@ export default function MqttClientManagement() {
                 }}
                 disabled={approveMutation.isPending}
               >
-                Phê duyệt
+                {t('mqtt.clientMgmt.approve')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -903,8 +905,8 @@ export default function MqttClientManagement() {
         <Dialog open={!!editingClient} onOpenChange={(open) => !open && setEditingClient(null)}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Chỉnh sửa Client</DialogTitle>
-              <DialogDescription>Cập nhật cài đặt cho {editingClient?.deviceName}</DialogDescription>
+              <DialogTitle>{t('mqtt.editClient')}</DialogTitle>
+              <DialogDescription>{t('mqtt.clientMgmt.updateSettingsFor')}</DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
@@ -915,7 +917,7 @@ export default function MqttClientManagement() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label>Công trạm</Label>
+                <Label>{t('mqtt.clientMgmt.workstation')}</Label>
                 <Select
                   value={formData.stationId?.toString() || "none"}
                   onValueChange={(value) => {
@@ -931,10 +933,10 @@ export default function MqttClientManagement() {
                   }}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Chọn công trạm" />
+                    <SelectValue placeholder={t('mqtt.clientMgmt.selectWorkstation')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Không chọn</SelectItem>
+                    <SelectItem value="none">{t('mqtt.clientMgmt.noSelection')}</SelectItem>
                     {stations?.map((station) => (
                       <SelectItem key={station.id} value={station.id.toString()}>
                         {station.name}
@@ -944,21 +946,21 @@ export default function MqttClientManagement() {
                 </Select>
               </div>
               <div className="flex items-center justify-between">
-                <Label>Nhận NG Alerts</Label>
+                <Label>{t('mqtt.clientMgmt.receiveNGAlerts')}</Label>
                 <Switch
                   checked={formData.receiveNGAlerts}
                   onCheckedChange={(checked) => setFormData({ ...formData, receiveNGAlerts: checked })}
                 />
               </div>
               <div className="flex items-center justify-between">
-                <Label>Nhận Daily Summary</Label>
+                <Label>{t('mqtt.clientMgmt.receiveDailySummary')}</Label>
                 <Switch
                   checked={formData.receiveDailySummary}
                   onCheckedChange={(checked) => setFormData({ ...formData, receiveDailySummary: checked })}
                 />
               </div>
               <div className="flex items-center justify-between">
-                <Label>Nhận Weekly Summary</Label>
+                <Label>{t('mqtt.clientMgmt.receiveWeeklySummary')}</Label>
                 <Switch
                   checked={formData.receiveWeeklySummary}
                   onCheckedChange={(checked) => setFormData({ ...formData, receiveWeeklySummary: checked })}
@@ -966,9 +968,9 @@ export default function MqttClientManagement() {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setEditingClient(null)}>Hủy</Button>
+              <Button variant="outline" onClick={() => setEditingClient(null)}>{t('common.cancel')}</Button>
               <Button onClick={handleUpdate} disabled={updateMutation.isPending}>
-                {updateMutation.isPending ? 'Đang lưu...' : 'Lưu thay đổi'}
+                {updateMutation.isPending ? t('mqtt.clientMgmt.saving') : t('mqtt.clientMgmt.saveChanges')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -978,15 +980,15 @@ export default function MqttClientManagement() {
         <Dialog open={createManualDialog} onOpenChange={setCreateManualDialog}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Thêm kết nối thủ công</DialogTitle>
-              <DialogDescription>Tạo kết nối trực tiếp tới máy qua IP</DialogDescription>
+              <DialogTitle>{t('mqtt.clientMgmt.addManualConnection')}</DialogTitle>
+              <DialogDescription>{t('mqtt.clientMgmt.createManualDesc')}</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Máy</Label>
+                <Label>{t('mqtt.clientMgmt.machine')}</Label>
                 <Select value={manualForm.machineId} onValueChange={(v) => setManualForm(f => ({ ...f, machineId: v }))}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Chọn máy" />
+                    <SelectValue placeholder={t('mqtt.clientMgmt.selectMachine')} />
                   </SelectTrigger>
                   <SelectContent>
                     {machines.map(machine => (
@@ -1028,7 +1030,7 @@ export default function MqttClientManagement() {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setCreateManualDialog(false)}>Hủy</Button>
+              <Button variant="outline" onClick={() => setCreateManualDialog(false)}>{t('common.cancel')}</Button>
               <Button 
                 onClick={() => {
                   if (manualForm.machineId && manualForm.ipAddress) {
@@ -1042,7 +1044,7 @@ export default function MqttClientManagement() {
                 }}
                 disabled={!manualForm.machineId || !manualForm.ipAddress || createManualMutation.isPending}
               >
-                Tạo kết nối
+                {t('mqtt.clientMgmt.createConnection')}
               </Button>
             </DialogFooter>
           </DialogContent>

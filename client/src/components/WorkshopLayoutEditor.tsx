@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useMemo } from "react";
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -76,6 +77,7 @@ export default function WorkshopLayoutEditor({
   onLayoutChange,
 }: WorkshopLayoutEditorProps) {
   const [zoom, setZoom] = useState(1);
+  const { t } = useTranslation();
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
@@ -100,7 +102,7 @@ export default function WorkshopLayoutEditor({
   // Mutations
   const addPositionMutation = trpc.layout.addMachinePosition.useMutation({
     onSuccess: () => {
-      toast.success("Đã thêm máy vào layout");
+      toast.success(t('machines.machineAddedToLayout'));
       refetchLayout();
       onLayoutChange?.();
     },
@@ -117,7 +119,7 @@ export default function WorkshopLayoutEditor({
 
   const removePositionMutation = trpc.layout.removeMachinePosition.useMutation({
     onSuccess: () => {
-      toast.success("Đã xóa máy khỏi layout");
+      toast.success(t('machines.machineRemovedFromLayout'));
       refetchLayout();
       onLayoutChange?.();
     },
@@ -266,7 +268,7 @@ export default function WorkshopLayoutEditor({
 
   // Remove machine from layout
   const handleRemoveMachine = (positionId: number) => {
-    if (confirm("Bạn có chắc muốn xóa máy này khỏi layout?")) {
+    if (confirm(t('machines.confirmRemoveMachine'))) {
       removePositionMutation.mutate({ id: positionId });
       setSelectedMachine(null);
     }
@@ -290,7 +292,7 @@ export default function WorkshopLayoutEditor({
       <Card className="glass-card">
         <CardContent className="py-12 text-center">
           <Layers className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-          <p className="text-muted-foreground">Chọn hoặc tạo layout để bắt đầu chỉnh sửa</p>
+          <p className="text-muted-foreground">{t('machines.selectOrCreateLayout')}</p>
         </CardContent>
       </Card>
     );
@@ -305,7 +307,7 @@ export default function WorkshopLayoutEditor({
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={() => setIsAddMachineOpen(true)}>
                 <Plus className="h-4 w-4 mr-1" />
-                Thêm máy
+                {t('machines.addMachine')}
               </Button>
               {selectedMachine && (
                 <>
@@ -315,7 +317,7 @@ export default function WorkshopLayoutEditor({
                     onClick={() => setIsEditDialogOpen(true)}
                   >
                     <Edit className="h-4 w-4 mr-1" />
-                    Chỉnh sửa
+                    {t('common.edit')}
                   </Button>
                   <Button
                     variant="outline"
@@ -327,7 +329,7 @@ export default function WorkshopLayoutEditor({
                     }
                   >
                     <Trash2 className="h-4 w-4 mr-1" />
-                    Xóa
+                    {t('common.delete')}
                   </Button>
                 </>
               )}
@@ -449,10 +451,10 @@ export default function WorkshopLayoutEditor({
                         machine.operationStatus === 'error' ? 'bg-white' :
                         'bg-white/70'
                       }`} />
-                      {machine.operationStatus === 'running' ? 'Chạy' :
-                       machine.operationStatus === 'stopped' ? 'Dừng' :
-                       machine.operationStatus === 'error' ? 'Lỗi' :
-                       machine.operationStatus === 'maintenance' ? 'Bảo trì' : 'N/A'}
+                      {machine.operationStatus === 'running' ? t('machines.running') :
+                       machine.operationStatus === 'stopped' ? t('machines.stopped') :
+                       machine.operationStatus === 'error' ? t('machines.error') :
+                       machine.operationStatus === 'maintenance' ? t('machines.maintenance') : 'N/A'}
                     </div>
 
                     {/* Stats Overlay */}
@@ -544,7 +546,7 @@ export default function WorkshopLayoutEditor({
             {/* Controls hint */}
             <div className="absolute bottom-4 left-4 text-xs text-muted-foreground bg-card/80 backdrop-blur px-3 py-2 rounded-lg">
               <Move className="h-3 w-3 inline mr-1" />
-              Kéo máy để di chuyển • Cuộn để zoom • Click để chọn
+              {t('machines.dragToMoveHint')}
             </div>
           </div>
         </CardContent>
@@ -554,16 +556,16 @@ export default function WorkshopLayoutEditor({
       <Dialog open={isAddMachineOpen} onOpenChange={setIsAddMachineOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Thêm máy vào Layout</DialogTitle>
+            <DialogTitle>{t('machines.addMachineToLayout')}</DialogTitle>
             <DialogDescription>
-              Chọn máy để thêm vào layout hiện tại
+              {t('machines.addMachineToLayoutDescription')}
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[400px]">
             <div className="space-y-2">
               {availableMachines.length === 0 ? (
                 <p className="text-center text-muted-foreground py-4">
-                  Tất cả máy đã được thêm vào layout
+                  {t('machines.allMachinesAdded')}
                 </p>
               ) : (
                 availableMachines.map((machine) => (
@@ -594,7 +596,7 @@ export default function WorkshopLayoutEditor({
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Chỉnh sửa vị trí máy</DialogTitle>
+            <DialogTitle>{t('machines.editMachinePosition')}</DialogTitle>
             <DialogDescription>
               {selectedMachine?.name} ({selectedMachine?.code})
             </DialogDescription>
@@ -602,7 +604,7 @@ export default function WorkshopLayoutEditor({
           {selectedMachine?.position && (
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Vị trí X</Label>
+                <Label>{t('machines.positionX')}</Label>
                 <Input
                   type="number"
                   value={selectedMachine.position.positionX}
@@ -618,7 +620,7 @@ export default function WorkshopLayoutEditor({
                 />
               </div>
               <div className="space-y-2">
-                <Label>Vị trí Y</Label>
+                <Label>{t('machines.positionY')}</Label>
                 <Input
                   type="number"
                   value={selectedMachine.position.positionY}
@@ -634,7 +636,7 @@ export default function WorkshopLayoutEditor({
                 />
               </div>
               <div className="space-y-2">
-                <Label>Chiều rộng</Label>
+                <Label>{t('machines.width')}</Label>
                 <Input
                   type="number"
                   value={selectedMachine.position.width}
@@ -650,7 +652,7 @@ export default function WorkshopLayoutEditor({
                 />
               </div>
               <div className="space-y-2">
-                <Label>Chiều cao</Label>
+                <Label>{t('machines.height')}</Label>
                 <Input
                   type="number"
                   value={selectedMachine.position.height}
@@ -666,7 +668,7 @@ export default function WorkshopLayoutEditor({
                 />
               </div>
               <div className="space-y-2">
-                <Label>Góc xoay (độ)</Label>
+                <Label>{t('machines.rotationAngle')}</Label>
                 <Input
                   type="number"
                   value={selectedMachine.position.rotation || 0}
@@ -685,7 +687,7 @@ export default function WorkshopLayoutEditor({
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={() => {
@@ -703,7 +705,7 @@ export default function WorkshopLayoutEditor({
               }}
               disabled={updatePositionMutation.isPending}
             >
-              {updatePositionMutation.isPending ? "Đang lưu..." : "Lưu thay đổi"}
+              {updatePositionMutation.isPending ? t('common.saving') : t('common.saveChanges')}
             </Button>
           </DialogFooter>
         </DialogContent>

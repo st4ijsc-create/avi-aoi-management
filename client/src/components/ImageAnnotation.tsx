@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
@@ -101,6 +102,7 @@ export default function ImageAnnotation({
   const [textPosition, setTextPosition] = useState<Point | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  const { t } = useTranslation();
 
   // Load image
   useEffect(() => {
@@ -110,7 +112,7 @@ export default function ImageAnnotation({
       setImage(img);
     };
     img.onerror = () => {
-      toast.error('Không thể tải hình ảnh');
+      toast.error(t('annotation.cannotLoadImage'));
     };
     img.src = imageUrl;
   }, [imageUrl]);
@@ -417,9 +419,9 @@ export default function ImageAnnotation({
     setIsSaving(true);
     try {
       await onSave(annotations);
-      toast.success('Đã lưu annotations');
+      toast.success(t('annotation.saved'));
     } catch (error) {
-      toast.error('Lỗi khi lưu annotations');
+      toast.error(t('annotation.saveError'));
     } finally {
       setIsSaving(false);
     }
@@ -478,12 +480,12 @@ export default function ImageAnnotation({
   }, [historyIndex, selectedAnnotationId, textPosition, annotations]);
 
   const tools = [
-    { id: 'select' as const, icon: MousePointer, label: 'Chọn' },
-    { id: 'rectangle' as const, icon: Square, label: 'Hình chữ nhật' },
-    { id: 'circle' as const, icon: Circle, label: 'Hình tròn' },
-    { id: 'arrow' as const, icon: ArrowRight, label: 'Mũi tên' },
-    { id: 'freehand' as const, icon: Pencil, label: 'Vẽ tự do' },
-    { id: 'text' as const, icon: Type, label: 'Văn bản' },
+    { id: 'select' as const, icon: MousePointer, label: t('annotation.select') },
+    { id: 'rectangle' as const, icon: Square, label: t('annotation.rectangle') },
+    { id: 'circle' as const, icon: Circle, label: t('annotation.circle') },
+    { id: 'arrow' as const, icon: ArrowRight, label: t('annotation.arrow') },
+    { id: 'freehand' as const, icon: Pencil, label: t('annotation.freehand') },
+    { id: 'text' as const, icon: Type, label: t('annotation.text') },
   ];
 
   return (
@@ -528,7 +530,7 @@ export default function ImageAnnotation({
 
           {/* Line Width */}
           <div className="flex items-center gap-2 border-r pr-2 min-w-[120px]">
-            <Label className="text-xs whitespace-nowrap">Độ dày:</Label>
+            <Label className="text-xs whitespace-nowrap">{t('annotation.lineWidth')}:</Label>
             <Slider
               value={[lineWidth]}
               onValueChange={([value]) => setLineWidth(value)}
@@ -554,7 +556,7 @@ export default function ImageAnnotation({
                     <ZoomOut className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Thu nhỏ</TooltipContent>
+                <TooltipContent>{t('annotation.zoomOut')}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
             <span className="text-xs w-12 text-center">{Math.round(zoom * 100)}%</span>
@@ -570,7 +572,7 @@ export default function ImageAnnotation({
                     <ZoomIn className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Phóng to</TooltipContent>
+                <TooltipContent>{t('annotation.zoomIn')}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </div>
@@ -589,7 +591,7 @@ export default function ImageAnnotation({
                     <Undo2 className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Hoàn tác (Ctrl+Z)</TooltipContent>
+                <TooltipContent>{t('annotation.undo')}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
             <TooltipProvider>
@@ -604,7 +606,7 @@ export default function ImageAnnotation({
                     <Redo2 className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Làm lại (Ctrl+Y)</TooltipContent>
+                <TooltipContent>{t('annotation.redo')}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
             <TooltipProvider>
@@ -619,7 +621,7 @@ export default function ImageAnnotation({
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Xóa đã chọn (Delete)</TooltipContent>
+                <TooltipContent>{t('annotation.deleteSelected')}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </div>
@@ -642,10 +644,10 @@ export default function ImageAnnotation({
                     <TooltipTrigger asChild>
                       <Button variant="outline" size="sm" className="gap-1">
                         <Wand2 className="h-4 w-4" />
-                        AI Phân tích
+                        AI {t('annotation.aiAnalysis')}
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>AI tự động phát hiện và gợi ý annotation</TooltipContent>
+                    <TooltipContent>{t('annotation.aiTooltip')}</TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               }
@@ -661,7 +663,7 @@ export default function ImageAnnotation({
                     <Download className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Tải ảnh đã đánh dấu</TooltipContent>
+                <TooltipContent>{t('annotation.downloadAnnotated')}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
             <Button
@@ -672,7 +674,7 @@ export default function ImageAnnotation({
               className="gap-1"
             >
               <Save className="h-4 w-4" />
-              {isSaving ? 'Đang lưu...' : 'Lưu (Ctrl+S)'}
+              {isSaving ? t('annotation.saving') : t('annotation.save')}
             </Button>
             {onClose && (
               <Button variant="ghost" size="icon" onClick={onClose}>
@@ -715,13 +717,13 @@ export default function ImageAnnotation({
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <Card className="w-80">
             <CardHeader>
-              <CardTitle className="text-lg">Thêm văn bản</CardTitle>
+              <CardTitle className="text-lg">{t('annotation.addText')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <Textarea
                 value={textInput}
                 onChange={(e) => setTextInput(e.target.value)}
-                placeholder="Nhập văn bản..."
+                placeholder={t('annotation.enterText')}
                 autoFocus
               />
               <div className="flex justify-end gap-2">
@@ -732,10 +734,10 @@ export default function ImageAnnotation({
                     setTextInput('');
                   }}
                 >
-                  Hủy
+                  {t('common.cancel')}
                 </Button>
                 <Button onClick={handleAddText} disabled={!textInput.trim()}>
-                  Thêm
+                  {t('annotation.add')}
                 </Button>
               </div>
             </CardContent>
@@ -745,7 +747,7 @@ export default function ImageAnnotation({
 
       {/* Annotation count */}
       <div className="px-4 py-2 border-t bg-muted/50 text-sm text-muted-foreground">
-        {annotations.length} annotation(s) | {selectedAnnotationId ? 'Đã chọn 1' : 'Chưa chọn'}
+        {annotations.length} annotation(s) | {selectedAnnotationId ? t('annotation.oneSelected') : t('annotation.noneSelected')}
       </div>
     </div>
   );

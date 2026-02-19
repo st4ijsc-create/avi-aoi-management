@@ -29,8 +29,10 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
+import { useTranslation } from 'react-i18next';
 
 export default function SessionManagement() {
+  const { t } = useTranslation();
   const [revokeSessionId, setRevokeSessionId] = useState<number | null>(null);
   const [showRevokeAllDialog, setShowRevokeAllDialog] = useState(false);
 
@@ -38,21 +40,21 @@ export default function SessionManagement() {
   
   const revokeMutation = trpc.user.revokeSession.useMutation({
     onSuccess: () => {
-      toast.success("Đã đăng xuất phiên thành công");
+      toast.success(t('session.logoutSuccess'));
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message || "Không thể đăng xuất phiên");
+      toast.error(error.message || t('session.logoutError'));
     },
   });
 
   const revokeAllMutation = trpc.user.revokeAllSessions.useMutation({
     onSuccess: () => {
-      toast.success("Đã đăng xuất tất cả các phiên khác");
+      toast.success(t('session.logoutAllSuccess'));
       refetch();
     },
     onError: (error) => {
-      toast.error(error.message || "Không thể đăng xuất các phiên");
+      toast.error(error.message || t('session.logoutAllError'));
     },
   });
 
@@ -85,15 +87,15 @@ export default function SessionManagement() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Quản lý phiên đăng nhập</h1>
+            <h1 className="text-2xl font-bold">{t('session.title')}</h1>
             <p className="text-muted-foreground">
-              Xem và quản lý các thiết bị đang đăng nhập vào tài khoản của bạn
+              {t('session.description')}
             </p>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => refetch()}>
               <RefreshCw className="h-4 w-4 mr-2" />
-              Làm mới
+              {t('common.refresh')}
             </Button>
             {sessions && sessions.length > 1 && (
               <Button 
@@ -101,7 +103,7 @@ export default function SessionManagement() {
                 onClick={() => setShowRevokeAllDialog(true)}
               >
                 <LogOut className="h-4 w-4 mr-2" />
-                Đăng xuất tất cả
+                {t('session.logoutAll')}
               </Button>
             )}
           </div>
@@ -112,10 +114,9 @@ export default function SessionManagement() {
           <CardContent className="flex items-start gap-4 pt-6">
             <Shield className="h-6 w-6 text-blue-500 flex-shrink-0" />
             <div>
-              <h3 className="font-semibold text-blue-500">Bảo mật tài khoản</h3>
+              <h3 className="font-semibold text-blue-500">{t('session.accountSecurity')}</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                Nếu bạn thấy phiên đăng nhập không quen thuộc, hãy đăng xuất ngay và đổi mật khẩu. 
-                Bật xác thực 2 bước để tăng cường bảo mật.
+                {t('session.securityNotice')}
               </p>
             </div>
           </CardContent>
@@ -124,9 +125,9 @@ export default function SessionManagement() {
         {/* Sessions List */}
         <Card>
           <CardHeader>
-            <CardTitle>Các phiên đang hoạt động</CardTitle>
+            <CardTitle>{t('session.activeSessions')}</CardTitle>
             <CardDescription>
-              {sessions?.length || 0} phiên đang đăng nhập
+              {sessions?.length || 0} {t('session.sessionsLoggedIn')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -164,7 +165,7 @@ export default function SessionManagement() {
                         </span>
                         {index === 0 && (
                           <Badge variant="outline" className="text-green-500 border-green-500">
-                            Phiên hiện tại
+                            {t('session.currentSession')}
                           </Badge>
                         )}
                       </div>
@@ -185,7 +186,7 @@ export default function SessionManagement() {
                         )}
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          Hoạt động {formatDistanceToNow(new Date(session.lastActivityAt), { 
+                          {t('session.active')} {formatDistanceToNow(new Date(session.lastActivityAt), { 
                             addSuffix: true, 
                             locale: vi 
                           })}
@@ -209,7 +210,7 @@ export default function SessionManagement() {
             ) : (
               <div className="text-center py-8 text-muted-foreground">
                 <Monitor className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Không có phiên đăng nhập nào</p>
+                <p>{t('session.noSessions')}</p>
               </div>
             )}
           </CardContent>
@@ -219,18 +220,18 @@ export default function SessionManagement() {
         <AlertDialog open={!!revokeSessionId} onOpenChange={() => setRevokeSessionId(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Đăng xuất phiên này?</AlertDialogTitle>
+              <AlertDialogTitle>{t('session.logoutThisSession')}</AlertDialogTitle>
               <AlertDialogDescription>
-                Thiết bị này sẽ bị đăng xuất và cần đăng nhập lại để truy cập tài khoản.
+                {t('session.logoutSessionDescription')}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Hủy</AlertDialogCancel>
+              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
               <AlertDialogAction 
                 onClick={handleRevokeSession}
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >
-                Đăng xuất
+                {t('session.logout')}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -240,18 +241,18 @@ export default function SessionManagement() {
         <AlertDialog open={showRevokeAllDialog} onOpenChange={setShowRevokeAllDialog}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Đăng xuất tất cả các phiên khác?</AlertDialogTitle>
+              <AlertDialogTitle>{t('session.logoutAllOtherSessions')}</AlertDialogTitle>
               <AlertDialogDescription>
-                Tất cả các thiết bị khác sẽ bị đăng xuất. Chỉ phiên hiện tại của bạn được giữ lại.
+                {t('session.logoutAllDescription')}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Hủy</AlertDialogCancel>
+              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
               <AlertDialogAction 
                 onClick={handleRevokeAllSessions}
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >
-                Đăng xuất tất cả
+                {t('session.logoutAll')}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,6 +30,7 @@ interface ExportDashboardButtonProps {
 }
 
 export function ExportDashboardButton({ corporateCode }: ExportDashboardButtonProps) {
+  const { t } = useTranslation();
   const [showDialog, setShowDialog] = useState(false);
   const [exportFormat, setExportFormat] = useState<'excel' | 'pdf'>('excel');
   const [dateRange, setDateRange] = useState<{
@@ -41,17 +43,17 @@ export function ExportDashboardButton({ corporateCode }: ExportDashboardButtonPr
 
   const exportMutation = trpc.export.exportDashboardStats.useMutation({
     onSuccess: (data) => {
-      toast.success('Xuất báo cáo thành công!', {
+      toast.success(t('reports.exportSuccess'), {
         description: `File: ${data.filename}`,
         action: {
-          label: 'Tải xuống',
+          label: t('common.download'),
           onClick: () => window.open(data.url, '_blank'),
         },
       });
       setShowDialog(false);
     },
     onError: (error) => {
-      toast.error('Lỗi xuất báo cáo', {
+      toast.error(t('reports.exportError'), {
         description: error.message,
       });
     },
@@ -77,11 +79,11 @@ export function ExportDashboardButton({ corporateCode }: ExportDashboardButtonPr
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" className="gap-2">
             <FileDown className="h-4 w-4" />
-            Xuất báo cáo
+            {t('reports.exportReport')}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuLabel>Chọn định dạng</DropdownMenuLabel>
+          <DropdownMenuLabel>{t('reports.chooseFormat')}</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => handleExport('excel')} className="gap-2 cursor-pointer">
             <FileSpreadsheet className="h-4 w-4 text-green-600" />
@@ -103,16 +105,16 @@ export function ExportDashboardButton({ corporateCode }: ExportDashboardButtonPr
               ) : (
                 <FileText className="h-5 w-5 text-red-600" />
               )}
-              Xuất báo cáo {exportFormat === 'excel' ? 'Excel' : 'PDF'}
+              {t('reports.exportReportFormat', { format: exportFormat === 'excel' ? 'Excel' : 'PDF' })}
             </DialogTitle>
             <DialogDescription>
-              Chọn khoảng thời gian để xuất báo cáo thống kê dashboard
+              {t('reports.exportReportDescription')}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Khoảng thời gian</label>
+              <label className="text-sm font-medium">{t('reports.dateRange')}</label>
               <div className="flex items-center gap-2">
                 <Popover>
                   <PopoverTrigger asChild>
@@ -130,7 +132,7 @@ export function ExportDashboardButton({ corporateCode }: ExportDashboardButtonPr
                     />
                   </PopoverContent>
                 </Popover>
-                <span className="text-muted-foreground">đến</span>
+                <span className="text-muted-foreground">{t('common.to')}</span>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button variant="outline" className="w-full justify-start text-left font-normal">
@@ -159,7 +161,7 @@ export function ExportDashboardButton({ corporateCode }: ExportDashboardButtonPr
                   to: new Date(),
                 })}
               >
-                7 ngày
+                7 {t('common.days')}
               </Button>
               <Button
                 variant="outline"
@@ -169,7 +171,7 @@ export function ExportDashboardButton({ corporateCode }: ExportDashboardButtonPr
                   to: new Date(),
                 })}
               >
-                30 ngày
+                30 {t('common.days')}
               </Button>
               <Button
                 variant="outline"
@@ -179,45 +181,45 @@ export function ExportDashboardButton({ corporateCode }: ExportDashboardButtonPr
                   to: new Date(),
                 })}
               >
-                90 ngày
+                90 {t('common.days')}
               </Button>
             </div>
 
             {corporateCode && (
               <div className="p-3 bg-muted/50 rounded-lg">
                 <p className="text-sm text-muted-foreground">
-                  Báo cáo sẽ được lọc theo công ty: <strong>{corporateCode}</strong>
+                  {t('reports.filteredByCorporate', { code: corporateCode })}
                 </p>
               </div>
             )}
 
             <div className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg">
               <p className="text-sm text-blue-700 dark:text-blue-300">
-                <strong>Nội dung báo cáo:</strong>
+                <strong>{t('reports.reportContent')}:</strong>
               </p>
               <ul className="text-sm text-blue-600 dark:text-blue-400 mt-1 space-y-1">
-                <li>• Tổng quan thống kê (tổng kiểm tra, OK, NG, NTF, yield rate)</li>
-                <li>• Thống kê theo công ty</li>
-                <li>• Thống kê theo nhà máy</li>
-                <li>• Throughput theo ngày</li>
+                <li>• {t('reports.reportOverview')}</li>
+                <li>• {t('reports.reportByCorporate')}</li>
+                <li>• {t('reports.reportByFactory')}</li>
+                <li>• {t('reports.reportThroughput')}</li>
               </ul>
             </div>
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDialog(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button onClick={confirmExport} disabled={exportMutation.isPending}>
               {exportMutation.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Đang xuất...
+                  {t('reports.exporting')}
                 </>
               ) : (
                 <>
                   <FileDown className="mr-2 h-4 w-4" />
-                  Xuất báo cáo
+                  {t('reports.exportReport')}
                 </>
               )}
             </Button>

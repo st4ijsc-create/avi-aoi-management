@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,11 +32,13 @@ const Factory3DScene = lazy(() => import("@/components/Factory3DScene"));
 import type { FactoryData, WorkshopData } from "@/types/factory";
 
 export default function CorporateLayout() {
+  const { t } = useTranslation();
   const { user, loading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
   const [viewMode, setViewMode] = useState<"2D" | "3D" | "MAP">("2D");
   const [selectedFactory, setSelectedFactory] = useState<FactoryData | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -45,6 +48,23 @@ export default function CorporateLayout() {
   const [factoryPositions, setFactoryPositions] = useState<Record<number, { x: number; y: number }>>({});
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [positionsInitialized, setPositionsInitialized] = useState(false);
+
+  // Zoom handlers
+  const handleZoomIn = () => {
+    setZoom(prev => Math.min(prev + 0.2, 3)); // Max zoom 3x
+  };
+
+  const handleZoomOut = () => {
+    setZoom(prev => Math.max(prev - 0.2, 0.5)); // Min zoom 0.5x
+  };
+
+  const handleResetZoom = () => {
+    setZoom(1);
+  };
+
+  const toggleFullscreen = () => {
+    setIsFullscreen(prev => !prev);
+  };
 
   const { data: factories } = trpc.factory.list.useQuery();
   const { data: workshops } = trpc.workshop.list.useQuery();
@@ -79,43 +99,41 @@ export default function CorporateLayout() {
     yieldRate: number;
   };
   const { data: dashboardStats } = trpc.dashboard.getStats.useQuery({});
+  const { data: yieldByFactory, isLoading: yieldLoading } = trpc.corporateFactoryStats.yieldRateByFactory.useQuery({});
 
-  // Aggregate stats per factory
+  // Aggregate stats per factory using real API data
   const factoriesWithStats = useMemo(() => {
     if (!factories) return [];
     
     return factories.map((factory) => {
       const factoryWorkshops = workshops?.filter(w => w.factoryId === factory.id) || [];
       
-      // Mock stats for visualization - in production this would come from real data
-      const mockStats = {
-        total: Math.floor(Math.random() * 5000) + 1000,
-        ok: 0,
-        ng: 0,
-        ntf: 0,
-        yieldRate: 0,
+      // Match real stats by factoryCode
+      const realStats = yieldByFactory?.find(s => s.factoryCode === factory.code);
+      const stats = {
+        total: realStats?.totalInspections ?? 0,
+        ok: realStats?.okCount ?? 0,
+        ng: realStats?.ngCount ?? 0,
+        ntf: realStats?.ntfCount ?? 0,
+        yieldRate: realStats ? parseFloat(realStats.yieldRate) : 0,
       };
-      mockStats.ok = Math.floor(mockStats.total * (0.92 + Math.random() * 0.06));
-      mockStats.ng = Math.floor((mockStats.total - mockStats.ok) * 0.7);
-      mockStats.ntf = mockStats.total - mockStats.ok - mockStats.ng;
-      mockStats.yieldRate = (mockStats.ok / mockStats.total) * 100;
 
       return {
         ...factory,
-        stats: mockStats,
+        stats,
         workshops: factoryWorkshops.map(ws => ({
           ...ws,
           stats: {
-            total: Math.floor(mockStats.total / factoryWorkshops.length),
-            ok: Math.floor(mockStats.ok / factoryWorkshops.length),
-            ng: Math.floor(mockStats.ng / factoryWorkshops.length),
-            ntf: Math.floor(mockStats.ntf / factoryWorkshops.length),
-            yieldRate: mockStats.yieldRate,
+            total: factoryWorkshops.length > 0 ? Math.floor(stats.total / factoryWorkshops.length) : 0,
+            ok: factoryWorkshops.length > 0 ? Math.floor(stats.ok / factoryWorkshops.length) : 0,
+            ng: factoryWorkshops.length > 0 ? Math.floor(stats.ng / factoryWorkshops.length) : 0,
+            ntf: factoryWorkshops.length > 0 ? Math.floor(stats.ntf / factoryWorkshops.length) : 0,
+            yieldRate: stats.yieldRate,
           }
         }))
       } as FactoryData;
     });
-  }, [factories, workshops]);
+  }, [factories, workshops, yieldByFactory]);
 
   // Draw 2D corporate layout
   useEffect(() => {
@@ -240,7 +258,7 @@ export default function CorporateLayout() {
       // Workshops count
       ctx.fillStyle = "#64748b";
       ctx.font = `${11 * zoom}px sans-serif`;
-      ctx.fillText(`${factory.workshops.length} nhà xưởng`, x + 20 * zoom, y + boxHeight - 15 * zoom);
+      ctx.fillText(`${factory.workshops.length} ${t('corporate.workshops')}`, x + 20 * zoom, y + boxHeight - 15 * zoom);
 
       // Connection lines between factories
       if (index < factoriesWithStats.length - 1) {
@@ -261,13 +279,13 @@ export default function CorporateLayout() {
     // Draw title
     ctx.fillStyle = "#ffffff";
     ctx.font = `bold ${20 * zoom}px sans-serif`;
-    ctx.fillText("Tổng quan Tập đoàn - Bản đồ Nhà máy", 20, 30);
+    ctx.fillText(t('corporate.corporateMapTitle'), 20, 30);
 
     ctx.fillStyle = "#94a3b8";
     ctx.font = `${12 * zoom}px sans-serif`;
-    ctx.fillText(`${factoriesWithStats.length} nhà máy | ${workshops?.length || 0} nhà xưởng`, 20, 50);
+    ctx.fillText(`${factoriesWithStats.length} ${t('corporate.factories')} | ${workshops?.length || 0} ${t('corporate.workshops')}`, 20, 50);
 
-  }, [viewMode, factoriesWithStats, selectedFactory, zoom, workshops?.length, factoryPositions]);
+  }, [viewMode, factoriesWithStats, selectedFactory, zoom, workshops?.length, factoryPositions, t]);
 
   // Get factory at position
   const getFactoryAtPosition = (mouseX: number, mouseY: number) => {
@@ -417,7 +435,7 @@ export default function CorporateLayout() {
 
   if (authLoading) {
     return (
-      <DashboardLayout title="Layout Tập đoàn" navItems={navItems} currentPath="/corporate-layout">
+      <DashboardLayout title={t('corporate.corporateLayout')} navItems={navItems} currentPath="/corporate-layout">
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>
@@ -426,13 +444,13 @@ export default function CorporateLayout() {
   }
 
   return (
-    <DashboardLayout title="Layout Tập đoàn" navItems={navItems} currentPath="/corporate-layout">
+    <DashboardLayout title={t('corporate.corporateLayout')} navItems={navItems} currentPath="/corporate-layout">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Trực quan hóa Tập đoàn</h1>
-            <p className="text-muted-foreground">Bản đồ tổng quan các nhà máy và nhà xưởng</p>
+            <h1 className="text-2xl font-bold text-foreground">{t('corporate.corporateVisualization')}</h1>
+            <p className="text-muted-foreground">{t('corporate.mapOverview')}</p>
           </div>
           <div className="flex items-center gap-2">
             <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "2D" | "3D" | "MAP")}>
@@ -476,7 +494,7 @@ export default function CorporateLayout() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-foreground">{factoriesWithStats.length}</p>
-                  <p className="text-sm text-muted-foreground">Nhà máy</p>
+                  <p className="text-sm text-muted-foreground">{t('corporate.factory')}</p>
                 </div>
               </div>
             </CardContent>
@@ -489,7 +507,7 @@ export default function CorporateLayout() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-foreground">{workshops?.length || 0}</p>
-                  <p className="text-sm text-muted-foreground">Nhà xưởng</p>
+                  <p className="text-sm text-muted-foreground">{t('corporate.workshop')}</p>
                 </div>
               </div>
             </CardContent>
@@ -504,7 +522,7 @@ export default function CorporateLayout() {
                   <p className="text-2xl font-bold text-foreground">
                     {(dashboardStats as DashboardStats | undefined)?.yieldRate?.toFixed(1) || "0"}%
                   </p>
-                  <p className="text-sm text-muted-foreground">Yield Rate TB</p>
+                  <p className="text-sm text-muted-foreground">{t('corporate.avgYieldRate')}</p>
                 </div>
               </div>
             </CardContent>
@@ -519,7 +537,7 @@ export default function CorporateLayout() {
                   <p className="text-2xl font-bold text-foreground">
                     {(dashboardStats as DashboardStats | undefined)?.total?.toLocaleString() || "0"}
                   </p>
-                  <p className="text-sm text-muted-foreground">Tổng sản phẩm</p>
+                  <p className="text-sm text-muted-foreground">{t('corporate.totalProducts')}</p>
                 </div>
               </div>
             </CardContent>
@@ -532,12 +550,52 @@ export default function CorporateLayout() {
             <CardHeader className="pb-2">
               <CardTitle className="text-lg flex items-center gap-2">
                 <Globe className="h-5 w-5 text-primary" />
-                Bản đồ Nhà máy
+                {t('corporate.factoryMap')}
               </CardTitle>
-              <CardDescription>Click vào nhà máy để xem chi tiết</CardDescription>
+              <CardDescription>{t('corporate.clickFactoryForDetails')}</CardDescription>
             </CardHeader>
             <CardContent>
-              <div ref={containerRef} className="relative border rounded-lg overflow-hidden bg-background/50">
+              {/* Zoom Controls */}
+              <div className="flex items-center gap-2 mb-4">
+                <div className="flex items-center gap-1 border rounded-lg p-1 bg-background/80">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleZoomOut}
+                    disabled={zoom <= 0.5}
+                    className="h-8 w-8 p-0"
+                  >
+                    <ZoomOut className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleResetZoom}
+                    className="h-8 px-3 text-xs font-mono"
+                  >
+                    {(zoom * 100).toFixed(0)}%
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleZoomIn}
+                    disabled={zoom >= 3}
+                    className="h-8 w-8 p-0"
+                  >
+                    <ZoomIn className="h-4 w-4" />
+                  </Button>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={toggleFullscreen}
+                  className="h-8 w-8 p-0"
+                >
+                  <Maximize2 className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <div ref={containerRef} className={`relative border rounded-lg overflow-hidden bg-background/50 transition-all ${isFullscreen ? 'fixed inset-4 z-50' : ''}`}>
                 {viewMode === "2D" ? (
                   <canvas
                     ref={canvasRef}
@@ -547,7 +605,7 @@ export default function CorporateLayout() {
                     onMouseUp={handleMouseUp}
                     onMouseLeave={handleMouseUp}
                     className={`w-full ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
-                    style={{ minHeight: 600 }}
+                    style={{ minHeight: isFullscreen ? '100%' : 600 }}
                   />
                 ) : viewMode === "MAP" ? (
                   <div className="relative w-full" style={{ minHeight: 600 }}>
@@ -632,7 +690,7 @@ export default function CorporateLayout() {
                         {/* Legend */}
                         <g transform="translate(20, 420)">
                           <rect x="0" y="0" width="150" height="60" rx="4" fill="rgba(0,0,0,0.7)" />
-                          <text x="10" y="18" fill="#fff" fontSize="11" fontWeight="bold">Chú thích</text>
+                          <text x="10" y="18" fill="#fff" fontSize="11" fontWeight="bold">{t('corporate.legend')}</text>
                           <circle cx="20" cy="35" r="6" fill="#10b981" />
                           <text x="35" y="38" fill="#94a3b8" fontSize="9">≥ 95% Yield</text>
                           <circle cx="90" cy="35" r="6" fill="#f59e0b" />
@@ -663,9 +721,9 @@ export default function CorporateLayout() {
           {/* Factory Details */}
           <Card className="glass-card">
             <CardHeader className="pb-2">
-              <CardTitle className="text-lg">Chi tiết Nhà máy</CardTitle>
+              <CardTitle className="text-lg">{t('corporate.factoryDetails')}</CardTitle>
               <CardDescription>
-                {selectedFactory ? selectedFactory.name : "Chọn nhà máy từ bản đồ"}
+                {selectedFactory ? selectedFactory.name : t('corporate.selectFactoryFromMap')}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -692,11 +750,11 @@ export default function CorporateLayout() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="p-3 rounded-lg bg-secondary/30">
                       <p className="text-2xl font-bold text-foreground">{selectedFactory.stats.total.toLocaleString()}</p>
-                      <p className="text-xs text-muted-foreground">Tổng sản phẩm</p>
+                      <p className="text-xs text-muted-foreground">{t('corporate.totalProducts')}</p>
                     </div>
                     <div className="p-3 rounded-lg bg-emerald-500/10">
                       <p className="text-2xl font-bold text-emerald-500">{selectedFactory.stats.yieldRate.toFixed(1)}%</p>
-                      <p className="text-xs text-muted-foreground">Yield Rate</p>
+                      <p className="text-xs text-muted-foreground">{t('corporate.yieldRate')}</p>
                     </div>
                     <div className="p-3 rounded-lg bg-emerald-500/10">
                       <div className="flex items-center gap-1">
@@ -715,7 +773,7 @@ export default function CorporateLayout() {
                   </div>
 
                   <div>
-                    <h4 className="text-sm font-medium mb-2">Nhà xưởng ({selectedFactory.workshops.length})</h4>
+                    <h4 className="text-sm font-medium mb-2">{t('corporate.workshops')} ({selectedFactory.workshops.length})</h4>
                     <div className="space-y-2 max-h-48 overflow-y-auto">
                       {selectedFactory.workshops.map((ws) => (
                         <div
@@ -742,15 +800,15 @@ export default function CorporateLayout() {
                     className="w-full"
                     onClick={() => setLocation(`/layout?factoryId=${selectedFactory.id}`)}
                   >
-                    Xem Layout Chi tiết
+                    {t('corporate.viewDetailedLayout')}
                   </Button>
                 </div>
               ) : (
                 <div className="flex items-center justify-center h-64 text-muted-foreground">
                   <div className="text-center">
                     <Building2 className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p>Chọn một nhà máy từ bản đồ</p>
-                    <p className="text-sm">để xem thông tin chi tiết</p>
+                    <p>{t('corporate.selectAFactoryFromMap')}</p>
+                    <p className="text-sm">{t('corporate.toViewDetails')}</p>
                   </div>
                 </div>
               )}
@@ -761,8 +819,8 @@ export default function CorporateLayout() {
         {/* Factory List */}
         <Card className="glass-card">
           <CardHeader>
-            <CardTitle className="text-lg">Danh sách Nhà máy</CardTitle>
-            <CardDescription>Tổng quan hiệu suất các nhà máy trong tập đoàn</CardDescription>
+            <CardTitle className="text-lg">{t('corporate.factoryList')}</CardTitle>
+            <CardDescription>{t('corporate.factoryListDescription')}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -809,7 +867,7 @@ export default function CorporateLayout() {
                     </div>
                   </div>
                   <div className="mt-2 text-xs text-muted-foreground">
-                    {factory.workshops.length} nhà xưởng
+                    {factory.workshops.length} {t('corporate.workshops')}
                   </div>
                 </div>
               ))}

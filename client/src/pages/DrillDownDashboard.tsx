@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -61,8 +62,9 @@ function Breadcrumb({
   state: DrillDownState; 
   onNavigate: (level: DrillLevel, data?: Partial<DrillDownState>) => void;
 }) {
+  const { t } = useTranslation();
   const items = [
-    { level: "corporate" as DrillLevel, label: "Tổng quan", icon: Building2 },
+    { level: "corporate" as DrillLevel, label: t('dashboard.overview'), icon: Building2 },
   ];
 
   if (state.corporateCode) {
@@ -172,7 +174,7 @@ function StatsCard({
           <div className={`flex items-center gap-1 mt-2 text-sm ${trend >= 0 ? "text-green-500" : "text-red-500"}`}>
             {trend >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
             <span>{Math.abs(trend).toFixed(1)}%</span>
-            <span className="text-muted-foreground">so với hôm qua</span>
+            <span className="text-muted-foreground">{t('dashboard.vsYesterday')}</span>
           </div>
         )}
       </CardContent>
@@ -226,6 +228,7 @@ function ClickableBarItem({
 }
 
 export default function DrillDownDashboard() {
+  const { t } = useTranslation();
   const [drillState, setDrillState] = useState<DrillDownState>({ level: "corporate" });
 
   // Queries based on drill level
@@ -329,17 +332,17 @@ export default function DrillDownDashboard() {
   // Get level title
   const getLevelTitle = () => {
     switch (drillState.level) {
-      case "corporate": return "Tổng quan theo Corporate";
-      case "factory": return `Nhà máy thuộc ${drillState.corporateName || drillState.corporateCode}`;
-      case "line": return `Dây chuyền thuộc ${drillState.factoryName}`;
-      case "machine": return `Máy thuộc ${drillState.lineName}`;
+      case "corporate": return t('dashboard.overviewByCorporate');
+      case "factory": return t('dashboard.factoriesOf', { name: drillState.corporateName || drillState.corporateCode });
+      case "line": return t('dashboard.linesOf', { name: drillState.factoryName });
+      case "machine": return t('dashboard.machinesOf', { name: drillState.lineName });
     }
   };
 
   const maxValue = Math.max(...currentStats.data.map((d: any) => d.total || 0), 1);
 
   return (
-    <DashboardLayout title="Drill-Down Dashboard">
+    <DashboardLayout title={t('dashboard.drillDownDashboard')}>
       <div className="space-y-6">
         {/* Breadcrumb */}
         <Breadcrumb state={drillState} onNavigate={handleNavigate} />
@@ -369,27 +372,27 @@ export default function DrillDownDashboard() {
             className="gap-2"
           >
             <ArrowLeft className="h-4 w-4" />
-            Quay lại
+            {t('common.goBack')}
           </Button>
         )}
 
         {/* Summary Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatsCard
-            title="Tổng sản lượng"
+            title={t('dashboard.totalProduction')}
             value={currentStats.total.toLocaleString()}
             icon={Activity}
             color="blue"
           />
           <StatsCard
-            title="Sản phẩm OK"
+            title={t('dashboard.okProducts')}
             value={currentStats.ok.toLocaleString()}
             subtitle={`${((currentStats.ok / currentStats.total) * 100 || 0).toFixed(1)}%`}
             icon={CheckCircle2}
             color="green"
           />
           <StatsCard
-            title="Sản phẩm NG"
+            title={t('dashboard.ngProducts')}
             value={currentStats.ng.toLocaleString()}
             subtitle={`${((currentStats.ng / currentStats.total) * 100 || 0).toFixed(1)}%`}
             icon={XCircle}
@@ -413,7 +416,7 @@ export default function DrillDownDashboard() {
                   {getLevelTitle()}
                 </CardTitle>
                 <CardDescription>
-                  Click vào mục để xem chi tiết
+                  {t('dashboard.clickToViewDetails')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -426,7 +429,7 @@ export default function DrillDownDashboard() {
                 ) : currentStats.data.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <AlertTriangle className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p>Không có dữ liệu</p>
+                    <p>{t('common.noData')}</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -463,14 +466,14 @@ export default function DrillDownDashboard() {
           <div>
             <Card>
               <CardHeader>
-                <CardTitle>Phân bố kết quả</CardTitle>
+                <CardTitle>{t('dashboard.resultDistribution')}</CardTitle>
               </CardHeader>
               <CardContent>
                 {isLoading ? (
                   <Skeleton className="h-64 w-full" />
                 ) : pieData.length === 0 ? (
                   <div className="h-64 flex items-center justify-center text-muted-foreground">
-                    Không có dữ liệu
+                    {t('common.noData')}
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height={250}>
@@ -502,21 +505,21 @@ export default function DrillDownDashboard() {
             {/* Quick stats */}
             <Card className="mt-4">
               <CardHeader>
-                <CardTitle className="text-sm">Thống kê nhanh</CardTitle>
+                <CardTitle className="text-sm">{t('dashboard.quickStats')}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Số lượng</span>
+                  <span className="text-sm text-muted-foreground">{t('common.quantity')}</span>
                   <Badge variant="outline">{currentStats.data.length}</Badge>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Yield cao nhất</span>
+                  <span className="text-sm text-muted-foreground">{t('dashboard.highestYield')}</span>
                   <Badge variant="default">
                     {Math.max(...currentStats.data.map((d: any) => d.yieldRate || 0), 0).toFixed(1)}%
                   </Badge>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Yield thấp nhất</span>
+                  <span className="text-sm text-muted-foreground">{t('dashboard.lowestYield')}</span>
                   <Badge variant="destructive">
                     {currentStats.data.length > 0 
                       ? Math.min(...currentStats.data.map((d: any) => d.yieldRate || 100)).toFixed(1) 
@@ -531,14 +534,14 @@ export default function DrillDownDashboard() {
         {/* Bar chart comparison */}
         <Card>
           <CardHeader>
-            <CardTitle>So sánh sản lượng</CardTitle>
+            <CardTitle>{t('dashboard.productionComparison')}</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <Skeleton className="h-80 w-full" />
             ) : currentStats.data.length === 0 ? (
               <div className="h-80 flex items-center justify-center text-muted-foreground">
-                Không có dữ liệu
+                {t('common.noData')}
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={300}>

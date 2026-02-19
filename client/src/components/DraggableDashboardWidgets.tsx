@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useTranslation } from 'react-i18next';
 import { GridLayout, useContainerWidth, type Layout, type LayoutItem as RGLLayoutItem } from "react-grid-layout";
 
 // Custom layout type compatible with react-grid-layout
@@ -63,50 +64,50 @@ export interface WidgetConfig {
 const DEFAULT_WIDGETS: WidgetConfig[] = [
   { 
     id: "shift-stats", 
-    title: "Thống kê theo ca", 
-    description: "Hiển thị sản lượng và FPY theo từng ca làm việc",
+    title: "dashboard.widgets.shiftStats", 
+    description: "dashboard.widgets.shiftStatsDesc",
     defaultLayout: { x: 0, y: 0, w: 4, h: 4, minW: 3, minH: 3 },
     visible: true 
   },
   { 
     id: "top-machines", 
-    title: "Top 5 máy tốt nhất", 
-    description: "Danh sách 5 máy có FPY cao nhất",
+    title: "dashboard.widgets.topMachines", 
+    description: "dashboard.widgets.topMachinesDesc",
     defaultLayout: { x: 4, y: 0, w: 4, h: 4, minW: 3, minH: 3 },
     visible: true 
   },
   { 
     id: "worst-machines", 
-    title: "Top 5 máy cần cải thiện", 
-    description: "Danh sách 5 máy có FPY thấp nhất",
+    title: "dashboard.widgets.worstMachines", 
+    description: "dashboard.widgets.worstMachinesDesc",
     defaultLayout: { x: 8, y: 0, w: 4, h: 4, minW: 3, minH: 3 },
     visible: true 
   },
   { 
     id: "time-chart", 
-    title: "Biểu đồ theo thời gian", 
-    description: "FPY, FY, NTFY và Output theo từng giờ",
+    title: "dashboard.widgets.timeChart", 
+    description: "dashboard.widgets.timeChartDesc",
     defaultLayout: { x: 0, y: 4, w: 6, h: 5, minW: 4, minH: 4 },
     visible: true 
   },
   { 
     id: "pie-chart", 
-    title: "Phân bố kết quả", 
-    description: "Tỷ lệ OK/NG/NTF tổng hợp",
+    title: "dashboard.widgets.pieChart", 
+    description: "dashboard.widgets.pieChartDesc",
     defaultLayout: { x: 6, y: 4, w: 3, h: 5, minW: 3, minH: 4 },
     visible: true 
   },
   { 
     id: "bar-chart", 
-    title: "Top máy theo sản lượng", 
-    description: "10 máy có output cao nhất",
+    title: "dashboard.widgets.barChart", 
+    description: "dashboard.widgets.barChartDesc",
     defaultLayout: { x: 9, y: 4, w: 3, h: 5, minW: 3, minH: 4 },
     visible: true 
   },
   { 
     id: "top-workstations", 
-    title: "Top 5 Công trạm có lỗi cao nhất", 
-    description: "Công trạm cần ưu tiên cải thiện",
+    title: "dashboard.widgets.topWorkstations", 
+    description: "dashboard.widgets.topWorkstationsDesc",
     defaultLayout: { x: 0, y: 9, w: 12, h: 4, minW: 6, minH: 3 },
     visible: true 
   },
@@ -126,6 +127,7 @@ export function DraggableDashboardWidgets({
   widgetIds, 
   renderWidget 
 }: DraggableDashboardWidgetsProps) {
+  const { t } = useTranslation();
   const [layouts, setLayouts] = useState<LayoutItem[]>([]);
   const [visibility, setVisibility] = useState<Record<WidgetId, boolean>>({} as Record<WidgetId, boolean>);
   const [isEditing, setIsEditing] = useState(false);
@@ -217,7 +219,7 @@ export function DraggableDashboardWidgets({
     
     saveLayout(defaultLayouts);
     saveVisibility(defaultVisibility);
-    toast.success("Đã khôi phục layout mặc định");
+    toast.success(t('dashboard.layoutReset'));
   }, [saveLayout, saveVisibility]);
 
   // Filter visible widgets
@@ -244,19 +246,19 @@ export function DraggableDashboardWidgets({
             {isLocked ? (
               <>
                 <Lock className="h-4 w-4" />
-                <span className="hidden sm:inline">Đã khóa</span>
+                <span className="hidden sm:inline">{t('dashboard.locked')}</span>
               </>
             ) : (
               <>
                 <Unlock className="h-4 w-4" />
-                <span className="hidden sm:inline">Đang chỉnh sửa</span>
+                <span className="hidden sm:inline">{t('dashboard.editing')}</span>
               </>
             )}
           </Button>
           
           {!isLocked && (
             <Badge variant="secondary" className="animate-pulse">
-              Kéo thả để sắp xếp
+              {t('dashboard.dragToArrange')}
             </Badge>
           )}
         </div>
@@ -266,12 +268,12 @@ export function DraggableDashboardWidgets({
             <DialogTrigger asChild>
               <Button variant="outline" size="sm" className="gap-2">
                 <Settings2 className="h-4 w-4" />
-                <span className="hidden sm:inline">Tùy chỉnh</span>
+                <span className="hidden sm:inline">{t('dashboard.customize')}</span>
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle>Tùy chỉnh Dashboard Widgets</DialogTitle>
+                <DialogTitle>{t('dashboard.customizeWidgets')}</DialogTitle>
               </DialogHeader>
               <ScrollArea className="max-h-[60vh]">
                 <div className="space-y-4 pr-4">
@@ -282,7 +284,7 @@ export function DraggableDashboardWidgets({
                     >
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">{widget.title}</span>
+                          <span className="font-medium">{t(widget.title)}</span>
                           {visibility[widget.id] !== false ? (
                             <Eye className="h-4 w-4 text-success" />
                           ) : (
@@ -290,7 +292,7 @@ export function DraggableDashboardWidgets({
                           )}
                         </div>
                         <p className="text-sm text-muted-foreground mt-1">
-                          {widget.description}
+                          {t(widget.description)}
                         </p>
                       </div>
                       <Switch
@@ -304,7 +306,7 @@ export function DraggableDashboardWidgets({
               <div className="flex justify-end gap-2 pt-4 border-t">
                 <Button variant="outline" onClick={resetLayout}>
                   <RotateCcw className="h-4 w-4 mr-2" />
-                  Khôi phục mặc định
+                  {t('dashboard.resetDefault')}
                 </Button>
               </div>
             </DialogContent>
@@ -358,7 +360,7 @@ export function DraggableDashboardWidgets({
                 )}
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
-                    {widget?.title || widgetId}
+                    {t(widget?.title || widgetId)}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="h-[calc(100%-60px)] overflow-auto">

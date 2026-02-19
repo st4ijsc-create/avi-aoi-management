@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -32,6 +33,7 @@ interface YieldByFactory extends YieldByCorporate {
 }
 
 export function CorporateFactoryStats() {
+  const { t } = useTranslation();
   const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d'>('30d');
   
   // Drill-down state
@@ -141,7 +143,7 @@ export function CorporateFactoryStats() {
 
   // Breadcrumb navigation
   const breadcrumbs: BreadcrumbItem[] = useMemo(() => {
-    const items: BreadcrumbItem[] = [{ level: 'corporate', label: 'Tổng quan' }];
+    const items: BreadcrumbItem[] = [{ level: 'corporate', label: t('corporate.overview') }];
     if (selectedCorporate && drillLevel !== 'corporate') {
       items.push({ level: 'factory', label: selectedCorporate, code: selectedCorporate });
     }
@@ -209,9 +211,9 @@ export function CorporateFactoryStats() {
   // Get status text based on yield rate
   const getStatusText = (yieldRate: string) => {
     const rate = parseFloat(yieldRate);
-    if (rate >= 95) return 'Tốt';
-    if (rate >= 85) return 'Trung bình';
-    return 'Cần cải thiện';
+    if (rate >= 95) return t('corporate.statusGood');
+    if (rate >= 85) return t('corporate.statusAverage');
+    return t('corporate.statusNeedsImprovement');
   };
 
   // Get code from item based on drill level
@@ -264,7 +266,7 @@ export function CorporateFactoryStats() {
         {drillLevel !== 'corporate' && (
           <Button variant="outline" size="sm" onClick={handleBack}>
             <ArrowLeft className="h-4 w-4 mr-1" />
-            Quay lại
+            {t('corporate.goBack')}
           </Button>
         )}
       </div>
@@ -279,9 +281,9 @@ export function CorporateFactoryStats() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="7d">7 ngày qua</SelectItem>
-                <SelectItem value="30d">30 ngày qua</SelectItem>
-                <SelectItem value="90d">90 ngày qua</SelectItem>
+                <SelectItem value="7d">{t('corporate.last7Days')}</SelectItem>
+                <SelectItem value="30d">{t('corporate.last30Days')}</SelectItem>
+                <SelectItem value="90d">{t('corporate.last90Days')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -296,10 +298,10 @@ export function CorporateFactoryStats() {
               }
             }}>
               <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Chọn công ty" />
+                <SelectValue placeholder={t('corporate.selectCompany')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tất cả công ty</SelectItem>
+                <SelectItem value="all">{t('corporate.allCompanies')}</SelectItem>
                 {yieldByCorporate.map(item => (
                   <SelectItem key={item.corporateCode} value={item.corporateCode}>
                     {item.corporateCode}
@@ -325,14 +327,14 @@ export function CorporateFactoryStats() {
         </div>
         <div>
           <h2 className="text-lg font-semibold">
-            {drillLevel === 'corporate' && 'Thống kê theo Công ty'}
-            {drillLevel === 'factory' && `Chi tiết Nhà máy - ${selectedCorporate}`}
-            {drillLevel === 'machine' && `Chi tiết Máy - ${selectedMachine?.name}`}
+            {drillLevel === 'corporate' && t('corporate.statsByCorporate')}
+            {drillLevel === 'factory' && t('corporate.factoryDetail', { code: selectedCorporate })}
+            {drillLevel === 'machine' && t('corporate.machineDetail', { name: selectedMachine?.name })}
           </h2>
           <p className="text-sm text-muted-foreground">
-            {drillLevel === 'corporate' && 'Click vào cột để xem chi tiết nhà máy'}
-            {drillLevel === 'factory' && 'Click vào thẻ máy để xem chi tiết'}
-            {drillLevel === 'machine' && 'Thống kê chi tiết của máy'}
+            {drillLevel === 'corporate' && t('corporate.clickToViewFactory')}
+            {drillLevel === 'factory' && t('corporate.clickToViewMachine')}
+            {drillLevel === 'machine' && t('corporate.machineStats')}
           </p>
         </div>
       </div>
@@ -341,18 +343,18 @@ export function CorporateFactoryStats() {
       <Card>
         <CardHeader>
           <CardTitle>
-            {drillLevel === 'corporate' ? 'Tỷ lệ đạt theo Công ty' : 
-             drillLevel === 'factory' ? 'Tỷ lệ đạt theo Nhà máy' : 'Tỷ lệ đạt theo Máy'}
+            {drillLevel === 'corporate' ? t('corporate.yieldByCorporate') : 
+             drillLevel === 'factory' ? t('corporate.yieldByFactory') : t('corporate.yieldByMachine')}
           </CardTitle>
           <CardDescription>
-            {drillLevel === 'corporate' ? 'So sánh yield rate giữa các công ty - Click để drill-down' : 
-             drillLevel === 'factory' ? `Chi tiết yield rate của ${selectedCorporate}` : `Chi tiết yield rate của ${selectedMachine?.name}`}
+            {drillLevel === 'corporate' ? t('corporate.compareYieldDrilldown') : 
+             drillLevel === 'factory' ? t('corporate.yieldDetailOf', { name: selectedCorporate }) : t('corporate.yieldDetailOf', { name: selectedMachine?.name })}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="h-[300px] flex items-center justify-center">
-              <p className="text-muted-foreground">Đang tải...</p>
+              <p className="text-muted-foreground">{t('common.loading')}</p>
             </div>
           ) : currentYieldData && currentYieldData.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
@@ -368,13 +370,13 @@ export function CorporateFactoryStats() {
                 <YAxis domain={[0, 100]} label={{ value: 'Yield Rate (%)', angle: -90, position: 'insideLeft' }} />
                 <Tooltip 
                   formatter={(value: any) => `${value}%`}
-                  labelFormatter={(label) => drillLevel === 'corporate' ? `Công ty: ${label}` : `Nhà máy: ${label}`}
+                  labelFormatter={(label) => drillLevel === 'corporate' ? `${t('corporate.company')}: ${label}` : `${t('corporate.factory')}: ${label}`}
                   cursor={{ fill: 'rgba(0, 0, 0, 0.1)' }}
                 />
                 <Legend />
                 <Bar 
                   dataKey="yieldRateNum" 
-                  name="Tỷ lệ đạt (%)" 
+                  name={t('corporate.yieldRatePercent')} 
                   cursor={drillLevel !== 'machine' ? 'pointer' : 'default'}
                 >
                   {currentYieldData.map((entry, index) => {
@@ -391,7 +393,7 @@ export function CorporateFactoryStats() {
             </ResponsiveContainer>
           ) : (
             <div className="h-[300px] flex items-center justify-center">
-              <p className="text-muted-foreground">Không có dữ liệu</p>
+              <p className="text-muted-foreground">{t('common.noData')}</p>
             </div>
           )}
         </CardContent>
@@ -401,8 +403,8 @@ export function CorporateFactoryStats() {
       {drillLevel === 'factory' && factoryMachines.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Chọn máy để xem chi tiết</CardTitle>
-            <CardDescription>Click vào máy để xem thống kê chi tiết và lịch sử kiểm tra</CardDescription>
+            <CardTitle>{t('corporate.selectMachine')}</CardTitle>
+            <CardDescription>{t('corporate.clickMachineDetail')}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -423,7 +425,7 @@ export function CorporateFactoryStats() {
                       </div>
                     </div>
                     <div className="mt-3 flex items-center text-xs text-primary">
-                      <span>Xem chi tiết</span>
+                      <span>{t('corporate.viewDetails')}</span>
                       <ChevronRight className="h-3 w-3 ml-1" />
                     </div>
                   </CardContent>
@@ -438,14 +440,14 @@ export function CorporateFactoryStats() {
       <Card>
         <CardHeader>
           <CardTitle>
-            {drillLevel === 'corporate' ? 'Xu hướng Throughput theo Công ty' : 'Xu hướng Throughput theo Nhà máy'}
+            {drillLevel === 'corporate' ? t('corporate.throughputByCorporate') : t('corporate.throughputByFactory')}
           </CardTitle>
-          <CardDescription>Số lượng sản phẩm kiểm tra theo thời gian</CardDescription>
+          <CardDescription>{t('corporate.throughputDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           {(drillLevel === 'corporate' ? loadingThroughput : loadingFactoryThroughput) ? (
             <div className="h-[400px] flex items-center justify-center">
-              <p className="text-muted-foreground">Đang tải...</p>
+              <p className="text-muted-foreground">{t('common.loading')}</p>
             </div>
           ) : throughputChartData.length > 0 ? (
             <ResponsiveContainer width="100%" height={400}>
@@ -458,7 +460,7 @@ export function CorporateFactoryStats() {
                     return `${date.getMonth() + 1}/${date.getDate()}`;
                   }}
                 />
-                <YAxis label={{ value: 'Số lượng', angle: -90, position: 'insideLeft' }} />
+                <YAxis label={{ value: t('corporate.quantity'), angle: -90, position: 'insideLeft' }} />
                 <Tooltip 
                   labelFormatter={(label) => {
                     const date = new Date(label);
@@ -482,7 +484,7 @@ export function CorporateFactoryStats() {
             </ResponsiveContainer>
           ) : (
             <div className="h-[400px] flex items-center justify-center">
-              <p className="text-muted-foreground">Không có dữ liệu</p>
+              <p className="text-muted-foreground">{t('common.noData')}</p>
             </div>
           )}
         </CardContent>
@@ -519,7 +521,7 @@ export function CorporateFactoryStats() {
                 <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-muted-foreground">
                   <div>
                     <p className="font-medium text-foreground">{item.totalInspections}</p>
-                    <p>Tổng</p>
+                    <p>{t('common.total')}</p>
                   </div>
                   <div>
                     <p className="font-medium text-green-600">{item.okCount}</p>
@@ -532,7 +534,7 @@ export function CorporateFactoryStats() {
                 </div>
                 {drillLevel !== 'machine' && (
                   <div className="mt-3 flex items-center text-xs text-primary">
-                    <span>Xem chi tiết</span>
+                    <span>{t('corporate.viewDetails')}</span>
                     <ChevronRight className="h-3 w-3 ml-1" />
                   </div>
                 )}
@@ -546,8 +548,8 @@ export function CorporateFactoryStats() {
       {currentYieldData && currentYieldData.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Phân bố sản lượng</CardTitle>
-            <CardDescription>Tỷ lệ đóng góp của từng {drillLevel === 'corporate' ? 'công ty' : 'nhà máy'}</CardDescription>
+            <CardTitle>{t('corporate.outputDistribution')}</CardTitle>
+            <CardDescription>{t('corporate.contributionRatio', { level: drillLevel === 'corporate' ? t('corporate.company') : t('corporate.factory') })}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col lg:flex-row items-center gap-8">
@@ -570,13 +572,13 @@ export function CorporateFactoryStats() {
                     ))}
                   </Pie>
                   <Tooltip 
-                    formatter={(value: any, name: string) => [`${value} sản phẩm`, name]}
+                    formatter={(value: any, name: string) => [`${value} ${t('corporate.products')}`, name]}
                   />
                 </PieChart>
               </ResponsiveContainer>
               
               <div className="w-full lg:w-auto">
-                <h4 className="font-medium mb-3">Chi tiết</h4>
+                <h4 className="font-medium mb-3">{t('common.details')}</h4>
                 <div className="space-y-2">
                   {currentYieldData.map((item, index) => {
                     const code = getItemCode(item);

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import * as XLSX from 'xlsx';
 
 export default function ImportExport() {
+  const { t } = useTranslation();
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [importResult, setImportResult] = useState<{ success: number; failed: number; errors: string[] } | null>(null);
@@ -46,7 +48,7 @@ export default function ImportExport() {
       const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
       if (jsonData.length === 0) {
-        toast.error('File Excel trống hoặc không đúng định dạng');
+        toast.error(t('importExport.emptyFile'));
         return;
       }
 
@@ -66,12 +68,12 @@ export default function ImportExport() {
       setImportResult(result);
       
       if (result.failed === 0) {
-        toast.success(`Import thành công ${result.success} ${type}`);
+        toast.success(t('importExport.importSuccess', { count: result.success, type }));
       } else {
-        toast.warning(`Import hoàn tất: ${result.success} thành công, ${result.failed} thất bại`);
+        toast.warning(t('importExport.importPartial', { success: result.success, failed: result.failed }));
       }
     } catch (error: any) {
-      toast.error(`Import thất bại: ${error.message}`);
+      toast.error(t('importExport.importFailed', { message: error.message }));
       setImportResult({ success: 0, failed: 0, errors: [error.message] });
     } finally {
       setImporting(false);
@@ -145,7 +147,7 @@ export default function ImportExport() {
     XLSX.utils.book_append_sheet(wb, ws, 'Template');
     XLSX.writeFile(wb, `${type}_template.xlsx`);
     
-    toast.success(`Đã tải template ${type}`);
+    toast.success(t('importExport.templateDownloaded', { type }));
   };
 
   const handleExportInspections = async () => {
@@ -162,9 +164,9 @@ export default function ImportExport() {
       });
       
       window.open(result.url, '_blank');
-      toast.success(`Đã export ${result.count} inspection records`);
+      toast.success(t('importExport.exportSuccess', { count: result.count, type: 'inspection records' }));
     } catch (error: any) {
-      toast.error(`Export thất bại: ${error.message}`);
+      toast.error(t('importExport.exportFailed', { message: error.message }));
     } finally {
       setExporting(false);
     }
@@ -184,9 +186,9 @@ export default function ImportExport() {
       });
       
       window.open(result.url, '_blank');
-      toast.success('Đã export statistics');
+      toast.success(t('importExport.statisticsExported'));
     } catch (error: any) {
-      toast.error(`Export thất bại: ${error.message}`);
+      toast.error(t('importExport.exportFailed', { message: error.message }));
     } finally {
       setExporting(false);
     }
@@ -209,9 +211,9 @@ export default function ImportExport() {
       }
       
       window.open(result.url, '_blank');
-      toast.success(`Đã export ${result.count} ${type}`);
+      toast.success(t('importExport.exportSuccess', { count: result.count, type }));
     } catch (error: any) {
-      toast.error(`Export thất bại: ${error.message}`);
+      toast.error(t('importExport.exportFailed', { message: error.message }));
     } finally {
       setExporting(false);
     }
@@ -219,7 +221,7 @@ export default function ImportExport() {
 
   return (
     <DashboardLayout
-      title="Import/Export Data"
+      title={t('importExport.title')}
       navItems={navItems}
       currentPath="/import-export"
     >
@@ -227,11 +229,11 @@ export default function ImportExport() {
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="import" className="flex items-center gap-2">
             <Upload className="h-4 w-4" />
-            Import Data
+            {t('importExport.importData')}
           </TabsTrigger>
           <TabsTrigger value="export" className="flex items-center gap-2">
             <Download className="h-4 w-4" />
-            Export Data
+            {t('importExport.exportData')}
           </TabsTrigger>
         </TabsList>
 
@@ -242,9 +244,9 @@ export default function ImportExport() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Building2 className="h-5 w-5" />
-                Dữ liệu Tổ chức
+                {t('importExport.orgData')}
               </CardTitle>
-              <CardDescription>Import factories, workshops, machines</CardDescription>
+              <CardDescription>{t('importExport.orgDataDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Factories */}
@@ -252,11 +254,11 @@ export default function ImportExport() {
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold flex items-center gap-2">
                     <Factory className="h-4 w-4" />
-                    Factories (Nhà máy)
+                    Factories ({t('importExport.factories')})
                   </h3>
                   <Button variant="outline" size="sm" onClick={() => downloadTemplate('factories')}>
                     <FileSpreadsheet className="h-4 w-4 mr-2" />
-                    Tải template
+                    {t('importExport.downloadTemplate')}
                   </Button>
                 </div>
                 <div className="flex items-center gap-4">
@@ -277,10 +279,10 @@ export default function ImportExport() {
               {/* Workshops */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-semibold">Workshops (Xưởng)</h3>
+                  <h3 className="font-semibold">Workshops ({t('importExport.workshops')})</h3>
                   <Button variant="outline" size="sm" onClick={() => downloadTemplate('workshops')}>
                     <FileSpreadsheet className="h-4 w-4 mr-2" />
-                    Tải template
+                    {t('importExport.downloadTemplate')}
                   </Button>
                 </div>
                 <div className="flex items-center gap-4">
@@ -303,11 +305,11 @@ export default function ImportExport() {
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold flex items-center gap-2">
                     <Cpu className="h-4 w-4" />
-                    Machines (Máy)
+                    Machines ({t('importExport.machines')})
                   </h3>
                   <Button variant="outline" size="sm" onClick={() => downloadTemplate('machines')}>
                     <FileSpreadsheet className="h-4 w-4 mr-2" />
-                    Tải template
+                    {t('importExport.downloadTemplate')}
                   </Button>
                 </div>
                 <div className="flex items-center gap-4">
@@ -332,9 +334,9 @@ export default function ImportExport() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Package className="h-5 w-5" />
-                Dữ liệu Sản phẩm
+                {t('importExport.productData')}
               </CardTitle>
-              <CardDescription>Import products và measurement points</CardDescription>
+              <CardDescription>{t('importExport.productDataDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Products */}
@@ -342,11 +344,11 @@ export default function ImportExport() {
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold flex items-center gap-2">
                     <Package className="h-4 w-4" />
-                    Products (Sản phẩm)
+                    Products ({t('importExport.products')})
                   </h3>
                   <Button variant="outline" size="sm" onClick={() => downloadTemplate('products')}>
                     <FileSpreadsheet className="h-4 w-4 mr-2" />
-                    Tải template
+                    {t('importExport.downloadTemplate')}
                   </Button>
                 </div>
                 <div className="flex items-center gap-4">
@@ -369,11 +371,11 @@ export default function ImportExport() {
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold flex items-center gap-2">
                     <Ruler className="h-4 w-4" />
-                    Measurement Points (Điểm đo)
+                    Measurement Points ({t('importExport.measurementPoints')})
                   </h3>
                   <Button variant="outline" size="sm" onClick={() => downloadTemplate('measurementPoints')}>
                     <FileSpreadsheet className="h-4 w-4 mr-2" />
-                    Tải template
+                    {t('importExport.downloadTemplate')}
                   </Button>
                 </div>
                 <div className="flex items-center gap-4">
@@ -402,12 +404,12 @@ export default function ImportExport() {
                   <div className="flex items-center gap-4">
                     <span className="flex items-center gap-1">
                       <CheckCircle2 className="h-4 w-4 text-green-500" />
-                      Thành công: {importResult.success}
+                      {t('importExport.successCount')}: {importResult.success}
                     </span>
                     {importResult.failed > 0 && (
                       <span className="flex items-center gap-1">
                         <AlertCircle className="h-4 w-4 text-red-500" />
-                        Thất bại: {importResult.failed}
+                        {t('importExport.failedCount')}: {importResult.failed}
                       </span>
                     )}
                   </div>
@@ -419,7 +421,7 @@ export default function ImportExport() {
                           <li key={idx}>{err}</li>
                         ))}
                         {importResult.errors.length > 10 && (
-                          <li>... và {importResult.errors.length - 10} lỗi khác</li>
+                          <li>... {t('importExport.andMoreErrors', { count: importResult.errors.length - 10 })}</li>
                         )}
                       </ul>
                     </div>
@@ -437,9 +439,9 @@ export default function ImportExport() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Download className="h-5 w-5" />
-                Export Inspection Data
+                {t('importExport.exportInspectionData')}
               </CardTitle>
-              <CardDescription>Export inspection records và statistics sang Excel</CardDescription>
+              <CardDescription>{t('importExport.exportInspectionDataDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center gap-4">
@@ -449,9 +451,9 @@ export default function ImportExport() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="7d">7 ngày qua</SelectItem>
-                    <SelectItem value="30d">30 ngày qua</SelectItem>
-                    <SelectItem value="90d">90 ngày qua</SelectItem>
+                    <SelectItem value="7d">{t('importExport.last7days')}</SelectItem>
+                    <SelectItem value="30d">{t('importExport.last30days')}</SelectItem>
+                    <SelectItem value="90d">{t('importExport.last90days')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -484,9 +486,9 @@ export default function ImportExport() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileSpreadsheet className="h-5 w-5" />
-                Export Master Data
+                {t('importExport.exportMasterData')}
               </CardTitle>
-              <CardDescription>Export dữ liệu master (factories, machines, products, measurement points)</CardDescription>
+              <CardDescription>{t('importExport.exportMasterDataDesc')}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -546,8 +548,7 @@ export default function ImportExport() {
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              Export sẽ tạo file Excel và upload lên S3. File sẽ tự động mở trong tab mới.
-              Max 10,000 records cho Inspections export.
+              {t('importExport.exportNote')}
             </AlertDescription>
           </Alert>
         </TabsContent>

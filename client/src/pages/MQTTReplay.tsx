@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { io, Socket } from "socket.io-client";
+import { useTranslation } from 'react-i18next';
 
 interface MqttMessage {
   topic: string;
@@ -47,6 +48,7 @@ interface DiscoveredMachine {
 }
 
 export default function MQTTReplay() {
+  const { t } = useTranslation();
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const [liveMessages, setLiveMessages] = useState<MqttMessage[]>([]);
@@ -94,7 +96,7 @@ export default function MQTTReplay() {
     });
 
     socketInstance.on("machine:discovered", (machine: DiscoveredMachine) => {
-      toast.info(`Máy mới: ${machine.machineCode} từ topic ${machine.topic}`);
+      toast.info(t('mqtt.replayPage.newMachineDetected', { code: machine.machineCode, topic: machine.topic }));
       refetchDiscovered();
     });
 
@@ -129,7 +131,7 @@ export default function MQTTReplay() {
     a.download = `mqtt-messages-${new Date().toISOString()}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success(`Đã xuất ${filteredLiveMessages.length} messages`);
+    toast.success(t('mqtt.replayPage.messagesExported', { count: filteredLiveMessages.length }));
   };
 
   // Format payload for display
@@ -152,13 +154,13 @@ export default function MQTTReplay() {
           <div>
             <h1 className="text-2xl font-bold">MQTT Message Replay</h1>
             <p className="text-muted-foreground">
-              Theo dõi và phát lại tin nhắn MQTT để debug
+              {t('mqtt.replayPage.pageDesc')}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant={connected ? "default" : "destructive"} className="gap-1">
               {connected ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-              {connected ? "Đã kết nối" : "Mất kết nối"}
+              {connected ? t('mqtt.replayPage.connected') : t('mqtt.replayPage.disconnected')}
             </Badge>
           </div>
         </div>
@@ -227,8 +229,8 @@ export default function MQTTReplay() {
                       <SelectContent>
                         <SelectItem value="all">All machines</SelectItem>
                         {machines?.map((m) => (
-                          <SelectItem key={m.id} value={m.code}>
-                            {m.code}
+                          <SelectItem key={m.id} value={m.code || String(m.id)}>
+                            {m.code || String(m.id)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -278,9 +280,9 @@ export default function MQTTReplay() {
                       {filteredLiveMessages.length === 0 && (
                         <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
                           <Radio className="h-12 w-12 mb-4 animate-pulse" />
-                          <p>Đang chờ tin nhắn MQTT...</p>
+                          <p>{t('mqtt.replayPage.waitingMessages')}</p>
                           <p className="text-sm mt-2">
-                            {isPlaying ? "Stream đang chạy" : "Stream đã tạm dừng"}
+                            {isPlaying ? t('mqtt.replayPage.streamRunning') : t('mqtt.replayPage.streamPaused')}
                           </p>
                         </div>
                       )}
@@ -292,7 +294,7 @@ export default function MQTTReplay() {
               {/* Message Detail */}
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-lg">Chi tiết Message</CardTitle>
+                  <CardTitle className="text-lg">{t('mqtt.replayPage.messageDetail')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {selectedMessage ? (
@@ -323,7 +325,7 @@ export default function MQTTReplay() {
                   ) : (
                     <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
                       <Search className="h-12 w-12 mb-4" />
-                      <p>Chọn một message để xem chi tiết</p>
+                      <p>{t('mqtt.replayPage.selectMessage')}</p>
                     </div>
                   )}
                 </CardContent>
@@ -335,9 +337,9 @@ export default function MQTTReplay() {
           <TabsContent value="history" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Lịch sử Message</CardTitle>
+                <CardTitle className="text-lg">{t('mqtt.replayPage.messageHistory')}</CardTitle>
                 <CardDescription>
-                  Xem lại các tin nhắn MQTT đã được lưu trữ
+                  {t('mqtt.replayPage.messageHistoryDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -355,15 +357,15 @@ export default function MQTTReplay() {
                     <SelectContent>
                       <SelectItem value="all">All machines</SelectItem>
                       {machines?.map((m) => (
-                        <SelectItem key={m.id} value={m.code}>
-                          {m.code}
+                        <SelectItem key={m.id} value={m.code || String(m.id)}>
+                          {m.code || String(m.id)}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   <Button variant="outline" onClick={() => refetchHistory()}>
                     <RefreshCw className="h-4 w-4 mr-2" />
-                    Làm mới
+                    {t('common.refresh')}
                   </Button>
                 </div>
 
@@ -391,7 +393,7 @@ export default function MQTTReplay() {
                     {(!messageHistory || messageHistory.length === 0) && (
                       <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
                         <Clock className="h-12 w-12 mb-4" />
-                        <p>Không có lịch sử message</p>
+                        <p>{t('mqtt.replayPage.noHistory')}</p>
                       </div>
                     )}
                   </div>
@@ -409,14 +411,14 @@ export default function MQTTReplay() {
                   Machine Auto-Discovery
                 </CardTitle>
                 <CardDescription>
-                  Các máy được tự động phát hiện từ MQTT topics
+                  {t('mqtt.replayPage.autoDiscoveryDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex justify-end mb-4">
                   <Button variant="outline" onClick={() => refetchDiscovered()}>
                     <RefreshCw className="h-4 w-4 mr-2" />
-                    Làm mới
+                    {t('common.refresh')}
                   </Button>
                 </div>
 
@@ -434,29 +436,29 @@ export default function MQTTReplay() {
                               </p>
                             </div>
                             {isRegistered ? (
-                              <Badge variant="default">Đã đăng ký</Badge>
+                              <Badge variant="default">{t('mqtt.replayPage.registered')}</Badge>
                             ) : (
-                              <Badge variant="secondary">Mới</Badge>
+                              <Badge variant="secondary">{t('mqtt.replayPage.new')}</Badge>
                             )}
                           </div>
                           <div className="space-y-1 text-sm">
                             <div className="flex justify-between">
-                              <span className="text-muted-foreground">Phát hiện lần đầu:</span>
+                              <span className="text-muted-foreground">{t('mqtt.replayPage.firstDetected')}:</span>
                               <span>{new Date(machine.firstSeen).toLocaleString("vi-VN")}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-muted-foreground">Lần cuối:</span>
+                              <span className="text-muted-foreground">{t('mqtt.replayPage.lastSeen')}:</span>
                               <span>{new Date(machine.lastSeen).toLocaleString("vi-VN")}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-muted-foreground">Số message:</span>
+                              <span className="text-muted-foreground">{t('mqtt.replayPage.messageCountLabel')}:</span>
                               <span>{machine.messageCount}</span>
                             </div>
                           </div>
                           {!isRegistered && (
                             <Button size="sm" className="w-full mt-3" variant="outline">
                               <Plus className="h-4 w-4 mr-2" />
-                              Đăng ký máy
+                              {t('mqtt.replayPage.registerMachine')}
                             </Button>
                           )}
                         </CardContent>
@@ -466,9 +468,9 @@ export default function MQTTReplay() {
                   {(!discoveredMachines || discoveredMachines.length === 0) && (
                     <div className="col-span-full flex flex-col items-center justify-center h-64 text-muted-foreground">
                       <AlertCircle className="h-12 w-12 mb-4" />
-                      <p>Chưa phát hiện máy nào từ MQTT</p>
+                      <p>{t('mqtt.replayPage.noMachinesDetected')}</p>
                       <p className="text-sm mt-2">
-                        Hệ thống sẽ tự động phát hiện khi có message từ máy mới
+                        {t('mqtt.replayPage.autoDetectInfo')}
                       </p>
                     </div>
                   )}

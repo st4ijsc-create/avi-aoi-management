@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -59,14 +60,15 @@ const getAnnotationIcon = (type: string): React.ComponentType<{ className?: stri
 };
 
 const annotationTypeLabels: Record<string, string> = {
-  rectangle: 'Rectangle',
-  circle: 'Circle',
-  arrow: 'Arrow',
-  freehand: 'Freehand',
-  text: 'Text',
+  rectangle: 'annotation.search.typeRectangle',
+  circle: 'annotation.search.typeCircle',
+  arrow: 'annotation.search.typeArrow',
+  freehand: 'annotation.search.typeFreehand',
+  text: 'annotation.search.typeText',
 };
 
 export function AnnotationSearch({ onSelectImage }: AnnotationSearchProps) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
@@ -115,13 +117,13 @@ export function AnnotationSearch({ onSelectImage }: AnnotationSearchProps) {
   };
 
   const colorOptions = [
-    { value: 'all', label: 'All Colors' },
-    { value: '#ef4444', label: 'Red (Defects)' },
-    { value: '#f97316', label: 'Orange (Warnings)' },
-    { value: '#eab308', label: 'Yellow (Caution)' },
-    { value: '#22c55e', label: 'Green (OK)' },
-    { value: '#3b82f6', label: 'Blue (Measurement)' },
-    { value: '#8b5cf6', label: 'Purple (Notes)' },
+    { value: 'all', label: t('annotation.search.allColors') },
+    { value: '#ef4444', label: t('annotation.search.colorRed') },
+    { value: '#f97316', label: t('annotation.search.colorOrange') },
+    { value: '#eab308', label: t('annotation.search.colorYellow') },
+    { value: '#22c55e', label: t('annotation.search.colorGreen') },
+    { value: '#3b82f6', label: t('annotation.search.colorBlue') },
+    { value: '#8b5cf6', label: t('annotation.search.colorPurple') },
   ];
 
   const groupedResults: Record<string, SearchResult[]> = useMemo(() => {
@@ -149,7 +151,7 @@ export function AnnotationSearch({ onSelectImage }: AnnotationSearchProps) {
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2">
           <Search className="h-4 w-4" />
-          Search Annotations
+          {t('annotation.search.searchAnnotations')}
           {activeFiltersCount > 0 && (
             <Badge variant="secondary" className="ml-1">
               {activeFiltersCount}
@@ -161,7 +163,7 @@ export function AnnotationSearch({ onSelectImage }: AnnotationSearchProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Search className="h-5 w-5" />
-            Search Images by Annotation
+            {t('annotation.search.searchByAnnotation')}
           </DialogTitle>
         </DialogHeader>
 
@@ -172,7 +174,7 @@ export function AnnotationSearch({ onSelectImage }: AnnotationSearchProps) {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search annotation text content..."
+                placeholder={t('annotation.search.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -180,7 +182,7 @@ export function AnnotationSearch({ onSelectImage }: AnnotationSearchProps) {
               />
             </div>
             <Button onClick={handleSearch} disabled={isLoading}>
-              {isLoading ? 'Searching...' : 'Search'}
+              {isLoading ? t('annotation.search.searching') : t('common.search')}
             </Button>
             {activeFiltersCount > 0 && (
               <Button variant="ghost" size="icon" onClick={handleClearFilters}>
@@ -193,7 +195,7 @@ export function AnnotationSearch({ onSelectImage }: AnnotationSearchProps) {
           <div className="flex flex-wrap gap-4 items-end">
             {/* Annotation Types */}
             <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Annotation Types</Label>
+              <Label className="text-xs text-muted-foreground">{t('annotation.search.annotationTypes')}</Label>
               <div className="flex gap-1">
                 {(Object.keys(annotationTypeIcons) as AnnotationType[]).map((type) => {
                   const Icon = annotationTypeIcons[type];
@@ -204,7 +206,7 @@ export function AnnotationSearch({ onSelectImage }: AnnotationSearchProps) {
                       size="sm"
                       className="h-8 w-8 p-0"
                       onClick={() => handleTypeToggle(type)}
-                      title={annotationTypeLabels[type]}
+                      title={t(annotationTypeLabels[type])}
                     >
                       <Icon className="h-4 w-4" />
                     </Button>
@@ -215,7 +217,7 @@ export function AnnotationSearch({ onSelectImage }: AnnotationSearchProps) {
 
             {/* Color Filter */}
             <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Color</Label>
+              <Label className="text-xs text-muted-foreground">{t('annotation.search.color')}</Label>
               <Select value={selectedColor} onValueChange={setSelectedColor}>
                 <SelectTrigger className="w-[160px] h-8">
                   <SelectValue />
@@ -240,7 +242,7 @@ export function AnnotationSearch({ onSelectImage }: AnnotationSearchProps) {
 
             {/* Date Range */}
             <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Date Range</Label>
+              <Label className="text-xs text-muted-foreground">{t('annotation.search.dateRange')}</Label>
               <div className="flex gap-2 items-center">
                 <Input
                   type="date"
@@ -248,7 +250,7 @@ export function AnnotationSearch({ onSelectImage }: AnnotationSearchProps) {
                   onChange={(e) => setDateFrom(e.target.value)}
                   className="h-8 w-[130px]"
                 />
-                <span className="text-muted-foreground">to</span>
+                <span className="text-muted-foreground">{t('common.to')}</span>
                 <Input
                   type="date"
                   value={dateTo}
@@ -269,7 +271,7 @@ export function AnnotationSearch({ onSelectImage }: AnnotationSearchProps) {
           ) : searchResults && searchResults.length > 0 ? (
             <div className="space-y-4 p-2">
               <p className="text-sm text-muted-foreground">
-                Found {searchResults.length} annotation{searchResults.length !== 1 ? 's' : ''} in {Object.keys(groupedResults).length} image{Object.keys(groupedResults).length !== 1 ? 's' : ''}
+                {t('annotation.search.foundResults', { annotations: searchResults.length, images: Object.keys(groupedResults).length })}
               </p>
               
               <div className="grid grid-cols-2 gap-4">
@@ -360,8 +362,8 @@ export function AnnotationSearch({ onSelectImage }: AnnotationSearchProps) {
           ) : (
             <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
               <ImageIcon className="h-12 w-12 mb-4 opacity-50" />
-              <p>No annotated images found</p>
-              <p className="text-sm">Try adjusting your search criteria</p>
+              <p>{t('annotation.search.noResults')}</p>
+              <p className="text-sm">{t('annotation.search.tryAdjusting')}</p>
             </div>
           )}
         </div>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ const SYSTEM_TEMPLATES = [
     id: "production-overview",
     name: "Production Overview",
     description: "Tổng quan sản xuất với biểu đồ sản lượng, yield rate, và trạng thái máy",
+    descriptionKey: "dashboard.tplProductionOverviewDesc",
     templateType: "system" as const,
     icon: BarChart3,
     widgets: ["production-stats", "yield-chart", "machine-status", "hourly-trend"],
@@ -46,6 +48,7 @@ const SYSTEM_TEMPLATES = [
     id: "quality-control",
     name: "Quality Control",
     description: "Giám sát chất lượng với NG analysis, SPC charts, và defect tracking",
+    descriptionKey: "dashboard.tplQualityControlDesc",
     templateType: "system" as const,
     icon: PieChart,
     widgets: ["ng-analysis", "spc-chart", "defect-pareto", "quality-trend"],
@@ -61,6 +64,7 @@ const SYSTEM_TEMPLATES = [
     id: "machine-health",
     name: "Machine Health",
     description: "Theo dõi sức khỏe máy với uptime, alerts, và maintenance schedule",
+    descriptionKey: "dashboard.tplMachineHealthDesc",
     templateType: "system" as const,
     icon: Activity,
     widgets: ["machine-uptime", "alert-summary", "maintenance-calendar", "oee-gauge"],
@@ -76,6 +80,7 @@ const SYSTEM_TEMPLATES = [
     id: "executive-summary",
     name: "Executive Summary",
     description: "Báo cáo tổng hợp cho quản lý với KPIs, trends, và comparisons",
+    descriptionKey: "dashboard.tplExecutiveSummaryDesc",
     templateType: "system" as const,
     icon: Gauge,
     widgets: ["kpi-cards", "factory-comparison", "monthly-trend", "top-issues"],
@@ -91,6 +96,7 @@ const SYSTEM_TEMPLATES = [
     id: "realtime-monitoring",
     name: "Realtime Monitoring",
     description: "Giám sát thời gian thực với live data, alerts, và status updates",
+    descriptionKey: "dashboard.tplRealtimeMonitoringDesc",
     templateType: "system" as const,
     icon: TrendingUp,
     widgets: ["live-production", "active-alerts", "machine-map", "recent-inspections"],
@@ -106,6 +112,7 @@ const SYSTEM_TEMPLATES = [
     id: "alert-management",
     name: "Alert Management",
     description: "Quản lý cảnh báo với alert history, rules, và notifications",
+    descriptionKey: "dashboard.tplAlertManagementDesc",
     templateType: "system" as const,
     icon: AlertTriangle,
     widgets: ["alert-timeline", "alert-rules", "notification-stats", "escalation-matrix"],
@@ -120,6 +127,7 @@ const SYSTEM_TEMPLATES = [
 ];
 
 export default function DashboardTemplates() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   
@@ -134,7 +142,7 @@ export default function DashboardTemplates() {
   
   const createTemplateMutation = trpc.dashboard.createTemplate.useMutation({
     onSuccess: () => {
-      toast.success("Đã tạo template mới");
+      toast.success(t('dashboard.templateCreated'));
       setCreateDialogOpen(false);
       setNewTemplate({ name: "", description: "", templateType: "shared" });
       refetch();
@@ -146,7 +154,7 @@ export default function DashboardTemplates() {
 
   const deleteTemplateMutation = trpc.dashboard.deleteTemplate.useMutation({
     onSuccess: () => {
-      toast.success("Đã xóa template");
+      toast.success(t('dashboard.templateDeleted'));
       refetch();
     },
     onError: (error) => {
@@ -156,7 +164,7 @@ export default function DashboardTemplates() {
 
   const applyTemplateMutation = trpc.dashboard.applyTemplate.useMutation({
     onSuccess: (data) => {
-      toast.success("Đã áp dụng template. Vui lòng vào Dashboard để xem kết quả.");
+      toast.success(t('dashboard.templateApplied'));
       // In a real implementation, this would update the user's dashboard configuration
       console.log("Applied template:", data);
     },
@@ -167,7 +175,7 @@ export default function DashboardTemplates() {
 
   const handleCreateTemplate = () => {
     if (!newTemplate.name.trim()) {
-      toast.error("Vui lòng nhập tên template");
+      toast.error(t('dashboard.enterTemplateName'));
       return;
     }
     
@@ -183,7 +191,7 @@ export default function DashboardTemplates() {
 
   const handleApplySystemTemplate = (template: typeof SYSTEM_TEMPLATES[0]) => {
     // For system templates, we just show a toast with instructions
-    toast.info(`Template: ${template.name} - Vui lòng vào Dashboard và chọn 'Áp dụng Template' để sử dụng template này.`);
+    toast.info(`Template: ${template.name} - ${t('dashboard.applyTemplateInstruction')}`);
   };
 
   return (
@@ -197,7 +205,7 @@ export default function DashboardTemplates() {
               Dashboard Templates
             </h1>
             <p className="text-muted-foreground mt-1">
-              Chọn template có sẵn hoặc tạo template tùy chỉnh cho dashboard
+              {t('dashboard.templatesDescription')}
             </p>
           </div>
           
@@ -206,19 +214,19 @@ export default function DashboardTemplates() {
               <DialogTrigger asChild>
                 <Button>
                   <Plus className="h-4 w-4 mr-2" />
-                  Tạo Template
+                  {t('dashboard.createTemplate')}
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Tạo Template Mới</DialogTitle>
+                  <DialogTitle>{t('dashboard.createNewTemplate')}</DialogTitle>
                   <DialogDescription>
-                    Tạo template dashboard tùy chỉnh để chia sẻ với team
+                    {t('dashboard.createTemplateDescription')}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
-                    <Label htmlFor="name">Tên Template</Label>
+                    <Label htmlFor="name">{t('dashboard.templateName')}</Label>
                     <Input
                       id="name"
                       value={newTemplate.name}
@@ -227,16 +235,16 @@ export default function DashboardTemplates() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="description">Mô tả</Label>
+                    <Label htmlFor="description">{t('common.description')}</Label>
                     <Textarea
                       id="description"
                       value={newTemplate.description}
                       onChange={(e) => setNewTemplate({ ...newTemplate, description: e.target.value })}
-                      placeholder="Mô tả ngắn về template..."
+                      placeholder={t('dashboard.descriptionPlaceholder')}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="type">Loại Template</Label>
+                    <Label htmlFor="type">{t('dashboard.templateType')}</Label>
                     <Select
                       value={newTemplate.templateType}
                       onValueChange={(value: "system" | "shared") => 
@@ -255,10 +263,10 @@ export default function DashboardTemplates() {
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
-                    Hủy
+                    {t('common.cancel')}
                   </Button>
                   <Button onClick={handleCreateTemplate} disabled={createTemplateMutation.isPending}>
-                    {createTemplateMutation.isPending ? "Đang tạo..." : "Tạo Template"}
+                    {createTemplateMutation.isPending ? t('dashboard.creating') : t('dashboard.createTemplate')}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -283,7 +291,7 @@ export default function DashboardTemplates() {
                     </div>
                     <CardTitle className="text-lg mt-3">{template.name}</CardTitle>
                     <CardDescription className="line-clamp-2">
-                      {template.description}
+                      {t(template.descriptionKey)}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -298,7 +306,7 @@ export default function DashboardTemplates() {
                         onClick={() => handleApplySystemTemplate(template)}
                       >
                         <Eye className="h-4 w-4 mr-1" />
-                        Xem trước
+                        {t('dashboard.preview')}
                       </Button>
                       <Button 
                         size="sm" 
@@ -306,7 +314,7 @@ export default function DashboardTemplates() {
                         onClick={() => handleApplySystemTemplate(template)}
                       >
                         <Copy className="h-4 w-4 mr-1" />
-                        Áp dụng
+                        {t('dashboard.apply')}
                       </Button>
                     </div>
                   </CardContent>
@@ -334,14 +342,14 @@ export default function DashboardTemplates() {
                     </div>
                     <CardTitle className="text-lg mt-3">{template.name}</CardTitle>
                     <CardDescription className="line-clamp-2">
-                      {template.description || "Không có mô tả"}
+                      {template.description || t('dashboard.noDescription')}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
                       <span>{template.widgets?.length || 0} widgets</span>
                       <span>•</span>
-                      <span>{template.usageCount} lần sử dụng</span>
+                      <span>{template.usageCount} {t('dashboard.timesUsed')}</span>
                     </div>
                     <div className="flex gap-2">
                       <Button 
@@ -352,7 +360,7 @@ export default function DashboardTemplates() {
                         disabled={applyTemplateMutation.isPending}
                       >
                         <Copy className="h-4 w-4 mr-1" />
-                        Áp dụng
+                        {t('dashboard.apply')}
                       </Button>
                       {isAdmin && (
                         <Button 
@@ -373,7 +381,7 @@ export default function DashboardTemplates() {
             <Card className="p-8 text-center">
               <LayoutTemplate className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
               <p className="text-muted-foreground">
-                Chưa có custom template nào. {isAdmin && "Hãy tạo template đầu tiên!"}
+                {t('dashboard.noCustomTemplates')} {isAdmin && t('dashboard.createFirstTemplate')}
               </p>
             </Card>
           )}

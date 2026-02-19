@@ -7,9 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
+import { useTranslation } from 'react-i18next';
 import { Loader2, Shield } from "lucide-react";
 
 export default function Setup() {
+  const { t } = useTranslation();
   const [form, setForm] = useState({
     username: "",
     email: "",
@@ -40,7 +42,7 @@ export default function Setup() {
       required: true,
       custom: (value: string) => {
         if (value !== form.password) {
-          return "Mật khẩu không khớp";
+          return t('auth.passwordMismatch');
         }
         return null;
       },
@@ -49,13 +51,13 @@ export default function Setup() {
 
   const setupAdminMutation = trpc.auth.setupAdmin.useMutation({
     onSuccess: () => {
-      toast.success("Tạo admin thành công! Đang chuyển đến trang đăng nhập...");
+      toast.success(t('setup.adminCreatedSuccess'));
       setTimeout(() => {
         window.location.href = "/login";
       }, 1500);
     },
     onError: (error) => {
-      toast.error(error.message || "Có lỗi xảy ra khi tạo admin");
+      toast.error(error.message || t('setup.adminCreatedError'));
     },
   });
 
@@ -66,7 +68,7 @@ export default function Setup() {
     const isValid = validate(form);
 
     if (!isValid) {
-      toast.error("Vui lòng kiểm tra lại thông tin");
+      toast.error(t('setup.pleaseCheckInfo'));
       return;
     }
 
@@ -85,15 +87,15 @@ export default function Setup() {
           <div className="flex items-center justify-center mb-4">
             <Shield className="h-12 w-12 text-primary" />
           </div>
-          <CardTitle className="text-2xl text-center">Cài đặt Admin</CardTitle>
+          <CardTitle className="text-2xl text-center">{t('setup.adminSetup')}</CardTitle>
           <CardDescription className="text-center">
-            Tạo tài khoản admin đầu tiên cho hệ thống
+            {t('setup.createFirstAdmin')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username">Tên đăng nhập</Label>
+              <Label htmlFor="username">{t('auth.username')}</Label>
               <Input
                 id="username"
                 type="text"
@@ -125,7 +127,7 @@ export default function Setup() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="name">Tên</Label>
+              <Label htmlFor="name">{t('profile.name')}</Label>
               <Input
                 id="name"
                 type="text"
@@ -141,7 +143,7 @@ export default function Setup() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Mật khẩu</Label>
+              <Label htmlFor="password">{t('auth.password')}</Label>
               <Input
                 id="password"
                 type="password"
@@ -157,7 +159,7 @@ export default function Setup() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Xác nhận mật khẩu</Label>
+              <Label htmlFor="confirmPassword">{t('auth.confirmPassword')}</Label>
               <Input
                 id="confirmPassword"
                 type="password"
@@ -180,10 +182,10 @@ export default function Setup() {
               {setupAdminMutation.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Đang tạo...
+                  {t('setup.creating')}
                 </>
               ) : (
-                "Tạo Admin"
+                t('setup.createAdmin')
               )}
             </Button>
           </form>

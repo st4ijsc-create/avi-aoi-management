@@ -9,7 +9,18 @@ let intervalId: NodeJS.Timeout | null = null;
 
 export async function checkOfflineMachines(): Promise<void> {
   try {
-    const unnotifiedMachines = await db.getUnnotifiedOfflineMachines(OFFLINE_THRESHOLD_MINUTES);
+    let unnotifiedMachines;
+    try {
+      unnotifiedMachines = await db.getUnnotifiedOfflineMachines(OFFLINE_THRESHOLD_MINUTES);
+    } catch (dbError: any) {
+      // Graceful handling for DB connection timeouts
+      const code = dbError?.cause?.code || dbError?.code;
+      if (code === 'CONNECT_TIMEOUT' || code === 'CONNECTION_CLOSED' || code === 'ECONNREFUSED') {
+        console.warn(`[OfflineMonitor] DB temporarily unreachable (${code}), will retry next interval`);
+        return;
+      }
+      throw dbError;
+    }
     
     if (unnotifiedMachines.length === 0) {
       return;

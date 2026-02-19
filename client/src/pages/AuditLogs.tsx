@@ -16,6 +16,7 @@ import {
   Download
 } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from 'react-i18next';
 import { useState } from "react";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -23,35 +24,36 @@ import {
 } from "recharts";
 
 const ACTION_LABELS: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  login: { label: "Đăng nhập", icon: <LogIn className="h-4 w-4" />, color: "bg-green-500" },
-  login_failed: { label: "Đăng nhập thất bại", icon: <AlertTriangle className="h-4 w-4" />, color: "bg-red-500" },
-  logout: { label: "Đăng xuất", icon: <LogOut className="h-4 w-4" />, color: "bg-blue-500" },
-  create: { label: "Tạo mới", icon: <Plus className="h-4 w-4" />, color: "bg-emerald-500" },
-  update: { label: "Cập nhật", icon: <Edit className="h-4 w-4" />, color: "bg-yellow-500" },
-  delete: { label: "Xóa", icon: <Trash2 className="h-4 w-4" />, color: "bg-red-500" },
-  password_change: { label: "Đổi mật khẩu", icon: <Key className="h-4 w-4" />, color: "bg-purple-500" },
-  role_change: { label: "Thay đổi vai trò", icon: <Shield className="h-4 w-4" />, color: "bg-orange-500" },
-  export: { label: "Xuất dữ liệu", icon: <TrendingUp className="h-4 w-4" />, color: "bg-cyan-500" },
+  login: { label: "audit.actionLogin", icon: <LogIn className="h-4 w-4" />, color: "bg-green-500" },
+  login_failed: { label: "audit.actionLoginFailed", icon: <AlertTriangle className="h-4 w-4" />, color: "bg-red-500" },
+  logout: { label: "audit.actionLogout", icon: <LogOut className="h-4 w-4" />, color: "bg-blue-500" },
+  create: { label: "audit.actionCreate", icon: <Plus className="h-4 w-4" />, color: "bg-emerald-500" },
+  update: { label: "audit.actionUpdate", icon: <Edit className="h-4 w-4" />, color: "bg-yellow-500" },
+  delete: { label: "audit.actionDelete", icon: <Trash2 className="h-4 w-4" />, color: "bg-red-500" },
+  password_change: { label: "audit.actionPasswordChange", icon: <Key className="h-4 w-4" />, color: "bg-purple-500" },
+  role_change: { label: "audit.actionRoleChange", icon: <Shield className="h-4 w-4" />, color: "bg-orange-500" },
+  export: { label: "audit.actionExport", icon: <TrendingUp className="h-4 w-4" />, color: "bg-cyan-500" },
 };
 
 const ENTITY_LABELS: Record<string, string> = {
-  user: "Người dùng",
-  machine: "Máy",
-  product: "Sản phẩm",
-  inspection: "Kiểm tra",
-  factory: "Nhà máy",
-  workshop: "Xưởng",
-  line: "Dây chuyền",
-  station: "Trạm",
-  alert: "Cảnh báo",
-  threshold: "Ngưỡng",
-  mapping: "Mapping",
-  order: "Đơn hàng",
+  user: "audit.entityUser",
+  machine: "audit.entityMachine",
+  product: "audit.entityProduct",
+  inspection: "audit.entityInspection",
+  factory: "audit.entityFactory",
+  workshop: "audit.entityWorkshop",
+  line: "audit.entityLine",
+  station: "audit.entityStation",
+  alert: "audit.entityAlert",
+  threshold: "audit.entityThreshold",
+  mapping: "audit.entityMapping",
+  order: "audit.entityOrder",
 };
 
 const CHART_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
 
 export default function AuditLogs() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [filters, setFilters] = useState({
     action: "all",
@@ -82,12 +84,12 @@ export default function AuditLogs() {
   // Check admin access after all hooks
   if (!isAdmin) {
     return (
-      <DashboardLayout title="Lịch sử hoạt động" currentPath="/audit-logs">
+      <DashboardLayout title={t('audit.title')} currentPath="/audit-logs">
         <div className="container py-12 text-center">
           <Shield className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-          <h2 className="text-xl font-semibold">Truy cập bị từ chối</h2>
+          <h2 className="text-xl font-semibold">{t('audit.accessDenied')}</h2>
           <p className="text-muted-foreground mt-2">
-            Chỉ quản trị viên mới có quyền xem lịch sử hoạt động hệ thống.
+            {t('audit.adminOnlyMessage')}
           </p>
         </div>
       </DashboardLayout>
@@ -118,28 +120,28 @@ export default function AuditLogs() {
   // Export to CSV function
   const handleExportCSV = () => {
     if (!logsData?.logs || logsData.logs.length === 0) {
-      toast.error("Không có dữ liệu để xuất");
+      toast.error(t('audit.noDataToExport'));
       return;
     }
 
     const headers = [
-      "Thời gian",
-      "Người dùng",
-      "Hành động",
-      "Đối tượng",
-      "ID đối tượng",
-      "Trạng thái",
-      "Địa chỉ IP",
-      "Chi tiết"
+      t('audit.csvTime'),
+      t('audit.csvUser'),
+      t('audit.csvAction'),
+      t('audit.csvEntity'),
+      t('audit.csvEntityId'),
+      t('audit.csvStatus'),
+      t('audit.csvIpAddress'),
+      t('audit.csvDetails')
     ];
 
     const rows = logsData.logs.map(log => [
       formatDate(log.createdAt),
-      log.userName || "Hệ thống",
-      ACTION_LABELS[log.action]?.label || log.action,
-      ENTITY_LABELS[log.entityType || ""] || log.entityType || "",
+      log.userName || t('audit.system'),
+      t(ACTION_LABELS[log.action]?.label || log.action),
+      t(ENTITY_LABELS[log.entityType || ""] || log.entityType || ""),
       log.entityId || "",
-      log.status === "success" ? "Thành công" : "Thất bại",
+      log.status === "success" ? t('audit.statusSuccess') : t('audit.statusFailure'),
       log.ipAddress || "",
       log.details ? JSON.stringify(log.details) : ""
     ]);
@@ -160,30 +162,30 @@ export default function AuditLogs() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
     
-    toast.success(`Đã xuất ${logsData.logs.length} bản ghi`);
+    toast.success(t('audit.exportSuccess', { count: logsData.logs.length }));
   };
 
   // Prepare chart data
   const pieData = stats ? [
-    { name: "Đăng nhập", value: stats.loginCount },
-    { name: "Tạo mới", value: stats.createCount },
-    { name: "Cập nhật", value: stats.updateCount },
-    { name: "Xóa", value: stats.deleteCount },
-    { name: "Thất bại", value: stats.failedLogins },
+    { name: t('audit.actionLogin'), value: stats.loginCount },
+    { name: t('audit.actionCreate'), value: stats.createCount },
+    { name: t('audit.actionUpdate'), value: stats.updateCount },
+    { name: t('audit.actionDelete'), value: stats.deleteCount },
+    { name: t('audit.statusFailure'), value: stats.failedLogins },
   ].filter(d => d.value > 0) : [];
 
   return (
-    <DashboardLayout title="Lịch sử hoạt động" currentPath="/audit-logs">
+    <DashboardLayout title={t('audit.title')} currentPath="/audit-logs">
       <div className="container py-6 space-y-6">
         <Tabs defaultValue="logs">
           <TabsList>
             <TabsTrigger value="logs" className="gap-2">
               <Activity className="h-4 w-4" />
-              Nhật ký
+              {t('audit.logs')}
             </TabsTrigger>
             <TabsTrigger value="stats" className="gap-2">
               <TrendingUp className="h-4 w-4" />
-              Thống kê
+              {t('audit.statistics')}
             </TabsTrigger>
           </TabsList>
 
@@ -193,60 +195,60 @@ export default function AuditLogs() {
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
                   <Filter className="h-4 w-4" />
-                  Bộ lọc
+                  {t('audit.filters')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div className="space-y-2">
-                    <Label>Hành động</Label>
+                    <Label>{t('audit.action')}</Label>
                     <Select 
                       value={filters.action} 
                       onValueChange={(v) => { setFilters({ ...filters, action: v }); setPage(0); }}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Tất cả" />
+                        <SelectValue placeholder={t('common.all')} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">Tất cả</SelectItem>
+                        <SelectItem value="all">{t('common.all')}</SelectItem>
                         {Object.entries(ACTION_LABELS).map(([key, { label }]) => (
-                          <SelectItem key={key} value={key}>{label}</SelectItem>
+                          <SelectItem key={key} value={key}>{t(label)}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Đối tượng</Label>
+                    <Label>{t('audit.entity')}</Label>
                     <Select 
                       value={filters.entityType} 
                       onValueChange={(v) => { setFilters({ ...filters, entityType: v }); setPage(0); }}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Tất cả" />
+                        <SelectValue placeholder={t('common.all')} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">Tất cả</SelectItem>
+                        <SelectItem value="all">{t('common.all')}</SelectItem>
                         {Object.entries(ENTITY_LABELS).map(([key, label]) => (
-                          <SelectItem key={key} value={key}>{label}</SelectItem>
+                          <SelectItem key={key} value={key}>{t(label)}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Trạng thái</Label>
+                    <Label>{t('audit.statusLabel')}</Label>
                     <Select 
                       value={filters.status} 
                       onValueChange={(v) => { setFilters({ ...filters, status: v }); setPage(0); }}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Tất cả" />
+                        <SelectValue placeholder={t('common.all')} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">Tất cả</SelectItem>
-                        <SelectItem value="success">Thành công</SelectItem>
-                        <SelectItem value="failure">Thất bại</SelectItem>
+                        <SelectItem value="all">{t('common.all')}</SelectItem>
+                        <SelectItem value="success">{t('audit.statusSuccess')}</SelectItem>
+                        <SelectItem value="failure">{t('audit.statusFailure')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -259,7 +261,7 @@ export default function AuditLogs() {
                       onClick={() => { setFilters({ action: "", entityType: "", status: "", search: "" }); setPage(0); }}
                     >
                       <RefreshCw className="h-4 w-4 mr-2" />
-                      Xóa bộ lọc
+                      {t('audit.clearFilters')}
                     </Button>
                   </div>
                 </div>
@@ -272,10 +274,10 @@ export default function AuditLogs() {
                 <CardTitle className="flex items-center justify-between">
                   <span className="flex items-center gap-2">
                     <Activity className="h-5 w-5" />
-                    Nhật ký hoạt động
+                    {t('audit.activityLog')}
                   </span>
                   <div className="flex items-center gap-2">
-                    <Badge variant="secondary">{logsData?.total || 0} bản ghi</Badge>
+                    <Badge variant="secondary">{logsData?.total || 0} {t('audit.records')}</Badge>
                     <Button 
                       variant="outline" 
                       size="sm"
@@ -283,7 +285,7 @@ export default function AuditLogs() {
                       disabled={!logsData?.logs || logsData.logs.length === 0}
                     >
                       <Download className="h-4 w-4 mr-2" />
-                      Xuất CSV
+                      {t('audit.exportCSV')}
                     </Button>
                   </div>
                 </CardTitle>
@@ -291,19 +293,19 @@ export default function AuditLogs() {
               <CardContent>
                 {isLoading ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    Đang tải...
+                    {t('common.loading')}
                   </div>
                 ) : (
                   <>
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="w-[180px]">Thời gian</TableHead>
-                          <TableHead>Người dùng</TableHead>
-                          <TableHead>Hành động</TableHead>
-                          <TableHead>Đối tượng</TableHead>
-                          <TableHead>Chi tiết</TableHead>
-                          <TableHead className="w-[100px]">Trạng thái</TableHead>
+                          <TableHead className="w-[180px]">{t('audit.csvTime')}</TableHead>
+                          <TableHead>{t('audit.csvUser')}</TableHead>
+                          <TableHead>{t('audit.csvAction')}</TableHead>
+                          <TableHead>{t('audit.csvEntity')}</TableHead>
+                          <TableHead>{t('audit.csvDetails')}</TableHead>
+                          <TableHead className="w-[100px]">{t('audit.csvStatus')}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -323,7 +325,7 @@ export default function AuditLogs() {
                                     <User className="h-4 w-4 text-primary" />
                                   </div>
                                   <span className="font-medium">
-                                    {log.userName || "Hệ thống"}
+                                    {log.userName || t('audit.system')}
                                   </span>
                                 </div>
                               </TableCell>
@@ -332,14 +334,14 @@ export default function AuditLogs() {
                                   <div className={`p-1 rounded ${actionInfo.color} text-white`}>
                                     {actionInfo.icon}
                                   </div>
-                                  <span>{actionInfo.label}</span>
+                                  <span>{t(actionInfo.label)}</span>
                                 </div>
                               </TableCell>
                               <TableCell>
                                 {log.entityType && (
                                   <div>
                                     <span className="text-muted-foreground">
-                                      {ENTITY_LABELS[log.entityType] || log.entityType}
+                                      {t(ENTITY_LABELS[log.entityType] || log.entityType)}
                                     </span>
                                     {log.entityName && (
                                       <span className="ml-1 font-medium">
@@ -374,7 +376,7 @@ export default function AuditLogs() {
                                 ) : (
                                   <Badge variant="outline" className="text-red-600 border-red-600">
                                     <XCircle className="h-3 w-3 mr-1" />
-                                    Lỗi
+                                    {t('audit.statusError')}
                                   </Badge>
                                 )}
                               </TableCell>
@@ -384,7 +386,7 @@ export default function AuditLogs() {
                         {(!logsData?.logs || logsData.logs.length === 0) && (
                           <TableRow>
                             <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                              Không có dữ liệu
+                              {t('audit.noData')}
                             </TableCell>
                           </TableRow>
                         )}
@@ -395,7 +397,7 @@ export default function AuditLogs() {
                     {totalPages > 1 && (
                       <div className="flex items-center justify-between mt-4">
                         <p className="text-sm text-muted-foreground">
-                          Trang {page + 1} / {totalPages}
+                          {t('audit.page')} {page + 1} / {totalPages}
                         </p>
                         <div className="flex gap-2">
                           <Button
@@ -404,7 +406,7 @@ export default function AuditLogs() {
                             onClick={() => setPage(p => Math.max(0, p - 1))}
                             disabled={page === 0}
                           >
-                            Trước
+                            {t('common.previous')}
                           </Button>
                           <Button
                             variant="outline"
@@ -412,7 +414,7 @@ export default function AuditLogs() {
                             onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
                             disabled={page >= totalPages - 1}
                           >
-                            Sau
+                            {t('common.next')}
                           </Button>
                         </div>
                       </div>
@@ -433,7 +435,7 @@ export default function AuditLogs() {
                       <Activity className="h-6 w-6 text-blue-500" />
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">Tổng hoạt động</p>
+                      <p className="text-sm text-muted-foreground">{t('audit.totalActivities')}</p>
                       <p className="text-2xl font-bold">{stats?.totalActions || 0}</p>
                     </div>
                   </div>
@@ -447,7 +449,7 @@ export default function AuditLogs() {
                       <LogIn className="h-6 w-6 text-green-500" />
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">Đăng nhập</p>
+                      <p className="text-sm text-muted-foreground">{t('audit.actionLogin')}</p>
                       <p className="text-2xl font-bold">{stats?.loginCount || 0}</p>
                     </div>
                   </div>
@@ -461,7 +463,7 @@ export default function AuditLogs() {
                       <AlertTriangle className="h-6 w-6 text-red-500" />
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">Đăng nhập thất bại</p>
+                      <p className="text-sm text-muted-foreground">{t('audit.actionLoginFailed')}</p>
                       <p className="text-2xl font-bold">{stats?.failedLogins || 0}</p>
                     </div>
                   </div>
@@ -475,7 +477,7 @@ export default function AuditLogs() {
                       <Users className="h-6 w-6 text-purple-500" />
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">Người dùng hoạt động</p>
+                      <p className="text-sm text-muted-foreground">{t('audit.activeUsers')}</p>
                       <p className="text-2xl font-bold">{stats?.topUsers?.length || 0}</p>
                     </div>
                   </div>
@@ -487,8 +489,8 @@ export default function AuditLogs() {
               {/* Actions by Day Chart */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Hoạt động theo ngày</CardTitle>
-                  <CardDescription>7 ngày gần nhất</CardDescription>
+                  <CardTitle className="text-base">{t('audit.activityByDay')}</CardTitle>
+                  <CardDescription>{t('audit.last7Days')}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="h-[300px]">
@@ -503,7 +505,7 @@ export default function AuditLogs() {
                         <YAxis className="text-xs" />
                         <Tooltip 
                           labelFormatter={(v) => new Date(v).toLocaleDateString("vi-VN")}
-                          formatter={(v: number) => [v, "Hoạt động"]}
+                          formatter={(v: number) => [v, t('audit.activities')]}
                         />
                         <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                       </BarChart>
@@ -515,8 +517,8 @@ export default function AuditLogs() {
               {/* Actions Distribution */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Phân bố hoạt động</CardTitle>
-                  <CardDescription>Theo loại hành động</CardDescription>
+                  <CardTitle className="text-base">{t('audit.activityDistribution')}</CardTitle>
+                  <CardDescription>{t('audit.byActionType')}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="h-[300px]">
@@ -547,8 +549,8 @@ export default function AuditLogs() {
             {/* Top Users */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Người dùng hoạt động nhiều nhất</CardTitle>
-                <CardDescription>Top 10 trong 7 ngày qua</CardDescription>
+                  <CardTitle className="text-base">{t('audit.mostActiveUsers')}</CardTitle>
+                  <CardDescription>{t('audit.top10Last7Days')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
@@ -560,12 +562,12 @@ export default function AuditLogs() {
                       <div className="flex-1">
                         <p className="font-medium">{u.userName}</p>
                       </div>
-                      <Badge variant="secondary">{u.count} hoạt động</Badge>
+                      <Badge variant="secondary">{u.count} {t('audit.activities')}</Badge>
                     </div>
                   ))}
                   {(!stats?.topUsers || stats.topUsers.length === 0) && (
                     <p className="text-center py-4 text-muted-foreground">
-                      Chưa có dữ liệu
+                      {t('audit.noData')}
                     </p>
                   )}
                 </div>

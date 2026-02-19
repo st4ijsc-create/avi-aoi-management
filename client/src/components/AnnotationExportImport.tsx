@@ -28,6 +28,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 
 interface ExportOptions {
   format: 'json' | 'csv';
@@ -47,6 +48,7 @@ interface ImportResult {
 export function AnnotationExportImport() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { t } = useTranslation();
   
   // Export state
   const [exportOptions, setExportOptions] = useState<ExportOptions>({
@@ -84,11 +86,11 @@ export function AnnotationExportImport() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       
-      toast.success(`Export thành công: Đã xuất ${data.count} annotations`);
+      toast.success(t('annotation.exportSuccess', { count: data.count }));
       setIsExporting(false);
     },
     onError: (error) => {
-      toast.error(`Export thất bại: ${error.message}`);
+      toast.error(`${t('annotation.exportFailed')}: ${error.message}`);
       setIsExporting(false);
     },
   });
@@ -100,11 +102,11 @@ export function AnnotationExportImport() {
       setIsImporting(false);
       
       if (data.success) {
-        toast.success(`Import thành công: Đã import ${data.imported} annotations, bỏ qua ${data.skipped}`);
+        toast.success(t('annotation.importSuccess', { imported: data.imported, skipped: data.skipped }));
       }
     },
     onError: (error) => {
-      toast.error(`Import thất bại: ${error.message}`);
+      toast.error(`${t('annotation.importFailed')}: ${error.message}`);
       setIsImporting(false);
     },
   });
@@ -145,7 +147,7 @@ export function AnnotationExportImport() {
 
   const handleImport = () => {
     if (!importData.trim()) {
-      toast.error('Không có dữ liệu: Vui lòng nhập hoặc tải lên file JSON');
+      toast.error(t('annotation.noImportData'));
       return;
     }
     
@@ -165,10 +167,10 @@ export function AnnotationExportImport() {
         setPreviewData(parsed.slice(0, 20));
         setShowPreview(true);
       } else {
-        toast.error('Định dạng không hợp lệ: Dữ liệu phải là một mảng JSON');
+        toast.error(t('annotation.invalidJsonFormat'));
       }
     } catch (err) {
-      toast.error('JSON không hợp lệ: Không thể parse dữ liệu JSON');
+      toast.error(t('annotation.invalidJson'));
     }
   };
 
@@ -195,7 +197,7 @@ export function AnnotationExportImport() {
                 Export Annotations
               </CardTitle>
               <CardDescription>
-                Xuất annotations ra file JSON hoặc CSV để chia sẻ hoặc backup
+                {t('annotation.exportDescription')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -213,7 +215,7 @@ export function AnnotationExportImport() {
                     <div>
                       <p className="font-medium">JSON</p>
                       <p className="text-sm text-muted-foreground">
-                        Đầy đủ dữ liệu, có thể import lại
+                        {t('annotation.jsonDescription')}
                       </p>
                     </div>
                   </CardContent>
@@ -231,7 +233,7 @@ export function AnnotationExportImport() {
                     <div>
                       <p className="font-medium">CSV</p>
                       <p className="text-sm text-muted-foreground">
-                        Mở được bằng Excel, dễ đọc
+                        {t('annotation.csvDescription')}
                       </p>
                     </div>
                   </CardContent>
@@ -241,7 +243,7 @@ export function AnnotationExportImport() {
               {/* Filters */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="space-y-2">
-                  <Label>Máy</Label>
+                  <Label>{t('history.machine')}</Label>
                   <Select
                     value={exportOptions.machineId?.toString() || 'all'}
                     onValueChange={(v) => setExportOptions(prev => ({ 
@@ -250,10 +252,10 @@ export function AnnotationExportImport() {
                     }))}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Tất cả máy" />
+                      <SelectValue placeholder={t('common.all')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Tất cả</SelectItem>
+                      <SelectItem value="all">{t('common.all')}</SelectItem>
                       {machines?.map((m: any) => (
                         <SelectItem key={m.id} value={m.id.toString()}>
                           {m.name}
@@ -264,7 +266,7 @@ export function AnnotationExportImport() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Model sản phẩm</Label>
+                  <Label>{t('annotation.productModel')}</Label>
                   <Select
                     value={exportOptions.productModelId?.toString() || 'all'}
                     onValueChange={(v) => setExportOptions(prev => ({ 
@@ -273,10 +275,10 @@ export function AnnotationExportImport() {
                     }))}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Tất cả model" />
+                      <SelectValue placeholder={t('common.all')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Tất cả</SelectItem>
+                      <SelectItem value="all">{t('common.all')}</SelectItem>
                       {productModels?.map((pm: any) => (
                         <SelectItem key={pm.id} value={pm.id.toString()}>
                           {pm.name}
@@ -287,7 +289,7 @@ export function AnnotationExportImport() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Từ ngày</Label>
+                  <Label>{t('common.from')}</Label>
                   <Input
                     type="date"
                     value={exportOptions.dateFrom || ''}
@@ -299,7 +301,7 @@ export function AnnotationExportImport() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Đến ngày</Label>
+                  <Label>{t('common.to')}</Label>
                   <Input
                     type="date"
                     value={exportOptions.dateTo || ''}
@@ -319,7 +321,7 @@ export function AnnotationExportImport() {
                 {isExporting ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Đang xuất...
+                    {t('annotation.exporting')}
                   </>
                 ) : (
                   <>
@@ -341,7 +343,7 @@ export function AnnotationExportImport() {
                 Import Annotations
               </CardTitle>
               <CardDescription>
-                Nhập annotations từ file JSON đã export trước đó
+                {t('annotation.importDescription')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -349,7 +351,7 @@ export function AnnotationExportImport() {
               <div className="border-2 border-dashed rounded-lg p-8 text-center">
                 <Upload className="h-10 w-10 mx-auto mb-4 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground mb-4">
-                  Kéo thả file JSON hoặc click để chọn
+                  {t('annotation.dragDropJson')}
                 </p>
                 <input
                   ref={fileInputRef}
@@ -362,13 +364,13 @@ export function AnnotationExportImport() {
                   variant="outline" 
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  Chọn file
+                  {t('annotation.selectFile')}
                 </Button>
               </div>
 
               {/* Or paste JSON */}
               <div className="space-y-2">
-                <Label>Hoặc paste JSON trực tiếp</Label>
+                <Label>{t('annotation.orPasteJson')}</Label>
                 <Textarea
                   placeholder='[{"imageUrl": "...", "annotations": [...]}]'
                   value={importData}
@@ -380,7 +382,7 @@ export function AnnotationExportImport() {
 
               {/* Import Mode */}
               <div className="space-y-2">
-                <Label>Chế độ import</Label>
+                <Label>{t('annotation.importMode')}</Label>
                 <div className="grid grid-cols-2 gap-4">
                   <Card 
                     className={cn(
@@ -392,7 +394,7 @@ export function AnnotationExportImport() {
                     <CardContent className="pt-4">
                       <p className="font-medium">Merge</p>
                       <p className="text-xs text-muted-foreground">
-                        Thêm annotations mới vào annotations hiện có
+                        {t('annotation.mergeDescription')}
                       </p>
                     </CardContent>
                   </Card>
@@ -407,7 +409,7 @@ export function AnnotationExportImport() {
                     <CardContent className="pt-4">
                       <p className="font-medium">Replace</p>
                       <p className="text-xs text-muted-foreground">
-                        Thay thế hoàn toàn annotations hiện có
+                        {t('annotation.replaceDescription')}
                       </p>
                     </CardContent>
                   </Card>
@@ -423,7 +425,7 @@ export function AnnotationExportImport() {
                   className="flex-1 gap-2"
                 >
                   <Eye className="h-4 w-4" />
-                  Xem trước
+                  {t('annotation.preview')}
                 </Button>
                 <Button 
                   onClick={handleImport}
@@ -433,7 +435,7 @@ export function AnnotationExportImport() {
                   {isImporting ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Đang import...
+                    {t('annotation.importing')}
                     </>
                   ) : (
                     <>
@@ -453,15 +455,15 @@ export function AnnotationExportImport() {
                     <XCircle className="h-4 w-4" />
                   )}
                   <AlertTitle>
-                    {importResult.success ? 'Import thành công' : 'Import có lỗi'}
+                    {importResult.success ? t('annotation.importSuccessTitle') : t('annotation.importHasErrors')}
                   </AlertTitle>
                   <AlertDescription>
                     <div className="space-y-1 mt-2">
-                      <p>Đã import: {importResult.imported} annotations</p>
-                      <p>Bỏ qua: {importResult.skipped} annotations</p>
+                      <p>{t('annotation.importedCount', { count: importResult.imported })}</p>
+                      <p>{t('annotation.skippedCount', { count: importResult.skipped })}</p>
                       {importResult.errors.length > 0 && (
                         <div className="mt-2">
-                          <p className="font-medium">Lỗi:</p>
+                          <p className="font-medium">{t('common.error')}:</p>
                           <ul className="list-disc list-inside text-sm">
                             {importResult.errors.map((err, idx) => (
                               <li key={idx}>{err}</li>
@@ -482,9 +484,9 @@ export function AnnotationExportImport() {
       <Dialog open={showPreview} onOpenChange={setShowPreview}>
         <DialogContent className="max-w-4xl max-h-[80vh]">
           <DialogHeader>
-            <DialogTitle>Xem trước dữ liệu import</DialogTitle>
+            <DialogTitle>{t('annotation.previewImportData')}</DialogTitle>
             <DialogDescription>
-              Hiển thị {previewData.length} records đầu tiên
+              {t('annotation.showingFirstRecords', { count: previewData.length })}
             </DialogDescription>
           </DialogHeader>
           
@@ -525,10 +527,10 @@ export function AnnotationExportImport() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowPreview(false)}>
-              Đóng
+              {t('common.close')}
             </Button>
             <Button onClick={() => { setShowPreview(false); handleImport(); }}>
-              Tiến hành Import
+              {t('annotation.proceedImport')}
             </Button>
           </DialogFooter>
         </DialogContent>

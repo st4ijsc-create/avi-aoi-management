@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,14 +18,21 @@ import {
   Loader2,
   Shield,
   UserCheck,
-  X
+  X,
+  Pencil
 } from "lucide-react";
 
 export default function UserAssignments() {
+  const { t } = useTranslation();
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [assignType, setAssignType] = useState<'corporate' | 'factory'>('factory');
   const [selectedCode, setSelectedCode] = useState("");
+  // Edit/reassign state
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editType, setEditType] = useState<'corporate' | 'factory'>('factory');
+  const [editOldCode, setEditOldCode] = useState("");
+  const [editNewCode, setEditNewCode] = useState("");
 
   // Queries
   const { data: userAssignments, isLoading, refetch } = trpc.userAssignment.getAllUserAssignments.useQuery();
@@ -36,7 +44,7 @@ export default function UserAssignments() {
   // Mutations
   const assignCorporateMutation = trpc.userAssignment.assignCorporate.useMutation({
     onSuccess: () => {
-      toast.success("Gán quyền công ty thành công");
+      toast.success(t('assignments.corporateAssigned'));
       setAssignDialogOpen(false);
       setSelectedCode("");
       refetch();
@@ -46,7 +54,7 @@ export default function UserAssignments() {
 
   const assignFactoryMutation = trpc.userAssignment.assignFactory.useMutation({
     onSuccess: () => {
-      toast.success("Gán quyền nhà máy thành công");
+      toast.success(t('assignments.factoryAssigned'));
       setAssignDialogOpen(false);
       setSelectedCode("");
       refetch();
@@ -56,7 +64,7 @@ export default function UserAssignments() {
 
   const removeCorporateMutation = trpc.userAssignment.removeCorporateAssignment.useMutation({
     onSuccess: () => {
-      toast.success("Xóa quyền công ty thành công");
+      toast.success(t('assignments.corporateRemoved'));
       refetch();
     },
     onError: (err) => toast.error(err.message),
@@ -64,7 +72,27 @@ export default function UserAssignments() {
 
   const removeFactoryMutation = trpc.userAssignment.removeFactoryAssignment.useMutation({
     onSuccess: () => {
-      toast.success("Xóa quyền nhà máy thành công");
+      toast.success(t('assignments.factoryRemoved'));
+      refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const reassignCorporateMutation = trpc.userAssignment.reassignCorporate.useMutation({
+    onSuccess: () => {
+      toast.success(t('assignments.corporateChanged'));
+      setEditDialogOpen(false);
+      setEditNewCode("");
+      refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const reassignFactoryMutation = trpc.userAssignment.reassignFactory.useMutation({
+    onSuccess: () => {
+      toast.success(t('assignments.factoryChanged'));
+      setEditDialogOpen(false);
+      setEditNewCode("");
       refetch();
     },
     onError: (err) => toast.error(err.message),
@@ -72,7 +100,7 @@ export default function UserAssignments() {
 
   const handleAssign = () => {
     if (!selectedUserId || !selectedCode) {
-      toast.error("Vui lòng chọn đầy đủ thông tin");
+      toast.error(t('assignments.selectAllInfo'));
       return;
     }
 
@@ -88,6 +116,34 @@ export default function UserAssignments() {
     setAssignType(type);
     setSelectedCode("");
     setAssignDialogOpen(true);
+  };
+
+  const openEditDialog = (userId: number, type: 'corporate' | 'factory', oldCode: string) => {
+    setSelectedUserId(userId);
+    setEditType(type);
+    setEditOldCode(oldCode);
+    setEditNewCode("");
+    setEditDialogOpen(true);
+  };
+
+  const handleReassign = () => {
+    if (!selectedUserId || !editNewCode || editNewCode === editOldCode) {
+      toast.error(t('assignments.selectDifferentValue'));
+      return;
+    }
+    if (editType === 'corporate') {
+      reassignCorporateMutation.mutate({
+        userId: selectedUserId,
+        oldCorporateCode: editOldCode,
+        newCorporateCode: editNewCode,
+      });
+    } else {
+      reassignFactoryMutation.mutate({
+        userId: selectedUserId,
+        oldFactoryCode: editOldCode,
+        newFactoryCode: editNewCode,
+      });
+    }
   };
 
   if (isLoading) {
@@ -106,11 +162,10 @@ export default function UserAssignments() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Shield className="h-5 w-5 text-blue-500" />
-                Phân quyền truy cập dữ liệu
+                {t('assignments.title')}
               </CardTitle>
               <CardDescription>
-                Quản lý quyền truy cập của người dùng theo công ty và nhà máy. 
-                Admin có quyền truy cập tất cả dữ liệu.
+                {t('assignments.description')}
               </CardDescription>
             </div>
           </div>
@@ -120,11 +175,11 @@ export default function UserAssignments() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[200px]">Người dùng</TableHead>
-                  <TableHead>Vai trò</TableHead>
-                  <TableHead>Công ty được gán</TableHead>
-                  <TableHead>Nhà máy được gán</TableHead>
-                  <TableHead className="text-right">Thao tác</TableHead>
+                  <TableHead className="w-[200px]">{t('assignments.user')}</TableHead>
+                  <TableHead>{t('assignments.role')}</TableHead>
+                  <TableHead>{t('assignments.assignedCorporate')}</TableHead>
+                  <TableHead>{t('assignments.assignedFactory')}</TableHead>
+                  <TableHead className="text-right">{t('common.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -147,7 +202,7 @@ export default function UserAssignments() {
                     <TableCell>
                       {item.user.role === 'admin' ? (
                         <Badge variant="outline" className="text-green-600 border-green-600">
-                          Tất cả
+                          {t('common.all')}
                         </Badge>
                       ) : item.corporates.length > 0 ? (
                         <div className="flex flex-wrap gap-1">
@@ -156,11 +211,18 @@ export default function UserAssignments() {
                               <Building2 className="h-3 w-3" />
                               {c.corporateCode}
                               <button
+                                onClick={() => openEditDialog(item.user.id, 'corporate', c.corporateCode)}
+                                className="ml-1 hover:text-primary"
+                                title={t('assignments.changeCorporate')}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </button>
+                              <button
                                 onClick={() => removeCorporateMutation.mutate({ 
                                   userId: item.user.id, 
                                   corporateCode: c.corporateCode 
                                 })}
-                                className="ml-1 hover:text-destructive"
+                                className="hover:text-destructive"
                               >
                                 <X className="h-3 w-3" />
                               </button>
@@ -168,13 +230,13 @@ export default function UserAssignments() {
                           ))}
                         </div>
                       ) : (
-                        <span className="text-muted-foreground text-sm">Chưa gán</span>
+                        <span className="text-muted-foreground text-sm">{t('assignments.notAssigned')}</span>
                       )}
                     </TableCell>
                     <TableCell>
                       {item.user.role === 'admin' ? (
                         <Badge variant="outline" className="text-green-600 border-green-600">
-                          Tất cả
+                          {t('common.all')}
                         </Badge>
                       ) : item.factories.length > 0 ? (
                         <div className="flex flex-wrap gap-1">
@@ -183,11 +245,18 @@ export default function UserAssignments() {
                               <Factory className="h-3 w-3" />
                               {f.factoryCode}
                               <button
+                                onClick={() => openEditDialog(item.user.id, 'factory', f.factoryCode)}
+                                className="ml-1 hover:text-primary"
+                                title={t('assignments.changeFactory')}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </button>
+                              <button
                                 onClick={() => removeFactoryMutation.mutate({ 
                                   userId: item.user.id, 
                                   factoryCode: f.factoryCode 
                                 })}
-                                className="ml-1 hover:text-destructive"
+                                className="hover:text-destructive"
                               >
                                 <X className="h-3 w-3" />
                               </button>
@@ -195,7 +264,7 @@ export default function UserAssignments() {
                           ))}
                         </div>
                       ) : (
-                        <span className="text-muted-foreground text-sm">Chưa gán</span>
+                        <span className="text-muted-foreground text-sm">{t('assignments.notAssigned')}</span>
                       )}
                     </TableCell>
                     <TableCell className="text-right">
@@ -207,7 +276,7 @@ export default function UserAssignments() {
                             onClick={() => openAssignDialog(item.user.id, 'corporate')}
                           >
                             <Building2 className="h-4 w-4 mr-1" />
-                            Gán công ty
+                            {t('assignments.assignCorporate')}
                           </Button>
                           <Button
                             size="sm"
@@ -215,7 +284,7 @@ export default function UserAssignments() {
                             onClick={() => openAssignDialog(item.user.id, 'factory')}
                           >
                             <Factory className="h-4 w-4 mr-1" />
-                            Gán nhà máy
+                            {t('assignments.assignFactory')}
                           </Button>
                         </div>
                       )}
@@ -233,34 +302,34 @@ export default function UserAssignments() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {assignType === 'corporate' ? 'Gán quyền công ty' : 'Gán quyền nhà máy'}
+              {assignType === 'corporate' ? t('assignments.assignCorporatePermission') : t('assignments.assignFactoryPermission')}
             </DialogTitle>
             <DialogDescription>
               {assignType === 'corporate' 
-                ? 'Chọn công ty để gán quyền truy cập cho người dùng'
-                : 'Chọn nhà máy để gán quyền truy cập cho người dùng'
+                ? t('assignments.selectCorporateDesc')
+                : t('assignments.selectFactoryDesc')
               }
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">
-                {assignType === 'corporate' ? 'Công ty' : 'Nhà máy'}
+                {assignType === 'corporate' ? t('assignments.corporate') : t('assignments.factory')}
               </label>
               <Select value={selectedCode} onValueChange={setSelectedCode}>
                 <SelectTrigger>
-                  <SelectValue placeholder={assignType === 'corporate' ? 'Chọn công ty...' : 'Chọn nhà máy...'} />
+                  <SelectValue placeholder={assignType === 'corporate' ? t('assignments.selectCorporate') : t('assignments.selectFactory')} />
                 </SelectTrigger>
                 <SelectContent>
                   {assignType === 'corporate' ? (
                     corporates.map((c: { code: string; name: string }) => (
-                      <SelectItem key={c.code} value={c.code}>
+                      <SelectItem key={c.code || c.name} value={c.code || c.name}>
                         {c.code} - {c.name}
                       </SelectItem>
                     ))
                   ) : (
                     factories?.map((f) => (
-                      <SelectItem key={f.code} value={f.code}>
+                      <SelectItem key={f.code || String(f.id)} value={f.code || String(f.id)}>
                         {f.code} - {f.name}
                       </SelectItem>
                     ))
@@ -271,7 +340,7 @@ export default function UserAssignments() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAssignDialogOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button 
               onClick={handleAssign}
@@ -280,7 +349,80 @@ export default function UserAssignments() {
               {(assignCorporateMutation.isPending || assignFactoryMutation.isPending) && (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               )}
-              Gán quyền
+              {t('assignments.assignPermission')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit/Reassign Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editType === 'corporate' ? t('assignments.changeCorporate') : t('assignments.changeFactory')}
+            </DialogTitle>
+            <DialogDescription>
+              {editType === 'corporate'
+                ? t('assignments.changeCorporateDesc', { code: editOldCode })
+                : t('assignments.changeFactoryDesc', { code: editOldCode })
+              }
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">
+                {t('assignments.current')}
+              </label>
+              <div>
+                <Badge variant="outline" className="gap-1">
+                  {editType === 'corporate' ? <Building2 className="h-3 w-3" /> : <Factory className="h-3 w-3" />}
+                  {editOldCode}
+                </Badge>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                {editType === 'corporate' ? t('assignments.newCorporate') : t('assignments.newFactory')}
+              </label>
+              <Select value={editNewCode} onValueChange={setEditNewCode}>
+                <SelectTrigger>
+                  <SelectValue placeholder={editType === 'corporate' ? t('assignments.selectNewCorporate') : t('assignments.selectNewFactory')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {editType === 'corporate' ? (
+                    corporates
+                      .filter((c: { code: string; name: string }) => c.code !== editOldCode)
+                      .map((c: { code: string; name: string }) => (
+                        <SelectItem key={c.code || c.name} value={c.code || c.name}>
+                          {c.code} - {c.name}
+                        </SelectItem>
+                      ))
+                  ) : (
+                    factories
+                      ?.filter((f) => f.code !== editOldCode)
+                      .map((f) => (
+                        <SelectItem key={f.code || String(f.id)} value={f.code || String(f.id)}>
+                          {f.code} - {f.name}
+                        </SelectItem>
+                      ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button 
+              onClick={handleReassign}
+              disabled={!editNewCode || editNewCode === editOldCode || reassignCorporateMutation.isPending || reassignFactoryMutation.isPending}
+            >
+              {(reassignCorporateMutation.isPending || reassignFactoryMutation.isPending) && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
+              {t('assignments.change')}
             </Button>
           </DialogFooter>
         </DialogContent>

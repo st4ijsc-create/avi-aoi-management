@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,26 +10,27 @@ import { toast } from "sonner";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 
 export function SMTPConfig() {
+  const { t } = useTranslation();
   const [isTestingConnection, setIsTestingConnection] = useState(false);
 
   const { data: config, isLoading, refetch } = trpc.smtp.getConfig.useQuery();
   const updateConfigMutation = trpc.smtp.updateConfig.useMutation({
     onSuccess: () => {
-      toast.success("Đã lưu cấu hình SMTP");
+      toast.success(t('settings.smtpSaved'));
       refetch();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(`${t('common.error')}: ${error.message}`);
     },
   });
 
   const testConnectionMutation = trpc.smtp.testConnection.useMutation({
     onSuccess: () => {
-      toast.success("Kết nối SMTP thành công");
+      toast.success(t('settings.smtpConnectionSuccess'));
       setIsTestingConnection(false);
     },
     onError: (error) => {
-      toast.error(`Kết nối thất bại: ${error.message}`);
+      toast.error(`${t('settings.smtpConnectionFailed')}: ${error.message}`);
       setIsTestingConnection(false);
     },
   });
@@ -65,7 +67,7 @@ export function SMTPConfig() {
   const handleTestConnection = () => {
     // Validate required fields
     if (!formData.host || !formData.username || !formData.fromEmail) {
-      toast.error("Vui lòng điền đầy đủ thông tin SMTP");
+      toast.error(t('settings.smtpFillRequired'));
       return;
     }
     
@@ -85,9 +87,9 @@ export function SMTPConfig() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Cấu hình SMTP</CardTitle>
+        <CardTitle>{t('settings.smtpConfig')}</CardTitle>
         <CardDescription>
-          Cấu hình máy chủ SMTP để gửi email báo cáo tự động
+          {t('settings.smtpConfigDescription')}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -123,7 +125,7 @@ export function SMTPConfig() {
               onCheckedChange={(checked) => setFormData({ ...formData, secure: checked })}
             />
             <Label htmlFor="secure">
-              Sử dụng SSL/TLS (port 465)
+              {t('settings.smtpUseSSL')}
             </Label>
           </div>
 
@@ -145,7 +147,7 @@ export function SMTPConfig() {
                 type="password"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                placeholder={config ? "Để trống nếu không đổi" : ""}
+                placeholder={config ? t('settings.smtpLeaveBlank') : ""}
               />
             </div>
           </div>
@@ -182,10 +184,10 @@ export function SMTPConfig() {
               {updateConfigMutation.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Đang lưu...
+                  {t('common.saving')}
                 </>
               ) : (
-                "Lưu cấu hình"
+                t('settings.saveConfig')
               )}
             </Button>
 
@@ -199,10 +201,10 @@ export function SMTPConfig() {
               {isTestingConnection ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Đang kiểm tra...
+                  {t('settings.testing')}
                 </>
               ) : (
-                "Kiểm tra kết nối"
+                t('settings.testConnection')
               )}
             </Button>
           </div>
@@ -210,7 +212,7 @@ export function SMTPConfig() {
           {config && (
             <div className="mt-4 p-3 bg-muted rounded-md text-sm">
               <p className="text-muted-foreground">
-                Cấu hình SMTP đã được lưu. Nhấn "Kiểm tra kết nối" để verify.
+                {t('settings.smtpConfigSavedHint')}
               </p>
             </div>
           )}

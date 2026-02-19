@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -86,6 +87,7 @@ const annotationTypeIcons: Record<string, React.ComponentType<{ className?: stri
 };
 
 export function AnnotationComparison() {
+  const { t } = useTranslation();
   const [serialNumber, setSerialNumber] = useState('');
   const [productModelId, setProductModelId] = useState<number | undefined>();
   const [machineId, setMachineId] = useState<number | undefined>();
@@ -142,16 +144,16 @@ export function AnnotationComparison() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast.success('Đã xuất báo cáo thành công');
+      toast.success(t('annotation.comparison.exportSuccess'));
     },
     onError: (error) => {
-      toast.error(`Lỗi xuất báo cáo: ${error.message}`);
+      toast.error(t('common.errorWithMessage', { message: error.message }));
     },
   });
 
   const handleExportPdf = () => {
     if (!leftItem || !rightItem) {
-      toast.error('Vui lòng chọn 2 inspections để so sánh');
+      toast.error(t('annotation.comparison.selectTwoInspections'));
       return;
     }
     exportPdfMutation.mutate({
@@ -300,7 +302,7 @@ export function AnnotationComparison() {
         <div className="flex-1 flex items-center justify-center bg-muted rounded-lg min-h-[300px]">
           <div className="text-center text-muted-foreground">
             <ImageIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
-            <p>Chọn một lần kiểm tra để so sánh</p>
+            <p>{t('annotation.comparison.selectInspection')}</p>
           </div>
         </div>
       );
@@ -325,8 +327,8 @@ export function AnnotationComparison() {
               {format(new Date(item.inspectionTime), 'dd/MM/yyyy HH:mm:ss', { locale: vi })}
             </div>
             <div>Serial: {item.serialNumber}</div>
-            <div>Máy: {item.machineName}</div>
-            {item.value !== null && <div>Giá trị: {item.value}</div>}
+            <div>{t('annotation.comparison.machine')}: {item.machineName}</div>
+            {item.value !== null && <div>{t('annotation.comparison.value')}: {item.value}</div>}
           </div>
         </div>
 
@@ -381,20 +383,20 @@ export function AnnotationComparison() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <GitCompare className="h-5 w-5" />
-            So sánh Annotations
+            {t('annotation.comparison.title')}
           </CardTitle>
           <CardDescription>
-            So sánh annotations giữa các lần kiểm tra cùng sản phẩm để phát hiện defect patterns
+            {t('annotation.comparison.description')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="space-y-2">
-              <Label>Serial Number</Label>
+              <Label>{t('annotation.comparison.serialNumber')}</Label>
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Nhập serial number..."
+                  placeholder={t('annotation.comparison.serialPlaceholder')}
                   value={serialNumber}
                   onChange={(e) => setSerialNumber(e.target.value)}
                   className="pl-8"
@@ -403,16 +405,16 @@ export function AnnotationComparison() {
             </div>
 
             <div className="space-y-2">
-              <Label>Model sản phẩm</Label>
+              <Label>{t('annotation.comparison.productModel')}</Label>
               <Select
                 value={productModelId?.toString() || 'all'}
                 onValueChange={(v) => setProductModelId(v === 'all' ? undefined : parseInt(v))}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Chọn model..." />
+                  <SelectValue placeholder={t('annotation.comparison.selectModel')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
                   {productModels?.map((pm: any) => (
                     <SelectItem key={pm.id} value={pm.id.toString()}>
                       {pm.name}
@@ -423,16 +425,16 @@ export function AnnotationComparison() {
             </div>
 
             <div className="space-y-2">
-              <Label>Máy</Label>
+              <Label>{t('annotation.comparison.machineLabel')}</Label>
               <Select
                 value={machineId?.toString() || 'all'}
                 onValueChange={(v) => setMachineId(v === 'all' ? undefined : parseInt(v))}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Chọn máy..." />
+                  <SelectValue placeholder={t('annotation.comparison.selectMachine')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
                   {machines?.map((m: any) => (
                     <SelectItem key={m.id} value={m.id.toString()}>
                       {m.name}
@@ -443,17 +445,17 @@ export function AnnotationComparison() {
             </div>
 
             <div className="space-y-2">
-              <Label>Điểm đo</Label>
+              <Label>{t('annotation.comparison.measurementPoint')}</Label>
               <Select
                 value={measurementPointId?.toString() || 'all'}
                 onValueChange={(v) => setMeasurementPointId(v === 'all' ? undefined : parseInt(v))}
                 disabled={!productModelId}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Chọn điểm đo..." />
+                  <SelectValue placeholder={t('annotation.comparison.selectMeasurementPoint')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
                   {measurementPoints?.map((mp: any) => (
                     <SelectItem key={mp.id} value={mp.id.toString()}>
                       {mp.name}
@@ -464,7 +466,7 @@ export function AnnotationComparison() {
             </div>
 
             <div className="space-y-2">
-              <Label>Từ ngày</Label>
+              <Label>{t('annotation.comparison.dateFrom')}</Label>
               <Input
                 type="date"
                 value={dateFrom}
@@ -473,7 +475,7 @@ export function AnnotationComparison() {
             </div>
 
             <div className="space-y-2">
-              <Label>Đến ngày</Label>
+              <Label>{t('annotation.comparison.dateTo')}</Label>
               <Input
                 type="date"
                 value={dateTo}
@@ -484,7 +486,7 @@ export function AnnotationComparison() {
             <div className="flex items-end">
               <Button onClick={handleSearch} className="w-full gap-2">
                 <Search className="h-4 w-4" />
-                Tìm kiếm
+                {t('common.search')}
               </Button>
             </div>
 
@@ -500,7 +502,7 @@ export function AnnotationComparison() {
                 ) : (
                   <FileDown className="h-4 w-4" />
                 )}
-                Xuất báo cáo
+                {t('annotation.comparison.exportReport')}
               </Button>
             </div>
           </div>
@@ -518,7 +520,7 @@ export function AnnotationComparison() {
           {/* Measurement Points List */}
           <Card>
             <CardHeader className="py-3">
-              <CardTitle className="text-sm">Điểm đo ({comparisonData.groups.length})</CardTitle>
+              <CardTitle className="text-sm">{t('annotation.comparison.measurementPointCount', { count: comparisonData.groups.length })}</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <ScrollArea className="h-[500px]">
@@ -537,7 +539,7 @@ export function AnnotationComparison() {
                       <div className="flex-1 min-w-0">
                         <p className="font-medium truncate">{group.measurementPointName}</p>
                         <p className="text-xs text-muted-foreground">
-                          {group.inspections.length} lần kiểm tra
+                          {t('annotation.comparison.inspectionCount', { count: group.inspections.length })}
                         </p>
                       </div>
                     </Button>
@@ -552,7 +554,7 @@ export function AnnotationComparison() {
             <CardHeader className="py-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm">
-                  {selectedGroup?.measurementPointName || 'Chọn điểm đo để so sánh'}
+                  {selectedGroup?.measurementPointName || t('annotation.comparison.selectToCompare')}
                 </CardTitle>
                 <div className="flex items-center gap-2">
                   {/* View Mode Toggle */}
@@ -560,11 +562,11 @@ export function AnnotationComparison() {
                     <TabsList className="h-8">
                       <TabsTrigger value="side-by-side" className="text-xs px-2">
                         <GitCompare className="h-3 w-3 mr-1" />
-                        Song song
+                        {t('annotation.comparison.sideBySide')}
                       </TabsTrigger>
                       <TabsTrigger value="overlay" className="text-xs px-2">
                         <Layers className="h-3 w-3 mr-1" />
-                        Chồng lớp
+                        {t('annotation.comparison.overlay')}
                       </TabsTrigger>
                     </TabsList>
                   </Tabs>
@@ -618,7 +620,7 @@ export function AnnotationComparison() {
                   {/* Timeline Selector */}
                   <div className="mb-4 flex items-center gap-4">
                     <div className="flex-1">
-                      <Label className="text-xs mb-1 block">Ảnh trái</Label>
+                      <Label className="text-xs mb-1 block">{t('annotation.comparison.leftImage')}</Label>
                       <Select
                         value={leftIndex.toString()}
                         onValueChange={(v) => setLeftIndex(parseInt(v))}
@@ -660,7 +662,7 @@ export function AnnotationComparison() {
                       </Button>
                     </div>
                     <div className="flex-1">
-                      <Label className="text-xs mb-1 block">Ảnh phải</Label>
+                      <Label className="text-xs mb-1 block">{t('annotation.comparison.rightImage')}</Label>
                       <Select
                         value={rightIndex.toString()}
                         onValueChange={(v) => setRightIndex(parseInt(v))}
@@ -682,8 +684,8 @@ export function AnnotationComparison() {
                   {/* Comparison View */}
                   {viewMode === 'side-by-side' ? (
                     <div className="flex gap-4">
-                      {renderImageWithAnnotations(leftItem, 'Trước', 'border-blue-500')}
-                      {renderImageWithAnnotations(rightItem, 'Sau', 'border-green-500')}
+                      {renderImageWithAnnotations(leftItem, t('annotation.comparison.before'), 'border-blue-500')}
+                      {renderImageWithAnnotations(rightItem, t('annotation.comparison.after'), 'border-green-500')}
                     </div>
                   ) : (
                     <div className="relative min-h-[400px] bg-muted rounded-lg overflow-hidden">
@@ -716,7 +718,7 @@ export function AnnotationComparison() {
                       )}
                       {/* Opacity slider */}
                       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-background/80 backdrop-blur-sm rounded-lg p-3 flex items-center gap-3">
-                        <span className="text-xs text-muted-foreground">Trước</span>
+                        <span className="text-xs text-muted-foreground">{t('annotation.comparison.before')}</span>
                         <input
                           type="range"
                           min="0"
@@ -726,7 +728,7 @@ export function AnnotationComparison() {
                           onChange={(e) => setOverlayOpacity(parseFloat(e.target.value))}
                           className="w-32"
                         />
-                        <span className="text-xs text-muted-foreground">Sau</span>
+                        <span className="text-xs text-muted-foreground">{t('annotation.comparison.after')}</span>
                       </div>
                     </div>
                   )}
@@ -734,10 +736,10 @@ export function AnnotationComparison() {
                   {/* Annotation Diff Summary */}
                   {annotationDiff && (
                     <div className="mt-4 p-3 bg-muted rounded-lg">
-                      <h4 className="text-sm font-medium mb-2">So sánh Annotations</h4>
+                      <h4 className="text-sm font-medium mb-2">{t('annotation.comparison.compareAnnotations')}</h4>
                       <div className="grid grid-cols-2 gap-4 text-sm">
                         <div>
-                          <span className="text-blue-500 font-medium">Trước:</span>
+                          <span className="text-blue-500 font-medium">{t('annotation.comparison.before')}:</span>
                           <span className="ml-2">{annotationDiff.leftOnly} annotations</span>
                           <div className="flex items-center gap-2 mt-1">
                             {Object.entries(annotationDiff.leftByType).map(([type, count]) => {
@@ -752,7 +754,7 @@ export function AnnotationComparison() {
                           </div>
                         </div>
                         <div>
-                          <span className="text-green-500 font-medium">Sau:</span>
+                          <span className="text-green-500 font-medium">{t('annotation.comparison.after')}:</span>
                           <span className="ml-2">{annotationDiff.rightOnly} annotations</span>
                           <div className="flex items-center gap-2 mt-1">
                             {Object.entries(annotationDiff.rightByType).map(([type, count]) => {
@@ -774,7 +776,7 @@ export function AnnotationComparison() {
                 <div className="flex items-center justify-center h-[400px] text-muted-foreground">
                   <div className="text-center">
                     <GitCompare className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                    <p>Chọn một điểm đo từ danh sách bên trái để bắt đầu so sánh</p>
+                    <p>{t('annotation.comparison.selectFromList')}</p>
                   </div>
                 </div>
               )}
@@ -786,7 +788,7 @@ export function AnnotationComparison() {
           <CardContent className="flex items-center justify-center h-[200px] text-muted-foreground">
             <div className="text-center">
               <Search className="h-12 w-12 mx-auto mb-3 opacity-50" />
-              <p>Nhập serial number hoặc chọn filters để tìm kiếm</p>
+              <p>{t('annotation.comparison.enterSerialOrFilter')}</p>
             </div>
           </CardContent>
         </Card>

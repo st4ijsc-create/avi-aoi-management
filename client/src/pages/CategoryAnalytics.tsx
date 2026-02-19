@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +30,7 @@ import {
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
 export default function CategoryAnalytics() {
+  const { t } = useTranslation();
   const [timeRange, setTimeRange] = useState<'today' | 'week' | 'month' | 'quarter'>('week');
   const [selectedFactory, setSelectedFactory] = useState<string>('all');
   
@@ -186,17 +188,17 @@ export default function CategoryAnalytics() {
   };
 
   return (
-    <DashboardLayout title="AVI/AOI Management" currentPath="/category-analytics">
+    <DashboardLayout title={t('dashboard.aviAoiManagement')} currentPath="/category-analytics">
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <PieChart className="h-6 w-6 text-primary" />
-              Phân tích theo Category
+              {t('reports.categoryAnalytics')}
             </h1>
             <p className="text-muted-foreground">
-              Thống kê sản lượng và yield rate theo danh mục sản phẩm
+              {t('reports.categoryAnalyticsDesc')}
             </p>
           </div>
 
@@ -209,10 +211,10 @@ export default function CategoryAnalytics() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="today">Hôm nay</SelectItem>
-                  <SelectItem value="week">7 ngày</SelectItem>
-                  <SelectItem value="month">30 ngày</SelectItem>
-                  <SelectItem value="quarter">90 ngày</SelectItem>
+                  <SelectItem value="today">{t('common.today')}</SelectItem>
+                  <SelectItem value="week">{t('common.sevenDays')}</SelectItem>
+                  <SelectItem value="month">{t('common.thirtyDays')}</SelectItem>
+                  <SelectItem value="quarter">{t('common.ninetyDays')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -220,10 +222,10 @@ export default function CategoryAnalytics() {
             {/* Factory Filter */}
             <Select value={selectedFactory} onValueChange={setSelectedFactory}>
               <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Tất cả nhà máy" />
+                <SelectValue placeholder={t('common.allFactories')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tất cả nhà máy</SelectItem>
+                <SelectItem value="all">{t('common.allFactories')}</SelectItem>
                 {factories?.map(f => (
                   <SelectItem key={f.id} value={f.id.toString()}>{f.name}</SelectItem>
                 ))}
@@ -236,7 +238,7 @@ export default function CategoryAnalytics() {
 
             <Button variant="outline" onClick={handleExport} disabled={!analyticsData}>
               <Download className="h-4 w-4 mr-2" />
-              Xuất CSV
+              {t('common.exportCSV')}
             </Button>
           </div>
         </div>
@@ -249,8 +251,8 @@ export default function CategoryAnalytics() {
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
               <Package className="h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">Không có dữ liệu trong khoảng thời gian đã chọn</p>
-              <p className="text-sm text-muted-foreground">Hãy đảm bảo sản phẩm đã được gán category</p>
+              <p className="text-muted-foreground">{t('reports.noDataInTimeRange')}</p>
+              <p className="text-sm text-muted-foreground">{t('reports.ensureCategoryAssigned')}</p>
             </CardContent>
           </Card>
         ) : (
@@ -260,7 +262,7 @@ export default function CategoryAnalytics() {
               <Card>
                 <CardContent className="pt-6">
                   <div className="text-2xl font-bold">{analyticsData.totals.total.toLocaleString()}</div>
-                  <p className="text-sm text-muted-foreground">Tổng sản lượng</p>
+                  <p className="text-sm text-muted-foreground">{t('dashboard.totalProduction')}</p>
                 </CardContent>
               </Card>
               <Card>
@@ -296,9 +298,9 @@ export default function CategoryAnalytics() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <PieChart className="h-5 w-5" />
-                    Phân bố sản lượng theo Category
+                    {t('reports.productionDistByCategory')}
                   </CardTitle>
-                  <CardDescription>Tỷ lệ sản lượng của từng danh mục</CardDescription>
+                  <CardDescription>{t('reports.productionRatioByCategory')}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="h-[300px]">
@@ -330,9 +332,9 @@ export default function CategoryAnalytics() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <TrendingUp className="h-5 w-5" />
-                    So sánh Yield Rate theo Category
+                    {t('reports.yieldRateByCategory')}
                   </CardTitle>
-                  <CardDescription>Tỷ lệ yield của từng danh mục</CardDescription>
+                  <CardDescription>{t('reports.yieldRatioByCategory')}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="h-[300px]">
@@ -365,9 +367,9 @@ export default function CategoryAnalytics() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <BarChart3 className="h-5 w-5" />
-                  Chi tiết kết quả theo Category
+                  {t('reports.resultDetailByCategory')}
                 </CardTitle>
-                <CardDescription>Phân bố OK/NG/NTF của từng danh mục</CardDescription>
+                <CardDescription>{t('reports.okNgNtfDistByCategory')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-[400px]">
@@ -392,7 +394,7 @@ export default function CategoryAnalytics() {
             {/* Category Details Table */}
             <Card>
               <CardHeader>
-                <CardTitle>Chi tiết theo Category</CardTitle>
+                <CardTitle>{t('reports.detailByCategory')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
@@ -400,7 +402,7 @@ export default function CategoryAnalytics() {
                     <thead>
                       <tr className="border-b">
                         <th className="text-left py-3 px-4">Category</th>
-                        <th className="text-right py-3 px-4">Tổng</th>
+                        <th className="text-right py-3 px-4">{t('common.total')}</th>
                         <th className="text-right py-3 px-4">OK</th>
                         <th className="text-right py-3 px-4">NG</th>
                         <th className="text-right py-3 px-4">NTF</th>

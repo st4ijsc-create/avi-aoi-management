@@ -33,10 +33,12 @@ import {
   Pie,
   Cell,
 } from "recharts";
+import { useTranslation } from 'react-i18next';
 
 const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#6366f1'];
 
 export default function MqttDashboard() {
+  const { t } = useTranslation();
   const [trendDays, setTrendDays] = useState(7);
   
   // WebSocket real-time state
@@ -122,19 +124,19 @@ export default function MqttDashboard() {
     const newMuted = !soundMuted;
     setSoundMuted(newMuted);
     alertSoundService.setMuted(newMuted);
-    toast.info(newMuted ? 'Đã tắt âm thanh cảnh báo' : 'Đã bật âm thanh cảnh báo');
+    toast.info(newMuted ? t('mqtt.dashboard.alertSoundOff') : t('mqtt.dashboard.alertSoundOn'));
   };
 
   const testNGAlertMutation = trpc.mqttClient.testNGAlert.useMutation({
     onSuccess: (data) => {
-      toast.success(`NG Alert đã gửi: ${data.data.serialNumber}`);
+      toast.success(t('mqtt.dashboard.ngAlertSent', { serial: data.data.serialNumber }));
       // Play NG alert sound
       alertSoundService.playNGAlert();
       refetchMessages();
       refetchRealtimeStats();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t('mqtt.dashboard.errorMsg', { message: error.message }));
     },
   });
 
@@ -162,11 +164,11 @@ export default function MqttDashboard() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'DELIVERED':
-        return <Badge className="bg-green-500/20 text-green-400 border-green-500/30"><CheckCircle className="w-3 h-3 mr-1" /> Đã gửi</Badge>;
+        return <Badge className="bg-green-500/20 text-green-400 border-green-500/30"><CheckCircle className="w-3 h-3 mr-1" /> {t('mqtt.dashboard.delivered')}</Badge>;
       case 'FAILED':
-        return <Badge className="bg-red-500/20 text-red-400 border-red-500/30"><XCircle className="w-3 h-3 mr-1" /> Thất bại</Badge>;
+        return <Badge className="bg-red-500/20 text-red-400 border-red-500/30"><XCircle className="w-3 h-3 mr-1" /> {t('mqtt.dashboard.failed')}</Badge>;
       case 'PENDING':
-        return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30"><Clock className="w-3 h-3 mr-1" /> Đang chờ</Badge>;
+        return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30"><Clock className="w-3 h-3 mr-1" /> {t('mqtt.dashboard.pending')}</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -199,7 +201,7 @@ export default function MqttDashboard() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
           <div>
             <h1 className="text-xl sm:text-2xl font-bold">MQTT Dashboard</h1>
-            <p className="text-sm sm:text-base text-muted-foreground">Giám sát kết nối và tin nhắn MQTT realtime</p>
+            <p className="text-sm sm:text-base text-muted-foreground">{t('mqtt.dashboard.description')}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {mqttStatus?.enabled ? (
@@ -243,7 +245,7 @@ export default function MqttDashboard() {
               variant={soundMuted ? "outline" : "secondary"}
               size="sm"
               onClick={toggleSound}
-              title={soundMuted ? 'Bật âm thanh cảnh báo' : 'Tắt âm thanh cảnh báo'}
+              title={soundMuted ? t('mqtt.dashboard.enableAlertSound') : t('mqtt.dashboard.disableAlertSound')}
             >
               {soundMuted ? (
                 <VolumeX className="w-4 h-4" />
@@ -258,11 +260,11 @@ export default function MqttDashboard() {
               disabled={testNGAlertMutation.isPending}
             >
               <TestTube2 className="w-4 h-4 mr-2" />
-              {testNGAlertMutation.isPending ? 'Đang gửi...' : 'Test NG Alert'}
+              {testNGAlertMutation.isPending ? t('mqtt.dashboard.sending') : 'Test NG Alert'}
             </Button>
             <Button variant="outline" size="sm" onClick={handleRefresh}>
               <RefreshCw className="w-4 h-4 mr-2" />
-              Làm mới
+              {t('common.refresh')}
             </Button>
           </div>
         </div>
@@ -283,7 +285,7 @@ export default function MqttDashboard() {
                 {statsLoading ? '-' : stats?.clients.online || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                / {stats?.clients.total || 0} tổng clients
+                / {stats?.clients.total || 0} {t('mqtt.dashboard.totalClients')}
               </p>
             </CardContent>
           </Card>
@@ -302,7 +304,7 @@ export default function MqttDashboard() {
                 {statsLoading ? '-' : stats?.clients.offline || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                {stats?.clients.pendingApproval || 0} chờ phê duyệt
+                {stats?.clients.pendingApproval || 0} {t('mqtt.dashboard.pendingApproval')}
               </p>
             </CardContent>
           </Card>
@@ -312,8 +314,8 @@ export default function MqttDashboard() {
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
                 <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4 text-blue-400" />
-                <span className="hidden sm:inline">Tin nhắn hôm nay</span>
-                <span className="sm:hidden">Tin nhắn</span>
+                <span className="hidden sm:inline">{t('mqtt.dashboard.messagesToday')}</span>
+                <span className="sm:hidden">{t('mqtt.messages')}</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 sm:p-4 pt-0">
@@ -331,8 +333,8 @@ export default function MqttDashboard() {
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
                 <Send className="w-3 h-3 sm:w-4 sm:h-4 text-purple-400" />
-                <span className="hidden sm:inline">Tỷ lệ gửi thành công</span>
-                <span className="sm:hidden">Tỷ lệ</span>
+                <span className="hidden sm:inline">{t('mqtt.dashboard.successRate')}</span>
+                <span className="sm:hidden">{t('mqtt.dashboard.rate')}</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-3 sm:p-4 pt-0">
@@ -340,7 +342,7 @@ export default function MqttDashboard() {
                 {statsLoading ? '-' : `${stats?.messages.deliveryRate || 0}%`}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                {stats?.messages.delivered || 0} / {stats?.messages.total || 0} tin nhắn
+                {stats?.messages.delivered || 0} / {stats?.messages.total || 0} {t('mqtt.messages')}
               </p>
             </CardContent>
           </Card>
@@ -353,7 +355,7 @@ export default function MqttDashboard() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                 <Zap className="w-4 h-4 text-cyan-400" />
-                Throughput (1 phút)
+                {t('mqtt.dashboard.throughput1min')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -361,7 +363,7 @@ export default function MqttDashboard() {
                 {realtimeStats?.throughput.lastMinute || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                msg/phút
+                {t('mqtt.dashboard.msgPerMin')}
               </p>
             </CardContent>
           </Card>
@@ -371,7 +373,7 @@ export default function MqttDashboard() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-indigo-400" />
-                Throughput (5 phút)
+                {t('mqtt.dashboard.throughput5min')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -379,7 +381,7 @@ export default function MqttDashboard() {
                 {realtimeStats?.throughput.last5Minutes || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                avg msg/phút
+                {t('mqtt.dashboard.avgMsgPerMin')}
               </p>
             </CardContent>
           </Card>
@@ -443,9 +445,9 @@ export default function MqttDashboard() {
               <div>
                 <CardTitle className="flex items-center gap-2">
                   <Activity className="w-5 h-5 text-cyan-400" />
-                  Throughput Realtime
+                  {t('mqtt.dashboard.throughputRealtime')}
                 </CardTitle>
-                <CardDescription>Số lượng message trong 1 giờ qua (theo phút)</CardDescription>
+                <CardDescription>{t('mqtt.dashboard.messagesLastHour')}</CardDescription>
               </div>
             </div>
           </CardHeader>
@@ -453,7 +455,7 @@ export default function MqttDashboard() {
             <div className="h-[250px]">
               {!throughputHistory || throughputHistory.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-muted-foreground">
-                  Chưa có dữ liệu
+                  {t('common.noData')}
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
@@ -473,7 +475,7 @@ export default function MqttDashboard() {
                     <Line 
                       type="monotone" 
                       dataKey="count" 
-                      name="Tổng" 
+                      name={t('common.total')} 
                       stroke="#06b6d4" 
                       strokeWidth={2}
                       dot={false}
@@ -481,7 +483,7 @@ export default function MqttDashboard() {
                     <Line 
                       type="monotone" 
                       dataKey="delivered" 
-                      name="Đã gửi" 
+                      name={t('mqtt.dashboard.delivered')} 
                       stroke="#10b981" 
                       strokeWidth={2}
                       dot={false}
@@ -489,7 +491,7 @@ export default function MqttDashboard() {
                     <Line 
                       type="monotone" 
                       dataKey="failed" 
-                      name="Thất bại" 
+                      name={t('mqtt.dashboard.failed')} 
                       stroke="#ef4444" 
                       strokeWidth={2}
                       dot={false}
@@ -518,18 +520,18 @@ export default function MqttDashboard() {
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <Activity className="w-5 h-5 text-primary" />
-                    Xu hướng tin nhắn
+                    {t('mqtt.dashboard.messageTrend')}
                   </CardTitle>
-                  <CardDescription>Số lượng tin nhắn theo ngày</CardDescription>
+                  <CardDescription>{t('mqtt.dashboard.messagesByDay')}</CardDescription>
                 </div>
                 <Select value={String(trendDays)} onValueChange={(v) => setTrendDays(Number(v))}>
                   <SelectTrigger className="w-32">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="7">7 ngày</SelectItem>
-                    <SelectItem value="14">14 ngày</SelectItem>
-                    <SelectItem value="30">30 ngày</SelectItem>
+                    <SelectItem value="7">{t('mqtt.dashboard.7days')}</SelectItem>
+                    <SelectItem value="14">{t('mqtt.dashboard.14days')}</SelectItem>
+                    <SelectItem value="30">{t('mqtt.dashboard.30days')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -538,7 +540,7 @@ export default function MqttDashboard() {
               <div className="h-[300px]">
                 {trendLoading ? (
                   <div className="h-full flex items-center justify-center text-muted-foreground">
-                    Đang tải...
+                    {t('common.loading')}
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
@@ -555,8 +557,8 @@ export default function MqttDashboard() {
                         labelFormatter={(value) => new Date(value).toLocaleDateString('vi-VN')}
                       />
                       <Legend />
-                      <Bar dataKey="delivered" name="Đã gửi" fill="#10b981" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="failed" name="Thất bại" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="delivered" name={t('mqtt.dashboard.delivered')} fill="#10b981" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="failed" name={t('mqtt.dashboard.failed')} fill="#ef4444" radius={[4, 4, 0, 0]} />
                       <Bar dataKey="ngAlerts" name="NG Alerts" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -570,15 +572,15 @@ export default function MqttDashboard() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Bell className="w-5 h-5 text-primary" />
-                Phân loại tin nhắn
+                {t('mqtt.dashboard.messageClassification')}
               </CardTitle>
-              <CardDescription>Hôm nay</CardDescription>
+              <CardDescription>{t('mqtt.dashboard.today')}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="h-[300px]">
                 {pieData.length === 0 ? (
                   <div className="h-full flex items-center justify-center text-muted-foreground">
-                    Chưa có tin nhắn
+                    {t('mqtt.dashboard.noMessages')}
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
@@ -611,11 +613,11 @@ export default function MqttDashboard() {
           <TabsList>
             <TabsTrigger value="clients" className="flex items-center gap-2">
               <Smartphone className="w-4 h-4" />
-              Connected Clients ({clients?.length || 0})
+              {t('mqtt.dashboard.connectedClients')} ({clients?.length || 0})
             </TabsTrigger>
             <TabsTrigger value="messages" className="flex items-center gap-2">
               <MessageSquare className="w-4 h-4" />
-              Recent Messages
+              {t('mqtt.dashboard.recentMessages')}
             </TabsTrigger>
           </TabsList>
 
@@ -623,19 +625,19 @@ export default function MqttDashboard() {
           <TabsContent value="clients">
             <Card>
               <CardHeader>
-                <CardTitle>Danh sách Clients</CardTitle>
-                <CardDescription>Các thiết bị đã kết nối qua MQTT</CardDescription>
+                <CardTitle>{t('mqtt.dashboard.clientList')}</CardTitle>
+                <CardDescription>{t('mqtt.dashboard.clientListDesc')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Thiết bị</TableHead>
+                      <TableHead>{t('mqtt.dashboard.device')}</TableHead>
                       <TableHead>Device ID</TableHead>
-                      <TableHead>Trạng thái</TableHead>
-                      <TableHead>Phê duyệt</TableHead>
-                      <TableHead>Trạm</TableHead>
-                      <TableHead>Kết nối lần cuối</TableHead>
+                      <TableHead>{t('common.status')}</TableHead>
+                      <TableHead>{t('mqtt.dashboard.approval')}</TableHead>
+                      <TableHead>{t('mqtt.dashboard.station')}</TableHead>
+                      <TableHead>{t('mqtt.dashboard.lastConnection')}</TableHead>
                       <TableHead>FCM Token</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -643,7 +645,7 @@ export default function MqttDashboard() {
                     {clients?.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                          Chưa có client nào kết nối
+                          {t('mqtt.dashboard.noClients')}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -692,10 +694,10 @@ export default function MqttDashboard() {
                           <TableCell>
                             {client.fcmToken ? (
                               <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
-                                <Bell className="w-3 h-3 mr-1" /> Có
+                                <Bell className="w-3 h-3 mr-1" /> {t('common.yes')}
                               </Badge>
                             ) : (
-                              <Badge variant="outline" className="text-muted-foreground">Không</Badge>
+                              <Badge variant="outline" className="text-muted-foreground">{t('common.no')}</Badge>
                             )}
                           </TableCell>
                         </TableRow>
@@ -711,32 +713,32 @@ export default function MqttDashboard() {
           <TabsContent value="messages">
             <Card>
               <CardHeader>
-                <CardTitle>Tin nhắn gần đây</CardTitle>
-                <CardDescription>20 tin nhắn mới nhất</CardDescription>
+                <CardTitle>{t('mqtt.dashboard.recentMessagesTitle')}</CardTitle>
+                <CardDescription>{t('mqtt.dashboard.recentMessagesDesc')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Loại</TableHead>
+                      <TableHead>{t('mqtt.dashboard.type')}</TableHead>
                       <TableHead>Topic</TableHead>
-                      <TableHead>Trạng thái</TableHead>
+                      <TableHead>{t('common.status')}</TableHead>
                       <TableHead>Station ID</TableHead>
                       <TableHead>Inspection ID</TableHead>
-                      <TableHead>Thời gian</TableHead>
+                      <TableHead>{t('mqtt.dashboard.time')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {messagesLoading ? (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                          Đang tải...
+                          {t('common.loading')}
                         </TableCell>
                       </TableRow>
                     ) : recentMessages?.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                          Chưa có tin nhắn nào
+                          {t('mqtt.dashboard.noMessages')}
                         </TableCell>
                       </TableRow>
                     ) : (

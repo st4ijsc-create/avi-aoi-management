@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -55,6 +56,7 @@ const COLORS = [
 ];
 
 export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode }: WorkstationAnalysisProps) {
+  const { t } = useTranslation();
   // Drill-down state
   const [selectedWorkstation, setSelectedWorkstation] = useState<{
     id: number;
@@ -145,10 +147,10 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
           id: `high-ng-${index}`,
           severity: 'high',
           type: 'process',
-          title: `Kiểm tra quy trình tại ${wsName}`,
-          description: `Công trạm ${wsName} có tỷ lệ NG ${ws.ngRate.toFixed(2)}%, cao hơn ngưỡng cho phép 5%. Cần rà soát lại quy trình làm việc và kiểm tra thiết bị.`,
+          title: t('workstations.recCheckProcess', { name: wsName }),
+          description: t('workstations.recHighNGDesc', { name: wsName, rate: ws.ngRate.toFixed(2) }),
           workstation: wsName,
-          impact: `Giảm ${Math.round((ws.ngRate - 2) * ws.totalCount / 100)} sản phẩm lỗi nếu đạt mục tiêu 2%`
+          impact: t('workstations.recReduceDefects', { count: Math.round((ws.ngRate - 2) * ws.totalCount / 100) })
         });
       }
       
@@ -158,10 +160,10 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
           id: `medium-ng-${index}`,
           severity: 'medium',
           type: 'equipment',
-          title: `Bảo trì thiết bị tại ${wsName}`,
-          description: `Công trạm ${wsName} có tỷ lệ NG ${ws.ngRate.toFixed(2)}%. Kiểm tra và bảo trì định kỳ thiết bị để duy trì hiệu suất.`,
+          title: t('workstations.recMaintainEquipment', { name: wsName }),
+          description: t('workstations.recMediumNGDesc', { name: wsName, rate: ws.ngRate.toFixed(2) }),
           workstation: wsName,
-          impact: `Tiết kiệm ${Math.round(ws.ngRate * ws.totalCount / 100 * 0.3)} sản phẩm lỗi/kỳ`
+          impact: t('workstations.recSaveDefects', { count: Math.round(ws.ngRate * ws.totalCount / 100 * 0.3) })
         });
       }
       
@@ -171,10 +173,10 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
           id: `high-volume-${index}`,
           severity: 'low',
           type: 'training',
-          title: `Tăng cường đào tạo tại ${wsName}`,
-          description: `Công trạm ${wsName} có khối lượng kiểm tra cao (${ws.totalCount.toLocaleString()} sản phẩm). Đảm bảo nhân viên được đào tạo đầy đủ.`,
+          title: t('workstations.recEnhanceTraining', { name: wsName }),
+          description: t('workstations.recHighVolumeDesc', { name: wsName, count: ws.totalCount.toLocaleString() }),
           workstation: wsName,
-          impact: `Cải thiện năng suất và chất lượng đồng đều`
+          impact: t('workstations.recImproveProductivity')
         });
       }
     });
@@ -185,16 +187,16 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
         id: 'overall-quality',
         severity: 'high',
         type: 'quality',
-        title: 'Cải thiện chất lượng toàn diện',
-        description: `Tỷ lệ NG trung bình ${totals.avgNGRate.toFixed(2)}% cao hơn mục tiêu. Cần triển khai chương trình cải tiến chất lượng toàn diện.`,
-        impact: `Giảm ${Math.round((totals.avgNGRate - 2) * totals.totalInspections / 100)} sản phẩm lỗi nếu đạt mục tiêu 2%`
+        title: t('workstations.recOverallQuality'),
+        description: t('workstations.recOverallQualityDesc', { rate: totals.avgNGRate.toFixed(2) }),
+        impact: t('workstations.recReduceDefects', { count: Math.round((totals.avgNGRate - 2) * totals.totalInspections / 100) })
       });
     }
     
     // Sort by severity
     const severityOrder = { high: 0, medium: 1, low: 2 };
     return recs.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
-  }, [workstationData, totals]);
+  }, [workstationData, totals, t]);
 
   if (isLoading) {
     return (
@@ -218,9 +220,9 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
       <Card>
         <CardContent className="py-12 text-center">
           <Wrench className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-          <h3 className="text-lg font-semibold mb-2">Không có dữ liệu công trạm</h3>
+          <h3 className="text-lg font-semibold mb-2">{t('workstations.noData')}</h3>
           <p className="text-muted-foreground">
-            Không tìm thấy dữ liệu phân tích công trạm trong khoảng thời gian đã chọn.
+            {t('workstations.noDataDesc')}
           </p>
         </CardContent>
       </Card>
@@ -235,7 +237,7 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Wrench className="h-4 w-4" />
-              Số công trạm
+              {t('workstations.workstationCount')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -247,7 +249,7 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-red-500" />
-              Tổng NG
+              {t('workstations.totalNG')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -259,7 +261,7 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
-              Tổng kiểm tra
+              {t('workstations.totalInspections')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -271,7 +273,7 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
-              Tỷ lệ NG trung bình
+              {t('workstations.avgNGRate')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -286,17 +288,17 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-red-600 dark:text-red-400">
               <AlertTriangle className="h-5 w-5" />
-              Top công trạm cần cải thiện
+              {t('workstations.topNeedImprovement')}
             </CardTitle>
             <CardDescription>
-              Các công trạm có số lượng NG cao nhất cần được ưu tiên kiểm tra và cải thiện
+              {t('workstations.topNeedImprovementDesc')}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {topWorkstations.map((ws, index) => (
                 <div 
-                  key={ws.workstation || index}
+                  key={ws.workstationId || `ws-${index}`}
                   className="p-4 rounded-lg bg-white dark:bg-gray-900 border"
                 >
                   <div className="flex items-center justify-between mb-2">
@@ -307,7 +309,7 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
                   </div>
                   <p className="text-2xl font-bold text-red-500">{ws.ngCount.toLocaleString()} NG</p>
                   <p className="text-sm text-muted-foreground">
-                    Tỷ lệ: {ws.ngRate.toFixed(2)}% ({ws.totalCount.toLocaleString()} kiểm tra)
+                    {t('workstations.rate')}: {ws.ngRate.toFixed(2)}% ({ws.totalCount.toLocaleString()} {t('workstations.inspections')})
                   </p>
                   <Progress 
                     value={ws.ngRate} 
@@ -327,10 +329,10 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5" />
-              Phân bố lỗi theo công trạm
+              {t('workstations.ngDistribution')}
             </CardTitle>
             <CardDescription>
-              Số lượng NG của từng công trạm
+              {t('workstations.ngDistributionDesc')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -347,7 +349,7 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
                   />
                   <Tooltip 
                     formatter={(value: number, name: string) => {
-                      if (name === "ngCount") return [value.toLocaleString(), "Số NG"];
+                      if (name === "ngCount") return [value.toLocaleString(), t('workstations.ngCount')];
                       return [value, name];
                     }}
                   />
@@ -367,10 +369,10 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <PieChartIcon className="h-5 w-5" />
-              Tỷ lệ NG theo công trạm
+              {t('workstations.ngRateByWorkstation')}
             </CardTitle>
             <CardDescription>
-              Phần trăm đóng góp NG của từng công trạm
+              {t('workstations.ngRateByWorkstationDesc')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -394,7 +396,7 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
                     ))}
                   </Pie>
                   <Tooltip 
-                    formatter={(value: number) => [value.toLocaleString(), "Số NG"]}
+                    formatter={(value: number) => [value.toLocaleString(), t('workstations.ngCount')]}
                   />
                   <Legend />
                 </PieChart>
@@ -410,10 +412,10 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
               <Lightbulb className="h-5 w-5" />
-              Đề xuất cải thiện từ AI
+              {t('workstations.aiRecommendations')}
             </CardTitle>
             <CardDescription>
-              Các đề xuất dựa trên phân tích dữ liệu công trạm
+              {t('workstations.aiRecommendationsDesc')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -426,10 +428,10 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
                 }[rec.severity];
                 
                 const typeConfig = {
-                  process: { label: 'Quy trình', color: 'bg-purple-500' },
-                  equipment: { label: 'Thiết bị', color: 'bg-blue-500' },
-                  training: { label: 'Đào tạo', color: 'bg-green-500' },
-                  quality: { label: 'Chất lượng', color: 'bg-orange-500' },
+                  process: { label: t('workstations.process'), color: 'bg-purple-500' },
+                  equipment: { label: t('workstations.equipment'), color: 'bg-blue-500' },
+                  training: { label: t('workstations.training'), color: 'bg-green-500' },
+                  quality: { label: t('workstations.quality'), color: 'bg-orange-500' },
                 }[rec.type];
                 
                 const SeverityIcon = severityConfig.icon;
@@ -448,13 +450,13 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
                             {typeConfig.label}
                           </Badge>
                           <Badge variant={rec.severity === 'high' ? 'destructive' : rec.severity === 'medium' ? 'secondary' : 'outline'}>
-                            {rec.severity === 'high' ? 'Cao' : rec.severity === 'medium' ? 'Trung bình' : 'Thấp'}
+                            {rec.severity === 'high' ? t('common.high') : rec.severity === 'medium' ? t('common.medium') : t('common.low')}
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground">{rec.description}</p>
                         <div className="flex items-center gap-2 text-sm">
                           <Zap className="h-4 w-4 text-yellow-500" />
-                          <span className="font-medium">Tác động dự kiến:</span>
+                          <span className="font-medium">{t('workstations.expectedImpact')}:</span>
                           <span className="text-muted-foreground">{rec.impact}</span>
                         </div>
                       </div>
@@ -470,9 +472,9 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
       {/* Detailed Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Chi tiết theo công trạm</CardTitle>
+          <CardTitle>{t('workstations.detailByWorkstation')}</CardTitle>
           <CardDescription>
-            Bảng thống kê chi tiết số lượng và tỷ lệ NG của từng công trạm. Click vào công trạm để xem chi tiết điểm đo.
+            {t('workstations.detailByWorkstationDesc')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -480,18 +482,18 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[50px]">#</TableHead>
-                <TableHead>Công trạm</TableHead>
-                <TableHead className="text-right">Số NG</TableHead>
-                <TableHead className="text-right">Tổng kiểm tra</TableHead>
-                <TableHead className="text-right">Tỷ lệ NG</TableHead>
-                <TableHead className="w-[200px]">Biểu đồ</TableHead>
-                <TableHead className="w-[100px]">Chi tiết</TableHead>
+                <TableHead>{t('workstations.workstation')}</TableHead>
+                <TableHead className="text-right">{t('workstations.ngCount')}</TableHead>
+                <TableHead className="text-right">{t('workstations.totalInspections')}</TableHead>
+                <TableHead className="text-right">{t('workstations.ngRate')}</TableHead>
+                <TableHead className="w-[200px]">{t('workstations.chart')}</TableHead>
+                <TableHead className="w-[100px]">{t('common.details')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {workstationData.map((ws, index) => (
                 <TableRow 
-                  key={ws.workstation || index}
+                  key={ws.workstationId || `ws-${index}`}
                   className="cursor-pointer hover:bg-muted/50"
                   onClick={() => {
                     if (ws.workstationId) {
@@ -571,10 +573,10 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Crosshair className="h-5 w-5" />
-              Chi tiết điểm đo - {selectedWorkstation?.name}
+              {t('workstations.measurementPointDetail')} - {selectedWorkstation?.name}
             </DialogTitle>
             <DialogDescription>
-              Danh sách các điểm đo thuộc công trạm {selectedWorkstation?.code || selectedWorkstation?.name}
+              {t('workstations.measurementPointsOf', { name: selectedWorkstation?.code || selectedWorkstation?.name })}
             </DialogDescription>
           </DialogHeader>
           
@@ -589,13 +591,13 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
                 <div className="grid grid-cols-3 gap-4">
                   <Card>
                     <CardContent className="pt-4">
-                      <div className="text-sm text-muted-foreground">Điểm đo</div>
+                      <div className="text-sm text-muted-foreground">{t('workstations.measurementPoints')}</div>
                       <div className="text-2xl font-bold">{measurementPointsData.length}</div>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="pt-4">
-                      <div className="text-sm text-muted-foreground">Tổng NG</div>
+                      <div className="text-sm text-muted-foreground">{t('workstations.totalNG')}</div>
                       <div className="text-2xl font-bold text-red-500">
                         {measurementPointsData.reduce((sum, mp) => sum + mp.ngCount, 0).toLocaleString()}
                       </div>
@@ -603,7 +605,7 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
                   </Card>
                   <Card>
                     <CardContent className="pt-4">
-                      <div className="text-sm text-muted-foreground">Tổng kiểm tra</div>
+                      <div className="text-sm text-muted-foreground">{t('workstations.totalInspections')}</div>
                       <div className="text-2xl font-bold">
                         {measurementPointsData.reduce((sum, mp) => sum + mp.totalCount, 0).toLocaleString()}
                       </div>
@@ -616,12 +618,12 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[50px]">#</TableHead>
-                      <TableHead>Mã điểm đo</TableHead>
-                      <TableHead>Tên điểm đo</TableHead>
-                      <TableHead className="text-right">Số NG</TableHead>
-                      <TableHead className="text-right">Tổng</TableHead>
-                      <TableHead className="text-right">Tỷ lệ NG</TableHead>
-                      <TableHead className="w-[150px]">Biểu đồ</TableHead>
+                      <TableHead>{t('workstations.pointCode')}</TableHead>
+                      <TableHead>{t('workstations.pointName')}</TableHead>
+                      <TableHead className="text-right">{t('workstations.ngCount')}</TableHead>
+                      <TableHead className="text-right">{t('common.total')}</TableHead>
+                      <TableHead className="text-right">{t('workstations.ngRate')}</TableHead>
+                      <TableHead className="w-[150px]">{t('workstations.chart')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -663,7 +665,7 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
                 {measurementPointsData.length > 0 && (
                   <Card>
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">Phân bố NG theo điểm đo</CardTitle>
+                      <CardTitle className="text-sm">{t('workstations.ngByMeasurementPoint')}</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="h-[250px]">
@@ -686,7 +688,7 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
                             />
                             <Tooltip 
                               formatter={(value: number, name: string) => {
-                                if (name === "ngCount") return [value.toLocaleString(), "Số NG"];
+                                if (name === "ngCount") return [value.toLocaleString(), t('workstations.ngCount')];
                                 return [value, name];
                               }}
                             />
@@ -705,8 +707,8 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
             ) : (
               <div className="text-center py-8 text-muted-foreground">
                 <Crosshair className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Không có dữ liệu điểm đo cho công trạm này</p>
-                <p className="text-sm">Công trạm chưa được liên kết với điểm đo nào</p>
+                <p>{t('workstations.noMeasurementPointData')}</p>
+                <p className="text-sm">{t('workstations.noMeasurementPointLinked')}</p>
               </div>
             )}
           </div>

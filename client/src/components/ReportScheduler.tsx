@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -64,27 +65,27 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { vi } from 'date-fns/locale';
 
 const REPORT_TYPES = {
-  NG_VISUAL: { label: 'Báo cáo NG Visual', icon: BarChart3 },
-  DAILY_SUMMARY: { label: 'Tổng hợp hàng ngày', icon: Calendar },
-  WEEKLY_SUMMARY: { label: 'Tổng hợp hàng tuần', icon: Calendar },
-  MONTHLY_SUMMARY: { label: 'Tổng hợp hàng tháng', icon: Calendar },
-  CUSTOM: { label: 'Tùy chỉnh', icon: FileText },
+  NG_VISUAL: { label: 'reports.ngVisual', icon: BarChart3 },
+  DAILY_SUMMARY: { label: 'reports.dailySummary', icon: Calendar },
+  WEEKLY_SUMMARY: { label: 'reports.weeklySummary', icon: Calendar },
+  MONTHLY_SUMMARY: { label: 'reports.monthlySummary', icon: Calendar },
+  CUSTOM: { label: 'reports.custom', icon: FileText },
 };
 
 const SCHEDULES = {
-  DAILY: { label: 'Hàng ngày', description: 'Gửi mỗi ngày vào giờ đã chọn' },
-  WEEKLY: { label: 'Hàng tuần', description: 'Gửi vào ngày đã chọn trong tuần' },
-  MONTHLY: { label: 'Hàng tháng', description: 'Gửi vào ngày đã chọn trong tháng' },
+  DAILY: { label: 'reports.daily', description: 'reports.dailyDesc' },
+  WEEKLY: { label: 'reports.weekly', description: 'reports.weeklyDesc' },
+  MONTHLY: { label: 'reports.monthly', description: 'reports.monthlyDesc' },
 };
 
 const DAYS_OF_WEEK = [
-  { value: 0, label: 'Chủ nhật' },
-  { value: 1, label: 'Thứ 2' },
-  { value: 2, label: 'Thứ 3' },
-  { value: 3, label: 'Thứ 4' },
-  { value: 4, label: 'Thứ 5' },
-  { value: 5, label: 'Thứ 6' },
-  { value: 6, label: 'Thứ 7' },
+  { value: 0, label: 'reports.sunday' },
+  { value: 1, label: 'reports.monday' },
+  { value: 2, label: 'reports.tuesday' },
+  { value: 3, label: 'reports.wednesday' },
+  { value: 4, label: 'reports.thursday' },
+  { value: 5, label: 'reports.friday' },
+  { value: 6, label: 'reports.saturday' },
 ];
 
 const FORMAT_ICONS = {
@@ -129,6 +130,7 @@ const DEFAULT_FORM_DATA: ReportFormData = {
 };
 
 export function ReportScheduler() {
+  const { t } = useTranslation();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editingReport, setEditingReport] = useState<number | null>(null);
   const [logsDialogOpen, setLogsDialogOpen] = useState(false);
@@ -148,7 +150,7 @@ export function ReportScheduler() {
   // Mutations
   const createMutation = trpc.scheduledReport.create.useMutation({
     onSuccess: () => {
-      toast.success('Đã tạo lịch báo cáo');
+      toast.success(t('reports.scheduleCreated'));
       setCreateDialogOpen(false);
       setFormData(DEFAULT_FORM_DATA);
       refetch();
@@ -158,7 +160,7 @@ export function ReportScheduler() {
 
   const updateMutation = trpc.scheduledReport.update.useMutation({
     onSuccess: () => {
-      toast.success('Đã cập nhật lịch báo cáo');
+      toast.success(t('reports.scheduleUpdated'));
       setEditingReport(null);
       setFormData(DEFAULT_FORM_DATA);
       refetch();
@@ -168,7 +170,7 @@ export function ReportScheduler() {
 
   const deleteMutation = trpc.scheduledReport.delete.useMutation({
     onSuccess: () => {
-      toast.success('Đã xóa lịch báo cáo');
+      toast.success(t('reports.scheduleDeleted'));
       refetch();
     },
     onError: (error) => toast.error(error.message),
@@ -176,7 +178,7 @@ export function ReportScheduler() {
 
   const toggleMutation = trpc.scheduledReport.update.useMutation({
     onSuccess: () => {
-      toast.success('Đã cập nhật trạng thái lịch báo cáo');
+      toast.success(t('reports.scheduleStatusUpdated'));
       refetch();
     },
     onError: (error: any) => toast.error(error.message),
@@ -184,7 +186,7 @@ export function ReportScheduler() {
 
   const triggerMutation = trpc.scheduledReport.sendTest.useMutation({
     onSuccess: () => {
-      toast.success('Đã gửi báo cáo test');
+      toast.success(t('reports.testReportSent'));
       refetch();
     },
     onError: (error: any) => toast.error(error.message),
@@ -200,7 +202,7 @@ export function ReportScheduler() {
       }
       setRecipientInput('');
     } else {
-      toast.error('Email không hợp lệ');
+      toast.error(t('reports.invalidEmail'));
     }
   };
 
@@ -213,11 +215,11 @@ export function ReportScheduler() {
 
   const handleSubmit = () => {
     if (!formData.name.trim()) {
-      toast.error('Vui lòng nhập tên báo cáo');
+      toast.error(t('reports.enterReportName'));
       return;
     }
     if (formData.recipients.length === 0) {
-      toast.error('Vui lòng thêm ít nhất một người nhận');
+      toast.error(t('reports.addAtLeastOneRecipient'));
       return;
     }
 
@@ -276,7 +278,7 @@ export function ReportScheduler() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Calendar className="h-4 w-4" />
-              Tổng lịch báo cáo
+              {t('reports.totalSchedules')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -288,7 +290,7 @@ export function ReportScheduler() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 text-green-500" />
-              Đang hoạt động
+              {t('common.active')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -302,7 +304,7 @@ export function ReportScheduler() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Pause className="h-4 w-4 text-yellow-500" />
-              Tạm dừng
+              {t('common.paused')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -316,7 +318,7 @@ export function ReportScheduler() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Mail className="h-4 w-4 text-blue-500" />
-              Tổng người nhận
+              {t('reports.totalRecipients')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -331,9 +333,9 @@ export function ReportScheduler() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>Lịch báo cáo tự động</CardTitle>
+            <CardTitle>{t('reports.automaticSchedule')}</CardTitle>
             <CardDescription>
-              Quản lý các báo cáo được gửi tự động theo lịch
+              {t('reports.manageAutoReports')}
             </CardDescription>
           </div>
           <Button onClick={() => {
@@ -342,32 +344,32 @@ export function ReportScheduler() {
             setCreateDialogOpen(true);
           }}>
             <Plus className="h-4 w-4 mr-2" />
-            Tạo lịch mới
+            {t('reports.createNew')}
           </Button>
         </CardHeader>
         <CardContent>
           {(reportsData || []).length === 0 ? (
             <div className="text-center py-12">
               <Calendar className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Chưa có lịch báo cáo</h3>
+              <h3 className="text-lg font-semibold mb-2">{t('reports.noSchedules')}</h3>
               <p className="text-muted-foreground mb-4">
-                Tạo lịch báo cáo tự động để nhận báo cáo qua email định kỳ
+                {t('reports.createAutoReport')}
               </p>
               <Button onClick={() => setCreateDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />
-                Tạo lịch đầu tiên
+                {t('reports.createFirst')}
               </Button>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Tên báo cáo</TableHead>
-                  <TableHead>Loại</TableHead>
-                  <TableHead>Lịch gửi</TableHead>
-                  <TableHead>Người nhận</TableHead>
-                  <TableHead>Lần gửi tiếp</TableHead>
-                  <TableHead>Trạng thái</TableHead>
+                  <TableHead>{t('reports.reportName')}</TableHead>
+                  <TableHead>{t('reports.type')}</TableHead>
+                  <TableHead>{t('reports.sendSchedule')}</TableHead>
+                  <TableHead>{t('reports.recipients')}</TableHead>
+                  <TableHead>{t('reports.nextSend')}</TableHead>
+                  <TableHead>{t('common.status')}</TableHead>
                   <TableHead className="w-[80px]"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -394,7 +396,7 @@ export function ReportScheduler() {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Badge variant="secondary">
-                            {REPORT_TYPES[report.reportType as keyof typeof REPORT_TYPES]?.label}
+                            {t(REPORT_TYPES[report.reportType as keyof typeof REPORT_TYPES]?.label)}
                           </Badge>
                           <FormatIcon className="h-4 w-4 text-muted-foreground" />
                         </div>
@@ -403,7 +405,7 @@ export function ReportScheduler() {
                         <div className="flex items-center gap-2">
                           <Clock className="h-4 w-4 text-muted-foreground" />
                           <div>
-                            <p className="text-sm">{SCHEDULES[report.schedule as keyof typeof SCHEDULES]?.label}</p>
+                            <p className="text-sm">{t(SCHEDULES[report.schedule as keyof typeof SCHEDULES]?.label)}</p>
                             <p className="text-xs text-muted-foreground">{report.scheduleTime}</p>
                           </div>
                         </div>
@@ -411,7 +413,7 @@ export function ReportScheduler() {
                       <TableCell>
                         <div className="flex items-center gap-1">
                           <Mail className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm">{report.recipients?.length || 0} người</span>
+                          <span className="text-sm">{report.recipients?.length || 0} {t('reports.people')}</span>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -430,7 +432,7 @@ export function ReportScheduler() {
                       </TableCell>
                       <TableCell>
                         <Badge variant={report.isActive ? 'default' : 'secondary'}>
-                          {report.isActive ? 'Đang hoạt động' : 'Tạm dừng'}
+                          {report.isActive ? t('common.active') : t('common.paused')}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -443,27 +445,27 @@ export function ReportScheduler() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => handleEdit(report)}>
                               <Edit className="h-4 w-4 mr-2" />
-                              Chỉnh sửa
+                              {t('common.edit')}
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleViewLogs(report.id)}>
                               <History className="h-4 w-4 mr-2" />
-                              Lịch sử gửi
+                              {t('reports.sendHistory')}
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => triggerMutation.mutate({ id: report.id })}>
                               <Send className="h-4 w-4 mr-2" />
-                              Gửi ngay
+                              {t('reports.sendNow')}
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => toggleMutation.mutate({ id: report.id, isActive: !report.isActive })}>
                               {report.isActive ? (
                                 <>
                                   <Pause className="h-4 w-4 mr-2" />
-                                  Tạm dừng
+                                  {t('common.pause')}
                                 </>
                               ) : (
                                 <>
                                   <Play className="h-4 w-4 mr-2" />
-                                  Kích hoạt
+                                  {t('common.activate')}
                                 </>
                               )}
                             </DropdownMenuItem>
@@ -471,13 +473,13 @@ export function ReportScheduler() {
                             <DropdownMenuItem 
                               className="text-red-600"
                               onClick={() => {
-                                if (confirm('Bạn có chắc muốn xóa lịch báo cáo này?')) {
+                                if (confirm(t('reports.confirmDeleteSchedule'))) {
                                   deleteMutation.mutate({ id: report.id });
                                 }
                               }}
                             >
                               <Trash2 className="h-4 w-4 mr-2" />
-                              Xóa
+                              {t('common.delete')}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -496,44 +498,44 @@ export function ReportScheduler() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {editingReport ? 'Chỉnh sửa lịch báo cáo' : 'Tạo lịch báo cáo mới'}
+              {editingReport ? t('reports.editSchedule') : t('reports.createNewSchedule')}
             </DialogTitle>
             <DialogDescription>
-              Cấu hình báo cáo tự động gửi qua email theo lịch
+              {t('reports.configAutoReport')}
             </DialogDescription>
           </DialogHeader>
 
           <Tabs defaultValue="basic" className="mt-4">
             <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="basic">Cơ bản</TabsTrigger>
-              <TabsTrigger value="schedule">Lịch gửi</TabsTrigger>
-              <TabsTrigger value="content">Nội dung</TabsTrigger>
+              <TabsTrigger value="basic">{t('reports.basic')}</TabsTrigger>
+              <TabsTrigger value="schedule">{t('reports.sendSchedule')}</TabsTrigger>
+              <TabsTrigger value="content">{t('reports.content')}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="basic" className="space-y-4 mt-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Tên báo cáo *</Label>
+                <Label htmlFor="name">{t('reports.reportNameRequired')}</Label>
                 <Input
                   id="name"
                   value={formData.name}
                   onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="VD: Báo cáo NG hàng ngày"
+                  placeholder={t('reports.reportNamePlaceholder')}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="description">Mô tả</Label>
+                <Label htmlFor="description">{t('common.description')}</Label>
                 <Textarea
                   id="description"
                   value={formData.description}
                   onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Mô tả ngắn về báo cáo..."
+                  placeholder={t('reports.descriptionPlaceholder')}
                   rows={2}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label>Loại báo cáo</Label>
+                <Label>{t('reports.reportType')}</Label>
                 <Select
                   value={formData.reportType}
                   onValueChange={(value: any) => setFormData(prev => ({ ...prev, reportType: value }))}
@@ -543,14 +545,14 @@ export function ReportScheduler() {
                   </SelectTrigger>
                   <SelectContent>
                     {Object.entries(REPORT_TYPES).map(([key, { label }]) => (
-                      <SelectItem key={key} value={key}>{label}</SelectItem>
+                      <SelectItem key={key} value={key}>{t(label)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
-                <Label>Định dạng</Label>
+                <Label>{t('reports.format')}</Label>
                 <Select
                   value={formData.reportFormat}
                   onValueChange={(value: any) => setFormData(prev => ({ ...prev, reportFormat: value }))}
@@ -567,7 +569,7 @@ export function ReportScheduler() {
               </div>
 
               <div className="space-y-2">
-                <Label>Người nhận *</Label>
+                <Label>{t('reports.recipientsRequired')}</Label>
                 <div className="flex gap-2">
                   <Input
                     value={recipientInput}
@@ -598,7 +600,7 @@ export function ReportScheduler() {
 
             <TabsContent value="schedule" className="space-y-4 mt-4">
               <div className="space-y-2">
-                <Label>Tần suất</Label>
+                <Label>{t('reports.frequency')}</Label>
                 <Select
                   value={formData.schedule}
                   onValueChange={(value: any) => setFormData(prev => ({ ...prev, schedule: value }))}
@@ -610,8 +612,8 @@ export function ReportScheduler() {
                     {Object.entries(SCHEDULES).map(([key, { label, description }]) => (
                       <SelectItem key={key} value={key}>
                         <div>
-                          <p>{label}</p>
-                          <p className="text-xs text-muted-foreground">{description}</p>
+                          <p>{t(label)}</p>
+                          <p className="text-xs text-muted-foreground">{t(description)}</p>
                         </div>
                       </SelectItem>
                     ))}
@@ -620,7 +622,7 @@ export function ReportScheduler() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="scheduleTime">Giờ gửi</Label>
+                <Label htmlFor="scheduleTime">{t('reports.sendTime')}</Label>
                 <Input
                   id="scheduleTime"
                   type="time"
@@ -631,17 +633,17 @@ export function ReportScheduler() {
 
               {formData.schedule === 'WEEKLY' && (
                 <div className="space-y-2">
-                  <Label>Ngày trong tuần</Label>
+                  <Label>{t('reports.dayOfWeek')}</Label>
                   <Select
                     value={formData.scheduleDayOfWeek?.toString()}
                     onValueChange={(value) => setFormData(prev => ({ ...prev, scheduleDayOfWeek: parseInt(value) }))}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Chọn ngày" />
+                      <SelectValue placeholder={t('reports.selectDay')} />
                     </SelectTrigger>
                     <SelectContent>
                       {DAYS_OF_WEEK.map(({ value, label }) => (
-                        <SelectItem key={value} value={value.toString()}>{label}</SelectItem>
+                        <SelectItem key={value} value={value.toString()}>{t(label)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -650,17 +652,17 @@ export function ReportScheduler() {
 
               {formData.schedule === 'MONTHLY' && (
                 <div className="space-y-2">
-                  <Label>Ngày trong tháng</Label>
+                  <Label>{t('reports.dayOfMonth')}</Label>
                   <Select
                     value={formData.scheduleDayOfMonth?.toString()}
                     onValueChange={(value) => setFormData(prev => ({ ...prev, scheduleDayOfMonth: parseInt(value) }))}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Chọn ngày" />
+                      <SelectValue placeholder={t('reports.selectDay')} />
                     </SelectTrigger>
                     <SelectContent>
                       {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
-                        <SelectItem key={day} value={day.toString()}>Ngày {day}</SelectItem>
+                        <SelectItem key={day} value={day.toString()}>{t('reports.dayN', { day })}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -668,7 +670,7 @@ export function ReportScheduler() {
               )}
 
               <div className="space-y-2">
-                <Label>Lọc theo nhà máy (tùy chọn)</Label>
+                <Label>{t('reports.filterByFactory')}</Label>
                 <Select
                   value={formData.factoryId?.toString() || 'all'}
                   onValueChange={(value) => setFormData(prev => ({ 
@@ -677,10 +679,10 @@ export function ReportScheduler() {
                   }))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Tất cả nhà máy" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tất cả nhà máy</SelectItem>
+                    <SelectValue placeholder={t('reports.allFactories')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                    <SelectItem value="all">{t('reports.allFactories')}</SelectItem>
                     {factories?.map((factory) => (
                       <SelectItem key={factory.id} value={factory.id.toString()}>
                         {factory.name}
@@ -695,8 +697,8 @@ export function ReportScheduler() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label>Heatmap công trạm</Label>
-                    <p className="text-xs text-muted-foreground">Hiển thị phân bố lỗi theo công trạm</p>
+                    <Label>{t('reports.workstationHeatmap')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('reports.workstationHeatmapDesc')}</p>
                   </div>
                   <Switch
                     checked={formData.includeWorkstationHeatmap}
@@ -706,8 +708,8 @@ export function ReportScheduler() {
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label>Top điểm NG</Label>
-                    <p className="text-xs text-muted-foreground">Danh sách điểm đo có nhiều lỗi nhất</p>
+                    <Label>{t('reports.topNGPoints')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('reports.topNGPointsDesc')}</p>
                   </div>
                   <Switch
                     checked={formData.includeTopNGPoints}
@@ -717,8 +719,8 @@ export function ReportScheduler() {
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label>Biểu đồ xu hướng</Label>
-                    <p className="text-xs text-muted-foreground">Xu hướng yield theo thời gian</p>
+                    <Label>{t('reports.trendChart')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('reports.trendChartDesc')}</p>
                   </div>
                   <Switch
                     checked={formData.includeTrendChart}
@@ -728,8 +730,8 @@ export function ReportScheduler() {
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label>So sánh kỳ trước</Label>
-                    <p className="text-xs text-muted-foreground">So sánh với kỳ báo cáo trước</p>
+                    <Label>{t('reports.periodComparison')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('reports.periodComparisonDesc')}</p>
                   </div>
                   <Switch
                     checked={formData.includeComparison}
@@ -739,7 +741,7 @@ export function ReportScheduler() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="primaryColor">Màu chủ đạo</Label>
+                <Label htmlFor="primaryColor">{t('reports.primaryColor')}</Label>
                 <div className="flex gap-2">
                   <Input
                     id="primaryColor"
@@ -758,12 +760,12 @@ export function ReportScheduler() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="footerText">Chữ ký footer</Label>
+                <Label htmlFor="footerText">{t('reports.footerSignature')}</Label>
                 <Textarea
                   id="footerText"
                   value={formData.footerText}
                   onChange={(e) => setFormData(prev => ({ ...prev, footerText: e.target.value }))}
-                  placeholder="VD: Báo cáo này được tạo tự động bởi hệ thống AVI/AOI Management"
+                  placeholder={t('reports.footerPlaceholder')}
                   rows={2}
                 />
               </div>
@@ -772,13 +774,13 @@ export function ReportScheduler() {
 
           <DialogFooter className="mt-6">
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button 
               onClick={handleSubmit}
               disabled={createMutation.isPending || updateMutation.isPending}
             >
-              {editingReport ? 'Cập nhật' : 'Tạo lịch'}
+              {editingReport ? t('common.update') : t('reports.createSchedule')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -790,23 +792,23 @@ export function ReportScheduler() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <History className="h-5 w-5" />
-              Lịch sử gửi báo cáo
+              {t('reports.sendReportHistory')}
             </DialogTitle>
           </DialogHeader>
 
           {(logsData || []).length === 0 ? (
             <div className="text-center py-8">
               <History className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">Chưa có lịch sử gửi báo cáo</p>
+              <p className="text-muted-foreground">{t('reports.noSendHistory')}</p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Thời gian</TableHead>
-                  <TableHead>Trạng thái</TableHead>
-                  <TableHead>Người nhận</TableHead>
-                  <TableHead>Ghi chú</TableHead>
+                  <TableHead>{t('reports.time')}</TableHead>
+                  <TableHead>{t('common.status')}</TableHead>
+                  <TableHead>{t('reports.recipients')}</TableHead>
+                  <TableHead>{t('reports.note')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -829,13 +831,13 @@ export function ReportScheduler() {
                         {log.status === 'SUCCESS' && <CheckCircle2 className="h-3 w-3 mr-1" />}
                         {log.status === 'FAILED' && <XCircle className="h-3 w-3 mr-1" />}
                         {log.status === 'PENDING' && <AlertCircle className="h-3 w-3 mr-1" />}
-                        {log.status === 'SUCCESS' ? 'Thành công' : 
-                         log.status === 'FAILED' ? 'Thất bại' : 'Đang xử lý'}
+                        {log.status === 'SUCCESS' ? t('common.success') : 
+                         log.status === 'FAILED' ? t('common.failure') : t('common.processing')}
                       </Badge>
                     </TableCell>
                     <TableCell>
                       <span className="text-sm">
-                        {log.successCount}/{log.recipientCount} thành công
+                        {log.successCount}/{log.recipientCount} {t('common.success').toLowerCase()}
                       </span>
                     </TableCell>
                     <TableCell>

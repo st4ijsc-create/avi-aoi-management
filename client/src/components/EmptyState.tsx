@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { LucideIcon, Inbox, FileQuestion, Database, BarChart3, Settings, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -24,44 +25,44 @@ interface EmptyStateProps {
 
 const variantConfig: Record<EmptyStateVariant, { 
   icon: LucideIcon; 
-  title: string; 
-  description: string;
+  titleKey: string; 
+  descriptionKey: string;
   iconColor: string;
 }> = {
   default: {
     icon: Inbox,
-    title: 'Không có dữ liệu',
-    description: 'Chưa có dữ liệu nào được ghi nhận trong hệ thống.',
+    titleKey: 'common.noData',
+    descriptionKey: 'common.noDataDescription',
     iconColor: 'text-muted-foreground'
   },
   'no-data': {
     icon: Database,
-    title: 'Chưa có dữ liệu',
-    description: 'Dữ liệu sẽ được hiển thị khi có kết quả kiểm tra từ máy.',
+    titleKey: 'common.noDataYet',
+    descriptionKey: 'common.noDataYetDescription',
     iconColor: 'text-blue-500'
   },
   'no-results': {
     icon: FileQuestion,
-    title: 'Không tìm thấy kết quả',
-    description: 'Không có kết quả nào phù hợp với bộ lọc hiện tại. Thử thay đổi điều kiện tìm kiếm.',
+    titleKey: 'common.noResults',
+    descriptionKey: 'common.noResultsDescription',
     iconColor: 'text-amber-500'
   },
   'no-analytics': {
     icon: BarChart3,
-    title: 'Chưa có dữ liệu phân tích',
-    description: 'Cần có dữ liệu kiểm tra để hiển thị biểu đồ và thống kê.',
+    titleKey: 'common.noAnalytics',
+    descriptionKey: 'common.noAnalyticsDescription',
     iconColor: 'text-emerald-500'
   },
   'no-config': {
     icon: Settings,
-    title: 'Chưa cấu hình',
-    description: 'Vui lòng cấu hình các thông số cần thiết để sử dụng tính năng này.',
+    titleKey: 'common.noConfig',
+    descriptionKey: 'common.noConfigDescription',
     iconColor: 'text-purple-500'
   },
   error: {
     icon: AlertCircle,
-    title: 'Đã xảy ra lỗi',
-    description: 'Không thể tải dữ liệu. Vui lòng thử lại sau.',
+    titleKey: 'errors.occurred',
+    descriptionKey: 'errors.loadDataFailed',
     iconColor: 'text-red-500'
   }
 };
@@ -76,10 +77,11 @@ export function EmptyState({
   className,
   compact = false
 }: EmptyStateProps) {
+  const { t } = useTranslation();
   const config = variantConfig[variant];
   const Icon = CustomIcon || config.icon;
-  const title = customTitle || config.title;
-  const description = customDescription || config.description;
+  const title = customTitle || t(config.titleKey);
+  const description = customDescription || t(config.descriptionKey);
 
   if (compact) {
     return (
@@ -132,59 +134,64 @@ export function EmptyState({
 
 // Specialized empty states for common use cases
 export function NoWorkstationData({ onRefresh }: { onRefresh?: () => void }) {
+  const { t } = useTranslation();
   return (
     <EmptyState
       variant="no-analytics"
-      title="Chưa có dữ liệu công trạm"
-      description="Dữ liệu phân tích công trạm sẽ được hiển thị khi có kết quả kiểm tra từ các điểm đo được gán công trạm."
-      actionLabel={onRefresh ? "Làm mới" : undefined}
+      title={t('machines.noWorkstationData')}
+      description={t('machines.noWorkstationDataDescription')}
+      actionLabel={onRefresh ? t('common.refresh') : undefined}
       onAction={onRefresh}
     />
   );
 }
 
 export function NoMeasurementPoints({ onAdd }: { onAdd?: () => void }) {
+  const { t } = useTranslation();
   return (
     <EmptyState
       variant="no-config"
-      title="Chưa có điểm đo"
-      description="Thêm các điểm đo để định nghĩa vị trí kiểm tra trên sản phẩm."
-      actionLabel={onAdd ? "Thêm điểm đo" : undefined}
+      title={t('products.noMeasurementPoints')}
+      description={t('products.noMeasurementPointsDescription')}
+      actionLabel={onAdd ? t('products.addMeasurementPoint') : undefined}
       onAction={onAdd}
     />
   );
 }
 
 export function NoInspectionResults({ onSeedData }: { onSeedData?: () => void }) {
+  const { t } = useTranslation();
   return (
     <EmptyState
       variant="no-data"
-      title="Chưa có kết quả kiểm tra"
-      description="Kết quả kiểm tra sẽ được hiển thị khi máy AVI/AOI gửi dữ liệu qua API."
-      actionLabel={onSeedData ? "Tạo dữ liệu mẫu" : undefined}
+      title={t('history.noInspectionResults')}
+      description={t('history.noInspectionResultsDescription')}
+      actionLabel={onSeedData ? t('history.createSampleData') : undefined}
       onAction={onSeedData}
     />
   );
 }
 
 export function NoChartData() {
+  const { t } = useTranslation();
   return (
     <EmptyState
       variant="no-analytics"
-      title="Chưa đủ dữ liệu"
-      description="Cần có ít nhất một số kết quả kiểm tra để hiển thị biểu đồ."
+      title={t('dashboard.notEnoughData')}
+      description={t('dashboard.notEnoughDataDescription')}
       compact
     />
   );
 }
 
 export function LoadingError({ onRetry }: { onRetry?: () => void }) {
+  const { t } = useTranslation();
   return (
     <EmptyState
       variant="error"
-      title="Không thể tải dữ liệu"
-      description="Đã xảy ra lỗi khi tải dữ liệu. Vui lòng kiểm tra kết nối và thử lại."
-      actionLabel={onRetry ? "Thử lại" : undefined}
+      title={t('errors.cannotLoadData')}
+      description={t('errors.cannotLoadDataDescription')}
+      actionLabel={onRetry ? t('common.retry') : undefined}
       onAction={onRetry}
     />
   );

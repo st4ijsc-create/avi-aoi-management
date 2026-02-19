@@ -1,4 +1,6 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
+import i18next from 'i18next';
+import { useTranslation } from 'react-i18next';
 import { AlertCircle, RefreshCw, Bug, Home, AlertTriangle, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -61,8 +63,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       showDetails = false, 
       className,
       variant = 'default',
-      title = 'Đã xảy ra lỗi',
-      description = 'Không thể hiển thị nội dung này. Vui lòng thử lại hoặc liên hệ hỗ trợ.'
+      title = i18next.t('errors.occurred'),
+      description = i18next.t('errors.cannotDisplayContent')
     } = this.props;
 
     if (!hasError) {
@@ -84,7 +86,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               className="text-destructive mb-6 flex-shrink-0"
             />
 
-            <h2 className="text-xl mb-4">An unexpected error occurred.</h2>
+            <h2 className="text-xl mb-4">{i18next.t('errors.unexpectedError')}</h2>
 
             <div className="p-4 w-full rounded bg-muted overflow-auto mb-6">
               <pre className="text-sm text-muted-foreground whitespace-break-spaces">
@@ -101,7 +103,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               )}
             >
               <RotateCcw size={16} />
-              Reload Page
+              {i18next.t('common.reloadPage')}
             </button>
           </div>
         </div>
@@ -124,7 +126,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             className="ml-auto h-7 px-2 text-red-600 hover:text-red-700 hover:bg-red-500/20"
           >
             <RefreshCw className="h-3 w-3 mr-1" />
-            Thử lại
+            {i18next.t('common.retry')}
           </Button>
         </div>
       );
@@ -149,7 +151,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             className="gap-2"
           >
             <RefreshCw className="h-3 w-3" />
-            Thử lại
+            {i18next.t('common.retry')}
           </Button>
         </div>
       );
@@ -187,14 +189,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 className="gap-2"
               >
                 <Home className="h-4 w-4" />
-                Trang chủ
+                {i18next.t('common.home')}
               </Button>
               <Button 
                 onClick={this.handleRetry}
                 className="gap-2"
               >
                 <RefreshCw className="h-4 w-4" />
-                Thử lại
+                {i18next.t('common.retry')}
               </Button>
             </div>
           </CardContent>
@@ -231,11 +233,12 @@ export function withErrorBoundary<P extends object>(
 
 // Specialized error boundaries for common use cases
 export function ChartErrorBoundary({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   return (
     <ErrorBoundary
       variant="compact"
-      title="Không thể hiển thị biểu đồ"
-      description="Đã xảy ra lỗi khi render biểu đồ. Vui lòng thử lại."
+      title={t('errors.cannotDisplayChart')}
+      description={t('errors.chartRenderError')}
     >
       {children}
     </ErrorBoundary>
@@ -243,11 +246,12 @@ export function ChartErrorBoundary({ children }: { children: ReactNode }) {
 }
 
 export function TableErrorBoundary({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   return (
     <ErrorBoundary
       variant="compact"
-      title="Không thể hiển thị bảng"
-      description="Đã xảy ra lỗi khi render bảng dữ liệu. Vui lòng thử lại."
+      title={t('errors.cannotDisplayTable')}
+      description={t('errors.tableRenderError')}
     >
       {children}
     </ErrorBoundary>
@@ -255,10 +259,11 @@ export function TableErrorBoundary({ children }: { children: ReactNode }) {
 }
 
 export function WidgetErrorBoundary({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   return (
     <ErrorBoundary
       variant="inline"
-      title="Lỗi widget"
+      title={t('errors.widgetError')}
     >
       {children}
     </ErrorBoundary>
@@ -266,11 +271,12 @@ export function WidgetErrorBoundary({ children }: { children: ReactNode }) {
 }
 
 export function AnalyticsErrorBoundary({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   return (
     <ErrorBoundary
       variant="compact"
-      title="Không thể tải dữ liệu phân tích"
-      description="Đã xảy ra lỗi khi tải dữ liệu phân tích. Vui lòng thử lại sau."
+      title={t('errors.cannotLoadAnalytics')}
+      description={t('errors.analyticsRenderError')}
     >
       {children}
     </ErrorBoundary>

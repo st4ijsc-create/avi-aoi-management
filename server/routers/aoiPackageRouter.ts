@@ -621,12 +621,14 @@ export const aoiPackageRouter = router({
                     const pointCode = point.pointId || point.pointCode || point.code || `Point_${idx + 1}`;
                     const pointName = point.name || pointCode;
                     const measuredVal = point.measuredValue !== undefined ? point.measuredValue : point.value;
+                    const measuredStr = measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null;
+                    const isNumeric = measuredStr !== null && !isNaN(Number(measuredStr)) && measuredStr.trim() !== '';
                     
                     return {
                       inspectionId: linkedInspectionId!,
                       pointDefId: 0, // No point definition from AOI
-                      measuredValue: measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null,
-                      measuredValueText: measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null,
+                      measuredValue: isNumeric ? measuredStr : null,
+                      measuredValueText: measuredStr,
                       result: (point.result || "NTF") as "OK" | "NG" | "NTF",
                       imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
                       remark: point.remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`,

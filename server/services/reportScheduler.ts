@@ -233,29 +233,39 @@ export function stopScheduledReport(reportId: number) {
 /**
  * Initialize all active scheduled reports
  */
-export async function initializeScheduledReports() {
+export async function initializeScheduledReports(retries = 3, delayMs = 5000) {
   console.log("[ReportScheduler] Initializing scheduled reports...");
   
-  try {
-    // Get all active scheduled reports
-    const reports = await db.getScheduledReports({ isActive: true });
-    
-    console.log(`[ReportScheduler] Found ${reports.length} active reports`);
-    
-    // Schedule each report
-    for (const report of reports) {
-      scheduleReport({
-        id: report.id,
-        schedule: report.schedule,
-        scheduleTime: report.scheduleTime,
-        scheduleDayOfWeek: report.scheduleDayOfWeek,
-        scheduleDayOfMonth: report.scheduleDayOfMonth,
-      });
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      // Get all active scheduled reports
+      const reports = await db.getScheduledReports({ isActive: true });
+      
+      console.log(`[ReportScheduler] Found ${reports.length} active reports`);
+      
+      // Schedule each report
+      for (const report of reports) {
+        scheduleReport({
+          id: report.id,
+          schedule: report.schedule,
+          scheduleTime: report.scheduleTime,
+          scheduleDayOfWeek: report.scheduleDayOfWeek,
+          scheduleDayOfMonth: report.scheduleDayOfMonth,
+        });
+      }
+      
+      console.log(`[ReportScheduler] Initialized ${reports.length} scheduled reports`);
+      return; // Success — exit
+    } catch (error) {
+      const isLastAttempt = attempt === retries;
+      if (isLastAttempt) {
+        console.error("[ReportScheduler] Failed to initialize scheduled reports after all retries:", error);
+      } else {
+        const wait = delayMs * attempt;
+        console.warn(`[ReportScheduler] Attempt ${attempt}/${retries} failed, retrying in ${wait / 1000}s...`, (error as any)?.cause?.code || (error as any)?.message || '');
+        await new Promise(resolve => setTimeout(resolve, wait));
+      }
     }
-    
-    console.log(`[ReportScheduler] Initialized ${reports.length} scheduled reports`);
-  } catch (error) {
-    console.error("[ReportScheduler] Failed to initialize scheduled reports:", error);
   }
 }
 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
@@ -49,10 +50,11 @@ function formatDuration(seconds: number): string {
 }
 
 function MachineCard({ machine, onClick }: { machine: MachineWithStatus; onClick: () => void }) {
+  const { t } = useTranslation();
   const isOnline = machine.latestStatus === 'online';
   const lastSeen = machine.latestHeartbeat 
     ? formatDistanceToNow(new Date(machine.latestHeartbeat), { addSuffix: true, locale: vi })
-    : 'Chưa có dữ liệu';
+    : t('machines.noData');
 
   // Get status color based on uptime and online status
   const getStatusColor = () => {
@@ -110,7 +112,7 @@ function MachineCard({ machine, onClick }: { machine: MachineWithStatus; onClick
       <CardContent>
         <div className="space-y-3">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Uptime (24h)</span>
+            <span className="text-muted-foreground">{t('machines.uptime24h')}</span>
             <span className="font-medium">{machine.uptimePercent}%</span>
           </div>
           <Progress value={machine.uptimePercent} className="h-2" />
@@ -118,7 +120,7 @@ function MachineCard({ machine, onClick }: { machine: MachineWithStatus; onClick
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="flex items-center gap-1 text-muted-foreground">
               <Clock className="h-3 w-3" />
-              <span>Last seen: {lastSeen}</span>
+              <span>{t('machines.lastSeen')}: {lastSeen}</span>
             </div>
             <div className="flex items-center gap-1 text-muted-foreground">
               <Activity className="h-3 w-3" />
@@ -144,6 +146,7 @@ function MachineDetailDialog({
   open: boolean; 
   onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const [timeRange, setTimeRange] = useState("24");
   
   const { data: statusLogs } = trpc.machineStatus.getLogs.useQuery(
@@ -191,17 +194,17 @@ function MachineDetailDialog({
         <div className="space-y-6">
           {/* Time Range Selector */}
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Khoảng thời gian:</span>
+            <span className="text-sm font-medium">{t('machines.timeRange')}:</span>
             <Select value={timeRange} onValueChange={setTimeRange}>
               <SelectTrigger className="w-40">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="1">1 giờ</SelectItem>
-                <SelectItem value="6">6 giờ</SelectItem>
-                <SelectItem value="24">24 giờ</SelectItem>
-                <SelectItem value="72">3 ngày</SelectItem>
-                <SelectItem value="168">7 ngày</SelectItem>
+                <SelectItem value="1">{t('machines.1hour')}</SelectItem>
+                <SelectItem value="6">{t('machines.6hours')}</SelectItem>
+                <SelectItem value="24">{t('machines.24hoursShort')}</SelectItem>
+                <SelectItem value="72">{t('machines.3days')}</SelectItem>
+                <SelectItem value="168">{t('machines.7daysShort')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -246,7 +249,7 @@ function MachineDetailDialog({
           {/* Location Info */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Vị trí</CardTitle>
+              <CardTitle className="text-sm">{t('machines.location')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 text-sm">
@@ -266,7 +269,7 @@ function MachineDetailDialog({
             <TabsList>
               <TabsTrigger value="status">
                 <History className="h-4 w-4 mr-1" />
-                Lịch sử trạng thái
+                {t('machines.statusHistory')}
               </TabsTrigger>
               <TabsTrigger value="heartbeat">
                 <Activity className="h-4 w-4 mr-1" />
@@ -303,7 +306,7 @@ function MachineDetailDialog({
                         </div>
                       ))
                     ) : (
-                      <p className="text-center text-muted-foreground py-4">Chưa có dữ liệu</p>
+                      <p className="text-center text-muted-foreground py-4">{t('machines.noData')}</p>
                     )}
                   </div>
                 </CardContent>
@@ -344,7 +347,7 @@ function MachineDetailDialog({
                         </div>
                       ))
                     ) : (
-                      <p className="text-center text-muted-foreground py-4">Chưa có dữ liệu heartbeat</p>
+                      <p className="text-center text-muted-foreground py-4">{t('machines.noHeartbeatData')}</p>
                     )}
                   </div>
                 </CardContent>
@@ -358,6 +361,7 @@ function MachineDetailDialog({
 }
 
 export default function MachineStatusMonitor() {
+  const { t } = useTranslation();
   const [selectedMachine, setSelectedMachine] = useState<MachineWithStatus | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -413,21 +417,21 @@ export default function MachineStatusMonitor() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Machine Status Monitor</h1>
-            <p className="text-muted-foreground">Theo dõi trạng thái kết nối của tất cả máy trong hệ thống</p>
+            <h1 className="text-2xl font-bold">{t('machines.statusMonitor')}</h1>
+            <p className="text-muted-foreground">{t('machines.trackConnectionStatus')}</p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => setAlertConfigOpen(true)}>
               <Settings2 className="h-4 w-4 mr-2" />
-              Cấu hình cảnh báo
+              {t('machines.alertConfig')}
             </Button>
             <Button variant="outline" onClick={() => setExportDialogOpen(true)}>
               <Download className="h-4 w-4 mr-2" />
-              Xuất báo cáo
+              {t('machines.exportReport')}
             </Button>
             <Button variant="outline" onClick={() => refetch()}>
               <RefreshCw className="h-4 w-4 mr-2" />
-              Làm mới
+              {t('machines.refresh')}
             </Button>
           </div>
         </div>
@@ -440,7 +444,7 @@ export default function MachineStatusMonitor() {
                 <Server className="h-8 w-8 text-muted-foreground" />
                 <div>
                   <p className="text-3xl font-bold">{totalMachines}</p>
-                  <p className="text-sm text-muted-foreground">Tổng số máy</p>
+                  <p className="text-sm text-muted-foreground">{t('machines.totalMachines')}</p>
                 </div>
               </div>
             </CardContent>
@@ -487,11 +491,11 @@ export default function MachineStatusMonitor() {
           <TabsList>
             <TabsTrigger value="machines" className="gap-2">
               <Server className="h-4 w-4" />
-              Danh sách máy
+              {t('machines.machineList')}
             </TabsTrigger>
             <TabsTrigger value="timeline" className="gap-2">
               <BarChart3 className="h-4 w-4" />
-              Uptime Timeline
+              {t('machines.uptimeTimeline')}
             </TabsTrigger>
           </TabsList>
 
@@ -500,10 +504,10 @@ export default function MachineStatusMonitor() {
             <div className="flex items-center gap-4">
               <Select value={filterStatus} onValueChange={setFilterStatus}>
                 <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Trạng thái" />
+                  <SelectValue placeholder={t('common.status')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
                   <SelectItem value="online">Online</SelectItem>
                   <SelectItem value="offline">Offline</SelectItem>
                 </SelectContent>
@@ -511,10 +515,10 @@ export default function MachineStatusMonitor() {
 
               <Select value={filterFactory} onValueChange={setFilterFactory}>
                 <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Nhà máy" />
+                  <SelectValue placeholder={t('machines.factory')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả nhà máy</SelectItem>
+                  <SelectItem value="all">{t('machines.allFactories')}</SelectItem>
                   {factories?.map((f: any) => (
                     <SelectItem key={f.id} value={f.id.toString()}>{f.name}</SelectItem>
                   ))}
@@ -530,7 +534,7 @@ export default function MachineStatusMonitor() {
                     setFilterFactory("all");
                   }}
                 >
-                  Xóa bộ lọc
+                  {t('machines.clearFilters')}
                 </Button>
               )}
             </div>
@@ -565,7 +569,7 @@ export default function MachineStatusMonitor() {
               <Card>
                 <CardContent className="py-12 text-center">
                   <AlertTriangle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">Không tìm thấy máy nào phù hợp với bộ lọc</p>
+                  <p className="text-muted-foreground">{t('machines.noMachinesMatchFilter')}</p>
                 </CardContent>
               </Card>
             )}
@@ -577,17 +581,17 @@ export default function MachineStatusMonitor() {
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle>Uptime Timeline</CardTitle>
-                    <CardDescription>Biểu đồ thời gian online/offline của từng máy</CardDescription>
+                    <CardDescription>{t('machines.uptimeTimelineDescription')}</CardDescription>
                   </div>
                   <Select value={timelineHours.toString()} onValueChange={(v) => setTimelineHours(Number(v))}>
                     <SelectTrigger className="w-40">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="24">24 giờ qua</SelectItem>
-                      <SelectItem value="48">48 giờ qua</SelectItem>
-                      <SelectItem value="72">72 giờ qua</SelectItem>
-                      <SelectItem value="168">7 ngày qua</SelectItem>
+                      <SelectItem value="24">{t('machines.last24hours')}</SelectItem>
+                      <SelectItem value="48">{t('machines.last48hours')}</SelectItem>
+                      <SelectItem value="72">{t('machines.last72hours')}</SelectItem>
+                      <SelectItem value="168">{t('machines.last7days')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -601,7 +605,7 @@ export default function MachineStatusMonitor() {
                   <UptimeTimeline data={timelines} hours={timelineHours} />
                 ) : (
                   <div className="h-64 flex items-center justify-center text-muted-foreground">
-                    Không có dữ liệu timeline
+                  {t('machines.noTimelineData')}
                   </div>
                 )}
               </CardContent>
@@ -620,14 +624,14 @@ export default function MachineStatusMonitor() {
         <Dialog open={alertConfigOpen} onOpenChange={setAlertConfigOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Cấu hình cảnh báo Offline</DialogTitle>
+              <DialogTitle>{t('machines.offlineAlertConfig')}</DialogTitle>
               <DialogDescription>
-                Thiết lập ngưỡng thời gian và bật/tắt cảnh báo khi máy offline
+                {t('machines.offlineAlertDescription')}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label>Ngưỡng thời gian offline (phút)</Label>
+                <Label>{t('machines.offlineThresholdMinutes')}</Label>
                 <Input
                   type="number"
                   min={1}
@@ -644,13 +648,13 @@ export default function MachineStatusMonitor() {
                   }}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Gửi cảnh báo khi máy offline quá số phút này
+                  {t('machines.offlineThresholdHint')}
                 </p>
               </div>
               <div className="flex items-center justify-between">
                 <div>
-                  <Label>Bật cảnh báo</Label>
-                  <p className="text-xs text-muted-foreground">Gửi notification khi máy offline</p>
+                  <Label>{t('machines.enableAlert')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('machines.sendNotificationWhenOffline')}</p>
                 </div>
                 <Switch
                   checked={alertConfig?.isActive ?? true}
@@ -659,7 +663,7 @@ export default function MachineStatusMonitor() {
                       thresholdMinutes: alertConfig?.thresholdMinutes || 5,
                       isActive: checked
                     });
-                    toast.success(checked ? 'Cảnh báo đã bật' : 'Cảnh báo đã tắt');
+                    toast.success(checked ? t('machines.alertEnabled') : t('machines.alertDisabled'));
                   }}
                 />
               </div>
@@ -671,21 +675,21 @@ export default function MachineStatusMonitor() {
         <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Xuất báo cáo trạng thái máy</DialogTitle>
+              <DialogTitle>{t('machines.exportStatusReport')}</DialogTitle>
               <DialogDescription>
-                Chọn máy và khoảng thời gian để xuất báo cáo
+                {t('machines.exportReportDescription')}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Chọn máy</Label>
+                  <Label>{t('machines.selectMachine')}</Label>
                   <Select 
                     value={exportMachineId?.toString() || ''} 
                     onValueChange={(v) => setExportMachineId(Number(v))}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Chọn máy..." />
+                      <SelectValue placeholder={t('machines.selectMachinePlaceholder')} />
                     </SelectTrigger>
                     <SelectContent>
                       {machines?.map((m: MachineWithStatus) => (
@@ -697,7 +701,7 @@ export default function MachineStatusMonitor() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Từ ngày</Label>
+                  <Label>{t('machines.fromDate')}</Label>
                   <Input
                     type="date"
                     value={exportDateRange.start}
@@ -705,7 +709,7 @@ export default function MachineStatusMonitor() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Đến ngày</Label>
+                  <Label>{t('machines.toDate')}</Label>
                   <Input
                     type="date"
                     value={exportDateRange.end}
@@ -741,7 +745,7 @@ export default function MachineStatusMonitor() {
                       </div>
                       <div className="text-center p-3 rounded-lg bg-red-500/10">
                         <p className="text-2xl font-bold text-red-500">{exportReport.statistics.offlineCount}</p>
-                        <p className="text-xs text-muted-foreground">Lần offline</p>
+                        <p className="text-xs text-muted-foreground">{t('machines.offlineCount')}</p>
                       </div>
                       <div className="text-center p-3 rounded-lg bg-muted">
                         <p className="text-2xl font-bold">{formatDuration(exportReport.statistics.mtbf)}</p>
@@ -760,18 +764,18 @@ export default function MachineStatusMonitor() {
                           a.download = `machine-report-${exportReport.machine.code}-${exportDateRange.start}-${exportDateRange.end}.json`;
                           a.click();
                           URL.revokeObjectURL(url);
-                          toast.success('Xuất báo cáo thành công');
+                          toast.success(t('machines.reportExported'));
                         }}
                       >
                         <Download className="h-4 w-4 mr-2" />
-                        Tải JSON
+                        {t('machines.downloadJSON')}
                       </Button>
                       <Button 
                         variant="outline"
                         className="flex-1"
                         onClick={() => {
                           // Export as CSV
-                          const headers = ['Thời gian', 'Trạng thái', 'IP'];
+                          const headers = [t('machines.csvTime'), t('common.status'), 'IP'];
                           const rows = exportReport.logs.map((log: any) => [
                             format(new Date(log.timestamp), 'dd/MM/yyyy HH:mm:ss'),
                             log.status,
@@ -785,11 +789,11 @@ export default function MachineStatusMonitor() {
                           a.download = `machine-report-${exportReport.machine.code}-${exportDateRange.start}-${exportDateRange.end}.csv`;
                           a.click();
                           URL.revokeObjectURL(url);
-                          toast.success('Xuất báo cáo thành công');
+                          toast.success(t('machines.reportExported'));
                         }}
                       >
                         <FileText className="h-4 w-4 mr-2" />
-                        Tải CSV
+                        {t('machines.downloadCSV')}
                       </Button>
                     </div>
                   </CardContent>

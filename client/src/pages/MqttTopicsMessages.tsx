@@ -31,8 +31,10 @@ import {
   Inbox,
   Send,
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 export default function MqttTopicsMessages() {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("topics");
   const [searchTerm, setSearchTerm] = useState("");
   const [messageTypeFilter, setMessageTypeFilter] = useState<string>("all");
@@ -136,7 +138,7 @@ export default function MqttTopicsMessages() {
 
   const handleCopyPayload = (payload: any) => {
     navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
-    toast.success("Đã sao chép payload");
+    toast.success(t('mqtt.topicsMessages.payloadCopied'));
   };
 
   const handleExportMessages = () => {
@@ -156,7 +158,7 @@ export default function MqttTopicsMessages() {
     a.download = `mqtt-messages-${new Date().toISOString().split("T")[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success("Đã xuất messages");
+    toast.success(t('mqtt.topicsMessages.messagesExported'));
   };
 
   return (
@@ -167,17 +169,17 @@ export default function MqttTopicsMessages() {
           <div>
             <h1 className="text-2xl font-bold">MQTT Topics & Messages</h1>
             <p className="text-muted-foreground">
-              Quản lý topics và xem lịch sử messages MQTT
+              {t('mqtt.topicsMessages.pageDesc')}
             </p>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => refetchMessages()}>
               <RefreshCw className="w-4 h-4 mr-2" />
-              Làm mới
+              {t('common.refresh')}
             </Button>
             <Button variant="outline" onClick={handleExportMessages}>
               <Download className="w-4 h-4 mr-2" />
-              Xuất JSON
+              {t('mqtt.topicsMessages.exportJson')}
             </Button>
           </div>
         </div>
@@ -187,7 +189,7 @@ export default function MqttTopicsMessages() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Tổng Topics
+                {t('mqtt.topicsMessages.totalTopics')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -197,7 +199,7 @@ export default function MqttTopicsMessages() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Tổng Messages
+                {t('mqtt.topicsMessages.totalMessages')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -253,7 +255,7 @@ export default function MqttTopicsMessages() {
               <CardHeader>
                 <CardTitle>Topic Statistics</CardTitle>
                 <CardDescription>
-                  Thống kê messages theo topic
+                  {t('mqtt.topicsMessages.topicStats')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -296,7 +298,7 @@ export default function MqttTopicsMessages() {
                     {topicStats.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                          Chưa có topic nào
+                          {t('mqtt.noTopics')}
                         </TableCell>
                       </TableRow>
                     )}
@@ -316,7 +318,7 @@ export default function MqttTopicsMessages() {
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <Input
-                        placeholder="Tìm kiếm topic hoặc payload..."
+                        placeholder={t('mqtt.topicsMessages.searchPlaceholder')}
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="pl-9"
@@ -328,7 +330,7 @@ export default function MqttTopicsMessages() {
                       <SelectValue placeholder="Message Type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Tất cả types</SelectItem>
+                      <SelectItem value="all">{t('mqtt.topicsMessages.allTypes')}</SelectItem>
                       <SelectItem value="NG_ALERT">NG Alert</SelectItem>
                       <SelectItem value="DAILY_SUMMARY">Daily Summary</SelectItem>
                       <SelectItem value="WEEKLY_SUMMARY">Weekly Summary</SelectItem>
@@ -340,7 +342,7 @@ export default function MqttTopicsMessages() {
                       <SelectValue placeholder="Status" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Tất cả status</SelectItem>
+                      <SelectItem value="all">{t('mqtt.topicsMessages.allStatus')}</SelectItem>
                       <SelectItem value="DELIVERED">Delivered</SelectItem>
                       <SelectItem value="PENDING">Pending</SelectItem>
                       <SelectItem value="FAILED">Failed</SelectItem>
@@ -367,13 +369,13 @@ export default function MqttTopicsMessages() {
                     {loadingMessages ? (
                       <TableRow>
                         <TableCell colSpan={5} className="text-center py-8">
-                          Đang tải...
+                          {t('common.loading')}
                         </TableCell>
                       </TableRow>
                     ) : filteredMessages.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                          Không có messages
+                          {t('mqtt.topicsMessages.noMessages')}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -433,7 +435,7 @@ export default function MqttTopicsMessages() {
               <CardHeader>
                 <CardTitle>Recent Messages</CardTitle>
                 <CardDescription>
-                  50 messages gần nhất
+                  {t('mqtt.topicsMessages.recentMessages')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -441,11 +443,11 @@ export default function MqttTopicsMessages() {
                   <div className="space-y-2">
                     {loadingRecent ? (
                       <div className="text-center py-8 text-muted-foreground">
-                        Đang tải...
+                        {t('common.loading')}
                       </div>
                     ) : recentMessages.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground">
-                        Chưa có messages
+                        {t('mqtt.topicsMessages.noMessages')}
                       </div>
                     ) : (
                       recentMessages.map((msg: any) => (
@@ -486,7 +488,7 @@ export default function MqttTopicsMessages() {
             <DialogHeader>
               <DialogTitle>Message Detail</DialogTitle>
               <DialogDescription>
-                Chi tiết message MQTT
+                {t('mqtt.topicsMessages.messageDetail')}
               </DialogDescription>
             </DialogHeader>
             {selectedMessage && (
@@ -546,7 +548,7 @@ export default function MqttTopicsMessages() {
                 Copy Payload
               </Button>
               <Button onClick={() => setIsDetailOpen(false)}>
-                Đóng
+                {t('common.close')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -558,7 +560,7 @@ export default function MqttTopicsMessages() {
             <DialogHeader>
               <DialogTitle>Replay Message</DialogTitle>
               <DialogDescription>
-                Gửi lại message này
+                {t('mqtt.topicsMessages.replayMessage')}
               </DialogDescription>
             </DialogHeader>
             {replayMessage && (
@@ -579,14 +581,14 @@ export default function MqttTopicsMessages() {
             )}
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsReplayOpen(false)}>
-                Hủy
+                {t('common.cancel')}
               </Button>
               <Button onClick={() => {
-                toast.info("Tính năng replay đang được phát triển");
+                toast.info(t('mqtt.topicsMessages.replayInDev'));
                 setIsReplayOpen(false);
               }}>
                 <Send className="w-4 h-4 mr-2" />
-                Gửi lại
+                {t('mqtt.topicsMessages.resend')}
               </Button>
             </DialogFooter>
           </DialogContent>

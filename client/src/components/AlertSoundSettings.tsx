@@ -12,17 +12,19 @@ import {
   Upload, Trash2, Music, Check
 } from 'lucide-react';
 import { alertSoundService, SoundType } from '@/lib/alertSoundService';
+import { useTranslation } from 'react-i18next';
 
-const SOUND_TYPES: { value: SoundType; label: string; description: string }[] = [
-  { value: 'beep', label: 'Beep', description: 'Tiếng beep đơn giản' },
-  { value: 'chime', label: 'Chime', description: 'Âm thanh nhẹ nhàng' },
-  { value: 'warning', label: 'Warning', description: 'Cảnh báo 2 tiếng' },
-  { value: 'alarm', label: 'Alarm', description: 'Báo động 2 tông' },
-  { value: 'critical', label: 'Critical', description: 'Báo động khẩn cấp' },
-  { value: 'custom', label: 'Tùy chỉnh', description: 'Âm thanh do bạn upload' },
+const SOUND_TYPES: { value: SoundType; label: string; descriptionKey: string }[] = [
+  { value: 'beep', label: 'Beep', descriptionKey: 'settings.soundBeep' },
+  { value: 'chime', label: 'Chime', descriptionKey: 'settings.soundChime' },
+  { value: 'warning', label: 'Warning', descriptionKey: 'settings.soundWarning' },
+  { value: 'alarm', label: 'Alarm', descriptionKey: 'settings.soundAlarm' },
+  { value: 'critical', label: 'Critical', descriptionKey: 'settings.soundCritical' },
+  { value: 'custom', label: 'Custom', descriptionKey: 'settings.soundCustom' },
 ];
 
 export default function AlertSoundSettings() {
+  const { t } = useTranslation();
   const [settings, setSettings] = useState(alertSoundService.getSettings());
   const [testing, setTesting] = useState<SoundType | null>(null);
   const [customSounds, setCustomSounds] = useState(alertSoundService.getCustomSounds());
@@ -55,11 +57,11 @@ export default function AlertSoundSettings() {
     setUploading(false);
 
     if (result.success) {
-      toast.success('Đã thêm âm thanh tùy chỉnh');
+      toast.success(t('settings.customSoundAdded'));
       setCustomSounds(alertSoundService.getCustomSounds());
       setSettings(alertSoundService.getSettings());
     } else {
-      toast.error(result.error || 'Không thể thêm âm thanh');
+      toast.error(result.error || t('settings.cannotAddSound'));
     }
 
     // Reset input
@@ -72,7 +74,7 @@ export default function AlertSoundSettings() {
     alertSoundService.removeCustomSound(index);
     setCustomSounds(alertSoundService.getCustomSounds());
     setSettings(alertSoundService.getSettings());
-    toast.success('Đã xóa âm thanh tùy chỉnh');
+    toast.success(t('settings.customSoundRemoved'));
   };
 
   const handleSetActiveCustomSound = (index: number) => {
@@ -89,19 +91,19 @@ export default function AlertSoundSettings() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Bell className="h-5 w-5" />
-          Cài đặt âm thanh cảnh báo
+          {t('settings.alertSoundSettings')}
         </CardTitle>
         <CardDescription>
-          Cấu hình âm thanh thông báo khi có lỗi NG từ MQTT
+          {t('settings.alertSoundDescription')}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Enable/Disable */}
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
-            <Label className="text-base">Bật âm thanh cảnh báo</Label>
+            <Label className="text-base">{t('settings.enableAlertSound')}</Label>
             <p className="text-sm text-muted-foreground">
-              Phát âm thanh khi nhận được thông báo lỗi NG
+              {t('settings.enableAlertSoundDescription')}
             </p>
           </div>
           <Switch
@@ -113,7 +115,7 @@ export default function AlertSoundSettings() {
         {/* Volume */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <Label className="text-base">Âm lượng</Label>
+            <Label className="text-base">{t('settings.volume')}</Label>
             <span className="text-sm text-muted-foreground">
               {Math.round(settings.volume * 100)}%
             </span>
@@ -135,14 +137,14 @@ export default function AlertSoundSettings() {
 
         {/* Sound Type */}
         <div className="space-y-3">
-          <Label className="text-base">Loại âm thanh mặc định</Label>
+          <Label className="text-base">{t('settings.defaultSoundType')}</Label>
           <Select
             value={settings.soundType}
             onValueChange={(soundType: SoundType) => updateSettings({ soundType })}
             disabled={!settings.enabled}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Chọn loại âm thanh" />
+              <SelectValue placeholder={t('settings.chooseSoundType')} />
             </SelectTrigger>
             <SelectContent>
               {SOUND_TYPES.map((type) => (
@@ -153,7 +155,7 @@ export default function AlertSoundSettings() {
                 >
                   <div className="flex flex-col">
                     <span>{type.label}</span>
-                    <span className="text-xs text-muted-foreground">{type.description}</span>
+                    <span className="text-xs text-muted-foreground">{t(type.descriptionKey)}</span>
                   </div>
                 </SelectItem>
               ))}
@@ -164,7 +166,7 @@ export default function AlertSoundSettings() {
         {/* Custom Sounds Section */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <Label className="text-base">Âm thanh tùy chỉnh</Label>
+            <Label className="text-base">{t('settings.customSounds')}</Label>
             <Badge variant="outline">{customSounds.length}/5</Badge>
           </div>
           
@@ -184,10 +186,10 @@ export default function AlertSoundSettings() {
               disabled={uploading || customSounds.length >= 5}
             >
               <Upload className="h-4 w-4 mr-2" />
-              {uploading ? 'Đang tải...' : 'Tải lên âm thanh'}
+              {uploading ? t('common.uploading') : t('settings.uploadSound')}
             </Button>
             <span className="text-xs text-muted-foreground">
-              MP3, WAV, OGG (tối đa 1MB)
+              {t('settings.soundFileHint')}
             </span>
           </div>
 
@@ -216,7 +218,7 @@ export default function AlertSoundSettings() {
                     {settings.activeCustomSoundIndex === index && settings.soundType === 'custom' && (
                       <Badge variant="default" className="text-xs">
                         <Check className="h-3 w-3 mr-1" />
-                        Đang dùng
+                        {t('settings.inUse')}
                       </Badge>
                     )}
                     <Button
@@ -232,7 +234,7 @@ export default function AlertSoundSettings() {
                         size="sm"
                         onClick={() => handleSetActiveCustomSound(index)}
                       >
-                        Chọn
+                        {t('settings.select')}
                       </Button>
                     )}
                     <Button
@@ -251,7 +253,7 @@ export default function AlertSoundSettings() {
 
           {customSounds.length === 0 && (
             <p className="text-sm text-muted-foreground text-center py-4 border rounded-lg border-dashed">
-              Chưa có âm thanh tùy chỉnh. Tải lên file âm thanh để sử dụng.
+              {t('settings.noCustomSounds')}
             </p>
           )}
         </div>
@@ -259,9 +261,9 @@ export default function AlertSoundSettings() {
         {/* Repeat Count */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <Label className="text-base">Số lần lặp</Label>
+            <Label className="text-base">{t('settings.repeatCount')}</Label>
             <span className="text-sm text-muted-foreground">
-              {settings.repeatCount} lần
+              {settings.repeatCount} {t('settings.times')}
             </span>
           </div>
           <Slider
@@ -276,7 +278,7 @@ export default function AlertSoundSettings() {
 
         {/* Test Sounds */}
         <div className="space-y-3">
-          <Label className="text-base">Thử âm thanh preset</Label>
+          <Label className="text-base">{t('settings.testPresetSounds')}</Label>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {SOUND_TYPES.filter(t => t.value !== 'custom').map((type) => (
               <Button
@@ -300,7 +302,7 @@ export default function AlertSoundSettings() {
 
         {/* Severity Mapping Info */}
         <div className="rounded-lg border p-4 space-y-2">
-          <Label className="text-base">Ánh xạ mức độ nghiêm trọng</Label>
+          <Label className="text-base">{t('settings.severityMapping')}</Label>
           <div className="grid grid-cols-2 gap-2 text-sm">
             <div className="flex items-center gap-2">
               <Info className="h-4 w-4 text-blue-500" />

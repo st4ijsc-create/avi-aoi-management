@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useTranslation } from 'react-i18next';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,7 @@ interface BarcodeScannerProps {
 }
 
 export default function BarcodeScanner({ open, onOpenChange, onScan }: BarcodeScannerProps) {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<"camera" | "manual">("camera");
   const [manualInput, setManualInput] = useState("");
   const [isScanning, setIsScanning] = useState(false);
@@ -81,17 +83,17 @@ export default function BarcodeScanner({ open, onOpenChange, onScan }: BarcodeSc
           }
         );
       } else {
-        setError("Không tìm thấy camera. Vui lòng nhập thủ công.");
+        setError(t('common.noCameraFound'));
         setMode("manual");
       }
     } catch (err: any) {
       console.error("Scanner error:", err);
       if (err.name === "NotAllowedError") {
-        setError("Quyền truy cập camera bị từ chối. Vui lòng cấp quyền hoặc nhập thủ công.");
+        setError(t('common.cameraDenied'));
       } else if (err.name === "NotFoundError") {
-        setError("Không tìm thấy camera. Vui lòng nhập thủ công.");
+        setError(t('common.noCameraFound'));
       } else {
-        setError("Không thể khởi động camera. Vui lòng nhập thủ công.");
+        setError(t('common.cameraStartFailed'));
       }
       setMode("manual");
     } finally {
@@ -118,7 +120,7 @@ export default function BarcodeScanner({ open, onOpenChange, onScan }: BarcodeSc
     stopScanner();
     
     setScanResult(decodedText);
-    toast.success(`Đã quét: ${decodedText}`);
+    toast.success(`${t('common.scanned')}: ${decodedText}`);
     
     // Delay to show result before closing
     setTimeout(() => {
@@ -129,7 +131,7 @@ export default function BarcodeScanner({ open, onOpenChange, onScan }: BarcodeSc
 
   const handleManualSubmit = () => {
     if (!manualInput.trim()) {
-      toast.error("Vui lòng nhập Serial Number");
+      toast.error(t('common.pleaseEnterSerialNumber'));
       return;
     }
     
@@ -161,10 +163,10 @@ export default function BarcodeScanner({ open, onOpenChange, onScan }: BarcodeSc
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <QrCode className="w-5 h-5" />
-            Quét mã vạch / QR Code
+            {t('common.scanBarcode')}
           </DialogTitle>
           <DialogDescription>
-            Quét mã vạch hoặc QR code để tra cứu nhanh Serial Number
+            {t('common.scanBarcodeDescription')}
           </DialogDescription>
         </DialogHeader>
         
@@ -186,7 +188,7 @@ export default function BarcodeScanner({ open, onOpenChange, onScan }: BarcodeSc
             className="flex-1"
           >
             <Keyboard className="w-4 h-4 mr-2" />
-            Nhập thủ công
+            {t('common.manualInput')}
           </Button>
         </div>
         
@@ -207,7 +209,7 @@ export default function BarcodeScanner({ open, onOpenChange, onScan }: BarcodeSc
               >
                 {isScanning && (
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-white text-sm">Đang khởi động camera...</div>
+                    <div className="text-white text-sm">{t('common.startingCamera')}</div>
                   </div>
                 )}
                 {/* Scanner overlay */}
@@ -227,7 +229,7 @@ export default function BarcodeScanner({ open, onOpenChange, onScan }: BarcodeSc
             )}
             
             <p className="text-sm text-muted-foreground text-center">
-              Đưa mã vạch hoặc QR code vào khung hình để quét
+              {t('common.pointBarcodeToScan')}
             </p>
           </div>
         )}
@@ -240,7 +242,7 @@ export default function BarcodeScanner({ open, onOpenChange, onScan }: BarcodeSc
               <div className="flex gap-2">
                 <Input
                   id="serial-input"
-                  placeholder="Nhập Serial Number..."
+                  placeholder={t('common.enterSerialNumber')}
                   value={manualInput}
                   onChange={(e) => setManualInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -251,7 +253,7 @@ export default function BarcodeScanner({ open, onOpenChange, onScan }: BarcodeSc
                   autoFocus
                 />
                 <Button onClick={handleManualSubmit}>
-                  Tìm kiếm
+                  {t('common.search')}
                 </Button>
               </div>
             </div>
@@ -259,7 +261,7 @@ export default function BarcodeScanner({ open, onOpenChange, onScan }: BarcodeSc
             <div className="p-3 bg-muted/50 rounded-lg">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Barcode className="w-4 h-4" />
-                <span>Hoặc sử dụng máy quét mã vạch cầm tay</span>
+                <span>{t('common.orUseBarcodeScanner')}</span>
               </div>
             </div>
           </div>
@@ -270,7 +272,7 @@ export default function BarcodeScanner({ open, onOpenChange, onScan }: BarcodeSc
           <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
             <div className="flex items-center gap-2 text-green-600">
               <CheckCircle2 className="w-5 h-5" />
-              <span className="font-medium">Đã quét thành công</span>
+              <span className="font-medium">{t('common.scanSuccess')}</span>
             </div>
             <p className="mt-1 text-sm font-mono">{scanResult}</p>
           </div>
@@ -280,7 +282,7 @@ export default function BarcodeScanner({ open, onOpenChange, onScan }: BarcodeSc
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="outline" onClick={handleClose}>
             <X className="w-4 h-4 mr-2" />
-            Đóng
+            {t('common.close')}
           </Button>
         </div>
       </DialogContent>

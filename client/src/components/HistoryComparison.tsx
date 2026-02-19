@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -51,6 +52,7 @@ interface ComparisonStats {
 const COLORS = ['#22c55e', '#ef4444', '#f59e0b'];
 
 export default function HistoryComparison() {
+  const { t } = useTranslation();
   const [comparePreset, setComparePreset] = useState<ComparePreset>('week');
   const [period1Start, setPeriod1Start] = useState('');
   const [period1End, setPeriod1End] = useState('');
@@ -66,12 +68,12 @@ export default function HistoryComparison() {
         period1: {
           start: period1Start ? new Date(period1Start) : subWeeks(now, 1),
           end: period1End ? endOfDay(new Date(period1End)) : now,
-          label: period1Start && period1End ? `${format(new Date(period1Start), 'dd/MM', { locale: vi })} - ${format(new Date(period1End), 'dd/MM', { locale: vi })}` : 'Kỳ 1'
+          label: period1Start && period1End ? `${format(new Date(period1Start), 'dd/MM', { locale: vi })} - ${format(new Date(period1End), 'dd/MM', { locale: vi })}` : t('history.comparison.period1')
         },
         period2: {
           start: period2Start ? new Date(period2Start) : subWeeks(now, 2),
           end: period2End ? endOfDay(new Date(period2End)) : subWeeks(now, 1),
-          label: period2Start && period2End ? `${format(new Date(period2Start), 'dd/MM', { locale: vi })} - ${format(new Date(period2End), 'dd/MM', { locale: vi })}` : 'Kỳ 2'
+          label: period2Start && period2End ? `${format(new Date(period2Start), 'dd/MM', { locale: vi })} - ${format(new Date(period2End), 'dd/MM', { locale: vi })}` : t('history.comparison.period2')
         }
       };
     }
@@ -82,12 +84,12 @@ export default function HistoryComparison() {
           period1: {
             start: startOfWeek(now, { weekStartsOn: 1 }),
             end: endOfDay(now),
-            label: 'Tuần này'
+            label: t('history.comparison.thisWeek')
           },
           period2: {
             start: startOfWeek(subWeeks(now, 1), { weekStartsOn: 1 }),
             end: endOfWeek(subWeeks(now, 1), { weekStartsOn: 1 }),
-            label: 'Tuần trước'
+            label: t('history.comparison.lastWeek')
           }
         };
       case 'month':
@@ -95,12 +97,12 @@ export default function HistoryComparison() {
           period1: {
             start: startOfMonth(now),
             end: endOfDay(now),
-            label: 'Tháng này'
+            label: t('history.comparison.thisMonth')
           },
           period2: {
             start: startOfMonth(subMonths(now, 1)),
             end: endOfMonth(subMonths(now, 1)),
-            label: 'Tháng trước'
+            label: t('history.comparison.lastMonth')
           }
         };
       case 'quarter':
@@ -108,18 +110,18 @@ export default function HistoryComparison() {
           period1: {
             start: subDays(now, 90),
             end: endOfDay(now),
-            label: '90 ngày gần nhất'
+            label: t('history.comparison.last90Days')
           },
           period2: {
             start: subDays(now, 180),
             end: subDays(now, 91),
-            label: '90 ngày trước đó'
+            label: t('history.comparison.previous90Days')
           }
         };
       default:
         return {
-          period1: { start: subWeeks(now, 1), end: now, label: 'Tuần này' },
-          period2: { start: subWeeks(now, 2), end: subWeeks(now, 1), label: 'Tuần trước' }
+          period1: { start: subWeeks(now, 1), end: now, label: t('history.comparison.thisWeek') },
+          period2: { start: subWeeks(now, 2), end: subWeeks(now, 1), label: t('history.comparison.lastWeek') }
         };
     }
   }, [comparePreset, period1Start, period1End, period2Start, period2End]);
@@ -181,7 +183,7 @@ export default function HistoryComparison() {
 
   // Chart data
   const barChartData = [
-    { name: 'Tổng', period1: stats1.total, period2: stats2.total },
+    { name: t('common.total'), period1: stats1.total, period2: stats2.total },
     { name: 'OK', period1: stats1.ok, period2: stats2.ok },
     { name: 'NG', period1: stats1.ng, period2: stats2.ng },
     { name: 'NTF', period1: stats1.ntf, period2: stats2.ntf },
@@ -223,7 +225,7 @@ export default function HistoryComparison() {
   };
 
   const handleExportPDF = async () => {
-    toast.info('Đang tạo PDF báo cáo so sánh...');
+    toast.info(t('history.comparison.generatingPdf'));
     try {
       await exportComparisonPDF(
         stats1,
@@ -232,9 +234,9 @@ export default function HistoryComparison() {
         dateRanges.period2.label,
         ['comparison-bar-chart', 'comparison-yield-chart', 'comparison-pie-1', 'comparison-pie-2']
       );
-      toast.success('Xuất PDF thành công!');
+      toast.success(t('history.comparison.pdfSuccess'));
     } catch (error) {
-      toast.error('Lỗi khi xuất PDF');
+      toast.error(t('history.comparison.pdfError'));
       console.error(error);
     }
   };
@@ -246,25 +248,25 @@ export default function HistoryComparison() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Calendar className="h-5 w-5" />
-            Chọn khoảng thời gian so sánh
+            {t('history.comparison.selectPeriod')}
           </CardTitle>
           <CardDescription>
-            So sánh hiệu suất chất lượng giữa 2 khoảng thời gian
+            {t('history.comparison.compareQuality')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap items-end gap-4">
             <div className="space-y-2">
-              <Label>Kiểu so sánh</Label>
+              <Label>{t('history.comparison.compareType')}</Label>
               <Select value={comparePreset} onValueChange={(v) => setComparePreset(v as ComparePreset)}>
                 <SelectTrigger className="w-[200px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="week">Tuần này vs Tuần trước</SelectItem>
-                  <SelectItem value="month">Tháng này vs Tháng trước</SelectItem>
-                  <SelectItem value="quarter">90 ngày vs 90 ngày trước</SelectItem>
-                  <SelectItem value="custom">Tùy chỉnh</SelectItem>
+                  <SelectItem value="week">{t('history.comparison.weekVsWeek')}</SelectItem>
+                  <SelectItem value="month">{t('history.comparison.monthVsMonth')}</SelectItem>
+                  <SelectItem value="quarter">{t('history.comparison.quarterVsQuarter')}</SelectItem>
+                  <SelectItem value="custom">{t('history.comparison.custom')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -272,7 +274,7 @@ export default function HistoryComparison() {
             {comparePreset === 'custom' && (
               <>
                 <div className="space-y-2">
-                  <Label>Kỳ 1 (Hiện tại)</Label>
+                  <Label>{t('history.comparison.period1Current')}</Label>
                   <div className="flex gap-2">
                     <Input
                       type="date"
@@ -291,7 +293,7 @@ export default function HistoryComparison() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Kỳ 2 (So sánh)</Label>
+                  <Label>{t('history.comparison.period2Compare')}</Label>
                   <div className="flex gap-2">
                     <Input
                       type="date"
@@ -334,7 +336,7 @@ export default function HistoryComparison() {
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Tổng sản phẩm</CardDescription>
+            <CardDescription>{t('history.comparison.totalProducts')}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats1.total.toLocaleString()}</div>
@@ -345,7 +347,7 @@ export default function HistoryComparison() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Sản phẩm OK</CardDescription>
+            <CardDescription>{t('history.comparison.okProducts')}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-500">{stats1.ok.toLocaleString()}</div>
@@ -356,7 +358,7 @@ export default function HistoryComparison() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Sản phẩm NG</CardDescription>
+            <CardDescription>{t('history.comparison.ngProducts')}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-500">{stats1.ng.toLocaleString()}</div>
@@ -367,7 +369,7 @@ export default function HistoryComparison() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Sản phẩm NTF</CardDescription>
+            <CardDescription>{t('history.comparison.ntfProducts')}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-orange-500">{stats1.ntf.toLocaleString()}</div>
@@ -395,7 +397,7 @@ export default function HistoryComparison() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5" />
-              So sánh số lượng
+              {t('history.comparison.quantityComparison')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -420,7 +422,7 @@ export default function HistoryComparison() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5" />
-              So sánh Yield Rate
+              {t('history.comparison.yieldComparison')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -441,7 +443,7 @@ export default function HistoryComparison() {
         {/* Pie Chart Period 1 */}
         <Card>
           <CardHeader>
-            <CardTitle>{dateRanges.period1.label} - Phân bố kết quả</CardTitle>
+            <CardTitle>{dateRanges.period1.label} - {t('history.comparison.resultDistribution')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div id="comparison-pie-1">
@@ -471,7 +473,7 @@ export default function HistoryComparison() {
         {/* Pie Chart Period 2 */}
         <Card>
           <CardHeader>
-            <CardTitle>{dateRanges.period2.label} - Phân bố kết quả</CardTitle>
+            <CardTitle>{dateRanges.period2.label} - {t('history.comparison.resultDistribution')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div id="comparison-pie-2">
@@ -502,44 +504,44 @@ export default function HistoryComparison() {
       {/* Summary Analysis */}
       <Card>
         <CardHeader>
-          <CardTitle>Phân tích tổng hợp</CardTitle>
+          <CardTitle>{t('history.comparison.summaryAnalysis')}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             {changes.yieldRate > 0 && (
               <div className="flex items-center gap-2 text-green-500">
                 <TrendingUp className="h-5 w-5" />
-                <span>Yield Rate tăng {changes.yieldRate.toFixed(2)} điểm phần trăm so với kỳ trước</span>
+                <span>{t('history.comparison.yieldIncreased', { value: changes.yieldRate.toFixed(2) })}</span>
               </div>
             )}
             {changes.yieldRate < 0 && (
               <div className="flex items-center gap-2 text-red-500">
                 <TrendingDown className="h-5 w-5" />
-                <span>Yield Rate giảm {Math.abs(changes.yieldRate).toFixed(2)} điểm phần trăm so với kỳ trước</span>
+                <span>{t('history.comparison.yieldDecreased', { value: Math.abs(changes.yieldRate).toFixed(2) })}</span>
               </div>
             )}
             {changes.ng < 0 && (
               <div className="flex items-center gap-2 text-green-500">
                 <TrendingDown className="h-5 w-5" />
-                <span>Số lượng NG giảm {Math.abs(changes.ng).toFixed(1)}% - Cải thiện chất lượng</span>
+                <span>{t('history.comparison.ngDecreased', { value: Math.abs(changes.ng).toFixed(1) })}</span>
               </div>
             )}
             {changes.ng > 0 && (
               <div className="flex items-center gap-2 text-red-500">
                 <TrendingUp className="h-5 w-5" />
-                <span>Số lượng NG tăng {changes.ng.toFixed(1)}% - Cần xem xét nguyên nhân</span>
+                <span>{t('history.comparison.ngIncreased', { value: changes.ng.toFixed(1) })}</span>
               </div>
             )}
             {changes.total > 10 && (
               <div className="flex items-center gap-2 text-blue-500">
                 <TrendingUp className="h-5 w-5" />
-                <span>Sản lượng tăng {changes.total.toFixed(1)}% so với kỳ trước</span>
+                <span>{t('history.comparison.outputIncreased', { value: changes.total.toFixed(1) })}</span>
               </div>
             )}
             {changes.total < -10 && (
               <div className="flex items-center gap-2 text-orange-500">
                 <TrendingDown className="h-5 w-5" />
-                <span>Sản lượng giảm {Math.abs(changes.total).toFixed(1)}% so với kỳ trước</span>
+                <span>{t('history.comparison.outputDecreased', { value: Math.abs(changes.total).toFixed(1) })}</span>
               </div>
             )}
           </div>

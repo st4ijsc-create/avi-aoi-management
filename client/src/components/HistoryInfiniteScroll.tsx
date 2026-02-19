@@ -1,4 +1,5 @@
 import { useCallback, useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +48,7 @@ interface Inspection {
 }
 
 export function HistoryInfiniteScroll({ filters, machines }: HistoryInfiniteScrollProps) {
+  const { t } = useTranslation();
   const utils = trpc.useUtils();
   const [filterKey, setFilterKey] = useState(0);
 
@@ -175,7 +177,7 @@ export function HistoryInfiniteScroll({ filters, machines }: HistoryInfiniteScro
       <Link href={`/inspection/${inspection.id}`}>
         <Button variant="outline" size="sm" className="gap-2">
           <Eye className="h-4 w-4" />
-          Chi tiết
+          {t('common.details')}
         </Button>
       </Link>
     </div>
@@ -184,8 +186,8 @@ export function HistoryInfiniteScroll({ filters, machines }: HistoryInfiniteScro
   const renderEmpty = () => (
     <div className="py-12 text-center">
       <HistoryIcon className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-      <p className="text-muted-foreground">Không tìm thấy kết quả nào</p>
-      <p className="text-sm text-muted-foreground mt-1">Thử thay đổi bộ lọc hoặc từ khóa tìm kiếm</p>
+      <p className="text-muted-foreground">{t('common.noResults')}</p>
+      <p className="text-sm text-muted-foreground mt-1">{t('common.tryChangeFilters')}</p>
     </div>
   );
 
@@ -194,9 +196,9 @@ export function HistoryInfiniteScroll({ filters, machines }: HistoryInfiniteScro
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="text-lg">Kết quả tìm kiếm (Infinite Scroll)</CardTitle>
+            <CardTitle className="text-lg">{t('history.searchResults')}</CardTitle>
             <CardDescription>
-              {total ? `Tìm thấy ${total} kết quả` : "Chưa có dữ liệu"}
+              {total ? t('history.foundResults', { count: total }) : t('common.noData')}
             </CardDescription>
           </div>
           <Button
@@ -207,7 +209,7 @@ export function HistoryInfiniteScroll({ filters, machines }: HistoryInfiniteScro
             className="gap-2"
           >
             <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            Làm mới
+            {t('common.refresh')}
           </Button>
         </div>
       </CardHeader>
@@ -226,9 +228,9 @@ export function HistoryInfiniteScroll({ filters, machines }: HistoryInfiniteScro
           keyExtractor={(item) => item.id}
           renderEmpty={renderEmpty}
           showTotal={false}
-          loadingText="Đang tải lịch sử..."
-          loadMoreText="Tải thêm kết quả"
-          emptyText="Không tìm thấy kết quả nào"
+          loadingText={t('history.loadingHistory')}
+          loadMoreText={t('history.loadMoreResults')}
+          emptyText={t('common.noResults')}
         />
       </CardContent>
     </Card>

@@ -48,8 +48,10 @@ import {
   Check,
   Eye
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 export default function MqttProfileManagement() {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("profiles");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingProfile, setEditingProfile] = useState<any>(null);
@@ -93,7 +95,7 @@ export default function MqttProfileManagement() {
   // Mutations
   const createProfile = trpc.mqttClientManagement.createProfile.useMutation({
     onSuccess: () => {
-      toast.success("Đã tạo profile mới");
+      toast.success(t('mqtt.profileMgmt.profileCreated'));
       refetchProfiles();
       refetchStats();
       setShowCreateDialog(false);
@@ -105,7 +107,7 @@ export default function MqttProfileManagement() {
 
   const updateProfile = trpc.mqttClientManagement.updateProfile.useMutation({
     onSuccess: () => {
-      toast.success("Đã cập nhật profile");
+      toast.success(t('mqtt.profileMgmt.profileUpdated'));
       refetchProfiles();
       setEditingProfile(null);
     },
@@ -116,7 +118,7 @@ export default function MqttProfileManagement() {
 
   const deleteProfile = trpc.mqttClientManagement.deleteProfile.useMutation({
     onSuccess: () => {
-      toast.success("Đã xóa profile");
+      toast.success(t('mqtt.profileMgmt.profileDeleted'));
       refetchProfiles();
       refetchStats();
     },
@@ -127,7 +129,7 @@ export default function MqttProfileManagement() {
 
   const duplicateProfile = trpc.mqttClientManagement.duplicateProfile.useMutation({
     onSuccess: () => {
-      toast.success("Đã nhân bản profile");
+      toast.success(t('mqtt.profileMgmt.profileDuplicated'));
       refetchProfiles();
     },
     onError: (error) => {
@@ -137,7 +139,7 @@ export default function MqttProfileManagement() {
 
   const assignProfile = trpc.mqttClientManagement.assignProfile.useMutation({
     onSuccess: () => {
-      toast.success("Đã gán profile");
+      toast.success(t('mqtt.profileMgmt.profileAssigned'));
       refetchAssignments();
       refetchStats();
       setShowAssignDialog(false);
@@ -149,7 +151,7 @@ export default function MqttProfileManagement() {
 
   const importProfiles = trpc.mqttClientManagement.importProfiles.useMutation({
     onSuccess: (result) => {
-      toast.success(`Import hoàn tất: ${result.profilesImported} imported, ${result.profilesUpdated} updated, ${result.profilesSkipped} skipped`);
+      toast.success(t('mqtt.profileMgmt.importComplete', { imported: result.profilesImported, updated: result.profilesUpdated, skipped: result.profilesSkipped }));
       if (result.errors.length > 0) {
         result.errors.forEach(err => toast.error(err));
       }
@@ -165,7 +167,7 @@ export default function MqttProfileManagement() {
 
   const removeAssignment = trpc.mqttClientManagement.removeAssignment.useMutation({
     onSuccess: () => {
-      toast.success("Đã gỡ bỏ assignment");
+      toast.success(t('mqtt.profileMgmt.assignmentRemoved'));
       refetchAssignments();
       refetchStats();
     },
@@ -177,7 +179,7 @@ export default function MqttProfileManagement() {
   // Alert Mutations
   const updateAlertConfig = trpc.mqttClientManagement.updateAlertConfig.useMutation({
     onSuccess: () => {
-      toast.success("Đã cập nhật cấu hình cảnh báo");
+      toast.success(t('mqtt.profileMgmt.alertConfigUpdated'));
       refetchAlertConfig();
     },
     onError: (error) => {
@@ -187,7 +189,7 @@ export default function MqttProfileManagement() {
 
   const acknowledgeAlert = trpc.mqttClientManagement.acknowledgeAlert.useMutation({
     onSuccess: () => {
-      toast.success("Đã xác nhận cảnh báo");
+      toast.success(t('mqtt.profileMgmt.alertAcknowledged'));
       refetchAlerts();
       refetchAlertSummary();
     },
@@ -198,7 +200,7 @@ export default function MqttProfileManagement() {
 
   const resolveAlert = trpc.mqttClientManagement.resolveAlert.useMutation({
     onSuccess: () => {
-      toast.success("Đã giải quyết cảnh báo");
+      toast.success(t('mqtt.profileMgmt.alertResolved'));
       refetchAlerts();
       refetchAlertSummary();
     },
@@ -220,7 +222,7 @@ export default function MqttProfileManagement() {
 
   const bulkAssign = trpc.mqttClientManagement.bulkAssign.useMutation({
     onSuccess: (result) => {
-      toast.success(`Bulk assign hoàn tất: ${result.success} thành công, ${result.skipped} bỏ qua`);
+      toast.success(t('mqtt.profileMgmt.bulkAssignComplete', { success: result.success, skipped: result.skipped }));
       if (result.errors.length > 0) {
         result.errors.forEach(err => toast.error(err));
       }
@@ -369,9 +371,9 @@ export default function MqttProfileManagement() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Quản lý MQTT Profiles</h1>
+            <h1 className="text-2xl font-bold">{t('mqtt.profileMgmt.title')}</h1>
             <p className="text-muted-foreground">
-              Cấu hình tập trung các MQTT profiles và gán cho máy/station/factory
+              {t('mqtt.profileMgmt.pageDesc')}
             </p>
           </div>
           <div className="flex gap-2">
@@ -385,7 +387,7 @@ export default function MqttProfileManagement() {
                 a.download = `mqtt-profiles-${new Date().toISOString().split('T')[0]}.json`;
                 a.click();
                 URL.revokeObjectURL(url);
-                toast.success('Đã xuất profiles thành công');
+                toast.success(t('mqtt.profileMgmt.exportProfilesSuccess'));
               }
             }}>
               <Download className="h-4 w-4 mr-2" />
@@ -402,7 +404,7 @@ export default function MqttProfileManagement() {
                 a.download = `mqtt-assignments-${new Date().toISOString().split('T')[0]}.csv`;
                 a.click();
                 URL.revokeObjectURL(url);
-                toast.success(`Đã xuất ${result.data.total} assignments thành công`);
+                toast.success(t('mqtt.profileMgmt.exportAssignmentsSuccess', { total: result.data.total }));
               }
             }}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
@@ -414,7 +416,7 @@ export default function MqttProfileManagement() {
             </Button>
             <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
               <Plus className="h-4 w-4 mr-2" />
-              Tạo Profile mới
+              {t('mqtt.profileMgmt.createProfile')}
             </Button>
           </div>
         </div>
@@ -469,7 +471,7 @@ export default function MqttProfileManagement() {
               {/* Profile Health Details */}
               {connectionHealth.profiles.length > 0 && (
                 <div className="mt-4 space-y-2">
-                  <p className="text-sm font-medium">Chi tiết kết nối:</p>
+                  <p className="text-sm font-medium">{t('mqtt.profileMgmt.connectionDetail')}:</p>
                   <div className="grid gap-2">
                     {connectionHealth.profiles.map((profile) => (
                       <div key={profile.profileId} className="flex items-center justify-between p-2 bg-muted/50 rounded-lg">
@@ -618,7 +620,7 @@ export default function MqttProfileManagement() {
                         <Button 
                           variant="ghost" 
                           size="sm"
-                          title="Gán cho 1 target"
+                          title={t('mqtt.profileMgmt.assignSingle')}
                           onClick={() => {
                             setSelectedProfileForAssign(profile.id);
                             setShowAssignDialog(true);
@@ -629,7 +631,7 @@ export default function MqttProfileManagement() {
                         <Button 
                           variant="ghost" 
                           size="sm"
-                          title="Gán cho nhiều targets"
+                          title={t('mqtt.profileMgmt.assignMultiple')}
                           onClick={() => {
                             setSelectedProfileForAssign(profile.id);
                             setShowBulkAssignDialog(true);
@@ -642,7 +644,7 @@ export default function MqttProfileManagement() {
                           size="sm" 
                           className="text-red-500"
                           onClick={() => {
-                            if (confirm("Bạn có chắc muốn xóa profile này?")) {
+                            if (confirm(t('mqtt.profileMgmt.confirmDeleteProfile'))) {
                               deleteProfile.mutate({ id: profile.id });
                             }
                           }}
@@ -690,7 +692,7 @@ export default function MqttProfileManagement() {
               {(!profiles || profiles.length === 0) && (
                 <Card>
                   <CardContent className="py-8 text-center text-muted-foreground">
-                    Chưa có profile nào. Nhấn "Tạo Profile mới" để bắt đầu.
+                    {t('mqtt.profileMgmt.noProfilesHint')}
                   </CardContent>
                 </Card>
               )}
@@ -742,7 +744,7 @@ export default function MqttProfileManagement() {
                   {(!assignments || assignments.length === 0) && (
                     <tr>
                       <td colSpan={5} className="p-8 text-center text-muted-foreground">
-                        Chưa có assignment nào
+                        {t('mqtt.profileMgmt.noAssignments')}
                       </td>
                     </tr>
                   )}
@@ -793,7 +795,7 @@ export default function MqttProfileManagement() {
                   {(!connectionLogs || connectionLogs.length === 0) && (
                     <tr>
                       <td colSpan={4} className="p-8 text-center text-muted-foreground">
-                        Chưa có log nào
+                        {t('mqtt.profileMgmt.noLogs')}
                       </td>
                     </tr>
                   )}
@@ -847,7 +849,7 @@ export default function MqttProfileManagement() {
               {(!templates || templates.length === 0) && (
                 <Card>
                   <CardContent className="py-8 text-center text-muted-foreground">
-                    Chưa có template nào
+                    {t('mqtt.profileMgmt.noTemplates')}
                   </CardContent>
                 </Card>
               )}
@@ -957,7 +959,7 @@ export default function MqttProfileManagement() {
                       {(!connectionStatusData?.items || connectionStatusData.items.length === 0) && (
                         <tr>
                           <td colSpan={7} className="py-8 text-center text-muted-foreground">
-                            Chưa có dữ liệu connection status
+                            {t('mqtt.profileMgmt.noConnectionData')}
                           </td>
                         </tr>
                       )}
@@ -1107,7 +1109,7 @@ export default function MqttProfileManagement() {
                       {(!reconnectHistory?.items || reconnectHistory.items.length === 0) && (
                         <tr>
                           <td colSpan={6} className="py-8 text-center text-muted-foreground">
-                            Chưa có lịch sử reconnect
+                            {t('mqtt.profileMgmt.noReconnectHistory')}
                           </td>
                         </tr>
                       )}
@@ -1128,9 +1130,9 @@ export default function MqttProfileManagement() {
         }}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{editingProfile ? "Chỉnh sửa Profile" : "Tạo Profile mới"}</DialogTitle>
+              <DialogTitle>{editingProfile ? t('mqtt.profileMgmt.editProfile') : t('mqtt.profileMgmt.createNewProfile')}</DialogTitle>
               <DialogDescription>
-                Cấu hình thông số kết nối MQTT broker
+                {t('mqtt.profileMgmt.configMqttBroker')}
               </DialogDescription>
             </DialogHeader>
             
@@ -1138,7 +1140,7 @@ export default function MqttProfileManagement() {
               {/* Basic Info */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="name">Tên Profile *</Label>
+                  <Label htmlFor="name">{t('mqtt.profileMgmt.profileNameRequired')}</Label>
                   <Input
                     id="name"
                     value={formData.name}
@@ -1166,19 +1168,19 @@ export default function MqttProfileManagement() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="description">Mô tả</Label>
+                <Label htmlFor="description">{t('mqtt.profileMgmt.descriptionLabel')}</Label>
                 <Textarea
                   id="description"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Mô tả profile..."
+                  placeholder={t('mqtt.profileMgmt.descriptionPlaceholder')}
                 />
               </div>
 
               {/* Connection Settings */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="brokerUrl">Broker URL *</Label>
+                  <Label htmlFor="brokerUrl">{t('mqtt.profileMgmt.brokerUrlRequired')}</Label>
                   <Input
                     id="brokerUrl"
                     value={formData.brokerUrl}
@@ -1298,7 +1300,7 @@ export default function MqttProfileManagement() {
                       onChange={(e) => setFormData({ ...formData, reconnectBackoffMultiplier: e.target.value })}
                       disabled={!formData.autoReconnect}
                     />
-                    <p className="text-xs text-muted-foreground">Delay tăng theo hệ số này sau mỗi lần thử lại</p>
+                    <p className="text-xs text-muted-foreground">{t('mqtt.profileMgmt.backoffDesc')}</p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="maxReconnectDelay">Max Reconnect Delay (ms)</Label>
@@ -1310,7 +1312,7 @@ export default function MqttProfileManagement() {
                       onChange={(e) => setFormData({ ...formData, maxReconnectDelay: parseInt(e.target.value) || 60000 })}
                       disabled={!formData.autoReconnect}
                     />
-                    <p className="text-xs text-muted-foreground">Delay tối đa giữa các lần reconnect</p>
+                    <p className="text-xs text-muted-foreground">{t('mqtt.profileMgmt.maxDelayDesc')}</p>
                   </div>
                 </div>
               </div>
@@ -1353,7 +1355,7 @@ export default function MqttProfileManagement() {
 
               {/* Topics */}
               <div className="space-y-2">
-                <Label htmlFor="subscribeTopics">Subscribe Topics (mỗi dòng 1 topic)</Label>
+                <Label htmlFor="subscribeTopics">{t('mqtt.profileMgmt.subscribeTopics')}</Label>
                 <Textarea
                   id="subscribeTopics"
                   value={formData.subscribeTopics.join("\n")}
@@ -1367,7 +1369,7 @@ export default function MqttProfileManagement() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="publishTopics">Publish Topics (mỗi dòng 1 topic)</Label>
+                <Label htmlFor="publishTopics">{t('mqtt.profileMgmt.publishTopics')}</Label>
                 <Textarea
                   id="publishTopics"
                   value={formData.publishTopics.join("\n")}
@@ -1405,13 +1407,13 @@ export default function MqttProfileManagement() {
                 setEditingProfile(null);
                 resetForm();
               }}>
-                Hủy
+                {t('common.cancel')}
               </Button>
               <Button 
                 onClick={editingProfile ? handleUpdateProfile : handleCreateProfile}
                 disabled={!formData.name || !formData.brokerUrl}
               >
-                {editingProfile ? "Cập nhật" : "Tạo Profile"}
+                {editingProfile ? t('mqtt.profileMgmt.update') : t('mqtt.profileMgmt.createProfileBtn')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1421,15 +1423,15 @@ export default function MqttProfileManagement() {
         <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Gán Profile cho Target</DialogTitle>
+              <DialogTitle>{t('mqtt.profileMgmt.assignToTarget')}</DialogTitle>
               <DialogDescription>
-                Chọn loại target và target cụ thể để gán profile
+                {t('mqtt.profileMgmt.selectTargetDesc')}
               </DialogDescription>
             </DialogHeader>
             
             <div className="grid gap-4 py-4">
               <div className="space-y-2">
-                <Label>Loại Target</Label>
+                <Label>{t('mqtt.profileMgmt.targetType')}</Label>
                 <Select
                   value={assignFormData.targetType}
                   onValueChange={(v: any) => setAssignFormData({ ...assignFormData, targetType: v, targetId: 0 })}
@@ -1452,7 +1454,7 @@ export default function MqttProfileManagement() {
                   onValueChange={(v) => setAssignFormData({ ...assignFormData, targetId: parseInt(v) })}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Chọn target..." />
+                    <SelectValue placeholder={t('mqtt.profileMgmt.selectTarget')} />
                   </SelectTrigger>
                   <SelectContent>
                     {getTargetOptions().map((opt: any) => (
@@ -1467,13 +1469,13 @@ export default function MqttProfileManagement() {
 
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowAssignDialog(false)}>
-                Hủy
+                {t('common.cancel')}
               </Button>
               <Button 
                 onClick={handleAssignProfile}
                 disabled={!assignFormData.targetId}
               >
-                Gán Profile
+                {t('mqtt.profileMgmt.assignProfile')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1485,7 +1487,7 @@ export default function MqttProfileManagement() {
             <DialogHeader>
               <DialogTitle>Import MQTT Profiles</DialogTitle>
               <DialogDescription>
-                Chọn file JSON đã export trước đó để import profiles
+                {t('mqtt.profileMgmt.importDesc')}
               </DialogDescription>
             </DialogHeader>
             
@@ -1505,7 +1507,7 @@ export default function MqttProfileManagement() {
                     checked={importOptions.overwriteExisting}
                     onCheckedChange={(v) => setImportOptions({ ...importOptions, overwriteExisting: v })}
                   />
-                  <Label>Ghi đè profiles trùng tên</Label>
+                  <Label>{t('mqtt.profileMgmt.overwriteExisting')}</Label>
                 </div>
               </div>
 
@@ -1514,7 +1516,7 @@ export default function MqttProfileManagement() {
                   checked={importOptions.skipDuplicates}
                   onCheckedChange={(v) => setImportOptions({ ...importOptions, skipDuplicates: v })}
                 />
-                <Label>Bỏ qua profiles trùng tên (nếu không ghi đè)</Label>
+                <Label>{t('mqtt.profileMgmt.skipDuplicates')}</Label>
               </div>
             </div>
 
@@ -1523,7 +1525,7 @@ export default function MqttProfileManagement() {
                 setShowImportDialog(false);
                 setImportFile(null);
               }}>
-                Hủy
+                {t('common.cancel')}
               </Button>
               <Button 
                 onClick={async () => {
@@ -1537,7 +1539,7 @@ export default function MqttProfileManagement() {
                       skipDuplicates: importOptions.skipDuplicates,
                     });
                   } catch (error) {
-                    toast.error('File JSON không hợp lệ');
+                    toast.error(t('mqtt.profileMgmt.invalidJson'));
                   }
                 }}
                 disabled={!importFile || importProfiles.isPending}
@@ -1590,14 +1592,14 @@ export default function MqttProfileManagement() {
                 <div className="flex items-center justify-between">
                   <CardTitle className="flex items-center gap-2">
                     <Settings2 className="h-5 w-5" />
-                    Cấu hình Cảnh báo
+                    {t('mqtt.profileMgmt.alertConfig')}
                   </CardTitle>
                 </div>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="space-y-2">
-                    <Label>Mất kết nối (phút)</Label>
+                    <Label>{t('mqtt.profileMgmt.connectionLostMin')}</Label>
                     <Input
                       type="number"
                       value={alertConfig?.connectionLostThreshold || 5}
@@ -1605,10 +1607,10 @@ export default function MqttProfileManagement() {
                       min={1}
                       max={1440}
                     />
-                    <p className="text-xs text-muted-foreground">Cảnh báo khi mất kết nối quá thời gian này</p>
+                    <p className="text-xs text-muted-foreground">{t('mqtt.profileMgmt.connectionLostDesc')}</p>
                   </div>
                   <div className="space-y-2">
-                    <Label>Reconnect thất bại (lần)</Label>
+                    <Label>{t('mqtt.profileMgmt.reconnectFailedCount')}</Label>
                     <Input
                       type="number"
                       value={alertConfig?.reconnectFailedThreshold || 10}
@@ -1616,10 +1618,10 @@ export default function MqttProfileManagement() {
                       min={1}
                       max={100}
                     />
-                    <p className="text-xs text-muted-foreground">Cảnh báo khi reconnect thất bại liên tiếp</p>
+                    <p className="text-xs text-muted-foreground">{t('mqtt.profileMgmt.reconnectFailedDesc')}</p>
                   </div>
                   <div className="space-y-2">
-                    <Label>Tần suất reconnect cao (lần/giờ)</Label>
+                    <Label>{t('mqtt.profileMgmt.highReconnectRate')}</Label>
                     <Input
                       type="number"
                       value={alertConfig?.highReconnectRateThreshold || 20}
@@ -1627,10 +1629,10 @@ export default function MqttProfileManagement() {
                       min={1}
                       max={1000}
                     />
-                    <p className="text-xs text-muted-foreground">Cảnh báo khi reconnect quá nhiều trong 1 giờ</p>
+                    <p className="text-xs text-muted-foreground">{t('mqtt.profileMgmt.highReconnectRateDesc')}</p>
                   </div>
                   <div className="space-y-2">
-                    <Label>Ngắt kết nối lâu (phút)</Label>
+                    <Label>{t('mqtt.profileMgmt.longDisconnection')}</Label>
                     <Input
                       type="number"
                       value={alertConfig?.longDisconnectionThreshold || 30}
@@ -1638,7 +1640,7 @@ export default function MqttProfileManagement() {
                       min={1}
                       max={1440}
                     />
-                    <p className="text-xs text-muted-foreground">Cảnh báo khi ngắt kết nối quá lâu</p>
+                    <p className="text-xs text-muted-foreground">{t('mqtt.profileMgmt.longDisconnectionDesc')}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-6 mt-4 pt-4 border-t">
@@ -1664,7 +1666,7 @@ export default function MqttProfileManagement() {
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle>Danh sách Cảnh báo</CardTitle>
+                  <CardTitle>{t('mqtt.profileMgmt.alertList')}</CardTitle>
                   <Button variant="outline" size="sm" onClick={() => refetchAlerts()}>
                     <RefreshCw className="h-4 w-4 mr-2" />
                     Refresh
@@ -1720,7 +1722,7 @@ export default function MqttProfileManagement() {
                   {(!connectionAlerts?.alerts || connectionAlerts.alerts.length === 0) && (
                     <div className="py-8 text-center text-muted-foreground">
                       <BellOff className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                      <p>Không có cảnh báo nào</p>
+                      <p>{t('mqtt.profileMgmt.noAlerts')}</p>
                     </div>
                   )}
                 </div>
@@ -1735,9 +1737,9 @@ export default function MqttProfileManagement() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <BarChart3 className="h-5 w-5" />
-                  Reconnect Heatmap (7 ngày gần nhất)
+                  {t('mqtt.profileMgmt.reconnectHeatmap7d')}
                 </CardTitle>
-                <CardDescription>Phân bố reconnect theo giờ và ngày trong tuần</CardDescription>
+                <CardDescription>{t('mqtt.profileMgmt.heatmapDesc')}</CardDescription>
               </CardHeader>
               <CardContent>
                 {reconnectHeatmap && (
@@ -1777,7 +1779,7 @@ export default function MqttProfileManagement() {
                       ))}
                       {/* Legend */}
                       <div className="flex items-center justify-end gap-2 mt-4">
-                        <span className="text-xs text-muted-foreground">Ít</span>
+                        <span className="text-xs text-muted-foreground">{t('mqtt.profileMgmt.less')}</span>
                         <div className="flex gap-px">
                           {[0, 0.25, 0.5, 0.75, 1].map((intensity) => (
                             <div
@@ -1791,14 +1793,14 @@ export default function MqttProfileManagement() {
                             />
                           ))}
                         </div>
-                        <span className="text-xs text-muted-foreground">Nhiều</span>
+                        <span className="text-xs text-muted-foreground">{t('mqtt.profileMgmt.more')}</span>
                       </div>
                     </div>
                   </div>
                 )}
                 {!reconnectHeatmap && (
                   <div className="py-8 text-center text-muted-foreground">
-                    Chưa có dữ liệu heatmap
+                    {t('mqtt.profileMgmt.noHeatmapData')}
                   </div>
                 )}
               </CardContent>
@@ -1809,9 +1811,9 @@ export default function MqttProfileManagement() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <TrendingUp className="h-5 w-5" />
-                  Top Profiles có nhiều Reconnect nhất
+                  {t('mqtt.profileMgmt.topReconnectProfiles')}
                 </CardTitle>
-                <CardDescription>Profiles có tần suất reconnect cao trong 7 ngày gần nhất</CardDescription>
+                <CardDescription>{t('mqtt.profileMgmt.topReconnectDesc')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
@@ -1838,7 +1840,7 @@ export default function MqttProfileManagement() {
                   ))}
                   {(!topReconnectProfiles || topReconnectProfiles.length === 0) && (
                     <div className="py-8 text-center text-muted-foreground">
-                      Chưa có dữ liệu reconnect
+                      {t('mqtt.profileMgmt.noReconnectData')}
                     </div>
                   )}
                 </div>
@@ -1850,7 +1852,7 @@ export default function MqttProfileManagement() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Activity className="h-5 w-5" />
-                  Xu hướng Reconnect (30 ngày)
+                  {t('mqtt.profileMgmt.reconnectTrend30d')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -1913,7 +1915,7 @@ export default function MqttProfileManagement() {
                   </div>
                 ) : (
                   <div className="py-8 text-center text-muted-foreground">
-                    Chưa có dữ liệu trend
+                    {t('mqtt.profileMgmt.noTrendData')}
                   </div>
                 )}
               </CardContent>
@@ -1925,15 +1927,15 @@ export default function MqttProfileManagement() {
         <Dialog open={showBulkAssignDialog} onOpenChange={setShowBulkAssignDialog}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Gán Profile cho nhiều Targets</DialogTitle>
+              <DialogTitle>{t('mqtt.profileMgmt.bulkAssignTitle')}</DialogTitle>
               <DialogDescription>
-                Chọn nhiều machines/stations/factories để gán profile cùng lúc
+                {t('mqtt.profileMgmt.bulkAssignDesc')}
               </DialogDescription>
             </DialogHeader>
             
             <div className="grid gap-4 py-4">
               <div className="space-y-2">
-                <Label>Loại Target</Label>
+                <Label>{t('mqtt.profileMgmt.targetType')}</Label>
                 <Select
                   value={bulkAssignTargetType}
                   onValueChange={(v: any) => {
@@ -1957,26 +1959,26 @@ export default function MqttProfileManagement() {
                   checked={bulkReplaceExisting}
                   onCheckedChange={setBulkReplaceExisting}
                 />
-                <Label>Thay thế assignments hiện có</Label>
+                <Label>{t('mqtt.profileMgmt.replaceExisting')}</Label>
               </div>
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label>Chọn Targets ({selectedTargets.length} đã chọn)</Label>
+                  <Label>{t('mqtt.profileMgmt.selectTargets')} ({selectedTargets.length} {t('mqtt.profileMgmt.selected')})</Label>
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => setSelectedTargets(availableTargets?.map(t => t.id) || [])}
                     >
-                      Chọn tất cả
+                      {t('common.selectAll')}
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => setSelectedTargets([])}
                     >
-                      Bỏ chọn
+                      {t('mqtt.profileMgmt.deselect')}
                     </Button>
                   </div>
                 </div>
@@ -2003,12 +2005,12 @@ export default function MqttProfileManagement() {
                       />
                       <span className="flex-1">{target.name}</span>
                       {target.code && <Badge variant="outline">{target.code}</Badge>}
-                      {target.hasAssignment && <Badge variant="secondary">Đã gán</Badge>}
+                      {target.hasAssignment && <Badge variant="secondary">{t('mqtt.profileMgmt.assigned')}</Badge>}
                     </div>
                   ))}
                   {(!availableTargets || availableTargets.length === 0) && (
                     <div className="p-4 text-center text-muted-foreground">
-                      Không có target nào khả dụng
+                      {t('mqtt.profileMgmt.noTargetsAvailable')}
                     </div>
                   )}
                 </div>
@@ -2016,9 +2018,9 @@ export default function MqttProfileManagement() {
 
               {selectedTargets.length > 0 && (
                 <div className="bg-muted p-3 rounded-md">
-                  <p className="text-sm"><strong>Preview:</strong> Sẽ gán profile cho {selectedTargets.length} {bulkAssignTargetType}(s)</p>
+                  <p className="text-sm"><strong>Preview:</strong> {t('mqtt.profileMgmt.bulkAssignPreview', { count: '{selectedTargets.length}', type: '{bulkAssignTargetType}' })}</p>
                   {bulkReplaceExisting && (
-                    <p className="text-sm text-orange-600">Các assignments hiện có sẽ bị thay thế</p>
+                    <p className="text-sm text-orange-600">{t('mqtt.profileMgmt.replaceWarning')}</p>
                   )}
                 </div>
               )}
@@ -2029,13 +2031,13 @@ export default function MqttProfileManagement() {
                 setShowBulkAssignDialog(false);
                 setSelectedTargets([]);
               }}>
-                Hủy
+                {t('common.cancel')}
               </Button>
               <Button 
                 onClick={handleBulkAssign}
                 disabled={selectedTargets.length === 0 || bulkAssign.isPending}
               >
-                {bulkAssign.isPending ? 'Đang gán...' : `Gán ${selectedTargets.length} targets`}
+                {bulkAssign.isPending ? t('mqtt.profileMgmt.assigning') : t('mqtt.profileMgmt.assignTargets', { count: selectedTargets.length })}
               </Button>
             </DialogFooter>
           </DialogContent>

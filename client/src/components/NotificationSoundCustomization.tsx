@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -40,22 +41,22 @@ interface NotificationSoundSettings {
 }
 
 const ALERT_TYPES: { value: AlertType; label: string; description: string; icon: React.ReactNode }[] = [
-  { value: 'ng', label: 'NG Detection', description: 'Khi phát hiện sản phẩm lỗi NG', icon: <AlertCircle className="h-4 w-4 text-destructive" /> },
-  { value: 'yield_warning', label: 'Yield Warning', description: 'Khi FPY dưới ngưỡng cảnh báo', icon: <AlertTriangle className="h-4 w-4 text-warning" /> },
-  { value: 'yield_critical', label: 'Yield Critical', description: 'Khi FPY dưới ngưỡng nguy hiểm', icon: <AlertCircle className="h-4 w-4 text-destructive" /> },
-  { value: 'machine_offline', label: 'Machine Offline', description: 'Khi máy mất kết nối', icon: <Zap className="h-4 w-4 text-muted-foreground" /> },
-  { value: 'mqtt_disconnect', label: 'MQTT Disconnect', description: 'Khi mất kết nối MQTT broker', icon: <AlertTriangle className="h-4 w-4 text-warning" /> },
-  { value: 'system', label: 'System Alert', description: 'Thông báo hệ thống chung', icon: <Info className="h-4 w-4 text-blue-500" /> },
+  { value: 'ng', label: 'NG Detection', description: 'notifications.ngDetectionDesc', icon: <AlertCircle className="h-4 w-4 text-destructive" /> },
+  { value: 'yield_warning', label: 'Yield Warning', description: 'notifications.yieldWarningDesc', icon: <AlertTriangle className="h-4 w-4 text-warning" /> },
+  { value: 'yield_critical', label: 'Yield Critical', description: 'notifications.yieldCriticalDesc', icon: <AlertCircle className="h-4 w-4 text-destructive" /> },
+  { value: 'machine_offline', label: 'Machine Offline', description: 'notifications.machineOfflineDesc', icon: <Zap className="h-4 w-4 text-muted-foreground" /> },
+  { value: 'mqtt_disconnect', label: 'MQTT Disconnect', description: 'notifications.mqttDisconnectDesc', icon: <AlertTriangle className="h-4 w-4 text-warning" /> },
+  { value: 'system', label: 'System Alert', description: 'notifications.systemAlertDesc', icon: <Info className="h-4 w-4 text-blue-500" /> },
 ];
 
 const SOUND_TYPES: { value: SoundType; label: string; description: string }[] = [
-  { value: 'none', label: 'Không âm thanh', description: 'Tắt âm thanh cho loại cảnh báo này' },
-  { value: 'beep', label: 'Beep', description: 'Tiếng beep đơn giản' },
-  { value: 'chime', label: 'Chime', description: 'Âm thanh nhẹ nhàng' },
-  { value: 'warning', label: 'Warning', description: 'Cảnh báo 2 tiếng' },
-  { value: 'alarm', label: 'Alarm', description: 'Báo động 2 tông' },
-  { value: 'critical', label: 'Critical', description: 'Báo động khẩn cấp' },
-  { value: 'custom', label: 'Tùy chỉnh', description: 'Âm thanh do bạn upload' },
+  { value: 'none', label: 'notifications.noSound', description: 'notifications.noSoundDesc' },
+  { value: 'beep', label: 'Beep', description: 'notifications.beepDesc' },
+  { value: 'chime', label: 'Chime', description: 'notifications.chimeDesc' },
+  { value: 'warning', label: 'Warning', description: 'notifications.warningDesc' },
+  { value: 'alarm', label: 'Alarm', description: 'notifications.alarmDesc' },
+  { value: 'critical', label: 'Critical', description: 'notifications.criticalDesc' },
+  { value: 'custom', label: 'notifications.custom', description: 'notifications.customDesc' },
 ];
 
 const DEFAULT_MAPPINGS: AlertSoundMapping[] = [
@@ -160,6 +161,7 @@ async function playCustomSound(data: string, volume: number): Promise<void> {
 }
 
 export default function NotificationSoundCustomization() {
+  const { t } = useTranslation();
   const [settings, setSettings] = useState<NotificationSoundSettings>(DEFAULT_SETTINGS);
   const [testing, setTesting] = useState<AlertType | SoundType | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -270,17 +272,17 @@ export default function NotificationSoundCustomization() {
     if (!file) return;
 
     if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-      toast.error('Định dạng file không hỗ trợ. Chỉ chấp nhận MP3, WAV, OGG.');
+      toast.error(t('notifications.unsupportedFormat'));
       return;
     }
 
     if (file.size > MAX_FILE_SIZE) {
-      toast.error('File quá lớn. Kích thước tối đa là 1MB.');
+      toast.error(t('notifications.fileTooLarge'));
       return;
     }
 
     if (settings.customSounds.length >= MAX_CUSTOM_SOUNDS) {
-      toast.error(`Đã đạt giới hạn ${MAX_CUSTOM_SOUNDS} âm thanh tùy chỉnh.`);
+      toast.error(t('notifications.maxCustomSoundsReached', { count: MAX_CUSTOM_SOUNDS }));
       return;
     }
 
@@ -301,9 +303,9 @@ export default function NotificationSoundCustomization() {
       };
 
       saveSettings({ customSounds: [...settings.customSounds, customSound] });
-      toast.success('Đã thêm âm thanh tùy chỉnh');
+      toast.success(t('notifications.customSoundAdded'));
     } catch {
-      toast.error('Không thể đọc file âm thanh.');
+      toast.error(t('notifications.cannotReadAudioFile'));
     }
 
     setUploading(false);
@@ -328,7 +330,7 @@ export default function NotificationSoundCustomization() {
     });
 
     saveSettings({ customSounds: newCustomSounds, alertMappings: newMappings });
-    toast.success('Đã xóa âm thanh tùy chỉnh');
+    toast.success(t('notifications.customSoundDeleted'));
   };
 
   // Test custom sound
@@ -342,7 +344,7 @@ export default function NotificationSoundCustomization() {
   // Reset to defaults
   const resetToDefaults = () => {
     saveSettings(DEFAULT_SETTINGS);
-    toast.success('Đã khôi phục cài đặt mặc định');
+    toast.success(t('notifications.settingsReset'));
   };
 
   return (
@@ -350,27 +352,27 @@ export default function NotificationSoundCustomization() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Bell className="h-5 w-5" />
-          Tùy chỉnh âm thanh thông báo
+          {t('notifications.customizeSound')}
         </CardTitle>
         <CardDescription>
-          Cấu hình âm thanh riêng cho từng loại cảnh báo
+          {t('notifications.configureAlertSounds')}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="mappings" className="space-y-4">
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="mappings">Ánh xạ cảnh báo</TabsTrigger>
-            <TabsTrigger value="custom">Âm thanh tùy chỉnh</TabsTrigger>
-            <TabsTrigger value="settings">Cài đặt chung</TabsTrigger>
+            <TabsTrigger value="mappings">{t('notifications.alertMappings')}</TabsTrigger>
+            <TabsTrigger value="custom">{t('notifications.customSounds')}</TabsTrigger>
+            <TabsTrigger value="settings">{t('notifications.generalSettings')}</TabsTrigger>
           </TabsList>
 
           {/* Alert Mappings Tab */}
           <TabsContent value="mappings" className="space-y-4">
             <div className="flex items-center justify-between mb-4">
               <div className="space-y-0.5">
-                <Label className="text-base">Bật âm thanh cảnh báo</Label>
+                <Label className="text-base">{t('notifications.enableAlertSounds')}</Label>
                 <p className="text-sm text-muted-foreground">
-                  Bật/tắt tất cả âm thanh thông báo
+                  {t('notifications.toggleAllSounds')}
                 </p>
               </div>
               <Switch
@@ -404,7 +406,7 @@ export default function NotificationSoundCustomization() {
                             />
                           </div>
                           <p className="text-sm text-muted-foreground mt-1">
-                            {alertType.description}
+                            {t(alertType.description)}
                           </p>
                         </div>
                       </div>
@@ -425,7 +427,7 @@ export default function NotificationSoundCustomization() {
                                 value={sound.value}
                                 disabled={sound.value === 'custom' && settings.customSounds.length === 0}
                               >
-                                {sound.label}
+                                {sound.value === 'none' || sound.value === 'custom' ? t(sound.label) : sound.label}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -473,7 +475,7 @@ export default function NotificationSoundCustomization() {
           {/* Custom Sounds Tab */}
           <TabsContent value="custom" className="space-y-4">
             <div className="flex items-center justify-between">
-              <Label className="text-base">Âm thanh tùy chỉnh</Label>
+              <Label className="text-base">{t('notifications.customSounds')}</Label>
               <Badge variant="outline">{settings.customSounds.length}/{MAX_CUSTOM_SOUNDS}</Badge>
             </div>
 
@@ -492,10 +494,10 @@ export default function NotificationSoundCustomization() {
                 disabled={uploading || settings.customSounds.length >= MAX_CUSTOM_SOUNDS}
               >
                 <Upload className="h-4 w-4 mr-2" />
-                {uploading ? 'Đang tải...' : 'Tải lên âm thanh'}
+                {uploading ? t('notifications.uploading') : t('notifications.uploadSound')}
               </Button>
               <span className="text-xs text-muted-foreground">
-                MP3, WAV, OGG (tối đa 1MB)
+                {t('notifications.audioFormats')}
               </span>
             </div>
 
@@ -538,13 +540,13 @@ export default function NotificationSoundCustomization() {
               </div>
             ) : (
               <p className="text-sm text-muted-foreground text-center py-8 border rounded-lg border-dashed">
-                Chưa có âm thanh tùy chỉnh. Tải lên file âm thanh để sử dụng.
+                {t('notifications.noCustomSounds')}
               </p>
             )}
 
             {/* Preset Sounds Preview */}
             <div className="space-y-3 pt-4 border-t">
-              <Label className="text-base">Thử âm thanh preset</Label>
+              <Label className="text-base">{t('notifications.testPresetSounds')}</Label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {SOUND_TYPES.filter(t => t.value !== 'custom' && t.value !== 'none').map((type) => (
                   <Button
@@ -560,7 +562,7 @@ export default function NotificationSoundCustomization() {
                     ) : (
                       <Play className="h-3 w-3" />
                     )}
-                    {type.label}
+                    {type.value === 'none' || type.value === 'custom' ? t(type.label) : type.label}
                   </Button>
                 ))}
               </div>
@@ -572,7 +574,7 @@ export default function NotificationSoundCustomization() {
             {/* Volume */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-base">Âm lượng</Label>
+                <Label className="text-base">{t('notifications.volume')}</Label>
                 <span className="text-sm text-muted-foreground">
                   {Math.round(settings.volume * 100)}%
                 </span>
@@ -594,9 +596,9 @@ export default function NotificationSoundCustomization() {
             {/* Repeat Count */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-base">Số lần lặp</Label>
+                <Label className="text-base">{t('notifications.repeatCount')}</Label>
                 <span className="text-sm text-muted-foreground">
-                  {settings.repeatCount} lần
+                  {t('notifications.times', { count: settings.repeatCount })}
                 </span>
               </div>
               <Slider
@@ -611,7 +613,7 @@ export default function NotificationSoundCustomization() {
             {/* Repeat Interval */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-base">Khoảng cách lặp</Label>
+                <Label className="text-base">{t('notifications.repeatInterval')}</Label>
                 <span className="text-sm text-muted-foreground">
                   {settings.repeatInterval}ms
                 </span>
@@ -629,7 +631,7 @@ export default function NotificationSoundCustomization() {
             <div className="pt-4 border-t">
               <Button variant="outline" onClick={resetToDefaults}>
                 <Settings2 className="h-4 w-4 mr-2" />
-                Khôi phục mặc định
+                {t('notifications.resetDefaults')}
               </Button>
             </div>
           </TabsContent>

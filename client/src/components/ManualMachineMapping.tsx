@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -55,6 +56,7 @@ interface Machine {
 }
 
 export default function ManualMachineMapping() {
+  const { t } = useTranslation();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingConnection, setEditingConnection] = useState<ManualConnection | null>(null);
@@ -79,35 +81,35 @@ export default function ManualMachineMapping() {
   // Mutations
   const createMutation = trpc.manualMapping.create.useMutation({
     onSuccess: () => {
-      toast.success("Đã tạo cấu hình kết nối thành công");
+      toast.success(t('machines.connectionCreated'));
       setCreateDialogOpen(false);
       resetForm();
       refetchConnections();
     },
     onError: (error) => {
-      toast.error(error.message || "Lỗi khi tạo cấu hình kết nối");
+      toast.error(error.message || t('machines.connectionCreateError'));
     },
   });
 
   const updateMutation = trpc.manualMapping.update.useMutation({
     onSuccess: () => {
-      toast.success("Đã cập nhật cấu hình kết nối");
+      toast.success(t('machines.connectionUpdated'));
       setEditDialogOpen(false);
       setEditingConnection(null);
       refetchConnections();
     },
     onError: (error) => {
-      toast.error(error.message || "Lỗi khi cập nhật cấu hình");
+      toast.error(error.message || t('machines.connectionUpdateError'));
     },
   });
 
   const deleteMutation = trpc.manualMapping.delete.useMutation({
     onSuccess: () => {
-      toast.success("Đã xóa cấu hình kết nối");
+      toast.success(t('machines.connectionDeleted'));
       refetchConnections();
     },
     onError: (error) => {
-      toast.error(error.message || "Lỗi khi xóa cấu hình");
+      toast.error(error.message || t('machines.connectionDeleteError'));
     },
   });
 
@@ -121,7 +123,7 @@ export default function ManualMachineMapping() {
       refetchConnections();
     },
     onError: (error) => {
-      toast.error(error.message || "Lỗi khi kiểm tra kết nối");
+      toast.error(error.message || t('machines.testConnectionError'));
     },
     onSettled: () => {
       setTestingConnectionId(null);
@@ -142,7 +144,7 @@ export default function ManualMachineMapping() {
 
   const handleCreate = async () => {
     if (!formData.machineId || !formData.ipAddress) {
-      toast.error("Vui lòng điền đầy đủ thông tin");
+      toast.error(t('common.fillRequiredInfo'));
       return;
     }
 
@@ -208,13 +210,13 @@ export default function ManualMachineMapping() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'connected':
-        return <Badge className="bg-green-500"><CheckCircle2 className="h-3 w-3 mr-1" /> Đã kết nối</Badge>;
+        return <Badge className="bg-green-500"><CheckCircle2 className="h-3 w-3 mr-1" /> {t('machines.statusConnected')}</Badge>;
       case 'disconnected':
-        return <Badge variant="secondary"><WifiOff className="h-3 w-3 mr-1" /> Ngắt kết nối</Badge>;
+        return <Badge variant="secondary"><WifiOff className="h-3 w-3 mr-1" /> {t('machines.statusDisconnected')}</Badge>;
       case 'error':
-        return <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" /> Lỗi</Badge>;
+        return <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" /> {t('machines.statusError')}</Badge>;
       case 'pending':
-        return <Badge variant="outline"><Clock className="h-3 w-3 mr-1" /> Đang chờ</Badge>;
+        return <Badge variant="outline"><Clock className="h-3 w-3 mr-1" /> {t('machines.statusPending')}</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -236,19 +238,19 @@ export default function ManualMachineMapping() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Network className="h-5 w-5 text-primary" />
-          <span className="font-medium">Cấu hình kết nối thủ công</span>
+          <span className="font-medium">{t('machines.manualConnectionConfig')}</span>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => refetchConnections()}>
             <RefreshCw className="h-4 w-4 mr-2" />
-            Làm mới
+            {t('common.refresh')}
           </Button>
           <Button size="sm" onClick={() => {
             resetForm();
             setCreateDialogOpen(true);
           }}>
             <Plus className="h-4 w-4 mr-2" />
-            Thêm kết nối
+            {t('machines.addConnection')}
           </Button>
         </div>
       </div>
@@ -258,31 +260,31 @@ export default function ManualMachineMapping() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Server className="h-5 w-5 text-primary" />
-            Danh sách kết nối thủ công
+            {t('machines.manualConnectionList')}
           </CardTitle>
           <CardDescription>
-            Cấu hình kết nối socket đến máy qua IP:Port
+            {t('machines.socketConnectionDesc')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {!connections || connections.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-32 text-muted-foreground">
               <Network className="h-8 w-8 mb-2 opacity-50" />
-              <p className="text-sm">Chưa có cấu hình kết nối nào</p>
-              <p className="text-xs">Nhấn "Thêm kết nối" để tạo mới</p>
+              <p className="text-sm">{t('machines.noConnections')}</p>
+              <p className="text-xs">{t('machines.addConnectionHint')}</p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Máy</TableHead>
-                  <TableHead>Địa chỉ IP</TableHead>
+                  <TableHead>{t('machines.machine')}</TableHead>
+                  <TableHead>{t('machines.ipAddress')}</TableHead>
                   <TableHead>Port</TableHead>
-                  <TableHead>Giao thức</TableHead>
-                  <TableHead>Trạng thái</TableHead>
-                  <TableHead>Kết nối gần nhất</TableHead>
-                  <TableHead>Bật/Tắt</TableHead>
-                  <TableHead className="text-right">Thao tác</TableHead>
+                  <TableHead>{t('machines.protocol')}</TableHead>
+                  <TableHead>{t('common.status')}</TableHead>
+                  <TableHead>{t('machines.lastConnection')}</TableHead>
+                  <TableHead>{t('machines.enableDisable')}</TableHead>
+                  <TableHead className="text-right">{t('common.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -351,18 +353,18 @@ export default function ManualMachineMapping() {
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
+                              <AlertDialogTitle>{t('common.confirmDelete')}</AlertDialogTitle>
                               <AlertDialogDescription>
-                                Bạn có chắc muốn xóa cấu hình kết nối này? Hành động này không thể hoàn tác.
+                                {t('machines.confirmDeleteConnection')}
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>Hủy</AlertDialogCancel>
+                              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                               <AlertDialogAction
                                 className="bg-red-500 hover:bg-red-600"
                                 onClick={() => deleteMutation.mutate({ id: conn.id })}
                               >
-                                Xóa
+                                {t('common.delete')}
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -381,20 +383,20 @@ export default function ManualMachineMapping() {
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Thêm kết nối thủ công</DialogTitle>
+            <DialogTitle>{t('machines.addManualConnection')}</DialogTitle>
             <DialogDescription>
-              Cấu hình kết nối socket đến máy qua IP:Port
+              {t('machines.socketConnectionDesc')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="machine">Chọn máy</Label>
+              <Label htmlFor="machine">{t('machines.selectMachine')}</Label>
               <Select
                 value={formData.machineId}
                 onValueChange={(v) => setFormData({ ...formData, machineId: v })}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Chọn máy..." />
+                  <SelectValue placeholder={t('machines.selectMachinePlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
                   {availableMachines.map((m) => (
@@ -408,7 +410,7 @@ export default function ManualMachineMapping() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="ipAddress">Địa chỉ IP</Label>
+                <Label htmlFor="ipAddress">{t('machines.ipAddress')}</Label>
                 <Input
                   id="ipAddress"
                   placeholder="192.168.1.100"
@@ -429,7 +431,7 @@ export default function ManualMachineMapping() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="protocol">Giao thức</Label>
+              <Label htmlFor="protocol">{t('machines.protocol')}</Label>
               <Select
                 value={formData.protocol}
                 onValueChange={(v) => setFormData({ ...formData, protocol: v as 'websocket' | 'tcp' | 'http' })}
@@ -447,7 +449,7 @@ export default function ManualMachineMapping() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="maxRetries">Số lần thử lại tối đa</Label>
+                <Label htmlFor="maxRetries">{t('machines.maxRetries')}</Label>
                 <Input
                   id="maxRetries"
                   type="number"
@@ -456,7 +458,7 @@ export default function ManualMachineMapping() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="retryInterval">Khoảng cách thử lại (giây)</Label>
+                <Label htmlFor="retryInterval">{t('machines.retryInterval')}</Label>
                 <Input
                   id="retryInterval"
                   type="number"
@@ -467,7 +469,7 @@ export default function ManualMachineMapping() {
             </div>
 
             <div className="flex items-center justify-between">
-              <Label htmlFor="isEnabled">Kích hoạt kết nối</Label>
+              <Label htmlFor="isEnabled">{t('machines.enableConnection')}</Label>
               <Switch
                 id="isEnabled"
                 checked={formData.isEnabled}
@@ -477,11 +479,11 @@ export default function ManualMachineMapping() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleCreate} disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Tạo kết nối
+              {t('machines.createConnection')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -491,15 +493,15 @@ export default function ManualMachineMapping() {
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Chỉnh sửa kết nối</DialogTitle>
+            <DialogTitle>{t('machines.editConnection')}</DialogTitle>
             <DialogDescription>
-              Cập nhật cấu hình kết nối cho máy {editingConnection && getMachineName(editingConnection.machineId)}
+              {t('machines.updateConnectionDesc', { name: editingConnection && getMachineName(editingConnection.machineId) })}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="editIpAddress">Địa chỉ IP</Label>
+                <Label htmlFor="editIpAddress">{t('machines.ipAddress')}</Label>
                 <Input
                   id="editIpAddress"
                   placeholder="192.168.1.100"
@@ -520,7 +522,7 @@ export default function ManualMachineMapping() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="editProtocol">Giao thức</Label>
+              <Label htmlFor="editProtocol">{t('machines.protocol')}</Label>
               <Select
                 value={formData.protocol}
                 onValueChange={(v) => setFormData({ ...formData, protocol: v as 'websocket' | 'tcp' | 'http' })}
@@ -538,7 +540,7 @@ export default function ManualMachineMapping() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="editMaxRetries">Số lần thử lại tối đa</Label>
+                <Label htmlFor="editMaxRetries">{t('machines.maxRetries')}</Label>
                 <Input
                   id="editMaxRetries"
                   type="number"
@@ -547,7 +549,7 @@ export default function ManualMachineMapping() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="editRetryInterval">Khoảng cách thử lại (giây)</Label>
+                <Label htmlFor="editRetryInterval">{t('machines.retryInterval')}</Label>
                 <Input
                   id="editRetryInterval"
                   type="number"
@@ -558,7 +560,7 @@ export default function ManualMachineMapping() {
             </div>
 
             <div className="flex items-center justify-between">
-              <Label htmlFor="editIsEnabled">Kích hoạt kết nối</Label>
+              <Label htmlFor="editIsEnabled">{t('machines.enableConnection')}</Label>
               <Switch
                 id="editIsEnabled"
                 checked={formData.isEnabled}
@@ -568,11 +570,11 @@ export default function ManualMachineMapping() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleUpdate} disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Cập nhật
+              {t('common.update')}
             </Button>
           </DialogFooter>
         </DialogContent>

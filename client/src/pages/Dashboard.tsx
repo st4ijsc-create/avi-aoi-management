@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -55,6 +56,7 @@ import { ChartErrorBoundary, WidgetErrorBoundary } from "@/components/ErrorBound
 import { StatsCardSkeleton, ChartSkeleton, PieChartSkeleton, ListSkeleton, MachineGridSkeleton } from "@/components/AnalyticsSkeleton";
 import { WorkstationNGHeatmap, MeasurementPointNGList } from "@/components/NGVisualReflect";
 import type { WidgetData } from "@/components/WidgetDataExport";
+import CustomDashboardViewer from "@/components/CustomDashboardViewer";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 import { Link } from "wouter";
@@ -138,15 +140,18 @@ type ShiftStats = {
 };
 
 // Auto-refresh intervals
-const REFRESH_INTERVALS = [
-  { value: "5", label: "5 giây" },
-  { value: "10", label: "10 giây" },
-  { value: "30", label: "30 giây" },
-  { value: "60", label: "1 phút" },
-  { value: "0", label: "Tắt" },
-];
+// REFRESH_INTERVALS moved inside component for i18n
 
 export default function Dashboard() {
+  const { t } = useTranslation();
+  
+  const REFRESH_INTERVALS = useMemo(() => [
+    { value: "5", label: t("dashboard.5seconds") },
+    { value: "10", label: t("dashboard.10seconds") },
+    { value: "30", label: t("dashboard.30seconds") },
+    { value: "60", label: t("dashboard.1minute") },
+    { value: "0", label: t("dashboard.off") },
+  ], [t]);
   const { user } = useAuth();
   const [timeRange, setTimeRange] = useState("today");
   const [selectedFactory, setSelectedFactory] = useState<string>("all");
@@ -157,7 +162,7 @@ export default function Dashboard() {
   const [autoRefreshInterval, setAutoRefreshInterval] = useState("30");
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(true);
   const [lastRefreshTime, setLastRefreshTime] = useState(new Date());
-  const [activeTab, setActiveTab] = useState<"overview" | "layout" | "ng-visual" | "corporate-stats">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "layout" | "ng-visual" | "corporate-stats" | "custom">("overview");
   const [machineStatusFilter, setMachineStatusFilter] = useState<"all" | "online" | "offline">("all");
   const [ngTimeFilter, setNgTimeFilter] = useState<"day" | "week" | "month">("month"); // Default to month for more data
   const [selectedWorkstationForDrilldown, setSelectedWorkstationForDrilldown] = useState<{ id: number; code: string; name: string } | null>(null);
@@ -221,9 +226,10 @@ export default function Dashboard() {
   
   // Machine online status from WebSocket
   const [onlineMachines, setOnlineMachines] = useState<Set<string>>(new Set());
+  const [urgentAlerts, setUrgentAlerts] = useState<Array<{id: string; type: string; severity: string; title: string; message: string; timestamp: Date}>>([]);
   const socketRef = useRef<Socket | null>(null);
 
-  // WebSocket connection for realtime machine status
+  // WebSocket connection for realtime machine status + urgent alerts
   useEffect(() => {
     const socket = io(window.location.origin, {
       path: '/api/socket.io',
@@ -253,6 +259,31 @@ export default function Dashboard() {
         return newSet;
       });
     });
+
+    // Urgent alert listeners for real-time push notifications
+    const handleUrgentAlert = (data: any, type: string) => {
+      const alert = {
+        id: `${type}-${Date.now()}`,
+        type,
+        severity: data.severity || 'warning',
+        title: data.title || type,
+        message: data.message || JSON.stringify(data),
+        timestamp: new Date(),
+      };
+      setUrgentAlerts(prev => [alert, ...prev].slice(0, 20));
+      
+      // Show toast notification for urgent alerts
+      if (data.severity === 'critical') {
+        toast.error(alert.title, { description: alert.message, duration: 8000 });
+      } else {
+        toast.warning(alert.title, { description: alert.message, duration: 5000 });
+      }
+    };
+
+    socket.on('inspection:alert', (data: any) => handleUrgentAlert(data, 'inspection'));
+    socket.on('yield:warning', (data: any) => handleUrgentAlert(data, 'yield'));
+    socket.on('ng:alert', (data: any) => handleUrgentAlert(data, 'ng'));
+    socket.on('qualityGate:triggered', (data: any) => handleUrgentAlert(data, 'qualityGate'));
 
     socket.on('disconnect', () => {
       console.log('[Dashboard] WebSocket disconnected');
@@ -541,7 +572,7 @@ export default function Dashboard() {
         ngRate: mp.totalCount > 0 ? ((mp.ngCount || 0) / mp.totalCount * 100).toFixed(1) : '0.0',
       })) : [];
 
-      const timeRangeLabel = ngTimeFilter === "day" ? "Hôm nay" : ngTimeFilter === "week" ? "7 ngày qua" : "30 ngày qua";
+      const timeRangeLabel = ngTimeFilter === "day" ? t("dashboard.today") : ngTimeFilter === "week" ? t("dashboard.7daysPeriod") : t("dashboard.30daysPeriod");
       const exportDate = new Date().toLocaleString('vi-VN');
 
       // Create HTML content for PDF
@@ -550,7 +581,7 @@ export default function Dashboard() {
         <html>
         <head>
           <meta charset="UTF-8">
-          <title>Báo cáo NG Visual - ${timeRangeLabel}</title>
+          <title>${t("dashboard.ngReportTitle")} - ${timeRangeLabel}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
             h1 { color: #1e40af; border-bottom: 2px solid #1e40af; padding-bottom: 10px; }
@@ -568,22 +599,22 @@ export default function Dashboard() {
         </head>
         <body>
           <div class="header">
-            <h1>Báo cáo NG Visual</h1>
+            <h1>${t("dashboard.ngReportTitle")}</h1>
             <div class="meta">
-              <p>Khoảng thời gian: <strong>${timeRangeLabel}</strong></p>
-              <p>Ngày xuất: ${exportDate}</p>
+              <p>${t("dashboard.timeRangeLabel")}: <strong>${timeRangeLabel}</strong></p>
+              <p>${t("dashboard.exportDateLabel")}: ${exportDate}</p>
             </div>
           </div>
 
-          <h2>Tỉ lệ NG theo Công trạm</h2>
+          <h2>${t("dashboard.ngRateByWorkstation")}</h2>
           <table>
             <thead>
               <tr>
-                <th>Mã</th>
-                <th>Tên công trạm</th>
-                <th>Tổng kiểm tra</th>
-                <th>Số NG</th>
-                <th>Tỉ lệ NG (%)</th>
+                <th>${t("dashboard.codeCol")}</th>
+                <th>${t("dashboard.workstationNameCol")}</th>
+                <th>${t("dashboard.totalInspectionCol")}</th>
+                <th>${t("dashboard.ngCountCol")}</th>
+                <th>${t("dashboard.ngRateCol")}</th>
               </tr>
             </thead>
             <tbody>
@@ -600,16 +631,16 @@ export default function Dashboard() {
             </tbody>
           </table>
 
-          <h2>Top Điểm đo có tỉ lệ NG cao</h2>
+          <h2>${t("dashboard.topNgPoints")}</h2>
           <table>
             <thead>
               <tr>
-                <th>Mã</th>
-                <th>Tên điểm đo</th>
-                <th>Công trạm</th>
-                <th>Tổng kiểm tra</th>
-                <th>Số NG</th>
-                <th>Tỉ lệ NG (%)</th>
+                <th>${t("dashboard.codeCol")}</th>
+                <th>${t("dashboard.pointNameCol")}</th>
+                <th>${t("dashboard.workstationCol")}</th>
+                <th>${t("dashboard.totalInspectionCol")}</th>
+                <th>${t("dashboard.ngCountCol")}</th>
+                <th>${t("dashboard.ngRateCol")}</th>
               </tr>
             </thead>
             <tbody>
@@ -628,7 +659,7 @@ export default function Dashboard() {
           </table>
 
           <div class="footer">
-            <p>Báo cáo được tạo tự động bởi hệ thống AVI/AOI Management</p>
+            <p>${t("dashboard.reportFooter")}</p>
           </div>
         </body>
         </html>
@@ -645,13 +676,13 @@ export default function Dashboard() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      toast.success("Xuất báo cáo thành công!", {
-        description: "File HTML đã được tải xuống. Bạn có thể mở và in thành PDF.",
+      toast.success(t("dashboard.exportSuccess"), {
+        description: t("dashboard.exportSuccessDesc"),
       });
     } catch (error) {
       console.error('Export PDF error:', error);
-      toast.error("Lỗi xuất báo cáo", {
-        description: "Không thể tạo file báo cáo. Vui lòng thử lại.",
+      toast.error(t("dashboard.exportReportError"), {
+        description: t("dashboard.exportReportErrorDesc"),
       });
     } finally {
       setExportingPDF(false);
@@ -695,7 +726,7 @@ export default function Dashboard() {
       ntf: m.stats.ntf,
       yieldRate: m.stats.yieldRate,
       lineId: m.line?.id,
-      lineName: m.line?.name || 'Chưa phân loại',
+      lineName: m.line?.name || t('dashboard.unclassified'),
       stationId: m.station?.id,
       stationName: m.station?.name,
       workshopId: m.workshop?.id,
@@ -718,7 +749,7 @@ export default function Dashboard() {
         if (machineStatusFilter === "offline" && isOnline) return;
       }
       
-      const lineKey = machine.lineName || "Chưa phân loại";
+      const lineKey = machine.lineName || t("dashboard.unclassified");
       if (!grouped.has(lineKey)) {
         grouped.set(lineKey, []);
       }
@@ -781,7 +812,7 @@ export default function Dashboard() {
             currentValue,
             threshold: criticalVal,
             target: targetVal,
-            message: `${threshold.metricType} ${isHigherBetter ? 'dưới' : 'vượt'} ngưỡng nguy hiểm: ${currentValue.toFixed(2)}% (ngưỡng: ${criticalVal}%)`
+            message: t('dashboard.criticalThresholdMsg', { metric: threshold.metricType, direction: isHigherBetter ? t('dashboard.below') : t('dashboard.exceeds'), value: currentValue.toFixed(2), threshold: criticalVal })
           });
         }
       } else if (isHigherBetter ? currentValue < warningVal : currentValue > warningVal) {
@@ -792,7 +823,7 @@ export default function Dashboard() {
             currentValue,
             threshold: warningVal,
             target: targetVal,
-            message: `${threshold.metricType} ${isHigherBetter ? 'dưới' : 'vượt'} ngưỡng cảnh báo: ${currentValue.toFixed(2)}% (ngưỡng: ${warningVal}%)`
+            message: t('dashboard.warningThresholdMsg', { metric: threshold.metricType, direction: isHigherBetter ? t('dashboard.below') : t('dashboard.exceeds'), value: currentValue.toFixed(2), threshold: warningVal })
           });
         }
       }
@@ -810,9 +841,9 @@ export default function Dashboard() {
 
   // Get status indicator
   const getStatusIndicator = (fpy: number) => {
-    if (fpy >= 95) return { icon: CheckCircle2, color: "text-success", label: "Tốt" };
-    if (fpy >= 85) return { icon: AlertTriangle, color: "text-warning", label: "Cảnh báo" };
-    return { icon: XCircle, color: "text-destructive", label: "Cần xử lý" };
+    if (fpy >= 95) return { icon: CheckCircle2, color: "text-success", label: t("dashboard.good") };
+    if (fpy >= 85) return { icon: AlertTriangle, color: "text-warning", label: t("dashboard.warning") };
+    return { icon: XCircle, color: "text-destructive", label: t("dashboard.needsAttention") };
   };
 
   // Trend indicator component
@@ -878,7 +909,7 @@ export default function Dashboard() {
 
   return (
     <DashboardLayout 
-      title="Dashboard" 
+      title={t("dashboard.title")} 
       navItems={navItems}
       currentPath="/dashboard"
     >
@@ -888,13 +919,11 @@ export default function Dashboard() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
             <div>
               <h1 className="text-xl sm:text-2xl font-bold text-foreground flex items-center gap-2">
-                <Activity className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
-                Production Dashboard
-              </h1>
+                <Activity className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />{t("dashboard.productionDashboard")}</h1>
               <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mt-1">
-                <p className="text-muted-foreground text-xs sm:text-sm">Theo dõi chất lượng sản xuất</p>
+                <p className="text-muted-foreground text-xs sm:text-sm">{t("dashboard.monitoringQuality")}</p>
                 <span className="text-xs text-muted-foreground">
-                  • Cập nhật lúc {lastRefreshTime.toLocaleTimeString('vi-VN')}
+                  • {t("dashboard.updatedAt")} {lastRefreshTime.toLocaleTimeString('vi-VN')}
                 </span>
               </div>
             </div>
@@ -925,7 +954,7 @@ export default function Dashboard() {
                 <Link href="/alerts">
                   <Button variant="outline" size="sm" className="relative">
                     <Bell className="h-4 w-4 mr-1" />
-                    Cảnh báo
+                    {t("dashboard.alerts")}
                     <Badge variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center text-xs">
                       {activeAlertsCount as number}
                     </Badge>
@@ -941,10 +970,10 @@ export default function Dashboard() {
             }}>
               <SelectTrigger className="w-[120px] sm:w-[160px] shrink-0">
                 <Factory className="h-4 w-4 mr-1 sm:hidden" />
-                <SelectValue placeholder="Nhà máy" />
+                <SelectValue placeholder={t("dashboard.factory")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tất cả nhà máy</SelectItem>
+                <SelectItem value="all">{t("dashboard.allFactories")}</SelectItem>
                 {factories?.map((factory) => (
                   <SelectItem key={factory.id} value={String(factory.id)}>
                     {factory.name}
@@ -958,10 +987,10 @@ export default function Dashboard() {
               setSelectedLine("all");
             }}>
               <SelectTrigger className="w-[120px] sm:w-[160px] shrink-0">
-                <SelectValue placeholder="Xưởng" />
+                <SelectValue placeholder={t("dashboard.workshop")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tất cả xưởng</SelectItem>
+                <SelectItem value="all">{t("dashboard.allWorkshops")}</SelectItem>
                 {filteredWorkshops?.map((workshop) => (
                   <SelectItem key={workshop.id} value={String(workshop.id)}>
                     {workshop.name}
@@ -975,7 +1004,7 @@ export default function Dashboard() {
                 <SelectValue placeholder="Line" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tất cả line</SelectItem>
+                <SelectItem value="all">{t("dashboard.allLines")}</SelectItem>
                 {filteredLines?.map((line) => (
                   <SelectItem key={line.id} value={String(line.id)}>
                     {line.name}
@@ -989,9 +1018,9 @@ export default function Dashboard() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="today">Hôm nay</SelectItem>
-                <SelectItem value="week">7 ngày</SelectItem>
-                <SelectItem value="month">30 ngày</SelectItem>
+                <SelectItem value="today">{t("common.today")}</SelectItem>
+                <SelectItem value="week">{t("dashboard.7days")}</SelectItem>
+                <SelectItem value="month">{t("dashboard.30days")}</SelectItem>
               </SelectContent>
             </Select>
 
@@ -1010,7 +1039,7 @@ export default function Dashboard() {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {isAutoRefreshing ? 'Tạm dừng auto-refresh' : 'Bật auto-refresh'}
+                    {isAutoRefreshing ? t('dashboard.pauseAutoRefresh') : t('dashboard.enableAutoRefresh')}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -1057,7 +1086,7 @@ export default function Dashboard() {
               <CardContent className="pt-4">
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
-                    <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>Total Output</p>
+                    <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>{t("dashboard.totalOutput")}</p>
                     <div className="flex items-center gap-2 mt-1">
                       <p className="text-2xl font-bold">
                         {statsLoading ? "..." : stats?.total?.toLocaleString() || 0}
@@ -1077,7 +1106,7 @@ export default function Dashboard() {
               <CardContent className="pt-4">
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
-                    <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>FPY</p>
+                    <p className="text-xs uppercase tracking-wide" style={{ opacity: 0.7 }}>{t("dashboard.fpy")}</p>
                     <div className="flex items-center gap-2 mt-1">
                       <p className="text-2xl font-bold text-success">
                         {statsLoading ? "..." : `${stats?.yieldRate?.toFixed(1) || 0}%`}
@@ -1166,13 +1195,11 @@ export default function Dashboard() {
                       yieldAlerts.some(a => a.level === 'critical') ? 'text-destructive' : 'text-warning'
                     }`} />
                   </div>
-                  <span className="text-sm font-medium">Cảnh báo Yield</span>
+                  <span className="text-sm font-medium">{t("dashboard.yieldWarning")}</span>
                   <Badge variant="secondary" className="text-xs h-5">{yieldAlerts.length}</Badge>
                 </div>
                 <Link href="/settings">
-                  <Button variant="ghost" size="sm" className="h-6 text-xs px-2">
-                    Cấu hình
-                  </Button>
+                  <Button variant="ghost" size="sm" className="h-6 text-xs px-2">{t("dashboard.configuration")}</Button>
                 </Link>
               </div>
               {yieldAlerts.length > 0 ? (
@@ -1196,7 +1223,7 @@ export default function Dashboard() {
                         </TooltipTrigger>
                         <TooltipContent side="bottom" className="max-w-xs">
                           <p className="font-medium">{alert.message}</p>
-                          <p className="text-xs text-muted-foreground mt-1">Mục tiêu: {alert.target}% | Ngưỡng: {alert.threshold}%</p>
+                          <p className="text-xs text-muted-foreground mt-1">{t("dashboard.target")}: {alert.target}% | {t("dashboard.threshold")}: {alert.threshold}%</p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
@@ -1205,7 +1232,7 @@ export default function Dashboard() {
               ) : (
                 <div className="flex items-center justify-center py-4 text-muted-foreground text-sm">
                   <CheckCircle2 className="h-4 w-4 mr-2 text-success" />
-                  Không có cảnh báo
+                  {t("dashboard.noAlerts")}
                 </div>
               )}
             </CardContent>
@@ -1219,34 +1246,34 @@ export default function Dashboard() {
                   <div className="h-6 w-6 rounded-md flex items-center justify-center bg-primary/20">
                     <Activity className="h-3.5 w-3.5 text-primary" />
                   </div>
-                  <span className="text-sm font-medium">Trạng thái kết nối máy</span>
+                  <span className="text-sm font-medium">{t("dashboard.machineConnectionStatus")}</span>
                 </div>
                 <Link href="/machine-status">
                   <Button variant="ghost" size="sm" className="h-6 text-xs px-2">
-                    Chi tiết
+                    {t("common.details")}
                   </Button>
                 </Link>
               </div>
               <div className="grid grid-cols-4 gap-2">
                 <div className="flex flex-col items-center p-2 rounded-lg bg-muted/30">
                   <p className="text-lg font-bold">{machinesStats?.length || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">Tổng</p>
+                  <p className="text-[10px] text-muted-foreground">{t("common.total")}</p>
                 </div>
                 <div className="flex flex-col items-center p-2 rounded-lg bg-emerald-500/10">
                   <p className="text-lg font-bold text-emerald-500">{onlineMachines.size}</p>
-                  <p className="text-[10px] text-muted-foreground">Online</p>
+                  <p className="text-[10px] text-muted-foreground">{t("dashboard.online")}</p>
                 </div>
                 <div className="flex flex-col items-center p-2 rounded-lg bg-red-500/10">
                   <p className="text-lg font-bold text-red-500">
                     {Math.max(0, (machinesStats?.length || 0) - onlineMachines.size)}
                   </p>
-                  <p className="text-[10px] text-muted-foreground">Offline</p>
+                  <p className="text-[10px] text-muted-foreground">{t("dashboard.offline")}</p>
                 </div>
                 <div className="flex flex-col items-center p-2 rounded-lg bg-primary/10">
                   <p className="text-lg font-bold">
                     {machinesStats?.length ? Math.round((onlineMachines.size / machinesStats.length) * 100) : 0}%
                   </p>
-                  <p className="text-[10px] text-muted-foreground">Avail</p>
+                  <p className="text-[10px] text-muted-foreground">{t("dashboard.avail")}</p>
                 </div>
               </div>
             </CardContent>
@@ -1254,20 +1281,16 @@ export default function Dashboard() {
         </div>
 
         {/* Tabs for Overview and Layout */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "overview" | "layout" | "ng-visual" | "corporate-stats")} className="w-full">
-          <TabsList className="grid w-full max-w-xl grid-cols-3">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "overview" | "layout" | "ng-visual" | "corporate-stats" | "custom")} className="w-full">
+          <TabsList className="grid w-full max-w-2xl grid-cols-4">
             <TabsTrigger value="overview" className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4" />
-              Tổng quan
-            </TabsTrigger>
+              <BarChart3 className="h-4 w-4" />{t("dashboard.overviewTab")}</TabsTrigger>
             <TabsTrigger value="ng-visual" className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4" />
-              NG Visual
-            </TabsTrigger>
+              <AlertTriangle className="h-4 w-4" />{t("dashboard.ngVisualTab")}</TabsTrigger>
             <TabsTrigger value="layout" className="flex items-center gap-2">
-              <LayoutGrid className="h-4 w-4" />
-              Layout dây chuyền
-            </TabsTrigger>
+              <LayoutGrid className="h-4 w-4" />{t("dashboard.layoutTab")}</TabsTrigger>
+            <TabsTrigger value="custom" className="flex items-center gap-2">
+              <Palette className="h-4 w-4" />{t("dashboard.customTab")}</TabsTrigger>
           </TabsList>
 
           {/* Overview Tab */}
@@ -1281,9 +1304,7 @@ export default function Dashboard() {
           <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
-                <Clock className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />
-                Thống kê theo ca
-              </CardTitle>
+                <Clock className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />{t("dashboard.shiftStats")}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
@@ -1305,7 +1326,7 @@ export default function Dashboard() {
                   );
                 })}
                 {(!shiftStats || (shiftStats as ShiftStats[]).length === 0) && (
-                  <p className="text-sm text-muted-foreground text-center py-4">Chưa có dữ liệu</p>
+                  <p className="text-sm text-muted-foreground text-center py-4">{t("dashboard.noDataYet")}</p>
                 )}
               </div>
             </CardContent>
@@ -1315,9 +1336,7 @@ export default function Dashboard() {
           <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
-                <Award className="h-4 w-4 text-success" />
-                Top 5 máy tốt nhất
-              </CardTitle>
+                <Award className="h-4 w-4 text-success" />{t("dashboard.top5Best")}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
@@ -1336,7 +1355,7 @@ export default function Dashboard() {
                   </div>
                 ))}
                 {(!topBottomMachines || (topBottomMachines as { top: any[] }).top?.length === 0) && (
-                  <p className="text-sm text-muted-foreground text-center py-4">Chưa có dữ liệu</p>
+                  <p className="text-sm text-muted-foreground text-center py-4">{t("dashboard.noDataYet")}</p>
                 )}
               </div>
             </CardContent>
@@ -1346,9 +1365,7 @@ export default function Dashboard() {
           <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
-                <ThumbsDown className="h-4 w-4 text-destructive" />
-                Top 5 máy cần cải thiện
-              </CardTitle>
+                <ThumbsDown className="h-4 w-4 text-destructive" />{t("dashboard.top5NeedImprovement")}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
@@ -1367,7 +1384,7 @@ export default function Dashboard() {
                   </div>
                 ))}
                 {(!topBottomMachines || (topBottomMachines as { bottom: any[] }).bottom?.length === 0) && (
-                  <p className="text-sm text-muted-foreground text-center py-4">Chưa có dữ liệu</p>
+                  <p className="text-sm text-muted-foreground text-center py-4">{t("dashboard.noDataYet")}</p>
                 )}
               </div>
             </CardContent>
@@ -1378,10 +1395,8 @@ export default function Dashboard() {
         <Card className={cardStyleProps.className} style={cardStyleProps.style}>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <Activity className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />
-              Biểu đồ theo thời gian (24 giờ qua)
-            </CardTitle>
-            <CardDescription>FPY, FY, NTFY và Output theo từng giờ</CardDescription>
+              <Activity className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />{t("dashboard.timeChart24h")}</CardTitle>
+            <CardDescription>{t("dashboard.hourlyChartDesc")}</CardDescription>
           </CardHeader>
           <CardContent>
             <ChartErrorBoundary>
@@ -1468,9 +1483,7 @@ export default function Dashboard() {
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-full flex items-center justify-center text-muted-foreground">
-                  Chưa có dữ liệu
-                </div>
+                <div className="h-full flex items-center justify-center text-muted-foreground">{t("dashboard.noDataYet")}</div>
               )}
             </div>
             </ChartErrorBoundary>
@@ -1482,8 +1495,8 @@ export default function Dashboard() {
           {/* Pie Chart */}
           <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardHeader>
-              <CardTitle className="text-base">Phân bố kết quả</CardTitle>
-              <CardDescription>Tỷ lệ OK/NG/NTF tổng hợp</CardDescription>
+              <CardTitle className="text-base">{t("dashboard.resultDistribution")}</CardTitle>
+              <CardDescription>{t("dashboard.resultDistributionDesc")}</CardDescription>
             </CardHeader>
             <CardContent>
               <ChartErrorBoundary>
@@ -1509,9 +1522,7 @@ export default function Dashboard() {
                     </PieChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="h-full flex items-center justify-center text-muted-foreground">
-                    Chưa có dữ liệu
-                  </div>
+                  <div className="h-full flex items-center justify-center text-muted-foreground">{t("dashboard.noDataYet")}</div>
                 )}
               </div>
               </ChartErrorBoundary>
@@ -1521,8 +1532,8 @@ export default function Dashboard() {
           {/* Bar Chart - Top machines */}
           <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardHeader>
-              <CardTitle className="text-base">Top máy theo sản lượng</CardTitle>
-              <CardDescription>10 máy có output cao nhất</CardDescription>
+              <CardTitle className="text-base">{t("dashboard.topMachinesByOutput")}</CardTitle>
+              <CardDescription>{t("dashboard.top10MachinesDesc")}</CardDescription>
             </CardHeader>
             <CardContent>
               <ChartErrorBoundary>
@@ -1550,9 +1561,7 @@ export default function Dashboard() {
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="h-full flex items-center justify-center text-muted-foreground">
-                    Chưa có dữ liệu
-                  </div>
+                  <div className="h-full flex items-center justify-center text-muted-foreground">{t("dashboard.noDataYet")}</div>
                 )}
               </div>
               </ChartErrorBoundary>
@@ -1563,10 +1572,8 @@ export default function Dashboard() {
           <Card className={cardStyleProps.className} style={cardStyleProps.style}>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
-                <Factory className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />
-                Top 5 Công trạm có lỗi cao nhất
-              </CardTitle>
-              <CardDescription>Công trạm cần ưu tiên cải thiện</CardDescription>
+                <Factory className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />{t("dashboard.top5HighErrorWorkstations")}</CardTitle>
+              <CardDescription>{t("dashboard.workstationsNeedImprovement")}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
@@ -1591,11 +1598,11 @@ export default function Dashboard() {
                           <div className="flex items-center gap-4">
                             <div className="text-right">
                               <div className="text-sm font-semibold text-red-600">{totalDefects}</div>
-                              <div className="text-xs text-muted-foreground">Lỗi</div>
+                              <div className="text-xs text-muted-foreground">{t("common.error")}</div>
                             </div>
                             <div className="text-right">
                               <div className="text-sm font-semibold text-blue-600">{yieldRate.toFixed(1)}%</div>
-                              <div className="text-xs text-muted-foreground">Yield</div>
+                              <div className="text-xs text-muted-foreground">{t("dashboard.yield")}</div>
                             </div>
                           </div>
                         </div>
@@ -1604,8 +1611,8 @@ export default function Dashboard() {
                 ) : (
                   <EmptyState
                     variant="no-analytics"
-                    title="Chưa có dữ liệu công trạm"
-                    description="Dữ liệu sẽ hiển thị khi có kết quả kiểm tra từ các điểm đo."
+                    title={t("dashboard.noWorkstationData")}
+                    description={t("dashboard.noWorkstationDataDesc")}
                     compact
                   />
                 )}
@@ -1621,22 +1628,22 @@ export default function Dashboard() {
               {/* Time Filter and Legend */}
               <div className="flex flex-wrap items-center justify-between gap-4 bg-card p-4 rounded-lg border">
                 <div className="flex flex-wrap items-center gap-4 text-sm">
-                  <span className="text-muted-foreground font-medium">Mức độ NG:</span>
+                  <span className="text-muted-foreground font-medium">{t("dashboard.ngSeverityLabel")}</span>
                   <div className="flex items-center gap-1">
                     <div className="w-3 h-3 rounded bg-green-500" />
-                    <span>≤2% (Tốt)</span>
+                    <span>{t("dashboard.ngLevelGood")}</span>
                   </div>
                   <div className="flex items-center gap-1">
                     <div className="w-3 h-3 rounded bg-yellow-500" />
-                    <span>2-5% (Chấp nhận)</span>
+                    <span>{t("dashboard.ngLevelAcceptable")}</span>
                   </div>
                   <div className="flex items-center gap-1">
                     <div className="w-3 h-3 rounded bg-orange-500" />
-                    <span>5-10% (Cảnh báo)</span>
+                    <span>{t("dashboard.ngLevelWarning")}</span>
                   </div>
                   <div className="flex items-center gap-1">
                     <div className="w-3 h-3 rounded bg-red-500" />
-                    <span>&gt;10% (Nghiêm trọng)</span>
+                    <span>{t("dashboard.ngLevelCritical")}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1646,9 +1653,9 @@ export default function Dashboard() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="day">Hôm nay</SelectItem>
-                      <SelectItem value="week">7 ngày qua</SelectItem>
-                      <SelectItem value="month">30 ngày qua</SelectItem>
+                      <SelectItem value="day">{t("common.today")}</SelectItem>
+                      <SelectItem value="week">{t("dashboard.last7Days")}</SelectItem>
+                      <SelectItem value="month">{t("dashboard.last30Days")}</SelectItem>
                     </SelectContent>
                   </Select>
                   <Button
@@ -1663,7 +1670,7 @@ export default function Dashboard() {
                     ) : (
                       <FileDown className="h-4 w-4" />
                     )}
-                    {exportingPDF ? "Đang xuất..." : "Xuất báo cáo"}
+                    {exportingPDF ? t("dashboard.exporting") : t("dashboard.exportReport")}
                   </Button>
                 </div>
               </div>
@@ -1674,7 +1681,7 @@ export default function Dashboard() {
                 <Card className={cardStyleProps.className} style={cardStyleProps.style}>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium" style={{ opacity: 0.7 }}>
-                      {ngTimeFilter === "day" ? "Hôm nay" : ngTimeFilter === "week" ? "7 ngày qua" : "30 ngày qua"}
+                      {ngTimeFilter === "day" ? t("dashboard.today") : ngTimeFilter === "week" ? t("dashboard.7daysPeriod") : t("dashboard.30daysPeriod")}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -1686,15 +1693,15 @@ export default function Dashboard() {
                       <div className="space-y-2">
                         <div className="flex items-baseline gap-2">
                           <span className="text-2xl font-bold">{ngComparisonData.current.ngRate.toFixed(2)}%</span>
-                          <span className="text-sm text-muted-foreground">Tỉ lệ NG</span>
+                          <span className="text-sm text-muted-foreground">{t("dashboard.ngRate")}</span>
                         </div>
                         <div className="flex items-center gap-4 text-sm">
-                          <span className="text-muted-foreground">Tổng: {ngComparisonData.current.totalCount.toLocaleString()}</span>
+                          <span className="text-muted-foreground">{t("common.total")}: {ngComparisonData.current.totalCount.toLocaleString()}</span>
                           <span className="text-red-500">NG: {ngComparisonData.current.ngCount.toLocaleString()}</span>
                         </div>
                       </div>
                     ) : (
-                      <div className="text-muted-foreground text-sm">Không có dữ liệu</div>
+                      <div className="text-muted-foreground text-sm">{t("common.noData")}</div>
                     )}
                   </CardContent>
                 </Card>
@@ -1703,7 +1710,7 @@ export default function Dashboard() {
                 <Card className={cardStyleProps.className} style={cardStyleProps.style}>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium" style={{ opacity: 0.7 }}>
-                      {ngTimeFilter === "day" ? "Hôm qua" : ngTimeFilter === "week" ? "7 ngày trước" : "30 ngày trước"}
+                      {ngTimeFilter === "day" ? t("common.yesterday") : ngTimeFilter === "week" ? t("dashboard.7daysBefore") : t("dashboard.30daysBefore")}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -1715,15 +1722,15 @@ export default function Dashboard() {
                       <div className="space-y-2">
                         <div className="flex items-baseline gap-2">
                           <span className="text-2xl font-bold">{ngComparisonData.previous.ngRate.toFixed(2)}%</span>
-                          <span className="text-sm text-muted-foreground">Tỉ lệ NG</span>
+                          <span className="text-sm text-muted-foreground">{t("dashboard.ngRate")}</span>
                         </div>
                         <div className="flex items-center gap-4 text-sm">
-                          <span className="text-muted-foreground">Tổng: {ngComparisonData.previous.totalCount.toLocaleString()}</span>
+                          <span className="text-muted-foreground">{t("common.total")}: {ngComparisonData.previous.totalCount.toLocaleString()}</span>
                           <span className="text-red-500">NG: {ngComparisonData.previous.ngCount.toLocaleString()}</span>
                         </div>
                       </div>
                     ) : (
-                      <div className="text-muted-foreground text-sm">Không có dữ liệu</div>
+                      <div className="text-muted-foreground text-sm">{t("common.noData")}</div>
                     )}
                   </CardContent>
                 </Card>
@@ -1731,7 +1738,7 @@ export default function Dashboard() {
                 {/* Change Indicator */}
                 <Card className={`${cardStyleProps.className} ${ngComparisonData?.changes.isImproved ? 'border-green-500/50' : 'border-red-500/50'}`} style={cardStyleProps.style}>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium" style={{ opacity: 0.7 }}>So sánh</CardTitle>
+                    <CardTitle className="text-sm font-medium" style={{ opacity: 0.7 }}>{t("dashboard.ngCompare")}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     {ngComparisonLoading ? (
@@ -1752,16 +1759,16 @@ export default function Dashboard() {
                         </div>
                         <div className="text-sm">
                           {ngComparisonData.changes.isImproved ? (
-                            <span className="text-green-500">Cải thiện so với kỳ trước</span>
+                            <span className="text-green-500">{t("dashboard.improvedVsPrevious")}</span>
                           ) : ngComparisonData.changes.ngRateChange === 0 ? (
-                            <span className="text-muted-foreground">Không thay đổi</span>
+                            <span className="text-muted-foreground">{t("dashboard.noChange")}</span>
                           ) : (
-                            <span className="text-red-500">Tăng so với kỳ trước</span>
+                            <span className="text-red-500">{t("dashboard.increasedVsPrevious")}</span>
                           )}
                         </div>
                       </div>
                     ) : (
-                      <div className="text-muted-foreground text-sm">Không có dữ liệu</div>
+                      <div className="text-muted-foreground text-sm">{t("common.noData")}</div>
                     )}
                   </CardContent>
                 </Card>
@@ -1774,13 +1781,13 @@ export default function Dashboard() {
                     <div>
                       <CardTitle className="text-lg flex items-center gap-2">
                         <TrendingUp className="h-5 w-5" style={{ color: cardStyleProps.accentColor }} />
-                        Xu hướng tỉ lệ NG theo ngày
+                        {t("dashboard.ngTrendByDay")}
                         {(trendFilterWorkstationId || trendFilterMeasurementPointId) && (
-                          <Badge variant="secondary" className="ml-2">Đã lọc</Badge>
+                          <Badge variant="secondary" className="ml-2">{t("common.filtered")}</Badge>
                         )}
                       </CardTitle>
                       <CardDescription>
-                        Biểu đồ thể hiện xu hướng tỉ lệ NG theo thời gian
+                        {t("dashboard.ngTrendChartDesc")}
                       </CardDescription>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -1792,10 +1799,10 @@ export default function Dashboard() {
                         }}
                       >
                         <SelectTrigger className="w-[180px]">
-                          <SelectValue placeholder="Chọn công trạm" />
+                          <SelectValue placeholder={t("dashboard.selectWorkstation")} />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="all">Tất cả công trạm</SelectItem>
+                          <SelectItem value="all">{t("dashboard.allWorkstations")}</SelectItem>
                           {allWorkstations?.map((ws: any) => (
                             <SelectItem key={ws.id} value={ws.id.toString()}>
                               {ws.code} - {ws.name}
@@ -1810,10 +1817,10 @@ export default function Dashboard() {
                           onValueChange={(v) => setTrendFilterMeasurementPointId(v === "all" ? undefined : Number(v))}
                         >
                           <SelectTrigger className="w-[200px]">
-                            <SelectValue placeholder="Chọn điểm đo" />
+                            <SelectValue placeholder={t("dashboard.selectPoint")} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="all">Tất cả điểm đo</SelectItem>
+                            <SelectItem value="all">{t("dashboard.allPoints")}</SelectItem>
                             {ngTopNGPoints
                               ?.filter((mp: any) => mp.workstationId === trendFilterWorkstationId)
                               .map((mp: any) => (
@@ -1835,7 +1842,7 @@ export default function Dashboard() {
                           }}
                         >
                           <XCircle className="h-4 w-4 mr-1" />
-                          Xóa bộ lọc
+                          {t("history.clearFilters")}
                         </Button>
                       )}
                     </div>
@@ -1873,9 +1880,9 @@ export default function Dashboard() {
                               borderRadius: '8px',
                             }}
                             formatter={(value: number, name: string) => {
-                              if (name === 'ngRate') return [`${value.toFixed(2)}%`, 'Tỉ lệ NG'];
-                              if (name === 'totalCount') return [value.toLocaleString(), 'Tổng kiểm tra'];
-                              if (name === 'ngCount') return [value.toLocaleString(), 'Số lỗi NG'];
+                              if (name === 'ngRate') return [`${value.toFixed(2)}%`, t('dashboard.ngRate')];
+                              if (name === 'totalCount') return [value.toLocaleString(), t('dashboard.totalInspections')];
+                              if (name === 'ngCount') return [value.toLocaleString(), t('dashboard.ngCountLabel')];
                               return [value, name];
                             }}
                           />
@@ -1893,8 +1900,8 @@ export default function Dashboard() {
                   ) : (
                     <EmptyState
                       variant="no-analytics"
-                      title="Chưa có dữ liệu xu hướng"
-                      description="Dữ liệu sẽ hiển thị khi có kết quả kiểm tra theo ngày."
+                      title={t("dashboard.noTrendData")}
+                      description={t("dashboard.noTrendDataDesc")}
                       compact
                     />
                   )}
@@ -1906,10 +1913,10 @@ export default function Dashboard() {
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2">
                     <Factory className="h-5 w-5" style={{ color: cardStyleProps.accentColor }} />
-                    Tỉ lệ NG theo Công trạm
+                    {t("dashboard.ngRateByWorkstation")}
                   </CardTitle>
                   <CardDescription>
-                    Hiển thị tỉ lệ lỗi của từng công trạm, màu sắc thể hiện mức độ nghiêm trọng
+                    {t("dashboard.ngRateByWorkstationDesc")}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -1935,8 +1942,8 @@ export default function Dashboard() {
                   ) : (
                     <EmptyState
                       variant="no-analytics"
-                      title="Chưa có dữ liệu công trạm"
-                      description="Dữ liệu sẽ hiển thị khi có kết quả kiểm tra từ các điểm đo."
+                      title={t("dashboard.noWorkstationData")}
+                      description={t("dashboard.noWorkstationDataDesc")}
                       compact
                     />
                   )}
@@ -1948,10 +1955,10 @@ export default function Dashboard() {
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2">
                     <Target className="h-5 w-5" style={{ color: cardStyleProps.accentColor }} />
-                    Top Điểm đo có tỉ lệ NG cao
+                    {t("dashboard.topNgPoints")}
                   </CardTitle>
                   <CardDescription>
-                    Các điểm đo có tỉ lệ lỗi cao nhất, cần ưu tiên kiểm tra và cải thiện
+                    {t("dashboard.topNgPointsDesc")}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -1976,8 +1983,8 @@ export default function Dashboard() {
                   ) : (
                     <EmptyState
                       variant="no-analytics"
-                      title="Chưa có dữ liệu điểm đo"
-                      description="Dữ liệu sẽ hiển thị khi có kết quả kiểm tra."
+                      title={t("dashboard.noPointData")}
+                      description={t("dashboard.noPointDataDesc")}
                       compact
                     />
                   )}
@@ -1991,17 +1998,15 @@ export default function Dashboard() {
             <div className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-              <LayoutGrid className="h-5 w-5 text-primary" />
-              Layout Dây chuyền sản xuất
-            </h2>
+              <LayoutGrid className="h-5 w-5 text-primary" />{t("dashboard.productionLineLayout")}</h2>
             <div className="flex items-center gap-2">
               {/* Machine Status Filter */}
               <Select value={machineStatusFilter} onValueChange={(v: "all" | "online" | "offline") => setMachineStatusFilter(v)}>
                 <SelectTrigger className="w-[140px]">
-                  <SelectValue placeholder="Trạng thái" />
+                  <SelectValue placeholder={t("common.status")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả</SelectItem>
+                  <SelectItem value="all">{t("common.all")}</SelectItem>
                   <SelectItem value="online">
                     <span className="flex items-center gap-2">
                       <Wifi className="h-3 w-3 text-green-500" />
@@ -2022,11 +2027,9 @@ export default function Dashboard() {
                 onClick={() => setMetricsSettingsOpen(true)}
                 className="gap-1"
               >
-                <Settings2 className="h-4 w-4" />
-                Tùy chỉnh chỉ số
-              </Button>
+                <Settings2 className="h-4 w-4" />{t("dashboard.customizeMetrics")}</Button>
               <Badge variant="outline" className="text-muted-foreground">
-                {machinesByLine.size} dây chuyền • {Array.from(machinesByLine.values()).flat().length} máy
+                {machinesByLine.size} {t("dashboard.productionLines")} • {Array.from(machinesByLine.values()).flat().length} {t("dashboard.machines")}
               </Badge>
             </div>
           </div>
@@ -2037,7 +2040,7 @@ export default function Dashboard() {
             <Card className="glass-card">
               <CardContent className="py-12 text-center">
                 <Cpu className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">Chưa có máy nào trong bộ lọc hiện tại</p>
+                <p className="text-muted-foreground">{t("dashboard.noMachinesInFilter")}</p>
               </CardContent>
             </Card>
           ) : (
@@ -2082,7 +2085,7 @@ export default function Dashboard() {
                               )}
                             </div>
                             <p className="text-sm text-muted-foreground">
-                              {machines.length} máy hoạt động
+                              {machines.length} {t("dashboard.machinesActive")}
                               {productModel && ` • ${productModel.name}`}
                             </p>
                           </div>
@@ -2091,17 +2094,17 @@ export default function Dashboard() {
                         {/* Line Summary Stats */}
                         <div className="flex items-center gap-6 text-sm">
                           <div className="text-center">
-                            <p className="text-muted-foreground">Output</p>
+                            <p className="text-muted-foreground">{t("dashboard.output")}</p>
                             <p className="font-semibold text-foreground">{lineTotal.toLocaleString()}</p>
                           </div>
                           <div className="text-center">
-                            <p className="text-muted-foreground">FPY</p>
+                            <p className="text-muted-foreground">{t("dashboard.fpy")}</p>
                             <p className={`font-semibold ${parseFloat(lineFpy) >= 95 ? 'text-success' : parseFloat(lineFpy) >= 85 ? 'text-warning' : 'text-destructive'}`}>
                               {lineFpy}%
                             </p>
                           </div>
                           <div className="text-center">
-                            <p className="text-muted-foreground">OK/NG/NTF</p>
+                            <p className="text-muted-foreground">{t("dashboard.okNgNtf")}</p>
                             <p className="font-semibold">
                               <span className="text-success">{lineOk}</span>
                               <span className="text-muted-foreground">/</span>
@@ -2134,7 +2137,7 @@ export default function Dashboard() {
                               <div className="flex items-stretch bg-black/90 text-white">
                                 {visibleMetrics.fpy && (
                                   <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
-                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">FPY</p>
+                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.fpy")}</p>
                                     <p className={`text-base font-bold ${fpyNum >= 90 ? 'text-emerald-400' : fpyNum >= 70 ? 'text-amber-400' : 'text-rose-400'}`}>
                                       {fpy}%
                                     </p>
@@ -2142,19 +2145,19 @@ export default function Dashboard() {
                                 )}
                                 {visibleMetrics.fy && (
                                   <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
-                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">FY</p>
+                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.fy")}</p>
                                     <p className="text-base font-bold text-rose-400">{fy}%</p>
                                   </div>
                                 )}
                                 {visibleMetrics.ntfy && (
                                   <div className="flex-1 text-center py-2 px-1 border-r border-white/20">
-                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">NTFY</p>
+                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.ntfy")}</p>
                                     <p className="text-base font-bold text-amber-400">{ntfy}%</p>
                                   </div>
                                 )}
                                 {visibleMetrics.output && (
                                   <div className="flex-1 text-center py-2 px-1 relative">
-                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">Output</p>
+                                    <p className="text-[10px] opacity-70 uppercase tracking-wider">{t("dashboard.output")}</p>
                                     <p className="text-base font-bold text-cyan-400">{machine.total}</p>
                                   </div>
                                 )}
@@ -2207,7 +2210,7 @@ export default function Dashboard() {
                                           </div>
                                         </TooltipTrigger>
                                         <TooltipContent>
-                                          <p>{onlineMachines.has(machine.code) ? 'Online' : 'Offline'}</p>
+                                          <p>{onlineMachines.has(machine.code) ? t("dashboard.online") : t("dashboard.offline")}</p>
                                         </TooltipContent>
                                       </Tooltip>
                                     </TooltipProvider>
@@ -2227,12 +2230,17 @@ export default function Dashboard() {
               })}
             </div>
           )}
-            </div>
+          </div>
+          </TabsContent>
+
+          {/* Custom Dashboard Tab */}
+          <TabsContent value="custom" className="space-y-6 mt-6">
+            <CustomDashboardViewer />
           </TabsContent>
         </Tabs>
       </div>
 
-      {/* Machine Detail Modal */}
+      {/* Machine Detail Modal */
       <Dialog open={machineDetailOpen} onOpenChange={setMachineDetailOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -2241,14 +2249,14 @@ export default function Dashboard() {
               {selectedMachine?.name}
             </DialogTitle>
             <DialogDescription>
-              Mã máy: {selectedMachine?.code} • {selectedMachine?.lineName}
+              {t("dashboard.machineCode")} {selectedMachine?.code} • {selectedMachine?.lineName}
             </DialogDescription>
           </DialogHeader>
 
           <Tabs defaultValue="overview" className="mt-4">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="overview">Tổng quan</TabsTrigger>
-              <TabsTrigger value="recent">Kết quả gần nhất</TabsTrigger>
+              <TabsTrigger value="overview">{t("dashboard.overviewTab")}</TabsTrigger>
+              <TabsTrigger value="recent">{t("dashboard.latestResults")}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-4">
@@ -2257,23 +2265,23 @@ export default function Dashboard() {
                   {/* Stats Grid */}
                   <div className="grid grid-cols-4 gap-4">
                     <div className="text-center p-4 rounded-lg bg-muted/30">
-                      <p className="text-sm text-muted-foreground">Total Output</p>
+                      <p className="text-sm text-muted-foreground">{t("dashboard.totalOutput")}</p>
                       <p className="text-2xl font-bold text-foreground">{selectedMachine.total}</p>
                     </div>
                     <div className="text-center p-4 rounded-lg bg-success/10">
-                      <p className="text-sm text-muted-foreground">FPY</p>
+                      <p className="text-sm text-muted-foreground">{t("dashboard.fpy")}</p>
                       <p className="text-2xl font-bold text-success">
                         {calculateYields(selectedMachine).fpy}%
                       </p>
                     </div>
                     <div className="text-center p-4 rounded-lg bg-destructive/10">
-                      <p className="text-sm text-muted-foreground">FY</p>
+                      <p className="text-sm text-muted-foreground">{t("dashboard.fy")}</p>
                       <p className="text-2xl font-bold text-destructive">
                         {calculateYields(selectedMachine).fy}%
                       </p>
                     </div>
                     <div className="text-center p-4 rounded-lg bg-warning/10">
-                      <p className="text-sm text-muted-foreground">NTFY</p>
+                      <p className="text-sm text-muted-foreground">{t("dashboard.ntfy")}</p>
                       <p className="text-2xl font-bold text-warning">
                         {calculateYields(selectedMachine).ntfy}%
                       </p>
@@ -2349,9 +2357,7 @@ export default function Dashboard() {
                     </div>
                   ))}
                   {(!recentInspections?.data || recentInspections.data.length === 0) && (
-                    <p className="text-center text-muted-foreground py-8">
-                      Chưa có kết quả kiểm tra
-                    </p>
+                    <p className="text-center text-muted-foreground py-8">{t("dashboard.noInspectionResults")}</p>
                   )}
                 </div>
               </ScrollArea>
@@ -2359,18 +2365,14 @@ export default function Dashboard() {
           </Tabs>
         </DialogContent>
       </Dialog>
-
+      }
       {/* Metrics Settings Dialog */}
       <Dialog open={metricsSettingsOpen} onOpenChange={setMetricsSettingsOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Settings2 className="h-5 w-5 text-primary" />
-              Tùy chỉnh chỉ số hiển thị
-            </DialogTitle>
-            <DialogDescription>
-              Chọn các chỉ số bạn muốn hiển thị trên thẻ máy
-            </DialogDescription>
+              <Settings2 className="h-5 w-5 text-primary" />{t("dashboard.customizeMetricsTitle")}</DialogTitle>
+            <DialogDescription>{t("dashboard.customizeMetricsDesc")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
@@ -2379,8 +2381,8 @@ export default function Dashboard() {
                   <Target className="h-4 w-4 text-emerald-500" />
                 </div>
                 <div>
-                  <p className="font-medium">FPY (First Pass Yield)</p>
-                  <p className="text-xs text-muted-foreground">Tỷ lệ sản phẩm đạt lần đầu</p>
+                  <p className="font-medium">{t("dashboard.fpyFullName")}</p>
+                  <p className="text-xs text-muted-foreground">{t("dashboard.fpyDescription")}</p>
                 </div>
               </div>
               <Button
@@ -2388,7 +2390,7 @@ export default function Dashboard() {
                 size="sm"
                 onClick={() => setVisibleMetrics(prev => ({ ...prev, fpy: !prev.fpy }))}
               >
-                {visibleMetrics.fpy ? "Hiển thị" : "Ẩn"}
+                {visibleMetrics.fpy ? t("dashboard.shown") : t("dashboard.hidden")}
               </Button>
             </div>
             <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
@@ -2397,8 +2399,8 @@ export default function Dashboard() {
                   <ThumbsDown className="h-4 w-4 text-rose-500" />
                 </div>
                 <div>
-                  <p className="font-medium">FY (Fail Yield)</p>
-                  <p className="text-xs text-muted-foreground">Tỷ lệ sản phẩm lỗi</p>
+                  <p className="font-medium">{t("dashboard.fyFullName")}</p>
+                  <p className="text-xs text-muted-foreground">{t("dashboard.fyDescription")}</p>
                 </div>
               </div>
               <Button
@@ -2406,7 +2408,7 @@ export default function Dashboard() {
                 size="sm"
                 onClick={() => setVisibleMetrics(prev => ({ ...prev, fy: !prev.fy }))}
               >
-                {visibleMetrics.fy ? "Hiển thị" : "Ẩn"}
+                {visibleMetrics.fy ? t("dashboard.shown") : t("dashboard.hidden")}
               </Button>
             </div>
             <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
@@ -2415,8 +2417,8 @@ export default function Dashboard() {
                   <AlertTriangle className="h-4 w-4 text-amber-500" />
                 </div>
                 <div>
-                  <p className="font-medium">NTFY (No Test Found Yield)</p>
-                  <p className="text-xs text-muted-foreground">Tỷ lệ không tìm thấy kết quả</p>
+                  <p className="font-medium">{t("dashboard.ntfyFullName")}</p>
+                  <p className="text-xs text-muted-foreground">{t("dashboard.ntfyDescription")}</p>
                 </div>
               </div>
               <Button
@@ -2424,7 +2426,7 @@ export default function Dashboard() {
                 size="sm"
                 onClick={() => setVisibleMetrics(prev => ({ ...prev, ntfy: !prev.ntfy }))}
               >
-                {visibleMetrics.ntfy ? "Hiển thị" : "Ẩn"}
+                {visibleMetrics.ntfy ? t("dashboard.shown") : t("dashboard.hidden")}
               </Button>
             </div>
             <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
@@ -2433,8 +2435,8 @@ export default function Dashboard() {
                   <BarChart3 className="h-4 w-4 text-cyan-500" />
                 </div>
                 <div>
-                  <p className="font-medium">Output</p>
-                  <p className="text-xs text-muted-foreground">Tổng số sản phẩm đã kiểm tra</p>
+                  <p className="font-medium">{t("dashboard.outputLabel")}</p>
+                  <p className="text-xs text-muted-foreground">{t("dashboard.outputDescription")}</p>
                 </div>
               </div>
               <Button
@@ -2442,7 +2444,7 @@ export default function Dashboard() {
                 size="sm"
                 onClick={() => setVisibleMetrics(prev => ({ ...prev, output: !prev.output }))}
               >
-                {visibleMetrics.output ? "Hiển thị" : "Ẩn"}
+                {visibleMetrics.output ? t("dashboard.shown") : t("dashboard.hidden")}
               </Button>
             </div>
           </div>
@@ -2451,14 +2453,10 @@ export default function Dashboard() {
               variant="ghost"
               size="sm"
               onClick={() => setVisibleMetrics({ fpy: true, fy: true, ntfy: true, output: true })}
-            >
-              Đặt lại mặc định
-            </Button>
+            >{t("dashboard.resetDefault")}</Button>
             <Button
               onClick={() => setMetricsSettingsOpen(false)}
-            >
-              Xong
-            </Button>
+            >{t("dashboard.done")}</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -2469,10 +2467,10 @@ export default function Dashboard() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Factory className="h-5 w-5 text-primary" />
-              Chi tiết công trạm: {selectedWorkstationForDrilldown?.name}
+              {t("dashboard.workstationDetail")} {selectedWorkstationForDrilldown?.name}
             </DialogTitle>
             <DialogDescription>
-              Mã: {selectedWorkstationForDrilldown?.code} • Dữ liệu từ {ngTimeFilter === "day" ? "hôm nay" : ngTimeFilter === "week" ? "7 ngày qua" : "30 ngày qua"}
+              {t("dashboard.stationCode")} {selectedWorkstationForDrilldown?.code} • {t("dashboard.dataFrom")} {ngTimeFilter === "day" ? t("dashboard.todayPeriod") : ngTimeFilter === "week" ? t("dashboard.7daysPeriod") : t("dashboard.30daysPeriod")}
             </DialogDescription>
           </DialogHeader>
 
@@ -2500,13 +2498,13 @@ export default function Dashboard() {
                         </div>
                         <div className="text-right">
                           <p className="text-2xl font-bold">{ngRate.toFixed(1)}%</p>
-                          <p className="text-xs text-muted-foreground">NG Rate</p>
+                          <p className="text-xs text-muted-foreground">{t("dashboard.ngRate")}</p>
                         </div>
                       </div>
                       <div className="grid grid-cols-4 gap-2 text-sm">
                         <div className="text-center p-2 bg-background/50 rounded">
                           <p className="font-semibold">{mp.totalCount}</p>
-                          <p className="text-xs text-muted-foreground">Tổng</p>
+                          <p className="text-xs text-muted-foreground">{t("common.total")}</p>
                         </div>
                         <div className="text-center p-2 bg-background/50 rounded">
                           <p className="font-semibold text-green-500">{mp.okCount}</p>
@@ -2523,12 +2521,12 @@ export default function Dashboard() {
                       </div>
                       {(mp.lowerLimit !== null || mp.upperLimit !== null) && (
                         <div className="mt-2 pt-2 border-t border-border/30 text-xs text-muted-foreground">
-                          <span>Giới hạn: </span>
-                          {mp.lowerLimit !== null && <span>Min: {mp.lowerLimit}</span>}
+                          <span>{t("dashboard.limit")} </span>
+                          {mp.lowerLimit !== null && <span>{t("dashboard.min")}: {mp.lowerLimit}</span>}
                           {mp.lowerLimit !== null && mp.upperLimit !== null && <span> - </span>}
-                          {mp.upperLimit !== null && <span>Max: {mp.upperLimit}</span>}
+                          {mp.upperLimit !== null && <span>{t("dashboard.max")}: {mp.upperLimit}</span>}
                           {mp.unit && <span> ({mp.unit})</span>}
-                          {mp.avgValue !== 0 && <span className="ml-4">Avg: {mp.avgValue.toFixed(2)}</span>}
+                          {mp.avgValue !== 0 && <span className="ml-4">{t("dashboard.avg")}: {mp.avgValue.toFixed(2)}</span>}
                         </div>
                       )}
                     </div>
@@ -2538,8 +2536,8 @@ export default function Dashboard() {
             ) : (
               <EmptyState
                 variant="no-analytics"
-                title="Chưa có điểm đo"
-                description="Công trạm này chưa có điểm đo nào được gán hoặc chưa có dữ liệu kiểm tra."
+                title={t("dashboard.noMeasurementPoints")}
+                description={t("dashboard.noMeasurementPointsDesc")}
                 compact
               />
             )}
@@ -2552,6 +2550,7 @@ export default function Dashboard() {
 
 // MQTT Alert Widget Component - Combined alerts from mqttAlert and mqttClientManagement
 function MqttAlertWidget() {
+  const { t } = useTranslation();
   // Rule-based alerts
   const { data: unresolvedAlerts } = trpc.mqttAlert.unresolved.useQuery(undefined, {
     refetchInterval: 30000,
@@ -2615,35 +2614,35 @@ function MqttAlertWidget() {
         <div className="flex items-center justify-between">
           <CardTitle className="text-base flex items-center gap-2">
             <AlertTriangle className={`w-5 h-5 ${hasCritical ? 'text-red-400' : 'text-yellow-400'}`} />
-            MQTT Alerts
+            {t("dashboard.mqttAlerts")}
             <div className="flex gap-1 ml-2">
               {(connectionAlerts?.critical || 0) > 0 && (
-                <Badge variant="destructive">{connectionAlerts?.critical} critical</Badge>
+                <Badge variant="destructive">{connectionAlerts?.critical} {t("dashboard.criticalLabel")}</Badge>
               )}
               {(connectionAlerts?.warning || 0) > 0 && (
-                <Badge variant="outline" className="border-yellow-500 text-yellow-500">{connectionAlerts?.warning} warning</Badge>
+                <Badge variant="outline" className="border-yellow-500 text-yellow-500">{connectionAlerts?.warning} {t("dashboard.warningLabel")}</Badge>
               )}
               {totalRuleAlerts > 0 && (
-                <Badge variant="secondary">{totalRuleAlerts} rules</Badge>
+                <Badge variant="secondary">{totalRuleAlerts} {t("dashboard.rulesLabel")}</Badge>
               )}
             </div>
           </CardTitle>
           <div className="flex gap-2">
             <Link href="/mqtt-profiles?tab=alerts">
               <Button variant="outline" size="sm">
-                Connection Alerts
+                {t("dashboard.connectionAlerts")}
                 <ChevronRight className="w-4 h-4 ml-1" />
               </Button>
             </Link>
             <Link href="/mqtt-alerts">
               <Button variant="outline" size="sm">
-                Rule Alerts
+                {t("dashboard.ruleAlerts")}
                 <ChevronRight className="w-4 h-4 ml-1" />
               </Button>
             </Link>
           </div>
         </div>
-        <CardDescription>Unresolved MQTT system alerts ({totalAlerts} total)</CardDescription>
+        <CardDescription>{t("dashboard.unresolvedMqttAlerts", { total: totalAlerts })}</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
@@ -2663,7 +2662,7 @@ function MqttAlertWidget() {
                 <div className="flex items-center gap-2">
                   <p className="font-medium text-sm">{alert.title}</p>
                   <Badge variant="outline" className="text-xs">
-                    {alert.type === 'rule' ? 'Rule' : 'Connection'}
+                    {alert.type === 'rule' ? t("dashboard.ruleType") : t("dashboard.connectionType")}
                   </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
@@ -2677,7 +2676,7 @@ function MqttAlertWidget() {
           ))}
           {combinedAlerts.length > 5 && (
             <p className="text-xs text-muted-foreground text-center pt-2">
-              +{combinedAlerts.length - 5} more alerts
+              {t("dashboard.moreAlerts", { count: combinedAlerts.length - 5 })}
             </p>
           )}
         </div>

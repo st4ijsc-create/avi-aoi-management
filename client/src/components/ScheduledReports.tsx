@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,7 @@ type ScheduledReport = {
 };
 
 export default function ScheduledReports() {
+  const { t } = useTranslation();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingReport, setEditingReport] = useState<ScheduledReport | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -74,69 +76,69 @@ export default function ScheduledReports() {
   const utils = trpc.useUtils();
   const createMutation = trpc.scheduledReport.create.useMutation({
     onSuccess: () => {
-      toast.success("Tạo báo cáo tự động thành công");
+      toast.success(t('reports.reportCreated'));
       utils.scheduledReport.list.invalidate();
       setDialogOpen(false);
       resetForm();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t('common.errorMessage', { message: error.message }));
     },
   });
 
   const updateMutation = trpc.scheduledReport.update.useMutation({
     onSuccess: () => {
-      toast.success("Cập nhật báo cáo thành công");
+      toast.success(t('reports.reportUpdated'));
       utils.scheduledReport.list.invalidate();
       setDialogOpen(false);
       setEditingReport(null);
       resetForm();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t('common.errorMessage', { message: error.message }));
     },
   });
 
   const deleteMutation = trpc.scheduledReport.delete.useMutation({
     onSuccess: () => {
-      toast.success("Xóa báo cáo thành công");
+      toast.success(t('reports.reportDeleted'));
       utils.scheduledReport.list.invalidate();
       setDeleteDialogOpen(false);
       setReportToDelete(null);
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t('common.errorMessage', { message: error.message }));
     },
   });
 
   const toggleMutation = trpc.scheduledReport.update.useMutation({
     onSuccess: () => {
-      toast.success("Cập nhật trạng thái thành công");
+      toast.success(t('reports.statusUpdated'));
       utils.scheduledReport.list.invalidate();
     },
     onError: (error: any) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(t('common.errorMessage', { message: error.message }));
     },
   });
 
   const sendTestMutation = trpc.scheduledReport.sendTest.useMutation({
     onSuccess: () => {
-      toast.success("Email thử đã được gửi thành công");
+      toast.success(t('reports.testEmailSent'));
       utils.scheduledReport.list.invalidate();
     },
     onError: (error: any) => {
-      toast.error(`Lỗi gửi email: ${error.message}`);
+      toast.error(t('reports.errorSendEmail', { message: error.message }));
     },
   });
 
   const uploadLogoMutation = trpc.scheduledReport.uploadLogo.useMutation({
     onSuccess: (data) => {
       setForm({ ...form, logoUrl: data.url });
-      toast.success("Upload logo thành công");
+      toast.success(t('reports.logoUploaded'));
       setIsUploadingLogo(false);
     },
     onError: (error: any) => {
-      toast.error(`Lỗi upload: ${error.message}`);
+      toast.error(t('reports.errorUpload', { message: error.message }));
       setIsUploadingLogo(false);
     },
   });
@@ -201,13 +203,13 @@ export default function ScheduledReports() {
 
     // Validate file type
     if (!file.type.startsWith("image/")) {
-      toast.error("Vui lòng chọn file hình ảnh");
+      toast.error(t('reports.selectImageFile'));
       return;
     }
 
     // Validate file size (max 2MB)
     if (file.size > 2 * 1024 * 1024) {
-      toast.error("File quá lớn. Tối đa 2MB");
+      toast.error(t('reports.fileTooLarge'));
       return;
     }
 
@@ -233,7 +235,7 @@ export default function ScheduledReports() {
       .filter((email) => email.length > 0);
 
     if (!form.name || recipientsArray.length === 0) {
-      toast.error("Vui lòng điền đầy đủ thông tin");
+      toast.error(t('reports.fillRequiredInfo'));
       return;
     }
 
@@ -261,25 +263,25 @@ export default function ScheduledReports() {
   };
 
   const formatSchedule = (report: ScheduledReport) => {
-    if (report.schedule === "DAILY") return "Hàng ngày";
+    if (report.schedule === "DAILY") return t('reports.daily');
     if (report.schedule === "WEEKLY") {
-      const days = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
-      return `Hàng tuần (${days[report.scheduleDayOfWeek ?? 0]})`;
+      const days = [t('reports.sunday'), t('reports.monday'), t('reports.tuesday'), t('reports.wednesday'), t('reports.thursday'), t('reports.friday'), t('reports.saturday')];
+      return t('reports.weeklyOn', { day: days[report.scheduleDayOfWeek ?? 0] });
     }
     if (report.schedule === "MONTHLY") {
-      return `Hàng tháng (Ngày ${report.scheduleDayOfMonth})`;
+      return t('reports.monthlyOnDay', { day: report.scheduleDayOfMonth });
     }
     return report.schedule;
   };
 
   const formatReportType = (type: string) => {
     if (type === "NG_VISUAL") return "NG Visual";
-    if (type === "DAILY_SUMMARY") return "Tổng hợp hàng ngày";
-    if (type === "WEEKLY_SUMMARY") return "Tổng hợp hàng tuần";
-    if (type === "MONTHLY_SUMMARY") return "Tổng hợp hàng tháng";
-    if (type === "CUSTOM") return "Tùy chỉnh";
-    if (type === "OEE_REPORT") return "Báo cáo OEE";
-    if (type === "MACHINE_HEALTH") return "Sức khỏe máy";
+    if (type === "DAILY_SUMMARY") return t('reports.dailySummary');
+    if (type === "WEEKLY_SUMMARY") return t('reports.weeklySummary');
+    if (type === "MONTHLY_SUMMARY") return t('reports.monthlySummary');
+    if (type === "CUSTOM") return t('reports.custom');
+    if (type === "OEE_REPORT") return t('reports.oeeReport');
+    if (type === "MACHINE_HEALTH") return t('reports.machineHealth');
     return type;
   };
 
@@ -294,14 +296,14 @@ export default function ScheduledReports() {
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>Báo cáo tự động</CardTitle>
+            <CardTitle>{t('reports.scheduledReports')}</CardTitle>
             <CardDescription>
-              Cấu hình lịch gửi báo cáo NG Visual và các báo cáo khác qua email tự động
+              {t('reports.scheduledReportsDesc')}
             </CardDescription>
           </div>
           <Button onClick={handleCreate} className="gap-2">
             <Plus className="h-4 w-4" />
-            Tạo báo cáo mới
+            {t('reports.createNewReport')}
           </Button>
         </div>
       </CardHeader>
@@ -314,14 +316,14 @@ export default function ScheduledReports() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Tên báo cáo</TableHead>
-                <TableHead>Loại</TableHead>
-                <TableHead>Định dạng</TableHead>
-                <TableHead>Lịch gửi</TableHead>
-                <TableHead>Người nhận</TableHead>
-                <TableHead>Lần gửi cuối</TableHead>
-                <TableHead>Trạng thái</TableHead>
-                <TableHead className="text-right">Thao tác</TableHead>
+                <TableHead>{t('reports.reportName')}</TableHead>
+                <TableHead>{t('common.type')}</TableHead>
+                <TableHead>{t('reports.format')}</TableHead>
+                <TableHead>{t('reports.sendSchedule')}</TableHead>
+                <TableHead>{t('reports.recipients')}</TableHead>
+                <TableHead>{t('reports.lastSent')}</TableHead>
+                <TableHead>{t('common.status')}</TableHead>
+                <TableHead className="text-right">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -343,13 +345,13 @@ export default function ScheduledReports() {
                   <TableCell>
                     <div className="flex items-center gap-2 text-sm">
                       <Users className="h-4 w-4 text-muted-foreground" />
-                      {report.recipients.length} người
+                      {report.recipients.length} {t('reports.people')}
                     </div>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {report.lastSentAt
                       ? new Date(report.lastSentAt).toLocaleString("vi-VN")
-                      : "Chưa gửi"}
+                      : t('reports.notSentYet')}
                   </TableCell>
                   <TableCell>
                     <Switch
@@ -364,7 +366,7 @@ export default function ScheduledReports() {
                         size="sm"
                         onClick={() => handlePreview(report.id)}
                         className="h-8 w-8 p-0"
-                        title="Xem trước email"
+                        title={t('reports.previewEmail')}
                       >
                         <Eye className="h-4 w-4" />
                       </Button>
@@ -374,7 +376,7 @@ export default function ScheduledReports() {
                         onClick={() => sendTestMutation.mutate({ id: report.id })}
                         disabled={sendTestMutation.isPending}
                         className="h-8 w-8 p-0"
-                        title="Gửi thử"
+                        title={t('reports.sendTest')}
                       >
                         <Send className="h-4 w-4" />
                       </Button>
@@ -403,13 +405,13 @@ export default function ScheduledReports() {
         ) : (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <Mail className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">Chưa có báo cáo tự động</h3>
+            <h3 className="text-lg font-semibold mb-2">{t('reports.noScheduledReports')}</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              Tạo báo cáo tự động đầu tiên để nhận email định kỳ
+              {t('reports.noScheduledReportsDesc')}
             </p>
             <Button onClick={handleCreate} className="gap-2">
               <Plus className="h-4 w-4" />
-              Tạo báo cáo mới
+              {t('reports.createNewReport')}
             </Button>
           </div>
         )}
@@ -419,10 +421,10 @@ export default function ScheduledReports() {
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
-                {editingReport ? "Chỉnh sửa báo cáo" : "Tạo báo cáo tự động mới"}
+                {editingReport ? t('reports.editReport') : t('reports.createScheduledReport')}
               </DialogTitle>
               <DialogDescription>
-                Cấu hình lịch gửi báo cáo qua email tự động
+                {t('reports.configAutoReport')}
               </DialogDescription>
             </DialogHeader>
             
@@ -430,28 +432,28 @@ export default function ScheduledReports() {
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="basic" className="gap-2">
                   <FileText className="h-4 w-4" />
-                  Cơ bản
+                  {t('reports.basic')}
                 </TabsTrigger>
                 <TabsTrigger value="customization" className="gap-2">
                   <Palette className="h-4 w-4" />
-                  Tùy chỉnh
+                  {t('reports.customization')}
                 </TabsTrigger>
               </TabsList>
 
               <TabsContent value="basic" className="space-y-4 mt-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="name">Tên báo cáo *</Label>
+                  <Label htmlFor="name">{t('reports.reportName')} *</Label>
                   <Input
                     id="name"
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    placeholder="Ví dụ: Báo cáo NG hàng ngày"
+                    placeholder={t('reports.reportNamePlaceholder')}
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
-                    <Label htmlFor="reportType">Loại báo cáo</Label>
+                    <Label htmlFor="reportType">{t('reports.reportType')}</Label>
                     <Select
                       value={form.reportType}
                       onValueChange={(value: any) => setForm({ ...form, reportType: value })}
@@ -461,18 +463,18 @@ export default function ScheduledReports() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="NG_VISUAL">NG Visual</SelectItem>
-                        <SelectItem value="DAILY_SUMMARY">Tổng hợp hàng ngày</SelectItem>
-                        <SelectItem value="WEEKLY_SUMMARY">Tổng hợp hàng tuần</SelectItem>
-                        <SelectItem value="MONTHLY_SUMMARY">Tổng hợp hàng tháng</SelectItem>
-                        <SelectItem value="CUSTOM">Tùy chỉnh</SelectItem>
-                        <SelectItem value="OEE_REPORT">Báo cáo OEE</SelectItem>
-                        <SelectItem value="MACHINE_HEALTH">Sức khỏe máy</SelectItem>
+                        <SelectItem value="DAILY_SUMMARY">{t('reports.dailySummary')}</SelectItem>
+                        <SelectItem value="WEEKLY_SUMMARY">{t('reports.weeklySummary')}</SelectItem>
+                        <SelectItem value="MONTHLY_SUMMARY">{t('reports.monthlySummary')}</SelectItem>
+                        <SelectItem value="CUSTOM">{t('reports.custom')}</SelectItem>
+                        <SelectItem value="OEE_REPORT">{t('reports.oeeReport')}</SelectItem>
+                        <SelectItem value="MACHINE_HEALTH">{t('reports.machineHealth')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div className="grid gap-2">
-                    <Label htmlFor="schedule">Lịch gửi</Label>
+                    <Label htmlFor="schedule">{t('reports.sendSchedule')}</Label>
                     <Select
                       value={form.schedule}
                       onValueChange={(value: any) => setForm({ ...form, schedule: value })}
@@ -481,9 +483,9 @@ export default function ScheduledReports() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="DAILY">Hàng ngày</SelectItem>
-                        <SelectItem value="WEEKLY">Hàng tuần</SelectItem>
-                        <SelectItem value="MONTHLY">Hàng tháng</SelectItem>
+                        <SelectItem value="DAILY">{t('reports.daily')}</SelectItem>
+                        <SelectItem value="WEEKLY">{t('reports.weekly')}</SelectItem>
+                        <SelectItem value="MONTHLY">{t('reports.monthly')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -491,7 +493,7 @@ export default function ScheduledReports() {
 
                 {form.schedule === "WEEKLY" && (
                   <div className="grid gap-2">
-                    <Label htmlFor="dayOfWeek">Ngày trong tuần</Label>
+                    <Label htmlFor="dayOfWeek">{t('reports.dayOfWeek')}</Label>
                     <Select
                       value={form.scheduleDayOfWeek?.toString()}
                       onValueChange={(value) =>
@@ -499,16 +501,16 @@ export default function ScheduledReports() {
                       }
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Chọn ngày" />
+                        <SelectValue placeholder={t('reports.selectDay')} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="0">Chủ nhật</SelectItem>
-                        <SelectItem value="1">Thứ 2</SelectItem>
-                        <SelectItem value="2">Thứ 3</SelectItem>
-                        <SelectItem value="3">Thứ 4</SelectItem>
-                        <SelectItem value="4">Thứ 5</SelectItem>
-                        <SelectItem value="5">Thứ 6</SelectItem>
-                        <SelectItem value="6">Thứ 7</SelectItem>
+                        <SelectItem value="0">{t('reports.sunday')}</SelectItem>
+                        <SelectItem value="1">{t('reports.monday')}</SelectItem>
+                        <SelectItem value="2">{t('reports.tuesday')}</SelectItem>
+                        <SelectItem value="3">{t('reports.wednesday')}</SelectItem>
+                        <SelectItem value="4">{t('reports.thursday')}</SelectItem>
+                        <SelectItem value="5">{t('reports.friday')}</SelectItem>
+                        <SelectItem value="6">{t('reports.saturday')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -516,7 +518,7 @@ export default function ScheduledReports() {
 
                 {form.schedule === "MONTHLY" && (
                   <div className="grid gap-2">
-                    <Label htmlFor="dayOfMonth">Ngày trong tháng</Label>
+                    <Label htmlFor="dayOfMonth">{t('reports.dayOfMonth')}</Label>
                     <Input
                       id="dayOfMonth"
                       type="number"
@@ -532,7 +534,7 @@ export default function ScheduledReports() {
                 )}
 
                 <div className="grid gap-2">
-                  <Label htmlFor="recipients">Người nhận (email) *</Label>
+                  <Label htmlFor="recipients">{t('reports.recipientsEmail')} *</Label>
                   <Input
                     id="recipients"
                     value={form.recipients}
@@ -540,14 +542,14 @@ export default function ScheduledReports() {
                     placeholder="email1@example.com, email2@example.com"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Nhập nhiều email cách nhau bằng dấu phẩy
+                    {t('reports.multipleEmailsHint')}
                   </p>
                 </div>
 
                 <div className="grid gap-2">
                   <Label className="flex items-center gap-2">
                     <Filter className="h-4 w-4" />
-                    Bộ lọc (tùy chọn)
+                    {t('reports.filterOptional')}
                   </Label>
                   <div className="grid grid-cols-3 gap-4">
                     <Select
@@ -557,10 +559,10 @@ export default function ScheduledReports() {
                       }
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Nhà máy" />
+                        <SelectValue placeholder={t('reports.factory')} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">Tất cả nhà máy</SelectItem>
+                        <SelectItem value="all">{t('reports.allFactories')}</SelectItem>
                         {factories?.map((f) => (
                           <SelectItem key={f.id} value={f.id.toString()}>
                             {f.name}
@@ -576,10 +578,10 @@ export default function ScheduledReports() {
                       }
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Xưởng" />
+                        <SelectValue placeholder={t('reports.workshop')} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">Tất cả xưởng</SelectItem>
+                        <SelectItem value="all">{t('reports.allWorkshops')}</SelectItem>
                         {workshops?.map((w) => (
                           <SelectItem key={w.id} value={w.id.toString()}>
                             {w.name}
@@ -598,7 +600,7 @@ export default function ScheduledReports() {
                         <SelectValue placeholder="Line" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">Tất cả line</SelectItem>
+                        <SelectItem value="all">{t('reports.allLines')}</SelectItem>
                         {lines?.map((l) => (
                           <SelectItem key={l.id} value={l.id.toString()}>
                             {l.name}
@@ -613,7 +615,7 @@ export default function ScheduledReports() {
               <TabsContent value="customization" className="space-y-4 mt-4">
                 {/* Report Format */}
                 <div className="grid gap-2">
-                  <Label htmlFor="reportFormat">Định dạng báo cáo</Label>
+                  <Label htmlFor="reportFormat">{t('reports.reportFormat')}</Label>
                   <Select
                     value={form.reportFormat}
                     onValueChange={(value: "HTML" | "PDF" | "EXCEL") => setForm({ ...form, reportFormat: value })}
@@ -622,13 +624,13 @@ export default function ScheduledReports() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="HTML">HTML (Email trực tiếp)</SelectItem>
-                      <SelectItem value="PDF">PDF (Đính kèm file)</SelectItem>
-                      <SelectItem value="EXCEL">Excel (Đính kèm file)</SelectItem>
+                      <SelectItem value="HTML">{t('reports.htmlDirect')}</SelectItem>
+                      <SelectItem value="PDF">{t('reports.pdfAttachment')}</SelectItem>
+                      <SelectItem value="EXCEL">{t('reports.excelAttachment')}</SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
-                    HTML: Nội dung hiển thị trực tiếp trong email. PDF/Excel: Gửi kèm file đính kèm.
+                    {t('reports.formatDescription')}
                   </p>
                 </div>
 
@@ -636,7 +638,7 @@ export default function ScheduledReports() {
                 <div className="grid gap-2">
                   <Label className="flex items-center gap-2">
                     <Image className="h-4 w-4" />
-                    Logo tùy chỉnh
+                    {t('reports.customLogo')}
                   </Label>
                   <div className="flex items-center gap-4">
                     {form.logoUrl ? (
@@ -658,7 +660,7 @@ export default function ScheduledReports() {
                       </div>
                     ) : (
                       <div className="h-16 w-32 border-2 border-dashed rounded flex items-center justify-center text-muted-foreground text-sm">
-                        Chưa có logo
+                        {t('reports.noLogo')}
                       </div>
                     )}
                     <div>
@@ -684,7 +686,7 @@ export default function ScheduledReports() {
                         Upload logo
                       </Button>
                       <p className="text-xs text-muted-foreground mt-1">
-                        PNG, JPG tối đa 2MB
+                        {t('reports.maxFileSize')}
                       </p>
                     </div>
                   </div>
@@ -694,7 +696,7 @@ export default function ScheduledReports() {
                 <div className="grid gap-2">
                   <Label className="flex items-center gap-2">
                     <Palette className="h-4 w-4" />
-                    Màu chủ đạo
+                    {t('reports.primaryColor')}
                   </Label>
                   <div className="flex items-center gap-4">
                     <input
@@ -717,13 +719,13 @@ export default function ScheduledReports() {
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Màu này sẽ được sử dụng cho header, buttons và các điểm nhấn trong email
+                    {t('reports.colorDescription')}
                   </p>
                 </div>
 
                 {/* Footer Text */}
                 <div className="grid gap-2">
-                  <Label htmlFor="footerText">Nội dung footer</Label>
+                  <Label htmlFor="footerText">{t('reports.footerContent')}</Label>
                   <Textarea
                     id="footerText"
                     value={form.footerText}
@@ -732,13 +734,13 @@ export default function ScheduledReports() {
                     rows={3}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Nội dung này sẽ hiển thị ở cuối email báo cáo
+                    {t('reports.footerDescription')}
                   </p>
                 </div>
 
                 {/* Preview Section */}
                 <div className="border rounded-lg p-4 bg-muted/30">
-                  <Label className="text-sm font-medium mb-3 block">Xem trước email</Label>
+                  <Label className="text-sm font-medium mb-3 block">{t('reports.previewEmail')}</Label>
                   <div className="bg-white rounded border overflow-hidden">
                     {/* Header */}
                     <div
@@ -753,17 +755,17 @@ export default function ScheduledReports() {
                             Logo
                           </div>
                         )}
-                        <span className="font-semibold">Báo cáo NG Visual</span>
+                        <span className="font-semibold">{t('reports.ngVisualReport')}</span>
                       </div>
                     </div>
                     {/* Content */}
                     <div className="p-4 text-gray-700 text-sm">
-                      <p>Nội dung báo cáo sẽ hiển thị ở đây...</p>
-                      <p className="mt-2">Bao gồm thống kê, biểu đồ và chi tiết NG.</p>
+                      <p>{t('reports.previewContentPlaceholder')}</p>
+                      <p className="mt-2">{t('reports.previewContentDesc')}</p>
                     </div>
                     {/* Footer */}
                     <div className="p-3 bg-gray-100 text-xs text-gray-500 text-center">
-                      {form.footerText || "Footer text sẽ hiển thị ở đây"}
+                      {form.footerText || t('reports.footerPlaceholder')}
                     </div>
                   </div>
                 </div>
@@ -772,7 +774,7 @@ export default function ScheduledReports() {
 
             <DialogFooter className="mt-4">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                Hủy
+                {t('common.cancel')}
               </Button>
               <Button
                 onClick={handleSubmit}
@@ -781,7 +783,7 @@ export default function ScheduledReports() {
                 {(createMutation.isPending || updateMutation.isPending) && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
-                {editingReport ? "Cập nhật" : "Tạo báo cáo"}
+                {editingReport ? t('common.update') : t('reports.createReport')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -791,7 +793,7 @@ export default function ScheduledReports() {
         <DeleteConfirmDialog
           open={deleteDialogOpen}
           onOpenChange={setDeleteDialogOpen}
-          itemType="báo cáo tự động"
+          itemType={t('reports.scheduledReport')}
           itemName={reportToDelete?.name}
           onConfirm={() => reportToDelete && deleteMutation.mutate({ id: reportToDelete.id })}
           isLoading={deleteMutation.isPending}
@@ -818,6 +820,7 @@ function EmailPreviewDialog({
   onOpenChange: (open: boolean) => void;
   reportId: number | null;
 }) {
+  const { t } = useTranslation();
   const { data, isLoading, error } = trpc.scheduledReport.previewEmail.useQuery(
     { id: reportId! },
     { enabled: open && reportId !== null }
@@ -829,10 +832,10 @@ function EmailPreviewDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Eye className="h-5 w-5" />
-            Xem trước email với dữ liệu thực
+            {t('reports.previewEmailWithData')}
           </DialogTitle>
           <DialogDescription>
-            Preview email sẽ được gửi với dữ liệu 7 ngày gần nhất
+            {t('reports.previewEmailDesc')}
           </DialogDescription>
         </DialogHeader>
         
@@ -840,12 +843,12 @@ function EmailPreviewDialog({
           {isLoading ? (
             <div className="flex items-center justify-center h-96">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-muted-foreground">Đang tải preview...</span>
+              <span className="ml-2 text-muted-foreground">{t('reports.loadingPreview')}</span>
             </div>
           ) : error ? (
             <div className="flex flex-col items-center justify-center h-96 text-center">
               <Mail className="h-12 w-12 text-destructive mb-4" />
-              <h3 className="text-lg font-semibold text-destructive mb-2">Lỗi tải preview</h3>
+              <h3 className="text-lg font-semibold text-destructive mb-2">{t('reports.errorLoadPreview')}</h3>
               <p className="text-sm text-muted-foreground">{error.message}</p>
             </div>
           ) : data ? (
@@ -863,19 +866,19 @@ function EmailPreviewDialog({
           <div className="mt-4 p-3 bg-muted/50 rounded-lg">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
-                <span className="text-muted-foreground">Tổng kiểm tra:</span>
+                <span className="text-muted-foreground">{t('reports.totalInspections')}:</span>
                 <span className="ml-2 font-medium">{data.reportData.summary.totalInspections.toLocaleString()}</span>
               </div>
               <div>
-                <span className="text-muted-foreground">Tổng NG:</span>
+                <span className="text-muted-foreground">{t('reports.totalNG')}:</span>
                 <span className="ml-2 font-medium text-red-500">{data.reportData.summary.totalNG.toLocaleString()}</span>
               </div>
               <div>
-                <span className="text-muted-foreground">Tỷ lệ NG:</span>
+                <span className="text-muted-foreground">{t('reports.ngRate')}:</span>
                 <span className="ml-2 font-medium">{Number(data.reportData.summary.ngRate || 0).toFixed(2)}%</span>
               </div>
               <div>
-                <span className="text-muted-foreground">Định dạng:</span>
+                <span className="text-muted-foreground">{t('reports.format')}:</span>
                 <Badge variant="secondary" className="ml-2">{data.customization.reportFormat}</Badge>
               </div>
             </div>
@@ -884,7 +887,7 @@ function EmailPreviewDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Đóng
+            {t('common.close')}
           </Button>
         </DialogFooter>
       </DialogContent>

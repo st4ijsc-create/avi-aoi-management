@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -119,6 +120,7 @@ const SYSTEM_TEMPLATES = [
 ];
 
 export default function EmbeddedDashboardTemplates() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   
@@ -133,7 +135,7 @@ export default function EmbeddedDashboardTemplates() {
   
   const createTemplateMutation = trpc.dashboard.createTemplate.useMutation({
     onSuccess: () => {
-      toast.success("Đã tạo template mới");
+      toast.success(t('dashboard.templateCreated'));
       setCreateDialogOpen(false);
       setNewTemplate({ name: "", description: "", templateType: "shared" });
       refetch();
@@ -145,7 +147,7 @@ export default function EmbeddedDashboardTemplates() {
 
   const deleteTemplateMutation = trpc.dashboard.deleteTemplate.useMutation({
     onSuccess: () => {
-      toast.success("Đã xóa template");
+      toast.success(t('dashboard.templateDeleted'));
       refetch();
     },
     onError: (error) => {
@@ -155,7 +157,7 @@ export default function EmbeddedDashboardTemplates() {
 
   const handleCreateTemplate = () => {
     if (!newTemplate.name.trim()) {
-      toast.error("Vui lòng nhập tên template");
+      toast.error(t('dashboard.enterTemplateName'));
       return;
     }
     
@@ -170,7 +172,7 @@ export default function EmbeddedDashboardTemplates() {
   };
 
   const handleApplySystemTemplate = (template: typeof SYSTEM_TEMPLATES[0]) => {
-    toast.info(`Template: ${template.name} - Vui lòng vào Dashboard và chọn 'Áp dụng Template' để sử dụng template này.`);
+    toast.info(t('dashboard.applyTemplateHint', { name: template.name }));
   };
 
   return (
@@ -183,7 +185,7 @@ export default function EmbeddedDashboardTemplates() {
             Dashboard Templates
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Chọn template có sẵn hoặc tạo template tùy chỉnh cho dashboard
+            {t('dashboard.selectOrCreateTemplate')}
           </p>
         </div>
         {isAdmin && (
@@ -191,31 +193,31 @@ export default function EmbeddedDashboardTemplates() {
             <DialogTrigger asChild>
               <Button>
                 <Plus className="mr-2 h-4 w-4" />
-                Tạo Template
+                {t('dashboard.createTemplate')}
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Tạo Custom Template</DialogTitle>
+                <DialogTitle>{t('dashboard.createCustomTemplate')}</DialogTitle>
                 <DialogDescription>
-                  Tạo template dashboard tùy chỉnh mới
+                  {t('dashboard.createCustomTemplateDesc')}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label htmlFor="template-name">Tên Template</Label>
+                  <Label htmlFor="template-name">{t('dashboard.templateName')}</Label>
                   <Input
                     id="template-name"
-                    placeholder="Nhập tên template"
+                    placeholder={t('dashboard.enterTemplateName')}
                     value={newTemplate.name}
                     onChange={(e) => setNewTemplate({ ...newTemplate, name: e.target.value })}
                   />
                 </div>
                 <div>
-                  <Label htmlFor="template-desc">Mô tả</Label>
+                  <Label htmlFor="template-desc">{t('common.description')}</Label>
                   <Textarea
                     id="template-desc"
-                    placeholder="Mô tả ngắn gọn về template"
+                    placeholder={t('dashboard.templateDescPlaceholder')}
                     value={newTemplate.description}
                     onChange={(e) => setNewTemplate({ ...newTemplate, description: e.target.value })}
                   />
@@ -223,10 +225,10 @@ export default function EmbeddedDashboardTemplates() {
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
-                  Hủy
+                  {t('common.cancel')}
                 </Button>
                 <Button onClick={handleCreateTemplate} disabled={createTemplateMutation.isPending}>
-                  {createTemplateMutation.isPending ? "Đang tạo..." : "Tạo Template"}
+                  {createTemplateMutation.isPending ? t('common.creating') : t('dashboard.createTemplate')}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -239,7 +241,7 @@ export default function EmbeddedDashboardTemplates() {
         <div>
           <h3 className="text-lg font-semibold mb-3">System Templates</h3>
           <p className="text-sm text-muted-foreground mb-4">
-            Templates được thiết kế sẵn cho các use case phổ biến
+            {t('dashboard.systemTemplatesDesc')}
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -269,7 +271,7 @@ export default function EmbeddedDashboardTemplates() {
                       onClick={() => handleApplySystemTemplate(template)}
                     >
                       <Eye className="mr-1 h-3 w-3" />
-                      Xem trước
+                      {t('common.preview')}
                     </Button>
                     <Button
                       size="sm"
@@ -277,7 +279,7 @@ export default function EmbeddedDashboardTemplates() {
                       onClick={() => handleApplySystemTemplate(template)}
                     >
                       <Copy className="mr-1 h-3 w-3" />
-                      Áp dụng
+                      {t('common.apply')}
                     </Button>
                   </div>
                 </CardContent>
@@ -292,7 +294,7 @@ export default function EmbeddedDashboardTemplates() {
         <div>
           <h3 className="text-lg font-semibold mb-3">Custom Templates</h3>
           <p className="text-sm text-muted-foreground mb-4">
-            Templates tùy chỉnh được tạo bởi bạn hoặc team
+            {t('dashboard.customTemplatesDesc')}
           </p>
         </div>
         {!customTemplates || customTemplates.length === 0 ? (
@@ -300,7 +302,7 @@ export default function EmbeddedDashboardTemplates() {
             <CardContent className="flex flex-col items-center justify-center py-12">
               <LayoutTemplate className="h-12 w-12 text-muted-foreground mb-4" />
               <p className="text-sm text-muted-foreground text-center">
-                Chưa có custom template nào. {isAdmin && "Hãy tạo template đầu tiên!"}
+                {t('dashboard.noCustomTemplates')} {isAdmin && t('dashboard.createFirstTemplate')}
               </p>
             </CardContent>
           </Card>
@@ -331,14 +333,14 @@ export default function EmbeddedDashboardTemplates() {
                       className="flex-1"
                     >
                       <Eye className="mr-1 h-3 w-3" />
-                      Xem trước
+                      {t('common.preview')}
                     </Button>
                     <Button
                       size="sm"
                       className="flex-1"
                     >
                       <Copy className="mr-1 h-3 w-3" />
-                      Áp dụng
+                      {t('common.apply')}
                     </Button>
                     {isAdmin && (
                       <Button

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +59,7 @@ interface Machine {
 }
 
 export default function MachineMapping() {
+  const { t } = useTranslation();
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [pendingRegistrations, setPendingRegistrations] = useState<PendingRegistration[]>([]);
@@ -108,7 +110,7 @@ export default function MachineMapping() {
     newSocket.on("machine:registration_request", (data: PendingRegistration) => {
       console.log("[MachineMapping] New registration request:", data);
       setPendingRegistrations(prev => [...prev, data]);
-      toast.info(`Máy mới yêu cầu đăng ký: ${data.machineInfo.code}`);
+      toast.info(t('machines.newRegistrationRequest', { code: data.machineInfo.code }));
     });
 
     // Listen for machine connected
@@ -121,14 +123,14 @@ export default function MachineMapping() {
         }
         return [...prev, { ...data, socketId: "", lastHeartbeat: new Date(data.timestamp) }];
       });
-      toast.success(`Máy ${data.machineId} đã kết nối`);
+      toast.success(t('machines.machineConnected', { id: data.machineId }));
     });
 
     // Listen for machine disconnected
     newSocket.on("machine:disconnected", (data: { machineId: number; timestamp: Date }) => {
       console.log("[MachineMapping] Machine disconnected:", data);
       setConnectedMachines(prev => prev.filter(m => m.machineId !== data.machineId));
-      toast.warning(`Máy ${data.machineId} đã ngắt kết nối`);
+      toast.warning(t('machines.machineDisconnected', { id: data.machineId }));
     });
 
     // Listen for machine status updates
@@ -138,6 +140,54 @@ export default function MachineMapping() {
           ? { ...m, lastHeartbeat: new Date(data.lastHeartbeat) }
           : m
       ));
+    });
+
+    // Listen for approve success from server
+    newSocket.on("admin:approve_success", (data: { 
+      machineId: number; 
+      machineCode: string; 
+      machineName: string; 
+      apiKey: string; 
+      registrationCode: string;
+    }) => {
+      // Remove from pending list
+      setPendingRegistrations(prev => 
+        prev.filter(r => r.machineInfo.code !== data.registrationCode)
+      );
+      setIsApproving(false);
+      setApproveDialogOpen(false);
+      setSelectedRegistration(null);
+      setSelectedMachineId("");
+      toast.success(
+        t('machines.approvedMapping', { registrationCode: data.registrationCode, machineName: data.machineName, machineCode: data.machineCode })
+      );
+    });
+
+    // Listen for approve error
+    newSocket.on("admin:approve_error", (data: { message: string }) => {
+      setIsApproving(false);
+      toast.error(t('machines.approveError', { message: data.message }));
+    });
+
+    // Listen for machine sync status
+    newSocket.on("machine:sync_status", (data: { 
+      machineId: number; 
+      machineCode: string; 
+      status: string; 
+      ipAddress: string; 
+      timestamp: Date;
+    }) => {
+      if (data.status === "syncing") {
+        toast.success(t('machines.syncStarted', { code: data.machineCode }));
+        // Update connected machines list
+        setConnectedMachines(prev => {
+          const existing = prev.find(m => m.machineId === data.machineId);
+          if (existing) {
+            return prev.map(m => m.machineId === data.machineId ? { ...m, lastHeartbeat: new Date(data.timestamp) } : m);
+          }
+          return [...prev, { machineId: data.machineId, socketId: "", ipAddress: data.ipAddress, lastHeartbeat: new Date(data.timestamp) }];
+        });
+      }
     });
 
     setSocket(newSocket);
@@ -152,25 +202,15 @@ export default function MachineMapping() {
     if (!socket || !selectedRegistration || !selectedMachineId) return;
 
     setIsApproving(true);
-    const machine = machines?.find(m => m.id === parseInt(selectedMachineId));
     
+    // Send approve WITHOUT apiKey - server will generate/fetch it
     socket.emit("admin:approve_registration", {
       socketId: selectedRegistration.requestSocketId,
       machineId: parseInt(selectedMachineId),
-      apiKey: machine?.apiKey || "",
     });
 
-    // Remove from pending list
-    setPendingRegistrations(prev => 
-      prev.filter(r => r.requestSocketId !== selectedRegistration.requestSocketId)
-    );
-
-    toast.success(`Đã phê duyệt máy ${selectedRegistration.machineInfo.code} -> ${machine?.name}`);
-    setIsApproving(false);
-    setApproveDialogOpen(false);
-    setSelectedRegistration(null);
-    setSelectedMachineId("");
-  }, [socket, selectedRegistration, selectedMachineId, machines]);
+    // Don't immediately remove - wait for server confirmation
+  }, [socket, selectedRegistration, selectedMachineId]);
 
   // Handle reject registration
   const handleReject = useCallback(() => {
@@ -178,7 +218,7 @@ export default function MachineMapping() {
 
     socket.emit("admin:reject_registration", {
       socketId: selectedRegistration.requestSocketId,
-      reason: rejectReason || "Không được phê duyệt bởi admin",
+      reason: rejectReason || t('machines.defaultRejectReason'),
     });
 
     // Remove from pending list
@@ -186,7 +226,7 @@ export default function MachineMapping() {
       prev.filter(r => r.requestSocketId !== selectedRegistration.requestSocketId)
     );
 
-    toast.info(`Đã từ chối máy ${selectedRegistration.machineInfo.code}`);
+    toast.info(t('machines.rejected', { code: selectedRegistration.machineInfo.code }));
     setRejectDialogOpen(false);
     setSelectedRegistration(null);
     setRejectReason("");
@@ -200,9 +240,9 @@ export default function MachineMapping() {
     const minutes = Math.floor(seconds / 60);
     const hours = Math.floor(minutes / 60);
 
-    if (hours > 0) return `${hours} giờ trước`;
-    if (minutes > 0) return `${minutes} phút trước`;
-    return `${seconds} giây trước`;
+    if (hours > 0) return t('common.hoursAgo', { count: hours });
+    if (minutes > 0) return t('common.minutesAgo', { count: minutes });
+    return t('common.secondsAgo', { count: seconds });
   };
 
   // Get machine name by ID
@@ -219,12 +259,12 @@ export default function MachineMapping() {
           {isConnected ? (
             <>
               <Wifi className="h-5 w-5 text-green-500" />
-              <span className="text-sm text-green-500">Đã kết nối WebSocket</span>
+              <span className="text-sm text-green-500">{t('machines.wsConnected')}</span>
             </>
           ) : (
             <>
               <WifiOff className="h-5 w-5 text-red-500" />
-              <span className="text-sm text-red-500">Chưa kết nối WebSocket</span>
+              <span className="text-sm text-red-500">{t('machines.wsDisconnected')}</span>
             </>
           )}
         </div>
@@ -235,7 +275,7 @@ export default function MachineMapping() {
           disabled={!isConnected}
         >
           <RefreshCw className="h-4 w-4 mr-2" />
-          Làm mới
+          {t('common.refresh')}
         </Button>
       </div>
 
@@ -245,7 +285,7 @@ export default function MachineMapping() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Clock className="h-5 w-5 text-yellow-500" />
-              Máy chờ đăng ký
+              {t('machines.pendingRegistrations')}
               {pendingRegistrations.length > 0 && (
                 <Badge variant="secondary" className="ml-2">
                   {pendingRegistrations.length}
@@ -253,7 +293,7 @@ export default function MachineMapping() {
               )}
             </CardTitle>
             <CardDescription>
-              Các máy đang chờ phê duyệt kết nối
+              {t('machines.awaitingApproval')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -261,7 +301,7 @@ export default function MachineMapping() {
               {pendingRegistrations.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-32 text-muted-foreground">
                   <Server className="h-8 w-8 mb-2 opacity-50" />
-                  <p className="text-sm">Không có máy nào đang chờ đăng ký</p>
+                  <p className="text-sm">{t('machines.noPendingRegistrations')}</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -331,7 +371,7 @@ export default function MachineMapping() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Activity className="h-5 w-5 text-green-500" />
-              Máy đang kết nối
+              {t('machines.connectedMachines')}
               {connectedMachines.length > 0 && (
                 <Badge variant="default" className="ml-2 bg-green-500">
                   {connectedMachines.length}
@@ -339,7 +379,7 @@ export default function MachineMapping() {
               )}
             </CardTitle>
             <CardDescription>
-              Các máy đang hoạt động và gửi dữ liệu
+              {t('machines.activeMachines')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -347,7 +387,7 @@ export default function MachineMapping() {
               {connectedMachines.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-32 text-muted-foreground">
                   <Unlink className="h-8 w-8 mb-2 opacity-50" />
-                  <p className="text-sm">Không có máy nào đang kết nối</p>
+                  <p className="text-sm">{t('machines.noConnectedMachines')}</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -390,28 +430,27 @@ export default function MachineMapping() {
       <Dialog open={approveDialogOpen} onOpenChange={setApproveDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Phê duyệt đăng ký máy</DialogTitle>
+            <DialogTitle>{t('machines.approveRegistration')}</DialogTitle>
             <DialogDescription>
-              Chọn máy trong hệ thống để mapping với máy đang đăng ký
+              {t('machines.selectMachineForMapping')}
             </DialogDescription>
           </DialogHeader>
           {selectedRegistration && (
             <div className="space-y-4">
               <div className="p-4 rounded-lg bg-muted">
-                <h4 className="font-medium mb-2">Thông tin máy đăng ký:</h4>
+                <h4 className="font-medium mb-2">{t('machines.registrationInfo')}:</h4>
                 <div className="grid grid-cols-2 gap-2 text-sm">
-                  <span className="text-muted-foreground">Mã máy:</span>
+                  <span className="text-muted-foreground">{t('machines.machineCode')}:</span>
                   <span>{selectedRegistration.machineInfo.code}</span>
-                  <span className="text-muted-foreground">Tên máy:</span>
+                  <span className="text-muted-foreground">{t('machines.machineName')}:</span>
                   <span>{selectedRegistration.machineInfo.name}</span>
-                  <span className="text-muted-foreground">Loại:</span>
+                  <span className="text-muted-foreground">{t('common.type')}:</span>
                   <span>{selectedRegistration.machineInfo.type}</span>
                   <span className="text-muted-foreground">IP:</span>
                   <span>{selectedRegistration.ipAddress}</span>
                   {selectedRegistration.machineInfo.manufacturer && (
                     <>
-                      <span className="text-muted-foreground">NSX:</span>
-                      <span>{selectedRegistration.machineInfo.manufacturer}</span>
+                      <span className="text-muted-foreground">{t('machines.manufacturer')}:</span>
                     </>
                   )}
                 </div>
@@ -420,10 +459,10 @@ export default function MachineMapping() {
               <Separator />
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">Chọn máy trong hệ thống:</label>
+                <label className="text-sm font-medium">{t('machines.selectSystemMachine')}:</label>
                 <Select value={selectedMachineId} onValueChange={setSelectedMachineId}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Chọn máy để mapping..." />
+                    <SelectValue placeholder={t('machines.selectMachinePlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
                     {machines?.map((machine) => (
@@ -438,7 +477,7 @@ export default function MachineMapping() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setApproveDialogOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={handleApprove}
@@ -450,7 +489,7 @@ export default function MachineMapping() {
               ) : (
                 <Check className="h-4 w-4 mr-2" />
               )}
-              Phê duyệt
+              {t('machines.approve')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -460,28 +499,28 @@ export default function MachineMapping() {
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Từ chối đăng ký máy</DialogTitle>
+            <DialogTitle>{t('machines.rejectRegistration')}</DialogTitle>
             <DialogDescription>
-              Nhập lý do từ chối (tùy chọn)
+              {t('machines.rejectReasonOptional')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <Input
-              placeholder="Lý do từ chối..."
+              placeholder={t('machines.rejectReasonPlaceholder')}
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
             />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRejectDialogOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
               onClick={handleReject}
             >
               <X className="h-4 w-4 mr-2" />
-              Từ chối
+              {t('machines.reject')}
             </Button>
           </DialogFooter>
         </DialogContent>

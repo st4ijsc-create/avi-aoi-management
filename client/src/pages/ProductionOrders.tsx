@@ -15,8 +15,10 @@ import { Plus, Edit, Trash2, Search, Package, Factory, Calendar, Target, CheckCi
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import GanttChart from "@/components/GanttChart";
+import { useTranslation } from 'react-i18next';
 
 export default function ProductionOrders() {
+  const { t } = useTranslation();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
@@ -47,35 +49,35 @@ export default function ProductionOrders() {
   // Mutations
   const createMutation = trpc.productionOrder.create.useMutation({
     onSuccess: () => {
-      toast.success("Tạo lệnh sản xuất thành công");
+      toast.success(t('production.createSuccess'));
       setIsCreateOpen(false);
       resetForm();
       refetch();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(`${t('errors.error')}: ${error.message}`);
     },
   });
 
   const updateMutation = trpc.productionOrder.update.useMutation({
     onSuccess: () => {
-      toast.success("Cập nhật lệnh sản xuất thành công");
+      toast.success(t('production.updateSuccess'));
       setIsEditOpen(false);
       setSelectedOrder(null);
       refetch();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(`${t('errors.error')}: ${error.message}`);
     },
   });
 
   const deleteMutation = trpc.productionOrder.delete.useMutation({
     onSuccess: () => {
-      toast.success("Xóa lệnh sản xuất thành công");
+      toast.success(t('production.deleteSuccess'));
       refetch();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(`${t('errors.error')}: ${error.message}`);
     },
   });
 
@@ -84,7 +86,7 @@ export default function ProductionOrders() {
       refetch();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(`${t('errors.error')}: ${error.message}`);
       throw error; // Re-throw to handle in GanttChart
     },
   });
@@ -113,7 +115,7 @@ export default function ProductionOrders() {
 
   const handleCreate = () => {
     if (!orderCode || !companyCode || !factoryId || !workshopId || !lineId || !productModelId || !targetQuantity) {
-      toast.error("Vui lòng điền đầy đủ thông tin bắt buộc");
+      toast.error(t('production.fillRequiredFields'));
       return;
     }
     createMutation.mutate({
@@ -161,11 +163,11 @@ export default function ProductionOrders() {
 
   const getStatusBadge = (status: string) => {
     const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-      pending: { label: "Chờ xử lý", variant: "secondary" },
-      in_progress: { label: "Đang sản xuất", variant: "default" },
-      completed: { label: "Hoàn thành", variant: "outline" },
-      cancelled: { label: "Đã hủy", variant: "destructive" },
-      paused: { label: "Tạm dừng", variant: "secondary" },
+      pending: { label: t('production.statusPending'), variant: "secondary" },
+      in_progress: { label: t('production.statusInProgress'), variant: "default" },
+      completed: { label: t('production.statusCompleted'), variant: "outline" },
+      cancelled: { label: t('production.statusCancelled'), variant: "destructive" },
+      paused: { label: t('production.statusPaused'), variant: "secondary" },
     };
     const config = statusMap[status] || { label: status, variant: "secondary" as const };
     return <Badge variant={config.variant}>{config.label}</Badge>;
@@ -193,39 +195,39 @@ export default function ProductionOrders() {
   const filteredLines = lines?.filter(l => !workshopId || l.workshopId === workshopId);
 
   return (
-    <DashboardLayout title="Lệnh sản xuất" navItems={navItems} currentPath="/production-orders">
+    <DashboardLayout title={t('production.title')} navItems={navItems} currentPath="/production-orders">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Lệnh sản xuất</h1>
-            <p className="text-muted-foreground">Quản lý các lệnh sản xuất theo dây chuyền</p>
+            <h1 className="text-2xl font-bold">{t('production.title')}</h1>
+            <p className="text-muted-foreground">{t('production.description')}</p>
           </div>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
               <Button onClick={() => { resetForm(); setIsCreateOpen(true); }}>
                 <Plus className="w-4 h-4 mr-2" />
-                Tạo lệnh mới
+                {t('production.createNew')}
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
-                <DialogTitle>Tạo lệnh sản xuất mới</DialogTitle>
-                <DialogDescription>Nhập thông tin lệnh sản xuất</DialogDescription>
+                <DialogTitle>{t('production.createNewTitle')}</DialogTitle>
+                <DialogDescription>{t('production.createNewDescription')}</DialogDescription>
               </DialogHeader>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Mã lệnh sản xuất *</Label>
+                  <Label>{t('production.orderCode')} *</Label>
                   <Input value={orderCode} onChange={(e) => setOrderCode(e.target.value)} placeholder="PO-2024-001" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Mã công ty *</Label>
+                  <Label>{t('production.companyCode')} *</Label>
                   <Input value={companyCode} onChange={(e) => setCompanyCode(e.target.value)} placeholder="CORP-001" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Nhà máy *</Label>
+                  <Label>{t('production.factory')} *</Label>
                   <Select value={factoryId?.toString() || ""} onValueChange={(v) => { setFactoryId(parseInt(v)); setWorkshopId(null); setLineId(null); }}>
-                    <SelectTrigger><SelectValue placeholder="Chọn nhà máy" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={t('production.selectFactory')} /></SelectTrigger>
                     <SelectContent>
                       {factories?.map((f) => (
                         <SelectItem key={f.id} value={f.id.toString()}>{f.name}</SelectItem>
@@ -234,9 +236,9 @@ export default function ProductionOrders() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Nhà xưởng *</Label>
+                  <Label>{t('production.workshop')} *</Label>
                   <Select value={workshopId?.toString() || ""} onValueChange={(v) => { setWorkshopId(parseInt(v)); setLineId(null); }} disabled={!factoryId}>
-                    <SelectTrigger><SelectValue placeholder="Chọn nhà xưởng" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={t('production.selectWorkshop')} /></SelectTrigger>
                     <SelectContent>
                       {filteredWorkshops?.map((w) => (
                         <SelectItem key={w.id} value={w.id.toString()}>{w.name}</SelectItem>
@@ -245,9 +247,9 @@ export default function ProductionOrders() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Dây chuyền *</Label>
+                  <Label>{t('production.line')} *</Label>
                   <Select value={lineId?.toString() || ""} onValueChange={(v) => setLineId(parseInt(v))} disabled={!workshopId}>
-                    <SelectTrigger><SelectValue placeholder="Chọn dây chuyền" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={t('production.selectLine')} /></SelectTrigger>
                     <SelectContent>
                       {filteredLines?.map((l) => (
                         <SelectItem key={l.id} value={l.id.toString()}>{l.name}</SelectItem>
@@ -256,9 +258,9 @@ export default function ProductionOrders() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Sản phẩm *</Label>
+                  <Label>{t('production.product')} *</Label>
                   <Select value={productModelId?.toString() || ""} onValueChange={(v) => setProductModelId(parseInt(v))}>
-                    <SelectTrigger><SelectValue placeholder="Chọn sản phẩm" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={t('production.selectProduct')} /></SelectTrigger>
                     <SelectContent>
                       {products?.map((p) => (
                         <SelectItem key={p.id} value={p.id.toString()}>{p.name} ({p.code})</SelectItem>
@@ -267,29 +269,29 @@ export default function ProductionOrders() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Số lượng mục tiêu *</Label>
+                  <Label>{t('production.targetQuantity')} *</Label>
                   <Input type="number" value={targetQuantity} onChange={(e) => setTargetQuantity(e.target.value)} placeholder="1000" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Độ ưu tiên</Label>
+                  <Label>{t('production.priority')}</Label>
                   <Select value={priority} onValueChange={setPriority}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="0">Bình thường</SelectItem>
-                      <SelectItem value="1">Cao</SelectItem>
-                      <SelectItem value="2">Khẩn cấp</SelectItem>
+                      <SelectItem value="0">{t('production.priorityNormal')}</SelectItem>
+                      <SelectItem value="1">{t('production.priorityHigh')}</SelectItem>
+                      <SelectItem value="2">{t('production.priorityUrgent')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="col-span-2 space-y-2">
-                  <Label>Ghi chú</Label>
-                  <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Ghi chú thêm..." />
+                  <Label>{t('production.notes')}</Label>
+                  <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t('production.notesPlaceholder')} />
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setIsCreateOpen(false)}>Hủy</Button>
+                <Button variant="outline" onClick={() => setIsCreateOpen(false)}>{t('common.cancel')}</Button>
                 <Button onClick={handleCreate} disabled={createMutation.isPending}>
-                  {createMutation.isPending ? "Đang tạo..." : "Tạo lệnh"}
+                  {createMutation.isPending ? t('common.creating') : t('production.createOrder')}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -305,7 +307,7 @@ export default function ProductionOrders() {
                   <Package className="w-6 h-6 text-blue-500" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Tổng lệnh</p>
+                  <p className="text-sm text-muted-foreground">{t('production.totalOrders')}</p>
                   <p className="text-2xl font-bold">{orders?.length || 0}</p>
                 </div>
               </div>
@@ -318,7 +320,7 @@ export default function ProductionOrders() {
                   <Calendar className="w-6 h-6 text-yellow-500" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Đang sản xuất</p>
+                  <p className="text-sm text-muted-foreground">{t('production.statusInProgress')}</p>
                   <p className="text-2xl font-bold">{orders?.filter(o => o.status === 'in_progress').length || 0}</p>
                 </div>
               </div>
@@ -331,7 +333,7 @@ export default function ProductionOrders() {
                   <CheckCircle2 className="w-6 h-6 text-green-500" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Hoàn thành</p>
+                  <p className="text-sm text-muted-foreground">{t('production.statusCompleted')}</p>
                   <p className="text-2xl font-bold">{orders?.filter(o => o.status === 'completed').length || 0}</p>
                 </div>
               </div>
@@ -344,7 +346,7 @@ export default function ProductionOrders() {
                   <Target className="w-6 h-6 text-purple-500" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Tổng sản lượng</p>
+                  <p className="text-sm text-muted-foreground">{t('production.totalOutput')}</p>
                   <p className="text-2xl font-bold">{orders?.reduce((sum, o) => sum + o.completedQuantity, 0) || 0}</p>
                 </div>
               </div>
@@ -357,11 +359,11 @@ export default function ProductionOrders() {
           <TabsList>
             <TabsTrigger value="list" className="flex items-center gap-2">
               <Package className="w-4 h-4" />
-              Danh sách
+              {t('production.list')}
             </TabsTrigger>
             <TabsTrigger value="gantt" className="flex items-center gap-2">
               <BarChart3 className="w-4 h-4" />
-              Gantt Chart
+              {t('production.ganttChart')}
             </TabsTrigger>
           </TabsList>
           
@@ -374,7 +376,7 @@ export default function ProductionOrders() {
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <Input
-                        placeholder="Tìm theo mã lệnh, mã công ty..."
+                        placeholder={t('production.searchPlaceholder')}
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="pl-10"
@@ -383,15 +385,15 @@ export default function ProductionOrders() {
                   </div>
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
                     <SelectTrigger className="w-48">
-                      <SelectValue placeholder="Trạng thái" />
+                      <SelectValue placeholder={t('production.status')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Tất cả trạng thái</SelectItem>
-                      <SelectItem value="pending">Chờ xử lý</SelectItem>
-                      <SelectItem value="in_progress">Đang sản xuất</SelectItem>
-                      <SelectItem value="completed">Hoàn thành</SelectItem>
-                      <SelectItem value="paused">Tạm dừng</SelectItem>
-                      <SelectItem value="cancelled">Đã hủy</SelectItem>
+                      <SelectItem value="all">{t('production.allStatuses')}</SelectItem>
+                      <SelectItem value="pending">{t('production.statusPending')}</SelectItem>
+                      <SelectItem value="in_progress">{t('production.statusInProgress')}</SelectItem>
+                      <SelectItem value="completed">{t('production.statusCompleted')}</SelectItem>
+                      <SelectItem value="paused">{t('production.statusPaused')}</SelectItem>
+                      <SelectItem value="cancelled">{t('production.statusCancelled')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -401,21 +403,21 @@ export default function ProductionOrders() {
             {/* Orders Table */}
             <Card>
               <CardHeader>
-                <CardTitle>Danh sách lệnh sản xuất</CardTitle>
-                <CardDescription>Quản lý và theo dõi tiến độ các lệnh sản xuất</CardDescription>
+                <CardTitle>{t('production.orderList')}</CardTitle>
+                <CardDescription>{t('production.orderListDescription')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Mã lệnh</TableHead>
-                      <TableHead>Công ty</TableHead>
-                      <TableHead>Dây chuyền</TableHead>
-                      <TableHead>Sản phẩm</TableHead>
-                      <TableHead>Tiến độ</TableHead>
+                      <TableHead>{t('production.orderCode')}</TableHead>
+                      <TableHead>{t('production.company')}</TableHead>
+                      <TableHead>{t('production.line')}</TableHead>
+                      <TableHead>{t('production.product')}</TableHead>
+                      <TableHead>{t('production.progress')}</TableHead>
                       <TableHead>OK/NG/NTF</TableHead>
-                      <TableHead>Trạng thái</TableHead>
-                      <TableHead className="text-right">Thao tác</TableHead>
+                      <TableHead>{t('production.status')}</TableHead>
+                      <TableHead className="text-right">{t('common.actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -460,7 +462,7 @@ export default function ProductionOrders() {
                               variant="ghost"
                               size="icon"
                               onClick={() => {
-                                if (confirm("Bạn có chắc muốn xóa lệnh sản xuất này?")) {
+                                if (confirm(t('production.confirmDelete'))) {
                                   deleteMutation.mutate({ id: order.id });
                                 }
                               }}
@@ -474,7 +476,7 @@ export default function ProductionOrders() {
                     {(!filteredOrders || filteredOrders.length === 0) && (
                       <TableRow>
                         <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                          Chưa có lệnh sản xuất nào
+                          {t('production.noOrders')}
                         </TableCell>
                       </TableRow>
                     )}
@@ -501,55 +503,55 @@ export default function ProductionOrders() {
         <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Chỉnh sửa lệnh sản xuất</DialogTitle>
-              <DialogDescription>Cập nhật thông tin lệnh sản xuất</DialogDescription>
+              <DialogTitle>{t('production.editTitle')}</DialogTitle>
+              <DialogDescription>{t('production.editDescription')}</DialogDescription>
             </DialogHeader>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Mã lệnh sản xuất</Label>
+                <Label>{t('production.orderCode')}</Label>
                 <Input value={orderCode} onChange={(e) => setOrderCode(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Mã công ty</Label>
+                <Label>{t('production.companyCode')}</Label>
                 <Input value={companyCode} onChange={(e) => setCompanyCode(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Số lượng mục tiêu</Label>
+                <Label>{t('production.targetQuantity')}</Label>
                 <Input type="number" value={targetQuantity} onChange={(e) => setTargetQuantity(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Trạng thái</Label>
+                <Label>{t('production.status')}</Label>
                 <Select value={selectedOrder?.status || "pending"} onValueChange={(v) => setSelectedOrder({ ...selectedOrder, status: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="pending">Chờ xử lý</SelectItem>
-                    <SelectItem value="in_progress">Đang sản xuất</SelectItem>
-                    <SelectItem value="completed">Hoàn thành</SelectItem>
-                    <SelectItem value="paused">Tạm dừng</SelectItem>
-                    <SelectItem value="cancelled">Đã hủy</SelectItem>
+                    <SelectItem value="pending">{t('production.statusPending')}</SelectItem>
+                    <SelectItem value="in_progress">{t('production.statusInProgress')}</SelectItem>
+                    <SelectItem value="completed">{t('production.statusCompleted')}</SelectItem>
+                    <SelectItem value="paused">{t('production.statusPaused')}</SelectItem>
+                    <SelectItem value="cancelled">{t('production.statusCancelled')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Độ ưu tiên</Label>
+                <Label>{t('production.priority')}</Label>
                 <Select value={priority} onValueChange={setPriority}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="0">Bình thường</SelectItem>
-                    <SelectItem value="1">Cao</SelectItem>
-                    <SelectItem value="2">Khẩn cấp</SelectItem>
+                    <SelectItem value="0">{t('production.priorityNormal')}</SelectItem>
+                    <SelectItem value="1">{t('production.priorityHigh')}</SelectItem>
+                    <SelectItem value="2">{t('production.priorityUrgent')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="col-span-2 space-y-2">
-                <Label>Ghi chú</Label>
+                <Label>{t('production.notes')}</Label>
                 <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsEditOpen(false)}>Hủy</Button>
+              <Button variant="outline" onClick={() => setIsEditOpen(false)}>{t('common.cancel')}</Button>
               <Button onClick={handleUpdate} disabled={updateMutation.isPending}>
-                {updateMutation.isPending ? "Đang lưu..." : "Lưu thay đổi"}
+                {updateMutation.isPending ? t('common.saving') : t('common.saveChanges')}
               </Button>
             </DialogFooter>
           </DialogContent>

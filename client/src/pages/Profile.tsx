@@ -11,9 +11,11 @@ import { trpc } from "@/lib/trpc";
 import { User, Mail, Phone, Building, Briefcase, Shield, Calendar, Clock, ShieldCheck, ShieldOff, QrCode, Copy, CheckCircle2, AlertTriangle, KeyRound, Download, Monitor } from "lucide-react";
 import SessionManagement from "@/components/SessionManagement";
 import { useState, useEffect } from "react";
+import { useTranslation } from 'react-i18next';
 import { toast } from "sonner";
 
 export default function Profile() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
@@ -46,22 +48,22 @@ export default function Profile() {
       setBackupCodes(data.codes);
       setShowBackupCodes(true);
       refetchBackupCodes();
-      toast.success("Mã dự phòng đã được tạo!");
+      toast.success(t('profile.backupCodesGenerated'));
     },
     onError: (error: any) => {
-      toast.error(error.message || "Có lỗi xảy ra");
+      toast.error(error.message || t('errors.generic'));
     },
   });
 
   // Mutations
   const updateMutation = trpc.user.updateProfile.useMutation({
     onSuccess: () => {
-      toast.success("Cập nhật thông tin thành công!");
+      toast.success(t('profile.updateSuccess'));
       setIsEditing(false);
       window.location.reload();
     },
     onError: (error: any) => {
-      toast.error(error.message || "Có lỗi xảy ra");
+      toast.error(error.message || t('errors.generic'));
     },
   });
 
@@ -70,33 +72,33 @@ export default function Profile() {
       setSetupData(data);
     },
     onError: (error: any) => {
-      toast.error(error.message || "Có lỗi xảy ra khi thiết lập 2FA");
+      toast.error(error.message || t('auth.twoFASetupError'));
     },
   });
 
   const verify2FAMutation = trpc.user.verify2FA.useMutation({
     onSuccess: () => {
-      toast.success("Đã bật xác thực 2 bước thành công!");
+      toast.success(t('auth.twoFAVerifySuccess'));
       setShow2FASetup(false);
       setSetupData(null);
       setOtpToken("");
       refetch2FAStatus();
     },
     onError: (error: any) => {
-      toast.error(error.message || "Mã xác thực không hợp lệ");
+      toast.error(error.message || t('auth.invalidOTP'));
     },
   });
 
   const disable2FAMutation = trpc.user.disable2FA.useMutation({
     onSuccess: () => {
-      toast.success("Đã tắt xác thực 2 bước!");
+      toast.success(t('auth.twoFADisableSuccess'));
       setShow2FADisable(false);
       setOtpToken("");
       setDisablePassword("");
       refetch2FAStatus();
     },
     onError: (error: any) => {
-      toast.error(error.message || "Có lỗi xảy ra");
+      toast.error(error.message || t('errors.generic'));
     },
   });
 
@@ -111,7 +113,7 @@ export default function Profile() {
 
   const handleVerify2FA = () => {
     if (otpToken.length !== 6) {
-      toast.error("Vui lòng nhập mã 6 chữ số");
+      toast.error(t('auth.enterSixDigitCode'));
       return;
     }
     verify2FAMutation.mutate({ token: otpToken });
@@ -119,7 +121,7 @@ export default function Profile() {
 
   const handleDisable2FA = () => {
     if (otpToken.length !== 6) {
-      toast.error("Vui lòng nhập mã 6 chữ số");
+      toast.error(t('auth.enterSixDigitCode'));
       return;
     }
     disable2FAMutation.mutate({ token: otpToken, password: disablePassword || "oauth" });
@@ -130,13 +132,13 @@ export default function Profile() {
       navigator.clipboard.writeText(setupData.secret);
       setSecretCopied(true);
       setTimeout(() => setSecretCopied(false), 2000);
-      toast.success("Đã sao chép mã bí mật!");
+      toast.success(t('profile.secretCopied'));
     }
   };
 
   return (
     <DashboardLayout
-      title="Thông tin cá nhân"
+      title={t('profile.title')}
       currentPath="/profile"
     >
       <div className="container py-6 max-w-2xl space-y-6">
@@ -145,10 +147,10 @@ export default function Profile() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <User className="h-5 w-5" />
-              Thông tin cá nhân
+              {t('profile.title')}
             </CardTitle>
             <CardDescription>
-              Xem và cập nhật thông tin tài khoản của bạn
+              {t('profile.description')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -160,10 +162,10 @@ export default function Profile() {
                 </span>
               </div>
               <div>
-                <h3 className="text-lg font-semibold">{user?.name || "Chưa cập nhật"}</h3>
+                <h3 className="text-lg font-semibold">{user?.name || t('profile.notUpdated')}</h3>
                 <p className="text-sm text-muted-foreground flex items-center gap-1">
                   <Shield className="h-3 w-3" />
-                  {(user as any)?.role === "admin" ? "Quản trị viên" : "Người dùng"}
+                  {(user as any)?.role === "admin" ? t('roles.admin') : t('roles.user')}
                 </p>
               </div>
             </div>
@@ -173,7 +175,7 @@ export default function Profile() {
               <div className="grid gap-2">
                 <Label htmlFor="name" className="flex items-center gap-2">
                   <User className="h-4 w-4" />
-                  Họ và tên
+                  {t('profile.fullName')}
                 </Label>
                 {isEditing ? (
                   <Input
@@ -182,14 +184,14 @@ export default function Profile() {
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   />
                 ) : (
-                  <p className="text-sm p-2 bg-muted/30 rounded">{user?.name || "Chưa cập nhật"}</p>
+                  <p className="text-sm p-2 bg-muted/30 rounded">{user?.name || t('profile.notUpdated')}</p>
                 )}
               </div>
 
               <div className="grid gap-2">
                 <Label htmlFor="email" className="flex items-center gap-2">
                   <Mail className="h-4 w-4" />
-                  Email
+                  {t('profile.email')}
                 </Label>
                 {isEditing ? (
                   <Input
@@ -199,14 +201,14 @@ export default function Profile() {
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   />
                 ) : (
-                  <p className="text-sm p-2 bg-muted/30 rounded">{user?.email || "Chưa cập nhật"}</p>
+                  <p className="text-sm p-2 bg-muted/30 rounded">{user?.email || t('profile.notUpdated')}</p>
                 )}
               </div>
 
               <div className="grid gap-2">
                 <Label htmlFor="phone" className="flex items-center gap-2">
                   <Phone className="h-4 w-4" />
-                  Số điện thoại
+                  {t('profile.phone')}
                 </Label>
                 {isEditing ? (
                   <Input
@@ -215,14 +217,14 @@ export default function Profile() {
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   />
                 ) : (
-                  <p className="text-sm p-2 bg-muted/30 rounded">{(user as any)?.phone || "Chưa cập nhật"}</p>
+                  <p className="text-sm p-2 bg-muted/30 rounded">{(user as any)?.phone || t('profile.notUpdated')}</p>
                 )}
               </div>
 
               <div className="grid gap-2">
                 <Label htmlFor="department" className="flex items-center gap-2">
                   <Building className="h-4 w-4" />
-                  Phòng ban
+                  {t('profile.department')}
                 </Label>
                 {isEditing ? (
                   <Input
@@ -231,14 +233,14 @@ export default function Profile() {
                     onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                   />
                 ) : (
-                  <p className="text-sm p-2 bg-muted/30 rounded">{(user as any)?.department || "Chưa cập nhật"}</p>
+                  <p className="text-sm p-2 bg-muted/30 rounded">{(user as any)?.department || t('profile.notUpdated')}</p>
                 )}
               </div>
 
               <div className="grid gap-2">
                 <Label htmlFor="position" className="flex items-center gap-2">
                   <Briefcase className="h-4 w-4" />
-                  Chức vụ
+                  {t('profile.position')}
                 </Label>
                 {isEditing ? (
                   <Input
@@ -247,7 +249,7 @@ export default function Profile() {
                     onChange={(e) => setFormData({ ...formData, position: e.target.value })}
                   />
                 ) : (
-                  <p className="text-sm p-2 bg-muted/30 rounded">{(user as any)?.position || "Chưa cập nhật"}</p>
+                  <p className="text-sm p-2 bg-muted/30 rounded">{(user as any)?.position || t('profile.notUpdated')}</p>
                 )}
               </div>
             </div>
@@ -257,7 +259,7 @@ export default function Profile() {
               <div className="grid gap-2">
                 <Label className="flex items-center gap-2 text-muted-foreground">
                   <Calendar className="h-4 w-4" />
-                  Ngày tạo tài khoản
+                  {t('profile.accountCreatedDate')}
                 </Label>
                 <p className="text-sm p-2 bg-muted/30 rounded">
                   {(user as any)?.createdAt 
@@ -266,19 +268,19 @@ export default function Profile() {
                         month: "long",
                         day: "numeric",
                       })
-                    : "Không xác định"}
+                    : t('profile.unknown')}
                 </p>
               </div>
 
               <div className="grid gap-2">
                 <Label className="flex items-center gap-2 text-muted-foreground">
                   <Clock className="h-4 w-4" />
-                  Đăng nhập lần cuối
+                  {t('profile.lastLogin')}
                 </Label>
                 <p className="text-sm p-2 bg-muted/30 rounded">
                   {(user as any)?.lastSignedIn
                     ? new Date((user as any).lastSignedIn).toLocaleString("vi-VN")
-                    : "Không xác định"}
+                    : t('profile.unknown')}
                 </p>
               </div>
             </div>
@@ -288,15 +290,15 @@ export default function Profile() {
               {isEditing ? (
                 <>
                   <Button onClick={handleSave} disabled={updateMutation.isPending}>
-                    {updateMutation.isPending ? "Đang lưu..." : "Lưu thay đổi"}
+                    {updateMutation.isPending ? t('common.saving') : t('common.saveChanges')}
                   </Button>
                   <Button variant="outline" onClick={() => setIsEditing(false)}>
-                    Hủy
+                    {t('common.cancel')}
                   </Button>
                 </>
               ) : (
                 <Button onClick={() => setIsEditing(true)}>
-                  Chỉnh sửa thông tin
+                  {t('profile.editInfo')}
                 </Button>
               )}
             </div>
@@ -308,10 +310,10 @@ export default function Profile() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ShieldCheck className="h-5 w-5" />
-              Xác thực 2 bước (2FA)
+              {t('auth.twoFactorAuth')}
             </CardTitle>
             <CardDescription>
-              Bảo vệ tài khoản của bạn bằng xác thực 2 bước với ứng dụng Authenticator
+              {t('auth.twoFactorDescription')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -328,17 +330,17 @@ export default function Profile() {
                 )}
                 <div>
                   <p className="font-medium">
-                    {twoFAStatus?.enabled ? "Đã bật xác thực 2 bước" : "Chưa bật xác thực 2 bước"}
+                    {twoFAStatus?.enabled ? t('auth.twoFAEnabled') : t('auth.twoFADisabled')}
                   </p>
                   <p className="text-sm text-muted-foreground">
                     {twoFAStatus?.enabled 
-                      ? "Tài khoản của bạn được bảo vệ bởi xác thực 2 bước"
-                      : "Bật xác thực 2 bước để tăng cường bảo mật"}
+                      ? t('auth.twoFAEnabledDescription')
+                      : t('auth.twoFADisabledDescription')}
                   </p>
                 </div>
               </div>
               <Badge variant={twoFAStatus?.enabled ? "default" : "secondary"}>
-                {twoFAStatus?.enabled ? "Đã bật" : "Chưa bật"}
+                {twoFAStatus?.enabled ? t('common.enabled') : t('common.disabled')}
               </Badge>
             </div>
 
@@ -349,7 +351,7 @@ export default function Profile() {
                 className="w-full"
               >
                 <ShieldOff className="h-4 w-4 mr-2" />
-                Tắt xác thực 2 bước
+                {t('auth.disableTwoFA')}
               </Button>
             ) : (
               <Button 
@@ -358,14 +360,14 @@ export default function Profile() {
                 disabled={setup2FAMutation.isPending}
               >
                 <ShieldCheck className="h-4 w-4 mr-2" />
-                {setup2FAMutation.isPending ? "Đang thiết lập..." : "Bật xác thực 2 bước"}
+                {setup2FAMutation.isPending ? t('auth.twoFASettingUp') : t('auth.enableTwoFA')}
               </Button>
             )}
 
             <Alert>
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                Xác thực 2 bước yêu cầu bạn nhập mã từ ứng dụng Authenticator (Google Authenticator, Microsoft Authenticator, Authy...) mỗi khi đăng nhập.
+                {t('auth.twoFARequirementDescription')}
               </AlertDescription>
             </Alert>
           </CardContent>
@@ -377,10 +379,10 @@ export default function Profile() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <KeyRound className="h-5 w-5" />
-                Mã dự phòng
+                {t('profile.backupCodes')}
               </CardTitle>
               <CardDescription>
-                Mã dự phòng giúp bạn đăng nhập khi mất thiết bị Authenticator
+                {t('profile.backupCodesDescription')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -390,9 +392,9 @@ export default function Profile() {
                     <KeyRound className="h-5 w-5 text-blue-500" />
                   </div>
                   <div>
-                    <p className="font-medium">Mã dự phòng còn lại</p>
+                    <p className="font-medium">{t('profile.backupCodesRemaining')}</p>
                     <p className="text-sm text-muted-foreground">
-                      {backupCodesStatus?.unusedCount || 0} mã chưa sử dụng
+                      {backupCodesStatus?.unusedCount || 0} {t('profile.codesUnused')}
                     </p>
                   </div>
                 </div>
@@ -407,13 +409,13 @@ export default function Profile() {
                 disabled={generateBackupCodesMutation.isPending}
               >
                 <KeyRound className="h-4 w-4 mr-2" />
-                {generateBackupCodesMutation.isPending ? "Đang tạo..." : "Tạo mã dự phòng mới"}
+                {generateBackupCodesMutation.isPending ? t('common.generating') : t('profile.generateNewBackupCodes')}
               </Button>
 
               <Alert>
                 <AlertTriangle className="h-4 w-4" />
                 <AlertDescription>
-                  Lưu ý: Tạo mã mới sẽ vô hiệu hóa tất cả mã cũ. Hãy lưu mã ở nơi an toàn.
+                  {t('profile.backupCodesWarning')}
                 </AlertDescription>
               </Alert>
             </CardContent>
@@ -425,10 +427,10 @@ export default function Profile() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Monitor className="h-5 w-5" />
-              Phiên đăng nhập
+              {t('session.loginSessions')}
             </CardTitle>
             <CardDescription>
-              Quản lý các phiên đăng nhập của bạn trên các thiết bị
+              {t('session.manageDeviceSessions')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -449,10 +451,10 @@ export default function Profile() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <QrCode className="h-5 w-5" />
-              Thiết lập xác thực 2 bước
+              {t('auth.setup2FA')}
             </DialogTitle>
             <DialogDescription>
-              Quét mã QR bằng ứng dụng Authenticator để thiết lập
+              {t('auth.scanQRDescription')}
             </DialogDescription>
           </DialogHeader>
 
@@ -466,7 +468,7 @@ export default function Profile() {
               {/* Manual Entry */}
               <div className="space-y-2">
                 <Label className="text-sm text-muted-foreground">
-                  Hoặc nhập mã bí mật thủ công:
+                  {t('auth.enterSecretManually')}
                 </Label>
                 <div className="flex gap-2">
                   <Input 
@@ -486,7 +488,7 @@ export default function Profile() {
 
               {/* Verify Token */}
               <div className="space-y-2">
-                <Label>Nhập mã xác thực từ ứng dụng:</Label>
+                <Label>{t('auth.enterAuthCode')}</Label>
                 <Input
                   placeholder="000000"
                   value={otpToken}
@@ -504,13 +506,13 @@ export default function Profile() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShow2FASetup(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button 
               onClick={handleVerify2FA}
               disabled={!setupData || otpToken.length !== 6 || verify2FAMutation.isPending}
             >
-              {verify2FAMutation.isPending ? "Đang xác thực..." : "Xác nhận & Bật 2FA"}
+              {verify2FAMutation.isPending ? t('auth.verifying') : t('auth.confirmAndEnable2FA')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -528,10 +530,10 @@ export default function Profile() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-destructive">
               <ShieldOff className="h-5 w-5" />
-              Tắt xác thực 2 bước
+              {t('auth.disableTwoFATitle')}
             </DialogTitle>
             <DialogDescription>
-              Để tắt xác thực 2 bước, vui lòng xác nhận danh tính của bạn
+              {t('auth.disableTwoFADescription')}
             </DialogDescription>
           </DialogHeader>
 
@@ -539,16 +541,16 @@ export default function Profile() {
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                Tắt xác thực 2 bước sẽ làm giảm bảo mật cho tài khoản của bạn. Chỉ thực hiện nếu thực sự cần thiết.
+                {t('auth.disableTwoFAWarning')}
               </AlertDescription>
             </Alert>
 
             {(user as any)?.loginMethod === "local" && (
               <div className="space-y-2">
-                <Label>Mật khẩu hiện tại:</Label>
+                <Label>{t('auth.currentPassword')}:</Label>
                 <Input
                   type="password"
-                  placeholder="Nhập mật khẩu"
+                  placeholder={t('auth.enterPassword')}
                   value={disablePassword}
                   onChange={(e) => setDisablePassword(e.target.value)}
                 />
@@ -556,7 +558,7 @@ export default function Profile() {
             )}
 
             <div className="space-y-2">
-              <Label>Mã xác thực từ ứng dụng:</Label>
+              <Label>{t('auth.authCodeFromApp')}:</Label>
               <Input
                 placeholder="000000"
                 value={otpToken}
@@ -569,14 +571,14 @@ export default function Profile() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShow2FADisable(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button 
               variant="destructive"
               onClick={handleDisable2FA}
               disabled={otpToken.length !== 6 || disable2FAMutation.isPending}
             >
-              {disable2FAMutation.isPending ? "Đang xử lý..." : "Tắt 2FA"}
+              {disable2FAMutation.isPending ? t('common.processing') : t('auth.disableTwoFAButton')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -588,10 +590,10 @@ export default function Profile() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <KeyRound className="h-5 w-5" />
-              Mã dự phòng của bạn
+              {t('profile.yourBackupCodes')}
             </DialogTitle>
             <DialogDescription>
-              Lưu các mã này ở nơi an toàn. Mỗi mã chỉ sử dụng được một lần.
+              {t('profile.backupCodesSaveMessage')}
             </DialogDescription>
           </DialogHeader>
 
@@ -607,7 +609,7 @@ export default function Profile() {
             <Alert>
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                <strong>Quan trọng:</strong> Đây là lần duy nhất bạn thấy các mã này. Hãy lưu lại ngay!
+                <strong>{t('profile.important')}:</strong> {t('profile.backupCodesOnlyOnce')}
               </AlertDescription>
             </Alert>
           </div>
@@ -618,11 +620,11 @@ export default function Profile() {
               onClick={() => {
                 const text = backupCodes.join('\n');
                 navigator.clipboard.writeText(text);
-                toast.success("Đã sao chép mã dự phòng!");
+                toast.success(t('profile.backupCodesCopied'));
               }}
             >
               <Copy className="h-4 w-4 mr-2" />
-              Sao chép
+              {t('common.copy')}
             </Button>
             <Button
               variant="outline"
@@ -635,14 +637,14 @@ export default function Profile() {
                 a.download = 'backup-codes.txt';
                 a.click();
                 URL.revokeObjectURL(url);
-                toast.success("Đã tải xuống mã dự phòng!");
+                toast.success(t('profile.backupCodesDownloaded'));
               }}
             >
               <Download className="h-4 w-4 mr-2" />
-              Tải xuống
+              {t('common.download')}
             </Button>
             <Button onClick={() => setShowBackupCodes(false)}>
-              Đã lưu
+              {t('profile.saved')}
             </Button>
           </DialogFooter>
         </DialogContent>

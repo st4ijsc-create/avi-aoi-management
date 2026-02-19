@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
 
@@ -41,11 +42,11 @@ interface AISuggestionsPanelProps {
 }
 
 const suggestionTypeLabels: Record<string, string> = {
-  DEFECT_CLASSIFICATION: 'Phân loại lỗi',
-  ROOT_CAUSE: 'Nguyên nhân gốc',
-  CORRECTIVE_ACTION: 'Hành động khắc phục',
-  QUALITY_PREDICTION: 'Dự đoán chất lượng',
-  PROCESS_OPTIMIZATION: 'Tối ưu quy trình',
+  DEFECT_CLASSIFICATION: 'ai.suggestionType.defectClassification',
+  ROOT_CAUSE: 'ai.suggestionType.rootCause',
+  CORRECTIVE_ACTION: 'ai.suggestionType.correctiveAction',
+  QUALITY_PREDICTION: 'ai.suggestionType.qualityPrediction',
+  PROCESS_OPTIMIZATION: 'ai.suggestionType.processOptimization',
 };
 
 const suggestionTypeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -57,19 +58,19 @@ const suggestionTypeIcons: Record<string, React.ComponentType<{ className?: stri
 };
 
 const feedbackTypeLabels: Record<string, { label: string; color: string }> = {
-  CORRECT: { label: 'Chính xác', color: 'text-green-500 bg-green-500/10' },
-  INCORRECT: { label: 'Không chính xác', color: 'text-red-500 bg-red-500/10' },
-  PARTIAL: { label: 'Một phần đúng', color: 'text-yellow-500 bg-yellow-500/10' },
-  UNSURE: { label: 'Không chắc chắn', color: 'text-gray-500 bg-gray-500/10' },
+  CORRECT: { label: 'ai.feedback.correct', color: 'text-green-500 bg-green-500/10' },
+  INCORRECT: { label: 'ai.feedback.incorrect', color: 'text-red-500 bg-red-500/10' },
+  PARTIAL: { label: 'ai.feedback.partial', color: 'text-yellow-500 bg-yellow-500/10' },
+  UNSURE: { label: 'ai.feedback.unsure', color: 'text-gray-500 bg-gray-500/10' },
 };
 
 const errorCategoryLabels: Record<string, string> = {
-  FALSE_POSITIVE: 'Dương tính giả',
-  FALSE_NEGATIVE: 'Âm tính giả',
-  MISCLASSIFICATION: 'Phân loại sai',
-  WRONG_LOCATION: 'Sai vị trí',
-  WRONG_SEVERITY: 'Sai mức độ',
-  OTHER: 'Khác',
+  FALSE_POSITIVE: 'ai.errorCategory.falsePositive',
+  FALSE_NEGATIVE: 'ai.errorCategory.falseNegative',
+  MISCLASSIFICATION: 'ai.errorCategory.misclassification',
+  WRONG_LOCATION: 'ai.errorCategory.wrongLocation',
+  WRONG_SEVERITY: 'ai.errorCategory.wrongSeverity',
+  OTHER: 'ai.errorCategory.other',
 };
 
 export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedbackSubmitted }: AISuggestionsPanelProps) {
@@ -81,6 +82,7 @@ export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedba
     correctedValue?: string;
     correctionNotes?: string;
   } | null>(null);
+  const { t } = useTranslation();
 
   // Fetch suggestions for this inspection
   const { data: suggestions, isLoading, refetch } = trpc.aiFeedback.getSuggestionsByInspection.useQuery(
@@ -91,13 +93,13 @@ export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedba
   // Submit feedback mutation
   const submitFeedbackMutation = trpc.aiFeedback.submitFeedback.useMutation({
     onSuccess: () => {
-      toast.success('Đã gửi phản hồi thành công');
+      toast.success(t('ai.feedbackSuccess'));
       setFeedbackForm(null);
       refetch();
       onFeedbackSubmitted?.();
     },
     onError: (error) => {
-      toast.error(`Lỗi: ${error.message}`);
+      toast.error(`${t('common.error')}: ${error.message}`);
     },
   });
 
@@ -141,12 +143,12 @@ export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedba
             <Brain className="h-5 w-5 text-primary" />
             AI Suggestions
           </CardTitle>
-          <CardDescription>Gợi ý từ AI để cải thiện chất lượng</CardDescription>
+          <CardDescription>{t('ai.suggestionsDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
             <Sparkles className="h-12 w-12 mb-3 opacity-50" />
-            <p className="text-sm">Chưa có gợi ý AI cho inspection này</p>
+            <p className="text-sm">{t('ai.noSuggestions')}</p>
           </div>
         </CardContent>
       </Card>
@@ -165,7 +167,7 @@ export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedba
                 {suggestions.length}
               </Badge>
             </CardTitle>
-            <CardDescription>Gợi ý từ AI để cải thiện chất lượng</CardDescription>
+            <CardDescription>{t('ai.suggestionsDescription')}</CardDescription>
           </div>
           <Button variant="ghost" size="sm" onClick={() => refetch()}>
             <RefreshCw className="h-4 w-4" />
@@ -204,7 +206,7 @@ export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedba
                         <div className="flex-1 text-left">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="font-medium text-sm">
-                              {suggestionTypeLabels[suggestion.suggestionType]}
+                              {t(suggestionTypeLabels[suggestion.suggestionType])}
                             </span>
                             <Badge variant="outline" className={cn("text-xs", getConfidenceColor(confidence))}>
                               {(confidence * 100).toFixed(0)}% confidence
@@ -219,8 +221,8 @@ export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedba
                                   suggestion.status === "REVIEWED" && "bg-yellow-500/20 text-yellow-500",
                                 )}
                               >
-                                {suggestion.status === "ACCEPTED" ? "Đã chấp nhận" : 
-                                 suggestion.status === "REJECTED" ? "Đã từ chối" : "Đã xem xét"}
+                                {suggestion.status === "ACCEPTED" ? t('ai.status.accepted') : 
+                                 suggestion.status === "REJECTED" ? t('ai.status.rejected') : t('ai.status.reviewed')}
                               </Badge>
                             )}
                           </div>
@@ -242,20 +244,20 @@ export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedba
                       {/* Full suggestion */}
                       <div className="space-y-3">
                         <div>
-                          <Label className="text-xs text-muted-foreground">Gợi ý chi tiết</Label>
+                          <Label className="text-xs text-muted-foreground">{t('ai.detailedSuggestion')}</Label>
                           <p className="text-sm mt-1">{suggestion.suggestion}</p>
                         </div>
 
                         {suggestion.reasoning && (
                           <div>
-                            <Label className="text-xs text-muted-foreground">Lý do</Label>
+                            <Label className="text-xs text-muted-foreground">{t('ai.reasoning')}</Label>
                             <p className="text-sm mt-1 text-muted-foreground">{suggestion.reasoning}</p>
                           </div>
                         )}
 
                         {/* Confidence bar */}
                         <div>
-                          <Label className="text-xs text-muted-foreground">Độ tin cậy</Label>
+                          <Label className="text-xs text-muted-foreground">{t('ai.confidence')}</Label>
                           <div className="flex items-center gap-2 mt-1">
                             <Progress value={confidence * 100} className="flex-1 h-2" />
                             <span className={cn("text-sm font-medium", getConfidenceColor(confidence))}>
@@ -267,7 +269,7 @@ export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedba
                         {/* Alternatives */}
                         {suggestion.alternatives && (suggestion.alternatives as Array<{suggestion: string; confidence: number}>).length > 0 && (
                           <div>
-                            <Label className="text-xs text-muted-foreground">Gợi ý thay thế</Label>
+                            <Label className="text-xs text-muted-foreground">{t('ai.alternativeSuggestions')}</Label>
                             <div className="space-y-1 mt-1">
                               {(suggestion.alternatives as Array<{suggestion: string; confidence: number}>).map((alt, idx) => (
                                 <div key={idx} className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -291,7 +293,7 @@ export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedba
                         {/* Feedback section */}
                         {suggestion.status === "PENDING" && !isFeedbackOpen && (
                           <div className="flex items-center gap-2 pt-2">
-                            <span className="text-xs text-muted-foreground">Đánh giá gợi ý này:</span>
+                            <span className="text-xs text-muted-foreground">{t('ai.rateSuggestion')}:</span>
                             <Button
                               variant="ghost"
                               size="sm"
@@ -305,7 +307,7 @@ export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedba
                               }}
                             >
                               <ThumbsUp className="h-4 w-4 mr-1" />
-                              Chính xác
+                              {t('ai.feedback.correct')}
                             </Button>
                             <Button
                               variant="ghost"
@@ -320,7 +322,7 @@ export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedba
                               }}
                             >
                               <ThumbsDown className="h-4 w-4 mr-1" />
-                              Không đúng
+                              {t('ai.feedback.incorrect')}
                             </Button>
                             <Button
                               variant="ghost"
@@ -335,7 +337,7 @@ export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedba
                               }}
                             >
                               <HelpCircle className="h-4 w-4 mr-1" />
-                              Một phần
+                              {t('ai.feedback.partial')}
                             </Button>
                           </div>
                         )}
@@ -344,15 +346,15 @@ export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedba
                         {isFeedbackOpen && (
                           <div className="pt-3 border-t space-y-3">
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium">Phản hồi:</span>
+                              <span className="text-sm font-medium">{t('ai.feedbackLabel')}:</span>
                               <Badge className={feedbackTypeLabels[feedbackForm.feedbackType]?.color}>
-                                {feedbackTypeLabels[feedbackForm.feedbackType]?.label}
+                                {t(feedbackTypeLabels[feedbackForm.feedbackType]?.label)}
                               </Badge>
                             </div>
 
                             {feedbackForm.feedbackType === 'INCORRECT' && (
                               <div>
-                                <Label className="text-xs">Loại lỗi</Label>
+                                <Label className="text-xs">{t('ai.errorType')}</Label>
                                 <Select
                                   value={feedbackForm.errorCategory || ''}
                                   onValueChange={(value) => setFeedbackForm({
@@ -361,11 +363,11 @@ export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedba
                                   })}
                                 >
                                   <SelectTrigger className="mt-1">
-                                    <SelectValue placeholder="Chọn loại lỗi" />
+                                    <SelectValue placeholder={t('ai.selectErrorType')} />
                                   </SelectTrigger>
                                   <SelectContent>
                                     {Object.entries(errorCategoryLabels).map(([key, label]) => (
-                                      <SelectItem key={key} value={key}>{label}</SelectItem>
+                                      <SelectItem key={key} value={key}>{t(label)}</SelectItem>
                                     ))}
                                   </SelectContent>
                                 </Select>
@@ -374,10 +376,10 @@ export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedba
 
                             {(feedbackForm.feedbackType === 'INCORRECT' || feedbackForm.feedbackType === 'PARTIAL') && (
                               <div>
-                                <Label className="text-xs">Giá trị đúng (nếu có)</Label>
+                                <Label className="text-xs">{t('ai.correctedValue')}</Label>
                                 <Textarea
                                   className="mt-1"
-                                  placeholder="Nhập giá trị đúng..."
+                                  placeholder={t('ai.enterCorrectValue')}
                                   value={feedbackForm.correctedValue || ''}
                                   onChange={(e) => setFeedbackForm({
                                     ...feedbackForm,
@@ -389,10 +391,10 @@ export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedba
                             )}
 
                             <div>
-                              <Label className="text-xs">Ghi chú (tùy chọn)</Label>
+                              <Label className="text-xs">{t('ai.notesOptional')}</Label>
                               <Textarea
                                 className="mt-1"
-                                placeholder="Thêm ghi chú..."
+                                placeholder={t('ai.addNotes')}
                                 value={feedbackForm.correctionNotes || ''}
                                 onChange={(e) => setFeedbackForm({
                                   ...feedbackForm,
@@ -413,14 +415,14 @@ export function AISuggestionsPanel({ inspectionId, measurementResultId, onFeedba
                                 ) : (
                                   <Send className="h-4 w-4 mr-1" />
                                 )}
-                                Gửi phản hồi
+                                {t('ai.submitFeedback')}
                               </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => setFeedbackForm(null)}
                               >
-                                Hủy
+                                {t('common.cancel')}
                               </Button>
                             </div>
                           </div>

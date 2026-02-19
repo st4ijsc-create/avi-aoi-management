@@ -17,14 +17,15 @@ import {
   AlertTriangle, Bell, Plus, Trash2, Edit, CheckCircle, XCircle, 
   Clock, Activity, Wifi, WifiOff, RefreshCw, History, Settings
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
-const RULE_TYPES = [
-  { value: 'LATENCY_THRESHOLD', label: 'Latency vượt ngưỡng', unit: 'ms', description: 'Cảnh báo khi độ trễ message vượt ngưỡng' },
-  { value: 'BROKER_DISCONNECT', label: 'Broker Disconnect', unit: 'minutes', description: 'Cảnh báo khi external broker bị ngắt kết nối' },
-  { value: 'MESSAGE_FAILURE_RATE', label: 'Tỷ lệ thất bại', unit: '%', description: 'Cảnh báo khi tỷ lệ message thất bại vượt ngưỡng' },
-  { value: 'THROUGHPUT_LOW', label: 'Throughput thấp', unit: 'msg/min', description: 'Cảnh báo khi throughput thấp hơn ngưỡng' },
-  { value: 'THROUGHPUT_HIGH', label: 'Throughput cao', unit: 'msg/min', description: 'Cảnh báo khi throughput cao hơn ngưỡng (có thể là spam)' },
-  { value: 'CLIENT_OFFLINE', label: 'Client Offline', unit: 'minutes', description: 'Cảnh báo khi client offline quá lâu' },
+const RULE_TYPE_KEYS = [
+  { value: 'LATENCY_THRESHOLD', labelKey: 'mqtt.alertRulesPage.types.latencyThreshold', unit: 'ms', descKey: 'mqtt.alertRulesPage.types.latencyThresholdDesc' },
+  { value: 'BROKER_DISCONNECT', labelKey: 'mqtt.alertRulesPage.types.brokerDisconnect', unit: 'minutes', descKey: 'mqtt.alertRulesPage.types.brokerDisconnectDesc' },
+  { value: 'MESSAGE_FAILURE_RATE', labelKey: 'mqtt.alertRulesPage.types.failureRate', unit: '%', descKey: 'mqtt.alertRulesPage.types.failureRateDesc' },
+  { value: 'THROUGHPUT_LOW', labelKey: 'mqtt.alertRulesPage.types.throughputLow', unit: 'msg/min', descKey: 'mqtt.alertRulesPage.types.throughputLowDesc' },
+  { value: 'THROUGHPUT_HIGH', labelKey: 'mqtt.alertRulesPage.types.throughputHigh', unit: 'msg/min', descKey: 'mqtt.alertRulesPage.types.throughputHighDesc' },
+  { value: 'CLIENT_OFFLINE', labelKey: 'mqtt.alertRulesPage.types.clientOffline', unit: 'minutes', descKey: 'mqtt.alertRulesPage.types.clientOfflineDesc' },
 ];
 
 const COMPARISON_OPERATORS = [
@@ -36,6 +37,8 @@ const COMPARISON_OPERATORS = [
 ];
 
 export default function MqttAlertRules() {
+  const { t } = useTranslation();
+  const RULE_TYPES = RULE_TYPE_KEYS.map(rt => ({ ...rt, label: t(rt.labelKey), description: t(rt.descKey) }));
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<any>(null);
   const [formData, setFormData] = useState({
@@ -60,7 +63,7 @@ export default function MqttAlertRules() {
 
   const createMutation = trpc.mqttAlert.create.useMutation({
     onSuccess: () => {
-      toast.success('Đã tạo alert rule');
+      toast.success(t('mqtt.alertRulesPage.ruleCreated'));
       setIsCreateDialogOpen(false);
       resetForm();
       refetchRules();
@@ -70,7 +73,7 @@ export default function MqttAlertRules() {
 
   const updateMutation = trpc.mqttAlert.update.useMutation({
     onSuccess: () => {
-      toast.success('Đã cập nhật alert rule');
+      toast.success(t('mqtt.alertRulesPage.ruleUpdated'));
       setEditingRule(null);
       resetForm();
       refetchRules();
@@ -80,7 +83,7 @@ export default function MqttAlertRules() {
 
   const deleteMutation = trpc.mqttAlert.delete.useMutation({
     onSuccess: () => {
-      toast.success('Đã xóa alert rule');
+      toast.success(t('mqtt.alertRulesPage.ruleDeleted'));
       refetchRules();
     },
     onError: (error) => toast.error(error.message),
@@ -95,7 +98,7 @@ export default function MqttAlertRules() {
 
   const resolveMutation = trpc.mqttAlert.resolve.useMutation({
     onSuccess: () => {
-      toast.success('Đã resolve alert');
+      toast.success(t('mqtt.alertRulesPage.alertResolved'));
       refetchHistory();
       refetchUnresolved();
     },
@@ -159,7 +162,7 @@ export default function MqttAlertRules() {
   };
 
   const getCategoryName = (categoryId: number | null) => {
-    if (!categoryId) return 'Tất cả';
+    if (!categoryId) return t('common.all');
     const cat = categories?.find(c => c.id === categoryId);
     return cat?.name || '-';
   };
@@ -194,12 +197,12 @@ export default function MqttAlertRules() {
               <AlertTriangle className="w-6 h-6 text-yellow-400" />
               MQTT Alert Rules
             </h1>
-            <p className="text-muted-foreground">Cấu hình cảnh báo cho MQTT broker và messages</p>
+            <p className="text-muted-foreground">{t('mqtt.alertRulesPage.description')}</p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => { refetchRules(); refetchHistory(); refetchUnresolved(); }}>
               <RefreshCw className="w-4 h-4 mr-2" />
-              Làm mới
+              {t('common.refresh')}
             </Button>
             <Dialog open={isCreateDialogOpen} onOpenChange={(open) => {
               setIsCreateDialogOpen(open);
@@ -211,20 +214,20 @@ export default function MqttAlertRules() {
               <DialogTrigger asChild>
                 <Button>
                   <Plus className="w-4 h-4 mr-2" />
-                  Tạo Rule
+                  {t('mqtt.alertRulesPage.createRule')}
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-2xl">
                 <DialogHeader>
-                  <DialogTitle>{editingRule ? 'Chỉnh sửa Alert Rule' : 'Tạo Alert Rule mới'}</DialogTitle>
+                  <DialogTitle>{editingRule ? t('mqtt.alertRulesPage.editRule') : t('mqtt.alertRulesPage.createNewRule')}</DialogTitle>
                   <DialogDescription>
-                    Cấu hình điều kiện và thông báo khi có sự cố MQTT
+                    {t('mqtt.alertRulesPage.dialogDescription')}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>Tên Rule</Label>
+                      <Label>{t('mqtt.alertRulesPage.ruleName')}</Label>
                       <Input 
                         value={formData.name}
                         onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
@@ -232,7 +235,7 @@ export default function MqttAlertRules() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Loại Rule</Label>
+                      <Label>{t('mqtt.alertRulesPage.ruleType')}</Label>
                       <Select value={formData.ruleType} onValueChange={handleRuleTypeChange}>
                         <SelectTrigger>
                           <SelectValue />
@@ -248,16 +251,16 @@ export default function MqttAlertRules() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label>Mô tả</Label>
+                    <Label>{t('mqtt.alertRulesPage.descriptionLabel')}</Label>
                     <Textarea 
                       value={formData.description}
                       onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                      placeholder="Mô tả chi tiết về rule này..."
+                      placeholder={t('mqtt.alertRulesPage.descriptionPlaceholder')}
                     />
                   </div>
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
-                      <Label>Toán tử</Label>
+                      <Label>{t('mqtt.alertRulesPage.operator')}</Label>
                       <Select 
                         value={formData.comparisonOperator} 
                         onValueChange={(v) => setFormData(prev => ({ ...prev, comparisonOperator: v as any }))}
@@ -273,7 +276,7 @@ export default function MqttAlertRules() {
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label>Ngưỡng</Label>
+                      <Label>{t('mqtt.alertRulesPage.threshold')}</Label>
                       <Input 
                         type="number"
                         value={formData.thresholdValue}
@@ -281,7 +284,7 @@ export default function MqttAlertRules() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Đơn vị</Label>
+                      <Label>{t('mqtt.alertRulesPage.unit')}</Label>
                       <Input 
                         value={formData.thresholdUnit}
                         onChange={(e) => setFormData(prev => ({ ...prev, thresholdUnit: e.target.value }))}
@@ -290,7 +293,7 @@ export default function MqttAlertRules() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>Khoảng thời gian đánh giá (phút)</Label>
+                      <Label>{t('mqtt.alertRulesPage.evaluationPeriod')}</Label>
                       <Input 
                         type="number"
                         value={formData.timeWindowMinutes}
@@ -298,7 +301,7 @@ export default function MqttAlertRules() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Cooldown (phút)</Label>
+                      <Label>{t('mqtt.alertRulesPage.cooldownLabel')}</Label>
                       <Input 
                         type="number"
                         value={formData.cooldownMinutes}
@@ -307,16 +310,16 @@ export default function MqttAlertRules() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label>Category sản phẩm (áp dụng cho)</Label>
+                    <Label>{t('mqtt.alertRulesPage.productCategory')}</Label>
                     <Select 
                       value={formData.categoryId?.toString() || 'all'} 
                       onValueChange={(v) => setFormData(prev => ({ ...prev, categoryId: v === 'all' ? null : parseInt(v) }))}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Tất cả category" />
+                        <SelectValue placeholder={t('mqtt.alertRulesPage.allCategories')} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">Tất cả category</SelectItem>
+                        <SelectItem value="all">{t('mqtt.alertRulesPage.allCategories')}</SelectItem>
                         {categories?.map(cat => (
                           <SelectItem key={cat.id} value={cat.id.toString()}>
                             <div className="flex items-center gap-2">
@@ -327,14 +330,14 @@ export default function MqttAlertRules() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-muted-foreground">Chọn category để chỉ áp dụng cảnh báo cho sản phẩm thuộc category đó</p>
+                    <p className="text-xs text-muted-foreground">{t('mqtt.alertRulesPage.categoryHint')}</p>
                   </div>
                   <div className="space-y-4 pt-4 border-t">
-                    <Label className="text-base font-semibold">Thông báo</Label>
+                    <Label className="text-base font-semibold">{t('mqtt.alertRulesPage.notifications')}</Label>
                     <div className="flex items-center justify-between">
                       <div>
-                        <Label>Gửi notification cho Owner</Label>
-                        <p className="text-xs text-muted-foreground">Gửi thông báo qua Manus</p>
+                        <Label>{t('mqtt.alertRulesPage.notifyOwner')}</Label>
+                        <p className="text-xs text-muted-foreground">{t('mqtt.alertRulesPage.sendViaManus')}</p>
                       </div>
                       <Switch 
                         checked={formData.notifyOwner}
@@ -343,8 +346,8 @@ export default function MqttAlertRules() {
                     </div>
                     <div className="flex items-center justify-between">
                       <div>
-                        <Label>Gửi Email</Label>
-                        <p className="text-xs text-muted-foreground">Gửi email cảnh báo</p>
+                        <Label>{t('mqtt.alertRulesPage.notifyEmail')}</Label>
+                        <p className="text-xs text-muted-foreground">{t('mqtt.alertRulesPage.sendEmailAlert')}</p>
                       </div>
                       <Switch 
                         checked={formData.notifyEmail}
@@ -353,7 +356,7 @@ export default function MqttAlertRules() {
                     </div>
                     <div className="flex items-center justify-between">
                       <div>
-                        <Label>Gửi qua MQTT</Label>
+                        <Label>{t('mqtt.alertRulesPage.notifyMqtt')}</Label>
                         <p className="text-xs text-muted-foreground">Publish alert qua MQTT topic</p>
                       </div>
                       <Switch 
@@ -364,9 +367,9 @@ export default function MqttAlertRules() {
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Hủy</Button>
+                  <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>{t('common.cancel')}</Button>
                   <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
-                    {editingRule ? 'Cập nhật' : 'Tạo Rule'}
+                    {editingRule ? t('common.update') : t('mqtt.alertRulesPage.createRule')}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -380,7 +383,7 @@ export default function MqttAlertRules() {
             <CardHeader className="pb-2">
               <CardTitle className="text-red-400 flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5" />
-                {unresolvedAlerts.length} Alert chưa được xử lý
+                {unresolvedAlerts.length} {t('mqtt.alertRulesPage.unprocessedAlerts')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -415,27 +418,27 @@ export default function MqttAlertRules() {
             </TabsTrigger>
             <TabsTrigger value="history" className="flex items-center gap-2">
               <History className="w-4 h-4" />
-              Lịch sử
+              {t('mqtt.alertRulesPage.history')}
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="rules" className="mt-4">
             <Card>
               <CardHeader>
-                <CardTitle>Danh sách Alert Rules</CardTitle>
-                <CardDescription>Các rule đang được áp dụng để giám sát MQTT</CardDescription>
+                <CardTitle>{t('mqtt.alertRulesPage.ruleList')}</CardTitle>
+                <CardDescription>{t('mqtt.alertRulesPage.ruleListDesc')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Tên</TableHead>
-                      <TableHead>Loại</TableHead>
-                      <TableHead>Điều kiện</TableHead>
+                      <TableHead>{t('mqtt.alertRulesPage.name')}</TableHead>
+                      <TableHead>{t('mqtt.alertRulesPage.typeHeader')}</TableHead>
+                      <TableHead>{t('mqtt.alertRulesPage.condition')}</TableHead>
                       <TableHead>Category</TableHead>
-                      <TableHead>Thông báo</TableHead>
-                      <TableHead>Trạng thái</TableHead>
-                      <TableHead className="text-right">Thao tác</TableHead>
+                      <TableHead>{t('mqtt.alertRulesPage.notification')}</TableHead>
+                      <TableHead>{t('common.status')}</TableHead>
+                      <TableHead className="text-right">{t('common.actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -461,7 +464,7 @@ export default function MqttAlertRules() {
                               {getCategoryName(rule.categoryId)}
                             </Badge>
                           ) : (
-                            <span className="text-muted-foreground text-xs">Tất cả</span>
+                            <span className="text-muted-foreground text-xs">{t('common.all')}</span>
                           )}
                         </TableCell>
                         <TableCell>
@@ -497,7 +500,7 @@ export default function MqttAlertRules() {
                     {(!rules || rules.length === 0) && (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                          Chưa có alert rule nào. Nhấn "Tạo Rule" để bắt đầu.
+                          {t('mqtt.alertRulesPage.noRulesHint')}
                         </TableCell>
                       </TableRow>
                     )}
@@ -510,19 +513,19 @@ export default function MqttAlertRules() {
           <TabsContent value="history" className="mt-4">
             <Card>
               <CardHeader>
-                <CardTitle>Lịch sử Alert</CardTitle>
-                <CardDescription>Các alert đã được trigger trong quá khứ</CardDescription>
+                <CardTitle>{t('mqtt.alertRulesPage.alertHistory')}</CardTitle>
+                <CardDescription>{t('mqtt.alertRulesPage.alertHistoryDesc')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Thời gian</TableHead>
+                      <TableHead>{t('mqtt.alertRulesPage.timeHeader')}</TableHead>
                       <TableHead>Rule</TableHead>
-                      <TableHead>Giá trị</TableHead>
-                      <TableHead>Nội dung</TableHead>
-                      <TableHead>Trạng thái</TableHead>
-                      <TableHead className="text-right">Thao tác</TableHead>
+                      <TableHead>{t('mqtt.alertRulesPage.value')}</TableHead>
+                      <TableHead>{t('mqtt.alertRulesPage.content')}</TableHead>
+                      <TableHead>{t('common.status')}</TableHead>
+                      <TableHead className="text-right">{t('common.actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -536,7 +539,7 @@ export default function MqttAlertRules() {
                         </TableCell>
                         <TableCell>
                           <code className="text-sm bg-muted px-2 py-1 rounded">
-                            {alert.triggeredValue} (ngưỡng: {alert.thresholdValue})
+                            {alert.triggeredValue} ({t('mqtt.alertRulesPage.threshold')}: {alert.thresholdValue})
                           </code>
                         </TableCell>
                         <TableCell className="max-w-xs truncate">{alert.message}</TableCell>
@@ -544,12 +547,12 @@ export default function MqttAlertRules() {
                           {alert.isResolved ? (
                             <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
                               <CheckCircle className="w-3 h-3 mr-1" />
-                              Đã xử lý
+                              {t('mqtt.alertRulesPage.resolved')}
                             </Badge>
                           ) : (
                             <Badge className="bg-red-500/20 text-red-400 border-red-500/30">
                               <XCircle className="w-3 h-3 mr-1" />
-                              Chưa xử lý
+                              {t('mqtt.alertRulesPage.unresolved')}
                             </Badge>
                           )}
                         </TableCell>
@@ -569,7 +572,7 @@ export default function MqttAlertRules() {
                     {(!history || history.length === 0) && (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                          Chưa có alert nào được trigger.
+                          {t('mqtt.alertRulesPage.noAlerts')}.
                         </TableCell>
                       </TableRow>
                     )}

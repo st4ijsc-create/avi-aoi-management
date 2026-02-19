@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -57,10 +58,10 @@ const categoryIcons = {
 };
 
 const categoryLabels = {
-  defect_marker: 'Defect Markers',
-  measurement_guide: 'Measurement Guides',
-  quality_stamp: 'Quality Stamps',
-  custom: 'Custom Templates',
+  defect_marker: 'annotation.templates.defectMarkers',
+  measurement_guide: 'annotation.templates.measurementGuides',
+  quality_stamp: 'annotation.templates.qualityStamps',
+  custom: 'annotation.templates.customTemplates',
 };
 
 const categoryColors = {
@@ -71,6 +72,7 @@ const categoryColors = {
 };
 
 export function AnnotationTemplates({ onApplyTemplate, currentAnnotations }: AnnotationTemplatesProps) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -86,24 +88,24 @@ export function AnnotationTemplates({ onApplyTemplate, currentAnnotations }: Ann
 
   const saveMutation = trpc.annotationTemplate.create.useMutation({
     onSuccess: () => {
-      toast.success('Template saved successfully');
+      toast.success(t('annotation.templates.savedSuccess'));
       setSaveDialogOpen(false);
       setNewTemplateName('');
       setNewTemplateDescription('');
       refetch();
     },
     onError: (error) => {
-      toast.error('Failed to save template: ' + error.message);
+      toast.error(t('annotation.templates.saveFailed') + ': ' + error.message);
     },
   });
 
   const deleteMutation = trpc.annotationTemplate.delete.useMutation({
     onSuccess: () => {
-      toast.success('Template deleted');
+      toast.success(t('annotation.templates.deleted'));
       refetch();
     },
     onError: (error) => {
-      toast.error('Failed to delete template: ' + error.message);
+      toast.error(t('annotation.templates.deleteFailed') + ': ' + error.message);
     },
   });
 
@@ -114,17 +116,17 @@ export function AnnotationTemplates({ onApplyTemplate, currentAnnotations }: Ann
       id: `${template.name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}-${index}`,
     }));
     onApplyTemplate(newAnnotations);
-    toast.success(`Applied template: ${template.name}`);
+    toast.success(t('annotation.templates.applied', { name: template.name }));
     setIsOpen(false);
   };
 
   const handleSaveAsTemplate = () => {
     if (!currentAnnotations || currentAnnotations.length === 0) {
-      toast.error('No annotations to save as template');
+      toast.error(t('annotation.templates.noAnnotationsToSave'));
       return;
     }
     if (!newTemplateName.trim()) {
-      toast.error('Please enter a template name');
+      toast.error(t('annotation.templates.enterName'));
       return;
     }
     saveMutation.mutate({
@@ -137,10 +139,10 @@ export function AnnotationTemplates({ onApplyTemplate, currentAnnotations }: Ann
 
   const handleDeleteTemplate = (id: number, isSystem: boolean) => {
     if (isSystem) {
-      toast.error('Cannot delete system templates');
+      toast.error(t('annotation.templates.cannotDeleteSystem'));
       return;
     }
-    if (confirm('Are you sure you want to delete this template?')) {
+    if (confirm(t('annotation.templates.confirmDelete'))) {
       deleteMutation.mutate({ id });
     }
   };
@@ -258,14 +260,14 @@ export function AnnotationTemplates({ onApplyTemplate, currentAnnotations }: Ann
         <DialogTrigger asChild>
           <Button variant="outline" size="sm" className="gap-2">
             <Bookmark className="h-4 w-4" />
-            Templates
+            {t('annotation.templates.templates')}
           </Button>
         </DialogTrigger>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Bookmark className="h-5 w-5" />
-              Annotation Templates
+              {t('annotation.templates.title')}
             </DialogTitle>
           </DialogHeader>
 
@@ -273,7 +275,7 @@ export function AnnotationTemplates({ onApplyTemplate, currentAnnotations }: Ann
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search templates..."
+                placeholder={t('annotation.templates.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9"
@@ -281,22 +283,22 @@ export function AnnotationTemplates({ onApplyTemplate, currentAnnotations }: Ann
             </div>
             <Select value={selectedCategory} onValueChange={setSelectedCategory}>
               <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="All Categories" />
+                <SelectValue placeholder={t('annotation.templates.allCategories')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                <SelectItem value="defect_marker">Defect Markers</SelectItem>
-                <SelectItem value="measurement_guide">Measurement Guides</SelectItem>
-                <SelectItem value="quality_stamp">Quality Stamps</SelectItem>
-                <SelectItem value="custom">Custom Templates</SelectItem>
+                <SelectItem value="all">{t('annotation.templates.allCategories')}</SelectItem>
+                <SelectItem value="defect_marker">{t('annotation.templates.defectMarkers')}</SelectItem>
+                <SelectItem value="measurement_guide">{t('annotation.templates.measurementGuides')}</SelectItem>
+                <SelectItem value="quality_stamp">{t('annotation.templates.qualityStamps')}</SelectItem>
+                <SelectItem value="custom">{t('annotation.templates.customTemplates')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <Tabs defaultValue="browse" className="flex-1 overflow-hidden flex flex-col">
             <TabsList>
-              <TabsTrigger value="browse">Browse Templates</TabsTrigger>
-              <TabsTrigger value="save">Save Current</TabsTrigger>
+              <TabsTrigger value="browse">{t('annotation.templates.browseTemplates')}</TabsTrigger>
+              <TabsTrigger value="save">{t('annotation.templates.saveCurrent')}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="browse" className="flex-1 overflow-auto">
@@ -347,7 +349,7 @@ export function AnnotationTemplates({ onApplyTemplate, currentAnnotations }: Ann
                               {template.annotations.length} annotation{template.annotations.length !== 1 ? 's' : ''}
                             </Badge>
                             {template.isSystem && (
-                              <Badge variant="secondary" className="text-xs">System</Badge>
+                              <Badge variant="secondary" className="text-xs">{t('annotation.templates.system')}</Badge>
                             )}
                           </div>
                         </CardContent>
@@ -358,8 +360,8 @@ export function AnnotationTemplates({ onApplyTemplate, currentAnnotations }: Ann
               ) : (
                 <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
                   <Bookmark className="h-12 w-12 mb-4 opacity-50" />
-                  <p>No templates found</p>
-                  <p className="text-sm">Try adjusting your search or category filter</p>
+                  <p>{t('annotation.templates.noTemplatesFound')}</p>
+                  <p className="text-sm">{t('annotation.templates.tryAdjusting')}</p>
                 </div>
               )}
             </TabsContent>
@@ -367,7 +369,7 @@ export function AnnotationTemplates({ onApplyTemplate, currentAnnotations }: Ann
             <TabsContent value="save" className="flex-1">
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Save Current Annotations as Template</CardTitle>
+                  <CardTitle className="text-base">{t('annotation.templates.saveAsTemplate')}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {currentAnnotations && currentAnnotations.length > 0 ? (
@@ -376,49 +378,49 @@ export function AnnotationTemplates({ onApplyTemplate, currentAnnotations }: Ann
                         {renderAnnotationPreview(currentAnnotations)}
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        {currentAnnotations.length} annotation{currentAnnotations.length !== 1 ? 's' : ''} will be saved
+                        {currentAnnotations.length} annotation{currentAnnotations.length !== 1 ? 's' : ''} {t('annotation.templates.willBeSaved')}
                       </p>
                       <div className="space-y-3">
                         <div>
-                          <Label>Template Name</Label>
+                          <Label>{t('annotation.templates.templateName')}</Label>
                           <Input
                             value={newTemplateName}
                             onChange={(e) => setNewTemplateName(e.target.value)}
-                            placeholder="Enter template name"
+                            placeholder={t('annotation.templates.enterTemplateName')}
                           />
                         </div>
                         <div>
-                          <Label>Category</Label>
+                          <Label>{t('annotation.templates.category')}</Label>
                           <Select value={newTemplateCategory} onValueChange={(v) => setNewTemplateCategory(v as any)}>
                             <SelectTrigger>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="defect_marker">Defect Marker</SelectItem>
-                              <SelectItem value="measurement_guide">Measurement Guide</SelectItem>
-                              <SelectItem value="quality_stamp">Quality Stamp</SelectItem>
-                              <SelectItem value="custom">Custom</SelectItem>
+                              <SelectItem value="defect_marker">{t('annotation.templates.defectMarker')}</SelectItem>
+                              <SelectItem value="measurement_guide">{t('annotation.templates.measurementGuide')}</SelectItem>
+                              <SelectItem value="quality_stamp">{t('annotation.templates.qualityStamp')}</SelectItem>
+                              <SelectItem value="custom">{t('annotation.templates.custom')}</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
                         <div>
-                          <Label>Description (Optional)</Label>
+                          <Label>{t('annotation.templates.descriptionOptional')}</Label>
                           <Input
                             value={newTemplateDescription}
                             onChange={(e) => setNewTemplateDescription(e.target.value)}
-                            placeholder="Brief description of the template"
+                            placeholder={t('annotation.templates.descriptionPlaceholder')}
                           />
                         </div>
                         <Button onClick={handleSaveAsTemplate} disabled={saveMutation.isPending} className="w-full">
-                          {saveMutation.isPending ? 'Saving...' : 'Save Template'}
+                          {saveMutation.isPending ? t('annotation.templates.saving') : t('annotation.templates.saveTemplate')}
                         </Button>
                       </div>
                     </>
                   ) : (
                     <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                       <Layers className="h-12 w-12 mb-4 opacity-50" />
-                      <p>No annotations to save</p>
-                      <p className="text-sm">Draw some annotations first, then save as template</p>
+                      <p>{t('annotation.templates.noAnnotations')}</p>
+                      <p className="text-sm">{t('annotation.templates.drawFirst')}</p>
                     </div>
                   )}
                 </CardContent>

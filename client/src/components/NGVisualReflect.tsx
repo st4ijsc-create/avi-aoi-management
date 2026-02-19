@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -58,11 +59,11 @@ function getNGBgClass(ngRate: number): string {
   return "bg-red-500/10";
 }
 
-function getNGStatus(ngRate: number): { label: string; icon: React.ReactNode } {
-  if (ngRate <= 2) return { label: "Tốt", icon: <CheckCircle2 className="h-4 w-4 text-green-500" /> };
-  if (ngRate <= 5) return { label: "Chấp nhận", icon: <Minus className="h-4 w-4 text-yellow-500" /> };
-  if (ngRate <= 10) return { label: "Cảnh báo", icon: <AlertTriangle className="h-4 w-4 text-orange-500" /> };
-  return { label: "Nghiêm trọng", icon: <XCircle className="h-4 w-4 text-red-500" /> };
+function getNGStatus(ngRate: number): { labelKey: string; icon: React.ReactNode } {
+  if (ngRate <= 2) return { labelKey: "dashboard.ngGood", icon: <CheckCircle2 className="h-4 w-4 text-green-500" /> };
+  if (ngRate <= 5) return { labelKey: "dashboard.ngAcceptable", icon: <Minus className="h-4 w-4 text-yellow-500" /> };
+  if (ngRate <= 10) return { labelKey: "dashboard.ngWarning", icon: <AlertTriangle className="h-4 w-4 text-orange-500" /> };
+  return { labelKey: "dashboard.ngCritical", icon: <XCircle className="h-4 w-4 text-red-500" /> };
 }
 
 function getTrendIcon(trend?: "up" | "down" | "stable") {
@@ -83,6 +84,7 @@ export function WorkstationNGHeatmap({
   compact?: boolean;
   onWorkstationClick?: (workstation: WorkstationNGData) => void;
 }) {
+  const { t } = useTranslation();
   const sortedData = useMemo(() => {
     return [...data].sort((a, b) => b.ngRate - a.ngRate);
   }, [data]);
@@ -91,7 +93,7 @@ export function WorkstationNGHeatmap({
     return (
       <div className={cn("text-center py-8 text-muted-foreground", className)}>
         <AlertTriangle className="h-8 w-8 mx-auto mb-2 opacity-50" />
-        <p>Không có dữ liệu công trạm</p>
+        <p>{t('machines.noWorkstationData')}</p>
       </div>
     );
   }
@@ -150,24 +152,24 @@ export function WorkstationNGHeatmap({
               <TooltipContent side="top" className="max-w-xs">
                 <div className="space-y-1">
                   <p className="font-semibold">{ws.name}</p>
-                  <p className="text-xs text-muted-foreground">Mã: {ws.code}</p>
+                  <p className="text-xs text-muted-foreground">{t('common.code')}: {ws.code}</p>
                   <div className="flex justify-between gap-4 text-sm">
-                    <span>Tổng kiểm tra:</span>
+                    <span>{t('dashboard.totalInspections')}:</span>
                     <span className="font-medium">{ws.total.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between gap-4 text-sm">
-                    <span>Số lỗi (NG):</span>
+                    <span>{t('dashboard.ngCount')}:</span>
                     <span className="font-medium text-red-500">{ws.ng.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between gap-4 text-sm">
-                    <span>Tỉ lệ NG:</span>
+                    <span>{t('dashboard.ngRate')}:</span>
                     <span className={cn("font-bold", getNGColorClass(ws.ngRate).split(" ")[0])}>
                       {ws.ngRate.toFixed(2)}%
                     </span>
                   </div>
                   <div className="flex items-center gap-2 pt-1 border-t">
                     {status.icon}
-                    <span className="text-xs">{status.label}</span>
+                    <span className="text-xs">{t(status.labelKey)}</span>
                   </div>
                 </div>
               </TooltipContent>
@@ -191,6 +193,7 @@ export function MeasurementPointNGList({
   maxItems?: number;
   showWorkstation?: boolean;
 }) {
+  const { t } = useTranslation();
   const sortedData = useMemo(() => {
     return [...data].sort((a, b) => b.ngRate - a.ngRate).slice(0, maxItems);
   }, [data, maxItems]);
@@ -199,7 +202,7 @@ export function MeasurementPointNGList({
     return (
       <div className={cn("text-center py-8 text-muted-foreground", className)}>
         <AlertTriangle className="h-8 w-8 mx-auto mb-2 opacity-50" />
-        <p>Không có dữ liệu điểm đo</p>
+        <p>{t('products.noMeasurementPointData')}</p>
       </div>
     );
   }
@@ -234,7 +237,7 @@ export function MeasurementPointNGList({
               </div>
               {showWorkstation && mp.workstationName && (
                 <p className="text-xs text-muted-foreground truncate">
-                  Công trạm: {mp.workstationName}
+                  {t('machines.workstation')}: {mp.workstationName}
                 </p>
               )}
             </div>
@@ -273,27 +276,28 @@ export default function NGVisualReflect({
   showLegend = true,
   compact = false,
 }: NGVisualReflectProps) {
+  const { t } = useTranslation();
   return (
     <div className={cn("space-y-6", className)}>
       {/* Legend */}
       {showLegend && (
         <div className="flex flex-wrap items-center gap-4 text-sm">
-          <span className="text-muted-foreground">Mức độ NG:</span>
+          <span className="text-muted-foreground">{t('dashboard.ngLevel')}:</span>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-green-500" />
-            <span>≤2% (Tốt)</span>
+            <span>≤2% ({t('dashboard.ngGood')})</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-yellow-500" />
-            <span>2-5% (Chấp nhận)</span>
+            <span>2-5% ({t('dashboard.ngAcceptable')})</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-orange-500" />
-            <span>5-10% (Cảnh báo)</span>
+            <span>5-10% ({t('dashboard.ngWarning')})</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-red-500" />
-            <span>&gt;10% (Nghiêm trọng)</span>
+            <span>&gt;10% ({t('dashboard.ngCritical')})</span>
           </div>
         </div>
       )}
@@ -302,9 +306,9 @@ export default function NGVisualReflect({
       {workstationData.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Tỉ lệ NG theo Công trạm</CardTitle>
+            <CardTitle className="text-lg">{t('dashboard.ngRateByWorkstation')}</CardTitle>
             <CardDescription>
-              Hiển thị tỉ lệ lỗi của từng công trạm, màu sắc thể hiện mức độ nghiêm trọng
+              {t('dashboard.ngRateByWorkstationDescription')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -317,9 +321,9 @@ export default function NGVisualReflect({
       {measurementPointData.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Top Điểm đo có tỉ lệ NG cao</CardTitle>
+            <CardTitle className="text-lg">{t('dashboard.topNGMeasurementPoints')}</CardTitle>
             <CardDescription>
-              Các điểm đo có tỉ lệ lỗi cao nhất, cần ưu tiên kiểm tra và cải thiện
+              {t('dashboard.topNGMeasurementPointsDescription')}
             </CardDescription>
           </CardHeader>
           <CardContent>

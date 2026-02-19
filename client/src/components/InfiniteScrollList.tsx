@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -41,17 +42,21 @@ export function InfiniteScrollList<T>({
   renderHeader,
   className = '',
   itemClassName = '',
-  loadingText = 'Đang tải...',
-  loadMoreText = 'Tải thêm',
-  emptyText = 'Không có dữ liệu',
+  loadingText,
+  loadMoreText,
+  emptyText,
   showTotal = true,
 }: InfiniteScrollListProps<T>) {
+  const { t } = useTranslation();
+  const resolvedLoadingText = loadingText ?? t('common.loading');
+  const resolvedLoadMoreText = loadMoreText ?? t('common.loadMore');
+  const resolvedEmptyText = emptyText ?? t('common.noData');
   // Initial loading state
   if (isLoading && data.length === 0) {
     return (
       <div className={`flex flex-col items-center justify-center py-12 ${className}`}>
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        <p className="mt-2 text-sm text-muted-foreground">{loadingText}</p>
+        <p className="mt-2 text-sm text-muted-foreground">{resolvedLoadingText}</p>
       </div>
     );
   }
@@ -70,7 +75,7 @@ export function InfiniteScrollList<T>({
             className="mt-4"
           >
             <RefreshCw className="h-4 w-4 mr-2" />
-            Thử lại
+            {t('common.retry')}
           </Button>
         </CardContent>
       </Card>
@@ -85,7 +90,7 @@ export function InfiniteScrollList<T>({
     return (
       <Card className={className}>
         <CardContent className="flex flex-col items-center justify-center py-12">
-          <p className="text-sm text-muted-foreground">{emptyText}</p>
+          <p className="text-sm text-muted-foreground">{resolvedEmptyText}</p>
         </CardContent>
       </Card>
     );
@@ -99,7 +104,7 @@ export function InfiniteScrollList<T>({
       {showTotal && total !== undefined && (
         <div className="flex items-center justify-between mb-4">
           <p className="text-sm text-muted-foreground">
-            Hiển thị {data.length} / {total} kết quả
+            {t('common.showingResults', { shown: data.length, total })}
           </p>
           <Button
             variant="ghost"
@@ -108,7 +113,7 @@ export function InfiniteScrollList<T>({
             disabled={isLoading}
           >
             <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-            Làm mới
+            {t('common.refresh')}
           </Button>
         </div>
       )}
@@ -131,7 +136,7 @@ export function InfiniteScrollList<T>({
           {isLoadingMore ? (
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              <span className="text-sm">{loadingText}</span>
+              <span className="text-sm">{resolvedLoadingText}</span>
             </div>
           ) : (
             <Button
@@ -140,7 +145,7 @@ export function InfiniteScrollList<T>({
               onClick={loadMore}
               className="w-full max-w-xs"
             >
-              {loadMoreText}
+              {resolvedLoadMoreText}
             </Button>
           )}
         </div>
@@ -150,7 +155,7 @@ export function InfiniteScrollList<T>({
       {!hasMore && data.length > 0 && (
         <div className="flex items-center justify-center py-4">
           <p className="text-sm text-muted-foreground">
-            Đã hiển thị tất cả {data.length} kết quả
+            {t('common.showingAll', { count: data.length })}
           </p>
         </div>
       )}
@@ -165,7 +170,7 @@ export function InfiniteScrollList<T>({
             size="sm"
             onClick={loadMore}
           >
-            Thử lại
+            {t('common.retry')}
           </Button>
         </div>
       )}

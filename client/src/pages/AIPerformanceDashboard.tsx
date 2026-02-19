@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
 import { trpc } from '@/lib/trpc';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -35,6 +36,7 @@ import { BatchCommentsSection } from '@/components/BatchCommentsSection';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 export default function AIPerformanceDashboard() {
+  const { t } = useTranslation();
   const [selectedModelVersion, setSelectedModelVersion] = useState<string>('all');
   const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d');
 
@@ -92,13 +94,13 @@ export default function AIPerformanceDashboard() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'COMPLETED':
-        return <Badge className="bg-green-500/10 text-green-500">Hoàn thành</Badge>;
+        return <Badge className="bg-green-500/10 text-green-500">{t('common.completed')}</Badge>;
       case 'PROCESSING':
-        return <Badge className="bg-blue-500/10 text-blue-500">Đang xử lý</Badge>;
+        return <Badge className="bg-blue-500/10 text-blue-500">{t('common.processing')}</Badge>;
       case 'PENDING':
-        return <Badge className="bg-yellow-500/10 text-yellow-500">Chờ xử lý</Badge>;
+        return <Badge className="bg-yellow-500/10 text-yellow-500">{t('common.pending')}</Badge>;
       case 'FAILED':
-        return <Badge className="bg-red-500/10 text-red-500">Thất bại</Badge>;
+        return <Badge className="bg-red-500/10 text-red-500">{t('common.failed')}</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -107,13 +109,13 @@ export default function AIPerformanceDashboard() {
   const getFeedbackBadge = (feedback: string) => {
     switch (feedback) {
       case 'CORRECT':
-        return <Badge className="bg-green-500/10 text-green-500">Đúng</Badge>;
+        return <Badge className="bg-green-500/10 text-green-500">{t('reports.correct')}</Badge>;
       case 'INCORRECT':
-        return <Badge className="bg-red-500/10 text-red-500">Sai</Badge>;
+        return <Badge className="bg-red-500/10 text-red-500">{t('reports.incorrect')}</Badge>;
       case 'PARTIAL':
-        return <Badge className="bg-yellow-500/10 text-yellow-500">Một phần</Badge>;
+        return <Badge className="bg-yellow-500/10 text-yellow-500">{t('reports.partial')}</Badge>;
       case 'UNSURE':
-        return <Badge className="bg-gray-500/10 text-gray-500">Không chắc</Badge>;
+        return <Badge className="bg-gray-500/10 text-gray-500">{t('reports.unsure')}</Badge>;
       default:
         return <Badge variant="outline">{feedback}</Badge>;
     }
@@ -127,10 +129,10 @@ export default function AIPerformanceDashboard() {
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Brain className="h-6 w-6" />
-              AI Model Performance Dashboard
+              {t('reports.aiModelPerformanceDashboard')}
             </h1>
             <p className="text-muted-foreground">
-              Theo dõi và đánh giá hiệu suất của AI suggestions
+              {t('reports.aiModelPerformanceDesc')}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -139,15 +141,15 @@ export default function AIPerformanceDashboard() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="7d">7 ngày</SelectItem>
-                <SelectItem value="30d">30 ngày</SelectItem>
-                <SelectItem value="90d">90 ngày</SelectItem>
-                <SelectItem value="all">Tất cả</SelectItem>
+                <SelectItem value="7d">{t('common.sevenDays')}</SelectItem>
+                <SelectItem value="30d">{t('common.thirtyDays')}</SelectItem>
+                <SelectItem value="90d">{t('common.ninetyDays')}</SelectItem>
+                <SelectItem value="all">{t('common.all')}</SelectItem>
               </SelectContent>
             </Select>
             <Button variant="outline" onClick={() => refetchStats()}>
               <RefreshCw className="h-4 w-4 mr-2" />
-              Làm mới
+              {t('common.refresh')}
             </Button>
           </div>
         </div>
@@ -174,7 +176,7 @@ export default function AIPerformanceDashboard() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                {(metrics?.accuracy || 0) >= 80 ? "Đạt mục tiêu" : "Cần cải thiện"}
+                {(metrics?.accuracy || 0) >= 80 ? t('reports.targetMet') : t('reports.needsImprovement')}
               </p>
             </CardContent>
           </Card>
@@ -193,7 +195,7 @@ export default function AIPerformanceDashboard() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                Tỷ lệ dự đoán đúng trong số dự đoán positive
+                {t('reports.precisionDesc')}
               </p>
             </CardContent>
           </Card>
@@ -212,7 +214,7 @@ export default function AIPerformanceDashboard() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                Tỷ lệ phát hiện đúng trong số actual positive
+                {t('reports.recallDesc')}
               </p>
             </CardContent>
           </Card>
@@ -231,7 +233,7 @@ export default function AIPerformanceDashboard() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                Harmonic mean của Precision và Recall
+                {t('reports.f1ScoreDesc')}
               </p>
             </CardContent>
           </Card>
@@ -240,10 +242,10 @@ export default function AIPerformanceDashboard() {
         {/* Main Content */}
         <Tabs defaultValue="overview" className="space-y-4">
           <TabsList>
-            <TabsTrigger value="overview">Tổng quan</TabsTrigger>
-            <TabsTrigger value="confusion">Confusion Matrix</TabsTrigger>
-            <TabsTrigger value="batches">Training Batches</TabsTrigger>
-            <TabsTrigger value="suggestions">Suggestions History</TabsTrigger>
+            <TabsTrigger value="overview">{t('dashboard.overview')}</TabsTrigger>
+            <TabsTrigger value="confusion">{t('reports.confusionMatrix')}</TabsTrigger>
+            <TabsTrigger value="batches">{t('reports.trainingBatches')}</TabsTrigger>
+            <TabsTrigger value="suggestions">{t('reports.suggestionsHistory')}</TabsTrigger>
           </TabsList>
 
           {/* Overview Tab */}
@@ -254,7 +256,7 @@ export default function AIPerformanceDashboard() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <PieChart className="h-5 w-5" />
-                    Phân bố Feedback
+                    {t('reports.feedbackDistribution')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -267,19 +269,19 @@ export default function AIPerformanceDashboard() {
                           <div className="text-3xl font-bold text-green-500">
                             {dashboardStats.recentFeedback?.filter((f: any) => f.feedbackType === 'CORRECT').length || 0}
                           </div>
-                          <div className="text-sm text-muted-foreground">Đúng</div>
+                          <div className="text-sm text-muted-foreground">{t('reports.correct')}</div>
                         </div>
                         <div className="text-center">
                           <div className="text-3xl font-bold text-red-500">
                             {dashboardStats.recentFeedback?.filter((f: any) => f.feedbackType === 'INCORRECT').length || 0}
                           </div>
-                          <div className="text-sm text-muted-foreground">Sai</div>
+                          <div className="text-sm text-muted-foreground">{t('reports.incorrect')}</div>
                         </div>
                         <div className="text-center">
                           <div className="text-3xl font-bold text-yellow-500">
                             {dashboardStats.recentFeedback?.filter((f: any) => f.feedbackType === 'PARTIAL').length || 0}
                           </div>
-                          <div className="text-sm text-muted-foreground">Một phần</div>
+                          <div className="text-sm text-muted-foreground">{t('reports.partial')}</div>
                         </div>
                       </div>
                       
@@ -293,21 +295,21 @@ export default function AIPerformanceDashboard() {
                           return (
                             <>
                               <div className="flex items-center gap-2">
-                                <span className="w-20 text-sm">Đúng</span>
+                                <span className="w-20 text-sm">{t('reports.correct')}</span>
                                 <div className="flex-1 h-4 bg-muted rounded-full overflow-hidden">
                                   <div className="h-full bg-green-500 transition-all" style={{ width: `${total ? (correct / total) * 100 : 0}%` }} />
                                 </div>
                                 <span className="w-12 text-sm text-right">{total ? ((correct / total) * 100).toFixed(0) : 0}%</span>
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className="w-20 text-sm">Sai</span>
+                                <span className="w-20 text-sm">{t('reports.incorrect')}</span>
                                 <div className="flex-1 h-4 bg-muted rounded-full overflow-hidden">
                                   <div className="h-full bg-red-500 transition-all" style={{ width: `${total ? (incorrect / total) * 100 : 0}%` }} />
                                 </div>
                                 <span className="w-12 text-sm text-right">{total ? ((incorrect / total) * 100).toFixed(0) : 0}%</span>
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className="w-20 text-sm">Một phần</span>
+                                <span className="w-20 text-sm">{t('reports.partial')}</span>
                                 <div className="flex-1 h-4 bg-muted rounded-full overflow-hidden">
                                   <div className="h-full bg-yellow-500 transition-all" style={{ width: `${total ? (partial / total) * 100 : 0}%` }} />
                                 </div>
@@ -320,7 +322,7 @@ export default function AIPerformanceDashboard() {
                     </div>
                   ) : (
                     <div className="h-[200px] flex items-center justify-center text-muted-foreground">
-                      Không có dữ liệu
+                      {t('common.noData')}
                     </div>
                   )}
                 </CardContent>
@@ -331,7 +333,7 @@ export default function AIPerformanceDashboard() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <BarChart3 className="h-5 w-5" />
-                    Thống kê tổng hợp
+                    {t('reports.summaryStats')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -342,15 +344,15 @@ export default function AIPerformanceDashboard() {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="p-4 rounded-lg bg-muted/50">
                           <div className="text-2xl font-bold">{dashboardStats.totalSuggestions || 0}</div>
-                          <div className="text-sm text-muted-foreground">Tổng suggestions</div>
+                          <div className="text-sm text-muted-foreground">{t('reports.totalSuggestions')}</div>
                         </div>
                         <div className="p-4 rounded-lg bg-muted/50">
                           <div className="text-2xl font-bold">{dashboardStats.reviewedToday || 0}</div>
-                          <div className="text-sm text-muted-foreground">Reviewed hôm nay</div>
+                          <div className="text-sm text-muted-foreground">{t('reports.reviewedToday')}</div>
                         </div>
                         <div className="p-4 rounded-lg bg-muted/50">
                           <div className="text-2xl font-bold">{dashboardStats.pendingReview || 0}</div>
-                          <div className="text-sm text-muted-foreground">Chờ feedback</div>
+                          <div className="text-sm text-muted-foreground">{t('reports.pendingFeedback')}</div>
                         </div>
                         <div className="p-4 rounded-lg bg-muted/50">
                           <div className="text-2xl font-bold">
@@ -362,7 +364,7 @@ export default function AIPerformanceDashboard() {
                     </div>
                   ) : (
                     <div className="h-[200px] flex items-center justify-center text-muted-foreground">
-                      Không có dữ liệu
+                      {t('common.noData')}
                     </div>
                   )}
                 </CardContent>
@@ -374,9 +376,9 @@ export default function AIPerformanceDashboard() {
           <TabsContent value="confusion">
             <Card>
               <CardHeader>
-                <CardTitle>Confusion Matrix</CardTitle>
+                <CardTitle>{t('reports.confusionMatrix')}</CardTitle>
                 <CardDescription>
-                  Ma trận nhầm lẫn giúp đánh giá hiệu suất phân loại của AI model
+                  {t('reports.confusionMatrixDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -386,15 +388,15 @@ export default function AIPerformanceDashboard() {
                       {/* Header row */}
                       <div className="p-4" />
                       <div className="p-4 text-center font-medium bg-muted rounded-lg">
-                        Predicted Positive
+                        {t('reports.predictedPositive')}
                       </div>
                       <div className="p-4 text-center font-medium bg-muted rounded-lg">
-                        Predicted Negative
+                        {t('reports.predictedNegative')}
                       </div>
                       
                       {/* Actual Positive row */}
                       <div className="p-4 text-center font-medium bg-muted rounded-lg">
-                        Actual Positive
+                        {t('reports.actualPositive')}
                       </div>
                       <div className="p-8 text-center bg-green-500/20 rounded-lg border-2 border-green-500">
                         <div className="text-3xl font-bold text-green-600">{confusionMatrix.truePositive}</div>
@@ -407,7 +409,7 @@ export default function AIPerformanceDashboard() {
                       
                       {/* Actual Negative row */}
                       <div className="p-4 text-center font-medium bg-muted rounded-lg">
-                        Actual Negative
+                        {t('reports.actualNegative')}
                       </div>
                       <div className="p-8 text-center bg-red-500/20 rounded-lg border-2 border-red-500">
                         <div className="text-3xl font-bold text-red-600">{confusionMatrix.falsePositive}</div>
@@ -447,7 +449,7 @@ export default function AIPerformanceDashboard() {
                   <div className="h-[300px] flex items-center justify-center text-muted-foreground">
                     <div className="text-center">
                       <Brain className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p>Cần thêm feedback để tính toán confusion matrix</p>
+                      <p>{t('reports.needMoreFeedback')}</p>
                     </div>
                   </div>
                 )}
@@ -461,10 +463,10 @@ export default function AIPerformanceDashboard() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Database className="h-5 w-5" />
-                  Training Batches
+                  {t('reports.trainingBatches')}
                 </CardTitle>
                 <CardDescription>
-                  Danh sách các batch dữ liệu đã export để training model
+                  {t('reports.trainingBatchesDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -517,34 +519,34 @@ export default function AIPerformanceDashboard() {
                                   <div className="font-mono text-sm">{batch.batchId}</div>
                                 </div>
                                 <div>
-                                  <div className="text-sm text-muted-foreground">Trạng thái</div>
+                                  <div className="text-sm text-muted-foreground">{t('common.status')}</div>
                                   <div>{getStatusBadge(batch.status)}</div>
                                 </div>
                                 <div>
-                                  <div className="text-sm text-muted-foreground">Số mẫu</div>
+                                  <div className="text-sm text-muted-foreground">{t('reports.sampleCount')}</div>
                                   <div className="font-medium">{batch.feedbackCount}</div>
                                 </div>
                                 <div>
-                                  <div className="text-sm text-muted-foreground">Định dạng</div>
+                                  <div className="text-sm text-muted-foreground">{t('reports.format')}</div>
                                   <div className="font-medium">{batch.exportFormat}</div>
                                 </div>
                                 <div>
-                                  <div className="text-sm text-muted-foreground">Mẫu đúng</div>
+                                  <div className="text-sm text-muted-foreground">{t('reports.correctSamples')}</div>
                                   <div className="font-medium text-green-600">{batch.correctSamples}</div>
                                 </div>
                                 <div>
-                                  <div className="text-sm text-muted-foreground">Mẫu sai</div>
+                                  <div className="text-sm text-muted-foreground">{t('reports.incorrectSamples')}</div>
                                   <div className="font-medium text-red-600">{batch.incorrectSamples}</div>
                                 </div>
                                 <div className="col-span-2">
-                                  <div className="text-sm text-muted-foreground">Ngày tạo</div>
+                                  <div className="text-sm text-muted-foreground">{t('reports.createdDate')}</div>
                                   <div className="font-medium">
                                     {format(new Date(batch.createdAt), 'dd/MM/yyyy HH:mm:ss', { locale: vi })}
                                   </div>
                                 </div>
                                 {batch.description && (
                                   <div className="col-span-2">
-                                    <div className="text-sm text-muted-foreground">Mô tả</div>
+                                    <div className="text-sm text-muted-foreground">{t('common.description')}</div>
                                     <div className="text-sm">{batch.description}</div>
                                   </div>
                                 )}
@@ -565,7 +567,7 @@ export default function AIPerformanceDashboard() {
                   <div className="h-[200px] flex items-center justify-center text-muted-foreground">
                     <div className="text-center">
                       <Database className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p>Chưa có training batch nào</p>
+                      <p>{t('reports.noTrainingBatches')}</p>
                     </div>
                   </div>
                 )}
@@ -579,10 +581,10 @@ export default function AIPerformanceDashboard() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Brain className="h-5 w-5" />
-                  Lịch sử Suggestions
+                  {t('reports.suggestionsHistory')}
                 </CardTitle>
                 <CardDescription>
-                  Danh sách các AI suggestions gần đây và feedback từ người dùng
+                  {t('reports.suggestionsHistoryDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -626,7 +628,7 @@ export default function AIPerformanceDashboard() {
                               ) : (
                                 <Badge variant="outline" className="text-muted-foreground">
                                   <Clock className="h-3 w-3 mr-1" />
-                                  Chờ feedback
+                                  {t('reports.pendingFeedback')}
                                 </Badge>
                               )}
                               <span className="text-sm text-muted-foreground">
@@ -642,7 +644,7 @@ export default function AIPerformanceDashboard() {
                   <div className="h-[200px] flex items-center justify-center text-muted-foreground">
                     <div className="text-center">
                       <Brain className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p>Chưa có suggestions nào</p>
+                      <p>{t('reports.noSuggestions')}</p>
                     </div>
                   </div>
                 )}

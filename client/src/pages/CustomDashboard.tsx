@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import DashboardLayoutEditor, { DashboardLayout as LayoutType } from "@/components/DashboardLayoutEditor";
+import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { 
   Plus, 
@@ -28,40 +30,22 @@ import {
   StarOff,
 } from "lucide-react";
 
-// Mock data for saved layouts
-const mockLayouts: LayoutType[] = [
-  {
-    id: "layout_1",
-    name: "Production Overview",
-    description: "Dashboard tổng quan sản xuất với KPIs chính",
-    widgets: [
-      { id: "w1", type: "kpi-card", title: "Yield Rate", size: "small", position: { x: 0, y: 0 }, config: { dataSource: "yield_rate" } },
-      { id: "w2", type: "kpi-card", title: "NG Rate", size: "small", position: { x: 1, y: 0 }, config: { dataSource: "ng_rate" } },
-      { id: "w3", type: "line-chart", title: "Trend", size: "large", position: { x: 0, y: 1 }, config: { dataSource: "yield_trend" } },
-    ],
-    gridCols: 4,
-    isPublic: false,
-    createdAt: new Date("2024-01-15"),
-    updatedAt: new Date("2024-01-20"),
-  },
-  {
-    id: "layout_2",
-    name: "Quality Metrics",
-    description: "Dashboard theo dõi chất lượng sản phẩm",
-    widgets: [
-      { id: "w4", type: "pie-chart", title: "Result Distribution", size: "medium", position: { x: 0, y: 0 }, config: { dataSource: "result_distribution" } },
-      { id: "w5", type: "bar-chart", title: "NG by Machine", size: "medium", position: { x: 2, y: 0 }, config: { dataSource: "ng_by_machine" } },
-      { id: "w6", type: "alert-list", title: "Recent Alerts", size: "full", position: { x: 0, y: 1 }, config: { maxItems: 5 } },
-    ],
-    gridCols: 4,
-    isPublic: true,
-    createdAt: new Date("2024-01-10"),
-    updatedAt: new Date("2024-01-18"),
-  },
-];
+// Map server dashboard record to client LayoutType
+function mapToLayout(d: any): LayoutType {
+  return {
+    id: String(d.id),
+    name: d.name,
+    description: d.description || undefined,
+    widgets: (d.widgets as any[]) || [],
+    gridCols: d.gridCols || 4,
+    isPublic: d.isPublic || false,
+    createdAt: new Date(d.createdAt),
+    updatedAt: new Date(d.updatedAt),
+  };
+}
 
 export default function CustomDashboard() {
-  const [layouts, setLayouts] = useState<LayoutType[]>(mockLayouts);
+  const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("my-layouts");
   const [isEditing, setIsEditing] = useState(false);
@@ -69,81 +53,144 @@ export default function CustomDashboard() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newLayoutName, setNewLayoutName] = useState("");
   const [newLayoutDesc, setNewLayoutDesc] = useState("");
-  const [favorites, setFavorites] = useState<string[]>(["layout_1"]);
 
-  const filteredLayouts = layouts.filter(layout => 
-    layout.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    layout.description?.toLowerCase().includes(searchTerm.toLowerCase())
+  // Queries
+  const utils = trpc.useUtils();
+  const myDashboardsQuery = trpc.dashboardWidget.listCustomDashboards.useQuery();
+  const publicDashboardsQuery = trpc.dashboardWidget.listPublicDashboards.useQuery();
+
+  // Mutations
+  const createMutation = trpc.dashboardWidget.createCustomDashboard.useMutation({
+    onSuccess: () => utils.dashboardWidget.listCustomDashboards.invalidate(),
+  });
+  const updateMutation = trpc.dashboardWidget.updateCustomDashboard.useMutation({
+    onSuccess: () => {
+      utils.dashboardWidget.listCustomDashboards.invalidate();
+      utils.dashboardWidget.listPublicDashboards.invalidate();
+    },
+  });
+  const deleteMutation = trpc.dashboardWidget.deleteCustomDashboard.useMutation({
+    onSuccess: () => {
+      utils.dashboardWidget.listCustomDashboards.invalidate();
+      utils.dashboardWidget.listPublicDashboards.invalidate();
+    },
+  });
+  const duplicateMutation = trpc.dashboardWidget.duplicateCustomDashboard.useMutation({
+    onSuccess: () => utils.dashboardWidget.listCustomDashboards.invalidate(),
+  });
+  const toggleFavoriteMutation = trpc.dashboardWidget.toggleCustomDashboardFavorite.useMutation({
+    onSuccess: () => utils.dashboardWidget.listCustomDashboards.invalidate(),
+  });
+  const togglePublicMutation = trpc.dashboardWidget.toggleCustomDashboardPublic.useMutation({
+    onSuccess: () => {
+      utils.dashboardWidget.listCustomDashboards.invalidate();
+      utils.dashboardWidget.listPublicDashboards.invalidate();
+    },
+  });
+
+  // Derive layouts from server data
+  const allMyLayouts = (myDashboardsQuery.data || []).map(mapToLayout);
+  const allPublicLayouts = (publicDashboardsQuery.data || []).map(mapToLayout);
+  const favoriteIds = new Set(
+    (myDashboardsQuery.data || []).filter((d: any) => d.isFavorite).map((d: any) => String(d.id))
   );
 
-  const myLayouts = filteredLayouts.filter(l => !l.isPublic);
-  const sharedLayouts = filteredLayouts.filter(l => l.isPublic);
-  const favoriteLayouts = filteredLayouts.filter(l => favorites.includes(l.id));
+  const filterBySearch = (layouts: LayoutType[]) =>
+    layouts.filter(layout =>
+      layout.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      layout.description?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
-  const handleCreateLayout = () => {
+  const myLayouts = filterBySearch(allMyLayouts.filter(l => !l.isPublic));
+  const sharedLayouts = filterBySearch(allPublicLayouts);
+  const favoriteLayouts = filterBySearch(allMyLayouts.filter(l => favoriteIds.has(l.id)));
+
+  const handleCreateLayout = async () => {
     if (!newLayoutName.trim()) {
-      toast.error("Vui lòng nhập tên layout");
+      toast.error(t('dashboard.enterLayoutName'));
       return;
     }
 
-    const newLayout: LayoutType = {
-      id: `layout_${Date.now()}`,
-      name: newLayoutName,
-      description: newLayoutDesc,
-      widgets: [],
-      gridCols: 4,
-      isPublic: false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    setLayouts(prev => [...prev, newLayout]);
-    setEditingLayout(newLayout);
-    setIsEditing(true);
-    setIsCreateOpen(false);
-    setNewLayoutName("");
-    setNewLayoutDesc("");
-    toast.success("Đã tạo layout mới");
+    try {
+      const result = await createMutation.mutateAsync({
+        name: newLayoutName,
+        description: newLayoutDesc || undefined,
+        widgets: [],
+        gridCols: 4,
+        isPublic: false,
+      });
+      const newLayout: LayoutType = {
+        id: String(result?.id),
+        name: newLayoutName,
+        description: newLayoutDesc || undefined,
+        widgets: [],
+        gridCols: 4,
+        isPublic: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      setEditingLayout(newLayout);
+      setIsEditing(true);
+      setIsCreateOpen(false);
+      setNewLayoutName("");
+      setNewLayoutDesc("");
+      toast.success(t('dashboard.layoutCreated'));
+    } catch (e) {
+      toast.error(t('dashboard.createError'));
+    }
   };
 
-  const handleSaveLayout = (layout: LayoutType) => {
-    setLayouts(prev => prev.map(l => l.id === layout.id ? layout : l));
-    setIsEditing(false);
-    setEditingLayout(null);
-    toast.success("Đã lưu layout");
+  const handleSaveLayout = async (layout: LayoutType) => {
+    try {
+      await updateMutation.mutateAsync({
+        id: Number(layout.id),
+        name: layout.name,
+        description: layout.description,
+        widgets: layout.widgets,
+        gridCols: layout.gridCols,
+        isPublic: layout.isPublic,
+      });
+      setIsEditing(false);
+      setEditingLayout(null);
+      toast.success(t('dashboard.layoutSaved'));
+    } catch (e) {
+      toast.error(t('dashboard.saveError'));
+    }
   };
 
-  const handleDeleteLayout = (layoutId: string) => {
-    setLayouts(prev => prev.filter(l => l.id !== layoutId));
-    toast.success("Đã xóa layout");
+  const handleDeleteLayout = async (layoutId: string) => {
+    try {
+      await deleteMutation.mutateAsync({ id: Number(layoutId) });
+      toast.success(t('dashboard.layoutDeleted'));
+    } catch (e) {
+      toast.error(t('dashboard.deleteError'));
+    }
   };
 
-  const handleDuplicateLayout = (layout: LayoutType) => {
-    const newLayout: LayoutType = {
-      ...layout,
-      id: `layout_${Date.now()}`,
-      name: `${layout.name} (Copy)`,
-      isPublic: false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    setLayouts(prev => [...prev, newLayout]);
-    toast.success("Đã sao chép layout");
+  const handleDuplicateLayout = async (layout: LayoutType) => {
+    try {
+      await duplicateMutation.mutateAsync({ id: Number(layout.id) });
+      toast.success(t('dashboard.layoutDuplicated'));
+    } catch (e) {
+      toast.error(t('dashboard.duplicateError'));
+    }
   };
 
-  const handleToggleFavorite = (layoutId: string) => {
-    setFavorites(prev => 
-      prev.includes(layoutId) 
-        ? prev.filter(id => id !== layoutId)
-        : [...prev, layoutId]
-    );
+  const handleToggleFavorite = async (layoutId: string) => {
+    try {
+      await toggleFavoriteMutation.mutateAsync({ id: Number(layoutId) });
+    } catch (e) {
+      toast.error(t('dashboard.favoriteError'));
+    }
   };
 
-  const handleTogglePublic = (layoutId: string) => {
-    setLayouts(prev => prev.map(l => 
-      l.id === layoutId ? { ...l, isPublic: !l.isPublic } : l
-    ));
-    toast.success("Đã cập nhật trạng thái chia sẻ");
+  const handleTogglePublic = async (layoutId: string) => {
+    try {
+      await togglePublicMutation.mutateAsync({ id: Number(layoutId) });
+      toast.success(t('dashboard.shareStatusUpdated'));
+    } catch (e) {
+      toast.error(t('dashboard.shareStatusError'));
+    }
   };
 
   const formatDate = (date: Date) => {
@@ -177,28 +224,28 @@ export default function CustomDashboard() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Custom Dashboard</h1>
+            <h1 className="text-2xl font-bold">{t('dashboard.customDashboard')}</h1>
             <p className="text-muted-foreground">
-              Tạo và quản lý các dashboard tùy chỉnh
+              {t('dashboard.customDashboardDescription')}
             </p>
           </div>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="w-4 h-4 mr-2" />
-                Tạo Dashboard
+                {t('dashboard.createDashboard')}
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Tạo Dashboard mới</DialogTitle>
+                <DialogTitle>{t('dashboard.createNewDashboard')}</DialogTitle>
                 <DialogDescription>
-                  Nhập thông tin cho dashboard mới
+                  {t('dashboard.enterNewDashboardInfo')}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Tên dashboard *</Label>
+                  <Label>{t('dashboard.dashboardName')} *</Label>
                   <Input
                     value={newLayoutName}
                     onChange={(e) => setNewLayoutName(e.target.value)}
@@ -206,21 +253,21 @@ export default function CustomDashboard() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Mô tả</Label>
+                  <Label>{t('common.description')}</Label>
                   <Textarea
                     value={newLayoutDesc}
                     onChange={(e) => setNewLayoutDesc(e.target.value)}
-                    placeholder="Mô tả ngắn về dashboard..."
+                    placeholder={t('dashboard.descriptionPlaceholder')}
                     rows={3}
                   />
                 </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
-                  Hủy
+                  {t('common.cancel')}
                 </Button>
                 <Button onClick={handleCreateLayout}>
-                  Tạo & Thiết kế
+                  {t('dashboard.createAndDesign')}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -231,7 +278,7 @@ export default function CustomDashboard() {
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Tìm kiếm dashboard..."
+            placeholder={t('dashboard.searchDashboard')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-9"
@@ -243,15 +290,15 @@ export default function CustomDashboard() {
           <TabsList>
             <TabsTrigger value="my-layouts">
               <Lock className="w-4 h-4 mr-2" />
-              Của tôi ({myLayouts.length})
+              {t('dashboard.mine')} ({myLayouts.length})
             </TabsTrigger>
             <TabsTrigger value="shared">
               <Globe className="w-4 h-4 mr-2" />
-              Được chia sẻ ({sharedLayouts.length})
+              {t('dashboard.shared')} ({sharedLayouts.length})
             </TabsTrigger>
             <TabsTrigger value="favorites">
               <Star className="w-4 h-4 mr-2" />
-              Yêu thích ({favoriteLayouts.length})
+              {t('dashboard.favorites')} ({favoriteLayouts.length})
             </TabsTrigger>
           </TabsList>
 
@@ -276,13 +323,13 @@ export default function CustomDashboard() {
       return (
         <div className="text-center py-12">
           <LayoutGrid className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
-          <h3 className="text-lg font-medium mb-2">Chưa có dashboard</h3>
+          <h3 className="text-lg font-medium mb-2">{t('dashboard.noDashboard')}</h3>
           <p className="text-muted-foreground mb-4">
-            Tạo dashboard đầu tiên của bạn
+            {t('dashboard.createFirstDashboard')}
           </p>
           <Button onClick={() => setIsCreateOpen(true)}>
             <Plus className="w-4 h-4 mr-2" />
-            Tạo Dashboard
+            {t('dashboard.createDashboard')}
           </Button>
         </div>
       );
@@ -299,7 +346,7 @@ export default function CustomDashboard() {
                     {layout.name}
                   </CardTitle>
                   <CardDescription className="truncate">
-                    {layout.description || "Không có mô tả"}
+                    {layout.description || t('dashboard.noDescription')}
                   </CardDescription>
                 </div>
                 <Button
@@ -308,7 +355,7 @@ export default function CustomDashboard() {
                   className="shrink-0"
                   onClick={() => handleToggleFavorite(layout.id)}
                 >
-                  {favorites.includes(layout.id) ? (
+                  {favoriteIds.has(layout.id) ? (
                     <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                   ) : (
                     <StarOff className="w-4 h-4" />
@@ -328,7 +375,7 @@ export default function CustomDashboard() {
               {/* Meta */}
               <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
                 <Clock className="w-3 h-3" />
-                <span>Cập nhật: {formatDate(layout.updatedAt)}</span>
+                <span>{t('dashboard.updated')}: {formatDate(layout.updatedAt)}</span>
                 {layout.isPublic && (
                   <Badge variant="secondary" className="ml-auto">
                     <Globe className="w-3 h-3 mr-1" />
@@ -349,7 +396,7 @@ export default function CustomDashboard() {
                   }}
                 >
                   <Edit className="w-3 h-3 mr-1" />
-                  Chỉnh sửa
+                  {t('dashboard.edit')}
                 </Button>
                 <Button
                   variant="outline"

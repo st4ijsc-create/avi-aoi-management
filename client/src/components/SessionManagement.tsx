@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,6 +47,7 @@ const getBrowserIcon = (browser: string) => {
 };
 
 export function SessionManagement() {
+  const { t } = useTranslation();
   const [showRevokeAllDialog, setShowRevokeAllDialog] = useState(false);
   const [sessionToRevoke, setSessionToRevoke] = useState<number | null>(null);
 
@@ -56,7 +58,7 @@ export function SessionManagement() {
   // Mutations
   const revokeMutation = trpc.session.revoke.useMutation({
     onSuccess: () => {
-      toast.success("Đã đăng xuất khỏi thiết bị");
+      toast.success(t('auth.loggedOutDevice'));
       setSessionToRevoke(null);
       refetch();
     },
@@ -67,7 +69,7 @@ export function SessionManagement() {
 
   const revokeAllMutation = trpc.session.revokeAll.useMutation({
     onSuccess: () => {
-      toast.success("Đã đăng xuất khỏi tất cả thiết bị khác");
+      toast.success(t('auth.loggedOutAllDevices'));
       setShowRevokeAllDialog(false);
       refetch();
     },
@@ -95,16 +97,16 @@ export function SessionManagement() {
           <div>
             <CardTitle className="flex items-center gap-2">
               <Shield className="h-5 w-5" />
-              Quản lý phiên đăng nhập
+              {t('auth.sessionManagement')}
             </CardTitle>
             <CardDescription>
-              Xem và quản lý các thiết bị đang đăng nhập vào tài khoản của bạn
+              {t('auth.sessionManagementDescription')}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => refetch()}>
               <RefreshCw className="h-4 w-4 mr-2" />
-              Làm mới
+              {t('common.refresh')}
             </Button>
             {sessions && sessions.length > 1 && (
               <Button 
@@ -113,7 +115,7 @@ export function SessionManagement() {
                 onClick={() => setShowRevokeAllDialog(true)}
               >
                 <Trash2 className="h-4 w-4 mr-2" />
-                Đăng xuất tất cả
+                {t('auth.logoutAll')}
               </Button>
             )}
           </div>
@@ -124,7 +126,7 @@ export function SessionManagement() {
         <div className="flex items-center gap-2 mb-4 p-3 bg-muted/50 rounded-lg">
           <Globe className="h-5 w-5 text-muted-foreground" />
           <span className="text-sm">
-            {sessionCount?.count || 0} phiên đang hoạt động
+            {sessionCount?.count || 0} {t('auth.activeSessions')}
           </span>
         </div>
 
@@ -162,7 +164,7 @@ export function SessionManagement() {
                           </span>
                           {session.isCurrent && (
                             <Badge variant="default" className="text-xs">
-                              Phiên hiện tại
+                              {t('auth.currentSession')}
                             </Badge>
                           )}
                         </div>
@@ -181,7 +183,7 @@ export function SessionManagement() {
                         </div>
                         <p className="text-xs text-muted-foreground flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          Hoạt động {formatLastActivity(session.lastActivityAt)}
+                          {t('auth.activeAgo', { time: formatLastActivity(session.lastActivityAt) })}
                         </p>
                       </div>
                     </div>
@@ -195,7 +197,7 @@ export function SessionManagement() {
                         onClick={() => setSessionToRevoke(session.id)}
                       >
                         <LogOut className="h-4 w-4 mr-1" />
-                        Đăng xuất
+                        {t('auth.logout')}
                       </Button>
                     )}
                   </div>
@@ -206,7 +208,7 @@ export function SessionManagement() {
         ) : (
           <div className="text-center py-8 text-muted-foreground">
             <Globe className="h-12 w-12 mx-auto mb-2 opacity-50" />
-            <p>Không có phiên đăng nhập nào</p>
+            <p>{t('auth.noSessions')}</p>
           </div>
         )}
       </CardContent>
@@ -215,16 +217,15 @@ export function SessionManagement() {
       <Dialog open={sessionToRevoke !== null} onOpenChange={() => setSessionToRevoke(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Đăng xuất khỏi thiết bị</DialogTitle>
+            <DialogTitle>{t('auth.logoutFromDevice')}</DialogTitle>
             <DialogDescription>
-              Bạn có chắc chắn muốn đăng xuất khỏi thiết bị này? 
-              Thiết bị sẽ cần đăng nhập lại để truy cập tài khoản.
+              {t('auth.logoutFromDeviceDescription')}
             </DialogDescription>
           </DialogHeader>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setSessionToRevoke(null)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -236,7 +237,7 @@ export function SessionManagement() {
               ) : (
                 <LogOut className="h-4 w-4 mr-2" />
               )}
-              Đăng xuất
+              {t('auth.logout')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -246,24 +247,23 @@ export function SessionManagement() {
       <Dialog open={showRevokeAllDialog} onOpenChange={setShowRevokeAllDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Đăng xuất tất cả thiết bị</DialogTitle>
+            <DialogTitle>{t('auth.logoutAllDevices')}</DialogTitle>
             <DialogDescription>
-              Bạn có chắc chắn muốn đăng xuất khỏi tất cả thiết bị khác? 
-              Chỉ phiên hiện tại sẽ được giữ lại.
+              {t('auth.logoutAllDevicesDescription')}
             </DialogDescription>
           </DialogHeader>
 
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Cảnh báo</AlertTitle>
+            <AlertTitle>{t('common.warning')}</AlertTitle>
             <AlertDescription>
-              Tất cả các thiết bị khác sẽ bị đăng xuất ngay lập tức và cần đăng nhập lại.
+              {t('auth.logoutAllWarning')}
             </AlertDescription>
           </Alert>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowRevokeAllDialog(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -275,7 +275,7 @@ export function SessionManagement() {
               ) : (
                 <Trash2 className="h-4 w-4 mr-2" />
               )}
-              Đăng xuất tất cả
+              {t('auth.logoutAll')}
             </Button>
           </DialogFooter>
         </DialogContent>

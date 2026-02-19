@@ -9,85 +9,204 @@ import { permissions, users, userRoles, type Permission, type InsertPermission }
 const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
   admin: [
     // Admin has full access to everything
+    // Dashboard
     { category: 'dashboard', moduleName: 'dashboard_view', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
     { category: 'dashboard', moduleName: 'dashboard_widgets', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'dashboard', moduleName: 'dashboard_corporate', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'dashboard', moduleName: 'dashboard_drilldown', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'dashboard', moduleName: 'dashboard_templates', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    // History
     { category: 'history', moduleName: 'history_view', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+    { category: 'history', moduleName: 'history_detail', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'history', moduleName: 'history_export', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'history', moduleName: 'history_delete', canView: true, canCreate: false, canEdit: false, canDelete: true, canExport: false },
+    { category: 'history', moduleName: 'history_correct', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    { category: 'history', moduleName: 'history_ai_analysis', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: true },
+    // Analytics
     { category: 'analytics', moduleName: 'analytics_view', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
     { category: 'analytics', moduleName: 'analytics_advanced', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_spc', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_category', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_product_comparison', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_oee', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_oee_targets', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'analytics', moduleName: 'analytics_machine_health', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_defect_heatmap', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_defect_prediction', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_root_cause', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_predictive_alerts', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'analytics', moduleName: 'analytics_workstation', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_ai_performance', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    // Reports
     { category: 'reports', moduleName: 'reports_view', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
     { category: 'reports', moduleName: 'reports_create', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     { category: 'reports', moduleName: 'reports_schedule', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     { category: 'reports', moduleName: 'reports_export', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'reports', moduleName: 'reports_templates', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    // MQTT
     { category: 'mqtt', moduleName: 'mqtt_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'mqtt', moduleName: 'mqtt_configure', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     { category: 'mqtt', moduleName: 'mqtt_logs', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'mqtt', moduleName: 'mqtt_alerts', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'mqtt', moduleName: 'mqtt_profiles', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+    { category: 'mqtt', moduleName: 'mqtt_assignments', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+    { category: 'mqtt', moduleName: 'mqtt_monitoring', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'mqtt', moduleName: 'mqtt_bulletin', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'mqtt', moduleName: 'mqtt_replay', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
+    // Settings
     { category: 'settings', moduleName: 'settings_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_factory', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'settings', moduleName: 'settings_products', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     { category: 'settings', moduleName: 'settings_machines', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
-    { category: 'settings', moduleName: 'settings_users', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     { category: 'settings', moduleName: 'settings_alerts', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
-    { category: 'admin', moduleName: 'admin_panel', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
-    { category: 'admin', moduleName: 'admin_logs', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'settings', moduleName: 'settings_measurement_points', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'settings', moduleName: 'settings_workstations', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'settings', moduleName: 'settings_shifts', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'settings', moduleName: 'settings_stages', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'settings', moduleName: 'settings_yield_thresholds', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'settings', moduleName: 'settings_product_mapping', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'settings', moduleName: 'settings_process', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'settings', moduleName: 'settings_smtp', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'settings', moduleName: 'settings_notification_sounds', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
+    { category: 'settings', moduleName: 'settings_cache', canView: true, canCreate: false, canEdit: true, canDelete: true, canExport: false },
+    // Admin
+    { category: 'admin', moduleName: 'admin_users', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     { category: 'admin', moduleName: 'admin_permissions', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'admin', moduleName: 'admin_roles', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     { category: 'admin', moduleName: 'admin_system', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'admin', moduleName: 'admin_audit', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'admin', moduleName: 'admin_sessions', canView: true, canCreate: false, canEdit: false, canDelete: true, canExport: false },
+    { category: 'admin', moduleName: 'admin_2fa', canView: true, canCreate: false, canEdit: true, canDelete: true, canExport: false },
+    { category: 'admin', moduleName: 'admin_backup', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: true },
+    { category: 'admin', moduleName: 'admin_import_export', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: true },
+    // Production
+    { category: 'production', moduleName: 'production_orders', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+    { category: 'production', moduleName: 'production_layout', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'production', moduleName: 'production_line_assignments', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    // Machine Monitoring
+    { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'machine_monitoring', moduleName: 'machine_alerts', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+    // Annotations
+    { category: 'annotations', moduleName: 'annotation_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'annotations', moduleName: 'annotation_create', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'annotations', moduleName: 'annotation_templates', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'annotations', moduleName: 'annotation_export', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'annotations', moduleName: 'annotation_ai', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
   ],
   supervisor: [
     // Supervisor can view and manage most things except admin functions
+    // Dashboard
     { category: 'dashboard', moduleName: 'dashboard_view', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: true },
     { category: 'dashboard', moduleName: 'dashboard_widgets', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    { category: 'dashboard', moduleName: 'dashboard_corporate', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'dashboard', moduleName: 'dashboard_drilldown', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    // History
     { category: 'history', moduleName: 'history_view', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: true },
+    { category: 'history', moduleName: 'history_detail', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'history', moduleName: 'history_export', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'history', moduleName: 'history_correct', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // Analytics
     { category: 'analytics', moduleName: 'analytics_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'analytics', moduleName: 'analytics_advanced', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_spc', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_oee', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_machine_health', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_workstation', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_defect_heatmap', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_root_cause', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
+    // Reports
     { category: 'reports', moduleName: 'reports_view', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
     { category: 'reports', moduleName: 'reports_create', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'reports', moduleName: 'reports_schedule', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'reports', moduleName: 'reports_export', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'reports', moduleName: 'reports_templates', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // MQTT
     { category: 'mqtt', moduleName: 'mqtt_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'mqtt', moduleName: 'mqtt_monitoring', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // Settings
     { category: 'settings', moduleName: 'settings_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_alerts', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    { category: 'settings', moduleName: 'settings_shifts', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // Production
+    { category: 'production', moduleName: 'production_orders', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
+    { category: 'production', moduleName: 'production_layout', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'production', moduleName: 'production_line_assignments', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // Machine Monitoring
+    { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
+    // Annotations
+    { category: 'annotations', moduleName: 'annotation_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'annotations', moduleName: 'annotation_create', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
   ],
   quality_inspector: [
     // Quality inspector focuses on inspection data and quality control
+    // Dashboard
     { category: 'dashboard', moduleName: 'dashboard_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    // History
     { category: 'history', moduleName: 'history_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'history', moduleName: 'history_detail', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'history', moduleName: 'history_export', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'history', moduleName: 'history_correct', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    { category: 'history', moduleName: 'history_ai_analysis', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
+    // Analytics
     { category: 'analytics', moduleName: 'analytics_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'analytics', moduleName: 'analytics_advanced', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_spc', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_defect_heatmap', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_root_cause', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
+    // Reports
     { category: 'reports', moduleName: 'reports_view', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: true },
     { category: 'reports', moduleName: 'reports_create', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
     { category: 'reports', moduleName: 'reports_export', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    // Settings
     { category: 'settings', moduleName: 'settings_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_alerts', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // Annotations
+    { category: 'annotations', moduleName: 'annotation_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'annotations', moduleName: 'annotation_create', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    { category: 'annotations', moduleName: 'annotation_templates', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    { category: 'annotations', moduleName: 'annotation_ai', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
   ],
   operator: [
     // Operator can view assigned machines and submit inspection data
     { category: 'dashboard', moduleName: 'dashboard_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'history', moduleName: 'history_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'history', moduleName: 'history_detail', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
+    { category: 'production', moduleName: 'production_orders', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
   ],
   maintenance: [
     // Maintenance can view machine status and logs
     { category: 'dashboard', moduleName: 'dashboard_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'history', moduleName: 'history_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'history', moduleName: 'history_detail', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'history', moduleName: 'history_export', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'mqtt', moduleName: 'mqtt_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'mqtt', moduleName: 'mqtt_logs', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'mqtt', moduleName: 'mqtt_monitoring', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_machines', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    { category: 'machine_monitoring', moduleName: 'machine_alerts', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
+    { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
+    { category: 'analytics', moduleName: 'analytics_machine_health', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
   ],
   viewer: [
     // Viewer has read-only access to dashboards and reports
     { category: 'dashboard', moduleName: 'dashboard_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'history', moduleName: 'history_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'history', moduleName: 'history_detail', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'analytics', moduleName: 'analytics_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'reports', moduleName: 'reports_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
   ],
   user: [
     // Basic user access
     { category: 'dashboard', moduleName: 'dashboard_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'history', moduleName: 'history_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    { category: 'history', moduleName: 'history_detail', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
   ]
 };
 
@@ -124,7 +243,10 @@ const permissionCategoryEnum = z.enum([
   'reports',
   'mqtt',
   'settings',
-  'admin'
+  'admin',
+  'production',
+  'machine_monitoring',
+  'annotations'
 ]);
 
 export const permissionsRouter = router({
@@ -195,9 +317,7 @@ export const permissionsRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       
-      const targetUser = await db.query.users.findFirst({
-        where: eq(users.id, input.userId)
-      });
+      const [targetUser] = await db.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).limit(1);
       
       if (!targetUser) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
@@ -372,21 +492,17 @@ export const permissionsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       // Check if user exists
-      const targetUser = await db.query.users.findFirst({
-        where: eq(users.id, input.userId)
-      });
+      const [targetUser] = await db.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).limit(1);
       
       if (!targetUser) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
       }
       
       // Check if permission already exists
-      const existing = await db.query.permissions.findFirst({
-        where: and(
-          eq(permissions.userId, input.userId),
-          eq(permissions.moduleName, input.moduleName)
-        )
-      });
+      const [existing] = await db.select().from(permissions).where(and(
+        eq(permissions.userId, input.userId),
+        eq(permissions.moduleName, input.moduleName)
+      )).limit(1);
       
       if (existing) {
         // Update existing permission
@@ -450,9 +566,7 @@ export const permissionsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       // Check if user exists
-      const targetUser = await db.query.users.findFirst({
-        where: eq(users.id, input.userId)
-      });
+      const [targetUser] = await db.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).limit(1);
       
       if (!targetUser) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
@@ -492,9 +606,7 @@ export const permissionsRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      const permission = await db.query.permissions.findFirst({
-        where: eq(permissions.id, input.id)
-      });
+      const [permission] = await db.select({ id: permissions.id }).from(permissions).where(eq(permissions.id, input.id)).limit(1);
       
       if (!permission) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Permission not found' });
@@ -523,42 +635,99 @@ export const permissionsRouter = router({
   getAvailableModules: adminProcedure
     .query(() => {
       return [
-        // Dashboard modules
-        { category: 'dashboard', moduleName: 'dashboard_view', displayName: 'View Dashboard', description: 'Access to main dashboard page' },
-        { category: 'dashboard', moduleName: 'dashboard_widgets', displayName: 'Manage Widgets', description: 'Add/edit/delete dashboard widgets' },
-        
-        // History modules
-        { category: 'history', moduleName: 'history_view', displayName: 'View History', description: 'Access to inspection history page' },
-        { category: 'history', moduleName: 'history_export', displayName: 'Export History', description: 'Export history data to files' },
-        { category: 'history', moduleName: 'history_delete', displayName: 'Delete History', description: 'Delete inspection records' },
-        
-        // Analytics modules
-        { category: 'analytics', moduleName: 'analytics_view', displayName: 'View Analytics', description: 'Access to analytics dashboards' },
-        { category: 'analytics', moduleName: 'analytics_advanced', displayName: 'Advanced Analytics', description: 'Access to SPC, trend analysis, etc.' },
-        
-        // Reports modules
-        { category: 'reports', moduleName: 'reports_view', displayName: 'View Reports', description: 'Access to reports page' },
-        { category: 'reports', moduleName: 'reports_create', displayName: 'Create Reports', description: 'Generate new reports' },
-        { category: 'reports', moduleName: 'reports_schedule', displayName: 'Schedule Reports', description: 'Set up automated report schedules' },
-        { category: 'reports', moduleName: 'reports_export', displayName: 'Export Reports', description: 'Export reports to files' },
-        
-        // MQTT modules
-        { category: 'mqtt', moduleName: 'mqtt_view', displayName: 'View MQTT Status', description: 'Monitor MQTT connections' },
-        { category: 'mqtt', moduleName: 'mqtt_configure', displayName: 'Configure MQTT', description: 'Edit MQTT settings and clients' },
-        { category: 'mqtt', moduleName: 'mqtt_logs', displayName: 'View MQTT Logs', description: 'Access MQTT message logs' },
-        
-        // Settings modules
-        { category: 'settings', moduleName: 'settings_view', displayName: 'View Settings', description: 'Access to settings page' },
-        { category: 'settings', moduleName: 'settings_factory', displayName: 'Factory Settings', description: 'Manage factories, workshops, lines' },
-        { category: 'settings', moduleName: 'settings_products', displayName: 'Product Settings', description: 'Manage products and models' },
-        { category: 'settings', moduleName: 'settings_machines', displayName: 'Machine Settings', description: 'Manage machines and equipment' },
-        { category: 'settings', moduleName: 'settings_alerts', displayName: 'Alert Settings', description: 'Configure alert rules and notifications' },
-        
-        // Admin modules
-        { category: 'admin', moduleName: 'admin_users', displayName: 'User Management', description: 'Create/edit/delete users' },
-        { category: 'admin', moduleName: 'admin_permissions', displayName: 'Permissions Management', description: 'Manage user permissions' },
-        { category: 'admin', moduleName: 'admin_system', displayName: 'System Settings', description: 'Advanced system configuration' },
-        { category: 'admin', moduleName: 'admin_audit', displayName: 'Audit Logs', description: 'View system audit logs' },
+        // ======================== DASHBOARD ========================
+        { category: 'dashboard', moduleName: 'dashboard_view', displayName: 'Xem Dashboard', description: 'Truy cập trang dashboard chính, xem tổng quan sản xuất' },
+        { category: 'dashboard', moduleName: 'dashboard_widgets', displayName: 'Quản lý Widget', description: 'Thêm/sửa/xóa widget trên dashboard, tùy chỉnh bố cục' },
+        { category: 'dashboard', moduleName: 'dashboard_corporate', displayName: 'Dashboard Tập đoàn', description: 'Xem dashboard tổng hợp toàn tập đoàn, so sánh nhà máy' },
+        { category: 'dashboard', moduleName: 'dashboard_drilldown', displayName: 'Drill-Down Chi tiết', description: 'Xem chi tiết từ tập đoàn → nhà máy → dây chuyền → máy' },
+        { category: 'dashboard', moduleName: 'dashboard_templates', displayName: 'Mẫu Dashboard', description: 'Tạo và quản lý mẫu dashboard, marketplace template' },
+
+        // ======================== HISTORY ========================
+        { category: 'history', moduleName: 'history_view', displayName: 'Xem Lịch sử', description: 'Truy cập trang lịch sử kiểm tra, tìm kiếm, lọc dữ liệu' },
+        { category: 'history', moduleName: 'history_detail', displayName: 'Xem Chi tiết Inspection', description: 'Xem chi tiết từng inspection, xem ảnh, kết quả đo' },
+        { category: 'history', moduleName: 'history_export', displayName: 'Xuất Lịch sử', description: 'Xuất dữ liệu lịch sử ra CSV/Excel/PDF' },
+        { category: 'history', moduleName: 'history_delete', displayName: 'Xóa Lịch sử', description: 'Xóa bản ghi inspection từ hệ thống' },
+        { category: 'history', moduleName: 'history_correct', displayName: 'Sửa kết quả Inspection', description: 'Chỉnh sửa, annotation kết quả kiểm tra, xác nhận NTF' },
+        { category: 'history', moduleName: 'history_ai_analysis', displayName: 'Phân tích AI', description: 'Sử dụng AI để phân tích kết quả kiểm tra' },
+
+        // ======================== ANALYTICS ========================
+        { category: 'analytics', moduleName: 'analytics_view', displayName: 'Xem Analytics', description: 'Truy cập trang phân tích cơ bản' },
+        { category: 'analytics', moduleName: 'analytics_advanced', displayName: 'Phân tích Nâng cao', description: 'Truy cập SPC, phân tích xu hướng, v.v.' },
+        { category: 'analytics', moduleName: 'analytics_spc', displayName: 'Phân tích SPC', description: 'Biểu đồ kiểm soát, phát hiện bất thường, phân tích năng lực' },
+        { category: 'analytics', moduleName: 'analytics_category', displayName: 'Analytics theo Loại SP', description: 'Phân tích theo danh mục sản phẩm' },
+        { category: 'analytics', moduleName: 'analytics_product_comparison', displayName: 'So sánh Sản phẩm', description: 'So sánh chỉ số giữa các sản phẩm/model' },
+        { category: 'analytics', moduleName: 'analytics_oee', displayName: 'Dashboard OEE', description: 'Xem hiệu suất thiết bị tổng thể (OEE)' },
+        { category: 'analytics', moduleName: 'analytics_oee_targets', displayName: 'Cấu hình Mục tiêu OEE', description: 'Thiết lập và quản lý mục tiêu OEE' },
+        { category: 'analytics', moduleName: 'analytics_machine_health', displayName: 'Sức khỏe Máy', description: 'Giám sát sức khỏe máy, downtime, bảo trì' },
+        { category: 'analytics', moduleName: 'analytics_defect_heatmap', displayName: 'Heatmap Lỗi', description: 'Xem bản đồ nhiệt phân bố lỗi trên sản phẩm' },
+        { category: 'analytics', moduleName: 'analytics_defect_prediction', displayName: 'Dự đoán Lỗi', description: 'Xem dự đoán xu hướng lỗi bằng AI' },
+        { category: 'analytics', moduleName: 'analytics_root_cause', displayName: 'Phân tích Nguyên nhân gốc', description: 'Phân tích và quản lý nguyên nhân gốc của lỗi' },
+        { category: 'analytics', moduleName: 'analytics_predictive_alerts', displayName: 'Cảnh báo Dự đoán', description: 'Quản lý cảnh báo dự đoán thông minh' },
+        { category: 'analytics', moduleName: 'analytics_workstation', displayName: 'Analytics Trạm Làm việc', description: 'Phân tích theo trạm làm việc (workstation)' },
+        { category: 'analytics', moduleName: 'analytics_ai_performance', displayName: 'Hiệu suất AI', description: 'Dashboard đánh giá hiệu suất mô hình AI' },
+
+        // ======================== REPORTS ========================
+        { category: 'reports', moduleName: 'reports_view', displayName: 'Xem Báo cáo', description: 'Truy cập trang báo cáo, xem báo cáo có sẵn' },
+        { category: 'reports', moduleName: 'reports_create', displayName: 'Tạo Báo cáo', description: 'Tạo mới báo cáo từ dữ liệu hệ thống' },
+        { category: 'reports', moduleName: 'reports_schedule', displayName: 'Lịch trình Báo cáo', description: 'Đặt lịch gửi báo cáo tự động qua email' },
+        { category: 'reports', moduleName: 'reports_export', displayName: 'Xuất Báo cáo', description: 'Xuất báo cáo ra PDF/Excel/CSV' },
+        { category: 'reports', moduleName: 'reports_templates', displayName: 'Mẫu Báo cáo', description: 'Quản lý mẫu báo cáo tùy chỉnh' },
+
+        // ======================== MQTT ========================
+        { category: 'mqtt', moduleName: 'mqtt_view', displayName: 'Xem MQTT Status', description: 'Giám sát trạng thái kết nối MQTT, thống kê' },
+        { category: 'mqtt', moduleName: 'mqtt_configure', displayName: 'Cấu hình MQTT', description: 'Thêm/sửa/xóa MQTT client, cấu hình topic' },
+        { category: 'mqtt', moduleName: 'mqtt_logs', displayName: 'Xem Log MQTT', description: 'Truy cập nhật ký tin nhắn MQTT, lịch sử kết nối' },
+        { category: 'mqtt', moduleName: 'mqtt_alerts', displayName: 'Cảnh báo MQTT', description: 'Quản lý quy tắc cảnh báo MQTT, xem lịch sử cảnh báo' },
+        { category: 'mqtt', moduleName: 'mqtt_profiles', displayName: 'MQTT Profile', description: 'Quản lý profile kết nối MQTT (tạo/sửa/xóa/nhân bản)' },
+        { category: 'mqtt', moduleName: 'mqtt_assignments', displayName: 'MQTT Gán Profile', description: 'Gán profile MQTT cho máy/dây chuyền' },
+        { category: 'mqtt', moduleName: 'mqtt_monitoring', displayName: 'Giám sát Kết nối', description: 'Giám sát chi tiết trạng thái kết nối, health check' },
+        { category: 'mqtt', moduleName: 'mqtt_bulletin', displayName: 'MQTT Bulletin', description: 'Quản lý bulletin phát qua MQTT, lên lịch phát' },
+        { category: 'mqtt', moduleName: 'mqtt_replay', displayName: 'MQTT Replay', description: 'Phát lại tin nhắn MQTT để kiểm tra' },
+
+        // ======================== SETTINGS ========================
+        { category: 'settings', moduleName: 'settings_view', displayName: 'Xem Cài đặt', description: 'Truy cập trang cài đặt hệ thống' },
+        { category: 'settings', moduleName: 'settings_factory', displayName: 'QL Nhà máy', description: 'Quản lý nhà máy, xưởng, dây chuyền, trạm' },
+        { category: 'settings', moduleName: 'settings_products', displayName: 'QL Sản phẩm', description: 'Quản lý sản phẩm, model, danh mục sản phẩm' },
+        { category: 'settings', moduleName: 'settings_machines', displayName: 'QL Thiết bị', description: 'Quản lý máy AOI, đồng bộ máy, cấu hình kết nối' },
+        { category: 'settings', moduleName: 'settings_alerts', displayName: 'QL Cảnh báo', description: 'Cấu hình quy tắc cảnh báo, ngưỡng thông báo' },
+        { category: 'settings', moduleName: 'settings_measurement_points', displayName: 'QL Điểm đo', description: 'Quản lý điểm đo trên sản phẩm, upload ảnh crop' },
+        { category: 'settings', moduleName: 'settings_workstations', displayName: 'QL Trạm Làm việc', description: 'Quản lý trạm làm việc (workstation)' },
+        { category: 'settings', moduleName: 'settings_shifts', displayName: 'QL Ca làm việc', description: 'Cấu hình ca làm việc, lịch ca' },
+        { category: 'settings', moduleName: 'settings_stages', displayName: 'QL Công đoạn', description: 'Quản lý công đoạn trên dây chuyền' },
+        { category: 'settings', moduleName: 'settings_yield_thresholds', displayName: 'Ngưỡng Yield', description: 'Cấu hình ngưỡng yield cảnh báo' },
+        { category: 'settings', moduleName: 'settings_product_mapping', displayName: 'Gán SP-Máy', description: 'Gán sản phẩm cho máy, quản lý bản đồ SP-Máy' },
+        { category: 'settings', moduleName: 'settings_process', displayName: 'QL Quy trình', description: 'Quản lý quy trình sản xuất' },
+        { category: 'settings', moduleName: 'settings_smtp', displayName: 'Cấu hình Email', description: 'Cấu hình SMTP, mẫu email thông báo' },
+        { category: 'settings', moduleName: 'settings_notification_sounds', displayName: 'Âm thanh Thông báo', description: 'Tùy chỉnh âm thanh cảnh báo/thông báo' },
+        { category: 'settings', moduleName: 'settings_cache', displayName: 'Quản lý Cache', description: 'Xem thống kê cache, xóa cache' },
+
+        // ======================== ADMIN ========================
+        { category: 'admin', moduleName: 'admin_users', displayName: 'QL Người dùng', description: 'Tạo/sửa/xóa tài khoản người dùng' },
+        { category: 'admin', moduleName: 'admin_permissions', displayName: 'QL Phân quyền', description: 'Quản lý quyền truy cập cho người dùng' },
+        { category: 'admin', moduleName: 'admin_roles', displayName: 'QL Vai trò', description: 'Quản lý vai trò, gán vai trò cho người dùng' },
+        { category: 'admin', moduleName: 'admin_system', displayName: 'Cấu hình Hệ thống', description: 'Cấu hình hệ thống nâng cao' },
+        { category: 'admin', moduleName: 'admin_audit', displayName: 'Nhật ký Audit', description: 'Xem nhật ký hoạt động hệ thống' },
+        { category: 'admin', moduleName: 'admin_sessions', displayName: 'QL Phiên đăng nhập', description: 'Xem/thu hồi phiên đăng nhập người dùng' },
+        { category: 'admin', moduleName: 'admin_2fa', displayName: 'QL Xác thực 2 bước', description: 'Quản lý xác thực hai yếu tố (2FA)' },
+        { category: 'admin', moduleName: 'admin_backup', displayName: 'Sao lưu & Phục hồi', description: 'Sao lưu dữ liệu, khôi phục cấu hình' },
+        { category: 'admin', moduleName: 'admin_import_export', displayName: 'Nhập/Xuất dữ liệu', description: 'Nhập/xuất hàng loạt nhà máy, máy, sản phẩm' },
+
+        // ======================== PRODUCTION ========================
+        { category: 'production', moduleName: 'production_orders', displayName: 'QL Đơn sản xuất', description: 'Tạo/sửa/xóa đơn hàng sản xuất, lên lịch' },
+        { category: 'production', moduleName: 'production_layout', displayName: 'Bố trí Xưởng', description: 'Quản lý layout xưởng sản xuất, vị trí máy' },
+        { category: 'production', moduleName: 'production_line_assignments', displayName: 'Gán SP-Dây chuyền', description: 'Gán sản phẩm cho dây chuyền sản xuất' },
+
+        // ======================== MACHINE MONITORING ========================
+        { category: 'machine_monitoring', moduleName: 'machine_status', displayName: 'Trạng thái Máy', description: 'Giám sát trạng thái máy real-time, uptime' },
+        { category: 'machine_monitoring', moduleName: 'machine_alerts', displayName: 'Cảnh báo Máy', description: 'Cấu hình và xem cảnh báo trạng thái máy' },
+        { category: 'machine_monitoring', moduleName: 'machine_downtime', displayName: 'Quản lý Downtime', description: 'Ghi nhận và phân tích thời gian ngừng máy' },
+
+        // ======================== ANNOTATIONS ========================
+        { category: 'annotations', moduleName: 'annotation_view', displayName: 'Xem Annotation', description: 'Xem annotation trên hình ảnh kiểm tra' },
+        { category: 'annotations', moduleName: 'annotation_create', displayName: 'Tạo Annotation', description: 'Tạo và chỉnh sửa annotation trên hình ảnh' },
+        { category: 'annotations', moduleName: 'annotation_templates', displayName: 'Mẫu Annotation', description: 'Quản lý mẫu annotation tái sử dụng' },
+        { category: 'annotations', moduleName: 'annotation_export', displayName: 'Xuất/Nhập Annotation', description: 'Xuất và nhập dữ liệu annotation' },
+        { category: 'annotations', moduleName: 'annotation_ai', displayName: 'AI Annotation', description: 'Sử dụng AI hỗ trợ annotation, feedback training' },
       ];
     }),
 
@@ -581,9 +750,7 @@ export const permissionsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       // Check if name already exists
-      const existing = await db.query.userRoles.findFirst({
-        where: eq(userRoles.name, input.name)
-      });
+      const [existing] = await db.select({ id: userRoles.id }).from(userRoles).where(eq(userRoles.name, input.name)).limit(1);
       
       if (existing) {
         throw new TRPCError({ code: 'CONFLICT', message: 'Role name already exists' });
@@ -611,9 +778,7 @@ export const permissionsRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      const existing = await db.query.userRoles.findFirst({
-        where: eq(userRoles.id, input.id)
-      });
+      const [existing] = await db.select().from(userRoles).where(eq(userRoles.id, input.id)).limit(1);
       
       if (!existing) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Role not found' });
@@ -640,9 +805,7 @@ export const permissionsRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      const existing = await db.query.userRoles.findFirst({
-        where: eq(userRoles.id, input.id)
-      });
+      const [existing] = await db.select().from(userRoles).where(eq(userRoles.id, input.id)).limit(1);
       
       if (!existing) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Role not found' });
@@ -657,6 +820,235 @@ export const permissionsRouter = router({
         .where(eq(userRoles.id, input.id));
       
       return { success: true };
+    }),
+
+  // ============================================
+  // Custom Role Builder - Feature 3
+  // ============================================
+
+  /**
+   * Duplicate an existing role as a new custom role.
+   * Copies all permission templates from the source role.
+   */
+  duplicateRole: adminProcedure
+    .input(z.object({
+      sourceRoleId: z.number().optional(),
+      sourceBuiltInRole: z.string().optional(),
+      newName: z.string().min(1).max(100),
+      description: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+
+      // Check name uniqueness
+      const [existing] = await db
+        .select({ id: userRoles.id })
+        .from(userRoles)
+        .where(eq(userRoles.name, input.newName))
+        .limit(1);
+      if (existing) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Tên role đã tồn tại' });
+      }
+
+      let sourcePermissions: any[];
+
+      if (input.sourceRoleId) {
+        // Duplicate from an existing custom role
+        const [sourceRole] = await db
+          .select()
+          .from(userRoles)
+          .where(eq(userRoles.id, input.sourceRoleId))
+          .limit(1);
+        if (!sourceRole) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Source role not found' });
+        }
+        sourcePermissions = (sourceRole.permissions as any[]) || [];
+      } else if (input.sourceBuiltInRole && DEFAULT_ROLE_PERMISSIONS[input.sourceBuiltInRole]) {
+        // Duplicate from a built-in role template
+        sourcePermissions = DEFAULT_ROLE_PERMISSIONS[input.sourceBuiltInRole];
+      } else {
+        // Empty role
+        sourcePermissions = [];
+      }
+
+      const [newRole] = await db
+        .insert(userRoles)
+        .values({
+          name: input.newName,
+          description: input.description || `Nhân bản từ ${input.sourceBuiltInRole || 'custom role'}`,
+          permissions: sourcePermissions,
+          isSystem: false,
+          createdBy: ctx.user.id,
+        })
+        .returning();
+
+      return newRole;
+    }),
+
+  /**
+   * Apply a custom role's permission template to a user.
+   * Creates/updates individual permission rows for the user
+   * based on the role's JSON template.
+   */
+  applyRoleToUser: adminProcedure
+    .input(z.object({
+      roleId: z.number(),
+      userId: z.number(),
+      overwrite: z.boolean().default(true),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+
+      // Get the role
+      const [role] = await db
+        .select()
+        .from(userRoles)
+        .where(eq(userRoles.id, input.roleId))
+        .limit(1);
+      if (!role) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Role not found' });
+      }
+
+      // Validate user exists
+      const [targetUser] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.id, input.userId))
+        .limit(1);
+      if (!targetUser) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+      }
+
+      const permTemplates = (role.permissions as any[]) || [];
+      let applied = 0;
+      let skipped = 0;
+
+      for (const tmpl of permTemplates) {
+        if (!tmpl.moduleName) continue;
+
+        if (input.overwrite) {
+          // Upsert: delete existing then insert
+          await db
+            .delete(permissions)
+            .where(and(
+              eq(permissions.userId, input.userId),
+              eq(permissions.moduleName, tmpl.moduleName),
+            ));
+
+          await db.insert(permissions).values({
+            userId: input.userId,
+            moduleName: tmpl.moduleName,
+            canView: tmpl.canView ?? false,
+            canCreate: tmpl.canCreate ?? false,
+            canEdit: tmpl.canEdit ?? false,
+            canDelete: tmpl.canDelete ?? false,
+            canExport: tmpl.canExport ?? false,
+            grantedBy: ctx.user.id,
+          });
+          applied++;
+        } else {
+          // Only insert if no existing permission for this module
+          const [existingPerm] = await db
+            .select({ id: permissions.id })
+            .from(permissions)
+            .where(and(
+              eq(permissions.userId, input.userId),
+              eq(permissions.moduleName, tmpl.moduleName),
+            ))
+            .limit(1);
+
+          if (!existingPerm) {
+            await db.insert(permissions).values({
+              userId: input.userId,
+              moduleName: tmpl.moduleName,
+              canView: tmpl.canView ?? false,
+              canCreate: tmpl.canCreate ?? false,
+              canEdit: tmpl.canEdit ?? false,
+              canDelete: tmpl.canDelete ?? false,
+              canExport: tmpl.canExport ?? false,
+              grantedBy: ctx.user.id,
+            });
+            applied++;
+          } else {
+            skipped++;
+          }
+        }
+      }
+
+      return { success: true, applied, skipped, totalTemplates: permTemplates.length };
+    }),
+
+  /**
+   * Apply a built-in role template to a user.
+   * Convenience endpoint that doesn't require a custom role to be created first.
+   */
+  applyBuiltInRoleToUser: adminProcedure
+    .input(z.object({
+      builtInRole: z.string(),
+      userId: z.number(),
+      overwrite: z.boolean().default(true),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      const permTemplates = DEFAULT_ROLE_PERMISSIONS[input.builtInRole];
+
+      if (!permTemplates) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Unknown built-in role: ${input.builtInRole}. Available: ${Object.keys(DEFAULT_ROLE_PERMISSIONS).join(', ')}`,
+        });
+      }
+
+      // Validate user exists
+      const [targetUser] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.id, input.userId))
+        .limit(1);
+      if (!targetUser) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+      }
+
+      let applied = 0;
+
+      for (const tmpl of permTemplates) {
+        if (!tmpl.moduleName) continue;
+
+        if (input.overwrite) {
+          await db
+            .delete(permissions)
+            .where(and(
+              eq(permissions.userId, input.userId),
+              eq(permissions.moduleName, tmpl.moduleName),
+            ));
+        }
+
+        await db.insert(permissions).values({
+          userId: input.userId,
+          moduleName: tmpl.moduleName,
+          canView: tmpl.canView ?? false,
+          canCreate: tmpl.canCreate ?? false,
+          canEdit: tmpl.canEdit ?? false,
+          canDelete: tmpl.canDelete ?? false,
+          canExport: tmpl.canExport ?? false,
+          grantedBy: ctx.user.id,
+        });
+        applied++;
+      }
+
+      return { success: true, applied, role: input.builtInRole };
+    }),
+
+  /**
+   * Get the list of built-in role names available for template duplication.
+   */
+  getBuiltInRoles: adminProcedure
+    .query(() => {
+      return Object.keys(DEFAULT_ROLE_PERMISSIONS).map(roleName => ({
+        name: roleName,
+        permissionCount: DEFAULT_ROLE_PERMISSIONS[roleName].length,
+        categories: [...new Set(DEFAULT_ROLE_PERMISSIONS[roleName].map((p: any) => p.category))],
+      }));
     }),
 });
 

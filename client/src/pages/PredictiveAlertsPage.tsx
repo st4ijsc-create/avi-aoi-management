@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ type AlertSeverity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 type AlertType = "DEFECT_SPIKE" | "YIELD_DROP" | "MACHINE_FAILURE" | "QUALITY_DEGRADATION" | "PATTERN_ANOMALY";
 
 export default function PredictiveAlertsPage() {
+  const { t } = useTranslation();
   const [statusFilter, setStatusFilter] = useState<AlertStatus | "all">("all");
   const [severityFilter, setSeverityFilter] = useState<AlertSeverity | "all">("all");
   const [typeFilter, setTypeFilter] = useState<AlertType | "all">("all");
@@ -64,7 +66,7 @@ export default function PredictiveAlertsPage() {
   // Mutations
   const acknowledgeMutation = trpc.predictiveAlert.acknowledge.useMutation({
     onSuccess: () => {
-      toast.success("Đã xác nhận alert");
+      toast.success(t('reports.alertAcknowledged'));
       utils.predictiveAlert.list.invalidate();
       utils.predictiveAlert.stats.invalidate();
     },
@@ -72,7 +74,7 @@ export default function PredictiveAlertsPage() {
 
   const resolveMutation = trpc.predictiveAlert.resolve.useMutation({
     onSuccess: () => {
-      toast.success("Đã giải quyết alert");
+      toast.success(t('reports.alertResolved'));
       setResolveDialogOpen(false);
       setResolutionNotes("");
       utils.predictiveAlert.list.invalidate();
@@ -82,7 +84,7 @@ export default function PredictiveAlertsPage() {
 
   const dismissMutation = trpc.predictiveAlert.dismiss.useMutation({
     onSuccess: () => {
-      toast.success("Đã bỏ qua alert");
+      toast.success(t('reports.alertDismissed'));
       utils.predictiveAlert.list.invalidate();
       utils.predictiveAlert.stats.invalidate();
     },
@@ -90,7 +92,7 @@ export default function PredictiveAlertsPage() {
 
   const generateMutation = trpc.predictiveAlert.generatePredictions.useMutation({
     onSuccess: (data) => {
-      toast.success(`Đã tạo ${data.alertsCreated} alerts mới`);
+      toast.success(t('reports.alertsCreated', { count: data.alertsCreated }));
       utils.predictiveAlert.list.invalidate();
       utils.predictiveAlert.stats.invalidate();
     },
@@ -150,9 +152,9 @@ export default function PredictiveAlertsPage() {
         {/* Header */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Cảnh báo Dự đoán</h1>
+            <h1 className="text-2xl font-bold">{t('reports.predictiveAlerts')}</h1>
             <p className="text-muted-foreground">
-              AI tự động phát hiện và cảnh báo các vấn đề tiềm ẩn
+              {t('reports.predictiveAlertsDesc')}
             </p>
           </div>
           <Button onClick={() => generateMutation.mutate({})} disabled={generateMutation.isPending}>
@@ -161,7 +163,7 @@ export default function PredictiveAlertsPage() {
             ) : (
               <RefreshCw className="h-4 w-4 mr-2" />
             )}
-            Chạy Dự đoán
+            {t('reports.runPrediction')}
           </Button>
         </div>
 
@@ -171,7 +173,7 @@ export default function PredictiveAlertsPage() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Tổng Alerts</p>
+                  <p className="text-sm text-muted-foreground">{t('reports.totalAlerts')}</p>
                   <p className="text-2xl font-bold">{stats?.total || 0}</p>
                 </div>
                 <Bell className="h-8 w-8 text-muted-foreground" />
@@ -182,7 +184,7 @@ export default function PredictiveAlertsPage() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Đang Hoạt động</p>
+                  <p className="text-sm text-muted-foreground">{t('reports.activeAlerts')}</p>
                   <p className="text-2xl font-bold text-red-500">{stats?.active || 0}</p>
                 </div>
                 <AlertCircle className="h-8 w-8 text-red-500" />
@@ -204,7 +206,7 @@ export default function PredictiveAlertsPage() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Đã Giải quyết</p>
+                  <p className="text-sm text-muted-foreground">{t('reports.resolvedAlerts')}</p>
                   <p className="text-2xl font-bold text-green-500">{stats?.byStatus?.RESOLVED || 0}</p>
                 </div>
                 <CheckCircle className="h-8 w-8 text-green-500" />
@@ -219,23 +221,23 @@ export default function PredictiveAlertsPage() {
             <div className="flex flex-wrap gap-4">
               <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as AlertStatus | "all")}>
                 <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Trạng thái" />
+                  <SelectValue placeholder={t('common.status')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả</SelectItem>
-                  <SelectItem value="ACTIVE">Đang hoạt động</SelectItem>
-                  <SelectItem value="ACKNOWLEDGED">Đã xác nhận</SelectItem>
-                  <SelectItem value="RESOLVED">Đã giải quyết</SelectItem>
-                  <SelectItem value="DISMISSED">Đã bỏ qua</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
+                  <SelectItem value="ACTIVE">{t('reports.statusActive')}</SelectItem>
+                  <SelectItem value="ACKNOWLEDGED">{t('reports.statusAcknowledged')}</SelectItem>
+                  <SelectItem value="RESOLVED">{t('reports.statusResolved')}</SelectItem>
+                  <SelectItem value="DISMISSED">{t('reports.statusDismissed')}</SelectItem>
                 </SelectContent>
               </Select>
 
               <Select value={severityFilter} onValueChange={(v) => setSeverityFilter(v as AlertSeverity | "all")}>
                 <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Mức độ" />
+                  <SelectValue placeholder={t('reports.severity')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
                   <SelectItem value="CRITICAL">Critical</SelectItem>
                   <SelectItem value="HIGH">High</SelectItem>
                   <SelectItem value="MEDIUM">Medium</SelectItem>
@@ -245,10 +247,10 @@ export default function PredictiveAlertsPage() {
 
               <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as AlertType | "all")}>
                 <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Loại alert" />
+                  <SelectValue placeholder={t('reports.alertType')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
                   <SelectItem value="DEFECT_SPIKE">Defect Spike</SelectItem>
                   <SelectItem value="YIELD_DROP">Yield Drop</SelectItem>
                   <SelectItem value="MACHINE_FAILURE">Machine Failure</SelectItem>
@@ -265,7 +267,7 @@ export default function PredictiveAlertsPage() {
           {/* Alert List */}
           <Card>
             <CardHeader>
-              <CardTitle>Danh sách Cảnh báo</CardTitle>
+              <CardTitle>{t('reports.alertList')}</CardTitle>
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[500px]">
@@ -276,7 +278,7 @@ export default function PredictiveAlertsPage() {
                 ) : alerts?.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                     <Bell className="h-12 w-12 mb-4 opacity-50" />
-                    <p>Không có cảnh báo nào</p>
+                    <p>{t('reports.noAlerts')}</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -308,7 +310,7 @@ export default function PredictiveAlertsPage() {
                             <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                               <span>{format(new Date(alert.createdAt), "dd/MM HH:mm", { locale: vi })}</span>
                               {alert.confidenceScore && (
-                                <span>Độ tin cậy: {alert.confidenceScore}%</span>
+                                <span>{t('reports.confidence')}: {alert.confidenceScore}%</span>
                               )}
                             </div>
                           </div>
@@ -324,7 +326,7 @@ export default function PredictiveAlertsPage() {
           {/* Alert Detail */}
           <Card>
             <CardHeader>
-              <CardTitle>Chi tiết Cảnh báo</CardTitle>
+              <CardTitle>{t('reports.alertDetail')}</CardTitle>
             </CardHeader>
             <CardContent>
               {alertDetail ? (
@@ -342,15 +344,15 @@ export default function PredictiveAlertsPage() {
                   {(alertDetail.currentValue !== null || alertDetail.predictedValue !== null) && (
                     <div className="grid grid-cols-3 gap-4">
                       <div className="p-3 rounded-lg bg-muted/50 text-center">
-                        <p className="text-xs text-muted-foreground">Hiện tại</p>
+                        <p className="text-xs text-muted-foreground">{t('reports.current')}</p>
                         <p className="text-lg font-bold">{alertDetail.currentValue?.toFixed(1)}%</p>
                       </div>
                       <div className="p-3 rounded-lg bg-red-500/10 text-center">
-                        <p className="text-xs text-muted-foreground">Dự đoán</p>
+                        <p className="text-xs text-muted-foreground">{t('reports.predicted')}</p>
                         <p className="text-lg font-bold text-red-500">{alertDetail.predictedValue?.toFixed(1)}%</p>
                       </div>
                       <div className="p-3 rounded-lg bg-muted/50 text-center">
-                        <p className="text-xs text-muted-foreground">Ngưỡng</p>
+                        <p className="text-xs text-muted-foreground">{t('reports.thresholdLabel')}</p>
                         <p className="text-lg font-bold">{alertDetail.threshold?.toFixed(1)}%</p>
                       </div>
                     </div>
@@ -360,7 +362,7 @@ export default function PredictiveAlertsPage() {
                   {alertDetail.confidenceScore && (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between text-sm">
-                        <span>Độ tin cậy</span>
+                        <span>{t('reports.confidence')}</span>
                         <span className="font-medium">{alertDetail.confidenceScore}%</span>
                       </div>
                       <Progress value={alertDetail.confidenceScore} />
@@ -371,7 +373,7 @@ export default function PredictiveAlertsPage() {
                   {alertDetail.predictedTimeframe && (
                     <div className="flex items-center gap-2 text-sm">
                       <Clock className="h-4 w-4 text-muted-foreground" />
-                      <span>Dự kiến xảy ra trong: <strong>{alertDetail.predictedTimeframe}</strong></span>
+                      <span>{t('reports.expectedOccurrence')} <strong>{alertDetail.predictedTimeframe}</strong></span>
                     </div>
                   )}
 
@@ -380,13 +382,13 @@ export default function PredictiveAlertsPage() {
                     <div className="space-y-3">
                       <h4 className="font-medium flex items-center gap-2">
                         <Lightbulb className="h-4 w-4 text-yellow-500" />
-                        Phân tích AI
+                        {t('reports.aiAnalysis')}
                       </h4>
                       
                       {/* Factors */}
                       {alertDetail.aiAnalysis.factors?.length > 0 && (
                         <div className="space-y-2">
-                          <p className="text-sm text-muted-foreground">Yếu tố ảnh hưởng:</p>
+                          <p className="text-sm text-muted-foreground">{t('reports.influencingFactors')}:</p>
                           {alertDetail.aiAnalysis.factors.map((factor: any) => (
                             <div key={factor.name} className="p-2 rounded bg-muted/50">
                               <div className="flex items-center justify-between">
@@ -402,7 +404,7 @@ export default function PredictiveAlertsPage() {
                       {/* Recommendations */}
                       {alertDetail.aiAnalysis.recommendations?.length > 0 && (
                         <div className="space-y-2">
-                          <p className="text-sm text-muted-foreground">Đề xuất:</p>
+                          <p className="text-sm text-muted-foreground">{t('reports.recommendations')}:</p>
                           {alertDetail.aiAnalysis.recommendations.map((rec: string, index: number) => (
                             <div key={`alert-rec-${index}`} className="flex items-start gap-2 p-2 rounded bg-muted/50">
                               <Target className="h-4 w-4 mt-0.5 text-primary" />
@@ -422,14 +424,14 @@ export default function PredictiveAlertsPage() {
                         disabled={acknowledgeMutation.isPending}
                       >
                         <Eye className="h-4 w-4 mr-2" />
-                        Xác nhận
+                        {t('common.acknowledge')}
                       </Button>
                       <Button 
                         variant="outline"
                         onClick={() => setResolveDialogOpen(true)}
                       >
                         <Check className="h-4 w-4 mr-2" />
-                        Giải quyết
+                        {t('common.resolve')}
                       </Button>
                       <Button 
                         variant="ghost"
@@ -437,7 +439,7 @@ export default function PredictiveAlertsPage() {
                         disabled={dismissMutation.isPending}
                       >
                         <X className="h-4 w-4 mr-2" />
-                        Bỏ qua
+                        {t('common.dismiss')}
                       </Button>
                     </div>
                   )}
@@ -448,7 +450,7 @@ export default function PredictiveAlertsPage() {
                         onClick={() => setResolveDialogOpen(true)}
                       >
                         <Check className="h-4 w-4 mr-2" />
-                        Giải quyết
+                        {t('common.resolve')}
                       </Button>
                     </div>
                   )}
@@ -456,7 +458,7 @@ export default function PredictiveAlertsPage() {
                   {/* Resolution Notes */}
                   {alertDetail.resolutionNotes && (
                     <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                      <p className="text-sm font-medium text-green-600">Ghi chú giải quyết:</p>
+                      <p className="text-sm font-medium text-green-600">{t('reports.resolutionNotes')}:</p>
                       <p className="text-sm mt-1">{alertDetail.resolutionNotes}</p>
                     </div>
                   )}
@@ -464,7 +466,7 @@ export default function PredictiveAlertsPage() {
               ) : (
                 <div className="flex flex-col items-center justify-center h-[400px] text-muted-foreground">
                   <Bell className="h-12 w-12 mb-4 opacity-50" />
-                  <p>Chọn một cảnh báo để xem chi tiết</p>
+                  <p>{t('reports.selectAlertToView')}</p>
                 </div>
               )}
             </CardContent>
@@ -475,20 +477,20 @@ export default function PredictiveAlertsPage() {
         <Dialog open={resolveDialogOpen} onOpenChange={setResolveDialogOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Giải quyết Cảnh báo</DialogTitle>
+              <DialogTitle>{t('reports.resolveAlert')}</DialogTitle>
               <DialogDescription>
-                Thêm ghi chú về cách bạn đã giải quyết vấn đề này
+                {t('reports.resolveAlertDesc')}
               </DialogDescription>
             </DialogHeader>
             <Textarea
-              placeholder="Nhập ghi chú giải quyết..."
+              placeholder={t('reports.enterResolutionNotes')}
               value={resolutionNotes}
               onChange={(e) => setResolutionNotes(e.target.value)}
               rows={4}
             />
             <DialogFooter>
               <Button variant="outline" onClick={() => setResolveDialogOpen(false)}>
-                Hủy
+                {t('common.cancel')}
               </Button>
               <Button 
                 onClick={() => {
@@ -503,7 +505,7 @@ export default function PredictiveAlertsPage() {
                 ) : (
                   <Check className="h-4 w-4 mr-2" />
                 )}
-                Xác nhận Giải quyết
+                {t('reports.confirmResolve')}
               </Button>
             </DialogFooter>
           </DialogContent>

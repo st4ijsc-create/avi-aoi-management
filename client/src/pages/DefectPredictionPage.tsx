@@ -1,4 +1,5 @@
 import { Suspense, lazy } from 'react';
+import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -22,13 +23,15 @@ function LoadingSkeleton() {
 }
 
 export default function DefectPredictionPage() {
+  const { t } = useTranslation();
+
   return (
     <DashboardLayout>
       <div className="container py-6">
         <ErrorBoundary
           variant="default"
-          title="Không thể tải Dự đoán Defects"
-          description="Đã xảy ra lỗi khi tải dữ liệu. Vui lòng thử lại sau."
+          title={t('defects.cannotLoadPrediction')}
+          description={t('common.errorLoadingData')}
           showDetails
         >
           <Suspense fallback={<LoadingSkeleton />}>

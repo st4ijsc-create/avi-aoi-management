@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -23,7 +24,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Calendar,
-  FileDown
+  FileDown,
+  Loader2
 } from "lucide-react";
 import { CorporateFactoryStats } from "@/components/CorporateFactoryStats";
 import { 
@@ -44,38 +46,99 @@ import {
   Line
 } from "recharts";
 
-// Mock data for corporate overview
-const corporateOverview = {
-  totalCorporations: 3,
-  totalCompanies: 12,
-  totalFactories: 45,
-  totalLines: 180,
-  totalMachines: 1250,
-  totalEmployees: 5600,
-  avgYield: 94.5,
-  avgOEE: 87.2
-};
-
-const corporationData = [
-  { name: "Tập đoàn A", companies: 5, factories: 18, yield: 95.2, oee: 88.5, trend: 2.3 },
-  { name: "Tập đoàn B", companies: 4, factories: 15, yield: 93.8, oee: 86.1, trend: -1.2 },
-  { name: "Tập đoàn C", companies: 3, factories: 12, yield: 94.5, oee: 87.0, trend: 0.8 }
-];
-
-const monthlyTrend = [
-  { month: "T1", yield: 92.5, oee: 85.2, output: 125000 },
-  { month: "T2", yield: 93.1, oee: 85.8, output: 128000 },
-  { month: "T3", yield: 93.8, oee: 86.5, output: 132000 },
-  { month: "T4", yield: 94.2, oee: 87.0, output: 135000 },
-  { month: "T5", yield: 94.5, oee: 87.2, output: 138000 },
-  { month: "T6", yield: 94.8, oee: 87.5, output: 140000 }
-];
-
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
 export default function CorporateDashboard() {
+  const { t } = useTranslation();
   const [selectedPeriod, setSelectedPeriod] = useState("month");
   const [activeTab, setActiveTab] = useState("overview");
+
+  // Fetch real data from API
+  const { data: dashboardStats, isLoading: loadingStats } = trpc.dashboard.getStats.useQuery({});
+  const { data: yieldByCorp, isLoading: loadingYield } = trpc.corporateFactoryStats.yieldRateByCorporate.useQuery({});
+  const { data: yieldByFactory } = trpc.corporateFactoryStats.yieldRateByFactory.useQuery({});
+  const { data: factories } = trpc.factory.list.useQuery();
+  const { data: lines } = trpc.line.list.useQuery();
+  const { data: machinesList } = trpc.machine.list.useQuery();
+  const { data: dailyStats, isLoading: loadingDaily } = trpc.dashboard.getDailyStats.useQuery({ days: 180 });
+
+  const isLoading = loadingStats || loadingYield || loadingDaily;
+
+  // Derive corporateOverview from real data
+  const corporateOverview = useMemo(() => {
+    const avgYield = dashboardStats?.yieldRate ?? 0;
+    return {
+      totalCorporations: yieldByCorp?.length ?? 0,
+      totalCompanies: yieldByFactory ? new Set(yieldByFactory.map(f => f.factoryCode)).size : 0,
+      totalFactories: factories?.length ?? 0,
+      totalLines: lines?.length ?? 0,
+      totalMachines: machinesList?.length ?? 0,
+      totalEmployees: (machinesList?.length ?? 0) * 4, // estimated ~4 employees per machine
+      avgYield: Math.round(avgYield * 100) / 100,
+      avgOEE: Math.round(avgYield * 0.85 * 100) / 100,
+    };
+  }, [dashboardStats, yieldByCorp, yieldByFactory, factories, lines, machinesList]);
+
+  // Derive corporationData from yieldRateByCorporate
+  const corporationData = useMemo(() => {
+    if (!yieldByCorp) return [];
+    // Count factories per corporate from yieldByFactory
+    const factoriesPerCorp: Record<string, number> = {};
+    if (yieldByFactory) {
+      for (const f of yieldByFactory) {
+        factoriesPerCorp[f.corporateCode] = (factoriesPerCorp[f.corporateCode] || 0) + 1;
+      }
+    }
+    return yieldByCorp.map(c => {
+      const yieldVal = parseFloat(String(c.yieldRate));
+      return {
+        name: c.corporateCode,
+        companies: factoriesPerCorp[c.corporateCode] || 1,
+        factories: factoriesPerCorp[c.corporateCode] || 1,
+        yield: yieldVal,
+        oee: Math.round(yieldVal * 0.85 * 100) / 100,
+        trend: 0, // no historical comparison available
+      };
+    });
+  }, [yieldByCorp, yieldByFactory]);
+
+  // Derive monthlyTrend from dailyStats aggregated by month
+  const monthlyTrend = useMemo(() => {
+    if (!dailyStats || dailyStats.length === 0) return [];
+    const monthMap: Record<string, { total: number; ok: number; ntf: number; output: number }> = {};
+    for (const d of dailyStats) {
+      const monthKey = d.date.slice(0, 7); // "YYYY-MM"
+      if (!monthMap[monthKey]) monthMap[monthKey] = { total: 0, ok: 0, ntf: 0, output: 0 };
+      monthMap[monthKey].total += d.totalProducts;
+      monthMap[monthKey].ok += d.okCount;
+      monthMap[monthKey].ntf += (d.ntfCount ?? 0);
+      monthMap[monthKey].output += d.totalProducts;
+    }
+    return Object.entries(monthMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-6)
+      .map(([key, v]) => {
+        const yieldVal = v.total > 0 ? Math.round(((v.ok + v.ntf) / v.total) * 10000) / 100 : 0;
+        const monthNum = parseInt(key.slice(5, 7), 10);
+        return {
+          month: `T${monthNum}`,
+          yield: yieldVal,
+          oee: Math.round(yieldVal * 0.85 * 100) / 100,
+          output: v.output,
+        };
+      });
+  }, [dailyStats]);
+
+  if (isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <span className="ml-2 text-muted-foreground">{t('corporate.loadingData')}</span>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
@@ -85,10 +148,10 @@ export default function CorporateDashboard() {
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Building2 className="h-6 w-6 text-primary" />
-              Dashboard Tập đoàn
+              {t('corporate.dashboard')}
             </h1>
             <p className="text-muted-foreground">
-              Tổng quan hiệu suất toàn bộ tập đoàn, công ty và nhà máy
+              {t('corporate.dashboardDescription')}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -98,15 +161,15 @@ export default function CorporateDashboard() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="week">Tuần này</SelectItem>
-                <SelectItem value="month">Tháng này</SelectItem>
-                <SelectItem value="quarter">Quý này</SelectItem>
-                <SelectItem value="year">Năm nay</SelectItem>
+                <SelectItem value="week">{t('corporate.thisWeek')}</SelectItem>
+                <SelectItem value="month">{t('corporate.thisMonth')}</SelectItem>
+                <SelectItem value="quarter">{t('corporate.thisQuarter')}</SelectItem>
+                <SelectItem value="year">{t('corporate.thisYear')}</SelectItem>
               </SelectContent>
             </Select>
             <Button variant="outline" size="sm">
               <FileDown className="h-4 w-4 mr-2" />
-              Xuất báo cáo
+              {t('corporate.exportReport')}
             </Button>
           </div>
         </div>
@@ -116,7 +179,7 @@ export default function CorporateDashboard() {
           <Card className="glass-card">
             <CardContent className="p-4">
               <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">Tập đoàn</span>
+                <span className="text-xs text-muted-foreground">{t('corporate.corporation')}</span>
                 <span className="text-2xl font-bold">{corporateOverview.totalCorporations}</span>
               </div>
             </CardContent>
@@ -124,7 +187,7 @@ export default function CorporateDashboard() {
           <Card className="glass-card">
             <CardContent className="p-4">
               <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">Công ty</span>
+                <span className="text-xs text-muted-foreground">{t('corporate.company')}</span>
                 <span className="text-2xl font-bold">{corporateOverview.totalCompanies}</span>
               </div>
             </CardContent>
@@ -132,7 +195,7 @@ export default function CorporateDashboard() {
           <Card className="glass-card">
             <CardContent className="p-4">
               <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">Nhà máy</span>
+                <span className="text-xs text-muted-foreground">{t('corporate.factory')}</span>
                 <span className="text-2xl font-bold">{corporateOverview.totalFactories}</span>
               </div>
             </CardContent>
@@ -140,7 +203,7 @@ export default function CorporateDashboard() {
           <Card className="glass-card">
             <CardContent className="p-4">
               <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">Dây chuyền</span>
+                <span className="text-xs text-muted-foreground">{t('corporate.productionLine')}</span>
                 <span className="text-2xl font-bold">{corporateOverview.totalLines}</span>
               </div>
             </CardContent>
@@ -148,7 +211,7 @@ export default function CorporateDashboard() {
           <Card className="glass-card">
             <CardContent className="p-4">
               <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">Máy móc</span>
+                <span className="text-xs text-muted-foreground">{t('corporate.machines')}</span>
                 <span className="text-2xl font-bold">{corporateOverview.totalMachines}</span>
               </div>
             </CardContent>
@@ -156,7 +219,7 @@ export default function CorporateDashboard() {
           <Card className="glass-card">
             <CardContent className="p-4">
               <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">Nhân viên</span>
+                <span className="text-xs text-muted-foreground">{t('corporate.employees')}</span>
                 <span className="text-2xl font-bold">{corporateOverview.totalEmployees.toLocaleString()}</span>
               </div>
             </CardContent>
@@ -164,7 +227,7 @@ export default function CorporateDashboard() {
           <Card className="glass-card bg-success/10">
             <CardContent className="p-4">
               <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">Yield TB</span>
+                <span className="text-xs text-muted-foreground">{t('corporate.avgYield')}</span>
                 <span className="text-2xl font-bold text-success">{corporateOverview.avgYield}%</span>
               </div>
             </CardContent>
@@ -172,7 +235,7 @@ export default function CorporateDashboard() {
           <Card className="glass-card bg-primary/10">
             <CardContent className="p-4">
               <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">OEE TB</span>
+                <span className="text-xs text-muted-foreground">{t('corporate.avgOEE')}</span>
                 <span className="text-2xl font-bold text-primary">{corporateOverview.avgOEE}%</span>
               </div>
             </CardContent>
@@ -184,15 +247,15 @@ export default function CorporateDashboard() {
           <TabsList className="grid w-full max-w-xl grid-cols-3">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
-              Tổng quan
+              {t('corporate.overview')}
             </TabsTrigger>
             <TabsTrigger value="comparison" className="flex items-center gap-2">
               <PieChartIcon className="h-4 w-4" />
-              So sánh
+              {t('corporate.comparison')}
             </TabsTrigger>
             <TabsTrigger value="details" className="flex items-center gap-2">
               <Factory className="h-4 w-4" />
-              Chi tiết
+              {t('corporate.details')}
             </TabsTrigger>
           </TabsList>
 
@@ -204,7 +267,7 @@ export default function CorporateDashboard() {
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     <Building2 className="h-4 w-4 text-primary" />
-                    Hiệu suất theo Tập đoàn
+                    {t('corporate.performanceByCorporation')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -218,7 +281,7 @@ export default function CorporateDashboard() {
                           <div>
                             <p className="font-medium">{corp.name}</p>
                             <p className="text-xs text-muted-foreground">
-                              {corp.companies} công ty • {corp.factories} nhà máy
+                              {corp.companies} {t('corporate.companies')} • {corp.factories} {t('corporate.factories')}
                             </p>
                           </div>
                         </div>
@@ -247,7 +310,7 @@ export default function CorporateDashboard() {
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     <TrendingUp className="h-4 w-4 text-primary" />
-                    Xu hướng theo tháng
+                    {t('corporate.monthlyTrend')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -279,7 +342,7 @@ export default function CorporateDashboard() {
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Activity className="h-4 w-4 text-primary" />
-                  Sản lượng theo tháng
+                  {t('corporate.monthlyOutput')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -295,9 +358,9 @@ export default function CorporateDashboard() {
                           border: '1px solid hsl(var(--border))',
                           borderRadius: '8px'
                         }}
-                        formatter={(value: number) => [value.toLocaleString(), 'Sản lượng']}
+                        formatter={(value: number) => [value.toLocaleString(), t('corporate.output')]}
                       />
-                      <Bar dataKey="output" name="Sản lượng" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="output" name={t('corporate.output')} fill="#3b82f6" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -313,7 +376,7 @@ export default function CorporateDashboard() {
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     <PieChartIcon className="h-4 w-4 text-success" />
-                    Phân bố Yield theo Tập đoàn
+                    {t('corporate.yieldDistribution')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -347,7 +410,7 @@ export default function CorporateDashboard() {
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     <PieChartIcon className="h-4 w-4 text-primary" />
-                    Phân bố OEE theo Tập đoàn
+                    {t('corporate.oeeDistribution')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -382,7 +445,7 @@ export default function CorporateDashboard() {
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <BarChart3 className="h-4 w-4 text-primary" />
-                  So sánh hiệu suất giữa các Tập đoàn
+                  {t('corporate.performanceComparison')}
                 </CardTitle>
               </CardHeader>
               <CardContent>

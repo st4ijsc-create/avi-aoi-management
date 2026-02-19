@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,7 @@ import { cn } from "@/lib/utils";
 type AnalysisType = "DEFECT_ANALYSIS" | "YIELD_ANALYSIS" | "QUALITY_ANALYSIS" | "MACHINE_ANALYSIS";
 
 export default function RootCauseAnalysisPage() {
+  const { t } = useTranslation();
   const [analysisType, setAnalysisType] = useState<AnalysisType>("DEFECT_ANALYSIS");
   const [machineId, setMachineId] = useState<number | undefined>();
   const [productModelId, setProductModelId] = useState<number | undefined>();
@@ -106,9 +108,9 @@ export default function RootCauseAnalysisPage() {
         {/* Header */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Phân tích Nguyên nhân Gốc rễ</h1>
+            <h1 className="text-2xl font-bold">{t('reports.rootCauseAnalysis')}</h1>
             <p className="text-muted-foreground">
-              Sử dụng AI để phân tích và xác định nguyên nhân gốc rễ của defects
+              {t('reports.rootCauseAnalysisDesc')}
             </p>
           </div>
         </div>
@@ -118,42 +120,42 @@ export default function RootCauseAnalysisPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Search className="h-5 w-5" />
-              Cấu hình Phân tích
+              {t('reports.analysisConfig')}
             </CardTitle>
             <CardDescription>
-              Chọn loại phân tích và phạm vi dữ liệu
+              {t('reports.selectAnalysisTypeAndScope')}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
               {/* Analysis Type */}
               <div className="space-y-2">
-                <label className="text-sm font-medium">Loại phân tích</label>
+                <label className="text-sm font-medium">{t('reports.analysisType')}</label>
                 <Select value={analysisType} onValueChange={(v) => setAnalysisType(v as AnalysisType)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="DEFECT_ANALYSIS">Phân tích Defect</SelectItem>
-                    <SelectItem value="YIELD_ANALYSIS">Phân tích Yield</SelectItem>
-                    <SelectItem value="QUALITY_ANALYSIS">Phân tích Chất lượng</SelectItem>
-                    <SelectItem value="MACHINE_ANALYSIS">Phân tích Máy</SelectItem>
+                    <SelectItem value="DEFECT_ANALYSIS">{t('reports.defectAnalysis')}</SelectItem>
+                    <SelectItem value="YIELD_ANALYSIS">{t('reports.yieldAnalysis')}</SelectItem>
+                    <SelectItem value="QUALITY_ANALYSIS">{t('reports.qualityAnalysis')}</SelectItem>
+                    <SelectItem value="MACHINE_ANALYSIS">{t('reports.machineAnalysis')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               {/* Factory */}
               <div className="space-y-2">
-                <label className="text-sm font-medium">Nhà máy</label>
+                <label className="text-sm font-medium">{t('common.factory')}</label>
                 <Select 
                   value={factoryId?.toString() || "all"} 
                   onValueChange={(v) => setFactoryId(v === "all" ? undefined : parseInt(v))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Tất cả" />
+                    <SelectValue placeholder={t('common.all')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tất cả</SelectItem>
+                    <SelectItem value="all">{t('common.all')}</SelectItem>
                     {factories?.map((f: any) => (
                       <SelectItem key={f.id} value={f.id.toString()}>{f.name}</SelectItem>
                     ))}
@@ -163,16 +165,16 @@ export default function RootCauseAnalysisPage() {
 
               {/* Machine */}
               <div className="space-y-2">
-                <label className="text-sm font-medium">Máy</label>
+                <label className="text-sm font-medium">{t('common.machine')}</label>
                 <Select 
                   value={machineId?.toString() || "all"} 
                   onValueChange={(v) => setMachineId(v === "all" ? undefined : parseInt(v))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Tất cả" />
+                    <SelectValue placeholder={t('common.all')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tất cả</SelectItem>
+                    <SelectItem value="all">{t('common.all')}</SelectItem>
                     {machines?.map((m) => (
                       <SelectItem key={m.id} value={m.id.toString()}>{m.code} - {m.name}</SelectItem>
                     ))}
@@ -182,16 +184,16 @@ export default function RootCauseAnalysisPage() {
 
               {/* Product Model */}
               <div className="space-y-2">
-                <label className="text-sm font-medium">Sản phẩm</label>
+                <label className="text-sm font-medium">{t('common.product')}</label>
                 <Select 
                   value={productModelId?.toString() || "all"} 
                   onValueChange={(v) => setProductModelId(v === "all" ? undefined : parseInt(v))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Tất cả" />
+                    <SelectValue placeholder={t('common.all')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tất cả</SelectItem>
+                    <SelectItem value="all">{t('common.all')}</SelectItem>
                     {productModels?.map((p) => (
                       <SelectItem key={p.id} value={p.id.toString()}>{p.code} - {p.name}</SelectItem>
                     ))}
@@ -201,7 +203,7 @@ export default function RootCauseAnalysisPage() {
 
               {/* Date Range */}
               <div className="space-y-2">
-                <label className="text-sm font-medium">Khoảng thời gian</label>
+                <label className="text-sm font-medium">{t('common.dateRange')}</label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button variant="outline" className="w-full justify-start text-left font-normal">
@@ -230,12 +232,12 @@ export default function RootCauseAnalysisPage() {
                 {analyzeMutation.isPending ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Đang phân tích...
+                    {t('reports.analyzing')}
                   </>
                 ) : (
                   <>
                     <Zap className="mr-2 h-4 w-4" />
-                    Chạy Phân tích
+                    {t('reports.runAnalysis')}
                   </>
                 )}
               </Button>
@@ -250,7 +252,7 @@ export default function RootCauseAnalysisPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <History className="h-5 w-5" />
-                Lịch sử Phân tích
+                {t('reports.analysisHistory')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -276,18 +278,18 @@ export default function RootCauseAnalysisPage() {
                         </span>
                       </div>
                       <div className="mt-2 text-sm">
-                        <span className="font-medium">{analysis.dataPointsAnalyzed}</span> điểm dữ liệu
+                        <span className="font-medium">{analysis.dataPointsAnalyzed}</span> {t('reports.dataPoints')}
                       </div>
                       {analysis.machineCode && (
                         <div className="text-xs text-muted-foreground">
-                          Máy: {analysis.machineCode}
+                          {t('common.machine')}: {analysis.machineCode}
                         </div>
                       )}
                     </div>
                   ))}
                   {(!analysisHistory || analysisHistory.length === 0) && (
                     <div className="text-center py-8 text-muted-foreground">
-                      Chưa có phân tích nào
+                      {t('reports.noAnalysisYet')}
                     </div>
                   )}
                 </div>
@@ -300,7 +302,7 @@ export default function RootCauseAnalysisPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5" />
-                Kết quả Phân tích
+                {t('reports.analysisResults')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -310,7 +312,7 @@ export default function RootCauseAnalysisPage() {
                     <TabsTrigger value="factors">Top Factors</TabsTrigger>
                     <TabsTrigger value="pareto">Pareto</TabsTrigger>
                     <TabsTrigger value="insights">AI Insights</TabsTrigger>
-                    <TabsTrigger value="recommendations">Đề xuất</TabsTrigger>
+                    <TabsTrigger value="recommendations">{t('reports.recommendations')}</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="factors" className="mt-4">
@@ -347,7 +349,7 @@ export default function RootCauseAnalysisPage() {
                           <YAxis yAxisId="right" orientation="right" domain={[0, 100]} />
                           <Tooltip />
                           <Legend />
-                          <Bar yAxisId="left" dataKey="count" name="Số lượng" fill="#3b82f6">
+                          <Bar yAxisId="left" dataKey="count" name={t('common.quantity')} fill="#3b82f6">
                             {analysisDetail.paretoData?.slice(0, 10).map((_: any, index: number) => (
                               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                             ))}
@@ -356,7 +358,7 @@ export default function RootCauseAnalysisPage() {
                             yAxisId="right" 
                             type="monotone" 
                             dataKey="cumulativePercentage" 
-                            name="Tích lũy %" 
+                            name={t('reports.cumulativePercent')} 
                             stroke="#ef4444" 
                             strokeWidth={2}
                           />
@@ -371,7 +373,7 @@ export default function RootCauseAnalysisPage() {
                       <div className="p-4 rounded-lg bg-muted/50">
                         <h4 className="font-medium flex items-center gap-2 mb-2">
                           <Activity className="h-4 w-4" />
-                          Tổng quan
+                          {t('dashboard.overview')}
                         </h4>
                         <p className="text-sm">{analysisDetail.aiInsights?.summary}</p>
                       </div>
@@ -380,7 +382,7 @@ export default function RootCauseAnalysisPage() {
                       <div>
                         <h4 className="font-medium flex items-center gap-2 mb-3">
                           <AlertTriangle className="h-4 w-4 text-yellow-500" />
-                          Nguyên nhân Gốc rễ
+                          {t('reports.rootCauses')}
                         </h4>
                         <div className="space-y-2">
                           {analysisDetail.aiInsights?.rootCauses?.map((cause: any) => (
@@ -405,7 +407,7 @@ export default function RootCauseAnalysisPage() {
                       <div>
                         <h4 className="font-medium flex items-center gap-2 mb-3">
                           <Lightbulb className="h-4 w-4 text-yellow-500" />
-                          Đề xuất Hành động
+                          {t('reports.actionRecommendations')}
                         </h4>
                         <div className="space-y-2">
                           {analysisDetail.aiInsights?.recommendations?.map((rec: string, index: number) => (
@@ -421,7 +423,7 @@ export default function RootCauseAnalysisPage() {
                       <div>
                         <h4 className="font-medium flex items-center gap-2 mb-3">
                           <CheckCircle className="h-4 w-4 text-green-500" />
-                          Biện pháp Phòng ngừa
+                          {t('reports.preventiveMeasures')}
                         </h4>
                         <div className="space-y-2">
                           {analysisDetail.aiInsights?.preventiveMeasures?.map((measure: string, index: number) => (
@@ -438,7 +440,7 @@ export default function RootCauseAnalysisPage() {
               ) : (
                 <div className="flex flex-col items-center justify-center h-[400px] text-muted-foreground">
                   <PieChart className="h-12 w-12 mb-4 opacity-50" />
-                  <p>Chọn một phân tích từ lịch sử hoặc chạy phân tích mới</p>
+                  <p>{t('reports.selectOrRunAnalysis')}</p>
                 </div>
               )}
             </CardContent>

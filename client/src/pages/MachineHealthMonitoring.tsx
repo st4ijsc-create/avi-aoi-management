@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -56,10 +57,11 @@ interface HealthScore {
 
 // Health Status Badge
 function HealthStatusBadge({ status }: { status: 'healthy' | 'warning' | 'critical' }) {
+  const { t } = useTranslation();
   const config = {
-    healthy: { label: "Khỏe mạnh", variant: "default" as const, icon: CheckCircle2, color: "text-green-500" },
-    warning: { label: "Cảnh báo", variant: "secondary" as const, icon: AlertTriangle, color: "text-yellow-500" },
-    critical: { label: "Nguy hiểm", variant: "destructive" as const, icon: XCircle, color: "text-red-500" },
+    healthy: { label: t('machines.healthy'), variant: "default" as const, icon: CheckCircle2, color: "text-green-500" },
+    warning: { label: t('machines.warning'), variant: "secondary" as const, icon: AlertTriangle, color: "text-yellow-500" },
+    critical: { label: t('machines.critical'), variant: "destructive" as const, icon: XCircle, color: "text-red-500" },
   };
   
   const { label, variant, icon: Icon, color } = config[status];
@@ -176,6 +178,7 @@ function FactorCard({
 }
 
 export default function MachineHealthMonitoring() {
+  const { t } = useTranslation();
   const [selectedMachine, setSelectedMachine] = useState<number | null>(null);
   const [timeRange, setTimeRange] = useState<"day" | "week" | "month">("week");
 
@@ -190,41 +193,54 @@ export default function MachineHealthMonitoring() {
   // Calculate health for all machines
   const calculateHealthMutation = trpc.mqttClient.calculateMachineHealth.useMutation({
     onSuccess: () => {
-      toast.success("Đã tính toán health score");
+      toast.success(t('machines.healthScoreCalculated'));
       refetchHealth();
     },
   });
 
-  // Generate mock health history data for chart
+  // TODO: Replace with real health history API from `machineHealthHistory` table
+  // (see drizzle/schema/machine.ts — the table exists but has no router endpoint yet)
   const healthHistoryData = useMemo(() => {
-    const days = timeRange === "day" ? 24 : timeRange === "week" ? 7 : 30;
+    const points = timeRange === "day" ? 24 : timeRange === "week" ? 7 : 30;
     const data = [];
     const baseScore = machineHealth?.score || 75;
-    
-    for (let i = days - 1; i >= 0; i--) {
+    const machineIdSeed = selectedMachine || 1;
+
+    // Deterministic pseudo-random generator seeded by machineId to avoid chart jitter
+    const seededRandom = (index: number) => {
+      const x = Math.sin(machineIdSeed * 9301 + index * 49297) * 233280;
+      return x - Math.floor(x);
+    };
+
+    // Simulate a gradual trend toward the current score
+    let currentScore = baseScore - 5 + seededRandom(0) * 10; // start near base
+
+    for (let i = points - 1; i >= 0; i--) {
       const date = new Date();
       if (timeRange === "day") {
         date.setHours(date.getHours() - i);
       } else {
         date.setDate(date.getDate() - i);
       }
-      
-      // Add some variation
-      const variation = (Math.random() - 0.5) * 20;
-      const score = Math.max(0, Math.min(100, baseScore + variation));
-      
+
+      // Smooth walk: drift toward baseScore with small deterministic noise
+      const noise = (seededRandom(i + 1) - 0.5) * 6;
+      currentScore += (baseScore - currentScore) * 0.15 + noise;
+      currentScore = Math.max(0, Math.min(100, currentScore));
+      const score = Math.round(currentScore);
+
       data.push({
-        time: timeRange === "day" 
+        time: timeRange === "day"
           ? date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
           : date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
-        healthScore: Math.round(score),
-        oee: Math.round(score * 0.9 + Math.random() * 10),
-        uptime: Math.round(score * 0.95 + Math.random() * 5),
-        errorRate: Math.round(100 - score + Math.random() * 10),
+        healthScore: score,
+        oee: Math.max(0, Math.min(100, Math.round(score * 0.9 + seededRandom(i + 100) * 10))),
+        uptime: Math.max(0, Math.min(100, Math.round(score * 0.95 + seededRandom(i + 200) * 5))),
+        errorRate: Math.max(0, Math.min(100, Math.round(100 - score + seededRandom(i + 300) * 10))),
       });
     }
     return data;
-  }, [machineHealth, timeRange]);
+  }, [machineHealth, timeRange, selectedMachine]);
 
   // Radar chart data for factors
   const radarData = useMemo(() => {
@@ -262,11 +278,11 @@ export default function MachineHealthMonitoring() {
   // Export health report
   const exportHealthReport = () => {
     if (!machineComparisonData.length) {
-      toast.error("Không có dữ liệu để xuất");
+      toast.error(t('machines.noDataToExport'));
       return;
     }
 
-    const headers = ['Máy', 'Health Score', 'OEE (%)', 'Availability (%)', 'Performance (%)', 'Quality (%)'];
+    const headers = [t('machines.machine'), 'Health Score', 'OEE (%)', 'Availability (%)', 'Performance (%)', 'Quality (%)'];
     const rows = machineComparisonData.map(m => [
       m.name,
       m.healthScore,
@@ -287,7 +303,7 @@ export default function MachineHealthMonitoring() {
     link.download = `Machine_Health_Report_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-    toast.success("Đã xuất báo cáo Machine Health");
+    toast.success(t('machines.healthReportExported'));
   };
 
   return (
@@ -301,17 +317,17 @@ export default function MachineHealthMonitoring() {
               Machine Health Monitoring
             </h1>
             <p className="text-muted-foreground">
-              Theo dõi sức khỏe máy móc và dự đoán bảo trì
+              {t('machines.trackHealthAndMaintenance')}
             </p>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={exportHealthReport}>
               <Download className="h-4 w-4 mr-2" />
-              Xuất báo cáo
+              {t('machines.exportReport')}
             </Button>
             <Button variant="outline" onClick={() => { refetchOEE(); refetchHealth(); }}>
               <RefreshCw className="h-4 w-4 mr-2" />
-              Làm mới
+              {t('machines.refresh')}
             </Button>
           </div>
         </div>
@@ -321,13 +337,13 @@ export default function MachineHealthMonitoring() {
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
               <div className="flex-1">
-                <label className="text-sm font-medium">Chọn máy để xem chi tiết</label>
+                <label className="text-sm font-medium">{t('machines.selectMachineForDetails')}</label>
                 <Select
                   value={selectedMachine?.toString() || ""}
                   onValueChange={(v) => setSelectedMachine(parseInt(v))}
                 >
                   <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Chọn máy..." />
+                    <SelectValue placeholder={t('machines.selectMachine')} />
                   </SelectTrigger>
                   <SelectContent>
                     {machines?.map(m => (
@@ -339,15 +355,15 @@ export default function MachineHealthMonitoring() {
                 </Select>
               </div>
               <div>
-                <label className="text-sm font-medium">Khoảng thời gian</label>
+                <label className="text-sm font-medium">{t('machines.timeRange')}</label>
                 <Select value={timeRange} onValueChange={(v) => setTimeRange(v as any)}>
                   <SelectTrigger className="mt-1 w-32">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="day">24 giờ</SelectItem>
-                    <SelectItem value="week">7 ngày</SelectItem>
-                    <SelectItem value="month">30 ngày</SelectItem>
+                    <SelectItem value="day">{t('machines.24hours')}</SelectItem>
+                    <SelectItem value="week">{t('machines.7days')}</SelectItem>
+                    <SelectItem value="month">{t('machines.30days')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -357,10 +373,10 @@ export default function MachineHealthMonitoring() {
 
         <Tabs defaultValue="overview" className="space-y-4">
           <TabsList>
-            <TabsTrigger value="overview">Tổng quan</TabsTrigger>
-            <TabsTrigger value="details">Chi tiết máy</TabsTrigger>
-            <TabsTrigger value="comparison">So sánh máy</TabsTrigger>
-            <TabsTrigger value="alerts">Cảnh báo & Khuyến nghị</TabsTrigger>
+            <TabsTrigger value="overview">{t('machines.overview')}</TabsTrigger>
+            <TabsTrigger value="details">{t('machines.machineDetails')}</TabsTrigger>
+            <TabsTrigger value="comparison">{t('machines.machineComparison')}</TabsTrigger>
+            <TabsTrigger value="alerts">{t('machines.alertsAndRecommendations')}</TabsTrigger>
           </TabsList>
 
           {/* Overview Tab */}
@@ -374,7 +390,7 @@ export default function MachineHealthMonitoring() {
                       <CheckCircle2 className="h-6 w-6 text-green-500" />
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">Máy khỏe mạnh</p>
+                      <p className="text-sm text-muted-foreground">{t('machines.healthyMachines')}</p>
                       <p className="text-2xl font-bold text-green-500">
                         {machineComparisonData.filter(m => m.healthScore >= 80).length}
                       </p>
@@ -389,7 +405,7 @@ export default function MachineHealthMonitoring() {
                       <AlertTriangle className="h-6 w-6 text-yellow-500" />
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">Cần chú ý</p>
+                      <p className="text-sm text-muted-foreground">{t('machines.needAttention')}</p>
                       <p className="text-2xl font-bold text-yellow-500">
                         {machineComparisonData.filter(m => m.healthScore >= 60 && m.healthScore < 80).length}
                       </p>
@@ -404,7 +420,7 @@ export default function MachineHealthMonitoring() {
                       <XCircle className="h-6 w-6 text-red-500" />
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">Cần bảo trì</p>
+                      <p className="text-sm text-muted-foreground">{t('machines.needMaintenance')}</p>
                       <p className="text-2xl font-bold text-red-500">
                         {machineComparisonData.filter(m => m.healthScore < 60).length}
                       </p>
@@ -434,8 +450,8 @@ export default function MachineHealthMonitoring() {
             {/* Machine Health Overview Chart */}
             <Card>
               <CardHeader>
-                <CardTitle>Health Score theo máy</CardTitle>
-                <CardDescription>So sánh health score giữa các máy</CardDescription>
+                <CardTitle>{t('machines.healthScoreByMachine')}</CardTitle>
+                <CardDescription>{t('machines.compareHealthScores')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-80">
@@ -461,19 +477,19 @@ export default function MachineHealthMonitoring() {
             {/* Machine List Table */}
             <Card>
               <CardHeader>
-                <CardTitle>Danh sách máy</CardTitle>
+                <CardTitle>{t('machines.machineList')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Máy</TableHead>
+                      <TableHead>{t('machines.machine')}</TableHead>
                       <TableHead>Health Score</TableHead>
                       <TableHead>OEE</TableHead>
                       <TableHead>Availability</TableHead>
                       <TableHead>Performance</TableHead>
                       <TableHead>Quality</TableHead>
-                      <TableHead>Trạng thái</TableHead>
+                      <TableHead>{t('common.status')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -547,7 +563,7 @@ export default function MachineHealthMonitoring() {
                           }
                         }}
                       >
-                        Tính lại Health Score
+                      {t('machines.recalculateHealthScore')}
                       </Button>
                     </CardContent>
                   </Card>
@@ -555,7 +571,7 @@ export default function MachineHealthMonitoring() {
                   {/* Radar Chart */}
                   <Card className="md:col-span-2">
                     <CardHeader>
-                      <CardTitle>Phân tích các yếu tố</CardTitle>
+                      <CardTitle>{t('machines.factorAnalysis')}</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="h-64">
@@ -583,10 +599,10 @@ export default function MachineHealthMonitoring() {
                   {machineHealth?.factors?.slice(0, 4).map((factor, index) => {
                     const icons = [Gauge, Clock, AlertTriangle, Zap];
                     const descriptions = [
-                      'Hiệu suất thiết bị tổng thể',
-                      'Thời gian hoạt động',
-                      'Tỷ lệ không lỗi',
-                      'Ổn định chu kỳ'
+                      t('machines.overallEquipmentEfficiency'),
+                      t('machines.operatingTime'),
+                      t('machines.errorFreeRate'),
+                      t('machines.cycleStability')
                     ];
                     return (
                       <FactorCard
@@ -603,8 +619,8 @@ export default function MachineHealthMonitoring() {
                 {/* Health History Chart */}
                 <Card>
                   <CardHeader>
-                    <CardTitle>Lịch sử Health Score</CardTitle>
-                    <CardDescription>Xu hướng health score theo thời gian</CardDescription>
+                    <CardTitle>{t('machines.healthScoreHistory')}</CardTitle>
+                    <CardDescription>{t('machines.healthScoreTrend')}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="h-80">
@@ -640,7 +656,7 @@ export default function MachineHealthMonitoring() {
               <Card>
                 <CardContent className="py-12 text-center">
                   <Heart className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">Chọn một máy để xem chi tiết health monitoring</p>
+                  <p className="text-muted-foreground">{t('machines.selectMachineForHealthMonitoring')}</p>
                 </CardContent>
               </Card>
             )}
@@ -650,8 +666,8 @@ export default function MachineHealthMonitoring() {
           <TabsContent value="comparison" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>So sánh hiệu suất máy</CardTitle>
-                <CardDescription>So sánh các chỉ số giữa các máy</CardDescription>
+                <CardTitle>{t('machines.performanceComparison')}</CardTitle>
+                <CardDescription>{t('machines.compareMetrics')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-96">
@@ -676,8 +692,8 @@ export default function MachineHealthMonitoring() {
           <TabsContent value="alerts" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Cảnh báo & Khuyến nghị</CardTitle>
-                <CardDescription>Các máy cần được chú ý</CardDescription>
+                <CardTitle>{t('machines.alertsAndRecommendations')}</CardTitle>
+                <CardDescription>{t('machines.machinesNeedAttention')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -711,23 +727,23 @@ export default function MachineHealthMonitoring() {
                             size="sm"
                             onClick={() => setSelectedMachine(machine.machineId)}
                           >
-                            Xem chi tiết
+                            {t('machines.viewDetails')}
                           </Button>
                         </div>
                         <div className="mt-3 text-sm">
-                          <p className="font-medium">Khuyến nghị:</p>
+                          <p className="font-medium">{t('machines.recommendations')}:</p>
                           <ul className="list-disc list-inside text-muted-foreground">
                             {machine.healthScore < 60 && (
-                              <li>Cần kiểm tra và bảo trì ngay lập tức</li>
+                              <li>{t('machines.needImmediateMaintenance')}</li>
                             )}
                             {machine.oee < 70 && (
-                              <li>OEE thấp ({machine.oee.toFixed(1)}%) - Kiểm tra hiệu suất sản xuất</li>
+                              <li>{t('machines.lowOEE', { value: machine.oee.toFixed(1) })}</li>
                             )}
                             {machine.availability < 85 && (
-                              <li>Availability thấp ({machine.availability.toFixed(1)}%) - Giảm thời gian dừng máy</li>
+                              <li>{t('machines.lowAvailability', { value: machine.availability.toFixed(1) })}</li>
                             )}
                             {machine.quality < 95 && (
-                              <li>Quality thấp ({machine.quality.toFixed(1)}%) - Kiểm tra chất lượng sản phẩm</li>
+                              <li>{t('machines.lowQuality', { value: machine.quality.toFixed(1) })}</li>
                             )}
                           </ul>
                         </div>
@@ -736,7 +752,7 @@ export default function MachineHealthMonitoring() {
                   {machineComparisonData.filter(m => m.healthScore < 80).length === 0 && (
                     <div className="text-center py-8">
                       <CheckCircle2 className="h-12 w-12 mx-auto text-green-500 mb-4" />
-                      <p className="text-muted-foreground">Tất cả máy đều hoạt động tốt!</p>
+                      <p className="text-muted-foreground">{t('machines.allMachinesGood')}</p>
                     </div>
                   )}
                 </div>

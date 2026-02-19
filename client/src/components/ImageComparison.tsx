@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
@@ -57,6 +58,7 @@ export function ImageComparison({
   onSelectRight,
   open = true,
 }: ImageComparisonProps) {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<CompareMode>('side-by-side');
   const [zoom, setZoom] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -190,8 +192,8 @@ export function ImageComparison({
         )}
         {image.value !== undefined && (
           <p className="text-xs text-white/70">
-            Giá trị: {image.value}
-            {image.standardValue !== undefined && ` (Chuẩn: ${image.standardValue})`}
+            {t('common.value')}: {image.value}
+            {image.standardValue !== undefined && ` (${t('common.standard')}: ${image.standardValue})`}
           </p>
         )}
       </div>
@@ -203,17 +205,16 @@ export function ImageComparison({
       <Card className="p-8 text-center">
         <div className="flex flex-col items-center gap-4">
           <SplitSquareVertical className="h-16 w-16 text-muted-foreground" />
-          <h3 className="text-lg font-medium">Chế độ so sánh ảnh</h3>
+          <h3 className="text-lg font-medium">{t('common.imageCompareMode')}</h3>
           <p className="text-muted-foreground max-w-md">
-            Chọn 2 ảnh từ gallery để so sánh side-by-side, overlay hoặc slider mode.
-            Sử dụng phím tắt: 1 (side-by-side), 2 (overlay), 3 (slider), S (swap), +/- (zoom)
+            {t('common.imageCompareDescription')}
           </p>
           <div className="flex gap-2">
             <Button onClick={onSelectLeft} variant="outline">
-              Chọn ảnh trái
+              {t('common.selectLeftImage')}
             </Button>
             <Button onClick={onSelectRight} variant="outline">
-              Chọn ảnh phải
+              {t('common.selectRightImage')}
             </Button>
           </div>
         </div>
@@ -287,7 +288,7 @@ export function ImageComparison({
                       <ZoomOut className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Thu nhỏ (-)</TooltipContent>
+                  <TooltipContent>{t('common.zoomOut')} (-)</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
               <span className="text-xs w-12 text-center">{Math.round(zoom * 100)}%</span>
@@ -303,7 +304,7 @@ export function ImageComparison({
                       <ZoomIn className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Phóng to (+)</TooltipContent>
+                  <TooltipContent>{t('common.zoomIn')} (+)</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </div>
@@ -311,7 +312,7 @@ export function ImageComparison({
             {/* Overlay opacity (only in overlay mode) */}
             {mode === 'overlay' && (
               <div className="flex items-center gap-2 border-r pr-2 min-w-[150px]">
-                <Label className="text-xs whitespace-nowrap">Độ trong suốt:</Label>
+                <Label className="text-xs whitespace-nowrap">{t('common.opacity')}:</Label>
                 <Slider
                   value={[overlayOpacity * 100]}
                   onValueChange={([value]) => setOverlayOpacity(value / 100)}
@@ -333,7 +334,7 @@ export function ImageComparison({
                       <ArrowLeftRight className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Đổi vị trí (S)</TooltipContent>
+                  <TooltipContent>{t('common.swapPosition')} (S)</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
               <TooltipProvider>
@@ -361,7 +362,7 @@ export function ImageComparison({
                       {showLeftInfo ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Hiện/ẩn info trái</TooltipContent>
+                  <TooltipContent>{t('common.toggleInfoLeft')}</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
               <TooltipProvider>
@@ -375,7 +376,7 @@ export function ImageComparison({
                       {showRightInfo ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Hiện/ẩn info phải</TooltipContent>
+                  <TooltipContent>{t('common.toggleInfoRight')}</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </div>
@@ -416,12 +417,12 @@ export function ImageComparison({
                       </div>
                       <ImageInfo image={leftImage} show={showLeftInfo} side="left" />
                       <div className="absolute top-2 left-2">
-                        <Badge variant="outline" className="bg-background/80">Ảnh gốc</Badge>
+                        <Badge variant="outline" className="bg-background/80">{t('common.originalImage')}</Badge>
                       </div>
                     </>
                   ) : (
                     <div className="flex items-center justify-center h-full">
-                      <Button onClick={onSelectLeft} variant="outline">Chọn ảnh trái</Button>
+                      <Button onClick={onSelectLeft} variant="outline">{t('common.selectLeftImage')}</Button>
                     </div>
                   )}
                 </div>
@@ -442,12 +443,12 @@ export function ImageComparison({
                       </div>
                       <ImageInfo image={rightImage} show={showRightInfo} side="right" />
                       <div className="absolute top-2 right-2">
-                        <Badge variant="outline" className="bg-background/80">Ảnh so sánh</Badge>
+                        <Badge variant="outline" className="bg-background/80">{t('common.comparisonImage')}</Badge>
                       </div>
                     </>
                   ) : (
                     <div className="flex items-center justify-center h-full">
-                      <Button onClick={onSelectRight} variant="outline">Chọn ảnh phải</Button>
+                      <Button onClick={onSelectRight} variant="outline">{t('common.selectRightImage')}</Button>
                     </div>
                   )}
                 </div>
@@ -558,10 +559,10 @@ export function ImageComparison({
 
                 {/* Labels */}
                 <div className="absolute top-4 left-4">
-                  <Badge variant="outline" className="bg-background/80">Ảnh gốc</Badge>
+                  <Badge variant="outline" className="bg-background/80">{t('common.originalImage')}</Badge>
                 </div>
                 <div className="absolute top-4 right-4">
-                  <Badge variant="outline" className="bg-background/80">Ảnh so sánh</Badge>
+                  <Badge variant="outline" className="bg-background/80">{t('common.comparisonImage')}</Badge>
                 </div>
               </div>
             )}
@@ -570,8 +571,8 @@ export function ImageComparison({
           {/* Status bar */}
           <div className="px-4 py-2 border-t bg-muted/50 text-sm text-muted-foreground flex justify-between">
             <span>
-              Phím tắt: 1/2/3 (chế độ), S (đổi vị trí), +/- (zoom), ESC (đóng)
-              {mode === 'slider' && ', ←/→ (di chuyển slider)'}
+              {t('common.shortcuts')}: 1/2/3 ({t('common.mode')}), S ({t('common.swapPosition').toLowerCase()}), +/- (zoom), ESC ({t('common.close').toLowerCase()})
+              {mode === 'slider' && `, ←/→ (${t('common.moveSlider')})`}
             </span>
             <span>
               Zoom: {Math.round(zoom * 100)}%

@@ -7,10 +7,12 @@ import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { Key, Eye, EyeOff, AlertCircle, CheckCircle } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
 export default function ChangePassword() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
@@ -24,12 +26,12 @@ export default function ChangePassword() {
 
   const changePasswordMutation = trpc.user.changePassword.useMutation({
     onSuccess: () => {
-      toast.success("Đổi mật khẩu thành công!");
+      toast.success(t('auth.changePasswordSuccess'));
       setFormData({ currentPassword: "", newPassword: "", confirmPassword: "" });
       setLocation("/profile");
     },
     onError: (error: any) => {
-      toast.error(error.message || "Có lỗi xảy ra");
+      toast.error(error.message || t('errors.generic'));
     },
   });
 
@@ -37,12 +39,12 @@ export default function ChangePassword() {
     e.preventDefault();
     
     if (formData.newPassword !== formData.confirmPassword) {
-      toast.error("Mật khẩu mới không khớp");
+      toast.error(t('auth.newPasswordMismatch'));
       return;
     }
     
     if (formData.newPassword.length < 6) {
-      toast.error("Mật khẩu mới phải có ít nhất 6 ký tự");
+      toast.error(t('auth.passwordMinLength'));
       return;
     }
     
@@ -65,16 +67,16 @@ export default function ChangePassword() {
     if (/[0-9]/.test(password)) strength++;
     if (/[^A-Za-z0-9]/.test(password)) strength++;
     
-    if (strength <= 2) return { level: strength, text: "Yếu", color: "bg-red-500" };
-    if (strength <= 3) return { level: strength, text: "Trung bình", color: "bg-yellow-500" };
-    return { level: strength, text: "Mạnh", color: "bg-green-500" };
+    if (strength <= 2) return { level: strength, text: t('auth.passwordWeak'), color: "bg-red-500" };
+    if (strength <= 3) return { level: strength, text: t('auth.passwordMedium'), color: "bg-yellow-500" };
+    return { level: strength, text: t('auth.passwordStrong'), color: "bg-green-500" };
   };
 
   const passwordStrength = getPasswordStrength(formData.newPassword);
 
   return (
     <DashboardLayout
-      title="Đổi mật khẩu"
+      title={t('auth.changePassword')}
       currentPath="/change-password"
     >
       <div className="container py-6 max-w-md">
@@ -82,10 +84,10 @@ export default function ChangePassword() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Key className="h-5 w-5" />
-              Đổi mật khẩu
+              {t('auth.changePassword')}
             </CardTitle>
             <CardDescription>
-              Thay đổi mật khẩu đăng nhập của bạn
+              {t('auth.changePasswordDescription')}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -93,19 +95,19 @@ export default function ChangePassword() {
               <div className="flex flex-col items-center gap-4 py-8 text-center">
                 <AlertCircle className="h-12 w-12 text-muted-foreground" />
                 <div>
-                  <h3 className="font-semibold">Không thể đổi mật khẩu</h3>
+                  <h3 className="font-semibold">{t('auth.cannotChangePassword')}</h3>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Tài khoản của bạn đăng nhập qua Manus OAuth, không sử dụng mật khẩu nội bộ.
+                    {t('auth.oauthPasswordMessage')}
                   </p>
                 </div>
                 <Button variant="outline" onClick={() => setLocation("/profile")}>
-                  Quay lại
+                  {t('common.back')}
                 </Button>
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="currentPassword">Mật khẩu hiện tại</Label>
+                  <Label htmlFor="currentPassword">{t('auth.currentPassword')}</Label>
                   <div className="relative">
                     <Input
                       id="currentPassword"
@@ -125,7 +127,7 @@ export default function ChangePassword() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="newPassword">Mật khẩu mới</Label>
+                  <Label htmlFor="newPassword">{t('auth.newPassword')}</Label>
                   <div className="relative">
                     <Input
                       id="newPassword"
@@ -156,14 +158,14 @@ export default function ChangePassword() {
                         ))}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Độ mạnh: {passwordStrength.text}
+                        {t('auth.passwordStrengthLabel')}: {passwordStrength.text}
                       </p>
                     </div>
                   )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="confirmPassword">Xác nhận mật khẩu mới</Label>
+                  <Label htmlFor="confirmPassword">{t('auth.confirmNewPassword')}</Label>
                   <div className="relative">
                     <Input
                       id="confirmPassword"
@@ -185,12 +187,12 @@ export default function ChangePassword() {
                       {formData.newPassword === formData.confirmPassword ? (
                         <>
                           <CheckCircle className="h-3 w-3 text-green-500" />
-                          <span className="text-green-500">Mật khẩu khớp</span>
+                          <span className="text-green-500">{t('auth.passwordMatch')}</span>
                         </>
                       ) : (
                         <>
                           <AlertCircle className="h-3 w-3 text-red-500" />
-                          <span className="text-red-500">Mật khẩu không khớp</span>
+                          <span className="text-red-500">{t('auth.passwordMismatch')}</span>
                         </>
                       )}
                     </div>
@@ -203,14 +205,14 @@ export default function ChangePassword() {
                     disabled={changePasswordMutation.isPending}
                     className="flex-1"
                   >
-                    {changePasswordMutation.isPending ? "Đang xử lý..." : "Đổi mật khẩu"}
+                    {changePasswordMutation.isPending ? t('common.processing') : t('auth.changePassword')}
                   </Button>
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => setLocation("/profile")}
                   >
-                    Hủy
+                    {t('common.cancel')}
                   </Button>
                 </div>
               </form>

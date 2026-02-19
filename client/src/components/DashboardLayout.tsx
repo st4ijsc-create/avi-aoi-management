@@ -35,7 +35,9 @@ import { useLocation, Link } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { navGroups, NavGroup, NavItem, hasAccessToGroup, getFilteredNavGroups } from "@/lib/navigation";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 
 type DashboardLayoutProps = {
   children: ReactNode;
@@ -61,6 +63,7 @@ export default function DashboardLayout({
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
   });
   const { loading, user } = useAuth();
+  const { t } = useTranslation();
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
@@ -79,10 +82,10 @@ export default function DashboardLayout({
           </div>
           <div className="flex flex-col items-center gap-4">
             <h1 className="text-2xl font-semibold tracking-tight text-center text-foreground">
-              Đăng nhập để tiếp tục
+              {t('auth.loginTitle')}
             </h1>
             <p className="text-sm text-muted-foreground text-center max-w-sm">
-              Truy cập hệ thống quản lý AVI/AOI yêu cầu xác thực. Nhấn nút bên dưới để đăng nhập.
+              {t('auth.systemDescription')}
             </p>
           </div>
           <Button
@@ -92,7 +95,7 @@ export default function DashboardLayout({
             size="lg"
             className="w-full shadow-lg hover:shadow-xl transition-all"
           >
-            Đăng nhập
+            {t('auth.login')}
           </Button>
         </div>
       </div>
@@ -135,6 +138,7 @@ function DashboardLayoutContent({
   currentPath,
 }: DashboardLayoutContentProps) {
   const { user, logout } = useAuth();
+  const { t } = useTranslation();
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -242,8 +246,11 @@ function DashboardLayoutContent({
     });
   };
 
-  // Filter groups based on user role (also filters items within groups)
-  const visibleGroups = getFilteredNavGroups(user?.role);
+  // Permission-based filtering
+  const { hasPermission, hasAnyCategoryPermission } = usePermissions();
+
+  // Filter groups based on user role + granular permissions
+  const visibleGroups = getFilteredNavGroups(user?.role, hasPermission, hasAnyCategoryPermission);
 
   return (
     <>
@@ -286,7 +293,7 @@ function DashboardLayoutContent({
                       <SidebarMenuButton
                         isActive={isActive}
                         onClick={() => setLocation(item.href)}
-                        tooltip={item.label}
+                        tooltip={t(item.label)}
                         className={`h-10 transition-all font-normal ${isActive ? 'bg-sidebar-accent' : ''}`}
                       >
                         <span className={isActive ? "text-primary" : "text-sidebar-foreground"}>
@@ -339,21 +346,21 @@ function DashboardLayoutContent({
                   className="cursor-pointer"
                 >
                   <User className="mr-2 h-4 w-4" />
-                  <span>Thông tin cá nhân</span>
+                  <span>{t('auth.personalInfo')}</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => window.location.href = "/change-password"}
                   className="cursor-pointer"
                 >
                   <Key className="mr-2 h-4 w-4" />
-                  <span>Đổi mật khẩu</span>
+                  <span>{t('auth.changePassword')}</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => window.location.href = "/sessions"}
                   className="cursor-pointer"
                 >
                   <Monitor className="mr-2 h-4 w-4" />
-                  <span>Quản lý phiên</span>
+                  <span>{t('session.title')}</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -361,7 +368,7 @@ function DashboardLayoutContent({
                   className="cursor-pointer text-destructive focus:text-destructive"
                 >
                   <LogOut className="mr-2 h-4 w-4" />
-                  <span>Đăng xuất</span>
+                  <span>{t('auth.logout')}</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -382,7 +389,7 @@ function DashboardLayoutContent({
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             {isMobile && <SidebarTrigger className="h-9 w-9 rounded-lg shrink-0" />}
             <span className="font-medium text-foreground text-sm sm:text-base truncate">
-              {activeItem?.label ?? title}
+              {activeItem ? t(activeItem.label) : title}
             </span>
           </div>
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
@@ -413,6 +420,7 @@ function NavGroupComponent({
   onNavigate,
 }: NavGroupComponentProps) {
   const hasActiveItem = group.items.some(item => item.href === currentPath);
+  const { t } = useTranslation();
 
   return (
     <Collapsible open={isOpen} onOpenChange={onToggle} className="px-2">
@@ -429,7 +437,7 @@ function NavGroupComponent({
               {group.icon}
             </span>
           )}
-          <span className="flex-1 text-left">{group.label}</span>
+          <span className="flex-1 text-left">{t(group.label)}</span>
           <ChevronRight
             className={cn(
               "h-4 w-4 text-muted-foreground transition-transform duration-200",
@@ -456,7 +464,7 @@ function NavGroupComponent({
               <span className={isActive ? "text-primary" : "text-muted-foreground"}>
                 {item.icon}
               </span>
-              <span>{item.label}</span>
+              <span>{t(item.label)}</span>
               {item.badge && (
                 <span className="ml-auto px-1.5 py-0.5 text-xs font-medium bg-primary/10 text-primary rounded">
                   {item.badge}

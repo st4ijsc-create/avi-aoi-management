@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react';
+import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,6 +26,8 @@ function LoadingSkeleton() {
 }
 
 export default function DefectHeatmapPage() {
+  const { t } = useTranslation();
+
   return (
     <DashboardLayout>
       <div className="container py-6">
@@ -32,19 +35,19 @@ export default function DefectHeatmapPage() {
           <TabsList>
             <TabsTrigger value="heatmap" className="flex items-center gap-2">
               <MapPin className="h-4 w-4" />
-              Bản đồ nhiệt
+              {t('defects.heatmap.title')}
             </TabsTrigger>
             <TabsTrigger value="trends" className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
-              Phân tích xu hướng
+              {t('reports.trendAnalysis')}
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="heatmap">
             <ErrorBoundary
               variant="default"
-              title="Không thể tải Bản đồ nhiệt Defects"
-              description="Đã xảy ra lỗi khi tải dữ liệu. Vui lòng thử lại sau."
+              title={t('defects.cannotLoadHeatmap')}
+              description={t('common.errorLoadingData')}
               showDetails
             >
               <Suspense fallback={<LoadingSkeleton />}>
@@ -56,8 +59,8 @@ export default function DefectHeatmapPage() {
           <TabsContent value="trends">
             <ErrorBoundary
               variant="default"
-              title="Không thể tải Phân tích xu hướng"
-              description="Đã xảy ra lỗi khi tải dữ liệu. Vui lòng thử lại sau."
+              title={t('defects.cannotLoadTrendAnalysis')}
+              description={t('common.errorLoadingData')}
               showDetails
             >
               <Suspense fallback={<LoadingSkeleton />}>

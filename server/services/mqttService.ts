@@ -708,6 +708,114 @@ export async function publishSummary(
 }
 
 /**
+ * Publish periodic bulletin for a station
+ * Topic: avi/factory/{fId}/workshop/{wId}/station/{sId}/bulletin/periodic
+ */
+export async function publishBulletin(
+  stationId: number,
+  payload: any,
+  options: { sendToExternal?: boolean; sendFcm?: boolean } = {}
+): Promise<boolean> {
+  if (!aedes || !db) {
+    console.log('[MQTT] Broker not initialized');
+    return false;
+  }
+
+  try {
+    // Get station info to build topic
+    const station = await db.select({
+      station: schema.stations,
+      line: schema.productionLines,
+      workshop: schema.workshops,
+      factory: schema.factories,
+    })
+    .from(schema.stations)
+    .innerJoin(schema.productionLines, eq(schema.stations.lineId, schema.productionLines.id))
+    .innerJoin(schema.workshops, eq(schema.productionLines.workshopId, schema.workshops.id))
+    .innerJoin(schema.factories, eq(schema.workshops.factoryId, schema.factories.id))
+    .where(eq(schema.stations.id, stationId))
+    .limit(1);
+
+    if (station.length === 0) {
+      console.log('[MQTT] Station not found:', stationId);
+      return false;
+    }
+
+    const { factory, workshop } = station[0];
+    const topic = `avi/factory/${factory.id}/workshop/${workshop.id}/station/${stationId}/bulletin/periodic`;
+
+    // Publish message
+    const message = JSON.stringify(payload);
+    aedes.publish({
+      topic,
+      payload: Buffer.from(message),
+      qos: 1,
+      retain: true, // Retain bulletin messages so new subscribers get latest
+      cmd: 'publish',
+      dup: false,
+    }, (error) => {
+      if (error) {
+        console.error('[MQTT] Bulletin publish error:', error);
+      }
+    });
+
+    // Log message
+    await db.insert(schema.mqttMessageLogs).values({
+      messageType: 'CUSTOM', // Use CUSTOM until enum is updated
+      topic,
+      payload: payload as any,
+      stationId,
+      deliveryStatus: 'DELIVERED',
+      deliveredAt: new Date(),
+    });
+
+    console.log(`[MQTT] Published periodic bulletin to ${topic}`);
+
+    // Also publish to external MQTT broker if enabled
+    if (options.sendToExternal && externalMqttClient && externalMqttClient.connected) {
+      const externalTopic = `${EXTERNAL_MQTT_TOPIC_PREFIX}/factory/${factory.id}/workshop/${workshop.id}/station/${stationId}/bulletin/periodic`;
+      externalMqttClient.publish(externalTopic, message, { qos: 1, retain: true }, (error) => {
+        if (error) {
+          console.error('[MQTT External] Bulletin publish error:', error);
+        } else {
+          console.log(`[MQTT External] Published periodic bulletin to ${externalTopic}`);
+        }
+      });
+    }
+
+    // Send FCM push notification to subscribed clients
+    if (options.sendFcm) {
+      try {
+        const { sendBulletinPushNotification } = await import('./fcmService');
+        if (typeof sendBulletinPushNotification === 'function') {
+          const stats = payload.statistics || {};
+          const fcmResult = await sendBulletinPushNotification({
+            stationId,
+            stationName: payload.stationName || station[0].station.name,
+            totalCount: stats.totalCount || 0,
+            okCount: stats.okCount || 0,
+            ngCount: stats.ngCount || 0,
+            ntfCount: stats.ntfCount || 0,
+            yieldRate: stats.yieldRate || 0,
+            failPointsCount: (payload.failPoints || []).length,
+            period: payload.period,
+          });
+          console.log(`[FCM] Bulletin push notification sent: ${fcmResult.sent} success, ${fcmResult.failed} failed`);
+        }
+      } catch (fcmError) {
+        // FCM is optional - don't fail bulletin if FCM fails
+        console.log('[FCM] Bulletin push notification skipped (function not available)');
+      }
+    }
+
+    return true;
+  } catch (error) {
+    console.error('[MQTT] Error publishing bulletin:', error);
+    return false;
+  }
+}
+
+/**
  * Send command to specific client
  */
 export async function sendClientCommand(

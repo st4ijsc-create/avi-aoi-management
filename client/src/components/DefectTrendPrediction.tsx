@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -43,6 +44,7 @@ export function DefectTrendPrediction() {
   const [productModelId, setProductModelId] = useState<number | undefined>();
   const [days, setDays] = useState(30);
   const [predictionDays, setPredictionDays] = useState(7);
+  const { t } = useTranslation();
 
   // Fetch prediction data
   const { data, isLoading, refetch } = trpc.annotation.trendPrediction.useQuery({
@@ -117,7 +119,7 @@ export function DefectTrendPrediction() {
     };
     return (
       <Badge variant="outline" className={cn('ml-2', colors[data.statistics.confidence])}>
-        Độ tin cậy: {data.statistics.confidence === 'high' ? 'Cao' : data.statistics.confidence === 'medium' ? 'Trung bình' : 'Thấp'}
+        {t('defects.trend.confidence')}: {data.statistics.confidence === 'high' ? t('defects.trend.high') : data.statistics.confidence === 'medium' ? t('defects.trend.medium') : t('defects.trend.low')}
       </Badge>
     );
   };
@@ -129,25 +131,25 @@ export function DefectTrendPrediction() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Brain className="h-5 w-5" />
-            Dự đoán xu hướng Defects
+            {t('defects.trend.title')}
           </CardTitle>
           <CardDescription>
-            Phân tích dữ liệu lịch sử và dự đoán xu hướng defects trong tương lai
+            {t('defects.trend.description')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="space-y-2">
-              <Label>Máy</Label>
+              <Label>{t('defects.trend.machine')}</Label>
               <Select
                 value={machineId?.toString() || 'all'}
                 onValueChange={(v) => setMachineId(v && v !== 'all' ? parseInt(v) : undefined)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Tất cả máy" />
+                  <SelectValue placeholder={t('defects.trend.allMachines')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
                   {machines?.map((m: any) => (
                     <SelectItem key={m.id} value={m.id.toString()}>
                       {m.name}
@@ -158,16 +160,16 @@ export function DefectTrendPrediction() {
             </div>
 
             <div className="space-y-2">
-              <Label>Model sản phẩm</Label>
+              <Label>{t('defects.trend.productModel')}</Label>
               <Select
                 value={productModelId?.toString() || 'all'}
                 onValueChange={(v) => setProductModelId(v && v !== 'all' ? parseInt(v) : undefined)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Tất cả model" />
+                  <SelectValue placeholder={t('defects.trend.allModels')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tất cả</SelectItem>
+                  <SelectItem value="all">{t('common.all')}</SelectItem>
                   {productModels?.map((pm: any) => (
                     <SelectItem key={pm.id} value={pm.id.toString()}>
                       {pm.name}
@@ -178,7 +180,7 @@ export function DefectTrendPrediction() {
             </div>
 
             <div className="space-y-2">
-              <Label>Dữ liệu lịch sử (ngày)</Label>
+              <Label>{t('defects.trend.historicalDays')}</Label>
               <Input
                 type="number"
                 min={7}
@@ -189,7 +191,7 @@ export function DefectTrendPrediction() {
             </div>
 
             <div className="space-y-2">
-              <Label>Dự đoán (ngày)</Label>
+              <Label>{t('defects.trend.predictionDays')}</Label>
               <Input
                 type="number"
                 min={1}
@@ -203,7 +205,7 @@ export function DefectTrendPrediction() {
               <Label>&nbsp;</Label>
               <Button onClick={() => refetch()} className="w-full gap-2">
                 <RefreshCw className="h-4 w-4" />
-                Phân tích
+                {t('defects.trend.analyze')}
               </Button>
             </div>
           </div>
@@ -216,7 +218,7 @@ export function DefectTrendPrediction() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Tổng defects</p>
+                <p className="text-sm text-muted-foreground">{t('defects.trend.totalDefects')}</p>
                 {isLoading ? (
                   <Skeleton className="h-8 w-16" />
                 ) : (
@@ -234,7 +236,7 @@ export function DefectTrendPrediction() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Trung bình/ngày</p>
+                <p className="text-sm text-muted-foreground">{t('defects.trend.avgDaily')}</p>
                 <div className="text-2xl font-bold">
                   {isLoading ? <Skeleton className="h-8 w-16" /> : data?.statistics.avgDaily || 0}
                 </div>
@@ -248,17 +250,17 @@ export function DefectTrendPrediction() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Xu hướng</p>
+                <p className="text-sm text-muted-foreground">{t('defects.trend.trendLabel')}</p>
                 <div className="flex items-center gap-2">
                   <div className={cn('text-2xl font-bold capitalize', getTrendColor())}>
                     {isLoading ? (
                       <Skeleton className="h-8 w-20" />
                     ) : data?.statistics.trendDirection === 'increasing' ? (
-                      'Tăng'
+                      t('defects.trend.increasing')
                     ) : data?.statistics.trendDirection === 'decreasing' ? (
-                      'Giảm'
+                      t('defects.trend.decreasing')
                     ) : (
-                      'Ổn định'
+                      t('defects.trend.stable')
                     )}
                   </div>
                   {!isLoading && getTrendIcon()}
@@ -273,7 +275,7 @@ export function DefectTrendPrediction() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Độ dốc (slope)</p>
+                <p className="text-sm text-muted-foreground">{t('defects.trend.slope')}</p>
                 <div className="text-2xl font-bold">
                   {isLoading ? <Skeleton className="h-8 w-16" /> : data?.statistics.slope || 0}
                 </div>
@@ -289,7 +291,7 @@ export function DefectTrendPrediction() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5" />
-            Biểu đồ xu hướng và dự đoán
+            {t('defects.trend.chartTitle')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -298,8 +300,8 @@ export function DefectTrendPrediction() {
           ) : chartData.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-[400px] text-muted-foreground">
               <Info className="h-12 w-12 mb-4" />
-              <p>Không có dữ liệu để hiển thị</p>
-              <p className="text-sm">Thử thay đổi bộ lọc hoặc tăng số ngày lịch sử</p>
+              <p>{t('defects.trend.noData')}</p>
+              <p className="text-sm">{t('defects.trend.noDataSuggestion')}</p>
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={400}>
@@ -322,16 +324,16 @@ export function DefectTrendPrediction() {
                         </p>
                         {data.actual !== null && (
                           <p className="text-sm text-blue-500">
-                            Thực tế: {data.actual} defects
+                            {t('defects.trend.actualValue', { count: data.actual })}
                           </p>
                         )}
                         {data.predicted !== null && (
                           <>
                             <p className="text-sm text-orange-500">
-                              Dự đoán: {data.predicted} defects
+                              {t('defects.trend.predictedValue', { count: data.predicted })}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              Khoảng tin cậy: {data.lower} - {data.upper}
+                              {t('defects.trend.confidenceRange', { lower: data.lower, upper: data.upper })}
                             </p>
                           </>
                         )}
@@ -348,7 +350,7 @@ export function DefectTrendPrediction() {
                   stroke="none"
                   fill="hsl(var(--warning))"
                   fillOpacity={0.1}
-                  name="Khoảng tin cậy (trên)"
+                  name={t('defects.trend.confidenceUpper')}
                 />
                 <Area
                   type="monotone"
@@ -356,7 +358,7 @@ export function DefectTrendPrediction() {
                   stroke="none"
                   fill="hsl(var(--background))"
                   fillOpacity={1}
-                  name="Khoảng tin cậy (dưới)"
+                  name={t('defects.trend.confidenceLower')}
                 />
                 
                 {/* Historical line */}
@@ -366,7 +368,7 @@ export function DefectTrendPrediction() {
                   stroke="hsl(var(--primary))"
                   strokeWidth={2}
                   dot={{ fill: 'hsl(var(--primary))' }}
-                  name="Thực tế"
+                  name={t('defects.trend.actual')}
                   connectNulls={false}
                 />
                 
@@ -378,7 +380,7 @@ export function DefectTrendPrediction() {
                   strokeWidth={2}
                   strokeDasharray="5 5"
                   dot={{ fill: 'hsl(var(--warning))' }}
-                  name="Dự đoán"
+                  name={t('defects.trend.predicted')}
                   connectNulls={false}
                 />
                 
@@ -389,7 +391,7 @@ export function DefectTrendPrediction() {
                     stroke="hsl(var(--muted-foreground))"
                     strokeDasharray="3 3"
                     label={{
-                      value: `Trung bình: ${data.statistics.avgDaily}`,
+                      value: t('defects.trend.averageLine', { value: data.statistics.avgDaily }),
                       position: 'right',
                       className: 'text-xs fill-muted-foreground',
                     }}
@@ -407,7 +409,7 @@ export function DefectTrendPrediction() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Lightbulb className="h-5 w-5" />
-              Phân tích AI
+              {t('defects.trend.aiInsights')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -426,17 +428,17 @@ export function DefectTrendPrediction() {
       {data && data.predictions.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Chi tiết dự đoán</CardTitle>
+            <CardTitle>{t('defects.trend.predictionDetail')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-2 px-4">Ngày</th>
-                    <th className="text-right py-2 px-4">Dự đoán</th>
-                    <th className="text-right py-2 px-4">Khoảng tin cậy</th>
-                    <th className="text-right py-2 px-4">So với trung bình</th>
+                    <th className="text-left py-2 px-4">{t('defects.trend.date')}</th>
+                    <th className="text-right py-2 px-4">{t('defects.trend.predicted')}</th>
+                    <th className="text-right py-2 px-4">{t('defects.trend.confidenceInterval')}</th>
+                    <th className="text-right py-2 px-4">{t('defects.trend.vsAverage')}</th>
                   </tr>
                 </thead>
                 <tbody>
