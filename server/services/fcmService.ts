@@ -6,6 +6,7 @@
  * https://firebase.google.com/docs/cloud-messaging/migrate-v1
  */
 
+import crypto from 'crypto';
 import { ENV } from '../_core/env';
 import * as db from '../db';
 
@@ -124,7 +125,6 @@ function generateJWT(credentials: ServiceAccountCredentials): string {
   const signatureInput = `${base64Header}.${base64Payload}`;
 
   // Sign with RSA-SHA256
-  const crypto = require('crypto');
   const sign = crypto.createSign('RSA-SHA256');
   sign.update(signatureInput);
   const signature = sign.sign(credentials.private_key, 'base64url');

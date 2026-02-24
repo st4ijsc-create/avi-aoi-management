@@ -14,7 +14,7 @@ import { navItems } from '@/lib/navigation';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import * as XLSX from 'xlsx';
 
-export default function ImportExport() {
+export function ImportExportContent() {
   const { t } = useTranslation();
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -220,11 +220,6 @@ export default function ImportExport() {
   };
 
   return (
-    <DashboardLayout
-      title={t('importExport.title')}
-      navItems={navItems}
-      currentPath="/import-export"
-    >
       <Tabs defaultValue="import" className="space-y-6">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="import" className="flex items-center gap-2">
@@ -553,6 +548,18 @@ export default function ImportExport() {
           </Alert>
         </TabsContent>
       </Tabs>
+  );
+}
+
+export default function ImportExport() {
+  const { t } = useTranslation();
+  return (
+    <DashboardLayout
+      title={t('importExport.title')}
+      navItems={navItems}
+      currentPath="/import-export"
+    >
+      <ImportExportContent />
     </DashboardLayout>
   );
 }

@@ -17,3 +17,4 @@ export * from "./ai";
 export * from "./oee";
 export * from "./integration";
 export * from "./spc";
+export * from "./license";

@@ -21,6 +21,8 @@ import { startAlertEvaluationJob, stopAlertEvaluationJob } from "../services/ale
 import { initSummaryScheduler, stopSummaryScheduler } from "../services/mqttSummaryScheduler";
 import { initBulletinScheduler, stopBulletinScheduler } from "../services/mqttBulletinService";
 import { cacheWarmingService } from "../services/cacheWarmingService";
+import { initializeLicenseSystem, licenseEnforcementMiddleware } from "../license/license-middleware";
+import { initializeRuntimeSecurity, shutdownRuntimeSecurity } from "../license/runtime-security";
 
 const HTTPS_ENABLED = process.env.HTTPS_ENABLED === "true";
 
@@ -758,6 +760,8 @@ async function startServer() {
 
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
+  // License enforcement middleware (must be before tRPC mount)
+  app.use("/api/trpc", licenseEnforcementMiddleware());
   // tRPC API
   app.use(
     "/api/trpc",
@@ -766,6 +770,12 @@ async function startServer() {
       createContext,
     })
   );
+  // Initialize License System (RSA keys)
+  await initializeLicenseSystem();
+
+  // Initialize Runtime Security (file integrity monitoring)
+  initializeRuntimeSecurity();
+
   // Initialize Socket.io for realtime notifications
   initializeSocket(server);
   
@@ -834,6 +844,7 @@ async function startServer() {
   process.on("SIGINT", () => {
     console.log("SIGINT received, shutting down gracefully...");
     shutdownScheduledReports();
+    shutdownRuntimeSecurity();
     cacheWarmingService.stop();
     if (process.env.MQTT_ENABLED === 'true') {
       shutdownMqttBroker();

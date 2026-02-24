@@ -36,6 +36,8 @@ import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { navGroups, NavGroup, NavItem, hasAccessToGroup, getFilteredNavGroups } from "@/lib/navigation";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import { useLicenseModules } from "@/hooks/useLicenseModules";
+import { LicenseEnforcementBanner } from "./LicenseEnforcementBanner";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 
@@ -249,8 +251,17 @@ function DashboardLayoutContent({
   // Permission-based filtering
   const { hasPermission, hasAnyCategoryPermission } = usePermissions();
 
-  // Filter groups based on user role + granular permissions
-  const visibleGroups = getFilteredNavGroups(user?.role, hasPermission, hasAnyCategoryPermission);
+  // License module gating - filter groups by allowed modules
+  const { isNavGroupAllowed, isRouteAllowed: isLicenseRouteAllowed } = useLicenseModules();
+
+  // Filter groups based on user role + granular permissions + license modules
+  const visibleGroups = getFilteredNavGroups(user?.role, hasPermission, hasAnyCategoryPermission)
+    .filter(group => isNavGroupAllowed(group.id))
+    .map(group => ({
+      ...group,
+      items: group.items.filter(item => isLicenseRouteAllowed(item.href)),
+    }))
+    .filter(group => group.items.length > 0);
 
   return (
     <>
@@ -397,6 +408,7 @@ function DashboardLayoutContent({
             <NotificationCenter />
           </div>
         </div>
+        <LicenseEnforcementBanner />
         <main className="flex-1 p-3 sm:p-4 md:p-6 overflow-auto">{children}</main>
       </SidebarInset>
     </>

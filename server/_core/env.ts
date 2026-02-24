@@ -16,4 +16,9 @@ export const ENV = {
   microsoftClientSecret: clean(process.env.MICROSOFT_CLIENT_SECRET),
   githubClientId: clean(process.env.GITHUB_CLIENT_ID),
   githubClientSecret: clean(process.env.GITHUB_CLIENT_SECRET),
+  // License Management
+  licenseServerUrl: clean(process.env.LICENSE_SERVER_URL),
+  licenseProductCode: clean(process.env.LICENSE_PRODUCT_CODE),
+  licenseEncryptionSecret: clean(process.env.LICENSE_ENCRYPTION_SECRET),
+  licenseFilePath: clean(process.env.LICENSE_FILE_PATH),
 };

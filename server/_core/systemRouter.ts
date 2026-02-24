@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { notifyOwner } from "./notification";
-import { adminProcedure, publicProcedure, router } from "./trpc";
+import { adminProcedure, protectedProcedure, publicProcedure, router } from "./trpc";
 import {
   getSlowQueries,
   getQueryStats,
@@ -10,6 +10,75 @@ import {
 } from "../queryMonitor";
 
 export const systemRouter = router({
+  // ─── System Settings CRUD ──────────────────────────────────────────
+  settings: router({
+    getByCategory: protectedProcedure
+      .input(z.object({ category: z.string().min(1) }))
+      .query(async ({ input }) => {
+        const db = await import("../db");
+        return db.getSystemSettings(input.category);
+      }),
+
+    get: protectedProcedure
+      .input(z.object({ key: z.string().min(1) }))
+      .query(async ({ input }) => {
+        const db = await import("../db");
+        return db.getSystemSetting(input.key);
+      }),
+
+    upsert: adminProcedure
+      .input(z.object({
+        category: z.string().min(1),
+        key: z.string().min(1),
+        value: z.string(),
+        description: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await import("../db");
+        const existing = await db.getSystemSetting(input.key);
+        if (existing) {
+          await db.updateSystemSetting(input.key, input.value, ctx.user?.id);
+        } else {
+          await db.createSystemSetting({
+            settingKey: input.key,
+            settingValue: input.value,
+            category: input.category,
+            description: input.description || null,
+            updatedBy: ctx.user?.id || null,
+          });
+        }
+        return { success: true };
+      }),
+
+    bulkUpsert: adminProcedure
+      .input(z.object({
+        category: z.string().min(1),
+        settings: z.array(z.object({
+          key: z.string().min(1),
+          value: z.string(),
+          description: z.string().optional(),
+        })),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await import("../db");
+        for (const setting of input.settings) {
+          const existing = await db.getSystemSetting(setting.key);
+          if (existing) {
+            await db.updateSystemSetting(setting.key, setting.value, ctx.user?.id);
+          } else {
+            await db.createSystemSetting({
+              settingKey: setting.key,
+              settingValue: setting.value,
+              category: input.category,
+              description: setting.description || null,
+              updatedBy: ctx.user?.id || null,
+            });
+          }
+        }
+        return { success: true };
+      }),
+  }),
+
   health: publicProcedure
     .input(
       z.object({

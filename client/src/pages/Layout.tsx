@@ -31,15 +31,20 @@ import {
   Undo2,
   Redo2,
   Grid3X3,
-  Download
+  Download,
+  Crosshair,
+  X,
+  Activity,
+  BarChart3
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
-import React, { useState, useMemo, useRef, useEffect } from "react";
-import { useParams } from "wouter";
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useParams, useSearch } from "wouter";
 import WorkshopLayoutEditor from "@/components/WorkshopLayoutEditor";
 
 type MachineWithStats = {
   id: number;
+  positionRecordId: number;
   code: string;
   name: string;
   machineType: string;
@@ -61,6 +66,8 @@ type MachineWithStats = {
 export default function Layout() {
   const { t } = useTranslation();
   const params = useParams<{ id?: string }>();
+  const search = useSearch();
+  const searchParams = new URLSearchParams(search);
   const [selectedWorkshop, setSelectedWorkshop] = useState<string>("");
   const [selectedLayout, setSelectedLayout] = useState<string>(params.id || "");
   const [activeTab, setActiveTab] = useState<string>("view");
@@ -74,6 +81,7 @@ export default function Layout() {
   const [newLayoutName, setNewLayoutName] = useState("");
   const [newLayoutType, setNewLayoutType] = useState<"2D" | "3D">("2D");
   const containerRef = useRef<HTMLDivElement>(null);
+  const [selectedMachineId, setSelectedMachineId] = useState<number | null>(null);
   
   // Drag & drop state for machines
   const [isDraggingMachine, setIsDraggingMachine] = useState(false);
@@ -125,6 +133,7 @@ export default function Layout() {
   };
 
   const { data: workshops } = trpc.workshop.list.useQuery();
+  const { data: factories } = trpc.factory.list.useQuery();
   const { data: layouts, refetch: refetchLayouts } = trpc.layout.listByWorkshop.useQuery(
     { workshopId: parseInt(selectedWorkshop) },
     { enabled: !!selectedWorkshop }
@@ -135,6 +144,32 @@ export default function Layout() {
   );
   const { data: machines } = trpc.machine.list.useQuery();
   const { data: machinesStats } = trpc.dashboard.getAllMachinesStats.useQuery({});
+
+  // Auto-select workshop from URL params (?workshopId=X or ?factoryId=X)
+  useEffect(() => {
+    if (!workshops || selectedWorkshop) return;
+    const wsId = searchParams.get('workshopId');
+    if (wsId) {
+      const found = workshops.find(w => String(w.id) === wsId);
+      if (found) { setSelectedWorkshop(String(found.id)); return; }
+    }
+    const facId = searchParams.get('factoryId');
+    if (facId && factories) {
+      const facWorkshop = workshops.find(w => String(w.factoryId) === facId);
+      if (facWorkshop) { setSelectedWorkshop(String(facWorkshop.id)); return; }
+    }
+    // Auto-select first workshop if only one
+    if (workshops.length === 1) {
+      setSelectedWorkshop(String(workshops[0].id));
+    }
+  }, [workshops, factories, searchParams.get('workshopId'), searchParams.get('factoryId')]);
+
+  // Auto-select first layout when layouts load
+  useEffect(() => {
+    if (layouts && layouts.length > 0 && !selectedLayout) {
+      setSelectedLayout(String(layouts[0].id));
+    }
+  }, [layouts]);
 
   const createLayoutMutation = trpc.layout.create.useMutation({
     onSuccess: (data) => {
@@ -147,38 +182,39 @@ export default function Layout() {
     onError: (err) => toast.error(err.message),
   });
 
-  // Mutation to save machine layout position
-  const updateMachinePositionMutation = trpc.machine.updateLayoutPosition.useMutation({
+  // Mutation to save machine position in layout
+  const updateLayoutPositionMutation = trpc.layout.updateMachinePosition.useMutation({
     onSuccess: () => {
       toast.success(t('layout.positionSaved'));
     },
     onError: (err) => toast.error(err.message),
   });
 
-  // Initialize machine positions from database
+  // Initialize machine positions from layout data (canvas pixel space)
   useEffect(() => {
-    if (machines && machines.length > 0) {
+    if (layoutData?.positions) {
       const positions: Record<number, { x: number; y: number }> = {};
-      machines.forEach((m) => {
-        if (m.layoutPositionX !== null && m.layoutPositionY !== null) {
-          positions[m.id] = {
-            x: parseFloat(m.layoutPositionX as string),
-            y: parseFloat(m.layoutPositionY as string),
-          };
-        }
+      layoutData.positions.forEach((pos: any) => {
+        positions[pos.machineId] = {
+          x: pos.positionX,
+          y: pos.positionY,
+        };
       });
       setMachinePositions(positions);
     }
-  }, [machines]);
+  }, [layoutData]);
 
   // Machine drag handlers
   const handleMachineDragStart = (e: React.MouseEvent, machineId: number, machineX: number, machineY: number) => {
     e.stopPropagation();
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
     setIsDraggingMachine(true);
     setDraggedMachineId(machineId);
+    // Compute click offset within the machine in canvas coordinate space
     setDragOffset({
-      x: e.clientX - machineX,
-      y: e.clientY - machineY,
+      x: (e.clientX - rect.left - pan.x) / zoom - machineX,
+      y: (e.clientY - rect.top - pan.y) / zoom - machineY,
     });
   };
 
@@ -186,12 +222,15 @@ export default function Layout() {
     if (!isDraggingMachine || draggedMachineId === null || !containerRef.current) return;
     
     const rect = containerRef.current.getBoundingClientRect();
-    const newX = (e.clientX - dragOffset.x - rect.left - pan.x) / zoom;
-    const newY = (e.clientY - dragOffset.y - rect.top - pan.y) / zoom;
+    // Convert mouse screen position to canvas space and subtract the initial click offset
+    const newX = (e.clientX - rect.left - pan.x) / zoom - dragOffset.x;
+    const newY = (e.clientY - rect.top - pan.y) / zoom - dragOffset.y;
     
-    // Clamp to container bounds
-    const clampedX = Math.max(0, Math.min(rect.width / zoom - 150, newX));
-    const clampedY = Math.max(0, Math.min(rect.height / zoom - 100, newY));
+    // Clamp to container bounds (canvas space)
+    const canvasW = rect.width / zoom;
+    const canvasH = rect.height / zoom;
+    const clampedX = Math.max(0, Math.min(canvasW - 150, newX));
+    const clampedY = Math.max(0, Math.min(canvasH - 100, newY));
     
     // Apply snap to grid
     const snappedPos = snapPosition(clampedX, clampedY);
@@ -205,16 +244,13 @@ export default function Layout() {
   const handleMachineDragEnd = () => {
     if (isDraggingMachine && draggedMachineId !== null && containerRef.current) {
       const pos = machinePositions[draggedMachineId];
-      if (pos) {
-        const rect = containerRef.current.getBoundingClientRect();
-        // Normalize to 0-1 range
-        const normalizedX = pos.x / (rect.width / zoom);
-        const normalizedY = pos.y / (rect.height / zoom);
-        
-        updateMachinePositionMutation.mutate({
-          id: draggedMachineId,
-          layoutPositionX: Math.max(0, Math.min(1, normalizedX)),
-          layoutPositionY: Math.max(0, Math.min(1, normalizedY)),
+      // Find the position record ID for the dragged machine
+      const machineData = machinesWithStats.find(m => m.id === draggedMachineId);
+      if (pos && machineData?.positionRecordId) {
+        updateLayoutPositionMutation.mutate({
+          id: machineData.positionRecordId,
+          positionX: Math.round(pos.x),
+          positionY: Math.round(pos.y),
         });
         
         // Save to history for undo/redo
@@ -229,7 +265,7 @@ export default function Layout() {
   const machinesWithStats = useMemo<MachineWithStats[]>(() => {
     if (!layoutData?.positions || !machinesStats) return [];
 
-    return layoutData.positions.map(pos => {
+    return layoutData.positions.map((pos: any) => {
       // Use image data from positions (joined with machines in server) or fallback to machines query
       const machineFromList = machines?.find(m => m.id === pos.machineId);
       const stats = machinesStats.find(s => s.machine.id === pos.machineId)?.stats || {
@@ -238,11 +274,12 @@ export default function Layout() {
 
       return {
         id: pos.machineId,
-        code: (pos as any).code || machineFromList?.code || "",
-        name: (pos as any).name || machineFromList?.name || `Machine ${pos.machineId}`,
-        machineType: (pos as any).machineType || machineFromList?.machineType || "UNKNOWN",
-        image2DUrl: (pos as any).image2DUrl || machineFromList?.image2DUrl,
-        image3DUrl: (pos as any).image3DUrl || machineFromList?.image3DUrl,
+        positionRecordId: pos.id,
+        code: pos.code || machineFromList?.code || "",
+        name: pos.name || machineFromList?.name || `Machine ${pos.machineId}`,
+        machineType: pos.machineType || machineFromList?.machineType || "UNKNOWN",
+        image2DUrl: pos.image2DUrl || machineFromList?.image2DUrl,
+        image3DUrl: pos.image3DUrl || machineFromList?.image3DUrl,
         positionX: pos.positionX,
         positionY: pos.positionY,
         width: pos.width,
@@ -260,16 +297,40 @@ export default function Layout() {
     setPan({ x: 0, y: 0 });
   };
 
-  // Handle panning
+  // Fit all machines in view
+  const fitAllInView = useCallback(() => {
+    if (!machinesWithStats.length || !containerRef.current) return;
+    const cw = containerRef.current.clientWidth;
+    const ch = containerRef.current.clientHeight;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    machinesWithStats.forEach(m => {
+      const cp = machinePositions[m.id];
+      const px = cp ? cp.x : m.positionX;
+      const py = cp ? cp.y : m.positionY;
+      minX = Math.min(minX, px);
+      minY = Math.min(minY, py);
+      maxX = Math.max(maxX, px + m.width);
+      maxY = Math.max(maxY, py + m.height);
+    });
+    const contentW = maxX - minX + 100;
+    const contentH = maxY - minY + 100;
+    const newZoom = Math.min(cw / contentW, ch / contentH, 2);
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    setZoom(newZoom);
+    setPan({ x: cw / 2 - centerX * newZoom, y: ch / 2 - centerY * newZoom });
+  }, [machinesWithStats, machinePositions]);
+
+  // Handle panning - only pan when NOT dragging a machine
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 0) {
+    if (e.button === 0 && !isDraggingMachine) {
       setIsPanning(true);
       setStartPan({ x: e.clientX - pan.x, y: e.clientY - pan.y });
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (isPanning) {
+    if (isPanning && !isDraggingMachine) {
       setPan({
         x: e.clientX - startPan.x,
         y: e.clientY - startPan.y,
@@ -281,11 +342,21 @@ export default function Layout() {
     setIsPanning(false);
   };
 
-  // Handle wheel zoom
+  // Handle wheel zoom toward cursor position
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const cursorX = e.clientX - rect.left;
+    const cursorY = e.clientY - rect.top;
     const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    setZoom(z => Math.max(0.5, Math.min(3, z + delta)));
+    const newZoom = Math.max(0.3, Math.min(3, zoom + delta));
+    const ratio = newZoom / zoom;
+    setPan({
+      x: cursorX - ratio * (cursorX - pan.x),
+      y: cursorY - ratio * (cursorY - pan.y),
+    });
+    setZoom(newZoom);
   };
 
   // Export layout as image
@@ -595,6 +666,9 @@ export default function Layout() {
                       <Button variant="outline" size="icon" onClick={handleResetView} title="Reset view">
                         <Maximize2 className="h-4 w-4" />
                       </Button>
+                      <Button variant="outline" size="icon" onClick={fitAllInView} title={t('layout.fitAllInView') || 'Fit all in view'}>
+                        <Crosshair className="h-4 w-4" />
+                      </Button>
                       <Button 
                         variant="outline" 
                         size="icon" 
@@ -621,7 +695,7 @@ export default function Layout() {
                 <CardContent className={isFullscreen ? "p-0" : ""}>
                   <div 
                     ref={containerRef}
-                    className={`relative w-full bg-secondary/30 rounded-lg overflow-hidden ${isDraggingMachine ? 'cursor-grabbing' : 'cursor-grab'} ${isFullscreen ? 'h-[calc(100vh-200px)]' : 'h-[600px]'}`}
+                    className={`relative w-full bg-secondary/30 rounded-lg overflow-hidden ${isDraggingMachine ? 'cursor-grabbing' : isPanning ? 'cursor-grabbing' : 'cursor-grab'} ${isFullscreen ? 'h-[calc(100vh-200px)]' : 'h-[600px]'}`}
                     onMouseDown={handleMouseDown}
                     onMouseMove={(e) => {
                       handleMouseMove(e);
@@ -677,7 +751,9 @@ export default function Layout() {
                               className={`absolute rounded-lg border-2 shadow-lg bg-card/80 backdrop-blur cursor-move select-none ${
                                 isDragged 
                                   ? 'border-primary shadow-primary/30 scale-105 z-50' 
-                                  : 'border-border/50 hover:scale-105 hover:border-primary/50'
+                                  : selectedMachineId === machine.id
+                                    ? 'border-primary/80 shadow-primary/20 ring-2 ring-primary/30 z-40'
+                                    : 'border-border/50 hover:scale-105 hover:border-primary/50'
                               } transition-all duration-100`}
                               style={{
                                 left: posX,
@@ -686,6 +762,12 @@ export default function Layout() {
                                 height: machine.height,
                               }}
                               onMouseDown={(e) => handleMachineDragStart(e, machine.id, posX, posY)}
+                              onClick={(e) => {
+                                if (!isDraggingMachine) {
+                                  e.stopPropagation();
+                                  setSelectedMachineId(prev => prev === machine.id ? null : machine.id);
+                                }
+                              }}
                             >
                               {/* Machine Image or Placeholder */}
                               {imageUrl ? (
@@ -703,6 +785,15 @@ export default function Layout() {
                                 </div>
                               )}
 
+                              {/* Yield status indicator */}
+                              <div className={`absolute top-1 right-1 px-1.5 py-0.5 rounded text-[9px] font-bold shadow ${
+                                machine.stats.yieldRate >= 98 ? 'bg-green-500/90 text-white' :
+                                machine.stats.yieldRate >= 95 ? 'bg-yellow-500/90 text-black' :
+                                machine.stats.total > 0 ? 'bg-red-500/90 text-white' : 'bg-gray-500/70 text-white'
+                              }`}>
+                                {machine.stats.total > 0 ? `${machine.stats.yieldRate.toFixed(1)}%` : 'N/A'}
+                              </div>
+
                               {/* Simple Label Overlay */}
                               <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 rounded-b-lg">
                                 <div className="flex items-center gap-1">
@@ -711,7 +802,14 @@ export default function Layout() {
                                     {machine.name}
                                   </span>
                                 </div>
-                                <span className="text-[10px] text-white/70">{machine.code}</span>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] text-white/70">{machine.code}</span>
+                                  {machine.stats.total > 0 && (
+                                    <span className="text-[9px] text-white/60">
+                                      {machine.stats.ok}/{machine.stats.total}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           );
@@ -726,13 +824,87 @@ export default function Layout() {
                     </div>
 
                     {/* Controls hint */}
-                    <div className="absolute bottom-4 left-4 text-xs text-muted-foreground bg-card/80 backdrop-blur px-3 py-2 rounded-lg">
-                      <Move className="h-3 w-3 inline mr-1" />
-                      {t('layout.controlsHint')}
+                    <div className="absolute bottom-4 left-4 text-xs text-muted-foreground bg-card/80 backdrop-blur px-3 py-2 rounded-lg space-x-3">
+                      <span><Move className="h-3 w-3 inline mr-1" />{t('layout.controlsHint')}</span>
+                      <span>|</span>
+                      <span>🖱️ Scroll to zoom</span>
+                      <span>|</span>
+                      <span>Click machine for details</span>
                     </div>
 
-                    {/* Mini-map for fullscreen mode */}
-                    {isFullscreen && machinesWithStats.length > 0 && (
+                    {/* Selected machine info panel */}
+                    {selectedMachineId && (() => {
+                      const sel = machinesWithStats.find(m => m.id === selectedMachineId);
+                      if (!sel) return null;
+                      return (
+                        <div className="absolute top-4 right-4 w-64 bg-card/95 backdrop-blur border border-border rounded-lg shadow-xl z-50 overflow-hidden">
+                          <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
+                            <div className="flex items-center gap-2">
+                              <Cpu className="h-4 w-4 text-primary" />
+                              <span className="font-semibold text-sm truncate">{sel.name}</span>
+                            </div>
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedMachineId(null)}>
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                          <div className="p-3 space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Code</span>
+                              <Badge variant="outline">{sel.code}</Badge>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Type</span>
+                              <span>{sel.machineType}</span>
+                            </div>
+                            <div className="border-t border-border pt-2 mt-2">
+                              <div className="flex items-center gap-1 mb-2">
+                                <Activity className="h-3.5 w-3.5 text-primary" />
+                                <span className="font-medium text-xs">Inspection Stats</span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="bg-muted/40 rounded px-2 py-1">
+                                  <div className="text-[10px] text-muted-foreground">Total</div>
+                                  <div className="font-bold">{sel.stats.total.toLocaleString()}</div>
+                                </div>
+                                <div className="bg-green-500/10 rounded px-2 py-1">
+                                  <div className="text-[10px] text-green-600">OK</div>
+                                  <div className="font-bold text-green-600">{sel.stats.ok.toLocaleString()}</div>
+                                </div>
+                                <div className="bg-red-500/10 rounded px-2 py-1">
+                                  <div className="text-[10px] text-red-600">NG</div>
+                                  <div className="font-bold text-red-600">{sel.stats.ng.toLocaleString()}</div>
+                                </div>
+                                <div className="bg-yellow-500/10 rounded px-2 py-1">
+                                  <div className="text-[10px] text-yellow-600">NTF</div>
+                                  <div className="font-bold text-yellow-600">{sel.stats.ntf.toLocaleString()}</div>
+                                </div>
+                              </div>
+                              <div className="mt-2">
+                                <div className="flex justify-between text-xs mb-1">
+                                  <span className="text-muted-foreground">Yield Rate</span>
+                                  <span className={`font-bold ${
+                                    sel.stats.yieldRate >= 98 ? 'text-green-600' :
+                                    sel.stats.yieldRate >= 95 ? 'text-yellow-600' : 'text-red-600'
+                                  }`}>{sel.stats.yieldRate.toFixed(2)}%</span>
+                                </div>
+                                <div className="w-full bg-muted rounded-full h-2">
+                                  <div
+                                    className={`h-2 rounded-full transition-all ${
+                                      sel.stats.yieldRate >= 98 ? 'bg-green-500' :
+                                      sel.stats.yieldRate >= 95 ? 'bg-yellow-500' : 'bg-red-500'
+                                    }`}
+                                    style={{ width: `${Math.min(100, sel.stats.yieldRate)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Mini-map */}
+                    {machinesWithStats.length > 0 && (
                       <div className="absolute bottom-4 right-4 w-48 h-32 bg-card/90 backdrop-blur border border-border/50 rounded-lg overflow-hidden shadow-lg">
                         <div className="absolute inset-0 p-2">
                           <div 

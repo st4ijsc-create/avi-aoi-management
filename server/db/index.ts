@@ -16,3 +16,4 @@ export * from "./system";
 export * from "./dashboard";
 export * from "./integration";
 export * from "./spc";
+export * from "./license";

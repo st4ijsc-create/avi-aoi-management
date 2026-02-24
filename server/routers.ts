@@ -53,6 +53,7 @@ import { reportBuilderRouter } from "./routers/reportBuilderRouter";
 import { enhancedAuditRouter } from "./routers/enhancedAuditRouter";
 import { paretoAnalysisRouter } from "./routers/paretoAnalysisRouter";
 import { qualityGateTemplateRouter } from "./routers/qualityGateTemplateRouter";
+import { licenseRouter } from "./routers/licenseRouter";
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -285,6 +286,9 @@ export const appRouter = router({
   enhancedAudit: enhancedAuditRouter,
   paretoAnalysis: paretoAnalysisRouter,
   qualityGateTemplate: qualityGateTemplateRouter,
+
+  // License Management
+  license: licenseRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -90,7 +90,7 @@ interface BackupHistory {
   status: "success" | "failed" | "pending";
 }
 
-export default function BackupRestore() {
+export function BackupRestorePageContent() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -255,7 +255,6 @@ export default function BackupRestore() {
 
   if (!isAdmin) {
     return (
-      <DashboardLayout>
         <div className="flex items-center justify-center h-[60vh]">
           <Card className="p-8 text-center">
             <AlertTriangle className="h-12 w-12 mx-auto text-yellow-500 mb-4" />
@@ -265,12 +264,10 @@ export default function BackupRestore() {
             </p>
           </Card>
         </div>
-      </DashboardLayout>
     );
   }
 
   return (
-    <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -564,6 +561,13 @@ export default function BackupRestore() {
           </TabsContent>
         </Tabs>
       </div>
+  );
+}
+
+export default function BackupRestore() {
+  return (
+    <DashboardLayout>
+      <BackupRestorePageContent />
     </DashboardLayout>
   );
 }

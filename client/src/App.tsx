@@ -10,6 +10,7 @@ import History from "./pages/History";
 import InspectionDetail from "./pages/InspectionDetail";
 import Layout from "./pages/Layout";
 import Settings from "./pages/Settings";
+import DataSettings from "./pages/DataSettings";
 import ApiDocs from "./pages/ApiDocs";
 import ProductModels from "./pages/ProductModels";
 import CorporateLayout from "./pages/CorporateLayout";
@@ -76,6 +77,9 @@ import ParetoAnalysis from "./pages/ParetoAnalysis";
 import QualityGateTemplates from "./pages/QualityGateTemplates";
 import ProductionScheduling from "./pages/ProductionScheduling";
 import MachineRegistration from "./pages/MachineRegistration";
+import CorporateManagement from "./pages/CorporateManagement";
+import AdminPage from "./pages/AdminPage";
+import LicenseManagement from "./pages/LicenseManagement";
 
 function Router() {
   return (
@@ -89,10 +93,13 @@ function Router() {
       <Route path="/layout" component={Layout} />
       <Route path="/layout/:id" component={Layout} />
       <Route path="/settings" component={Settings} />
+      <Route path="/datasettings" component={DataSettings} />
+      <Route path="/admin" component={AdminPage} />
       <Route path="/api-docs" component={ApiDocs} />
       <Route path="/products" component={ProductModels} />
       <Route path="/corporate-layout" component={CorporateLayout} />
       <Route path="/corporate-dashboard" component={CorporateDashboard} />
+      <Route path="/corporate-management" component={CorporateManagement} />
       <Route path="/reports" component={Reports} />
       <Route path="/alerts" component={Alerts} />
       <Route path="/users" component={Users} />
@@ -153,6 +160,7 @@ function Router() {
       <Route path="/quality-gate-templates" component={QualityGateTemplates} />
       <Route path="/production-scheduling" component={ProductionScheduling} />
       <Route path="/machine-registration" component={MachineRegistration} />
+      <Route path="/license" component={LicenseManagement} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

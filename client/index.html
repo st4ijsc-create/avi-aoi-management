@@ -8,6 +8,31 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <title>AVI/AOI Factory Management System</title>    
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    
+    <!-- Suppress browser extension errors -->
+    <script>
+      // Suppress "message channel closed" errors from browser extensions
+      window.addEventListener('unhandledrejection', function(event) {
+        if (event.reason && 
+            event.reason.message && 
+            event.reason.message.includes('message channel closed')) {
+          event.preventDefault();
+          // Optionally log for debugging
+          // console.log('Suppressed extension error:', event.reason.message);
+        }
+      });
+      
+      // Suppress console errors from extensions
+      const originalError = console.error;
+      console.error = function(...args) {
+        const msg = args.join(' ');
+        if (msg.includes('message channel closed') || 
+            msg.includes('listener indicated an asynchronous response')) {
+          return; // Suppress these errors
+        }
+        originalError.apply(console, args);
+      };
+    </script>
   </head>
 
   <body>

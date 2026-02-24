@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { trpc } from "@/lib/trpc";
 import { navItems } from "@/lib/navigation";
 import { 
@@ -19,11 +20,16 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Minimize2,
   Box,
   Globe,
-  Layers
+  Layers,
+  Hand,
+  Move,
+  LocateFixed,
+  GripVertical
 } from "lucide-react";
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import { lazy, Suspense } from "react";
 
@@ -42,25 +48,92 @@ export default function CorporateLayout() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
-  // Drag & drop state
-  const [isDragging, setIsDragging] = useState(false);
+  // Viewport pan state (for moving the entire view)
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [panStartOffset, setPanStartOffset] = useState({ x: 0, y: 0 });
+  
+  // Factory drag state (for moving individual factories)
+  const [isDraggingFactory, setIsDraggingFactory] = useState(false);
   const [draggedFactoryId, setDraggedFactoryId] = useState<number | null>(null);
   const [factoryPositions, setFactoryPositions] = useState<Record<number, { x: number; y: number }>>({});
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [positionsInitialized, setPositionsInitialized] = useState(false);
+  
+  // SVG map pan/zoom state
+  const [svgViewBox, setSvgViewBox] = useState({ x: 0, y: 0, w: 1000, h: 500 });
+  const [isSvgPanning, setIsSvgPanning] = useState(false);
+  const [svgPanStart, setSvgPanStart] = useState({ x: 0, y: 0 });
+  const [svgPanStartViewBox, setSvgPanStartViewBox] = useState({ x: 0, y: 0, w: 1000, h: 500 });
+  const svgRef = useRef<SVGSVGElement>(null);
 
-  // Zoom handlers
-  const handleZoomIn = () => {
-    setZoom(prev => Math.min(prev + 0.2, 3)); // Max zoom 3x
-  };
+  // Canvas dimensions
+  const CANVAS_WIDTH = 2000;
+  const CANVAS_HEIGHT = 1500;
 
-  const handleZoomOut = () => {
-    setZoom(prev => Math.max(prev - 0.2, 0.5)); // Min zoom 0.5x
-  };
+  // Zoom with mouse wheel
+  const handleWheel = useCallback((e: WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    setZoom(prev => {
+      const newZoom = Math.max(0.3, Math.min(3, prev + delta));
+      // Zoom toward cursor position
+      if (canvasRef.current) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const scale = newZoom / prev;
+        setPanOffset(pan => ({
+          x: mouseX - (mouseX - pan.x) * scale,
+          y: mouseY - (mouseY - pan.y) * scale,
+        }));
+      }
+      return newZoom;
+    });
+  }, []);
 
-  const handleResetZoom = () => {
-    setZoom(1);
-  };
+  // SVG wheel zoom
+  const handleSvgWheel = useCallback((e: WheelEvent) => {
+    e.preventDefault();
+    const scaleFactor = e.deltaY > 0 ? 1.1 : 0.9;
+    const svg = svgRef.current;
+    if (!svg) return;
+    
+    const rect = svg.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    
+    setSvgViewBox(prev => {
+      const svgMouseX = prev.x + (mouseX / rect.width) * prev.w;
+      const svgMouseY = prev.y + (mouseY / rect.height) * prev.h;
+      
+      const newW = Math.max(200, Math.min(3000, prev.w * scaleFactor));
+      const newH = Math.max(100, Math.min(1500, prev.h * scaleFactor));
+      
+      const newX = svgMouseX - (mouseX / rect.width) * newW;
+      const newY = svgMouseY - (mouseY / rect.height) * newH;
+      
+      return { x: newX, y: newY, w: newW, h: newH };
+    });
+  }, []);
+
+  // Attach wheel listeners
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas && viewMode === "2D") {
+      canvas.addEventListener('wheel', handleWheel, { passive: false });
+      return () => canvas.removeEventListener('wheel', handleWheel);
+    }
+  }, [handleWheel, viewMode]);
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (svg && viewMode === "MAP") {
+      svg.addEventListener('wheel', handleSvgWheel, { passive: false });
+      return () => svg.removeEventListener('wheel', handleSvgWheel);
+    }
+  }, [handleSvgWheel, viewMode]);
 
   const toggleFullscreen = () => {
     setIsFullscreen(prev => !prev);
@@ -70,24 +143,35 @@ export default function CorporateLayout() {
   const { data: workshops } = trpc.workshop.list.useQuery();
   const updateMapPositionMutation = trpc.factory.updateMapPosition.useMutation();
 
-  // Initialize positions from database or default
+  // Initialize positions from database or default grid layout
   useEffect(() => {
     if (factories && !positionsInitialized) {
       const positions: Record<number, { x: number; y: number }> = {};
+      const cols = Math.ceil(Math.sqrt(factories.length));
+      
       factories.forEach((factory, index) => {
-        // Use database position if available, otherwise use default
         const dbX = factory.mapPositionX ? parseFloat(factory.mapPositionX) : null;
         const dbY = factory.mapPositionY ? parseFloat(factory.mapPositionY) : null;
         
         if (dbX !== null && dbY !== null) {
-          positions[factory.id] = { x: dbX, y: dbY * 600 }; // Denormalize y from 0-1 to pixel
+          positions[factory.id] = { x: dbX * CANVAS_WIDTH, y: dbY * CANVAS_HEIGHT };
         } else {
-          // Default positions spread vertically
-          positions[factory.id] = { x: 0.3 + (index * 0.2), y: 100 + (index * 180) };
+          // Auto-arrange in grid
+          const col = index % cols;
+          const row = Math.floor(index / cols);
+          positions[factory.id] = { 
+            x: 150 + col * 350,
+            y: 100 + row * 250 
+          };
         }
       });
       setFactoryPositions(positions);
       setPositionsInitialized(true);
+      
+      // Auto-fit view to show all factories
+      if (factories.length > 0) {
+        setTimeout(() => fitAllInView(positions), 100);
+      }
     }
   }, [factories, positionsInitialized]);
 
@@ -101,14 +185,12 @@ export default function CorporateLayout() {
   const { data: dashboardStats } = trpc.dashboard.getStats.useQuery({});
   const { data: yieldByFactory, isLoading: yieldLoading } = trpc.corporateFactoryStats.yieldRateByFactory.useQuery({});
 
-  // Aggregate stats per factory using real API data
+  // Aggregate stats per factory
   const factoriesWithStats = useMemo(() => {
     if (!factories) return [];
     
     return factories.map((factory) => {
       const factoryWorkshops = workshops?.filter(w => w.factoryId === factory.id) || [];
-      
-      // Match real stats by factoryCode
       const realStats = yieldByFactory?.find(s => s.factoryCode === factory.code);
       const stats = {
         total: realStats?.totalInspections ?? 0,
@@ -135,7 +217,39 @@ export default function CorporateLayout() {
     });
   }, [factories, workshops, yieldByFactory]);
 
-  // Draw 2D corporate layout
+  // Fit all factories in view
+  const fitAllInView = useCallback((positions?: Record<number, { x: number; y: number }>) => {
+    const pos = positions || factoryPositions;
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container || Object.keys(pos).length === 0) return;
+    
+    const values = Object.values(pos);
+    const minX = Math.min(...values.map(p => p.x)) - 200;
+    const maxX = Math.max(...values.map(p => p.x)) + 400;
+    const minY = Math.min(...values.map(p => p.y)) - 100;
+    const maxY = Math.max(...values.map(p => p.y)) + 280;
+    
+    const contentWidth = maxX - minX;
+    const contentHeight = maxY - minY;
+    const viewWidth = container.clientWidth;
+    const viewHeight = isFullscreen ? window.innerHeight - 200 : 600;
+    
+    const scaleX = viewWidth / contentWidth;
+    const scaleY = viewHeight / contentHeight;
+    const newZoom = Math.max(0.3, Math.min(2, Math.min(scaleX, scaleY) * 0.85));
+    
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    
+    setZoom(newZoom);
+    setPanOffset({
+      x: viewWidth / 2 - centerX * newZoom,
+      y: viewHeight / 2 - centerY * newZoom,
+    });
+  }, [factoryPositions, isFullscreen]);
+
+  // Draw 2D canvas
   useEffect(() => {
     if (viewMode !== "2D" || !canvasRef.current) return;
     
@@ -146,50 +260,107 @@ export default function CorporateLayout() {
     const container = containerRef.current;
     if (container) {
       canvas.width = container.clientWidth;
-      canvas.height = 600;
+      canvas.height = isFullscreen ? window.innerHeight - 120 : 600;
     }
 
     // Clear canvas
     ctx.fillStyle = "#0a0a0f";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    ctx.save();
+    ctx.translate(panOffset.x, panOffset.y);
+    ctx.scale(zoom, zoom);
+
     // Draw grid
-    ctx.strokeStyle = "rgba(6, 182, 212, 0.1)";
-    ctx.lineWidth = 1;
-    for (let x = 0; x < canvas.width; x += 50 * zoom) {
+    const gridSize = 50;
+    ctx.strokeStyle = "rgba(6, 182, 212, 0.08)";
+    ctx.lineWidth = 0.5;
+    const startGridX = Math.floor(-panOffset.x / zoom / gridSize) * gridSize - gridSize;
+    const startGridY = Math.floor(-panOffset.y / zoom / gridSize) * gridSize - gridSize;
+    const endGridX = startGridX + (canvas.width / zoom) + gridSize * 2;
+    const endGridY = startGridY + (canvas.height / zoom) + gridSize * 2;
+    
+    for (let x = startGridX; x < endGridX; x += gridSize) {
       ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, canvas.height);
+      ctx.moveTo(x, startGridY);
+      ctx.lineTo(x, endGridY);
       ctx.stroke();
     }
-    for (let y = 0; y < canvas.height; y += 50 * zoom) {
+    for (let y = startGridY; y < endGridY; y += gridSize) {
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(canvas.width, y);
+      ctx.moveTo(startGridX, y);
+      ctx.lineTo(endGridX, y);
       ctx.stroke();
     }
 
-    // Draw factories as regions on a map using dynamic positions
-    factoriesWithStats.forEach((factory, index) => {
-      const pos = factoryPositions[factory.id] || { x: 0.3 + (index * 0.2), y: 100 + (index * 180) };
-      const region = { x: canvas.width * pos.x, y: pos.y * zoom };
-      const boxWidth = 280 * zoom;
-      const boxHeight = 160 * zoom;
-      const x = region.x - boxWidth / 2;
-      const y = region.y;
+    // Draw connection lines between factories (hub-spoke pattern)
+    if (factoriesWithStats.length > 1) {
+      const allPositions = factoriesWithStats.map(f => factoryPositions[f.id]).filter(Boolean);
+      if (allPositions.length > 0) {
+        const centerX = allPositions.reduce((sum, p) => sum + p.x + 140, 0) / allPositions.length;
+        const centerY = allPositions.reduce((sum, p) => sum + p.y + 80, 0) / allPositions.length;
+        
+        factoriesWithStats.forEach((factory) => {
+          const pos = factoryPositions[factory.id];
+          if (!pos) return;
+          
+          ctx.strokeStyle = "rgba(6, 182, 212, 0.15)";
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([8, 6]);
+          ctx.beginPath();
+          ctx.moveTo(centerX, centerY);
+          ctx.lineTo(pos.x + 140, pos.y + 80);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        });
+        
+        // Corporate center node
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, 20, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(6, 182, 212, 0.2)";
+        ctx.fill();
+        ctx.strokeStyle = "#06b6d4";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = "#06b6d4";
+        ctx.font = "bold 10px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("HQ", centerX, centerY + 4);
+        ctx.textAlign = "start";
+      }
+    }
 
-      // Factory box
+    // Draw factory cards
+    factoriesWithStats.forEach((factory) => {
+      const pos = factoryPositions[factory.id];
+      if (!pos) return;
+      
+      const boxWidth = 280;
+      const boxHeight = 160;
+      const x = pos.x;
+      const y = pos.y;
       const isSelected = selectedFactory?.id === factory.id;
+      const isBeingDragged = draggedFactoryId === factory.id;
+
+      // Shadow
+      if (isSelected || isBeingDragged) {
+        ctx.shadowColor = "rgba(6, 182, 212, 0.4)";
+        ctx.shadowBlur = 20;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 4;
+      }
+
+      // Factory box background
       const gradient = ctx.createLinearGradient(x, y, x, y + boxHeight);
-      gradient.addColorStop(0, isSelected ? "rgba(6, 182, 212, 0.3)" : "rgba(30, 41, 59, 0.8)");
-      gradient.addColorStop(1, isSelected ? "rgba(6, 182, 212, 0.1)" : "rgba(15, 23, 42, 0.8)");
+      gradient.addColorStop(0, isSelected ? "rgba(6, 182, 212, 0.3)" : "rgba(30, 41, 59, 0.9)");
+      gradient.addColorStop(1, isSelected ? "rgba(6, 182, 212, 0.1)" : "rgba(15, 23, 42, 0.9)");
       
       ctx.fillStyle = gradient;
-      ctx.strokeStyle = isSelected ? "#06b6d4" : "rgba(6, 182, 212, 0.3)";
+      ctx.strokeStyle = isSelected ? "#06b6d4" : isBeingDragged ? "#f59e0b" : "rgba(6, 182, 212, 0.3)";
       ctx.lineWidth = isSelected ? 2 : 1;
       
       // Rounded rectangle
-      const radius = 12 * zoom;
+      const radius = 12;
       ctx.beginPath();
       ctx.moveTo(x + radius, y);
       ctx.lineTo(x + boxWidth - radius, y);
@@ -204,232 +375,305 @@ export default function CorporateLayout() {
       ctx.fill();
       ctx.stroke();
 
+      // Reset shadow
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
+
+      // Drag handle dots
+      ctx.fillStyle = "rgba(100, 116, 139, 0.5)";
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.arc(x + boxWidth - 20 + i * 6, y + 12, 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x + boxWidth - 20 + i * 6, y + 19, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
       // Factory icon
       ctx.fillStyle = "#06b6d4";
-      ctx.font = `${24 * zoom}px sans-serif`;
-      ctx.fillText("🏭", x + 15 * zoom, y + 35 * zoom);
+      ctx.font = "24px sans-serif";
+      ctx.fillText("🏭", x + 15, y + 35);
 
       // Factory name
       ctx.fillStyle = "#ffffff";
-      ctx.font = `bold ${14 * zoom}px sans-serif`;
-      ctx.fillText(factory.name, x + 50 * zoom, y + 30 * zoom);
+      ctx.font = "bold 14px sans-serif";
+      ctx.fillText(factory.name, x + 50, y + 30);
 
-      // Factory code
+      // Factory code & location
       ctx.fillStyle = "#94a3b8";
-      ctx.font = `${11 * zoom}px sans-serif`;
-      ctx.fillText(factory.code, x + 50 * zoom, y + 48 * zoom);
+      ctx.font = "11px sans-serif";
+      const locationText = [factory.code, factory.region, factory.country].filter(Boolean).join(" · ");
+      ctx.fillText(locationText, x + 50, y + 48);
 
-      // Stats
-      const statsY = y + 75 * zoom;
+      // Divider
+      ctx.strokeStyle = "rgba(100, 116, 139, 0.2)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x + 15, y + 60);
+      ctx.lineTo(x + boxWidth - 15, y + 60);
+      ctx.stroke();
+
+      // Stats row
+      const statsY = y + 85;
       
-      // Total
       ctx.fillStyle = "#ffffff";
-      ctx.font = `bold ${18 * zoom}px sans-serif`;
-      ctx.fillText(factory.stats.total.toLocaleString(), x + 20 * zoom, statsY);
+      ctx.font = "bold 18px sans-serif";
+      ctx.fillText(factory.stats.total.toLocaleString(), x + 20, statsY);
       ctx.fillStyle = "#94a3b8";
-      ctx.font = `${10 * zoom}px sans-serif`;
-      ctx.fillText("Total", x + 20 * zoom, statsY + 15 * zoom);
+      ctx.font = "10px sans-serif";
+      ctx.fillText("Total", x + 20, statsY + 15);
 
-      // OK
       ctx.fillStyle = "#10b981";
-      ctx.font = `bold ${14 * zoom}px sans-serif`;
-      ctx.fillText(factory.stats.ok.toLocaleString(), x + 100 * zoom, statsY);
+      ctx.font = "bold 14px sans-serif";
+      ctx.fillText(factory.stats.ok.toLocaleString(), x + 100, statsY);
       ctx.fillStyle = "#94a3b8";
-      ctx.font = `${10 * zoom}px sans-serif`;
-      ctx.fillText("OK", x + 100 * zoom, statsY + 15 * zoom);
+      ctx.font = "10px sans-serif";
+      ctx.fillText("OK", x + 100, statsY + 15);
 
-      // NG
       ctx.fillStyle = "#ef4444";
-      ctx.font = `bold ${14 * zoom}px sans-serif`;
-      ctx.fillText(factory.stats.ng.toLocaleString(), x + 160 * zoom, statsY);
+      ctx.font = "bold 14px sans-serif";
+      ctx.fillText(factory.stats.ng.toLocaleString(), x + 160, statsY);
       ctx.fillStyle = "#94a3b8";
-      ctx.font = `${10 * zoom}px sans-serif`;
-      ctx.fillText("NG", x + 160 * zoom, statsY + 15 * zoom);
+      ctx.font = "10px sans-serif";
+      ctx.fillText("NG", x + 160, statsY + 15);
 
-      // Yield Rate
       const yieldColor = factory.stats.yieldRate >= 95 ? "#10b981" : factory.stats.yieldRate >= 90 ? "#f59e0b" : "#ef4444";
       ctx.fillStyle = yieldColor;
-      ctx.font = `bold ${16 * zoom}px sans-serif`;
-      ctx.fillText(`${factory.stats.yieldRate.toFixed(1)}%`, x + 210 * zoom, statsY);
+      ctx.font = "bold 16px sans-serif";
+      ctx.fillText(`${factory.stats.yieldRate.toFixed(1)}%`, x + 210, statsY);
       ctx.fillStyle = "#94a3b8";
-      ctx.font = `${10 * zoom}px sans-serif`;
-      ctx.fillText("Yield", x + 210 * zoom, statsY + 15 * zoom);
+      ctx.font = "10px sans-serif";
+      ctx.fillText("Yield", x + 210, statsY + 15);
 
-      // Workshops count
+      // Yield indicator bar
+      const barY = y + boxHeight - 30;
+      const barWidth = boxWidth - 30;
+      ctx.fillStyle = "rgba(100, 116, 139, 0.2)";
+      ctx.beginPath();
+      ctx.roundRect(x + 15, barY, barWidth, 6, 3);
+      ctx.fill();
+      ctx.fillStyle = yieldColor;
+      ctx.beginPath();
+      ctx.roundRect(x + 15, barY, barWidth * (factory.stats.yieldRate / 100), 6, 3);
+      ctx.fill();
+
+      // Workshop count
       ctx.fillStyle = "#64748b";
-      ctx.font = `${11 * zoom}px sans-serif`;
-      ctx.fillText(`${factory.workshops.length} ${t('corporate.workshops')}`, x + 20 * zoom, y + boxHeight - 15 * zoom);
-
-      // Connection lines between factories
-      if (index < factoriesWithStats.length - 1) {
-        const nextFactory = factoriesWithStats[index + 1];
-        const nextPos = factoryPositions[nextFactory.id] || { x: 0.3 + ((index + 1) * 0.2), y: 100 + ((index + 1) * 180) };
-        const nextRegion = { x: canvas.width * nextPos.x, y: nextPos.y * zoom };
-        ctx.strokeStyle = "rgba(6, 182, 212, 0.2)";
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);
-        ctx.beginPath();
-        ctx.moveTo(region.x, y + boxHeight);
-        ctx.lineTo(nextRegion.x, nextRegion.y);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
+      ctx.font = "11px sans-serif";
+      ctx.fillText(`${factory.workshops.length} ${t('corporate.workshops')}`, x + 20, y + boxHeight - 8);
     });
 
-    // Draw title
+    ctx.restore();
+    
+    // HUD overlay (fixed position)
+    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+    const hudRect = { x: 10, y: 10, w: 280, h: 48 };
+    ctx.beginPath();
+    ctx.roundRect(hudRect.x, hudRect.y, hudRect.w, hudRect.h, 8);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(6, 182, 212, 0.3)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    
     ctx.fillStyle = "#ffffff";
-    ctx.font = `bold ${20 * zoom}px sans-serif`;
-    ctx.fillText(t('corporate.corporateMapTitle'), 20, 30);
-
+    ctx.font = "bold 16px sans-serif";
+    ctx.fillText(t('corporate.corporateMapTitle'), 20, 33);
     ctx.fillStyle = "#94a3b8";
-    ctx.font = `${12 * zoom}px sans-serif`;
+    ctx.font = "12px sans-serif";
     ctx.fillText(`${factoriesWithStats.length} ${t('corporate.factories')} | ${workshops?.length || 0} ${t('corporate.workshops')}`, 20, 50);
 
-  }, [viewMode, factoriesWithStats, selectedFactory, zoom, workshops?.length, factoryPositions, t]);
+    // Mini-map
+    if (factoriesWithStats.length > 0) {
+      const mmWidth = 150;
+      const mmHeight = 80;
+      const mmX = canvas.width - mmWidth - 15;
+      const mmY = canvas.height - mmHeight - 15;
+      
+      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+      ctx.beginPath();
+      ctx.roundRect(mmX, mmY, mmWidth, mmHeight, 6);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(6, 182, 212, 0.3)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      
+      const allPos = Object.values(factoryPositions);
+      if (allPos.length > 0) {
+        const minFX = Math.min(...allPos.map(p => p.x)) - 100;
+        const maxFX = Math.max(...allPos.map(p => p.x)) + 400;
+        const minFY = Math.min(...allPos.map(p => p.y)) - 50;
+        const maxFY = Math.max(...allPos.map(p => p.y)) + 250;
+        
+        const contentW = maxFX - minFX || 1;
+        const contentH = maxFY - minFY || 1;
+        const mmScale = Math.min((mmWidth - 10) / contentW, (mmHeight - 10) / contentH);
+        
+        factoriesWithStats.forEach(f => {
+          const pos = factoryPositions[f.id];
+          if (!pos) return;
+          const dotX = mmX + 5 + (pos.x - minFX) * mmScale;
+          const dotY = mmY + 5 + (pos.y - minFY) * mmScale;
+          const yColor = f.stats.yieldRate >= 95 ? "#10b981" : f.stats.yieldRate >= 90 ? "#f59e0b" : "#ef4444";
+          ctx.beginPath();
+          ctx.arc(dotX, dotY, 3, 0, Math.PI * 2);
+          ctx.fillStyle = yColor;
+          ctx.fill();
+        });
+        
+        // Viewport rectangle
+        const vpX = mmX + 5 + (-panOffset.x / zoom - minFX) * mmScale;
+        const vpY = mmY + 5 + (-panOffset.y / zoom - minFY) * mmScale;
+        const vpW = (canvas.width / zoom) * mmScale;
+        const vpH = (canvas.height / zoom) * mmScale;
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(vpX, vpY, vpW, vpH);
+      }
+    }
 
-  // Get factory at position
-  const getFactoryAtPosition = (mouseX: number, mouseY: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return null;
+  }, [viewMode, factoriesWithStats, selectedFactory, zoom, workshops?.length, factoryPositions, panOffset, t, isFullscreen, draggedFactoryId]);
+
+  // Get factory at canvas mouse position (accounting for pan/zoom)
+  const getFactoryAtPosition = useCallback((mouseX: number, mouseY: number) => {
+    const worldX = (mouseX - panOffset.x) / zoom;
+    const worldY = (mouseY - panOffset.y) / zoom;
 
     for (const factory of factoriesWithStats) {
-      const pos = factoryPositions[factory.id] || { x: 0.3, y: 100 };
-      const region = { x: canvas.width * pos.x, y: pos.y * zoom };
-      const boxWidth = 280 * zoom;
-      const boxHeight = 160 * zoom;
-      const boxX = region.x - boxWidth / 2;
-      const boxY = region.y;
-
-      if (mouseX >= boxX && mouseX <= boxX + boxWidth && mouseY >= boxY && mouseY <= boxY + boxHeight) {
-        return { factory, boxX, boxY };
+      const pos = factoryPositions[factory.id];
+      if (!pos) continue;
+      const boxWidth = 280;
+      const boxHeight = 160;
+      if (worldX >= pos.x && worldX <= pos.x + boxWidth && worldY >= pos.y && worldY <= pos.y + boxHeight) {
+        return factory;
       }
     }
     return null;
-  };
+  }, [factoriesWithStats, factoryPositions, panOffset, zoom]);
 
-  // Handle mouse down - start drag
+  // Mouse down: start dragging factory or panning viewport
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const rect = canvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    const result = getFactoryAtPosition(mouseX, mouseY);
-    if (result) {
-      setIsDragging(true);
-      setDraggedFactoryId(result.factory.id);
-      setSelectedFactory(result.factory);
-      setDragOffset({
-        x: mouseX - result.boxX - (140 * zoom), // center of box
-        y: mouseY - result.boxY,
-      });
+    const factory = getFactoryAtPosition(mouseX, mouseY);
+    
+    if (factory) {
+      setIsDraggingFactory(true);
+      setDraggedFactoryId(factory.id);
+      setSelectedFactory(factory);
+      const pos = factoryPositions[factory.id];
+      if (pos) {
+        setDragOffset({
+          x: (mouseX - panOffset.x) / zoom - pos.x,
+          y: (mouseY - panOffset.y) / zoom - pos.y,
+        });
+      }
+    } else {
+      setIsPanning(true);
+      setPanStart({ x: mouseX, y: mouseY });
+      setPanStartOffset({ ...panOffset });
     }
   };
 
-  // Animation frame for smooth dragging
-  const animationFrameRef = useRef<number | null>(null);
-  const targetPositionRef = useRef<{ x: number; y: number } | null>(null);
-
-  // Smooth animation function
-  const animateToPosition = () => {
-    if (!targetPositionRef.current || draggedFactoryId === null) return;
-    
-    const currentPos = factoryPositions[draggedFactoryId];
-    if (!currentPos) return;
-    
-    const target = targetPositionRef.current;
-    const dx = target.x - currentPos.x;
-    const dy = target.y - currentPos.y;
-    
-    // Smooth interpolation (easing)
-    const ease = 0.3;
-    const newX = currentPos.x + dx * ease;
-    const newY = currentPos.y + dy * ease;
-    
-    // Update position
-    setFactoryPositions(prev => ({
-      ...prev,
-      [draggedFactoryId]: { x: newX, y: newY }
-    }));
-    
-    // Continue animation if not close enough
-    if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.5) {
-      animationFrameRef.current = requestAnimationFrame(animateToPosition);
-    }
-  };
-
-  // Handle mouse move - drag with smooth animation
+  // Mouse move: drag factory or pan viewport
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
-    if (!canvas || !isDragging || draggedFactoryId === null) return;
-
+    if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    // Calculate new position as percentage of canvas width and absolute y
-    const newX = (mouseX - dragOffset.x) / canvas.width;
-    const newY = (mouseY - dragOffset.y) / zoom;
-
-    // Clamp values
-    const clampedX = Math.max(0.15, Math.min(0.85, newX));
-    const clampedY = Math.max(50, Math.min(500, newY));
-
-    setFactoryPositions(prev => ({
-      ...prev,
-      [draggedFactoryId]: { x: clampedX, y: clampedY }
-    }));
+    if (isDraggingFactory && draggedFactoryId !== null) {
+      const worldX = (mouseX - panOffset.x) / zoom - dragOffset.x;
+      const worldY = (mouseY - panOffset.y) / zoom - dragOffset.y;
+      setFactoryPositions(prev => ({
+        ...prev,
+        [draggedFactoryId]: { x: worldX, y: worldY }
+      }));
+    } else if (isPanning) {
+      const dx = mouseX - panStart.x;
+      const dy = mouseY - panStart.y;
+      setPanOffset({
+        x: panStartOffset.x + dx,
+        y: panStartOffset.y + dy,
+      });
+    } else {
+      const factory = getFactoryAtPosition(mouseX, mouseY);
+      canvas.style.cursor = factory ? 'grab' : 'move';
+    }
   };
 
-  // Handle mouse up - end drag and save to database with animation
+  // Mouse up: stop dragging/panning
   const handleMouseUp = () => {
-    // Cancel any ongoing animation
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-    targetPositionRef.current = null;
-    
-    if (isDragging && draggedFactoryId !== null) {
+    if (isDraggingFactory && draggedFactoryId !== null) {
       const pos = factoryPositions[draggedFactoryId];
       if (pos) {
-        // Save position to database (normalize y to 0-1 range)
         updateMapPositionMutation.mutate({
           id: draggedFactoryId,
-          mapPositionX: pos.x,
-          mapPositionY: pos.y / 600, // Normalize to 0-1 based on canvas height
+          mapPositionX: pos.x / CANVAS_WIDTH,
+          mapPositionY: pos.y / CANVAS_HEIGHT,
         });
       }
     }
-    setIsDragging(false);
+    setIsDraggingFactory(false);
     setDraggedFactoryId(null);
+    setIsPanning(false);
   };
 
-  // Cleanup animation frame on unmount
-  useEffect(() => {
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, []);
+  // SVG map mouse handlers  
+  const handleSvgMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+    setIsSvgPanning(true);
+    setSvgPanStart({ x: e.clientX, y: e.clientY });
+    setSvgPanStartViewBox({ ...svgViewBox });
+  };
 
-  // Handle canvas click (for selection when not dragging)
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isDragging) return;
-    
+  const handleSvgMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!isSvgPanning || !svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const dx = (e.clientX - svgPanStart.x) / rect.width * svgPanStartViewBox.w;
+    const dy = (e.clientY - svgPanStart.y) / rect.height * svgPanStartViewBox.h;
+    setSvgViewBox({
+      ...svgPanStartViewBox,
+      x: svgPanStartViewBox.x - dx,
+      y: svgPanStartViewBox.y - dy,
+    });
+  };
+
+  const handleSvgMouseUp = () => {
+    setIsSvgPanning(false);
+  };
+
+  const resetSvgView = () => {
+    setSvgViewBox({ x: 0, y: 0, w: 1000, h: 500 });
+  };
+
+  // Double-click to navigate to factory layout
+  const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const rect = canvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    const result = getFactoryAtPosition(mouseX, mouseY);
-    if (result) {
-      setSelectedFactory(result.factory);
+    const factory = getFactoryAtPosition(mouseX, mouseY);
+    if (factory) {
+      setSelectedFactory(factory);
+      setLocation(`/layout?factoryId=${factory.id}`);
+    } else {
+      // Zoom in on double-click position
+      const newZoom = Math.min(3, zoom * 1.5);
+      const scale = newZoom / zoom;
+      setPanOffset({
+        x: mouseX - (mouseX - panOffset.x) * scale,
+        y: mouseY - (mouseY - panOffset.y) * scale,
+      });
+      setZoom(newZoom);
     }
   };
 
@@ -469,18 +713,6 @@ export default function CorporateLayout() {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
-            <div className="flex items-center gap-1 ml-2">
-              <Button variant="outline" size="icon" onClick={() => setZoom(z => Math.max(0.5, z - 0.1))}>
-                <ZoomOut className="h-4 w-4" />
-              </Button>
-              <span className="text-sm text-muted-foreground w-12 text-center">{Math.round(zoom * 100)}%</span>
-              <Button variant="outline" size="icon" onClick={() => setZoom(z => Math.min(2, z + 0.1))}>
-                <ZoomIn className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="icon" onClick={() => setZoom(1)}>
-                <Maximize2 className="h-4 w-4" />
-              </Button>
-            </div>
           </div>
         </div>
 
@@ -555,86 +787,135 @@ export default function CorporateLayout() {
               <CardDescription>{t('corporate.clickFactoryForDetails')}</CardDescription>
             </CardHeader>
             <CardContent>
-              {/* Zoom Controls */}
-              <div className="flex items-center gap-2 mb-4">
+              {/* Map Controls Toolbar */}
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-1 border rounded-lg p-1 bg-background/80">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleZoomOut}
-                    disabled={zoom <= 0.5}
-                    className="h-8 w-8 p-0"
-                  >
-                    <ZoomOut className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleResetZoom}
-                    className="h-8 px-3 text-xs font-mono"
-                  >
-                    {(zoom * 100).toFixed(0)}%
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleZoomIn}
-                    disabled={zoom >= 3}
-                    className="h-8 w-8 p-0"
-                  >
-                    <ZoomIn className="h-4 w-4" />
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="sm" onClick={() => setZoom(z => Math.max(0.3, z - 0.15))} className="h-8 w-8 p-0">
+                        <ZoomOut className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Zoom out</TooltipContent>
+                  </Tooltip>
+                  <span className="text-xs font-mono text-muted-foreground w-12 text-center">
+                    {Math.round(zoom * 100)}%
+                  </span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="sm" onClick={() => setZoom(z => Math.min(3, z + 0.15))} className="h-8 w-8 p-0">
+                        <ZoomIn className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Zoom in</TooltipContent>
+                  </Tooltip>
+                  <div className="w-px h-5 bg-border mx-1" />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="sm" onClick={() => fitAllInView()} className="h-8 w-8 p-0">
+                        <LocateFixed className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{t('corporate.fitAll', 'Fit all factories')}</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="sm" onClick={() => { setZoom(1); setPanOffset({ x: 0, y: 0 }); }} className="h-8 w-8 p-0">
+                        <Maximize2 className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{t('corporate.resetView', 'Reset view')}</TooltipContent>
+                  </Tooltip>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={toggleFullscreen}
-                  className="h-8 w-8 p-0"
-                >
-                  <Maximize2 className="h-4 w-4" />
-                </Button>
+                
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={isFullscreen ? "default" : "outline"}
+                      size="sm"
+                      onClick={toggleFullscreen}
+                      className="h-8 w-8 p-0"
+                    >
+                      {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}</TooltipContent>
+                </Tooltip>
               </div>
 
-              <div ref={containerRef} className={`relative border rounded-lg overflow-hidden bg-background/50 transition-all ${isFullscreen ? 'fixed inset-4 z-50' : ''}`}>
+              {/* Help text */}
+              <div className="flex items-center gap-4 mb-2 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1"><Hand className="h-3 w-3" /> {t('corporate.dragToPan', 'Drag to pan')}</span>
+                <span className="flex items-center gap-1"><Move className="h-3 w-3" /> {t('corporate.dragFactoryToMove', 'Drag factory to move')}</span>
+                <span className="flex items-center gap-1"><ZoomIn className="h-3 w-3" /> {t('corporate.scrollToZoom', 'Scroll to zoom')}</span>
+              </div>
+
+              <div ref={containerRef} className={`relative border rounded-lg overflow-hidden bg-background/50 transition-all ${isFullscreen ? 'fixed inset-4 z-50 bg-background' : ''}`}>
+                {isFullscreen && (
+                  <Button variant="outline" size="sm" onClick={toggleFullscreen} className="absolute top-2 right-2 z-10">
+                    <Minimize2 className="h-4 w-4 mr-1" /> ESC
+                  </Button>
+                )}
+                
                 {viewMode === "2D" ? (
                   <canvas
                     ref={canvasRef}
-                    onClick={handleCanvasClick}
                     onMouseDown={handleMouseDown}
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
                     onMouseLeave={handleMouseUp}
-                    className={`w-full ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
-                    style={{ minHeight: isFullscreen ? '100%' : 600 }}
+                    onDoubleClick={handleDoubleClick}
+                    className="w-full select-none"
+                    style={{ 
+                      minHeight: isFullscreen ? 'calc(100vh - 140px)' : 600,
+                      cursor: isDraggingFactory ? 'grabbing' : isPanning ? 'grabbing' : 'default'
+                    }}
                   />
                 ) : viewMode === "MAP" ? (
-                  <div className="relative w-full" style={{ minHeight: 600 }}>
-                    {/* World Map with Factory Markers */}
+                  <div className="relative w-full" style={{ minHeight: isFullscreen ? 'calc(100vh - 140px)' : 600 }}>
                     <div className="absolute inset-0 bg-gradient-to-b from-slate-900 to-slate-800 rounded-lg overflow-hidden">
-                      {/* SVG World Map */}
-                      <svg viewBox="0 0 1000 500" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
-                        {/* Ocean background */}
-                        <rect fill="#0f172a" width="1000" height="500" />
+                      {/* SVG Map Controls */}
+                      <div className="absolute top-3 left-3 z-10 flex gap-1">
+                        <Button variant="secondary" size="sm" className="h-7 text-xs" onClick={() => {
+                          setSvgViewBox(prev => ({ ...prev, w: prev.w * 0.8, h: prev.h * 0.8 }));
+                        }}>
+                          <ZoomIn className="h-3 w-3" />
+                        </Button>
+                        <Button variant="secondary" size="sm" className="h-7 text-xs" onClick={() => {
+                          setSvgViewBox(prev => ({ ...prev, w: prev.w * 1.2, h: prev.h * 1.2 }));
+                        }}>
+                          <ZoomOut className="h-3 w-3" />
+                        </Button>
+                        <Button variant="secondary" size="sm" className="h-7 text-xs" onClick={resetSvgView}>
+                          <LocateFixed className="h-3 w-3" />
+                        </Button>
+                      </div>
+
+                      <svg 
+                        ref={svgRef}
+                        viewBox={`${svgViewBox.x} ${svgViewBox.y} ${svgViewBox.w} ${svgViewBox.h}`} 
+                        className="w-full h-full select-none" 
+                        preserveAspectRatio="xMidYMid meet"
+                        onMouseDown={handleSvgMouseDown}
+                        onMouseMove={handleSvgMouseMove}
+                        onMouseUp={handleSvgMouseUp}
+                        onMouseLeave={handleSvgMouseUp}
+                        style={{ cursor: isSvgPanning ? 'grabbing' : 'grab' }}
+                      >
+                        <rect fill="#0f172a" x={svgViewBox.x - 500} y={svgViewBox.y - 500} width={svgViewBox.w + 1000} height={svgViewBox.h + 1000} />
                         
-                        {/* Simplified continent shapes */}
+                        {/* Continents */}
                         <g fill="#1e293b" stroke="#334155" strokeWidth="0.5">
-                          {/* North America */}
                           <path d="M50,80 L200,60 L280,100 L300,180 L250,220 L200,200 L150,220 L100,180 L50,150 Z" />
-                          {/* South America */}
                           <path d="M180,250 L220,230 L260,280 L280,350 L250,420 L200,450 L160,400 L170,320 Z" />
-                          {/* Europe */}
                           <path d="M420,80 L500,60 L520,100 L500,140 L450,150 L420,120 Z" />
-                          {/* Africa */}
                           <path d="M420,180 L500,160 L540,200 L560,280 L520,380 L460,400 L420,350 L400,250 Z" />
-                          {/* Asia */}
                           <path d="M520,60 L700,40 L850,80 L900,150 L880,220 L800,250 L700,230 L600,200 L550,150 L520,100 Z" />
-                          {/* Southeast Asia */}
                           <path d="M700,250 L780,230 L820,280 L800,320 L750,340 L700,300 Z" />
-                          {/* Australia */}
                           <path d="M780,350 L880,330 L920,380 L900,430 L820,450 L780,400 Z" />
                         </g>
                         
-                        {/* Grid lines */}
+                        {/* Grid */}
                         <g stroke="#334155" strokeWidth="0.3" strokeDasharray="5,5">
                           {[0, 100, 200, 300, 400].map(y => (
                             <line key={`h-${y}`} x1="0" y1={y + 50} x2="1000" y2={y + 50} />
@@ -646,42 +927,36 @@ export default function CorporateLayout() {
                         
                         {/* Factory Markers */}
                         {factoriesWithStats.map((factory, index) => {
-                          // Position factories on the map based on region
-                          const positions = [
-                            { x: 750, y: 280 }, // Vietnam
-                            { x: 800, y: 150 }, // China
-                            { x: 480, y: 120 }, // Europe
-                            { x: 200, y: 150 }, // USA
+                          const defaultPositions = [
+                            { x: 750, y: 280 },
+                            { x: 800, y: 150 },
+                            { x: 480, y: 120 },
+                            { x: 200, y: 150 },
+                            { x: 700, y: 200 },
+                            { x: 600, y: 100 },
                           ];
-                          const pos = positions[index % positions.length];
+                          const pos = defaultPositions[index % defaultPositions.length];
                           const isSelected = selectedFactory?.id === factory.id;
                           const yieldColor = factory.stats.yieldRate >= 95 ? "#10b981" : factory.stats.yieldRate >= 90 ? "#f59e0b" : "#ef4444";
                           
                           return (
-                            <g key={factory.id} onClick={() => setSelectedFactory(factory)} style={{ cursor: "pointer" }}>
-                              {/* Pulse animation for selected */}
+                            <g key={factory.id} onClick={(e) => { e.stopPropagation(); setSelectedFactory(factory); }} style={{ cursor: "pointer" }}>
                               {isSelected && (
                                 <circle cx={pos.x} cy={pos.y} r="25" fill={yieldColor} opacity="0.3">
                                   <animate attributeName="r" values="20;35;20" dur="2s" repeatCount="indefinite" />
                                   <animate attributeName="opacity" values="0.3;0.1;0.3" dur="2s" repeatCount="indefinite" />
                                 </circle>
                               )}
-                              {/* Marker circle */}
-                              <circle 
-                                cx={pos.x} cy={pos.y} r={isSelected ? 15 : 12} 
-                                fill={yieldColor} 
-                                stroke="#fff" 
-                                strokeWidth="2"
-                                className="transition-all duration-300"
-                              />
-                              {/* Factory icon */}
+                              <circle cx={pos.x} cy={pos.y} r={isSelected ? 15 : 12} fill={yieldColor} stroke="#fff" strokeWidth="2" />
                               <text x={pos.x} y={pos.y + 4} textAnchor="middle" fill="#fff" fontSize="10" fontWeight="bold">
                                 {factory.code.substring(0, 2)}
                               </text>
-                              {/* Label */}
-                              <rect x={pos.x - 40} y={pos.y + 20} width="80" height="24" rx="4" fill="rgba(0,0,0,0.8)" />
-                              <text x={pos.x} y={pos.y + 36} textAnchor="middle" fill="#fff" fontSize="10">
-                                {factory.name.length > 12 ? factory.name.substring(0, 12) + "..." : factory.name}
+                              <rect x={pos.x - 55} y={pos.y + 20} width="110" height="40" rx="6" fill="rgba(0,0,0,0.85)" stroke={yieldColor} strokeWidth="0.5" />
+                              <text x={pos.x} y={pos.y + 35} textAnchor="middle" fill="#fff" fontSize="9" fontWeight="bold">
+                                {factory.name.length > 14 ? factory.name.substring(0, 14) + "..." : factory.name}
+                              </text>
+                              <text x={pos.x} y={pos.y + 50} textAnchor="middle" fill={yieldColor} fontSize="9">
+                                Yield: {factory.stats.yieldRate.toFixed(1)}%
                               </text>
                             </g>
                           );
@@ -718,7 +993,7 @@ export default function CorporateLayout() {
             </CardContent>
           </Card>
 
-          {/* Factory Details */}
+          {/* Factory Details Panel */}
           <Card className="glass-card">
             <CardHeader className="pb-2">
               <CardTitle className="text-lg">{t('corporate.factoryDetails')}</CardTitle>
@@ -743,6 +1018,12 @@ export default function CorporateLayout() {
                       <div className="flex items-start gap-2 text-sm text-muted-foreground">
                         <MapPin className="h-4 w-4 mt-0.5 shrink-0" />
                         <span>{selectedFactory.address}</span>
+                      </div>
+                    )}
+                    {(selectedFactory.region || selectedFactory.country) && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                        <Globe className="h-4 w-4 shrink-0" />
+                        <span>{[selectedFactory.region, selectedFactory.country].filter(Boolean).join(", ")}</span>
                       </div>
                     )}
                   </div>
@@ -772,19 +1053,41 @@ export default function CorporateLayout() {
                     </div>
                   </div>
 
+                  {/* Yield bar */}
+                  <div className="px-1">
+                    <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                      <span>{t('corporate.yieldRate')}</span>
+                      <span className={
+                        selectedFactory.stats.yieldRate >= 95 ? "text-emerald-500" : 
+                        selectedFactory.stats.yieldRate >= 90 ? "text-amber-500" : "text-red-500"
+                      }>
+                        {selectedFactory.stats.yieldRate.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full transition-all ${
+                          selectedFactory.stats.yieldRate >= 95 ? "bg-emerald-500" : 
+                          selectedFactory.stats.yieldRate >= 90 ? "bg-amber-500" : "bg-red-500"
+                        }`}
+                        style={{ width: `${selectedFactory.stats.yieldRate}%` }}
+                      />
+                    </div>
+                  </div>
+
                   <div>
                     <h4 className="text-sm font-medium mb-2">{t('corporate.workshops')} ({selectedFactory.workshops.length})</h4>
                     <div className="space-y-2 max-h-48 overflow-y-auto">
                       {selectedFactory.workshops.map((ws) => (
                         <div
                           key={ws.id}
-                          className="p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors"
+                          className="p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors group"
                           onClick={() => setLocation(`/layout?workshopId=${ws.id}`)}
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <Warehouse className="h-4 w-4 text-cyan-500" />
-                              <span className="font-medium text-sm">{ws.name}</span>
+                              <span className="font-medium text-sm group-hover:text-primary transition-colors">{ws.name}</span>
                             </div>
                             <Badge variant={(ws.stats?.yieldRate ?? 0) >= 95 ? "default" : "secondary"}>
                               {(ws.stats?.yieldRate ?? 0).toFixed(1)}%
@@ -827,12 +1130,24 @@ export default function CorporateLayout() {
               {factoriesWithStats.map((factory) => (
                 <div
                   key={factory.id}
-                  className={`p-4 rounded-lg border cursor-pointer transition-all ${
+                  className={`p-4 rounded-lg border cursor-pointer transition-all hover:shadow-md ${
                     selectedFactory?.id === factory.id
-                      ? "border-primary bg-primary/5"
+                      ? "border-primary bg-primary/5 ring-1 ring-primary/20"
                       : "border-border hover:border-primary/50"
                   }`}
-                  onClick={() => setSelectedFactory(factory)}
+                  onClick={() => {
+                    setSelectedFactory(factory);
+                    if (viewMode === "2D") {
+                      const pos = factoryPositions[factory.id];
+                      const container = containerRef.current;
+                      if (pos && container) {
+                        setPanOffset({
+                          x: container.clientWidth / 2 - pos.x * zoom - 140 * zoom,
+                          y: 300 - pos.y * zoom - 80 * zoom,
+                        });
+                      }
+                    }
+                  }}
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
@@ -866,8 +1181,26 @@ export default function CorporateLayout() {
                       <p className="text-xs text-muted-foreground">NTF</p>
                     </div>
                   </div>
-                  <div className="mt-2 text-xs text-muted-foreground">
-                    {factory.workshops.length} {t('corporate.workshops')}
+                  {/* Yield mini bar */}
+                  <div className="mt-3">
+                    <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full ${
+                          factory.stats.yieldRate >= 95 ? "bg-emerald-500" : 
+                          factory.stats.yieldRate >= 90 ? "bg-amber-500" : "bg-red-500"
+                        }`}
+                        style={{ width: `${factory.stats.yieldRate}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground flex justify-between">
+                    <span>{factory.workshops.length} {t('corporate.workshops')}</span>
+                    {factory.address && (
+                      <span className="flex items-center gap-1">
+                        <MapPin className="h-3 w-3" />
+                        {factory.address.length > 20 ? factory.address.substring(0, 20) + "..." : factory.address}
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}
