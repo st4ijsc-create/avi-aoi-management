@@ -54,6 +54,7 @@ import { enhancedAuditRouter } from "./routers/enhancedAuditRouter";
 import { paretoAnalysisRouter } from "./routers/paretoAnalysisRouter";
 import { qualityGateTemplateRouter } from "./routers/qualityGateTemplateRouter";
 import { licenseRouter } from "./routers/licenseRouter";
+import { ngRateThresholdRouter } from "./routers/ngRateThresholdRouter";
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -289,6 +290,9 @@ export const appRouter = router({
 
   // License Management
   license: licenseRouter,
+
+  // NG Rate Threshold Alerts
+  ngRateThreshold: ngRateThresholdRouter,
 });
 
 export type AppRouter = typeof appRouter;

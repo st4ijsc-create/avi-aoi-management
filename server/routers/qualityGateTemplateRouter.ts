@@ -6,9 +6,9 @@
 import { z } from "zod";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db/connection";
-import { sql } from "drizzle-orm";
+import { sql, eq, desc } from "drizzle-orm";
 import { getBuiltinTemplates, getBuiltinTemplate } from "../services/qualityGateTemplateService";
-import { qualityGates } from "../../drizzle/schema/spc";
+import { qualityGates, qualityGateTemplates, qualityGateTemplateAssignments } from "../../drizzle/schema/spc";
 
 export const qualityGateTemplateRouter = router({
   /**
@@ -35,13 +35,8 @@ export const qualityGateTemplateRouter = router({
   listCustom: protectedProcedure.query(async () => {
     const db = await getDb();
     try {
-      const result = await db!.execute(sql`
-        SELECT * FROM quality_gate_templates 
-        ORDER BY "createdAt" DESC
-      `);
-      return result.rows;
+      return await db!.select().from(qualityGateTemplates).orderBy(desc(qualityGateTemplates.createdAt));
     } catch (err: any) {
-      // Table doesn't exist yet (migration not run)
       if (err.code === '42P01') return [];
       throw err;
     }
@@ -70,14 +65,16 @@ export const qualityGateTemplateRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       try {
-        const result = await db!.execute(sql`
-          INSERT INTO quality_gate_templates ("name", "description", "standard", "category", "rules", "notifyRoles", "createdBy", "createdAt", "updatedAt")
-          VALUES (${input.name}, ${input.description || null}, ${input.standard || null}, ${input.category}, 
-                  ${JSON.stringify(input.rules)}::jsonb, ${JSON.stringify(input.notifyRoles || [])}::jsonb, 
-                  ${ctx.user?.id || null}, NOW(), NOW())
-          RETURNING *
-        `);
-        return result.rows[0];
+        const [result] = await db!.insert(qualityGateTemplates).values({
+          name: input.name,
+          description: input.description || null,
+          standard: input.standard || "custom",
+          category: input.category,
+          rules: input.rules,
+          notifyRoles: input.notifyRoles || [],
+          createdBy: ctx.user?.id || null,
+        }).returning();
+        return result;
       } catch (err: any) {
         if (err.code === '42P01') throw new Error('Quality gate templates table not found. Please run migration 0067.');
         throw err;
@@ -106,20 +103,23 @@ export const qualityGateTemplateRouter = router({
       notifyRoles: z.array(z.string()).optional(),
     }))
     .mutation(async ({ input }) => {
-      const sets: string[] = [`"updatedAt" = NOW()`];
-      if (input.name) sets.push(`"name" = '${input.name}'`);
-      if (input.description !== undefined) sets.push(`"description" = '${input.description}'`);
-      if (input.standard !== undefined) sets.push(`"standard" = '${input.standard}'`);
-      if (input.category) sets.push(`"category" = '${input.category}'`);
-      if (input.rules) sets.push(`"rules" = '${JSON.stringify(input.rules)}'::jsonb`);
-      if (input.notifyRoles) sets.push(`"notifyRoles" = '${JSON.stringify(input.notifyRoles)}'::jsonb`);
+      const updateData: Record<string, any> = {
+        updatedAt: new Date(),
+      };
+      if (input.name !== undefined) updateData.name = input.name;
+      if (input.description !== undefined) updateData.description = input.description;
+      if (input.standard !== undefined) updateData.standard = input.standard;
+      if (input.category !== undefined) updateData.category = input.category;
+      if (input.rules !== undefined) updateData.rules = input.rules;
+      if (input.notifyRoles !== undefined) updateData.notifyRoles = input.notifyRoles;
 
       const db = await getDb();
       try {
-        const result = await db!.execute(sql.raw(`
-          UPDATE quality_gate_templates SET ${sets.join(", ")} WHERE id = ${input.id} RETURNING *
-        `));
-        return result.rows[0];
+        const [result] = await db!.update(qualityGateTemplates)
+          .set(updateData)
+          .where(eq(qualityGateTemplates.id, input.id))
+          .returning();
+        return result;
       } catch (err: any) {
         if (err.code === '42P01') throw new Error('Quality gate templates table not found. Please run migration 0067.');
         throw err;
@@ -134,7 +134,7 @@ export const qualityGateTemplateRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       try {
-        await db!.execute(sql`DELETE from quality_gate_templates WHERE id = ${input.id}`);
+        await db!.delete(qualityGateTemplates).where(eq(qualityGateTemplates.id, input.id));
         return { success: true };
       } catch (err: any) {
         if (err.code === '42P01') throw new Error('Quality gate templates table not found. Please run migration 0067.');

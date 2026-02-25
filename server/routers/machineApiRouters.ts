@@ -201,15 +201,38 @@ export const machineApiRouter = router({
           }
         }
 
+        // Auto-upload image to storage if base64 is provided
+        let uploadedImageUrl: string | undefined = undefined;
+        let uploadedImageKey: string | undefined = undefined;
+        if (measurement.imageBase64 && measurement.imageBase64.length > 200) {
+          try {
+            // If already a URL, use as-is
+            if (measurement.imageBase64.startsWith('http') || measurement.imageBase64.startsWith('/uploads')) {
+              uploadedImageUrl = measurement.imageBase64;
+            } else {
+              // Strip data URI prefix if present
+              const base64Data = measurement.imageBase64.replace(/^data:image\/[^;]+;base64,/, '');
+              const buffer = Buffer.from(base64Data, 'base64');
+              const ext = measurement.imageBase64.startsWith('data:image/png') ? 'png' : 'jpg';
+              const fileKey = `inspections/${inspectionId}/${pointCode}-${nanoid(8)}.${ext}`;
+              const { url } = await storagePut(fileKey, buffer, `image/${ext === 'png' ? 'png' : 'jpeg'}`);
+              uploadedImageUrl = url;
+              uploadedImageKey = fileKey;
+            }
+          } catch (imgErr) {
+            console.error(`[submitInspection] Image upload failed for point ${pointCode}:`, imgErr);
+          }
+        }
+
         measurementResults.push({
           inspectionId,
-          pointDefId: pointDef?.id || 0, // Use 0 if point definition not found
+          pointDefId: pointDef?.id || 0,
           measuredValue: numericValue,
           measuredValueText: textValue,
           result: measurement.result,
-          remark: measurement.remark || (pointDef ? undefined : `Point: ${pointCode}`), // Store point code in remark if no definition
-          // Store image if provided (will need to upload to S3 in production)
-          imageUrl: measurement.imageBase64 ? measurement.imageBase64.substring(0, 100) + '...' : undefined,
+          remark: measurement.remark || (pointDef ? undefined : `Point: ${pointCode}`),
+          imageUrl: uploadedImageUrl,
+          imageKey: uploadedImageKey,
         });
       }
       
@@ -244,6 +267,29 @@ export const machineApiRouter = router({
           const { publishNGAlert } = await import('../services/mqttService');
           const productModelInfo = productModelRecord || null;
           
+          // Build pointCode→imageUrl lookup from auto-uploaded images
+          const pointImageMap = new Map<string, string>();
+          // Build pointCode→referenceImageUrl lookup from resolved point definitions
+          const pointRefImageMap = new Map<string, string>();
+          if (input.measurements) {
+            for (let i = 0; i < input.measurements.length; i++) {
+              const m = input.measurements[i];
+              const mr = measurementResults[i];
+              if (mr?.imageUrl) {
+                const code = m.pointId || m.pointCode || 'UNKNOWN';
+                pointImageMap.set(code, mr.imageUrl);
+              }
+              // Lookup reference image from resolved pointDef cache
+              const code = m.pointId || m.pointCode || 'UNKNOWN';
+              const normalizedCode = code.trim();
+              // Check product cache first, then machine cache
+              const cachedDef = productPointCache.get(normalizedCode) || machinePointCache.get(normalizedCode);
+              if (cachedDef?.referenceImageUrl) {
+                pointRefImageMap.set(code, cachedDef.referenceImageUrl);
+              }
+            }
+          }
+
           await publishNGAlert({
             machineId: machine.id,
             machineName: machine.name,
@@ -260,19 +306,18 @@ export const machineApiRouter = router({
             productModelId: productModelInfo?.id,
             productModelName: productModelInfo?.name || resolvedProductModelCode,
             productModelCode: productModelInfo?.code || resolvedProductModelCode,
-            // Measurement results with image URLs
-            measurementResults: input.measurements?.filter(m => m.result === 'NG').map(m => ({
-              pointId: undefined,
-              pointCode: m.pointId || m.pointCode || 'UNKNOWN',
-              result: m.result,
-              value: m.measuredValue,
-              // Include image URL if provided (base64 or actual URL)
-              imageUrl: m.imageBase64 && m.imageBase64.startsWith('http') 
-                ? m.imageBase64 
-                : m.imageBase64 
-                  ? `data:image/jpeg;base64,${m.imageBase64.substring(0, 100)}...` 
-                  : undefined,
-            })) || [],
+            // Measurement results with proper uploaded image URLs (not base64)
+            measurementResults: input.measurements?.filter(m => m.result === 'NG').map(m => {
+              const pointCode = m.pointId || m.pointCode || 'UNKNOWN';
+              return {
+                pointId: undefined,
+                pointCode,
+                result: m.result,
+                value: m.measuredValue,
+                imageUrl: pointImageMap.get(pointCode),
+                referenceImageUrl: pointRefImageMap.get(pointCode),
+              };
+            }) || [],
             // Determine severity based on NG count
             severity: (input.measurements?.filter(m => m.result === 'NG').length || 0) >= 3 ? 'critical' : 'high',
           });
@@ -309,6 +354,22 @@ export const machineApiRouter = router({
           machineStats.yieldRate,
           90
         );
+      }
+
+      // Check NG rate thresholds per measurement point → auto MQTT alert
+      try {
+        const { checkNgRateAfterInspection } = await import('../services/ngRateAlertService');
+        // Run async, don't block the response
+        checkNgRateAfterInspection({
+          stationId: machine.stationId,
+          machineId: machine.id,
+          inspectionId,
+          productModelId: productModelRecord?.id,
+        }).catch(err => {
+          console.error('[NgRateAlert] Failed to check NG rate thresholds:', err);
+        });
+      } catch (ngRateErr) {
+        console.error('[NgRateAlert] Failed to import ngRateAlertService:', ngRateErr);
       }
 
       return { success: true, inspectionId };

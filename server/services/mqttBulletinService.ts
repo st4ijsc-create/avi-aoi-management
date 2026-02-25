@@ -41,6 +41,7 @@ export interface BulletinPayload {
     ngCount: number;
     percentage: number;
     imageUrl?: string;
+    referenceImageUrl?: string;
     latestInspectionId?: number;
     latestSerialNumber?: string;
   }>;
@@ -290,6 +291,7 @@ export async function generateAndSendBulletin(setting: BulletinSetting): Promise
       pointId: schema.measurementResults.pointDefId,
       pointName: schema.measurementPointDefs.name,
       pointCode: schema.measurementPointDefs.code,
+      referenceImageUrl: schema.measurementPointDefs.referenceImageUrl,
       ngCount: sql<number>`COUNT(*)`,
       imageUrl: sql<string>`MAX(${schema.measurementResults.imageUrl})`,
       latestInspectionId: sql<number>`MAX(${schema.productInspections.id})`,
@@ -319,7 +321,8 @@ export async function generateAndSendBulletin(setting: BulletinSetting): Promise
     .groupBy(
       schema.measurementResults.pointDefId,
       schema.measurementPointDefs.name,
-      schema.measurementPointDefs.code
+      schema.measurementPointDefs.code,
+      schema.measurementPointDefs.referenceImageUrl
     )
     .orderBy(desc(sql`COUNT(*)`))
     .limit(setting.maxFailPoints);
@@ -334,6 +337,7 @@ export async function generateAndSendBulletin(setting: BulletinSetting): Promise
       ngCount: Number(r.ngCount) || 0,
       percentage: totalNGPoints > 0 ? ((Number(r.ngCount) || 0) / totalNGPoints) * 100 : 0,
       imageUrl: setting.includeImages ? r.imageUrl : undefined,
+      referenceImageUrl: r.referenceImageUrl || undefined,
       latestInspectionId: r.latestInspectionId ? Number(r.latestInspectionId) : undefined,
       latestSerialNumber: r.latestSerialNumber || undefined,
     }));

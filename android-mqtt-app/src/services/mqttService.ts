@@ -25,6 +25,8 @@ export interface MqttConfig {
   clientId: string;
   topics: string[];
   enabled: boolean;
+  /** HTTP base URL of the AVI server (e.g. http://192.168.1.100:3000) for on-demand image loading */
+  serverUrl?: string;
 }
 
 export interface StationConfig {
@@ -48,6 +50,7 @@ const defaultConfig: MqttConfig = {
     'avi/quality/+/ng',
   ],
   enabled: false,
+  serverUrl: '',
 };
 
 /**

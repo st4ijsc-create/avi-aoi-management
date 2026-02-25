@@ -153,6 +153,260 @@ async function startServer() {
     }
   });
 
+  // ============================================================
+  // REST API: Inspection Images On-Demand (for Android app)
+  // Returns image URLs for a specific inspection - lightweight payload
+  // Android app calls this when user taps to view images instead of
+  // embedding images directly in MQTT messages
+  // ============================================================
+  app.get("/api/inspection/:id/images", async (req, res) => {
+    try {
+      const inspectionId = parseInt(req.params.id, 10);
+      if (isNaN(inspectionId)) {
+        return res.status(400).json({ success: false, message: "Invalid inspection ID" });
+      }
+
+      const { eq, and } = await import("drizzle-orm");
+      const schema = await import("../../drizzle/schema");
+      const { getDb } = await import("../db/connection");
+      const dbInstance = await getDb();
+      if (!dbInstance) {
+        return res.status(500).json({ success: false, message: "DB not available" });
+      }
+
+      // Fetch inspection info
+      const inspection = await dbInstance
+        .select({
+          id: schema.productInspections.id,
+          serialNumber: schema.productInspections.serialNumber,
+          overallResult: schema.productInspections.overallResult,
+          inspectionTime: schema.productInspections.inspectionTime,
+          machineId: schema.productInspections.machineId,
+        })
+        .from(schema.productInspections)
+        .where(eq(schema.productInspections.id, inspectionId))
+        .limit(1);
+
+      if (inspection.length === 0) {
+        return res.status(404).json({ success: false, message: "Inspection not found" });
+      }
+
+      // Fetch measurement results with images
+      const results = await dbInstance
+        .select({
+          id: schema.measurementResults.id,
+          pointDefId: schema.measurementResults.pointDefId,
+          pointCode: schema.measurementPointDefs.code,
+          pointName: schema.measurementPointDefs.name,
+          result: schema.measurementResults.result,
+          measuredValue: schema.measurementResults.measuredValue,
+          imageUrl: schema.measurementResults.imageUrl,
+          imageKey: schema.measurementResults.imageKey,
+          referenceImageUrl: schema.measurementPointDefs.referenceImageUrl,
+        })
+        .from(schema.measurementResults)
+        .leftJoin(
+          schema.measurementPointDefs,
+          eq(schema.measurementResults.pointDefId, schema.measurementPointDefs.id)
+        )
+        .where(eq(schema.measurementResults.inspectionId, inspectionId));
+
+      // Only return entries that have images
+      const pointsWithImages = results
+        .filter((r) => r.imageUrl && !r.imageUrl.endsWith("..."))
+        .map((r) => ({
+          pointDefId: r.pointDefId,
+          pointCode: r.pointCode || `P${r.pointDefId}`,
+          pointName: r.pointName || undefined,
+          result: r.result,
+          measuredValue: r.measuredValue,
+          imageUrl: r.imageUrl,
+          referenceImageUrl: r.referenceImageUrl || undefined,
+        }));
+
+      res.json({
+        success: true,
+        inspectionId,
+        serialNumber: inspection[0].serialNumber,
+        overallResult: inspection[0].overallResult,
+        inspectionTime: inspection[0].inspectionTime,
+        totalPoints: results.length,
+        pointsWithImages,
+      });
+    } catch (error: any) {
+      console.error("[API] inspection images error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to get images" });
+    }
+  });
+
+  // ============================================================
+  // REST API: Reference Images for Measurement Points
+  // Returns reference images (gold standard) for comparison with
+  // actual inspection images on Android app
+  // ============================================================
+
+  // GET /api/measurement-point/:id/reference-image — Get reference image for a specific measurement point
+  app.get("/api/measurement-point/:id/reference-image", async (req, res) => {
+    try {
+      const pointDefId = parseInt(req.params.id, 10);
+      if (isNaN(pointDefId)) {
+        return res.status(400).json({ success: false, message: "Invalid point definition ID" });
+      }
+
+      const { eq } = await import("drizzle-orm");
+      const schema = await import("../../drizzle/schema");
+      const { getDb } = await import("../db/connection");
+      const dbInstance = await getDb();
+      if (!dbInstance) {
+        return res.status(500).json({ success: false, message: "DB not available" });
+      }
+
+      const result = await dbInstance
+        .select({
+          id: schema.measurementPointDefs.id,
+          code: schema.measurementPointDefs.code,
+          name: schema.measurementPointDefs.name,
+          referenceImageUrl: schema.measurementPointDefs.referenceImageUrl,
+          positionX: schema.measurementPointDefs.positionX,
+          positionY: schema.measurementPointDefs.positionY,
+          radius: schema.measurementPointDefs.radius,
+          cropWidth: schema.measurementPointDefs.cropWidth,
+          cropHeight: schema.measurementPointDefs.cropHeight,
+          productModelId: schema.measurementPointDefs.productModelId,
+        })
+        .from(schema.measurementPointDefs)
+        .where(eq(schema.measurementPointDefs.id, pointDefId))
+        .limit(1);
+
+      if (result.length === 0) {
+        return res.status(404).json({ success: false, message: "Measurement point not found" });
+      }
+
+      const point = result[0];
+
+      // Also get product model reference image
+      let productReferenceImageUrl: string | null = null;
+      if (point.productModelId) {
+        const pm = await dbInstance
+          .select({
+            referenceImageUrl: schema.productModels.referenceImageUrl,
+            imageWidth: schema.productModels.imageWidth,
+            imageHeight: schema.productModels.imageHeight,
+          })
+          .from(schema.productModels)
+          .where(eq(schema.productModels.id, point.productModelId))
+          .limit(1);
+        if (pm.length > 0) {
+          productReferenceImageUrl = pm[0].referenceImageUrl;
+        }
+      }
+
+      res.json({
+        success: true,
+        pointDefId: point.id,
+        pointCode: point.code,
+        pointName: point.name,
+        referenceImageUrl: point.referenceImageUrl,
+        position: {
+          x: point.positionX,
+          y: point.positionY,
+          radius: point.radius,
+          cropWidth: point.cropWidth,
+          cropHeight: point.cropHeight,
+        },
+        productReferenceImageUrl,
+      });
+    } catch (error: any) {
+      console.error("[API] measurement-point reference-image error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to get reference image" });
+    }
+  });
+
+  // GET /api/product-model/:id/reference-images — Get all reference images for a product model
+  app.get("/api/product-model/:id/reference-images", async (req, res) => {
+    try {
+      const productModelId = parseInt(req.params.id, 10);
+      if (isNaN(productModelId)) {
+        return res.status(400).json({ success: false, message: "Invalid product model ID" });
+      }
+
+      const { eq } = await import("drizzle-orm");
+      const schema = await import("../../drizzle/schema");
+      const { getDb } = await import("../db/connection");
+      const dbInstance = await getDb();
+      if (!dbInstance) {
+        return res.status(500).json({ success: false, message: "DB not available" });
+      }
+
+      // Get product model info
+      const pm = await dbInstance
+        .select({
+          id: schema.productModels.id,
+          code: schema.productModels.code,
+          name: schema.productModels.name,
+          referenceImageUrl: schema.productModels.referenceImageUrl,
+          imageWidth: schema.productModels.imageWidth,
+          imageHeight: schema.productModels.imageHeight,
+        })
+        .from(schema.productModels)
+        .where(eq(schema.productModels.id, productModelId))
+        .limit(1);
+
+      if (pm.length === 0) {
+        return res.status(404).json({ success: false, message: "Product model not found" });
+      }
+
+      // Get all measurement points with reference images for this product
+      const points = await dbInstance
+        .select({
+          id: schema.measurementPointDefs.id,
+          code: schema.measurementPointDefs.code,
+          name: schema.measurementPointDefs.name,
+          referenceImageUrl: schema.measurementPointDefs.referenceImageUrl,
+          positionX: schema.measurementPointDefs.positionX,
+          positionY: schema.measurementPointDefs.positionY,
+          radius: schema.measurementPointDefs.radius,
+          cropWidth: schema.measurementPointDefs.cropWidth,
+          cropHeight: schema.measurementPointDefs.cropHeight,
+          orderIndex: schema.measurementPointDefs.orderIndex,
+        })
+        .from(schema.measurementPointDefs)
+        .where(eq(schema.measurementPointDefs.productModelId, productModelId))
+        .orderBy(schema.measurementPointDefs.orderIndex);
+
+      res.json({
+        success: true,
+        productModel: {
+          id: pm[0].id,
+          code: pm[0].code,
+          name: pm[0].name,
+          referenceImageUrl: pm[0].referenceImageUrl,
+          imageWidth: pm[0].imageWidth,
+          imageHeight: pm[0].imageHeight,
+        },
+        points: points.map((p) => ({
+          id: p.id,
+          code: p.code,
+          name: p.name,
+          referenceImageUrl: p.referenceImageUrl,
+          position: {
+            x: p.positionX,
+            y: p.positionY,
+            radius: p.radius,
+            cropWidth: p.cropWidth,
+            cropHeight: p.cropHeight,
+          },
+          orderIndex: p.orderIndex,
+        })),
+        totalPoints: points.length,
+        pointsWithRefImages: points.filter((p) => p.referenceImageUrl).length,
+      });
+    } catch (error: any) {
+      console.error("[API] product-model reference-images error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to get reference images" });
+    }
+  });
+
   // POST /api/machine/sync-points — Machine client pushes (PUT) measurement point definitions to server
   app.post("/api/machine/sync-points", async (req, res) => {
     try {

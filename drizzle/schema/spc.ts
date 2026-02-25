@@ -1,5 +1,7 @@
 // Schema domain: SPC & Quality Gate tables
-import { pgTable, pgEnum, serial, integer, text, timestamp, varchar, decimal, boolean, json, index } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, serial, integer, text, timestamp, varchar, decimal, boolean, json, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { users } from "./auth";
+import { productionLines } from "./hierarchy";
 import { comparisonOperatorEnum } from "./enums";
 
 // ─── New Enums ───────────────────────────────────────────────────────────────
@@ -208,3 +210,43 @@ export const qualityGateEvents = pgTable("quality_gate_events", {
 
 export type QualityGateEvent = typeof qualityGateEvents.$inferSelect;
 export type InsertQualityGateEvent = typeof qualityGateEvents.$inferInsert;
+
+// ─── Quality Gate Templates ─────────────────────────────────────────────────
+
+export const qualityGateTemplates = pgTable("quality_gate_templates", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  standard: varchar("standard", { length: 100 }).notNull().default("custom"),
+  category: varchar("category", { length: 100 }).notNull().default("general"),
+  rules: json("rules").notNull().default([]),
+  notifyRoles: json("notifyRoles").default(["admin", "quality_manager"]),
+  createdBy: integer("createdBy").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index("idx_qgt_standard").on(table.standard),
+  index("idx_qgt_category").on(table.category),
+  index("idx_qgt_createdBy").on(table.createdBy),
+]);
+
+export type QualityGateTemplate = typeof qualityGateTemplates.$inferSelect;
+export type InsertQualityGateTemplate = typeof qualityGateTemplates.$inferInsert;
+
+// ─── Quality Gate Template Assignments ──────────────────────────────────────
+
+export const qualityGateTemplateAssignments = pgTable("quality_gate_template_assignments", {
+  id: serial("id").primaryKey(),
+  templateId: integer("templateId").notNull().references(() => qualityGateTemplates.id, { onDelete: "cascade" }),
+  lineId: integer("lineId").notNull().references(() => productionLines.id, { onDelete: "cascade" }),
+  assignedBy: integer("assignedBy").references(() => users.id, { onDelete: "set null" }),
+  assignedAt: timestamp("assignedAt", { withTimezone: true }).defaultNow(),
+  isActive: boolean("isActive").default(true),
+}, (table) => [
+  uniqueIndex("idx_qgta_template_line_unique").on(table.templateId, table.lineId),
+  index("idx_qgta_templateId").on(table.templateId),
+  index("idx_qgta_lineId").on(table.lineId),
+]);
+
+export type QualityGateTemplateAssignment = typeof qualityGateTemplateAssignments.$inferSelect;
+export type InsertQualityGateTemplateAssignment = typeof qualityGateTemplateAssignments.$inferInsert;

@@ -80,6 +80,7 @@ import MachineRegistration from "./pages/MachineRegistration";
 import CorporateManagement from "./pages/CorporateManagement";
 import AdminPage from "./pages/AdminPage";
 import LicenseManagement from "./pages/LicenseManagement";
+import MqttNgRateThreshold from "./pages/MqttNgRateThreshold";
 
 function Router() {
   return (
@@ -161,6 +162,7 @@ function Router() {
       <Route path="/production-scheduling" component={ProductionScheduling} />
       <Route path="/machine-registration" component={MachineRegistration} />
       <Route path="/license" component={LicenseManagement} />
+      <Route path="/mqtt-ng-rate" component={MqttNgRateThreshold} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

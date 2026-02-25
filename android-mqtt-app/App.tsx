@@ -14,6 +14,7 @@ import { StatusBar } from 'react-native';
 import HomeScreen from './src/screens/HomeScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import NotificationHistoryScreen from './src/screens/NotificationHistoryScreen';
+import NotificationDetailScreen from './src/screens/NotificationDetailScreen';
 import StationConfigScreen from './src/screens/StationConfigScreen';
 
 // Services
@@ -75,6 +76,11 @@ export default function App() {
               name="NotificationHistory" 
               component={NotificationHistoryScreen}
               options={{ title: 'Lịch sử thông báo' }}
+            />
+            <Stack.Screen 
+              name="NotificationDetail" 
+              component={NotificationDetailScreen}
+              options={{ title: 'Chi tiết cảnh báo' }}
             />
             <Stack.Screen 
               name="StationConfig" 

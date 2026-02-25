@@ -66,6 +66,7 @@ interface NGAlertPayload {
     actualValue?: string;
     expectedValue?: string;
     imageUrl?: string;
+    referenceImageUrl?: string;
   }>;
   totalNG: number;
   imageUrl?: string;
@@ -441,6 +442,7 @@ export async function publishNGAlert(data: {
     value?: string | number | null;
     expectedValue?: string | number | null;
     imageUrl?: string;
+    referenceImageUrl?: string;
   }>;
   // Main error image URL
   errorImageUrl?: string;
@@ -529,6 +531,7 @@ export async function publishNGAlert(data: {
         actualValue: m.value?.toString(),
         expectedValue: m.expectedValue?.toString(),
         imageUrl: m.imageUrl,
+        referenceImageUrl: m.referenceImageUrl,
       })),
       totalNG: ngCount,
       imageUrl: mainImageUrl,

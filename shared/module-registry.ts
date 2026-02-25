@@ -158,7 +158,7 @@ export const SYSTEM_MODULES: SystemModule[] = [
     routes: [
       "/machine-status", "/machine-registration",
       "/mqtt-dashboard", "/mqtt-clients", "/mqtt-topics", "/mqtt-replay",
-      "/mqtt-profiles", "/mqtt-bulletin",
+      "/mqtt-profiles", "/mqtt-bulletin", "/mqtt-ng-rate",
       "/oee-dashboard", "/machine-health",
       "/workstation-management",
     ],
@@ -176,6 +176,7 @@ export const SYSTEM_MODULES: SystemModule[] = [
       { code: "MQTT_ASSIGNMENTS", name: "MQTT Gán Profile", featureType: "boolean", defaultValue: "true" },
       { code: "MQTT_MONITORING", name: "Giám sát Kết nối", featureType: "boolean", defaultValue: "true" },
       { code: "MQTT_BULLETIN", name: "MQTT Bulletin", featureType: "boolean", defaultValue: "true" },
+      { code: "MQTT_NG_RATE_THRESHOLD", name: "Ngưỡng NG Rate MQTT", featureType: "boolean", defaultValue: "true" },
       { code: "MQTT_REPLAY", name: "MQTT Replay", featureType: "boolean", defaultValue: "true" },
       // Analytics (monitoring-related)
       { code: "ANALYTICS_OEE", name: "Dashboard OEE", featureType: "boolean", defaultValue: "true" },

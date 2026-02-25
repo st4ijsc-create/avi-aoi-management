@@ -117,6 +117,8 @@ export default function ApiDocs() {
     { id: "smtpEmail", label: "SMTP & Email", icon: Mail },
     { id: "systemConfig", label: "System & Config", icon: Server },
     { id: "mqttAdvanced", label: "MQTT Management", icon: Wifi },
+    { id: "ngRateThreshold", label: "NG Rate Threshold", icon: Gauge },
+    { id: "inspectionImages", label: "Inspection Images", icon: Eye },
     { id: "annotationAI", label: "Annotations & AI", icon: Pencil },
     { id: "spcHeatmap", label: "SPC & Heatmap", icon: TrendingUp },
     { id: "audit", label: "Audit Logs", icon: ScrollText },
@@ -4436,6 +4438,484 @@ await trpc.mqttClientManagement.importProfiles.mutate({ data: exported });`} />
                   <div>
                     <h4 className="mb-2 font-semibold">mqttClientManagement.getDashboardStats — Dashboard MQTT</h4>
                     <CodeBlock code={`const { data } = trpc.mqttClientManagement.getDashboardStats.useQuery();`} />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* ============================================================ */}
+          {/* NG Rate Threshold */}
+          {/* ============================================================ */}
+          {activeMenu === "ngRateThreshold" && (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Gauge className="h-5 w-5" />
+                    NG Rate Threshold APIs
+                  </CardTitle>
+                  <CardDescription>
+                    Cấu hình ngưỡng tỉ lệ NG theo điểm đo. Khi NG rate trong ngày vượt ngưỡng → tự động gửi MQTT alert.
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+
+              <Card className={glassCard}>
+                <CardHeader>
+                  <CardTitle className="text-white">Threshold CRUD</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">ngRateThreshold.list — Danh sách ngưỡng (filter by station/machine)</h4>
+                    <CodeBlock code={`const { data } = trpc.ngRateThreshold.list.useQuery({
+  stationId: 1,      // optional
+  machineId: 5,      // optional
+  isEnabled: true,   // optional
+});
+// Returns: [{ id, stationId, stationName, machineId, machineName,
+//   measurementPointId, pointCode, pointName, productModelId, productModelName,
+//   name, description, warningThreshold, criticalThreshold,
+//   minSampleSize, cooldownMinutes, sendMqttLocal, sendMqttExternal,
+//   sendFcm, isEnabled, createdAt, updatedAt }]`} />
+                  </div>
+                  <div>
+                    <h4 className="mb-2 font-semibold">ngRateThreshold.getById — Chi tiết 1 ngưỡng</h4>
+                    <CodeBlock code={`const { data } = trpc.ngRateThreshold.getById.useQuery({ id: 1 });`} />
+                  </div>
+                  <div>
+                    <h4 className="mb-2 font-semibold">ngRateThreshold.create — Tạo ngưỡng mới</h4>
+                    <CodeBlock code={`await trpc.ngRateThreshold.create.mutate({
+  stationId: 1,                       // required
+  machineId: 5,                       // optional (null = tất cả máy)
+  measurementPointId: 12,             // optional (null = tổng thể)
+  productModelId: 3,                  // optional (null = tất cả model)
+  name: "NG rate MP001 > 5%",         // required
+  description: "Cảnh báo khi...",     // optional
+  warningThreshold: 5.0,              // % NG rate → warning
+  criticalThreshold: 10.0,            // % NG rate → critical
+  minSampleSize: 10,                  // tránh false alarm khi ít mẫu
+  cooldownMinutes: 30,                // chờ giữa 2 lần alert
+  sendMqttLocal: true,                // gửi qua broker nội bộ
+  sendMqttExternal: true,             // gửi qua broker bên ngoài
+  sendFcm: true,                      // push notification
+  isEnabled: true,
+});
+// Returns: { success: true, id: 1 }`} />
+                  </div>
+                  <div>
+                    <h4 className="mb-2 font-semibold">ngRateThreshold.update — Cập nhật ngưỡng</h4>
+                    <CodeBlock code={`await trpc.ngRateThreshold.update.mutate({
+  id: 1,
+  warningThreshold: 3.0,
+  criticalThreshold: 8.0,
+  cooldownMinutes: 15,
+  isEnabled: true,
+});`} />
+                  </div>
+                  <div>
+                    <h4 className="mb-2 font-semibold">ngRateThreshold.delete / toggle</h4>
+                    <CodeBlock code={`// Xóa ngưỡng
+await trpc.ngRateThreshold.delete.mutate({ id: 1 });
+
+// Bật/tắt ngưỡng
+await trpc.ngRateThreshold.toggle.mutate({ id: 1, isEnabled: false });`} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className={glassCard}>
+                <CardHeader>
+                  <CardTitle className="text-white">Alert History & Resolution</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">ngRateThreshold.alertHistory — Lịch sử cảnh báo</h4>
+                    <CodeBlock code={`const { data } = trpc.ngRateThreshold.alertHistory.useQuery({
+  stationId: 1,          // optional
+  thresholdId: 5,        // optional
+  severity: "critical",  // optional: "warning" | "critical"
+  isResolved: false,     // optional
+  limit: 50,
+  offset: 0,
+});
+// Returns: { data: [...alerts], total: 123 }`} />
+                  </div>
+                  <div>
+                    <h4 className="mb-2 font-semibold">ngRateThreshold.resolveAlert — Đánh dấu đã xử lý</h4>
+                    <CodeBlock code={`await trpc.ngRateThreshold.resolveAlert.mutate({
+  id: 42,
+  resolutionNote: "Đã điều chỉnh máy, NG rate giảm về bình thường",
+});`} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className={glassCard}>
+                <CardHeader>
+                  <CardTitle className="text-white">Realtime & Testing</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">ngRateThreshold.currentNgRates — NG rate hiện tại (hôm nay)</h4>
+                    <CodeBlock code={`const { data } = trpc.ngRateThreshold.currentNgRates.useQuery({ stationId: 1 });
+// Returns: { stationId, stationName, totalInspections, ngCount, ngRate,
+//   byPoint: [{ pointDefId, pointCode, pointName, total, ng, rate }] }`} />
+                  </div>
+                  <div>
+                    <h4 className="mb-2 font-semibold">ngRateThreshold.testCheck — Test kiểm tra NG rate (Admin)</h4>
+                    <CodeBlock code={`await trpc.ngRateThreshold.testCheck.mutate({
+  stationId: 1,
+  machineId: 5,
+  inspectionId: 0,        // default 0
+  productModelId: 3,       // optional
+});
+// Triggers NG rate check manually for debugging`} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className={glassCard}>
+                <CardHeader>
+                  <CardTitle className="text-white">MQTT NG Rate Alert Payload</CardTitle>
+                  <CardDescription>Bản tin tự động gửi khi NG rate vượt ngưỡng</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">Topic</h4>
+                    <CodeBlock code={`avi/factory/{factoryId}/workshop/{workshopId}/station/{stationId}/ng-rate-alert`} />
+                  </div>
+                  <div>
+                    <h4 className="mb-2 font-semibold">Payload</h4>
+                    <CodeBlock code={`{
+  "type": "NG_RATE_ALERT",
+  "severity": "warning",          // "warning" | "critical"
+  "thresholdId": 1,
+  "thresholdName": "NG rate MP001 > 5%",
+  "stationId": 1,
+  "stationName": "Station AOI-01",
+  "machineId": 5,
+  "machineName": "AOI Machine #5",
+  "measurementPointId": 12,       // null nếu check tổng thể
+  "pointCode": "MP001",           // null nếu check tổng thể
+  "pointName": "Solder Joint 1",
+  "referenceImageUrl": "/uploads/measurement-points/3/MP001-crop-abc123.png",  // ảnh mẫu (nếu có)
+  "productModelId": 3,            // null nếu tất cả model
+  "currentNgRate": 7.5,
+  "threshold": 5.0,
+  "totalInspections": 200,
+  "ngCount": 15,
+  "message": "NG rate 7.50% vượt ngưỡng cảnh báo 5.00% ...",
+  "timestamp": "2025-01-15T10:30:00Z"
+}`} />
+                  </div>
+                  <div>
+                    <h4 className="mb-2 font-semibold">Subscribe</h4>
+                    <CodeBlock code={`// Nhận NG rate alert cho 1 station cụ thể:
+avi/factory/1/workshop/2/station/3/ng-rate-alert
+
+// Nhận NG rate alert cho tất cả station trong 1 workshop:
+avi/factory/1/workshop/2/station/+/ng-rate-alert
+
+// Nhận NG rate alert toàn bộ nhà máy:
+avi/factory/1/workshop/+/station/+/ng-rate-alert`} />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* ============================================================ */}
+          {/* Inspection Images On-Demand */}
+          {/* ============================================================ */}
+          {activeMenu === "inspectionImages" && (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Eye className="h-5 w-5" />
+                    Inspection Images API
+                  </CardTitle>
+                  <CardDescription>
+                    REST API lấy ảnh kiểm tra on-demand. Thay vì gửi ảnh trực tiếp qua MQTT (quá nặng),
+                    client nhận inspectionId rồi gọi API này khi cần xem ảnh.
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+
+              <Card className={glassCard}>
+                <CardHeader>
+                  <CardTitle className="text-white">GET /api/inspection/:id/images</CardTitle>
+                  <CardDescription>Lấy danh sách ảnh của 1 lần kiểm tra theo inspectionId</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">Request</h4>
+                    <CodeBlock code={`GET /api/inspection/1234/images
+
+// Không cần authentication header
+// inspectionId lấy từ MQTT payload (ngAlert hoặc bulletin)`} />
+                  </div>
+                  <div>
+                    <h4 className="mb-2 font-semibold">Response (200 OK)</h4>
+                    <CodeBlock code={`{
+  "success": true,
+  "inspectionId": 1234,
+  "serialNumber": "SN-2025-001",
+  "overallResult": "NG",
+  "inspectionTime": "2025-01-15T10:30:00Z",
+  "totalPoints": 12,
+  "pointsWithImages": [
+    {
+      "pointDefId": 5,
+      "pointCode": "MP001",
+      "pointName": "Solder Joint 1",
+      "result": "NG",
+      "measuredValue": "0.85",
+      "imageUrl": "/uploads/inspections/1234/MP001-abc123.jpg",
+      "referenceImageUrl": "/uploads/measurement-points/3/MP001-crop-abc123.png"
+    },
+    {
+      "pointDefId": 8,
+      "pointCode": "MP004",
+      "pointName": "Component Alignment",
+      "result": "NG",
+      "measuredValue": "1.20",
+      "imageUrl": "/uploads/inspections/1234/MP004-def456.jpg",
+      "referenceImageUrl": null
+    }
+  ]
+}`} />
+                  </div>
+                  <div>
+                    <h4 className="mb-2 font-semibold">Error Responses</h4>
+                    <CodeBlock code={`// 400 - Invalid ID
+{ "success": false, "message": "Invalid inspection ID" }
+
+// 404 - Not found
+{ "success": false, "message": "Inspection not found" }
+
+// 500 - Server error
+{ "success": false, "message": "Failed to get images" }`} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className={glassCard}>
+                <CardHeader>
+                  <CardTitle className="text-white">MQTT NG Alert Payload (Updated)</CardTitle>
+                  <CardDescription>
+                    Bản tin NG alert đã tối ưu — không gửi ảnh trực tiếp, chỉ gửi URL + inspectionId
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">Topic</h4>
+                    <CodeBlock code={`avi/factory/{factoryId}/workshop/{workshopId}/station/{stationId}/errors`} />
+                  </div>
+                  <div>
+                    <h4 className="mb-2 font-semibold">Payload</h4>
+                    <CodeBlock code={`{
+  "type": "ngAlert",
+  "inspectionId": 1234,
+  "serialNumber": "SN-2025-001",
+  "productModel": "Model-A",
+  "machineName": "AOI Machine #5",
+  "stationName": "Station AOI-01",
+  "timestamp": "2025-01-15T10:30:00Z",
+  "overallResult": "NG",
+  "totalPoints": 12,
+  "ngPoints": [
+    {
+      "code": "MP001",
+      "name": "Solder Joint 1",
+      "result": "NG",
+      "measuredValue": "0.85",
+      "imageUrl": "/uploads/inspections/1234/MP001-abc123.jpg",
+      "referenceImageUrl": "/uploads/measurement-points/3/MP001-crop-abc123.png"
+    }
+  ],
+  "summary": "NG: 2/12 points failed"
+}
+
+// ⚠ imageUrl là đường dẫn tương đối trên server
+// Client xem ảnh: GET {serverUrl}{imageUrl}
+// Hoặc dùng API: GET {serverUrl}/api/inspection/1234/images`} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className={glassCard}>
+                <CardHeader>
+                  <CardTitle className="text-white">MQTT Bulletin Payload (Updated)</CardTitle>
+                  <CardDescription>
+                    Bulletin định kỳ — imageUrl bây giờ là URL thật thay vì base64 bị cắt
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">Topic</h4>
+                    <CodeBlock code={`avi/factory/{factoryId}/workshop/{workshopId}/station/{stationId}/bulletin/periodic`} />
+                  </div>
+                  <div>
+                    <h4 className="mb-2 font-semibold">Payload (trích)</h4>
+                    <CodeBlock code={`{
+  "type": "periodic_bulletin",
+  "stationId": 1,
+  "stationName": "Station AOI-01",
+  "period": { "from": "...", "to": "..." },
+  "summary": {
+    "totalInspections": 150,
+    "passCount": 140,
+    "ngCount": 10,
+    "passRate": "93.33%"
+  },
+  "topFailPoints": [
+    {
+      "code": "MP001",
+      "name": "Solder Joint 1",
+      "ngCount": 5,
+      "ngRate": "3.33%",
+      "latestImageUrl": "/uploads/inspections/1234/MP001-abc123.jpg",
+      "referenceImageUrl": "/uploads/measurement-points/3/MP001-crop-abc123.png"
+    }
+  ]
+}
+
+// ✅ latestImageUrl giờ là URL thật → client có thể tải ảnh khi cần
+// Trước đây: "data:image/jpeg;base64,/9j/4AAQ..." (bị cắt 100 ký tự)`} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className={glassCard}>
+                <CardHeader>
+                  <CardTitle className="text-white">Subscribe Topics Reference</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">Tổng hợp MQTT Topics</h4>
+                    <CodeBlock code={`// 1. NG Alert (lỗi từng lần kiểm tra)
+avi/factory/{fId}/workshop/{wId}/station/{sId}/errors
+
+// 2. NG Rate Threshold Alert (tỉ lệ NG vượt ngưỡng)
+avi/factory/{fId}/workshop/{wId}/station/{sId}/ng-rate-alert
+
+// 3. Bulletin (báo cáo định kỳ)
+avi/factory/{fId}/workshop/{wId}/station/{sId}/bulletin/periodic
+
+// Wildcards:
+// + = 1 level    → station/+/errors   (tất cả station)
+// # = multi level → avi/factory/1/#   (mọi topic của factory 1)`} />
+                  </div>
+                  <div>
+                    <h4 className="mb-2 font-semibold">Flow: On-Demand Image Loading</h4>
+                    <CodeBlock code={`// 1. Machine gửi kết quả kiểm tra (có ảnh base64)
+POST /api/trpc/machineApi.submitInspection
+→ Server tự upload ảnh → lưu URL vào DB
+
+// 2. Server gửi MQTT alert (chỉ gửi URL, không gửi ảnh)
+Topic: .../errors
+Payload: { inspectionId: 1234, ngPoints: [{ imageUrl: "..." }] }
+
+// 3. Android app nhận alert, hiển thị thông tin cơ bản
+
+// 4. User tap "Xem ảnh" → App gọi REST API
+GET /api/inspection/1234/images
+→ Trả về danh sách ảnh có URL đầy đủ
+
+// 5. App hiển thị ảnh từ URL
+Image source: {serverUrl}/uploads/inspections/1234/MP001-abc123.jpg
+
+// 6. So sánh với ảnh mẫu (Reference Image Comparison)
+// referenceImageUrl có trong cả 3 loại payload MQTT
+// Android app hiển thị side-by-side: ảnh mẫu (trái) vs ảnh thực tế (phải)
+// Fullscreen mode: toggle swap giữa ảnh mẫu ↔ ảnh thực tế`} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className={glassCard}>
+                <CardHeader>
+                  <CardTitle className="text-white">GET /api/measurement-point/:id/reference-image</CardTitle>
+                  <CardDescription>
+                    Lấy ảnh mẫu (reference image) của 1 điểm đo cụ thể, bao gồm vị trí crop trên ảnh product model
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">Request</h4>
+                    <CodeBlock code={`GET /api/measurement-point/5/reference-image`} />
+                  </div>
+                  <div>
+                    <h4 className="mb-2 font-semibold">Response (200 OK)</h4>
+                    <CodeBlock code={`{
+  "success": true,
+  "pointId": 5,
+  "pointCode": "MP001",
+  "pointName": "Solder Joint 1",
+  "referenceImageUrl": "/uploads/measurement-points/3/MP001-crop-abc123.png",
+  "position": {
+    "x": 150,
+    "y": 200,
+    "radius": 20,
+    "cropWidth": 100,
+    "cropHeight": 100
+  },
+  "productModel": {
+    "id": 3,
+    "name": "PCBA-REV3",
+    "referenceImageUrl": "/uploads/ref/PCBA-REV3/full-board.png"
+  }
+}`} />
+                  </div>
+                  <div>
+                    <h4 className="mb-2 font-semibold">Error Responses</h4>
+                    <CodeBlock code={`// 404 - Point not found or no reference image
+{ "success": false, "message": "Measurement point not found" }
+{ "success": false, "message": "No reference image for this point" }`} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className={glassCard}>
+                <CardHeader>
+                  <CardTitle className="text-white">GET /api/product-model/:id/reference-images</CardTitle>
+                  <CardDescription>
+                    Lấy tất cả ảnh mẫu (reference images) của các điểm đo trong 1 product model
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <h4 className="mb-2 font-semibold">Request</h4>
+                    <CodeBlock code={`GET /api/product-model/3/reference-images`} />
+                  </div>
+                  <div>
+                    <h4 className="mb-2 font-semibold">Response (200 OK)</h4>
+                    <CodeBlock code={`{
+  "success": true,
+  "productModelId": 3,
+  "productModelName": "PCBA-REV3",
+  "productReferenceImage": "/uploads/ref/PCBA-REV3/full-board.png",
+  "totalPoints": 12,
+  "pointsWithRefImage": 8,
+  "points": [
+    {
+      "id": 5,
+      "code": "MP001",
+      "name": "Solder Joint 1",
+      "referenceImageUrl": "/uploads/measurement-points/3/MP001-crop-abc123.png",
+      "position": { "x": 150, "y": 200, "radius": 20 }
+    },
+    {
+      "id": 8,
+      "code": "MP004",
+      "name": "Component Alignment",
+      "referenceImageUrl": null,
+      "position": { "x": 300, "y": 100, "radius": 25 }
+    }
+  ]
+}`} />
                   </div>
                 </CardContent>
               </Card>

@@ -240,6 +240,14 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "mqtt",
       },
       { 
+        href: "/mqtt-ng-rate", 
+        label: "nav.mqttNgRate", 
+        icon: <Gauge className="h-4 w-4" />,
+        description: "nav.mqttNgRateDesc",
+        requiredPermission: "mqtt_view",
+        permissionCategory: "mqtt",
+      },
+      { 
         href: "/oee-dashboard", 
         label: "nav.oeeDashboard", 
         icon: <Timer className="h-4 w-4" />,

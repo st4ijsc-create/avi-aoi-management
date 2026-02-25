@@ -623,3 +623,108 @@ export const mqttBulletinHistory = pgTable("mqtt_bulletin_history", {
 
 export type MqttBulletinHistoryRecord = typeof mqttBulletinHistory.$inferSelect;
 export type InsertMqttBulletinHistory = typeof mqttBulletinHistory.$inferInsert;
+
+// ============================================================
+// MQTT NG Rate Threshold - Cấu hình ngưỡng tỉ lệ NG theo điểm đo
+// Khi tỉ lệ NG của một điểm đo trong ngày vượt ngưỡng → tự động gửi MQTT alert
+// ============================================================
+
+/**
+ * MQTT NG Rate Thresholds - Cấu hình ngưỡng NG rate cho từng điểm đo (hoặc toàn station)
+ */
+export const mqttNgRateThresholds = pgTable("mqtt_ng_rate_thresholds", {
+  id: serial("id").primaryKey(),
+  // Scope: có thể cấu hình cho từng điểm đo, từng machine, hoặc toàn station
+  stationId: integer("stationId").notNull(),              // Trạm kiểm tra
+  machineId: integer("machineId"),                        // Máy cụ thể (null = tất cả máy trong trạm)
+  measurementPointId: integer("measurementPointId"),      // Điểm đo cụ thể (null = tất cả điểm đo)
+  productModelId: integer("productModelId"),              // Model sản phẩm cụ thể (null = tất cả)
+  
+  // Tên mô tả
+  name: varchar("name", { length: 255 }).notNull(),       // Ví dụ: "NG rate MP001 > 5%"
+  description: text("description"),
+  
+  // Ngưỡng cảnh báo
+  warningThreshold: decimal("warningThreshold", { precision: 5, scale: 2 }).notNull(),   // Ngưỡng cảnh báo (%) vd: 5.00
+  criticalThreshold: decimal("criticalThreshold", { precision: 5, scale: 2 }).notNull(), // Ngưỡng nghiêm trọng (%) vd: 10.00
+  
+  // Số lượng mẫu tối thiểu để đánh giá (tránh false alarm khi ít mẫu)
+  minSampleSize: integer("minSampleSize").default(10).notNull(),  // Tối thiểu 10 lần kiểm tra mới tính NG rate
+  
+  // Cooldown: tránh spam alert liên tục
+  cooldownMinutes: integer("cooldownMinutes").default(30).notNull(),  // Thời gian chờ giữa 2 lần alert
+  lastTriggeredAt: timestamp("lastTriggeredAt"),                     // Lần trigger gần nhất
+  
+  // Kênh gửi
+  sendMqttLocal: boolean("sendMqttLocal").default(true).notNull(),    // Gửi qua MQTT local broker
+  sendMqttExternal: boolean("sendMqttExternal").default(true).notNull(), // Gửi qua MQTT external broker
+  sendFcm: boolean("sendFcm").default(true).notNull(),                // Gửi push notification (FCM)
+  
+  // Trạng thái
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  createdBy: integer("createdBy"),                        // User ID tạo
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ng_rate_threshold_station").on(table.stationId),
+  index("idx_ng_rate_threshold_machine").on(table.machineId),
+  index("idx_ng_rate_threshold_point").on(table.measurementPointId),
+  index("idx_ng_rate_threshold_product").on(table.productModelId),
+  index("idx_ng_rate_threshold_enabled").on(table.isEnabled),
+]);
+
+export type MqttNgRateThreshold = typeof mqttNgRateThresholds.$inferSelect;
+export type InsertMqttNgRateThreshold = typeof mqttNgRateThresholds.$inferInsert;
+
+/**
+ * MQTT NG Rate Alert History - Lịch sử cảnh báo NG rate đã gửi
+ */
+export const mqttNgRateAlertHistory = pgTable("mqtt_ng_rate_alert_history", {
+  id: serial("id").primaryKey(),
+  thresholdId: integer("thresholdId").notNull(),           // FK to mqtt_ng_rate_thresholds
+  
+  // Snapshot thông tin khi alert
+  stationId: integer("stationId").notNull(),
+  machineId: integer("machineId"),
+  measurementPointId: integer("measurementPointId"),
+  pointName: varchar("pointName", { length: 255 }),        // Tên điểm đo snapshot
+  pointCode: varchar("pointCode", { length: 50 }),         // Mã điểm đo snapshot
+  productModelName: varchar("productModelName", { length: 255 }),
+  
+  // Dữ liệu NG rate
+  currentNgRate: decimal("currentNgRate", { precision: 5, scale: 2 }).notNull(), // NG rate hiện tại (%)
+  thresholdValue: decimal("thresholdValue", { precision: 5, scale: 2 }).notNull(), // Ngưỡng đã vượt
+  totalInspections: integer("totalInspections").notNull(),  // Tổng số lần kiểm tra trong ngày
+  ngCount: integer("ngCount").notNull(),                    // Số lần NG trong ngày
+  
+  // Mức nghiêm trọng
+  severity: varchar("severity", { length: 20 }).notNull(), // 'warning' | 'critical'
+  
+  // Thông tin gửi
+  message: text("message").notNull(),                      // Nội dung thông báo
+  mqttTopic: varchar("mqttTopic", { length: 255 }),
+  sentMqttLocal: boolean("sentMqttLocal").default(false).notNull(),
+  sentMqttExternal: boolean("sentMqttExternal").default(false).notNull(),
+  sentFcm: boolean("sentFcm").default(false).notNull(),
+  
+  // Payload đã gửi
+  payload: json("payload"),
+  
+  // Resolution
+  isResolved: boolean("isResolved").default(false).notNull(),
+  resolvedAt: timestamp("resolvedAt"),
+  resolvedBy: integer("resolvedBy"),
+  resolutionNote: text("resolutionNote"),
+  
+  triggeredAt: timestamp("triggeredAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ng_rate_alert_threshold").on(table.thresholdId),
+  index("idx_ng_rate_alert_station").on(table.stationId),
+  index("idx_ng_rate_alert_point").on(table.measurementPointId),
+  index("idx_ng_rate_alert_severity").on(table.severity),
+  index("idx_ng_rate_alert_resolved").on(table.isResolved),
+  index("idx_ng_rate_alert_triggered").on(table.triggeredAt),
+]);
+
+export type MqttNgRateAlertHistory = typeof mqttNgRateAlertHistory.$inferSelect;
+export type InsertMqttNgRateAlertHistory = typeof mqttNgRateAlertHistory.$inferInsert;

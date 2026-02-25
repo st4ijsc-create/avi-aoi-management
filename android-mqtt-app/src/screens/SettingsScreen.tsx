@@ -133,6 +133,18 @@ export default function SettingsScreen() {
           />
 
           <TextInput
+            label="Địa chỉ Server (HTTP)"
+            value={config.serverUrl || ''}
+            onChangeText={(text) => setConfig({ ...config, serverUrl: text })}
+            style={styles.input}
+            mode="outlined"
+            placeholder="http://192.168.1.100:3000"
+            outlineColor="#334155"
+            activeOutlineColor="#14b8a6"
+            textColor="#f1f5f9"
+          />
+
+          <TextInput
             label="Port"
             value={config.port.toString()}
             onChangeText={(text) => setConfig({ ...config, port: parseInt(text) || 1883 })}
