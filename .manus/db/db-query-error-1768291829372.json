@@ -1,8 +1,0 @@
-{
-  "query": "INSERT INTO production_orders (orderCode, productModelId, lineId, targetQuantity, status, priority, startDate, endDate, createdAt, updatedAt) VALUES ('PO-2026-001', 1, 1, 1000, 'in_progress', 'high', NOW(), DATE_ADD(NOW(), INTERVAL 7 DAY), NOW(), NOW()), ('PO-2026-002', 1, 2, 800, 'in_progress', 'medium', NOW(), DATE_ADD(NOW(), INTERVAL 5 DAY), NOW(), NOW()), ('PO-2026-003', 2, 3, 1200, 'pending', 'high', DATE_ADD(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 10 DAY), NOW(), NOW()), ('PO-2026-004', 2, 4, 500, 'in_progress', 'low', NOW(), DATE_ADD(NOW(), INTERVAL 3 DAY), NOW(), NOW());",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute INSERT INTO production_orders (orderCode, productModelId, lineId, targetQuantity, status, priority, startDate, endDate, createdAt, updatedAt) VALUES ('PO-2026-001', 1, 1, 1000, 'in_progress', 'high', NOW(), DATE_ADD(NOW(), INTERVAL 7 DAY), NOW(), NOW()), ('PO-2026-002', 1, 2, 800, 'in_progress', 'medium', NOW(), DATE_ADD(NOW(), INTERVAL 5 DAY), NOW(), NOW()), ('PO-2026-003', 2, 3, 1200, 'pending', 'high', DATE_ADD(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 10 DAY), NOW(), NOW()), ('PO-2026-004', 2, 4, 500, 'in_progress', 'low', NOW(), DATE_ADD(NOW(), INTERVAL 3 DAY), NOW(), NOW());",
-  "returncode": 1,
-  "logs": [
-    "ERROR 1054 (42S22) at line 1: Unknown column 'startDate' in 'field list'"
-  ]
-}

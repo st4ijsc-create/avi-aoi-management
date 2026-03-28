@@ -1,9 +1,0 @@
-{
-  "query": "INSERT INTO system_config (configKey, configValue, description, dataType, isEditable, requiresRestart) VALUES\n('MQTT_ENABLED', 'true', 'Enable/Disable MQTT Broker', 'BOOLEAN', TRUE, TRUE),\n('WEBSOCKET_ENABLED', 'true', 'Enable/Disable WebSocket Server', 'BOOLEAN', TRUE, TRUE)\nON DUPLICATE KEY UPDATE configKey=configKey;",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute INSERT INTO system_config (configKey, configValue, description, dataType, isEditable, requiresRestart) VALUES\n('MQTT_ENABLED', 'true', 'Enable/Disable MQTT Broker', 'BOOLEAN', TRUE, TRUE),\n('WEBSOCKET_ENABLED', 'true', 'Enable/Disable WebSocket Server', 'BOOLEAN', TRUE, TRUE)\nON DUPLICATE KEY UPDATE configKey=configKey;",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 1506
-}

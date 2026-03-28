@@ -1,5 +1,5 @@
 // Schema domain: Production tables
-import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, index, json } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, index, uniqueIndex, json } from "drizzle-orm/pg-core";
 import { statusEnum, processTypeEnum_1 } from "./enums";
 
 /**
@@ -21,7 +21,7 @@ export const dailyStatistics = pgTable("daily_statistics", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
-  index("idx_stats_machine_date").on(table.machineId, table.date),
+  uniqueIndex("uq_stats_machine_date").on(table.machineId, table.date),
   index("idx_stats_factory_date").on(table.factoryId, table.date),
   index("idx_stats_workshop_date").on(table.workshopId, table.date),
   index("idx_stats_date").on(table.date),

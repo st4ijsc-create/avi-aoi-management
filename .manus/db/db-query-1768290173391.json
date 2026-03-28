@@ -1,9 +1,0 @@
-{
-  "query": "INSERT INTO factory_layouts (workshopId, layoutLevel, name, layoutType, width, height, isActive)\nSELECT id, 'WORKSHOP', CONCAT('Layout ', name), '2D', 1000, 800, true\nFROM workshops \nWHERE (name LIKE '%SMT%' OR name LIKE '%Testing%')\nAND NOT EXISTS (SELECT 1 FROM factory_layouts fl WHERE fl.workshopId = workshops.id);",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute INSERT INTO factory_layouts (workshopId, layoutLevel, name, layoutType, width, height, isActive)\nSELECT id, 'WORKSHOP', CONCAT('Layout ', name), '2D', 1000, 800, true\nFROM workshops \nWHERE (name LIKE '%SMT%' OR name LIKE '%Testing%')\nAND NOT EXISTS (SELECT 1 FROM factory_layouts fl WHERE fl.workshopId = workshops.id);",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 1494
-}

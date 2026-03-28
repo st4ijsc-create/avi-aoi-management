@@ -1,8 +1,0 @@
-{
-  "query": "ALTER TABLE product_inspections \nADD COLUMN corporateCode VARCHAR(50) AFTER productModelId,\nADD COLUMN factoryCode VARCHAR(50) AFTER corporateCode,\nADD INDEX idx_inspections_corporate (corporateCode),\nADD INDEX idx_inspections_factory (factoryCode),\nADD INDEX idx_inspections_corporate_factory (corporateCode, factoryCode);",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute ALTER TABLE product_inspections \nADD COLUMN corporateCode VARCHAR(50) AFTER productModelId,\nADD COLUMN factoryCode VARCHAR(50) AFTER corporateCode,\nADD INDEX idx_inspections_corporate (corporateCode),\nADD INDEX idx_inspections_factory (factoryCode),\nADD INDEX idx_inspections_corporate_factory (corporateCode, factoryCode);",
-  "returncode": 1,
-  "logs": [
-    "ERROR 1054 (42S22) at line 1: Unknown column 'corporatecode' in 'product_inspections'"
-  ]
-}

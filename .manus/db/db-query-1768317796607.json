@@ -1,9 +1,0 @@
-{
-  "query": "ALTER TABLE alert_settings MODIFY COLUMN alertType ENUM('yield_rate', 'ng_count', 'machine_status', 'machine_offline') NOT NULL;",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute ALTER TABLE alert_settings MODIFY COLUMN alertType ENUM('yield_rate', 'ng_count', 'machine_status', 'machine_offline') NOT NULL;",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 1726
-}

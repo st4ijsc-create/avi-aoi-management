@@ -728,3 +728,49 @@ export const mqttNgRateAlertHistory = pgTable("mqtt_ng_rate_alert_history", {
 
 export type MqttNgRateAlertHistory = typeof mqttNgRateAlertHistory.$inferSelect;
 export type InsertMqttNgRateAlertHistory = typeof mqttNgRateAlertHistory.$inferInsert;
+
+// ============================================================
+// MQTT NG Alert Settings - Cấu hình bản tin NG Alert theo từng trạm
+// Cho phép bật/tắt, tùy chỉnh topic, kênh gửi cho từng station
+// ============================================================
+
+export const mqttNgAlertSettings = pgTable("mqtt_ng_alert_settings", {
+  id: serial("id").primaryKey(),
+  stationId: integer("stationId").notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  
+  // Topic cấu hình - hỗ trợ placeholder: {factoryId}, {workshopId}, {stationId}
+  topicPattern: varchar("topicPattern", { length: 500 })
+    .default("avi/factory/{factoryId}/workshop/{workshopId}/station/{stationId}/errors")
+    .notNull(),
+  externalTopicPattern: varchar("externalTopicPattern", { length: 500 }),
+  
+  // Kênh gửi
+  sendToLocal: boolean("sendToLocal").default(true).notNull(),
+  sendToExternal: boolean("sendToExternal").default(true).notNull(),
+  sendFcm: boolean("sendFcm").default(true).notNull(),
+  
+  // Tùy chọn nội dung
+  includeImages: boolean("includeImages").default(true).notNull(),
+  includeReferenceImages: boolean("includeReferenceImages").default(true).notNull(),
+  includePointImages: boolean("includePointImages").default(true).notNull(),
+  includeOverallResult: boolean("includeOverallResult").default(true).notNull(),
+  
+  // QoS settings
+  qos: integer("qos").default(1).notNull(),
+  retain: boolean("retain").default(false).notNull(),
+  
+  // Cooldown - tránh spam alert
+  cooldownSeconds: integer("cooldownSeconds").default(0).notNull(),
+  lastTriggeredAt: timestamp("lastTriggeredAt"),
+  
+  // Metadata
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_ng_alert_settings_station_unique").on(table.stationId),
+  index("idx_ng_alert_settings_enabled").on(table.enabled),
+]);
+
+export type MqttNgAlertSetting = typeof mqttNgAlertSettings.$inferSelect;
+export type InsertMqttNgAlertSetting = typeof mqttNgAlertSettings.$inferInsert;

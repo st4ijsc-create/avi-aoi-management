@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { useMqttStore } from '../stores/mqttStore';
+import { useMqttStore, NGAlert } from '../stores/mqttStore';
 
 // Configure notification handler
 Notifications.setNotificationHandler({
@@ -317,6 +317,42 @@ export default function SettingsScreen() {
                 <Text style={styles.testButtonText}>Test NG Alert</Text>
               </>
             )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.testButton, { backgroundColor: '#8b5cf6' }]}
+            onPress={() => {
+              const mockAlert: NGAlert = {
+                id: `ng_sim_${Date.now()}`,
+                type: 'NG_ALERT',
+                inspectionId: 9999,
+                serialNumber: 'SIM-001',
+                productName: 'Test Product A',
+                machineName: 'AVI-001',
+                stationName: 'Line 1 - Station 3',
+                timestamp: new Date().toISOString(),
+                ngPoints: [
+                  { pointId: 1, pointName: 'Solder Joint IC1', result: 'NG', actualValue: '0.32mm' },
+                  { pointId: 2, pointName: 'Component R5', result: 'NG', actualValue: 'Missing' },
+                ],
+                totalNG: 2,
+                receivedAt: new Date(),
+                dismissed: false,
+              };
+              useMqttStore.setState((s) => ({
+                alerts: [mockAlert, ...s.alerts].slice(0, 100),
+                activeAlert: mockAlert,
+              }));
+              setTimeout(() => {
+                const { activeAlert } = useMqttStore.getState();
+                if (activeAlert?.id === mockAlert.id) {
+                  useMqttStore.setState({ activeAlert: null });
+                }
+              }, settings.alertDisplayDuration * 1000);
+            }}
+          >
+            <Text style={styles.testButtonIcon}>🚨</Text>
+            <Text style={styles.testButtonText}>Simulate Popup</Text>
           </TouchableOpacity>
         </View>
 

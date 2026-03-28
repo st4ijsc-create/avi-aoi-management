@@ -1,9 +1,0 @@
-{
-  "query": "UPDATE machines SET image2DUrl = '/machines/aoi-machine-1.jpg' WHERE id = 1;\nUPDATE machines SET image2DUrl = '/machines/aoi-machine-2.jpg' WHERE id = 2;\nUPDATE machines SET image2DUrl = '/machines/aoi-machine-3.webp' WHERE id = 3;\nUPDATE machines SET image2DUrl = '/machines/avi-machine-1.jpg' WHERE id = 4;\nUPDATE machines SET image2DUrl = '/machines/avi-machine-2.jpg' WHERE id = 5;\nUPDATE machines SET image2DUrl = '/machines/avi-machine-3.jpg' WHERE id = 6;",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute UPDATE machines SET image2DUrl = '/machines/aoi-machine-1.jpg' WHERE id = 1;\nUPDATE machines SET image2DUrl = '/machines/aoi-machine-2.jpg' WHERE id = 2;\nUPDATE machines SET image2DUrl = '/machines/aoi-machine-3.webp' WHERE id = 3;\nUPDATE machines SET image2DUrl = '/machines/avi-machine-1.jpg' WHERE id = 4;\nUPDATE machines SET image2DUrl = '/machines/avi-machine-2.jpg' WHERE id = 5;\nUPDATE machines SET image2DUrl = '/machines/avi-machine-3.jpg' WHERE id = 6;",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 2573
-}

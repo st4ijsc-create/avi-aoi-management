@@ -1,9 +1,0 @@
-{
-  "query": "ALTER TABLE scheduled_reports MODIFY COLUMN reportType ENUM('NG_VISUAL', 'DAILY_SUMMARY', 'WEEKLY_SUMMARY', 'MONTHLY_SUMMARY', 'CUSTOM', 'OEE_REPORT', 'MACHINE_HEALTH') DEFAULT 'NG_VISUAL' NOT NULL;",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute ALTER TABLE scheduled_reports MODIFY COLUMN reportType ENUM('NG_VISUAL', 'DAILY_SUMMARY', 'WEEKLY_SUMMARY', 'MONTHLY_SUMMARY', 'CUSTOM', 'OEE_REPORT', 'MACHINE_HEALTH') DEFAULT 'NG_VISUAL' NOT NULL;",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 1669
-}

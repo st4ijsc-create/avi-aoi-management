@@ -1,9 +1,0 @@
-{
-  "query": "CREATE TABLE IF NOT EXISTS `report_templates` (\n  `id` int AUTO_INCREMENT PRIMARY KEY,\n  `name` varchar(100) NOT NULL,\n  `code` varchar(50) NOT NULL UNIQUE,\n  `description` text,\n  `templateType` enum('DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM') NOT NULL,\n  `sections` json NOT NULL,\n  `emailSubjectTemplate` varchar(255),\n  `emailBodyTemplate` text,\n  `defaultSchedule` varchar(50),\n  `isSystem` boolean NOT NULL DEFAULT false,\n  `isActive` boolean NOT NULL DEFAULT true,\n  `createdBy` int,\n  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  INDEX `idx_report_templates_code` (`code`),\n  INDEX `idx_report_templates_type` (`templateType`),\n  INDEX `idx_report_templates_active` (`isActive`)\n);",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute CREATE TABLE IF NOT EXISTS `report_templates` (\n  `id` int AUTO_INCREMENT PRIMARY KEY,\n  `name` varchar(100) NOT NULL,\n  `code` varchar(50) NOT NULL UNIQUE,\n  `description` text,\n  `templateType` enum('DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM') NOT NULL,\n  `sections` json NOT NULL,\n  `emailSubjectTemplate` varchar(255),\n  `emailBodyTemplate` text,\n  `defaultSchedule` varchar(50),\n  `isSystem` boolean NOT NULL DEFAULT false,\n  `isActive` boolean NOT NULL DEFAULT true,\n  `createdBy` int,\n  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  INDEX `idx_report_templates_code` (`code`),\n  INDEX `idx_report_templates_type` (`templateType`),\n  INDEX `idx_report_templates_active` (`isActive`)\n);",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 1725
-}

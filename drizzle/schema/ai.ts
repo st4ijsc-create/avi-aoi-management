@@ -1,6 +1,38 @@
 // Schema domain: AI & Annotation tables
 import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, index } from "drizzle-orm/pg-core";
-import { changeTypeEnum, alertTypeEnum_1, maintenanceUrgencyEnum, statusEnum_5, analysisTypeEnum, statusEnum_6, statusEnum_8, periodTypeEnum_1, suggestionTypeEnum, statusEnum_9, feedbackTypeEnum, errorCategoryEnum, accuracyTrendEnum, exportFormatEnum_1, statusEnum_10 } from "./enums";
+import { changeTypeEnum, alertTypeEnum_1, maintenanceUrgencyEnum, statusEnum_5, analysisTypeEnum, statusEnum_6, statusEnum_8, periodTypeEnum_1, suggestionTypeEnum, statusEnum_9, feedbackTypeEnum, errorCategoryEnum, accuracyTrendEnum, exportFormatEnum_1, statusEnum_10, modelFormatEnum, modelStatusEnum, inferenceStatusEnum, batchJobStatusEnum, batchItemStatusEnum, abTestStatusEnum, abTestVariantEnum, abTestWinnerEnum, driftAlertTypeEnum, driftSeverityEnum, edgeDeployStatusEnum, trainingJobStatusEnum, aiDecisionEnum, ensembleStrategyEnum, labelQueueStatusEnum, samplingStrategyEnum, chatRoleEnum, apiKeyProviderEnum, apiKeyStatusEnum } from "./enums";
+
+// ============= Image Annotations =============
+export const imageAnnotations = pgTable("image_annotations", {
+  id: serial("id").primaryKey(),
+  inspectionId: integer("inspectionId"),
+  measurementResultId: integer("measurementResultId"),
+  imageUrl: text("imageUrl").notNull(),
+  annotations: json("annotations").$type<Array<{
+    id: string;
+    type: string;
+    x: number;
+    y: number;
+    width?: number;
+    height?: number;
+    radius?: number;
+    points?: Array<{x: number; y: number}>;
+    text?: string;
+    color: string;
+    strokeWidth?: number;
+  }>>(),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_image_annotations_image_url").on(table.imageUrl),
+  index("idx_image_annotations_inspection").on(table.inspectionId),
+  index("idx_image_annotations_created_by").on(table.createdBy),
+  index("idx_image_annotations_created_at").on(table.createdAt),
+]);
+
+export type ImageAnnotation = typeof imageAnnotations.$inferSelect;
+export type InsertImageAnnotation = typeof imageAnnotations.$inferInsert;
 
 export const annotationHistory = pgTable("annotation_history", {
   id: serial("id").primaryKey(),
@@ -481,3 +513,706 @@ export const trainingBatchTagAssignments = pgTable("training_batch_tag_assignmen
 
 export type TrainingBatchTagAssignment = typeof trainingBatchTagAssignments.$inferSelect;
 export type InsertTrainingBatchTagAssignment = typeof trainingBatchTagAssignments.$inferInsert;
+
+
+// ============ AI MODEL MANAGEMENT — Offline AI Integration ============
+
+/**
+ * AI Models - Registry quản lý ML models cho offline inference
+ */
+export const aiModels = pgTable("ai_models", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 100 }).notNull().unique(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  modelType: varchar("modelType", { length: 100 }).notNull(), // e.g. "classification", "detection", "segmentation"
+  format: modelFormatEnum("format").default("ONNX").notNull(),
+  currentVersion: varchar("currentVersion", { length: 50 }),
+  filePath: text("filePath"),
+  fileKey: varchar("fileKey", { length: 255 }),
+  fileSize: integer("fileSize"),
+  inputShape: json("inputShape").$type<number[]>(), // e.g. [1, 3, 224, 224]
+  outputShape: json("outputShape").$type<number[]>(), // e.g. [1, 1000]
+  labels: json("labels").$type<string[]>(), // e.g. ["OK", "NG_scratch", "NG_crack"]
+  preprocessConfig: json("preprocessConfig").$type<{
+    resize?: { width: number; height: number };
+    normalize?: { mean: number[]; std: number[] };
+    colorSpace?: "RGB" | "BGR" | "GRAY";
+    channelFirst?: boolean;
+  }>(),
+  postprocessConfig: json("postprocessConfig").$type<{
+    type: "classification" | "detection" | "segmentation";
+    confidenceThreshold?: number;
+    nmsThreshold?: number;
+    topK?: number;
+  }>(),
+  status: modelStatusEnum("status").default("UPLOADING").notNull(),
+  metadata: json("metadata"),
+  productModelId: integer("productModelId"),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_models_code").on(table.code),
+  index("idx_ai_models_type").on(table.modelType),
+  index("idx_ai_models_format").on(table.format),
+  index("idx_ai_models_status").on(table.status),
+  index("idx_ai_models_product").on(table.productModelId),
+]);
+
+export type AiModel = typeof aiModels.$inferSelect;
+export type InsertAiModel = typeof aiModels.$inferInsert;
+
+/**
+ * Model Versions - Lịch sử phiên bản model
+ */
+export const modelVersions = pgTable("model_versions", {
+  id: serial("id").primaryKey(),
+  modelId: integer("modelId").notNull(),
+  version: varchar("version", { length: 50 }).notNull(),
+  filePath: text("filePath"),
+  fileKey: varchar("fileKey", { length: 255 }),
+  fileSize: integer("fileSize"),
+  changeLog: text("changeLog"),
+  metrics: json("metrics").$type<{
+    accuracy?: number;
+    precision?: number;
+    recall?: number;
+    f1Score?: number;
+    inferenceTimeMs?: number;
+    [key: string]: unknown;
+  }>(),
+  accuracy: decimal("accuracy", { precision: 5, scale: 2 }),
+  status: modelStatusEnum("status").default("UPLOADING").notNull(),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_model_versions_model").on(table.modelId),
+  index("idx_model_versions_version").on(table.modelId, table.version),
+  index("idx_model_versions_status").on(table.status),
+]);
+
+export type ModelVersion = typeof modelVersions.$inferSelect;
+export type InsertModelVersion = typeof modelVersions.$inferInsert;
+
+/**
+ * Inference Results - Kết quả inference từ ML models
+ */
+export const inferenceResults = pgTable("inference_results", {
+  id: serial("id").primaryKey(),
+  modelId: integer("modelId").notNull(),
+  modelVersion: varchar("modelVersion", { length: 50 }),
+  inspectionId: integer("inspectionId"),
+  measurementResultId: integer("measurementResultId"),
+  inputType: varchar("inputType", { length: 50 }).default("image").notNull(), // image, tensor, raw
+  inputReference: text("inputReference"), // URL or path to input data
+  predictions: json("predictions").$type<Array<{
+    label: string;
+    confidence: number;
+    bbox?: { x: number; y: number; width: number; height: number };
+    mask?: string; // base64 encoded mask for segmentation
+  }>>().notNull(),
+  confidence: decimal("confidence", { precision: 5, scale: 4 }),
+  topLabel: varchar("topLabel", { length: 100 }),
+  processingTimeMs: integer("processingTimeMs"),
+  status: inferenceStatusEnum("status").default("COMPLETED").notNull(),
+  errorMessage: text("errorMessage"),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_inference_results_model").on(table.modelId),
+  index("idx_inference_results_inspection").on(table.inspectionId),
+  index("idx_inference_results_measurement").on(table.measurementResultId),
+  index("idx_inference_results_status").on(table.status),
+  index("idx_inference_results_created").on(table.createdAt),
+]);
+
+export type InferenceResult = typeof inferenceResults.$inferSelect;
+export type InsertInferenceResult = typeof inferenceResults.$inferInsert;
+
+// ============= Batch Inference =============
+
+export const batchInferenceJobs = pgTable("batch_inference_jobs", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  modelId: integer("modelId").notNull(),
+  modelVersion: varchar("modelVersion", { length: 50 }),
+  status: batchJobStatusEnum("status").default("PENDING").notNull(),
+  totalItems: integer("totalItems").default(0).notNull(),
+  completedItems: integer("completedItems").default(0).notNull(),
+  failedItems: integer("failedItems").default(0).notNull(),
+  concurrency: integer("concurrency").default(4).notNull(),
+  priority: integer("priority").default(5).notNull(),
+  resultsSummary: json("resultsSummary").$type<{
+    labelCounts: Record<string, number>;
+    avgConfidence: number;
+    avgProcessingTimeMs: number;
+    topDefects: Array<{ label: string; count: number; percentage: number }>;
+  }>(),
+  errorLog: text("errorLog"),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+}, (table) => [
+  index("idx_batch_jobs_model").on(table.modelId),
+  index("idx_batch_jobs_status").on(table.status),
+  index("idx_batch_jobs_created").on(table.createdAt),
+]);
+
+export type BatchInferenceJob = typeof batchInferenceJobs.$inferSelect;
+export type InsertBatchInferenceJob = typeof batchInferenceJobs.$inferInsert;
+
+export const batchInferenceItems = pgTable("batch_inference_items", {
+  id: serial("id").primaryKey(),
+  batchJobId: integer("batchJobId").notNull(),
+  inputReference: text("inputReference").notNull(),
+  inputType: varchar("inputType", { length: 50 }).default("image").notNull(),
+  status: batchItemStatusEnum("status").default("PENDING").notNull(),
+  predictions: json("predictions").$type<Array<{
+    label: string;
+    confidence: number;
+    bbox?: { x: number; y: number; width: number; height: number };
+  }>>(),
+  confidence: decimal("confidence", { precision: 5, scale: 4 }),
+  topLabel: varchar("topLabel", { length: 100 }),
+  processingTimeMs: integer("processingTimeMs"),
+  errorMessage: text("errorMessage"),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+}, (table) => [
+  index("idx_batch_items_job").on(table.batchJobId),
+  index("idx_batch_items_status").on(table.status),
+]);
+
+export type BatchInferenceItem = typeof batchInferenceItems.$inferSelect;
+export type InsertBatchInferenceItem = typeof batchInferenceItems.$inferInsert;
+
+// ============= A/B Testing =============
+
+export const abTestExperiments = pgTable("ab_test_experiments", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  modelAId: integer("modelAId").notNull(),
+  modelAVersion: varchar("modelAVersion", { length: 50 }),
+  modelBId: integer("modelBId").notNull(),
+  modelBVersion: varchar("modelBVersion", { length: 50 }),
+  trafficSplitPercent: integer("trafficSplitPercent").default(50).notNull(),
+  status: abTestStatusEnum("status").default("DRAFT").notNull(),
+  productModelId: integer("productModelId"),
+  totalInferences: integer("totalInferences").default(0).notNull(),
+  modelAInferences: integer("modelAInferences").default(0).notNull(),
+  modelBInferences: integer("modelBInferences").default(0).notNull(),
+  modelAAccuracy: decimal("modelAAccuracy", { precision: 5, scale: 4 }),
+  modelBAccuracy: decimal("modelBAccuracy", { precision: 5, scale: 4 }),
+  modelAAvgLatency: decimal("modelAAvgLatency", { precision: 10, scale: 2 }),
+  modelBAvgLatency: decimal("modelBAvgLatency", { precision: 10, scale: 2 }),
+  winner: abTestWinnerEnum("winner"),
+  statisticalSignificance: decimal("statisticalSignificance", { precision: 5, scale: 4 }),
+  startDate: timestamp("startDate"),
+  endDate: timestamp("endDate"),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ab_test_status").on(table.status),
+  index("idx_ab_test_product").on(table.productModelId),
+  index("idx_ab_test_models").on(table.modelAId, table.modelBId),
+]);
+
+export type AbTestExperiment = typeof abTestExperiments.$inferSelect;
+export type InsertAbTestExperiment = typeof abTestExperiments.$inferInsert;
+
+export const abTestResults = pgTable("ab_test_results", {
+  id: serial("id").primaryKey(),
+  experimentId: integer("experimentId").notNull(),
+  variant: abTestVariantEnum("variant").notNull(),
+  modelId: integer("modelId").notNull(),
+  modelVersion: varchar("modelVersion", { length: 50 }),
+  inputReference: text("inputReference"),
+  predictions: json("predictions").$type<Array<{
+    label: string;
+    confidence: number;
+  }>>().notNull(),
+  confidence: decimal("confidence", { precision: 5, scale: 4 }),
+  topLabel: varchar("topLabel", { length: 100 }),
+  processingTimeMs: integer("processingTimeMs"),
+  feedbackType: feedbackTypeEnum("feedbackType"),
+  isCorrect: boolean("isCorrect"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ab_results_experiment").on(table.experimentId),
+  index("idx_ab_results_variant").on(table.variant),
+  index("idx_ab_results_created").on(table.createdAt),
+]);
+
+export type AbTestResult = typeof abTestResults.$inferSelect;
+export type InsertAbTestResult = typeof abTestResults.$inferInsert;
+
+// ============= Model Monitoring =============
+
+export const modelPerformanceSnapshots = pgTable("model_performance_snapshots", {
+  id: serial("id").primaryKey(),
+  modelId: integer("modelId").notNull(),
+  modelVersion: varchar("modelVersion", { length: 50 }),
+  periodStart: timestamp("periodStart").notNull(),
+  periodEnd: timestamp("periodEnd").notNull(),
+  totalInferences: integer("totalInferences").default(0).notNull(),
+  completedInferences: integer("completedInferences").default(0).notNull(),
+  failedInferences: integer("failedInferences").default(0).notNull(),
+  avgLatencyMs: decimal("avgLatencyMs", { precision: 10, scale: 2 }),
+  p50LatencyMs: decimal("p50LatencyMs", { precision: 10, scale: 2 }),
+  p95LatencyMs: decimal("p95LatencyMs", { precision: 10, scale: 2 }),
+  p99LatencyMs: decimal("p99LatencyMs", { precision: 10, scale: 2 }),
+  accuracy: decimal("accuracy", { precision: 5, scale: 4 }),
+  precision: decimal("precision", { precision: 5, scale: 4 }),
+  recall: decimal("recall", { precision: 5, scale: 4 }),
+  f1Score: decimal("f1Score", { precision: 5, scale: 4 }),
+  driftScore: decimal("driftScore", { precision: 5, scale: 4 }),
+  driftDetails: json("driftDetails").$type<{
+    baselineDistribution: Record<string, number>;
+    currentDistribution: Record<string, number>;
+    psiScore: number;
+    driftedFeatures: string[];
+  }>(),
+  confidenceDistribution: json("confidenceDistribution").$type<Record<string, number>>(),
+  labelDistribution: json("labelDistribution").$type<Record<string, number>>(),
+  errorRate: decimal("errorRate", { precision: 5, scale: 4 }),
+  timeoutRate: decimal("timeoutRate", { precision: 5, scale: 4 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_perf_snapshot_model").on(table.modelId),
+  index("idx_perf_snapshot_period").on(table.periodStart, table.periodEnd),
+  index("idx_perf_snapshot_created").on(table.createdAt),
+]);
+
+export type ModelPerformanceSnapshot = typeof modelPerformanceSnapshots.$inferSelect;
+export type InsertModelPerformanceSnapshot = typeof modelPerformanceSnapshots.$inferInsert;
+
+export const modelDriftAlerts = pgTable("model_drift_alerts", {
+  id: serial("id").primaryKey(),
+  modelId: integer("modelId").notNull(),
+  modelVersion: varchar("modelVersion", { length: 50 }),
+  alertType: driftAlertTypeEnum("alertType").notNull(),
+  severity: driftSeverityEnum("severity").default("MEDIUM").notNull(),
+  message: text("message").notNull(),
+  details: json("details"),
+  currentValue: decimal("currentValue", { precision: 10, scale: 4 }),
+  baselineValue: decimal("baselineValue", { precision: 10, scale: 4 }),
+  acknowledged: boolean("acknowledged").default(false).notNull(),
+  acknowledgedBy: integer("acknowledgedBy"),
+  acknowledgedAt: timestamp("acknowledgedAt"),
+  resolvedAt: timestamp("resolvedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_drift_alert_model").on(table.modelId),
+  index("idx_drift_alert_type").on(table.alertType),
+  index("idx_drift_alert_severity").on(table.severity),
+  index("idx_drift_alert_acknowledged").on(table.acknowledged),
+]);
+
+export type ModelDriftAlert = typeof modelDriftAlerts.$inferSelect;
+export type InsertModelDriftAlert = typeof modelDriftAlerts.$inferInsert;
+
+// ============= Training Pipeline =============
+
+export const trainingJobs = pgTable("training_jobs", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  modelId: integer("modelId").notNull(),
+  targetVersion: varchar("targetVersion", { length: 50 }).notNull(),
+  status: trainingJobStatusEnum("status").default("QUEUED").notNull(),
+  datasetConfig: json("datasetConfig").$type<{
+    datasetId?: number;
+    feedbackFilter?: { minAccuracy?: number; feedbackTypes?: string[]; dateRange?: { from: string; to: string } };
+    augmentation?: { flipHorizontal?: boolean; flipVertical?: boolean; rotation?: number; brightness?: number };
+    trainSplit?: number;
+    validationSplit?: number;
+    testSplit?: number;
+  }>().notNull(),
+  trainingConfig: json("trainingConfig").$type<{
+    epochs?: number;
+    batchSize?: number;
+    learningRate?: number;
+    optimizer?: string;
+    lossFunction?: string;
+    earlyStoppingPatience?: number;
+    [key: string]: unknown;
+  }>(),
+  progress: integer("progress").default(0).notNull(),
+  currentEpoch: integer("currentEpoch").default(0),
+  totalEpochs: integer("totalEpochs"),
+  trainingMetrics: json("trainingMetrics").$type<{
+    loss: number[];
+    accuracy: number[];
+    valLoss: number[];
+    valAccuracy: number[];
+  }>(),
+  validationMetrics: json("validationMetrics").$type<{
+    accuracy: number;
+    precision: number;
+    recall: number;
+    f1Score: number;
+    confusionMatrix?: number[][];
+  }>(),
+  bestMetrics: json("bestMetrics").$type<{
+    epoch: number;
+    accuracy: number;
+    loss: number;
+    valAccuracy: number;
+    valLoss: number;
+  }>(),
+  outputModelPath: text("outputModelPath"),
+  outputModelKey: varchar("outputModelKey", { length: 255 }),
+  trainingDataCount: integer("trainingDataCount").default(0).notNull(),
+  validationDataCount: integer("validationDataCount").default(0).notNull(),
+  errorMessage: text("errorMessage"),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+}, (table) => [
+  index("idx_training_jobs_model").on(table.modelId),
+  index("idx_training_jobs_status").on(table.status),
+  index("idx_training_jobs_created").on(table.createdAt),
+]);
+
+export type TrainingJob = typeof trainingJobs.$inferSelect;
+export type InsertTrainingJob = typeof trainingJobs.$inferInsert;
+
+export const trainingDatasets = pgTable("training_datasets", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  modelId: integer("modelId"),
+  productModelId: integer("productModelId"),
+  totalSamples: integer("totalSamples").default(0).notNull(),
+  labelDistribution: json("labelDistribution").$type<Record<string, number>>(),
+  splitConfig: json("splitConfig").$type<{
+    train: number;
+    validation: number;
+    test: number;
+  }>(),
+  sourceType: varchar("sourceType", { length: 50 }).default("feedback").notNull(),
+  filterConfig: json("filterConfig").$type<{
+    feedbackTypes?: string[];
+    minAccuracy?: number;
+    dateRange?: { from: string; to: string };
+    productModelIds?: number[];
+  }>(),
+  storageKey: varchar("storageKey", { length: 255 }),
+  fileSize: integer("fileSize"),
+  status: batchJobStatusEnum("status").default("PENDING").notNull(),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_training_datasets_model").on(table.modelId),
+  index("idx_training_datasets_product").on(table.productModelId),
+  index("idx_training_datasets_status").on(table.status),
+]);
+
+export type TrainingDataset = typeof trainingDatasets.$inferSelect;
+export type InsertTrainingDataset = typeof trainingDatasets.$inferInsert;
+
+// ============= Edge Deployment =============
+
+export const edgeDeployments = pgTable("edge_deployments", {
+  id: serial("id").primaryKey(),
+  modelId: integer("modelId").notNull(),
+  modelVersion: varchar("modelVersion", { length: 50 }),
+  deviceId: varchar("deviceId", { length: 100 }).notNull(),
+  deviceName: varchar("deviceName", { length: 255 }),
+  deviceType: varchar("deviceType", { length: 100 }).default("AOI_MACHINE").notNull(),
+  machineId: integer("machineId"),
+  packageUrl: text("packageUrl"),
+  packageKey: varchar("packageKey", { length: 255 }),
+  packageSize: integer("packageSize"),
+  packageHash: varchar("packageHash", { length: 128 }),
+  status: edgeDeployStatusEnum("status").default("PENDING").notNull(),
+  deployConfig: json("deployConfig").$type<{
+    quantization?: "fp32" | "fp16" | "int8";
+    runtime?: "ONNX" | "TENSORRT" | "OPENVINO";
+    maxBatchSize?: number;
+    optimizationLevel?: "basic" | "extended" | "full";
+  }>(),
+  lastSyncAt: timestamp("lastSyncAt"),
+  lastHeartbeatAt: timestamp("lastHeartbeatAt"),
+  offlineResultsPending: integer("offlineResultsPending").default(0).notNull(),
+  errorMessage: text("errorMessage"),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_edge_deploy_model").on(table.modelId),
+  index("idx_edge_deploy_device").on(table.deviceId),
+  index("idx_edge_deploy_machine").on(table.machineId),
+  index("idx_edge_deploy_status").on(table.status),
+]);
+
+export type EdgeDeployment = typeof edgeDeployments.$inferSelect;
+export type InsertEdgeDeployment = typeof edgeDeployments.$inferInsert;
+
+export const edgeInferenceSync = pgTable("edge_inference_sync", {
+  id: serial("id").primaryKey(),
+  deploymentId: integer("deploymentId").notNull(),
+  modelId: integer("modelId").notNull(),
+  modelVersion: varchar("modelVersion", { length: 50 }),
+  inputReference: text("inputReference"),
+  predictions: json("predictions").$type<Array<{
+    label: string;
+    confidence: number;
+  }>>().notNull(),
+  confidence: decimal("confidence", { precision: 5, scale: 4 }),
+  topLabel: varchar("topLabel", { length: 100 }),
+  processingTimeMs: integer("processingTimeMs"),
+  inferredAt: timestamp("inferredAt").notNull(),
+  deviceId: varchar("deviceId", { length: 100 }).notNull(),
+  synced: boolean("synced").default(false).notNull(),
+  syncedAt: timestamp("syncedAt"),
+  inspectionId: integer("inspectionId"),
+  measurementResultId: integer("measurementResultId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_edge_sync_deployment").on(table.deploymentId),
+  index("idx_edge_sync_device").on(table.deviceId),
+  index("idx_edge_sync_synced").on(table.synced),
+  index("idx_edge_sync_inferred").on(table.inferredAt),
+]);
+
+export type EdgeInferenceSync = typeof edgeInferenceSync.$inferSelect;
+export type InsertEdgeInferenceSync = typeof edgeInferenceSync.$inferInsert;
+
+// ============= AI Quality Gate Config =============
+
+export const aiQualityGateConfigs = pgTable("ai_quality_gate_configs", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  machineId: integer("machineId"),
+  productModelId: integer("productModelId"),
+  modelId: integer("modelId").notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  autoOkThreshold: decimal("autoOkThreshold", { precision: 5, scale: 4 }).default("0.95").notNull(),
+  autoNgThreshold: decimal("autoNgThreshold", { precision: 5, scale: 4 }).default("0.85").notNull(),
+  reviewThreshold: decimal("reviewThreshold", { precision: 5, scale: 4 }).default("0.60").notNull(),
+  ngLabels: json("ngLabels").$type<string[]>().default([]).notNull(),
+  okLabels: json("okLabels").$type<string[]>().default([]).notNull(),
+  ensembleConfigId: integer("ensembleConfigId"),
+  alertOnAutoNg: boolean("alertOnAutoNg").default(true).notNull(),
+  metadata: json("metadata"),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_qg_config_machine").on(table.machineId),
+  index("idx_qg_config_product").on(table.productModelId),
+  index("idx_qg_config_model").on(table.modelId),
+  index("idx_qg_config_enabled").on(table.enabled),
+]);
+
+export type AiQualityGateConfig = typeof aiQualityGateConfigs.$inferSelect;
+export type InsertAiQualityGateConfig = typeof aiQualityGateConfigs.$inferInsert;
+
+// ============= AI Ensemble Config =============
+
+export const aiEnsembleConfigs = pgTable("ai_ensemble_configs", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  strategy: ensembleStrategyEnum("strategy").default("VOTING").notNull(),
+  modelIds: json("modelIds").$type<number[]>().notNull(),
+  weights: json("weights").$type<number[]>(),
+  productModelId: integer("productModelId"),
+  cascadeThreshold: decimal("cascadeThreshold", { precision: 5, scale: 4 }),
+  enabled: boolean("enabled").default(true).notNull(),
+  metadata: json("metadata"),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ensemble_config_product").on(table.productModelId),
+  index("idx_ensemble_config_enabled").on(table.enabled),
+]);
+
+export type AiEnsembleConfig = typeof aiEnsembleConfigs.$inferSelect;
+export type InsertAiEnsembleConfig = typeof aiEnsembleConfigs.$inferInsert;
+
+// ============= AI Quality Gate Results =============
+
+export const aiQualityGateResults = pgTable("ai_quality_gate_results", {
+  id: serial("id").primaryKey(),
+  inspectionId: integer("inspectionId").notNull(),
+  configId: integer("configId").notNull(),
+  decision: aiDecisionEnum("decision").notNull(),
+  confidence: decimal("confidence", { precision: 5, scale: 4 }).notNull(),
+  topLabel: varchar("topLabel", { length: 100 }),
+  predictions: json("predictions").$type<Array<{ label: string; confidence: number }>>(),
+  ensembleResults: json("ensembleResults").$type<Array<{
+    modelId: number;
+    modelCode: string;
+    topLabel: string;
+    confidence: number;
+    predictions: Array<{ label: string; confidence: number }>;
+  }>>(),
+  processingTimeMs: integer("processingTimeMs"),
+  reviewedBy: integer("reviewedBy"),
+  reviewedAt: timestamp("reviewedAt"),
+  reviewDecision: varchar("reviewDecision", { length: 20 }),
+  reviewNotes: text("reviewNotes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_qg_result_inspection").on(table.inspectionId),
+  index("idx_qg_result_config").on(table.configId),
+  index("idx_qg_result_decision").on(table.decision),
+  index("idx_qg_result_created").on(table.createdAt),
+]);
+
+export type AiQualityGateResult = typeof aiQualityGateResults.$inferSelect;
+export type InsertAiQualityGateResult = typeof aiQualityGateResults.$inferInsert;
+
+// ============= AI Image Embeddings (pgvector) =============
+
+export const aiImageEmbeddings = pgTable("ai_image_embeddings", {
+  id: serial("id").primaryKey(),
+  inspectionId: integer("inspectionId"),
+  measurementResultId: integer("measurementResultId"),
+  imageUrl: text("imageUrl").notNull(),
+  embedding: text("embedding").notNull(), // stored as text "[0.1,0.2,...]", cast to vector in SQL
+  embeddingDim: integer("embeddingDim").notNull(),
+  modelCode: varchar("modelCode", { length: 100 }).notNull(),
+  label: varchar("label", { length: 255 }),
+  confidence: decimal("confidence", { precision: 5, scale: 4 }),
+  defectType: varchar("defectType", { length: 255 }),
+  machineId: integer("machineId"),
+  productModelId: integer("productModelId"),
+  metadata: json("metadata").$type<Record<string, unknown>>(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_image_emb_inspection").on(table.inspectionId),
+  index("idx_image_emb_measurement").on(table.measurementResultId),
+  index("idx_image_emb_model").on(table.modelCode),
+  index("idx_image_emb_machine").on(table.machineId),
+  index("idx_image_emb_product").on(table.productModelId),
+  index("idx_image_emb_label").on(table.label),
+  index("idx_image_emb_created").on(table.createdAt),
+]);
+
+export type AiImageEmbedding = typeof aiImageEmbeddings.$inferSelect;
+export type InsertAiImageEmbedding = typeof aiImageEmbeddings.$inferInsert;
+
+// ============= Active Learning Label Queue =============
+export const aiLabelQueue = pgTable("ai_label_queue", {
+  id: serial("id").primaryKey(),
+  inspectionId: integer("inspectionId"),
+  measurementResultId: integer("measurementResultId"),
+  imageUrl: text("imageUrl").notNull(),
+  // AI prediction
+  modelId: integer("modelId").notNull(),
+  predictedLabel: varchar("predictedLabel", { length: 100 }),
+  confidence: decimal("confidence", { precision: 5, scale: 4 }),
+  predictions: json("predictions").$type<Array<{ label: string; confidence: number }>>(),
+  uncertainty: decimal("uncertainty", { precision: 5, scale: 4 }),
+  // Ensemble disagreement (for committee sampling)
+  ensembleDisagreement: decimal("ensembleDisagreement", { precision: 5, scale: 4 }),
+  ensemblePredictions: json("ensemblePredictions").$type<Array<{ modelId: number; label: string; confidence: number }>>(),
+  // Active learning metadata
+  samplingStrategy: samplingStrategyEnum("samplingStrategy").default("UNCERTAINTY").notNull(),
+  priority: integer("priority").default(0).notNull(),
+  status: labelQueueStatusEnum("status").default("PENDING").notNull(),
+  // Human review
+  assignedTo: integer("assignedTo"),
+  reviewedBy: integer("reviewedBy"),
+  reviewedAt: timestamp("reviewedAt"),
+  humanLabel: varchar("humanLabel", { length: 100 }),
+  reviewNotes: text("reviewNotes"),
+  // Context
+  machineId: integer("machineId"),
+  productModelId: integer("productModelId"),
+  defectType: varchar("defectType", { length: 100 }),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_label_queue_status").on(table.status),
+  index("idx_label_queue_model").on(table.modelId),
+  index("idx_label_queue_priority").on(table.priority),
+  index("idx_label_queue_machine").on(table.machineId),
+  index("idx_label_queue_product").on(table.productModelId),
+  index("idx_label_queue_assigned").on(table.assignedTo),
+  index("idx_label_queue_created").on(table.createdAt),
+  index("idx_label_queue_confidence").on(table.confidence),
+]);
+
+export type AiLabelQueue = typeof aiLabelQueue.$inferSelect;
+export type InsertAiLabelQueue = typeof aiLabelQueue.$inferInsert;
+
+// ============= AI Chat Conversations =============
+export const aiChatConversations = pgTable("ai_chat_conversations", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull(),
+  title: varchar("title", { length: 255 }),
+  context: json("context"),
+  messageCount: integer("messageCount").default(0).notNull(),
+  lastMessageAt: timestamp("lastMessageAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_chat_conv_user").on(table.userId),
+  index("idx_chat_conv_updated").on(table.updatedAt),
+]);
+
+export type AiChatConversation = typeof aiChatConversations.$inferSelect;
+export type InsertAiChatConversation = typeof aiChatConversations.$inferInsert;
+
+// ============= AI Chat Messages =============
+export const aiChatMessages = pgTable("ai_chat_messages", {
+  id: serial("id").primaryKey(),
+  conversationId: integer("conversationId").notNull(),
+  role: chatRoleEnum("role").notNull(),
+  content: text("content"),
+  toolCalls: json("toolCalls"),
+  toolResults: json("toolResults"),
+  tokensUsed: integer("tokensUsed"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_chat_msg_conversation").on(table.conversationId),
+  index("idx_chat_msg_role").on(table.role),
+  index("idx_chat_msg_created").on(table.createdAt),
+]);
+
+export type AiChatMessage = typeof aiChatMessages.$inferSelect;
+export type InsertAiChatMessage = typeof aiChatMessages.$inferInsert;
+
+// ============= AI API Keys =============
+export const aiApiKeys = pgTable("ai_api_keys", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  provider: apiKeyProviderEnum("provider").notNull(),
+  encryptedKey: text("encryptedKey").notNull(),
+  endpoint: text("endpoint"),
+  status: apiKeyStatusEnum("status").default("active").notNull(),
+  lastTestedAt: timestamp("lastTestedAt"),
+  createdBy: integer("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_api_keys_provider").on(table.provider),
+  index("idx_ai_api_keys_status").on(table.status),
+  index("idx_ai_api_keys_created_by").on(table.createdBy),
+]);
+
+export type AiApiKey = typeof aiApiKeys.$inferSelect;
+export type InsertAiApiKey = typeof aiApiKeys.$inferInsert;
+
+// ============= AI System Config =============
+export const aiSystemConfig = pgTable("ai_system_config", {
+  id: serial("id").primaryKey(),
+  key: varchar("key", { length: 255 }).notNull().unique(),
+  value: text("value").notNull(),
+  description: text("description"),
+  updatedBy: integer("updatedBy"),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type AiSystemConfig = typeof aiSystemConfig.$inferSelect;
+export type InsertAiSystemConfig = typeof aiSystemConfig.$inferInsert;

@@ -1,9 +1,0 @@
-{
-  "query": "CREATE INDEX idx_threshold_history_threshold ON yield_threshold_history(thresholdId);\nCREATE INDEX idx_threshold_history_type ON yield_threshold_history(metricType);\nCREATE INDEX idx_threshold_history_date ON yield_threshold_history(createdAt);",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute CREATE INDEX idx_threshold_history_threshold ON yield_threshold_history(thresholdId);\nCREATE INDEX idx_threshold_history_type ON yield_threshold_history(metricType);\nCREATE INDEX idx_threshold_history_date ON yield_threshold_history(createdAt);",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 3220
-}

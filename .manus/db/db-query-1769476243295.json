@@ -1,9 +1,0 @@
-{
-  "query": "CREATE TABLE IF NOT EXISTS mqtt_alert_config (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  profileId INT,\n  connectionLostThreshold INT DEFAULT 5 NOT NULL,\n  reconnectFailedThreshold INT DEFAULT 10 NOT NULL,\n  highReconnectRateThreshold INT DEFAULT 20 NOT NULL,\n  longDisconnectionThreshold INT DEFAULT 30 NOT NULL,\n  enableEmailNotification BOOLEAN DEFAULT FALSE NOT NULL,\n  enablePushNotification BOOLEAN DEFAULT TRUE NOT NULL,\n  notificationEmails TEXT,\n  isActive BOOLEAN DEFAULT TRUE NOT NULL,\n  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,\n  updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,\n  INDEX idx_alert_config_profile (profileId),\n  INDEX idx_alert_config_active (isActive)\n);",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute CREATE TABLE IF NOT EXISTS mqtt_alert_config (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  profileId INT,\n  connectionLostThreshold INT DEFAULT 5 NOT NULL,\n  reconnectFailedThreshold INT DEFAULT 10 NOT NULL,\n  highReconnectRateThreshold INT DEFAULT 20 NOT NULL,\n  longDisconnectionThreshold INT DEFAULT 30 NOT NULL,\n  enableEmailNotification BOOLEAN DEFAULT FALSE NOT NULL,\n  enablePushNotification BOOLEAN DEFAULT TRUE NOT NULL,\n  notificationEmails TEXT,\n  isActive BOOLEAN DEFAULT TRUE NOT NULL,\n  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,\n  updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,\n  INDEX idx_alert_config_profile (profileId),\n  INDEX idx_alert_config_active (isActive)\n);",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 1661
-}

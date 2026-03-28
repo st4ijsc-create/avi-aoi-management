@@ -1119,7 +1119,7 @@ public class MachineAutoRegistration
 
 ---
 
-## 13. Code Examples
+## 14. Code Examples
 
 Hệ thống cung cấp code examples đầy đủ cho nhiều ngôn ngữ lập trình:
 
@@ -1167,7 +1167,7 @@ await service.SubmitInspectionAsync(inspection);
 
 ---
 
-## 14. Error Codes
+## 15. Error Codes
 
 | Code | Mô tả |
 |------|-------|
@@ -1180,7 +1180,7 @@ await service.SubmitInspectionAsync(inspection);
 
 ---
 
-## 15. Rate Limiting
+## 16. Rate Limiting
 
 | Endpoint Type | Limit |
 |---------------|-------|
@@ -1190,7 +1190,7 @@ await service.SubmitInspectionAsync(inspection);
 
 ---
 
-## 16. Troubleshooting
+## 17. Troubleshooting
 
 ### Problem: Measurement không được lưu
 
@@ -1244,4 +1244,349 @@ WHERE point_def_id = 0 AND remark LIKE 'Point:%';
 
 ---
 
-*Tài liệu này được cập nhật: February 10, 2026 | Version: 2.1 - Added External Machine Registration API*
+## 13. Measurement Point Statistics API (External)
+
+API thống kê kết quả đo lường theo từng điểm đo của sản phẩm trong khoảng thời gian tùy chỉnh, bao gồm ảnh OK/NG. Dành cho bên thứ 3 tích hợp (MES, ERP, BI tools, v.v.)
+
+**Endpoint:** `GET /api/external/statistics/measurement-points`  
+**Authentication:** Master API Key (Header `X-Master-Key`) hoặc Bearer Token (Header `Authorization: Bearer <token>`)
+
+### 13.1 Authentication
+
+Hỗ trợ 2 phương thức xác thực:
+
+**Phương thức 1: Master API Key** (cho server-to-server)
+```http
+GET /api/external/statistics/measurement-points?productModelId=1&startDate=2025-01-01&endDate=2025-12-31
+X-Master-Key: your_secure_master_key_here
+```
+
+**Phương thức 2: Bearer Token** (cho ứng dụng client)
+```http
+GET /api/external/statistics/measurement-points?productCode=SP-001&startDate=2025-01-01&endDate=2025-12-31
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+```
+
+Để lấy Bearer Token, gọi API login:
+```http
+POST /api/external/auth/login
+Content-Type: application/json
+
+{
+  "username": "your_username",
+  "password": "your_password"
+}
+```
+Token có hiệu lực 30 ngày.
+
+### 13.2 Query Parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `productModelId` | number | Có* | ID sản phẩm cần thống kê |
+| `productCode` | string | Có* | Mã sản phẩm (thay thế cho productModelId) |
+| `startDate` | string | Có | Ngày bắt đầu (ISO 8601: `YYYY-MM-DD` hoặc `YYYY-MM-DDTHH:mm:ssZ`) |
+| `endDate` | string | Có | Ngày kết thúc (ISO 8601) |
+| `includeImages` | string | Không | Đặt `true` hoặc `1` để bao gồm ảnh OK/NG cho từng điểm đo |
+
+> \* Bắt buộc một trong hai: `productModelId` hoặc `productCode`
+
+### 13.3 Response (Không có ảnh — mặc định)
+
+**Success (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "productModel": {
+      "id": 1,
+      "code": "SP-001",
+      "name": "Sản phẩm mẫu A"
+    },
+    "dateRange": {
+      "startDate": "2025-01-01T00:00:00.000Z",
+      "endDate": "2025-12-31T00:00:00.000Z"
+    },
+    "totalPoints": 5,
+    "points": [
+      {
+        "pointDefId": 10,
+        "pointCode": "D1",
+        "pointName": "Đường kính trục chính",
+        "measurementType": "DIAMETER",
+        "unit": "mm",
+        "lowerLimit": 9.95,
+        "upperLimit": 10.05,
+        "nominalValue": 10.0,
+        "totalCount": 1500,
+        "okCount": 1480,
+        "ngCount": 20,
+        "ngRate": 1.33,
+        "minValue": 9.92,
+        "maxValue": 10.08,
+        "avgValue": 10.001
+      }
+    ]
+  }
+}
+```
+
+### 13.4 Response (Có ảnh — `includeImages=true`)
+
+Khi truyền `includeImages=true`, mỗi điểm đo sẽ có thêm field `images` chứa danh sách ảnh OK và NG:
+
+```json
+{
+  "success": true,
+  "data": {
+    "productModel": {
+      "id": 1,
+      "code": "SP-001",
+      "name": "Sản phẩm mẫu A"
+    },
+    "dateRange": {
+      "startDate": "2025-01-01T00:00:00.000Z",
+      "endDate": "2025-03-31T00:00:00.000Z"
+    },
+    "totalPoints": 2,
+    "points": [
+      {
+        "pointDefId": 10,
+        "pointCode": "D1",
+        "pointName": "Đường kính trục chính",
+        "measurementType": "DIAMETER",
+        "unit": "mm",
+        "lowerLimit": 9.95,
+        "upperLimit": 10.05,
+        "nominalValue": 10.0,
+        "totalCount": 100,
+        "okCount": 95,
+        "ngCount": 5,
+        "ngRate": 5.0,
+        "minValue": 9.92,
+        "maxValue": 10.08,
+        "avgValue": 10.001,
+        "images": {
+          "okImages": [
+            {
+              "imageUrl": "/uploads/inspections/2025-01/img_001.jpg",
+              "measuredValue": 10.002,
+              "serialNumber": "SN-20250115-001",
+              "inspectionTime": "2025-01-15T08:30:00.000Z"
+            },
+            {
+              "imageUrl": "/uploads/inspections/2025-02/img_045.jpg",
+              "measuredValue": 9.998,
+              "serialNumber": "SN-20250210-003",
+              "inspectionTime": "2025-02-10T14:20:00.000Z"
+            }
+          ],
+          "ngImages": [
+            {
+              "imageUrl": "/uploads/inspections/2025-01/img_023.jpg",
+              "measuredValue": 10.12,
+              "serialNumber": "SN-20250120-007",
+              "inspectionTime": "2025-01-20T10:45:00.000Z"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
+```
+
+**Mô tả fields trong `points[]`:**
+
+| Field | Type | Description |
+|---|---|---|
+| `pointDefId` | number | ID định nghĩa điểm đo |
+| `pointCode` | string | Mã điểm đo |
+| `pointName` | string | Tên điểm đo |
+| `measurementType` | string | Loại đo lường (DIAMETER, LENGTH, ANGLE, POSITION, OTHER...) |
+| `unit` | string | Đơn vị đo |
+| `lowerLimit` | number\|null | Giới hạn dưới |
+| `upperLimit` | number\|null | Giới hạn trên |
+| `nominalValue` | number\|null | Giá trị danh nghĩa |
+| `totalCount` | number | Tổng số lần đo |
+| `okCount` | number | Số lần đạt (OK) |
+| `ngCount` | number | Số lần không đạt (NG) |
+| `ngRate` | number | Tỷ lệ NG (%) = ngCount/totalCount × 100 |
+| `minValue` | number\|null | Giá trị đo nhỏ nhất |
+| `maxValue` | number\|null | Giá trị đo lớn nhất |
+| `avgValue` | number\|null | Giá trị đo trung bình |
+| `images` | object\|undefined | Chỉ có khi `includeImages=true` |
+| `images.okImages` | array | Danh sách ảnh của kết quả OK |
+| `images.ngImages` | array | Danh sách ảnh của kết quả NG |
+
+**Mô tả fields trong `images.okImages[]` / `images.ngImages[]`:**
+
+| Field | Type | Description |
+|---|---|---|
+| `imageUrl` | string | Đường dẫn ảnh (relative). Ghép với server URL để tải: `{serverUrl}{imageUrl}` |
+| `measuredValue` | number\|null | Giá trị đo tại thời điểm chụp |
+| `serialNumber` | string | Serial number của sản phẩm được kiểm tra |
+| `inspectionTime` | string | Thời gian kiểm tra (ISO 8601) |
+
+> **Lưu ý về URL ảnh:** `imageUrl` là đường dẫn tương đối (bắt đầu bằng `/uploads/...`). Để tải ảnh, ghép với base URL của server:  
+> `http://your-server:3000/uploads/inspections/2025-01/img_001.jpg`
+
+### 13.5 Error Responses
+
+**400 Bad Request** — Thiếu tham số hoặc tham số không hợp lệ:
+```json
+{
+  "success": false,
+  "message": "Either productModelId or productCode is required"
+}
+```
+```json
+{
+  "success": false,
+  "message": "startDate and endDate are required (ISO 8601 format, e.g. 2025-01-01 or 2025-01-01T00:00:00Z)"
+}
+```
+```json
+{
+  "success": false,
+  "message": "startDate must be before or equal to endDate"
+}
+```
+
+**401 Unauthorized** — Thiếu hoặc sai authentication:
+```json
+{
+  "success": false,
+  "message": "Unauthorized. Provide x-master-key header or Authorization: Bearer <token>"
+}
+```
+
+**404 Not Found** — Không tìm thấy sản phẩm:
+```json
+{
+  "success": false,
+  "message": "Product model with code \"SP-999\" not found"
+}
+```
+
+### 13.6 Ví dụ tích hợp
+
+#### cURL
+```bash
+# Thống kê cơ bản (không có ảnh)
+curl -X GET "http://your-server:3000/api/external/statistics/measurement-points?productModelId=1&startDate=2025-01-01&endDate=2025-03-31" \
+  -H "X-Master-Key: your_secure_master_key_here"
+
+# Thống kê kèm ảnh OK/NG
+curl -X GET "http://your-server:3000/api/external/statistics/measurement-points?productCode=SP-001&startDate=2025-01-01&endDate=2025-03-31&includeImages=true" \
+  -H "X-Master-Key: your_secure_master_key_here"
+```
+
+#### Python
+```python
+import requests
+
+BASE_URL = "http://your-server:3000"
+MASTER_KEY = "your_secure_master_key_here"
+
+# Lấy thống kê kèm ảnh
+response = requests.get(
+    f"{BASE_URL}/api/external/statistics/measurement-points",
+    headers={"X-Master-Key": MASTER_KEY},
+    params={
+        "productCode": "SP-001",
+        "startDate": "2025-01-01",
+        "endDate": "2025-03-31",
+        "includeImages": "true",
+    },
+)
+
+data = response.json()
+if data["success"]:
+    print(f"Sản phẩm: {data['data']['productModel']['name']}")
+    for point in data["data"]["points"]:
+        print(f"\n  {point['pointCode']} - {point['pointName']}:")
+        print(f"    OK={point['okCount']}, NG={point['ngCount']}, NG Rate={point['ngRate']}%")
+
+        # Hiển thị ảnh NG
+        if "images" in point:
+            for ng_img in point["images"]["ngImages"]:
+                full_url = f"{BASE_URL}{ng_img['imageUrl']}"
+                print(f"    [NG] SN={ng_img['serialNumber']} | "
+                      f"Value={ng_img['measuredValue']} | URL: {full_url}")
+```
+
+#### C# (.NET)
+```csharp
+using var client = new HttpClient();
+client.BaseAddress = new Uri("http://your-server:3000");
+client.DefaultRequestHeaders.Add("X-Master-Key", "your_secure_master_key_here");
+
+// Lấy thống kê kèm ảnh
+var response = await client.GetAsync(
+    "/api/external/statistics/measurement-points" +
+    "?productCode=SP-001&startDate=2025-01-01&endDate=2025-03-31&includeImages=true");
+
+var json = await response.Content.ReadAsStringAsync();
+var result = JsonSerializer.Deserialize<JsonElement>(json);
+
+// Tải ảnh NG
+foreach (var point in result.GetProperty("data").GetProperty("points").EnumerateArray())
+{
+    if (point.TryGetProperty("images", out var images))
+    {
+        foreach (var ngImg in images.GetProperty("ngImages").EnumerateArray())
+        {
+            var imageUrl = ngImg.GetProperty("imageUrl").GetString();
+            var fullUrl = $"http://your-server:3000{imageUrl}";
+            Console.WriteLine($"NG Image: {fullUrl}");
+
+            // Tải ảnh về local
+            var imageBytes = await client.GetByteArrayAsync(fullUrl);
+            var fileName = Path.GetFileName(imageUrl);
+            await File.WriteAllBytesAsync($"ng_images/{fileName}", imageBytes);
+        }
+    }
+}
+```
+
+#### JavaScript / Node.js
+```javascript
+const BASE_URL = "http://your-server:3000";
+
+const response = await fetch(
+  `${BASE_URL}/api/external/statistics/measurement-points` +
+  "?productModelId=1&startDate=2025-01-01&endDate=2025-03-31&includeImages=true",
+  {
+    headers: { "X-Master-Key": "your_secure_master_key_here" },
+  }
+);
+
+const { success, data } = await response.json();
+if (success) {
+  for (const point of data.points) {
+    console.log(`${point.pointCode}: OK=${point.okCount}, NG=${point.ngCount}`);
+
+    if (point.images) {
+      // Hiển thị ảnh NG
+      for (const img of point.images.ngImages) {
+        console.log(`  [NG] ${BASE_URL}${img.imageUrl} | SN: ${img.serialNumber}`);
+      }
+    }
+  }
+}
+```
+
+### 13.7 Lưu ý khi tích hợp
+
+- **Rate Limit:** Tối đa 1000 requests / 15 phút trên `/api/` endpoints
+- **Thời gian truy vấn:** Khoảng thời gian lớn (> 1 năm) có thể chậm hơn, khuyến nghị chia nhỏ theo tháng/quý
+- **Định dạng ngày:** Hỗ trợ `YYYY-MM-DD` (mặc định 00:00:00 UTC) và full ISO 8601 `YYYY-MM-DDTHH:mm:ssZ`
+- **Điểm đo không có dữ liệu:** Nếu một điểm đo chưa có kết quả trong khoảng thời gian, `totalCount = 0` và các giá trị thống kê sẽ là `null`
+- **Bảo mật:** Không chia sẻ Master API Key cho client-side apps. Sử dụng Bearer Token (qua `/api/external/auth/login`) cho ứng dụng frontend
+- **Ảnh (includeImages):** Response có thể lớn nếu có nhiều ảnh. Chỉ sử dụng `includeImages=true` khi thực sự cần xem ảnh. Với khoảng thời gian dài, nên chia nhỏ query
+- **URL ảnh:** `imageUrl` là relative path. Ghép với server base URL: `{serverUrl}{imageUrl}`. Ảnh được serve tại `/uploads/` endpoint (static files)
+
+---
+
+*Tài liệu này được cập nhật: March 19, 2026 | Version: 2.3 - Added image support to Measurement Point Statistics API*

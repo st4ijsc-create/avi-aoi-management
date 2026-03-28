@@ -1,9 +1,0 @@
-{
-  "query": "UPDATE machines SET \n  image2DUrl = CASE \n    WHEN name LIKE '%AVI%' THEN '/machines/avi-machine-1.jpg'\n    WHEN name LIKE '%AOI%' THEN '/machines/aoi-machine-1.jpg'\n    ELSE image2DUrl\n  END,\n  image3DUrl = CASE \n    WHEN name LIKE '%AVI%' THEN '/machines/avi-3d.jpg'\n    WHEN name LIKE '%AOI%' THEN '/machines/aoi-3d.webp'\n    ELSE image3DUrl\n  END;",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute UPDATE machines SET \n  image2DUrl = CASE \n    WHEN name LIKE '%AVI%' THEN '/machines/avi-machine-1.jpg'\n    WHEN name LIKE '%AOI%' THEN '/machines/aoi-machine-1.jpg'\n    ELSE image2DUrl\n  END,\n  image3DUrl = CASE \n    WHEN name LIKE '%AVI%' THEN '/machines/avi-3d.jpg'\n    WHEN name LIKE '%AOI%' THEN '/machines/aoi-3d.webp'\n    ELSE image3DUrl\n  END;",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 1569
-}

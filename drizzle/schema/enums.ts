@@ -87,3 +87,38 @@ export const eventTypeEnum_1 = pgEnum("eventtypeenum_1", ["attempt", "success", 
 export const statusEnum_11 = pgEnum("statusenum_11", ["connected", "disconnected", "connecting", "error", "unknown"]);
 export const alertTypeEnum_2 = pgEnum("alerttypeenum_2", ["connection_lost", "reconnect_failed", "high_reconnect_rate", "long_disconnection"]);
 export const severityEnum = pgEnum("severityenum", ["info", "warning", "critical"]);
+
+// Sync enums
+export const syncOperationEnum = pgEnum("syncoperationenum", ["POINTS_PUSH", "POINTS_PULL", "IMAGE_PUSH", "IMAGE_PULL", "FULL_SYNC", "DELTA_SYNC"]);
+export const syncStatusEnum = pgEnum("syncstatusenum", ["SUCCESS", "PARTIAL", "FAILED"]);
+
+// AI Model enums
+export const modelFormatEnum = pgEnum("modelformatenum", ["ONNX", "TENSORRT", "OPENVINO", "CUSTOM"]);
+export const modelStatusEnum = pgEnum("modelstatusenum", ["UPLOADING", "VALIDATING", "READY", "ACTIVE", "INACTIVE", "FAILED", "ARCHIVED"]);
+export const inferenceStatusEnum = pgEnum("inferencestatusenum", ["PENDING", "RUNNING", "COMPLETED", "FAILED", "TIMEOUT"]);
+
+// AI Comprehensive upgrade enums
+export const batchJobStatusEnum = pgEnum("batchjobstatusenum", ["PENDING", "PROCESSING", "COMPLETED", "FAILED", "CANCELLED"]);
+export const batchItemStatusEnum = pgEnum("batchitemstatusenum", ["PENDING", "PROCESSING", "COMPLETED", "FAILED", "SKIPPED"]);
+export const abTestStatusEnum = pgEnum("abteststatusenum", ["DRAFT", "RUNNING", "PAUSED", "COMPLETED", "CANCELLED"]);
+export const abTestVariantEnum = pgEnum("abtestvariantenum", ["A", "B"]);
+export const abTestWinnerEnum = pgEnum("abtestwinnerenum", ["A", "B", "INCONCLUSIVE"]);
+export const driftAlertTypeEnum = pgEnum("driftalerttypeenum", ["ACCURACY_DROP", "LATENCY_SPIKE", "DRIFT_DETECTED", "ERROR_RATE_HIGH", "CONFIDENCE_SHIFT"]);
+export const driftSeverityEnum = pgEnum("driftseverityenum", ["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
+export const edgeDeployStatusEnum = pgEnum("edgedeploystatusenum", ["PENDING", "PACKAGING", "READY", "DOWNLOADING", "DEPLOYED", "ACTIVE", "FAILED", "OUTDATED"]);
+export const trainingJobStatusEnum = pgEnum("trainingjobstatusenum", ["QUEUED", "PREPARING_DATA", "TRAINING", "VALIDATING", "COMPLETED", "FAILED", "CANCELLED"]);
+
+// AI Quality Gate & Ensemble enums
+export const aiDecisionEnum = pgEnum("aidecisionenum", ["AUTO_OK", "AUTO_NG", "NEEDS_REVIEW", "MANUAL"]);
+export const ensembleStrategyEnum = pgEnum("ensemblestrategyenum", ["VOTING", "WEIGHTED_AVERAGE", "STACKING", "CASCADE"]);
+
+// Active Learning enums
+export const labelQueueStatusEnum = pgEnum("labelqueuestatusenum", ["PENDING", "IN_REVIEW", "LABELED", "AUTO_LABELED", "SKIPPED", "EXPERT_REQUIRED"]);
+export const samplingStrategyEnum = pgEnum("samplingstrategyenum", ["UNCERTAINTY", "DIVERSITY", "COMMITTEE", "RANDOM"]);
+
+// AI Chat enums
+export const chatRoleEnum = pgEnum("chatroleenum", ["system", "user", "assistant", "tool"]);
+
+// AI API Key enums
+export const apiKeyProviderEnum = pgEnum("apikeyprovider", ["openai", "azure_openai", "huggingface", "custom"]);
+export const apiKeyStatusEnum = pgEnum("apikeystatus", ["active", "inactive", "expired", "error"]);

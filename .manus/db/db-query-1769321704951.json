@@ -1,9 +1,0 @@
-{
-  "query": "CREATE TABLE IF NOT EXISTS image_annotations (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  inspection_id INT NOT NULL,\n  measurement_result_id INT,\n  image_url VARCHAR(1024) NOT NULL,\n  annotations JSON NOT NULL COMMENT 'Array of annotation objects with type, coordinates, color, etc.',\n  created_by INT NOT NULL,\n  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  INDEX idx_inspection_id (inspection_id),\n  INDEX idx_measurement_result_id (measurement_result_id),\n  INDEX idx_created_by (created_by)\n);",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute CREATE TABLE IF NOT EXISTS image_annotations (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  inspection_id INT NOT NULL,\n  measurement_result_id INT,\n  image_url VARCHAR(1024) NOT NULL,\n  annotations JSON NOT NULL COMMENT 'Array of annotation objects with type, coordinates, color, etc.',\n  created_by INT NOT NULL,\n  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  INDEX idx_inspection_id (inspection_id),\n  INDEX idx_measurement_result_id (measurement_result_id),\n  INDEX idx_created_by (created_by)\n);",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 1782
-}

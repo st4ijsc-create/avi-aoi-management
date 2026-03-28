@@ -1,9 +1,0 @@
-{
-  "query": "CREATE TABLE IF NOT EXISTS user_settings (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  userId INT NOT NULL UNIQUE,\n  language VARCHAR(10) DEFAULT 'vi' NOT NULL,\n  theme ENUM('light', 'dark', 'system') DEFAULT 'system' NOT NULL,\n  timezone VARCHAR(50) DEFAULT 'Asia/Ho_Chi_Minh',\n  dateFormat VARCHAR(20) DEFAULT 'DD/MM/YYYY',\n  timeFormat VARCHAR(10) DEFAULT '24h',\n  numberFormat VARCHAR(20) DEFAULT '1.234,56',\n  defaultDashboardTab VARCHAR(50) DEFAULT 'overview',\n  sidebarCollapsed BOOLEAN DEFAULT FALSE NOT NULL,\n  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,\n  updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,\n  INDEX idx_user_settings_user (userId),\n  INDEX idx_user_settings_language (language)\n);",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute CREATE TABLE IF NOT EXISTS user_settings (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  userId INT NOT NULL UNIQUE,\n  language VARCHAR(10) DEFAULT 'vi' NOT NULL,\n  theme ENUM('light', 'dark', 'system') DEFAULT 'system' NOT NULL,\n  timezone VARCHAR(50) DEFAULT 'Asia/Ho_Chi_Minh',\n  dateFormat VARCHAR(20) DEFAULT 'DD/MM/YYYY',\n  timeFormat VARCHAR(10) DEFAULT '24h',\n  numberFormat VARCHAR(20) DEFAULT '1.234,56',\n  defaultDashboardTab VARCHAR(50) DEFAULT 'overview',\n  sidebarCollapsed BOOLEAN DEFAULT FALSE NOT NULL,\n  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,\n  updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,\n  INDEX idx_user_settings_user (userId),\n  INDEX idx_user_settings_language (language)\n);",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 1654
-}

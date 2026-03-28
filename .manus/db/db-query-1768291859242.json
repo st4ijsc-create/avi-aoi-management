@@ -1,9 +1,0 @@
-{
-  "query": "UPDATE line_product_assignments lpa SET productionOrderId = (SELECT id FROM production_orders po WHERE po.lineId = lpa.lineId AND po.status = 'in_progress' LIMIT 1) WHERE productionOrderId IS NULL;",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute UPDATE line_product_assignments lpa SET productionOrderId = (SELECT id FROM production_orders po WHERE po.lineId = lpa.lineId AND po.status = 'in_progress' LIMIT 1) WHERE productionOrderId IS NULL;",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 1552
-}

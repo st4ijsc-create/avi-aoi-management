@@ -1,9 +1,0 @@
-{
-  "query": "CREATE TABLE IF NOT EXISTS `backup_logs` (\n  `id` int AUTO_INCREMENT PRIMARY KEY,\n  `userId` int NOT NULL,\n  `action` enum('export', 'import', 'scheduled_export') NOT NULL,\n  `categories` json NOT NULL,\n  `status` enum('success', 'failed', 'partial') NOT NULL,\n  `fileSize` int,\n  `fileName` varchar(255),\n  `fileUrl` text,\n  `recordCount` int,\n  `errorMessage` text,\n  `metadata` json,\n  `ipAddress` varchar(45),\n  `userAgent` text,\n  `duration` int,\n  `createdAt` timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL\n);\n\nCREATE INDEX `idx_backup_logs_user` ON `backup_logs` (`userId`);\nCREATE INDEX `idx_backup_logs_action` ON `backup_logs` (`action`);\nCREATE INDEX `idx_backup_logs_status` ON `backup_logs` (`status`);\nCREATE INDEX `idx_backup_logs_created` ON `backup_logs` (`createdAt`);",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute CREATE TABLE IF NOT EXISTS `backup_logs` (\n  `id` int AUTO_INCREMENT PRIMARY KEY,\n  `userId` int NOT NULL,\n  `action` enum('export', 'import', 'scheduled_export') NOT NULL,\n  `categories` json NOT NULL,\n  `status` enum('success', 'failed', 'partial') NOT NULL,\n  `fileSize` int,\n  `fileName` varchar(255),\n  `fileUrl` text,\n  `recordCount` int,\n  `errorMessage` text,\n  `metadata` json,\n  `ipAddress` varchar(45),\n  `userAgent` text,\n  `duration` int,\n  `createdAt` timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL\n);\n\nCREATE INDEX `idx_backup_logs_user` ON `backup_logs` (`userId`);\nCREATE INDEX `idx_backup_logs_action` ON `backup_logs` (`action`);\nCREATE INDEX `idx_backup_logs_status` ON `backup_logs` (`status`);\nCREATE INDEX `idx_backup_logs_created` ON `backup_logs` (`createdAt`);",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 4423
-}

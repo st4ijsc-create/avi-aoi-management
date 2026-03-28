@@ -1,8 +1,0 @@
-{
-  "query": "ALTER TABLE users \nADD COLUMN username VARCHAR(100) UNIQUE AFTER openId,\nADD COLUMN passwordHash VARCHAR(255) AFTER username,\nADD COLUMN phone VARCHAR(20) AFTER email,\nADD COLUMN department VARCHAR(100) AFTER phone,\nADD COLUMN position VARCHAR(100) AFTER department,\nADD COLUMN isActive BOOLEAN DEFAULT TRUE NOT NULL AFTER role;",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute ALTER TABLE users \nADD COLUMN username VARCHAR(100) UNIQUE AFTER openId,\nADD COLUMN passwordHash VARCHAR(255) AFTER username,\nADD COLUMN phone VARCHAR(20) AFTER email,\nADD COLUMN department VARCHAR(100) AFTER phone,\nADD COLUMN position VARCHAR(100) AFTER department,\nADD COLUMN isActive BOOLEAN DEFAULT TRUE NOT NULL AFTER role;",
-  "returncode": 1,
-  "logs": [
-    "ERROR 8200 (HY000) at line 1: unsupported add column 'username' constraint UNIQUE KEY when altering 'QHAn5mxdYwZFfFZze5gD7q.users'"
-  ]
-}

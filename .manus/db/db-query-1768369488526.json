@@ -1,9 +1,0 @@
-{
-  "query": "INSERT INTO system_settings (settingKey, settingValue, description, category) VALUES \n('require_2fa', 'false', 'Yêu cầu bắt buộc xác thực 2 bước cho tất cả người dùng', 'security'),\n('require_2fa_admin', 'false', 'Yêu cầu bắt buộc xác thực 2 bước cho admin', 'security'),\n('session_timeout_minutes', '1440', 'Thời gian hết hạn phiên đăng nhập (phút)', 'security'),\n('max_sessions_per_user', '5', 'Số phiên đăng nhập tối đa cho mỗi người dùng', 'security')\nON DUPLICATE KEY UPDATE settingKey = settingKey;",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute INSERT INTO system_settings (settingKey, settingValue, description, category) VALUES \n('require_2fa', 'false', 'Yêu cầu bắt buộc xác thực 2 bước cho tất cả người dùng', 'security'),\n('require_2fa_admin', 'false', 'Yêu cầu bắt buộc xác thực 2 bước cho admin', 'security'),\n('session_timeout_minutes', '1440', 'Thời gian hết hạn phiên đăng nhập (phút)', 'security'),\n('max_sessions_per_user', '5', 'Số phiên đăng nhập tối đa cho mỗi người dùng', 'security')\nON DUPLICATE KEY UPDATE settingKey = settingKey;",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 1562
-}

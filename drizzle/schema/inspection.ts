@@ -1,6 +1,6 @@
 // Schema domain: Inspection tables
 import { pgTable, pgEnum, serial, integer, text, timestamp, varchar, decimal, boolean, bigint, index, json } from "drizzle-orm/pg-core";
-import { overallResultEnum, originalResultEnum } from "./enums";
+import { overallResultEnum, originalResultEnum, aiDecisionEnum } from "./enums";
 
 export const productInspections = pgTable("product_inspections", {
   id: serial("id").primaryKey(),
@@ -26,6 +26,17 @@ export const productInspections = pgTable("product_inspections", {
   isArchived: boolean("isArchived").default(false),
   archivedAt: timestamp("archivedAt"),
   archivedBy: integer("archivedBy"),
+  // AI Quality Gate fields
+  aiDecision: aiDecisionEnum("aiDecision"),
+  aiConfidence: decimal("aiConfidence", { precision: 5, scale: 4 }),
+  aiModelId: integer("aiModelId"),
+  aiProcessedAt: timestamp("aiProcessedAt"),
+  aiDetails: json("aiDetails").$type<{
+    predictions?: Array<{ label: string; confidence: number }>;
+    ensembleResults?: Array<{ modelId: number; topLabel: string; confidence: number }>;
+    processingTimeMs?: number;
+    reviewReason?: string;
+  }>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [

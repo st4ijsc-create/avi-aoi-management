@@ -1,9 +1,0 @@
-{
-  "query": "INSERT INTO workstations (code, name, description, processType, orderIndex) VALUES\n('WS-SMT-01', 'SMT Line 1', 'Surface Mount Technology - Dây chuyền gắn linh kiện bề mặt', 'SMT', 1),\n('WS-SMT-02', 'SMT Line 2', 'Surface Mount Technology - Dây chuyền gắn linh kiện bề mặt', 'SMT', 2),\n('WS-DIP-01', 'DIP Station 1', 'Dual In-line Package - Trạm hàn chân cắm', 'DIP', 3),\n('WS-ASM-01', 'Assembly Line 1', 'Dây chuyền lắp ráp chính', 'ASSEMBLY', 4),\n('WS-ASM-02', 'Assembly Line 2', 'Dây chuyền lắp ráp phụ', 'ASSEMBLY', 5),\n('WS-TEST-01', 'Testing Station 1', 'Trạm kiểm tra chức năng', 'TESTING', 6),\n('WS-PKG-01', 'Packaging Line 1', 'Dây chuyền đóng gói', 'PACKAGING', 7);",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute INSERT INTO workstations (code, name, description, processType, orderIndex) VALUES\n('WS-SMT-01', 'SMT Line 1', 'Surface Mount Technology - Dây chuyền gắn linh kiện bề mặt', 'SMT', 1),\n('WS-SMT-02', 'SMT Line 2', 'Surface Mount Technology - Dây chuyền gắn linh kiện bề mặt', 'SMT', 2),\n('WS-DIP-01', 'DIP Station 1', 'Dual In-line Package - Trạm hàn chân cắm', 'DIP', 3),\n('WS-ASM-01', 'Assembly Line 1', 'Dây chuyền lắp ráp chính', 'ASSEMBLY', 4),\n('WS-ASM-02', 'Assembly Line 2', 'Dây chuyền lắp ráp phụ', 'ASSEMBLY', 5),\n('WS-TEST-01', 'Testing Station 1', 'Trạm kiểm tra chức năng', 'TESTING', 6),\n('WS-PKG-01', 'Packaging Line 1', 'Dây chuyền đóng gói', 'PACKAGING', 7);",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 1518
-}

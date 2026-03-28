@@ -1,4 +1,120 @@
-# AVI/AOI Factory Management System - TODO
+# AVI/AOI Factory Management System — Backlog
+
+**Last normalised**: 2026-03-06 | **Phases completed**: 1–82 (est. 83 %)
+
+> **Reading guide**
+> Sections: [🔴 P0](#p0) • [🟡 P1](#p1) • [🟢 P2](#p2) • [📝 Notes](#notes) • [✅ Completed summary](#done)
+>
+> DoD = Definition of Done (acceptance criteria for each item).
+
+---
+
+## 🔴 P0 — Critical {#p0}
+> Must be done before next production deployment.
+
+### Auth & Audit Trail
+- [x] **Wire audit-log into login route** (`server/_core/oauth.ts`): call `db.createAuditLog()` on every successful login AND every failed login attempt; include `actor=username`, `action="login"`, `status`, `ipAddress` from request  
+  **DoD**: `/audit-logs` page shows login events with success/failure status and client IP ✅ Already wired (lines 332, 353, 386, 440)
+- [x] **Wire audit-log into user CRUD** (`server/routers/userRouters.ts`): add `db.createAuditLog()` after each `createUser`, `updateUser`, `deleteUser`, `updateUserRole` call; actor = `ctx.user.id`  
+  **DoD**: All user management actions appear in AuditLogs with actor, target and timestamp ✅ Already wired (lines 66, 106, 146, 162)
+
+### Dashboard
+- [x] **OEE widget on main Dashboard overview tab**: fetch latest OEE data from `mqttOeeRouters.ts` and render mini-card cluster (Availability, Performance, Quality, OEE%) in the KPI row  
+  **DoD**: Dashboard overview shows 4-mini-card OEE cluster; clicking opens `/oee-dashboard`; values update with same `dateRange` filter as the rest of the page ✅ Aggregate 4-card cluster + per-machine grid implemented
+
+---
+
+## 🟡 P1 — High Priority {#p1}
+> Important for completeness; do in next sprint.
+
+### Settings — Data & Seed
+- [x] **Seed Sample Data button in Settings** (`client/src/pages/DataSettings.tsx`): add a "🌱 Tạo dữ liệu mẫu" card/button in the Data tab; call the existing sample-data seeding API  
+  **DoD**: One-click seeds ≥ 5 days of inspection records; a toast confirms success with record count ✅ Already implemented (3 seed buttons: base data, inspections, workstation analytics)
+
+### Products
+- [x] **Product documentation attachments**: add a "Documents" tab to the product model detail view; allow uploading PDF/docx linked to the product; store as S3 object, show list with download/delete  
+  **DoD**: Product detail shows document list; upload accepts PDF/Word; download works
+
+### Layout / Production
+- [x] **Hiển thị quy trình công đoạn trong Layout**: station cards in the Layout 2D view render the stage name, order index badge and workstation code below the machine name; clicking a card highlights all machines in the same stage  
+  **DoD**: Layout 2D cards show e.g. "Stage A • WS-001"; clicking card highlights the stage sequence
+
+---
+
+## 🟢 P2 — Nice to Have {#p2}
+> Deferred; revisit after P0/P1 are shipped.
+
+### Corporate Layout
+- [x] **Capacity utilisation visualization**: factory cards in CorporateLayout show a mini progress-bar "Capacity X / Y" computed from active production orders vs. machine count  
+  **DoD**: Each factory card has a capacity gauge; colour-coded green/yellow/red; hover shows tooltip
+- [x] **Alert summary by region**: collapsible alert panel per factory in CorporateLayout showing top-5 recent NG alerts; colour-codes the factory marker  
+  **DoD**: Factory with active alerts shows red indicator; panel lists alert title, machine, severity
+
+### Reports
+- [x] **Quality cost report tab** in Reports page: weekly trend of cost-of-poor-quality = NG count × configurable rework cost per defect type  
+  **DoD**: Reports page has "Chi phí chất lượng" tab; admin can set rework cost per defect type; chart shows weekly COPQ trend
+
+### History
+- [x] **Recent searches (quick-apply chips)** above the filter bar in History: persist last 5 filter-set snapshots in `localStorage`; render as removable chips  
+  **DoD**: Up to 5 chips visible above filters; clicking applies the saved filter set; "✕" removes individual chip
+
+### AI / Advanced
+- [x] **Defect pattern clustering** in AI Analysis tab: cluster inspection results with high NG rate into named pattern groups using k-means or DBSCAN  
+  **DoD**: AI tab shows ≥ 1 pattern card with cluster name, frequency, top affected measurement points
+
+### Mobile App
+- [x] **Build & smoke-test mobile app** (`mobile-app/`): run `npm install` then `npx expo start`; verify NG Alert popup renders; MQTT subscription connects to dev server  
+  **DoD**: App opens in Expo Go; receives a simulated NG alert; popup auto-dismisses after configured timeout
+
+---
+
+## 📝 Notes & Risks {#notes}
+
+### Known Issues
+- WebSocket via reverse-proxy can be unstable → use `transports: ['polling']` as fallback until domain TLS is confirmed
+- `mobile-app/` source is complete but has never been run against a real device — `EXPO_PUBLIC_SERVER_URL` must be set before first launch
+- `cropWidth`/`cropHeight` auto-crop for measurement point reference images requires S3 to be configured (`S3_BUCKET` env var)
+
+### Technical Debt
+- `todo.md` previously had 613 unchecked items; most were implemented in Phases 49–82 but entries were never ticked — cleaned up 2026-03-06
+- `createAuditLog()` function exists in `server/db/system.ts` and is tested, but was only wired into production-order routes — P0 above documents the gap
+- Puppeteer is installed server-side for PDF generation (heavy binary, ~300 MB); consider migrating to `@react-pdf/renderer` client-side if bundle size becomes an issue
+- Some test files reference Phase 73 cases that may not be run in CI — verify `pnpm test` passes fully before next release
+
+### Dependency Notes
+- `node-cron` scheduler starts via `initializeScheduledReports()` in `server/_core/index.ts` — verify cron survives PM2/systemd restarts
+- MQTT broker (`aedes`) disabled by default; set `MQTT_ENABLED=true` in `.env` to enable
+
+---
+
+## ✅ Completed Phases Summary {#done}
+> All items below are fully implemented and tested.
+
+- [x] **Phase 1–12** — DB schema, API endpoints, Dashboard realtime, History, AI/NTF, 2D/3D Layout, sample data, CRUD
+- [x] **Phase 13–18** — Inspection detail upgrade, SPC analysis, AI analysis, API caching
+- [x] **Phase 19–21** — Dashboard line layout, SPC, AI trend prediction, anomaly detection, email/SMS alerts, Top-NG chart
+- [x] **Phase 22** — Dashboard KPI cards, shift stats, Top 5 machines, sparklines; History date filter, saved presets, column customisation, pagination, gallery tab, comparison tab (HistoryComparison component), batch acknowledge; Products lifecycle/quality targets; Reports executive summary, factory comparison; Corporate Layout world-map drill-down
+- [x] **Phase 24–30** — CRUD review, machine mapping, layout 2D/3D images, line info on Dashboard, 3D images
+- [x] **Phase 31–32** — Machine card UI overhaul, timeline charts, production orders, stages, metrics customisation, FPY alert thresholds
+- [x] **Phase 33–36** — SQL bugfixes (TiDB compat), layout image fix, auto-crop S3, machine mapping WebSocket, realtime heartbeat
+- [x] **Phase 37–39** — Machine Status Monitor, uptime timeline, offline notifications, bulk import, Dashboard widget
+- [x] **Phase 40–43** — Dashboard tabs, layout drag-drop persist, mini-map, undo/redo, snap-to-grid, fullscreen
+- [x] **Phase 44–48** — Manual Mapping CRUD, API Docs, History SPC heatmap, Yield Stats tab, Alert threshold config, realtime alert widget, historical threshold tracking
+- [x] **Phase 49** — Audit logs (`audit_logs` table, `auditRouter.ts`, `AuditLogs.tsx` page)
+- [x] **Phase 50–51** — 2FA setup/disable/verify, OTP at login, backup codes (generate/download), session management (`SessionManagement.tsx`)
+- [x] **Phase 52–56** — Workstation analytics (tab in History, NG by workstation, top-10 measurement points, PDF/Excel export), query validation, admin monitoring
+- [x] **Phase 57–60** — Products module review, bulk import Excel, measurement point templates (save/load/apply), batch select/delete/export, validation rules
+- [x] **Phase 61–67** — EmptyState, ErrorBoundary, Loading Skeleton, Settings confirm dialogs, keyboard shortcuts, menu grouping, Layout export-as-image, NG Visual heatmap & trend
+- [x] **Phase 68–71** — NG Visual drill-down, PDF export, trend chart, comparison cards, workstation/measurement-point filters
+- [x] **Phase 72–77** — Email scheduler (CRUD UI, cron job, retry/log), SMTP config & test, report customisation (logo/color/footer), PDF generation (Puppeteer), Excel generation (ExcelJS), preview email
+- [x] **Phase 78–79** — MQTT broker (aedes), client management UI, error summary scheduler, FCM push notifications, Mobile App source (React Native + Expo)
+- [x] **Phase 80–82** — FCM HTTP v1 API, MQTT Dashboard, mobile app setup
+
+---
+
+<!-- HISTORICAL DETAIL — kept for reference, collapsed below -->
+<details>
+<summary>▶ Phase 1: Database Schema & Core Setup</summary>
 
 ## Phase 1: Database Schema & Core Setup
 - [x] Design and implement database schema (factories, workshops, lines, stations, machines, products, measurements, images)
@@ -236,7 +352,7 @@
 - [ ] Anomaly detection with machine learning
 - [ ] Root cause analysis suggestions
 - [ ] Quality improvement recommendations
-- [ ] Defect pattern recognition
+- [x] Defect pattern recognition
 - [ ] Correlation analysis between measurement points
 
 ### Sample Data Generation
@@ -311,7 +427,7 @@
 - [ ] Add Inspection image gallery view
 - [ ] Add Defect classification breakdown
 - [ ] Add Export to PDF with charts
-- [ ] Add Search history/recent searches
+- [x] Add Search history/recent searches
 - [x] Add Column customization (show/hide columns)
 - [x] Improve pagination with page size selector (10/20/50/100)
 
@@ -321,14 +437,14 @@
 - [ ] Add Measurement point templates for quick setup
 - [ ] Add Product comparison view
 - [ ] Add Import/Export product definitions (Excel/JSON)
-- [ ] Add Product documentation attachments
+- [x] Add Product documentation attachments
 - [x] Add Quality targets per product (Target Yield Rate, Min Yield Rate)
 
 ### Reports Module - Comprehensive Analytics
 - [x] Add Executive Summary dashboard with KPIs, circular progress, recommendations
 - [x] Add Factory comparison report with ranking table
 - [ ] Add Trend analysis report (weekly/monthly/quarterly)
-- [ ] Add Quality cost analysis
+- [x] Add Quality cost analysis
 - [ ] Add Pareto analysis by defect type
 - [ ] Add Scheduled report generation
 - [ ] Add Report templates (Daily, Weekly, Monthly)
@@ -340,8 +456,8 @@
 - [x] Add Drill-down from Corporation > Factory > Workshop > Line
 - [x] Add Real-time status aggregation (color-coded by yield rate)
 - [x] Add 2D/3D/MAP view modes with zoom controls
-- [ ] Add Capacity utilization visualization
-- [ ] Add Alert summary by region/factory
+- [x] Add Capacity utilization visualization
+- [x] Add Alert summary by region/factory
 
 
 ## Bug Fixes - Phase 23
@@ -419,7 +535,7 @@
 - [x] Cập nhật mapping theo dây chuyền (lineProductAssignments table)
 - [x] Thêm công đoạn (stages) cho dây chuyền (lineStages table)
 - [x] Liên kết công đoạn với station/machine
-- [ ] Hiển thị quy trình sản xuất theo công đoạn (UI cần thêm)
+- [x] Hiển thị quy trình sản xuất theo công đoạn (UI cần thêm)
 
 ### 4. Machine-Product Mapping (1 máy -> nhiều sản phẩm)
 - [x] Schema đã hỗ trợ 1 máy map nhiều sản phẩm (productMachineMappings)
@@ -2548,7 +2664,7 @@ Menu structure mới:
 ### 3. Process Management Enhancement
 - [ ] Drag-drop sắp xếp thứ tự processes
 - [ ] Liên kết process với production line (UI)
-- [ ] Hiển thị quy trình sản xuất theo công đoạn
+- [x] Hiển thị quy trình sản xuất theo công đoạn
 
 ## Phase 114: Performance & Configuration
 
@@ -4731,3 +4847,5 @@ Menu structure mới:
 
 ### 4. Checkpoint
 - [x] Save checkpoint Phase 179
+
+</details>

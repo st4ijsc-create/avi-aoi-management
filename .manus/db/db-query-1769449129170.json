@@ -1,9 +1,0 @@
-{
-  "query": "ALTER TABLE mqtt_client_profiles \nADD COLUMN maxReconnectAttempts INT NOT NULL DEFAULT 10,\nADD COLUMN reconnectBackoffMultiplier DECIMAL(3,1) NOT NULL DEFAULT 1.5,\nADD COLUMN maxReconnectDelay INT NOT NULL DEFAULT 60000,\nADD COLUMN autoReconnect BOOLEAN NOT NULL DEFAULT TRUE;",
-  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2bBfAdpTc8yvngq.60b3e82b8cf5 --database QHAn5mxdYwZFfFZze5gD7q --execute ALTER TABLE mqtt_client_profiles \nADD COLUMN maxReconnectAttempts INT NOT NULL DEFAULT 10,\nADD COLUMN reconnectBackoffMultiplier DECIMAL(3,1) NOT NULL DEFAULT 1.5,\nADD COLUMN maxReconnectDelay INT NOT NULL DEFAULT 60000,\nADD COLUMN autoReconnect BOOLEAN NOT NULL DEFAULT TRUE;",
-  "rows": [],
-  "messages": [],
-  "stdout": "",
-  "stderr": "",
-  "execution_time_ms": 2796
-}
