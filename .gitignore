@@ -106,3 +106,12 @@ temp/
 *.db
 *.sqlite
 *.sqlite3
+
+# Project-specific build directories (unversioned subprojects)
+FactoryAlertSystem/
+android-mqtt-app/android/.gradle/
+mobile-app/node_modules/
+
+# Deployment packages
+offline-deploy/
+_deploy/

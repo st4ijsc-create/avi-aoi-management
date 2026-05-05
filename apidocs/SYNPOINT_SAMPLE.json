@@ -1,0 +1,195 @@
+{
+  "baseUrl": "http://localhost:3000",
+  "auth": {
+    "x-api-key": "your-machine-api-key",
+    "machineCode": "AOI-01"
+  },
+  "syncPoints": {
+    "endpoint": "/api/machine/sync-points",
+    "method": "POST",
+    "request": {
+      "machineCode": "AOI-01",
+      "productModelCode": "PROD-A",
+      "sourceImageWidth": 1280,
+      "sourceImageHeight": 720,
+      "clientVersion": "factory-alert-app-1.0.15",
+      "points": [
+        {
+          "code": "CHECK-01",
+          "name": "Diem check 1",
+          "description": "Kiem tra vet tray",
+          "measurementType": "VISUAL",
+          "unit": null,
+          "lowerLimit": null,
+          "upperLimit": null,
+          "nominalValue": null,
+          "positionX": 250,
+          "positionY": 140,
+          "radius": 20,
+          "normalizedX": 0.1953125,
+          "normalizedY": 0.19444444,
+          "normalizedRadius": 0.015625,
+          "cropWidth": 100,
+          "cropHeight": 100,
+          "orderIndex": 0,
+          "workstationCode": "WS-01",
+          "isActive": true,
+          "imageUrl": "https://example.com/ref/CHECK-01.jpg",
+          "imageMimeType": "image/jpeg"
+        },
+        {
+          "code": "CHECK-02",
+          "name": "Diem check 2",
+          "measurementType": "VISUAL",
+          "positionX": 500,
+          "positionY": 320,
+          "radius": 24,
+          "cropWidth": 100,
+          "cropHeight": 100,
+          "orderIndex": 1,
+          "isActive": true
+        }
+      ]
+    },
+    "response": {
+      "success": true,
+      "machineId": 1,
+      "productModelId": 5,
+      "productModelCode": "PROD-A",
+      "pointsConfigVersion": 6,
+      "total": 2,
+      "created": 1,
+      "updated": 1,
+      "failed": 0,
+      "coordTransformed": 2,
+      "serverImageWidth": 1920,
+      "serverImageHeight": 1080,
+      "points": [
+        { "code": "CHECK-01", "id": 101, "action": "updated", "coordTransformed": true },
+        { "code": "CHECK-02", "id": 102, "action": "created", "coordTransformed": true }
+      ],
+      "errors": []
+    }
+  },
+  "checkPointsVersion": {
+    "endpoint": "/api/machine/check-points-version?productModelCode=PROD-A",
+    "method": "GET",
+    "response": {
+      "success": true,
+      "productModels": [
+        {
+          "productModelCode": "PROD-A",
+          "pointsConfigVersion": 6,
+          "imageWidth": 1920,
+          "imageHeight": 1080
+        }
+      ]
+    }
+  },
+  "deltaSyncPoints": {
+    "endpoint": "/api/machine/delta-sync-points?productModelCode=PROD-A&sinceVersion=5",
+    "method": "GET",
+    "responseHasChanges": {
+      "success": true,
+      "hasChanges": true,
+      "currentVersion": 6,
+      "sinceVersion": 5,
+      "serverImageWidth": 1920,
+      "serverImageHeight": 1080,
+      "points": [
+        {
+          "id": 101,
+          "code": "CHECK-01",
+          "name": "Diem check 1",
+          "description": "Kiem tra vet tray",
+          "measurementType": "VISUAL",
+          "unit": null,
+          "lowerLimit": null,
+          "upperLimit": null,
+          "nominalValue": null,
+          "positionX": 375,
+          "positionY": 210,
+          "radius": 30,
+          "normalizedX": "0.19531250",
+          "normalizedY": "0.19444444",
+          "normalizedRadius": "0.01562500",
+          "cropWidth": 100,
+          "cropHeight": 100,
+          "orderIndex": 0,
+          "isActive": true,
+          "lastModifiedAt": "2026-04-21T08:30:00.000Z"
+        }
+      ]
+    },
+    "responseNoChanges": {
+      "success": true,
+      "hasChanges": false,
+      "currentVersion": 6,
+      "sinceVersion": 6,
+      "points": []
+    }
+  },
+  "getPoints": {
+    "endpoint": "/api/machine/get-points?productModelCode=PROD-A",
+    "method": "GET",
+    "response": {
+      "success": true,
+      "machineId": 1,
+      "machineCode": "AOI-01",
+      "productModels": [
+        {
+          "productModelId": 5,
+          "productModelCode": "PROD-A",
+          "productModelName": "Product A",
+          "referenceImageUrl": "/uploads/product-models/5/ref.jpg",
+          "imageWidth": 1920,
+          "imageHeight": 1080,
+          "pointsConfigVersion": 6,
+          "totalPoints": 2,
+          "points": [
+            {
+              "id": 101,
+              "code": "CHECK-01",
+              "name": "Diem check 1",
+              "measurementType": "VISUAL",
+              "positionX": 375,
+              "positionY": 210,
+              "radius": 30,
+              "normalizedX": 0.1953125,
+              "normalizedY": 0.19444444,
+              "normalizedRadius": 0.015625,
+              "cropWidth": 100,
+              "cropHeight": 100,
+              "orderIndex": 0,
+              "isActive": true,
+              "workstationId": 1
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "syncPointImage": {
+    "endpoint": "/api/machine/sync-point-image",
+    "method": "POST",
+    "request": {
+      "machineCode": "AOI-01",
+      "productModelCode": "PROD-A",
+      "pointCode": "CHECK-01",
+      "imageUrl": "https://example.com/ref/CHECK-01-v2.jpg",
+      "imageMimeType": "image/jpeg"
+    },
+    "response": {
+      "success": true,
+      "machineId": 1,
+      "productModelId": 5,
+      "productModelCode": "PROD-A",
+      "pointId": 101,
+      "pointCode": "CHECK-01",
+      "referenceImageUrl": "/uploads/product-models/5/points/CHECK-01/ref.jpg",
+      "referenceImageKey": "product-models/5/points/CHECK-01/ref.jpg",
+      "imageSkipped": false,
+      "imageHash": "a6f8f1f2d9c0..."
+    }
+  }
+}
