@@ -1744,7 +1744,7 @@ export function MqttProfileManagementContent() {
               <CardContent>
                 {reconnectHeatmap && (
                   <div className="overflow-x-auto">
-                    <div className="min-w-[600px]">
+                    <div className="min-w-150">
                       {/* Hour labels */}
                       <div className="flex mb-1">
                         <div className="w-12"></div>

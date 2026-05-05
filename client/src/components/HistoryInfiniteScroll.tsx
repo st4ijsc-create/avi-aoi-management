@@ -122,21 +122,21 @@ export function HistoryInfiniteScroll({ filters, machines }: HistoryInfiniteScro
     switch (result) {
       case "OK":
         return (
-          <Badge className="status-ok gap-1">
+          <Badge className="bg-success/20 text-success border-success/30 gap-1">
             <CheckCircle2 className="h-3 w-3" />
             OK
           </Badge>
         );
       case "NG":
         return (
-          <Badge className="status-ng gap-1">
+          <Badge className="bg-destructive/20 text-destructive border-destructive/30 gap-1">
             <XCircle className="h-3 w-3" />
             NG
           </Badge>
         );
       case "NTF":
         return (
-          <Badge className="status-ntf gap-1">
+          <Badge className="bg-warning/20 text-warning border-warning/30 gap-1">
             <AlertTriangle className="h-3 w-3" />
             NTF
           </Badge>

@@ -21,4 +21,6 @@ export const ENV = {
   licenseProductCode: clean(process.env.LICENSE_PRODUCT_CODE),
   licenseEncryptionSecret: clean(process.env.LICENSE_ENCRYPTION_SECRET),
   licenseFilePath: clean(process.env.LICENSE_FILE_PATH),
+  /** Set LICENSE_BYPASS=true in .env to skip all license checks (offline deployment) */
+  licenseBypass: process.env.LICENSE_BYPASS === 'true',
 };

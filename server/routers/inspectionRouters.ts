@@ -242,7 +242,7 @@ export const inspectionRouter = router({
       if (!dbInstance) return [];
 
       const { measurementResults } = await import("../../drizzle/schema/inspection");
-      const { measurementPointDefs } = await import("../../drizzle/schema/product");
+      const { measurementPointDefs, productModels } = await import("../../drizzle/schema/product");
       const { productInspections } = await import("../../drizzle/schema/inspection");
       const { sql, eq, and, gte, lte, desc } = await import("drizzle-orm");
 
@@ -263,6 +263,8 @@ export const inspectionRouter = router({
           pointCode: measurementPointDefs.code,
           pointName: measurementPointDefs.name,
           productModelId: measurementPointDefs.productModelId,
+          productCode: productModels.code,
+          productName: productModels.name,
           measurementType: measurementPointDefs.measurementType,
           ngCount: sql<number>`count(*)::int`.as("ngCount"),
           distinctInspections: sql<number>`count(distinct ${measurementResults.inspectionId})::int`.as("distinctInspections"),
@@ -270,12 +272,15 @@ export const inspectionRouter = router({
         .from(measurementResults)
         .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
         .innerJoin(measurementPointDefs, eq(measurementResults.pointDefId, measurementPointDefs.id))
+        .leftJoin(productModels, eq(measurementPointDefs.productModelId, productModels.id))
         .where(and(...conditions))
         .groupBy(
           measurementResults.pointDefId,
           measurementPointDefs.code,
           measurementPointDefs.name,
           measurementPointDefs.productModelId,
+          productModels.code,
+          productModels.name,
           measurementPointDefs.measurementType,
         )
         .orderBy(desc(sql`count(*)`))
@@ -303,10 +308,31 @@ export const inspectionRouter = router({
           name: p.pointName,
           ngCount: p.ngCount,
           productModelId: p.productModelId,
+          productCode: p.productCode,
+          productName: p.productName,
         })),
       }));
 
       return patterns;
+    }),
+
+  gallery: protectedProcedure
+    .input(z.object({
+      factoryCode: z.string().optional(),
+      workshopCode: z.string().optional(),
+      lineCode: z.string().optional(),
+      stationCode: z.string().optional(),
+      machineCode: z.string().optional(),
+      serialNumber: z.string().optional(),
+      productModel: z.string().optional(),
+      result: z.enum(["OK", "NG", "NTF"]).optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      limit: z.number().min(1).max(500).optional(),
+      offset: z.number().min(0).optional(),
+    }))
+    .query(async ({ input, ctx }) => {
+      return db.getGalleryImages({ ...input, userId: ctx.user.id, userRole: ctx.user.role });
     }),
 });
 
@@ -617,4 +643,5 @@ Respond in JSON format:
         points: stats,
       };
     }),
+
 });

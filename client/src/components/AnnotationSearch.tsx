@@ -220,7 +220,7 @@ export function AnnotationSearch({ onSelectImage }: AnnotationSearchProps) {
             <div className="space-y-2">
               <Label className="text-xs text-muted-foreground">{t('annotation.search.color')}</Label>
               <Select value={selectedColor} onValueChange={setSelectedColor}>
-                <SelectTrigger className="w-[160px] h-8">
+                <SelectTrigger className="w-40 h-8">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -249,14 +249,14 @@ export function AnnotationSearch({ onSelectImage }: AnnotationSearchProps) {
                   type="date"
                   value={dateFrom}
                   onChange={(e) => setDateFrom(e.target.value)}
-                  className="h-8 w-[130px]"
+                  className="h-8 w-32.5"
                 />
                 <span className="text-muted-foreground">{t('common.to')}</span>
                 <Input
                   type="date"
                   value={dateTo}
                   onChange={(e) => setDateTo(e.target.value)}
-                  className="h-8 w-[130px]"
+                  className="h-8 w-32.5"
                 />
               </div>
             </div>
@@ -287,7 +287,7 @@ export function AnnotationSearch({ onSelectImage }: AnnotationSearchProps) {
                       <CardContent className="p-3">
                         <div className="flex gap-3">
                           {/* Image Thumbnail */}
-                          <div className="w-24 h-24 rounded-md overflow-hidden bg-muted flex-shrink-0">
+                          <div className="w-24 h-24 rounded-md overflow-hidden bg-muted shrink-0">
                             <img
                               src={firstAnnotation.imageUrl}
                               alt="Annotated image"
@@ -327,7 +327,7 @@ export function AnnotationSearch({ onSelectImage }: AnnotationSearchProps) {
                                     <IconComp className="h-3 w-3" />
                                     {ann.annotationType}
                                     {ann.annotationText && (
-                                      <span className="max-w-[80px] truncate">
+                                      <span className="max-w-20 truncate">
                                         : {ann.annotationText}
                                       </span>
                                     )}
@@ -350,7 +350,7 @@ export function AnnotationSearch({ onSelectImage }: AnnotationSearchProps) {
                           </div>
 
                           {/* Action */}
-                          <Button variant="ghost" size="icon" className="flex-shrink-0">
+                          <Button variant="ghost" size="icon" className="shrink-0">
                             <ExternalLink className="h-4 w-4" />
                           </Button>
                         </div>

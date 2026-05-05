@@ -605,6 +605,139 @@ export const mqttClientRouter = router({
       const { calculateLineBenchmarks } = await import('../_core/socket');
       return calculateLineBenchmarks(input.machines, { start: input.startDate, end: input.endDate });
     }),
+
+  // Send CONFIGURE command to a device via MQTT
+  sendConfigure: adminProcedure
+    .input(z.object({
+      deviceId: z.string().min(1),
+      stationId: z.number().optional(),
+      processId: z.number().optional(),
+      topics: z.array(z.string()).optional(),
+      settings: z.record(z.any()).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { sendConfigureCommand } = await import('../services/mqttService');
+      const { deviceId, ...command } = input;
+      const result = await sendConfigureCommand(deviceId, command);
+      return result;
+    }),
+
+  // Send full configuration profile to one or more devices via MQTT
+  sendBulkConfigure: adminProcedure
+    .input(z.object({
+      deviceIds: z.array(z.string().min(1)).min(1),
+      profile: z.object({
+        // MQTT settings
+        mqtt: z.object({
+          brokerAddress: z.string().optional(),
+          port: z.number().optional(),
+          protocol: z.enum(['tcp', 'websocket']).optional(),
+          useSSL: z.boolean().optional(),
+          topics: z.array(z.string()).optional(),
+          keepAlive: z.number().optional(),
+          reconnectPeriod: z.number().optional(),
+          connectTimeout: z.number().optional(),
+        }).optional(),
+        // Notification settings
+        notification: z.object({
+          enabled: z.boolean().optional(),
+          sound: z.boolean().optional(),
+          vibration: z.boolean().optional(),
+          severityFilter: z.array(z.string()).optional(),
+          quietHoursEnabled: z.boolean().optional(),
+          quietHoursStart: z.string().optional(),
+          quietHoursEnd: z.string().optional(),
+          stationFilterEnabled: z.boolean().optional(),
+          stationFilters: z.array(z.string()).optional(),
+          floatingBubbleEnabled: z.boolean().optional(),
+        }).optional(),
+        // App settings
+        app: z.object({
+          language: z.enum(['vi', 'en', 'zh']).optional(),
+          theme: z.enum(['light', 'dark', 'system']).optional(),
+          autoReconnect: z.boolean().optional(),
+          keepScreenOn: z.boolean().optional(),
+          maxQueueSize: z.number().optional(),
+          alertRetentionDays: z.number().optional(),
+          apiBaseUrl: z.string().optional(),
+          subscriptionMode: z.enum(['manual', 'hierarchy']).optional(),
+          ngFlashDurationMs: z.number().optional(),
+          ngBubbleDismissSec: z.number().optional(),
+          ngExplosionDismissSec: z.number().optional(),
+          alertAnimationEnabled: z.boolean().optional(),
+          alertAnimationType: z.enum(['bomb', 'alarm', 'triangle']).optional(),
+          alertAnimationDurationSec: z.number().optional(),
+          proactivePollingEnabled: z.boolean().optional(),
+          proactivePollingIntervalSec: z.number().optional(),
+          workstationId: z.number().nullable().optional(),
+          filterPointsByWorkstation: z.boolean().optional(),
+          ngAutoClearColor: z.boolean().optional(),
+          ngMarkerScale: z.number().optional(),
+          canvasImageMode: z.enum(['fit', 'fill', 'cover']).optional(),
+          autoCheckUpdate: z.boolean().optional(),
+          debugMode: z.boolean().optional(),
+          mqttHealthCheckInterval: z.number().optional(),
+          mqttRetryMaxAttempts: z.number().optional(),
+          mqttRetryInterval: z.number().optional(),
+        }).optional(),
+        // Station/process assignment
+        stationId: z.number().optional(),
+        processId: z.number().optional(),
+      }),
+    }))
+    .mutation(async ({ input }) => {
+      const { sendConfigureCommand } = await import('../services/mqttService');
+      const results: { deviceId: string; success: boolean; commandId?: string; error?: string }[] = [];
+
+      for (const deviceId of input.deviceIds) {
+        try {
+          const result = await sendConfigureCommand(deviceId, {
+            stationId: input.profile.stationId,
+            processId: input.profile.processId,
+            topics: input.profile.mqtt?.topics,
+            settings: {
+              mqtt: input.profile.mqtt,
+              notification: input.profile.notification,
+              app: input.profile.app,
+            },
+          });
+          results.push({ deviceId, success: true, commandId: result.commandId });
+        } catch (err) {
+          results.push({ deviceId, success: false, error: (err as Error).message });
+        }
+      }
+
+      return {
+        total: input.deviceIds.length,
+        succeeded: results.filter(r => r.success).length,
+        failed: results.filter(r => !r.success).length,
+        results,
+      };
+    }),
+
+  // Send a command to a specific device via MQTT (e.g., RESTART_APP)
+  sendCommand: adminProcedure
+    .input(z.object({
+      deviceId: z.string().min(1),
+      command: z.enum(['RESTART_APP', 'CHECK_UPDATE', 'FORCE_UPDATE']),
+      data: z.record(z.any()).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      // SOFTWARE_UPDATE commands use dedicated message type
+      if (input.command === 'CHECK_UPDATE' || input.command === 'FORCE_UPDATE') {
+        const { sendSoftwareUpdateCommand } = await import('../services/mqttService');
+        return sendSoftwareUpdateCommand(input.deviceId, input.command, input.data);
+      }
+      // Other commands (RESTART_APP) use CONFIGURE channel
+      const { sendConfigureCommand } = await import('../services/mqttService');
+      const result = await sendConfigureCommand(input.deviceId, {
+        settings: {
+          _command: input.command,
+          ...(input.data || {}),
+        },
+      });
+      return result;
+    }),
 });
 
 // ============================================================

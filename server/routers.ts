@@ -60,6 +60,7 @@ import { productionDashboardRouter } from "./routers/productionDashboardRouter";
 import { stationAnalysisRouter } from "./routers/stationAnalysisRouter";
 import { hierarchyTreeRouter } from "./routers/hierarchyTreeRouter";
 import { mqttNgAlertSettingsRouter } from "./routers/mqttNgAlertSettingsRouter";
+import { mqttSoftwareVersionRouter } from "./routers/mqttSoftwareVersionRouter";
 import { aiModelRouter } from "./routers/aiModelRouter";
 import { aiAdvancedRouter } from "./routers/aiAdvancedRouter";
 import { aiQualityGateRouter } from "./routers/aiQualityGateRouter";
@@ -74,6 +75,9 @@ import { aiLocalTrainingRouter } from "./routers/aiLocalTrainingRouter";
 import { aiChatRouter } from "./routers/aiChatRouter";
 import { aiAnalysisHubRouter } from "./routers/aiAnalysisHubRouter";
 import { aiSettingsRouter } from "./routers/aiSettingsRouter";
+import { aiGgufRouter } from "./routers/aiGgufRouter";
+import { aiInspectionAnalyticsRouter } from "./routers/aiInspectionAnalyticsRouter";
+import { aiSpecialistAgentRouter } from "./routers/aiSpecialistAgentRouter";
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -329,6 +333,9 @@ export const appRouter = router({
   // MQTT NG Alert Settings
   mqttNgAlertSettings: mqttNgAlertSettingsRouter,
 
+  // MQTT Software Version Management
+  mqttSoftwareVersion: mqttSoftwareVersionRouter,
+
   // AI Model Management & Inference
   aiModel: aiModelRouter,
 
@@ -364,6 +371,12 @@ export const appRouter = router({
   aiAnalysisHub: aiAnalysisHubRouter,
   // AI Settings — API keys, model config, system config
   aiSettings: aiSettingsRouter,
+  // AI GGUF — Local LLM model management & inference
+  aiGguf: aiGgufRouter,
+  // AI Specialist Agents — Data/Backend/Frontend/QA assistants on local GGUF
+  aiSpecialistAgent: aiSpecialistAgentRouter,
+  // AI Inspection Analytics — Trend, Pareto, forecast, SPC, risk
+  aiInspectionAnalytics: aiInspectionAnalyticsRouter,
 });
 
 export type AppRouter = typeof appRouter;

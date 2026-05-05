@@ -52,6 +52,7 @@ import {
   X,
   SquareCheck
 } from "lucide-react";
+import { LayoutGrid, List } from "lucide-react";
 import BarcodeScanner from "@/components/BarcodeScanner";
 import ImageGallery, { GalleryImage } from "@/components/ImageGallery";
 import { EmptyState, NoWorkstationData, NoChartData } from "@/components/EmptyState";
@@ -92,6 +93,7 @@ export default function History() {
   const [analysisLimit, setAnalysisLimit] = useState(100);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [pageSize, setPageSize] = useState(20);
+  const [listViewMode, setListViewMode] = useState<"card" | "table">("card");
   const [showColumnSettings, setShowColumnSettings] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState({
     serialNumber: true,
@@ -238,6 +240,22 @@ export default function History() {
   const { data: defectClusters } = trpc.inspection.defectPatternClusters.useQuery({
     startDate: dateRangeValues.startDate,
     endDate: dateRangeValues.endDate,
+  });
+
+  // Fetch gallery images (with measurement results that have images)
+  const { data: galleryData, isLoading: isLoadingGallery } = trpc.inspection.gallery.useQuery({
+    factoryCode: filters.factoryCode || undefined,
+    workshopCode: filters.workshopCode || undefined,
+    lineCode: filters.lineCode || undefined,
+    stationCode: filters.stationCode || undefined,
+    machineCode: filters.machineCode || undefined,
+    serialNumber: filters.serialNumber || undefined,
+    productModel: filters.productModel || undefined,
+    result: filters.result !== "all" ? filters.result : undefined,
+    startDate: dateRangeValues.startDate,
+    endDate: dateRangeValues.endDate,
+    limit: 200,
+    offset: 0,
   });
 
   // Fetch workstation data
@@ -829,21 +847,21 @@ export default function History() {
     switch (result) {
       case "OK":
         return (
-          <Badge className="status-ok gap-1">
+          <Badge className="bg-success/20 text-success border-success/30 gap-1">
             <CheckCircle2 className="h-3 w-3" />
             OK
           </Badge>
         );
       case "NG":
         return (
-          <Badge className="status-ng gap-1">
+          <Badge className="bg-destructive/20 text-destructive border-destructive/30 gap-1">
             <XCircle className="h-3 w-3" />
             NG
           </Badge>
         );
       case "NTF":
         return (
-          <Badge className="status-ntf gap-1">
+          <Badge className="bg-warning/20 text-warning border-warning/30 gap-1">
             <AlertTriangle className="h-3 w-3" />
             NTF
           </Badge>
@@ -1068,9 +1086,9 @@ export default function History() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    {savedFilters.map((sf, idx) => (
+                    {savedFilters.map((sf) => (
                       <DropdownMenuItem 
-                        key={idx}
+                        key={sf.name}
                         onClick={() => {
                           setFilters(sf.filters);
                           setPage(1);
@@ -1138,7 +1156,7 @@ export default function History() {
                   <div className="flex items-center gap-2">
                     {/* Page Size Selector */}
                     <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
-                      <SelectTrigger className="w-[100px]">
+                      <SelectTrigger className="w-25">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1148,6 +1166,28 @@ export default function History() {
                         <SelectItem value="100">{t("history.perPage", { count: 100 })}</SelectItem>
                       </SelectContent>
                     </Select>
+
+                    {/* View Mode Toggle */}
+                    <div className="flex items-center border rounded-md">
+                      <Button 
+                        variant={listViewMode === "card" ? "default" : "ghost"} 
+                        size="icon" 
+                        className="rounded-r-none h-9 w-9"
+                        onClick={() => setListViewMode("card")}
+                        title={t("history.cardView") || "Card View"}
+                      >
+                        <LayoutGrid className="h-4 w-4" />
+                      </Button>
+                      <Button 
+                        variant={listViewMode === "table" ? "default" : "ghost"} 
+                        size="icon" 
+                        className="rounded-l-none h-9 w-9"
+                        onClick={() => setListViewMode("table")}
+                        title={t("history.tableView") || "Table View"}
+                      >
+                        <List className="h-4 w-4" />
+                      </Button>
+                    </div>
 
                     {/* Column Settings */}
                     <Popover open={showColumnSettings} onOpenChange={setShowColumnSettings}>
@@ -1282,6 +1322,96 @@ export default function History() {
                   </div>
                 ) : data?.data && data.data.length > 0 ? (
                   <div className="space-y-3">
+                    {listViewMode === "table" ? (
+                      /* Table View */
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-border bg-muted/50">
+                              <th className="text-left p-3 w-10">
+                                <Checkbox
+                                  checked={isSelectAll}
+                                  onCheckedChange={handleSelectAll}
+                                />
+                              </th>
+                              {visibleColumns.serialNumber && <th className="text-left p-3 font-medium">{t("history.serialNumberLabel")}</th>}
+                              {visibleColumns.machine && <th className="text-left p-3 font-medium">{t("history.machine")}</th>}
+                              {visibleColumns.result && <th className="text-left p-3 font-medium">{t("history.result")}</th>}
+                              {visibleColumns.time && <th className="text-left p-3 font-medium">{t("common.time")}</th>}
+                              {visibleColumns.productModel && <th className="text-left p-3 font-medium">{t("history.model")}</th>}
+                              {visibleColumns.factory && <th className="text-left p-3 font-medium">{t("history.factory")}</th>}
+                              {visibleColumns.workshop && <th className="text-left p-3 font-medium">{t("history.workshopLabel")}</th>}
+                              {visibleColumns.line && <th className="text-left p-3 font-medium">{t("dashboard.productionLine")}</th>}
+                              {visibleColumns.station && <th className="text-left p-3 font-medium">{t("history.station")}</th>}
+                              {visibleColumns.okCount && <th className="text-right p-3 font-medium">OK</th>}
+                              {visibleColumns.ngCount && <th className="text-right p-3 font-medium">NG</th>}
+                              {visibleColumns.ntfCount && <th className="text-right p-3 font-medium">NTF</th>}
+                              <th className="text-right p-3 w-20"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {data.data.map((inspection) => (
+                              <tr 
+                                key={inspection.id}
+                                className={`border-b border-border/50 transition-colors ${selectedIds.has(inspection.id) ? 'bg-primary/10' : 'hover:bg-muted/30'}`}
+                              >
+                                <td className="p-3">
+                                  <Checkbox
+                                    checked={selectedIds.has(inspection.id)}
+                                    onCheckedChange={(checked) => handleSelectItem(inspection.id, !!checked)}
+                                  />
+                                </td>
+                                {visibleColumns.serialNumber && (
+                                  <td className="p-3 font-medium">{inspection.serialNumber}</td>
+                                )}
+                                {visibleColumns.machine && (
+                                  <td className="p-3 text-muted-foreground">{getMachineName(inspection.machineId)}</td>
+                                )}
+                                {visibleColumns.result && (
+                                  <td className="p-3">{getResultBadge(inspection.overallResult)}</td>
+                                )}
+                                {visibleColumns.time && (
+                                  <td className="p-3 text-muted-foreground">{formatDate(new Date(inspection.inspectionTime), "dd/MM/yyyy HH:mm:ss")}</td>
+                                )}
+                                {visibleColumns.productModel && (
+                                  <td className="p-3 text-muted-foreground">{inspection.productModel || '-'}</td>
+                                )}
+                                {visibleColumns.factory && (
+                                  <td className="p-3 text-muted-foreground">{(inspection as any).factoryCode || '-'}</td>
+                                )}
+                                {visibleColumns.workshop && (
+                                  <td className="p-3 text-muted-foreground">{(inspection as any).workshopCode || '-'}</td>
+                                )}
+                                {visibleColumns.line && (
+                                  <td className="p-3 text-muted-foreground">{(inspection as any).lineCode || '-'}</td>
+                                )}
+                                {visibleColumns.station && (
+                                  <td className="p-3 text-muted-foreground">{(inspection as any).stageCode || '-'}</td>
+                                )}
+                                {visibleColumns.okCount && (
+                                  <td className="p-3 text-right text-green-600">{(inspection as any).okCount ?? '-'}</td>
+                                )}
+                                {visibleColumns.ngCount && (
+                                  <td className="p-3 text-right text-red-600">{(inspection as any).ngCount ?? '-'}</td>
+                                )}
+                                {visibleColumns.ntfCount && (
+                                  <td className="p-3 text-right text-yellow-600">{(inspection as any).ntfCount ?? '-'}</td>
+                                )}
+                                <td className="p-3 text-right">
+                                  <Link href={`/inspection/${inspection.id}`}>
+                                    <Button variant="ghost" size="sm">
+                                      <Eye className="h-4 w-4" />
+                                    </Button>
+                                  </Link>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      /* Card View */
+                      <>
                     {data.data.map((inspection) => (
                       <div 
                         key={inspection.id}
@@ -1324,6 +1454,8 @@ export default function History() {
                         </Link>
                       </div>
                     ))}
+                      </>
+                    )}
 
                     {/* Pagination */}
                     {totalPages > 1 && (
@@ -1460,7 +1592,7 @@ export default function History() {
                         <PieChart className="h-5 w-5 text-primary" />{t("history.resultDistribution")}</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="h-[300px]">
+                      <div className="h-75">
                         <ResponsiveContainer width="100%" height="100%">
                           <RechartsPie>
                             <Pie
@@ -1492,7 +1624,7 @@ export default function History() {
                         <TrendingUp className="h-5 w-5 text-primary" />{t("history.trendByDay")}</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="h-[300px]">
+                      <div className="h-75">
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart data={analysisStats.dateStats}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -1682,7 +1814,7 @@ export default function History() {
           <TabsContent value="workstation">
             <div className="space-y-6">
               {/* Workstation Header */}
-              <Card className="glass-card bg-gradient-to-r from-blue-500/10 to-cyan-500/10">
+              <Card className="glass-card bg-linear-to-r from-blue-500/10 to-cyan-500/10">
                 <CardHeader>
                   <CardTitle className="text-xl flex items-center gap-3">
                     <Factory className="h-6 w-6 text-blue-500" />{t("history.workstationAnalysis")}</CardTitle>
@@ -2015,7 +2147,7 @@ export default function History() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="h-[350px]">
+                      <div className="h-87.5">
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart data={analysisStats.dateStats.map(d => ({
                             ...d,
@@ -2074,7 +2206,7 @@ export default function History() {
                           <BarChart3 className="h-5 w-5 text-primary" />{t("history.histogramResults")}</CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <div className="h-[300px]">
+                        <div className="h-75">
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={[
                               { name: 'OK', value: analysisStats.okCount, fill: '#10b981' },
@@ -2113,7 +2245,7 @@ export default function History() {
                           <Target className="h-5 w-5 text-primary" />{t("history.paretoTopErrors")}</CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <div className="h-[300px]">
+                        <div className="h-75">
                           {(() => {
                             const paretoData = analysisStats.machineStats
                               .filter(m => m.ng > 0)
@@ -2268,7 +2400,7 @@ export default function History() {
                           <div className="space-y-4">
                             {/* Heatmap Grid */}
                             <div className="overflow-x-auto">
-                              <div className="min-w-[600px]">
+                              <div className="min-w-150">
                                 {/* Hour labels */}
                                 <div className="flex mb-2">
                                   <div className="w-20"></div>
@@ -2449,7 +2581,7 @@ export default function History() {
           <TabsContent value="ai">
             <div className="space-y-6">
               {/* AI Header */}
-              <Card className="glass-card bg-gradient-to-r from-primary/10 to-purple-500/10">
+              <Card className="glass-card bg-linear-to-r from-primary/10 to-purple-500/10">
                 <CardHeader>
                   <CardTitle className="text-xl flex items-center gap-3">
                     <Brain className="h-6 w-6 text-primary" />{t("history.aiAnalysisTitle")}</CardTitle>
@@ -2550,7 +2682,7 @@ export default function History() {
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <div className="h-[250px]">
+                        <div className="h-62.5">
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={aiAnalysis.trendPrediction.predictions}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -2814,7 +2946,7 @@ export default function History() {
                         <CardDescription>{t("history.fpyTrendDesc")}</CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <div className="h-[280px]">
+                        <div className="h-70">
                           <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={analysisStats.dateStats.map((d, i) => ({
                               ...d,
@@ -2848,7 +2980,7 @@ export default function History() {
                         <CardDescription>{t("history.failYieldTrendDesc")}</CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <div className="h-[280px]">
+                        <div className="h-70">
                           <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={analysisStats.dateStats.map((d, i) => ({
                               ...d,
@@ -2886,7 +3018,7 @@ export default function History() {
                         <CardDescription>{t("history.ntfYieldDesc")}</CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <div className="h-[280px]">
+                        <div className="h-70">
                           <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={analysisStats.dateStats.map((d, i) => ({
                               ...d,
@@ -2921,7 +3053,7 @@ export default function History() {
                         <CardDescription>{t("history.uphTrendDesc")}</CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <div className="h-[280px]">
+                        <div className="h-70">
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={analysisStats.dateStats.map((d, i) => ({
                               ...d,
@@ -3032,25 +3164,24 @@ export default function History() {
                 <AnnotationSearch />
               </CardHeader>
               <CardContent>
-                {data?.data && data.data.length > 0 ? (
+                {isLoadingGallery ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  </div>
+                ) : galleryData?.data && galleryData.data.length > 0 ? (
                   <ImageGallery
-                    images={data.data.flatMap((inspection: any) => 
-                      (inspection.measurementResults || []).map((result: any, idx: number) => ({
-                        id: `${inspection.id}-${result.measurementPointDefId || idx}`,
-                        url: result.imageUrl || inspection.productModel?.referenceImageUrl || '',
-                        thumbnailUrl: result.imageUrl || inspection.productModel?.referenceImageUrl || '',
-                        title: `${inspection.serialNumber} - ${t("history.pointLabel")} ${result.measurementPointDefId || idx + 1}`,
-                        description: result.remark || '',
-                        result: result.result as "OK" | "NG" | "NTF",
-                        measurementPointId: result.measurementPointDefId,
-                        measurementPointName: result.measurementPointDef?.name || `${t("history.measurementPoint")} ${result.measurementPointDefId || idx + 1}`,
-                        value: result.value,
-                        standardValue: result.measurementPointDef?.standardValue,
-                        upperLimit: result.measurementPointDef?.upperLimit,
-                        lowerLimit: result.measurementPointDef?.lowerLimit,
-                        timestamp: new Date(inspection.inspectedAt),
-                      } as GalleryImage)).filter((img: GalleryImage) => img.url)
-                    )}
+                    images={galleryData.data.map((item: any, idx: number) => ({
+                      id: `${item.inspectionId}-${item.pointDefId || idx}`,
+                      url: item.imageUrl || '',
+                      thumbnailUrl: item.imageUrl || '',
+                      title: `${item.serialNumber} - ${item.pointName || item.pointCode || `${t("history.pointLabel")} ${idx + 1}`}`,
+                      description: item.remark || '',
+                      result: item.result as "OK" | "NG" | "NTF",
+                      measurementPointId: item.pointDefId,
+                      measurementPointName: item.pointName || item.pointCode || `${t("history.measurementPoint")} ${idx + 1}`,
+                      value: item.measuredValue ?? item.measuredValueText,
+                      timestamp: new Date(item.inspectionTime),
+                    } as GalleryImage)).filter((img: GalleryImage) => img.url)}
                     title={t("history.measurementImages")}
                     showFilters={true}
                     showSearch={true}

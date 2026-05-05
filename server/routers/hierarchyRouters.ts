@@ -65,9 +65,30 @@ export const factoryRouter = router({
     }),
 
   delete: adminProcedure
+    .input(z.object({ id: z.number(), cascade: z.boolean().optional() }))
+    .mutation(async ({ input }) => {
+      if (input.cascade) {
+        await db.cascadeDeleteFactory(input.id);
+      } else {
+        await db.deleteFactory(input.id);
+      }
+      return { success: true };
+    }),
+
+  cascadeInfo: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getFactoryCascadeInfo(input.id);
+    }),
+
+  listDeleted: adminProcedure.query(async () => {
+    return db.getDeletedFactories();
+  }),
+
+  restore: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
-      await db.deleteFactory(input.id);
+      await db.restoreFactory(input.id);
       return { success: true };
     }),
 });
@@ -110,9 +131,30 @@ export const workshopRouter = router({
     }),
 
   delete: adminProcedure
+    .input(z.object({ id: z.number(), cascade: z.boolean().optional() }))
+    .mutation(async ({ input }) => {
+      if (input.cascade) {
+        await db.cascadeDeleteWorkshop(input.id);
+      } else {
+        await db.deleteWorkshop(input.id);
+      }
+      return { success: true };
+    }),
+
+  cascadeInfo: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getWorkshopCascadeInfo(input.id);
+    }),
+
+  listDeleted: adminProcedure.query(async () => {
+    return db.getDeletedWorkshops();
+  }),
+
+  restore: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
-      await db.deleteWorkshop(input.id);
+      await db.restoreWorkshop(input.id);
       return { success: true };
     }),
 });
@@ -155,9 +197,30 @@ export const lineRouter = router({
     }),
 
   delete: adminProcedure
+    .input(z.object({ id: z.number(), cascade: z.boolean().optional() }))
+    .mutation(async ({ input }) => {
+      if (input.cascade) {
+        await db.cascadeDeleteLine(input.id);
+      } else {
+        await db.deleteProductionLine(input.id);
+      }
+      return { success: true };
+    }),
+
+  cascadeInfo: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getLineCascadeInfo(input.id);
+    }),
+
+  listDeleted: adminProcedure.query(async () => {
+    return db.getDeletedLines();
+  }),
+
+  restore: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
-      await db.deleteProductionLine(input.id);
+      await db.restoreLine(input.id);
       return { success: true };
     }),
 });
@@ -202,9 +265,30 @@ export const stationRouter = router({
     }),
 
   delete: adminProcedure
+    .input(z.object({ id: z.number(), cascade: z.boolean().optional() }))
+    .mutation(async ({ input }) => {
+      if (input.cascade) {
+        await db.cascadeDeleteStation(input.id);
+      } else {
+        await db.deleteStation(input.id);
+      }
+      return { success: true };
+    }),
+
+  cascadeInfo: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getStationCascadeInfo(input.id);
+    }),
+
+  listDeleted: adminProcedure.query(async () => {
+    return db.getDeletedStations();
+  }),
+
+  restore: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
-      await db.deleteStation(input.id);
+      await db.restoreStation(input.id);
       return { success: true };
     }),
 });
@@ -454,6 +538,17 @@ export const machineRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.deleteMachine(input.id);
+      return { success: true };
+    }),
+
+  listDeleted: adminProcedure.query(async () => {
+    return db.getDeletedMachines();
+  }),
+
+  restore: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.restoreMachine(input.id);
       return { success: true };
     }),
 

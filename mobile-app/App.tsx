@@ -3,12 +3,14 @@
  * React Native app để nhận thông báo NG qua MQTT
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
   StatusBar,
   Platform,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
@@ -42,12 +44,33 @@ export default function App() {
     loadSettings, 
     updateSettings,
     connect,
+    isConnected,
   } = useMqttStore();
+
+  const appState = useRef(AppState.currentState);
 
   useEffect(() => {
     // Initialize app
     initializeApp();
+
+    // Listen for app state changes (foreground/background)
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => {
+      subscription.remove();
+    };
   }, []);
+
+  const handleAppStateChange = (nextAppState: AppStateStatus) => {
+    // When app comes back to foreground
+    if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+      const { settings, isConnected: connected } = useMqttStore.getState();
+      if (settings.autoReconnect && !connected && settings.brokerUrl && settings.brokerUrl !== 'mqtt://localhost') {
+        console.log('[App] Returning to foreground, auto-reconnecting...');
+        useMqttStore.getState().connect();
+      }
+    }
+    appState.current = nextAppState;
+  };
 
   const initializeApp = async () => {
     // Load saved settings
@@ -65,9 +88,9 @@ export default function App() {
     // Register for push notifications
     await registerForPushNotifications();
 
-    // Auto-connect if settings are configured
+    // Auto-connect if autoReconnect is enabled and settings are configured
     const { settings } = useMqttStore.getState();
-    if (settings.brokerUrl && settings.brokerUrl !== 'mqtt://localhost') {
+    if (settings.autoReconnect && settings.brokerUrl && settings.brokerUrl !== 'mqtt://localhost') {
       await connect();
     }
   };

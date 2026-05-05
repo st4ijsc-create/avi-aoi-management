@@ -1,0 +1,8 @@
+{
+  "generatedAt": "2026-05-05T07:41:41.152Z",
+  "model": "mxbai-embed-large",
+  "baseUrl": "http://127.0.0.1:11434",
+  "totalEmbedded": 883,
+  "elapsedMs": 312467,
+  "outputFile": "knowledge/embeddings.jsonl"
+}

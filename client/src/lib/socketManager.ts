@@ -10,7 +10,7 @@ export function getSharedSocket(): Socket {
       transports: ["polling", "websocket"],
       reconnectionDelay: 2000,
       reconnectionDelayMax: 10000,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: Infinity,
     });
   }
   refCount++;
@@ -18,10 +18,8 @@ export function getSharedSocket(): Socket {
 }
 
 export function releaseSharedSocket(): void {
-  refCount--;
-  if (refCount <= 0 && sharedSocket) {
-    sharedSocket.disconnect();
-    sharedSocket = null;
-    refCount = 0;
-  }
+  refCount = Math.max(0, refCount - 1);
+  // Keep socket alive — it will be cleaned up when the tab/window closes.
+  // Disconnecting on refCount=0 causes reconnect loops during page navigation
+  // because DashboardLayout (with NotificationCenter) unmounts and remounts.
 }

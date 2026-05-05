@@ -253,3 +253,108 @@ function buildParetoResult(
     dateRange: { start: startDate, end: endDate },
   };
 }
+
+// ─── AI Recommendation Layer ───────────────────────────────────────────
+
+export interface ParetoRecommendation {
+  category: string;
+  action: string;
+  estimatedImpact: string;
+  priority: number;
+}
+
+export interface ParetoAnalysisWithRecommendations extends ParetoAnalysisResult {
+  recommendations: ParetoRecommendation[] | null;
+}
+
+/**
+ * Generate AI-powered improvement recommendations from Pareto results.
+ * Non-blocking — returns null on any failure.
+ */
+async function generateParetoRecommendations(
+  result: ParetoAnalysisResult,
+): Promise<ParetoRecommendation[] | null> {
+  if (result.items.length === 0) return null;
+
+  try {
+    const { generateText } = await import("./aiGgufEngine");
+
+    const top10 = result.items.slice(0, 10);
+    const paretoSummary = top10.map((item, i) =>
+      `${i + 1}. ${item.category}: ${item.count} defects (${item.percentage.toFixed(1)}%, cumulative ${item.cumulativePercentage.toFixed(1)}%)`
+    ).join("\n");
+
+    const response = await generateText({
+      systemPrompt: `You are a manufacturing quality improvement expert specializing in AOI/AVI defect reduction.
+Given Pareto analysis results, generate specific, actionable recommendations for the top contributors.
+Focus on practical factory-floor actions with estimated impact.
+Reply in JSON: { "recommendations": [{ "category": string, "action": string, "estimatedImpact": string, "priority": number (1=highest) }] }`,
+      prompt: `Pareto Analysis (${result.analysisType}) — Total: ${result.totalDefects} defects
+80% threshold: ${result.pareto80Count} categories (${result.pareto80Categories.join(", ")})
+Period: ${result.dateRange.start.toISOString().slice(0, 10)} to ${result.dateRange.end.toISOString().slice(0, 10)}
+
+Top contributors:
+${paretoSummary}
+
+Generate improvement recommendations for the categories contributing to 80% of defects. Include estimated recovery if addressed.`,
+      maxTokens: 512,
+      temperature: 0.3,
+      jsonMode: true,
+    });
+
+    const parsed = JSON.parse(response.text);
+    if (Array.isArray(parsed.recommendations)) {
+      return parsed.recommendations;
+    }
+    // Try regex fallback for array extraction
+    const match = response.text.match(/\[[\s\S]*\]/);
+    if (match) return JSON.parse(match[0]);
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Pareto by defect type with AI recommendations
+ */
+export async function paretoByDefectTypeWithRecommendations(
+  params: Parameters<typeof paretoByDefectType>[0],
+): Promise<ParetoAnalysisWithRecommendations> {
+  const result = await paretoByDefectType(params);
+  const recommendations = await generateParetoRecommendations(result);
+  return { ...result, recommendations };
+}
+
+/**
+ * Pareto by machine with AI recommendations
+ */
+export async function paretoByMachineWithRecommendations(
+  params: Parameters<typeof paretoByMachine>[0],
+): Promise<ParetoAnalysisWithRecommendations> {
+  const result = await paretoByMachine(params);
+  const recommendations = await generateParetoRecommendations(result);
+  return { ...result, recommendations };
+}
+
+/**
+ * Pareto by line with AI recommendations
+ */
+export async function paretoByLineWithRecommendations(
+  params: Parameters<typeof paretoByLine>[0],
+): Promise<ParetoAnalysisWithRecommendations> {
+  const result = await paretoByLine(params);
+  const recommendations = await generateParetoRecommendations(result);
+  return { ...result, recommendations };
+}
+
+/**
+ * Pareto by time period with AI recommendations
+ */
+export async function paretoByTimePeriodWithRecommendations(
+  params: Parameters<typeof paretoByTimePeriod>[0],
+): Promise<ParetoAnalysisWithRecommendations> {
+  const result = await paretoByTimePeriod(params);
+  const recommendations = await generateParetoRecommendations(result);
+  return { ...result, recommendations };
+}

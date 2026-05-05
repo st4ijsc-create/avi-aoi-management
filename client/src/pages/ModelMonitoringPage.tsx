@@ -247,7 +247,7 @@ export default function ModelMonitoringPage() {
                     <p className="text-sm">{t('modelMonitoring.noAlerts')}</p>
                   </div>
                 ) : (
-                  <ScrollArea className="max-h-[420px]">
+                  <ScrollArea className="max-h-105">
                     <Table>
                       <TableHeader>
                         <TableRow>

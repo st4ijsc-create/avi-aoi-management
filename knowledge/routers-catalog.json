@@ -1,0 +1,724 @@
+[
+  {
+    "file": "server/routers/aiActiveLearningRouter.ts",
+    "routerNames": [
+      "aiActiveLearningRouter"
+    ],
+    "procedureCalls": 10,
+    "protectedUses": 9,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiAdvancedRouter.ts",
+    "routerNames": [
+      "aiAdvancedRouter"
+    ],
+    "procedureCalls": 44,
+    "protectedUses": 27,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiAnalysisHubRouter.ts",
+    "routerNames": [
+      "aiAnalysisHubRouter"
+    ],
+    "procedureCalls": 13,
+    "protectedUses": 14,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiChatRouter.ts",
+    "routerNames": [
+      "aiChatRouter"
+    ],
+    "procedureCalls": 10,
+    "protectedUses": 11,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiEdgeEnhancedRouter.ts",
+    "routerNames": [
+      "aiEdgeEnhancedRouter"
+    ],
+    "procedureCalls": 11,
+    "protectedUses": 8,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiFeedback.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiFeedbackRouter.ts",
+    "routerNames": [
+      "aiFeedbackRouter"
+    ],
+    "procedureCalls": 11,
+    "protectedUses": 12,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiGgufRouter.ts",
+    "routerNames": [
+      "aiGgufRouter"
+    ],
+    "procedureCalls": 12,
+    "protectedUses": 11,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiImageSearchRouter.ts",
+    "routerNames": [
+      "aiImageSearchRouter"
+    ],
+    "procedureCalls": 5,
+    "protectedUses": 5,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiInspectionAnalyticsRouter.ts",
+    "routerNames": [
+      "aiInspectionAnalyticsRouter"
+    ],
+    "procedureCalls": 11,
+    "protectedUses": 3,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiLocalTrainingRouter.ts",
+    "routerNames": [
+      "aiLocalTrainingRouter"
+    ],
+    "procedureCalls": 6,
+    "protectedUses": 5,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiModelRouter.ts",
+    "routerNames": [
+      "aiModelRouter"
+    ],
+    "procedureCalls": 16,
+    "protectedUses": 11,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiQualityGateRouter.ts",
+    "routerNames": [
+      "aiQualityGateRouter"
+    ],
+    "procedureCalls": 13,
+    "protectedUses": 8,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiReportRouter.ts",
+    "routerNames": [
+      "aiReportRouter"
+    ],
+    "procedureCalls": 5,
+    "protectedUses": 6,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiRouters.ts",
+    "routerNames": [
+      "rootCauseRouter",
+      "predictiveAlertRouter"
+    ],
+    "procedureCalls": 10,
+    "protectedUses": 11,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiSettingsRouter.ts",
+    "routerNames": [
+      "aiSettingsRouter"
+    ],
+    "procedureCalls": 12,
+    "protectedUses": 4,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiSmartAlertRoutingRouter.ts",
+    "routerNames": [
+      "aiSmartAlertRoutingRouter"
+    ],
+    "procedureCalls": 7,
+    "protectedUses": 5,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiSpecialistAgentRouter.ts",
+    "routerNames": [
+      "aiSpecialistAgentRouter"
+    ],
+    "procedureCalls": 8,
+    "protectedUses": 9,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiTimeSeriesRouter.ts",
+    "routerNames": [
+      "aiTimeSeriesRouter"
+    ],
+    "procedureCalls": 6,
+    "protectedUses": 7,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aiVisionLanguageRouter.ts",
+    "routerNames": [
+      "aiVisionLanguageRouter"
+    ],
+    "procedureCalls": 3,
+    "protectedUses": 4,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/alertRouters.ts",
+    "routerNames": [
+      "alertRouter",
+      "yieldThresholdRouter"
+    ],
+    "procedureCalls": 19,
+    "protectedUses": 19,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/annotationComparison.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/annotationComparisonRouter.ts",
+    "routerNames": [
+      "annotationComparisonRouter"
+    ],
+    "procedureCalls": 7,
+    "protectedUses": 8,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/annotationRouters.ts",
+    "routerNames": [
+      "drillDownRouter",
+      "annotationRouter",
+      "annotationTemplateRouter",
+      "annotationHistoryRouter"
+    ],
+    "procedureCalls": 26,
+    "protectedUses": 27,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/aoiPackageRouter.ts",
+    "routerNames": [
+      "aoiPackageRouter"
+    ],
+    "procedureCalls": 11,
+    "protectedUses": 9,
+    "publicUses": 4
+  },
+  {
+    "file": "server/routers/auditRouter.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/auditRouter.ts",
+    "routerNames": [
+      "auditLogRouter"
+    ],
+    "procedureCalls": 6,
+    "protectedUses": 2,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/backupRouter.ts",
+    "routerNames": [
+      "backupRouter"
+    ],
+    "procedureCalls": 10,
+    "protectedUses": 11,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/dashboardStatsRouters.ts",
+    "routerNames": [
+      "dashboardRouter",
+      "seedDataRouter"
+    ],
+    "procedureCalls": 18,
+    "protectedUses": 13,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/dashboardWidgetRouters.ts",
+    "routerNames": [
+      "dashboardWidgetRouter"
+    ],
+    "procedureCalls": 37,
+    "protectedUses": 32,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/dataComparisonRouter.ts",
+    "routerNames": [
+      "dataComparisonRouter"
+    ],
+    "procedureCalls": 3,
+    "protectedUses": 4,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/dataRouters.ts",
+    "routerNames": [
+      "importRouter",
+      "exportRouter"
+    ],
+    "procedureCalls": 19,
+    "protectedUses": 11,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/defectHeatmap.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/defectHeatmapRouter.ts",
+    "routerNames": [
+      "defectHeatmapRouter"
+    ],
+    "procedureCalls": 7,
+    "protectedUses": 8,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/enhancedAuditRouter.ts",
+    "routerNames": [
+      "enhancedAuditRouter"
+    ],
+    "procedureCalls": 7,
+    "protectedUses": 2,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/hierarchyRouters.ts",
+    "routerNames": [
+      "factoryRouter",
+      "workshopRouter",
+      "lineRouter",
+      "stationRouter",
+      "machineRouter"
+    ],
+    "procedureCalls": 50,
+    "protectedUses": 14,
+    "publicUses": 3
+  },
+  {
+    "file": "server/routers/hierarchyTreeRouter.ts",
+    "routerNames": [
+      "hierarchyTreeRouter"
+    ],
+    "procedureCalls": 5,
+    "protectedUses": 6,
+    "publicUses": 1
+  },
+  {
+    "file": "server/routers/inspectionRouters.ts",
+    "routerNames": [
+      "inspectionRouter",
+      "measurementResultRouter"
+    ],
+    "procedureCalls": 19,
+    "protectedUses": 20,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/layoutRouters.ts",
+    "routerNames": [
+      "layoutRouter"
+    ],
+    "procedureCalls": 7,
+    "protectedUses": 3,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/licenseRouter.ts",
+    "routerNames": [
+      "licenseRouter"
+    ],
+    "procedureCalls": 32,
+    "protectedUses": 16,
+    "publicUses": 10
+  },
+  {
+    "file": "server/routers/machineApiRouters.ts",
+    "routerNames": [
+      "machineApiRouter"
+    ],
+    "procedureCalls": 12,
+    "protectedUses": 0,
+    "publicUses": 13
+  },
+  {
+    "file": "server/routers/mqttBulletinRouter.ts",
+    "routerNames": [
+      "mqttBulletinRouter"
+    ],
+    "procedureCalls": 13,
+    "protectedUses": 14,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/mqttClientManagement.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/mqttClientManagementRouter.ts",
+    "routerNames": [
+      "mqttClientManagementRouter"
+    ],
+    "procedureCalls": 49,
+    "protectedUses": 32,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/mqttNgAlertSettingsRouter.ts",
+    "routerNames": [
+      "mqttNgAlertSettingsRouter"
+    ],
+    "procedureCalls": 6,
+    "protectedUses": 7,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/mqttOeeRouters.ts",
+    "routerNames": [
+      "mqttClientRouter",
+      "oeeRouter",
+      "mqttAlertRouter"
+    ],
+    "procedureCalls": 54,
+    "protectedUses": 44,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/mqttProfileImportExport.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/mqttSoftwareVersionRouter.ts",
+    "routerNames": [
+      "mqttSoftwareVersionRouter"
+    ],
+    "procedureCalls": 9,
+    "protectedUses": 4,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/ngRateThresholdRouter.ts",
+    "routerNames": [
+      "ngRateThresholdRouter"
+    ],
+    "procedureCalls": 11,
+    "protectedUses": 10,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/notificationRouters.ts",
+    "routerNames": [
+      "notificationRouter"
+    ],
+    "procedureCalls": 10,
+    "protectedUses": 9,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/paretoAnalysisRouter.ts",
+    "routerNames": [
+      "paretoAnalysisRouter"
+    ],
+    "procedureCalls": 4,
+    "protectedUses": 5,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/pdfReportRouter.ts",
+    "routerNames": [
+      "pdfReportRouter"
+    ],
+    "procedureCalls": 5,
+    "protectedUses": 4,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/permissionsRouter.ts",
+    "routerNames": [
+      "permissionsRouter"
+    ],
+    "procedureCalls": 21,
+    "protectedUses": 7,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/powerpointRouter.ts",
+    "routerNames": [
+      "powerpointRouter"
+    ],
+    "procedureCalls": 3,
+    "protectedUses": 4,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/processRouter.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/processRouter.ts",
+    "routerNames": [
+      "processRouter"
+    ],
+    "procedureCalls": 11,
+    "protectedUses": 5,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/productionDashboardRouter.ts",
+    "routerNames": [
+      "productionDashboardRouter"
+    ],
+    "procedureCalls": 4,
+    "protectedUses": 5,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/productionRouters.ts",
+    "routerNames": [
+      "productionOrderRouter",
+      "lineStageRouter",
+      "lineProductAssignmentRouter"
+    ],
+    "procedureCalls": 28,
+    "protectedUses": 14,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/productRouters.ts",
+    "routerNames": [
+      "productModelRouter",
+      "measurementPointRouter",
+      "productMachineMappingRouter",
+      "productCategoryRouter",
+      "productDocumentRouter"
+    ],
+    "procedureCalls": 32,
+    "protectedUses": 21,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/publicProductApiRouter.ts",
+    "routerNames": [
+      "publicProductApiRouter"
+    ],
+    "procedureCalls": 8,
+    "protectedUses": 0,
+    "publicUses": 9
+  },
+  {
+    "file": "server/routers/qualityGateTemplateRouter.ts",
+    "routerNames": [
+      "qualityGateTemplateRouter"
+    ],
+    "procedureCalls": 7,
+    "protectedUses": 8,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/reportBuilderRouter.ts",
+    "routerNames": [
+      "reportBuilderRouter"
+    ],
+    "procedureCalls": 8,
+    "protectedUses": 9,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/reportScheduleRouter.ts",
+    "routerNames": [
+      "reportScheduleRouter"
+    ],
+    "procedureCalls": 9,
+    "protectedUses": 10,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/sessionRouter.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/sessionRouter.ts",
+    "routerNames": [
+      "sessionRouter"
+    ],
+    "procedureCalls": 4,
+    "protectedUses": 5,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/shiftConfigRouter.ts",
+    "routerNames": [
+      "shiftConfigRouter"
+    ],
+    "procedureCalls": 5,
+    "protectedUses": 6,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/spcAdvancedRouter.ts",
+    "routerNames": [
+      "spcConfigRouter",
+      "workstationSpcRouter",
+      "correlationRouter",
+      "spcRuleViolationRouter",
+      "cpkTrendRouter",
+      "qualityGateRouter"
+    ],
+    "procedureCalls": 31,
+    "protectedUses": 32,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/spcAnalysisRouter.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/spcAnalysisRouter.ts",
+    "routerNames": [
+      "spcAnalysisRouter"
+    ],
+    "procedureCalls": 7,
+    "protectedUses": 8,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/stationAnalysisRouter.ts",
+    "routerNames": [
+      "stationAnalysisRouter"
+    ],
+    "procedureCalls": 16,
+    "protectedUses": 17,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/statusTemplateRouters.ts",
+    "routerNames": [
+      "machineStatusRouter",
+      "templateRouter",
+      "bulkImportRouter",
+      "manualMappingRouter"
+    ],
+    "procedureCalls": 27,
+    "protectedUses": 14,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/systemRouters.ts",
+    "routerNames": [
+      "inlineAuditRouter",
+      "workstationRouter",
+      "scheduledReportRouter",
+      "smtpRouter",
+      "systemConfigRouter",
+      "corporateFactoryStatsRouter"
+    ],
+    "procedureCalls": 63,
+    "protectedUses": 26,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/trainingBatchComments.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/trainingBatchCommentsRouter.ts",
+    "routerNames": [
+      "trainingBatchCommentsRouter"
+    ],
+    "procedureCalls": 13,
+    "protectedUses": 14,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/twoFactorRouter.test.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 0,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/twoFactorRouter.ts",
+    "routerNames": [
+      "twoFactorRouter"
+    ],
+    "procedureCalls": 6,
+    "protectedUses": 7,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/userRouters.ts",
+    "routerNames": [
+      "userRouter",
+      "userAssignmentRouter",
+      "userSettingsRouter"
+    ],
+    "procedureCalls": 29,
+    "protectedUses": 18,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/webhookRouter.ts",
+    "routerNames": [
+      "webhookRouter"
+    ],
+    "procedureCalls": 11,
+    "protectedUses": 12,
+    "publicUses": 0
+  },
+  {
+    "file": "server/routers/_shared.ts",
+    "routerNames": [],
+    "procedureCalls": 0,
+    "protectedUses": 3,
+    "publicUses": 0
+  }
+]

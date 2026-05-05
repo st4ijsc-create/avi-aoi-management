@@ -1186,7 +1186,7 @@ await service.SubmitInspectionAsync(inspection);
 |---------------|-------|
 | Query | 100 requests/minute |
 | Mutation | 30 requests/minute |
-| Machine API | 1000 requests/minute |
+| Machine API | 100 requests/minute |
 
 ---
 
@@ -1227,7 +1227,7 @@ WHERE point_def_id = 0 AND remark LIKE 'Point:%';
 - HTTP 429 Too Many Requests
 
 **Giải pháp:**
-- Machine API: Max 1000 requests/minute (enough for real-time)
+- Machine API: Max 100 requests/minute
 - Sử dụng heartbeat interval 30-60 seconds
 - Batch measurements trong một request thay vì gửi riêng lẻ
 - Implement exponential backoff
@@ -1579,13 +1579,21 @@ if (success) {
 
 ### 13.7 Lưu ý khi tích hợp
 
-- **Rate Limit:** Tối đa 1000 requests / 15 phút trên `/api/` endpoints
+- **Rate Limit:** Tối đa 100 requests / 1 phút trên `/api/` và `/trpc/` endpoints
 - **Thời gian truy vấn:** Khoảng thời gian lớn (> 1 năm) có thể chậm hơn, khuyến nghị chia nhỏ theo tháng/quý
 - **Định dạng ngày:** Hỗ trợ `YYYY-MM-DD` (mặc định 00:00:00 UTC) và full ISO 8601 `YYYY-MM-DDTHH:mm:ssZ`
 - **Điểm đo không có dữ liệu:** Nếu một điểm đo chưa có kết quả trong khoảng thời gian, `totalCount = 0` và các giá trị thống kê sẽ là `null`
 - **Bảo mật:** Không chia sẻ Master API Key cho client-side apps. Sử dụng Bearer Token (qua `/api/external/auth/login`) cho ứng dụng frontend
 - **Ảnh (includeImages):** Response có thể lớn nếu có nhiều ảnh. Chỉ sử dụng `includeImages=true` khi thực sự cần xem ảnh. Với khoảng thời gian dài, nên chia nhỏ query
 - **URL ảnh:** `imageUrl` là relative path. Ghép với server base URL: `{serverUrl}{imageUrl}`. Ảnh được serve tại `/uploads/` endpoint (static files)
+
+### 13.8 AI Inspection Analytics Export Formats
+
+- Hỗ trợ export từ biểu đồ: `CSV`, `JSON`, `PNG`
+- CSV: dữ liệu bảng theo ngày (date, total, pass, fail, yieldRate, defectRate)
+- JSON: payload định dạng đầy đủ để phân tích lại
+- PNG: chụp snapshot của chart card đang hiển thị
+- `PDF` chưa được bật ở AI Inspection Analytics page
 
 ---
 

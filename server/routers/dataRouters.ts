@@ -17,20 +17,25 @@ export const importRouter = router({
         country: z.string().optional(),
         isActive: z.boolean().optional(),
       })),
+      replaceIfExists: z.boolean().default(false),
     }))
     .mutation(async ({ input }) => {
       const results = { success: 0, failed: 0, errors: [] as string[] };
       
       for (const item of input.data) {
         try {
-          // Check if factory code already exists
           const existing = await db.getFactoryByCode(item.code);
           if (existing) {
-            throw new Error('Factory code already exists');
+            if (input.replaceIfExists) {
+              await db.updateFactory(existing.id, item);
+              results.success++;
+            } else {
+              throw new Error('Factory code already exists');
+            }
+          } else {
+            await db.createFactory(item);
+            results.success++;
           }
-          
-          await db.createFactory(item);
-          results.success++;
         } catch (error: any) {
           results.failed++;
           results.errors.push(`${item.code}: ${error.message}`);
@@ -49,32 +54,41 @@ export const importRouter = router({
         description: z.string().optional(),
         isActive: z.boolean().optional(),
       })),
+      replaceIfExists: z.boolean().default(false),
     }))
     .mutation(async ({ input }) => {
       const results = { success: 0, failed: 0, errors: [] as string[] };
       
       for (const item of input.data) {
         try {
-          // Lookup factory by code
           const factory = await db.getFactoryByCode(item.factoryCode);
           if (!factory) {
             throw new Error(`Factory ${item.factoryCode} not found`);
           }
           
-          // Check if workshop code already exists
           const existing = await db.getWorkshopByCode(item.code);
           if (existing) {
-            throw new Error('Workshop code already exists');
+            if (input.replaceIfExists) {
+              await db.updateWorkshop(existing.id, {
+                factoryId: factory.id,
+                name: item.name,
+                description: item.description,
+                isActive: item.isActive ?? true,
+              });
+              results.success++;
+            } else {
+              throw new Error('Workshop code already exists');
+            }
+          } else {
+            await db.createWorkshop({
+              factoryId: factory.id,
+              code: item.code,
+              name: item.name,
+              description: item.description,
+              isActive: item.isActive ?? true,
+            });
+            results.success++;
           }
-          
-          await db.createWorkshop({
-            factoryId: factory.id,
-            code: item.code,
-            name: item.name,
-            description: item.description,
-            isActive: item.isActive ?? true,
-          });
-          results.success++;
         } catch (error: any) {
           results.failed++;
           results.errors.push(`${item.code}: ${error.message}`);
@@ -95,33 +109,49 @@ export const importRouter = router({
         manufacturer: z.string().optional(),
         isActive: z.boolean().optional(),
       })),
+      replaceIfExists: z.boolean().default(false),
     }))
     .mutation(async ({ input }) => {
       const results = { success: 0, failed: 0, errors: [] as string[] };
       
       for (const item of input.data) {
         try {
-          // Lookup station by code
           const station = await db.getStationByCode(item.stationCode);
           if (!station) {
             throw new Error(`Station ${item.stationCode} not found`);
           }
           
-          // Generate API key
-          const crypto = await import('crypto');
-          const apiKey = crypto.randomBytes(32).toString('hex');
-          
-          await db.createMachine({
-            stationId: station.id,
-            code: item.code,
-            name: item.name,
-            machineType: item.machineType,
-            model: item.model,
-            manufacturer: item.manufacturer,
-            apiKey,
-            isActive: item.isActive ?? true,
-          });
-          results.success++;
+          const existing = await db.getMachineByCode(item.code);
+          if (existing) {
+            if (input.replaceIfExists) {
+              await db.updateMachine(existing.id, {
+                stationId: station.id,
+                name: item.name,
+                machineType: item.machineType,
+                model: item.model,
+                manufacturer: item.manufacturer,
+                isActive: item.isActive ?? true,
+              });
+              results.success++;
+            } else {
+              throw new Error('Machine code already exists');
+            }
+          } else {
+            const crypto = await import('crypto');
+            const apiKey = crypto.randomBytes(32).toString('hex');
+            
+            await db.createMachine({
+              stationId: station.id,
+              code: item.code,
+              name: item.name,
+              machineType: item.machineType,
+              model: item.model,
+              manufacturer: item.manufacturer,
+              apiKey,
+              isActive: item.isActive ?? true,
+            });
+            results.success++;
+          }
         } catch (error: any) {
           results.failed++;
           results.errors.push(`${item.code}: ${error.message}`);
@@ -141,26 +171,36 @@ export const importRouter = router({
         version: z.string().optional(),
         isActive: z.boolean().optional(),
       })),
+      replaceIfExists: z.boolean().default(false),
     }))
     .mutation(async ({ input }) => {
       const results = { success: 0, failed: 0, errors: [] as string[] };
       
       for (const item of input.data) {
         try {
-          // Check if product code already exists
           const existing = await db.getProductModelByCode(item.code);
           if (existing) {
-            throw new Error('Product code already exists');
+            if (input.replaceIfExists) {
+              await db.updateProductModel(existing.id, {
+                name: item.name,
+                description: item.description,
+                category: item.category,
+                isActive: item.isActive ?? true,
+              });
+              results.success++;
+            } else {
+              throw new Error('Product code already exists');
+            }
+          } else {
+            await db.createProductModel({
+              code: item.code,
+              name: item.name,
+              description: item.description,
+              category: item.category,
+              isActive: item.isActive ?? true,
+            });
+            results.success++;
           }
-          
-          await db.createProductModel({
-            code: item.code,
-            name: item.name,
-            description: item.description,
-            category: item.category,
-            isActive: item.isActive ?? true,
-          });
-          results.success++;
         } catch (error: any) {
           results.failed++;
           results.errors.push(`${item.code}: ${error.message}`);
@@ -183,33 +223,246 @@ export const importRouter = router({
         lowerLimit: z.number().optional(),
         isActive: z.boolean().optional(),
       })),
+      replaceIfExists: z.boolean().default(false),
     }))
     .mutation(async ({ input }) => {
       const results = { success: 0, failed: 0, errors: [] as string[] };
       
       for (const item of input.data) {
         try {
-          // Lookup product model by code
           const productModel = await db.getProductModelByCode(item.productModelCode);
           if (!productModel) {
             throw new Error(`Product model ${item.productModelCode} not found`);
           }
           
-          await db.createMeasurementPointDef({
-            productModelId: productModel.id,
-            code: item.code,
-            name: item.name,
-            measurementType: item.measurementType,
-            unit: item.unit,
-            nominalValue: item.nominalValue?.toString(),
-            upperLimit: item.upperLimit?.toString(),
-            lowerLimit: item.lowerLimit?.toString(),
-            isActive: item.isActive ?? true,
-            positionX: 0,
-            positionY: 0,
-            radius: 20,
-          });
-          results.success++;
+          const existing = await db.getMeasurementPointDefByCode(productModel.id, item.code);
+          if (existing) {
+            if (input.replaceIfExists) {
+              await db.updateMeasurementPointDef(existing.id, {
+                name: item.name,
+                measurementType: item.measurementType,
+                unit: item.unit,
+                nominalValue: item.nominalValue?.toString(),
+                upperLimit: item.upperLimit?.toString(),
+                lowerLimit: item.lowerLimit?.toString(),
+                isActive: item.isActive ?? true,
+              });
+              results.success++;
+            } else {
+              throw new Error('Measurement point code already exists');
+            }
+          } else {
+            await db.createMeasurementPointDef({
+              productModelId: productModel.id,
+              code: item.code,
+              name: item.name,
+              measurementType: item.measurementType,
+              unit: item.unit,
+              nominalValue: item.nominalValue?.toString(),
+              upperLimit: item.upperLimit?.toString(),
+              lowerLimit: item.lowerLimit?.toString(),
+              isActive: item.isActive ?? true,
+              positionX: 0,
+              positionY: 0,
+              radius: 20,
+            });
+            results.success++;
+          }
+        } catch (error: any) {
+          results.failed++;
+          results.errors.push(`${item.code}: ${error.message}`);
+        }
+      }
+      
+      return results;
+    }),
+
+  importLines: adminProcedure
+    .input(z.object({
+      data: z.array(z.object({
+        workshopCode: z.string(),
+        code: z.string(),
+        name: z.string(),
+        description: z.string().optional(),
+        capacityPerHour: z.number().optional(),
+        maxConcurrentOrders: z.number().optional(),
+        isActive: z.boolean().optional(),
+      })),
+      replaceIfExists: z.boolean().default(false),
+    }))
+    .mutation(async ({ input }) => {
+      const results = { success: 0, failed: 0, errors: [] as string[] };
+      
+      for (const item of input.data) {
+        try {
+          const workshop = await db.getWorkshopByCode(item.workshopCode);
+          if (!workshop) {
+            throw new Error(`Workshop ${item.workshopCode} not found`);
+          }
+          
+          const existing = await db.getProductionLineByCode(item.code);
+          if (existing) {
+            if (input.replaceIfExists) {
+              await db.updateProductionLine(existing.id, {
+                workshopId: workshop.id,
+                name: item.name,
+                description: item.description,
+                capacityPerHour: item.capacityPerHour,
+                maxConcurrentOrders: item.maxConcurrentOrders,
+                isActive: item.isActive ?? true,
+              });
+              results.success++;
+            } else {
+              throw new Error('Line code already exists');
+            }
+          } else {
+            await db.createProductionLine({
+              workshopId: workshop.id,
+              code: item.code,
+              name: item.name,
+              description: item.description,
+              capacityPerHour: item.capacityPerHour,
+              maxConcurrentOrders: item.maxConcurrentOrders,
+              isActive: item.isActive ?? true,
+            });
+            results.success++;
+          }
+        } catch (error: any) {
+          results.failed++;
+          results.errors.push(`${item.code}: ${error.message}`);
+        }
+      }
+      
+      return results;
+    }),
+
+  importStations: adminProcedure
+    .input(z.object({
+      data: z.array(z.object({
+        lineCode: z.string(),
+        code: z.string(),
+        name: z.string(),
+        description: z.string().optional(),
+        orderIndex: z.number().optional(),
+        isActive: z.boolean().optional(),
+      })),
+      replaceIfExists: z.boolean().default(false),
+    }))
+    .mutation(async ({ input }) => {
+      const results = { success: 0, failed: 0, errors: [] as string[] };
+      
+      for (const item of input.data) {
+        try {
+          const line = await db.getProductionLineByCode(item.lineCode);
+          if (!line) {
+            throw new Error(`Line ${item.lineCode} not found`);
+          }
+          
+          const existing = await db.getStationByCode(item.code);
+          if (existing) {
+            if (input.replaceIfExists) {
+              await db.updateStation(existing.id, {
+                lineId: line.id,
+                name: item.name,
+                description: item.description,
+                orderIndex: item.orderIndex ?? 0,
+                isActive: item.isActive ?? true,
+              });
+              results.success++;
+            } else {
+              throw new Error('Station code already exists');
+            }
+          } else {
+            await db.createStation({
+              lineId: line.id,
+              code: item.code,
+              name: item.name,
+              description: item.description,
+              orderIndex: item.orderIndex ?? 0,
+              isActive: item.isActive ?? true,
+            });
+            results.success++;
+          }
+        } catch (error: any) {
+          results.failed++;
+          results.errors.push(`${item.code}: ${error.message}`);
+        }
+      }
+      
+      return results;
+    }),
+
+  importWorkstations: adminProcedure
+    .input(z.object({
+      data: z.array(z.object({
+        code: z.string(),
+        name: z.string(),
+        description: z.string().optional(),
+        factoryCode: z.string().optional(),
+        workshopCode: z.string().optional(),
+        lineCode: z.string().optional(),
+        processType: z.enum(['SMT', 'DIP', 'ASSEMBLY', 'TESTING', 'PACKAGING', 'OTHER']).optional(),
+        orderIndex: z.number().optional(),
+        isActive: z.boolean().optional(),
+      })),
+      replaceIfExists: z.boolean().default(false),
+    }))
+    .mutation(async ({ input }) => {
+      const results = { success: 0, failed: 0, errors: [] as string[] };
+      
+      for (const item of input.data) {
+        try {
+          let factoryId: number | undefined;
+          let workshopId: number | undefined;
+          let lineId: number | undefined;
+          
+          if (item.factoryCode) {
+            const factory = await db.getFactoryByCode(item.factoryCode);
+            if (!factory) throw new Error(`Factory ${item.factoryCode} not found`);
+            factoryId = factory.id;
+          }
+          if (item.workshopCode) {
+            const workshop = await db.getWorkshopByCode(item.workshopCode);
+            if (!workshop) throw new Error(`Workshop ${item.workshopCode} not found`);
+            workshopId = workshop.id;
+          }
+          if (item.lineCode) {
+            const line = await db.getProductionLineByCode(item.lineCode);
+            if (!line) throw new Error(`Line ${item.lineCode} not found`);
+            lineId = line.id;
+          }
+          
+          const existing = await db.getWorkstationByCode(item.code);
+          if (existing) {
+            if (input.replaceIfExists) {
+              await db.updateWorkstation(existing.id, {
+                name: item.name,
+                description: item.description,
+                factoryId,
+                workshopId,
+                lineId,
+                processType: item.processType,
+                orderIndex: item.orderIndex ?? 0,
+                isActive: item.isActive ?? true,
+              });
+              results.success++;
+            } else {
+              throw new Error('Workstation code already exists');
+            }
+          } else {
+            await db.createWorkstation({
+              code: item.code,
+              name: item.name,
+              description: item.description,
+              factoryId,
+              workshopId,
+              lineId,
+              processType: item.processType,
+              orderIndex: item.orderIndex ?? 0,
+              isActive: item.isActive ?? true,
+            });
+            results.success++;
+          }
         } catch (error: any) {
           results.failed++;
           results.errors.push(`${item.code}: ${error.message}`);
@@ -558,15 +811,20 @@ export const exportRouter = router({
     .mutation(async () => {
       const XLSX = await import('xlsx');
       
-      const products = await db.getProductModels();
+      const allProducts = await db.getProductModels();
       
-      const data = products.map((p: any) => ({
+      // Filter only active items
+      const products = allProducts.filter((p: any) => p.isActive);
+      
+      // Limit to 10,000 rows
+      const limitedProducts = products.slice(0, 10000);
+      
+      const data = limitedProducts.map((p: any) => ({
         'Code': p.code,
         'Name': p.name,
         'Description': p.description || '',
         'Category': p.category || '',
         'Version': p.version || '',
-        'Is Active': p.isActive ? 'Yes' : 'No',
         'Created At': new Date(p.createdAt).toLocaleString('vi-VN'),
       }));
 
@@ -588,10 +846,16 @@ export const exportRouter = router({
     .mutation(async () => {
       const XLSX = await import('xlsx');
       
-      const machines = await db.getMachines();
+      const allMachines = await db.getMachines();
       const stations = await db.getStations();
       
-      const data = machines.map((m: any) => {
+      // Filter only active items
+      const machines = allMachines.filter((m: any) => m.isActive);
+      
+      // Limit to 10,000 rows
+      const limitedMachines = machines.slice(0, 10000);
+      
+      const data = limitedMachines.map((m: any) => {
         const station = stations.find(s => s.id === m.stationId);
         return {
           'Code': m.code,
@@ -600,7 +864,6 @@ export const exportRouter = router({
           'Machine Type': m.machineType,
           'Model': m.model || '',
           'Manufacturer': m.manufacturer || '',
-          'Is Active': m.isActive ? 'Yes' : 'No',
           'Created At': new Date(m.createdAt).toLocaleString('vi-VN'),
         };
       });
@@ -626,12 +889,20 @@ export const exportRouter = router({
     .mutation(async ({ input }) => {
       const XLSX = await import('xlsx');
       
-      const measurementPoints = input.productModelId 
+      // Fetch all measurement points or filter by product
+      const allMeasurementPoints = input.productModelId 
         ? await db.getMeasurementPointDefsByProductModel(input.productModelId)
-        : [];
+        : await db.getAllMeasurementPoints();  // Need to add this function to db
+      
       const products = await db.getProductModels();
       
-      const data = measurementPoints.map((mp: any) => {
+      // Filter only active items
+      const measurementPoints = allMeasurementPoints.filter((mp: any) => mp.isActive);
+      
+      // Limit to 10,000 rows
+      const limitedMeasurementPoints = measurementPoints.slice(0, 10000);
+      
+      const data = limitedMeasurementPoints.map((mp: any) => {
         const product = products.find(p => p.id === mp.productModelId);
         return {
           'Product Code': product?.code || '',
@@ -642,7 +913,6 @@ export const exportRouter = router({
           'Nominal Value': mp.nominalValue || '',
           'Upper Limit': mp.upperLimit || '',
           'Lower Limit': mp.lowerLimit || '',
-          'Is Active': mp.isActive ? 'Yes' : 'No',
         };
       });
 
@@ -664,16 +934,20 @@ export const exportRouter = router({
     .mutation(async () => {
       const XLSX = await import('xlsx');
       
-      const factories = await db.getFactories();
+      const allFactories = await db.getFactories();
+      // Filter only active items
+      const factories = allFactories.filter((f: any) => f.isActive);
       
-      const data = factories.map((f: any) => ({
+      // Limit to 10,000 rows
+      const limitedFactories = factories.slice(0, 10000);
+      
+      const data = limitedFactories.map((f: any) => ({
         'Code': f.code,
         'Name': f.name,
         'Description': f.description || '',
         'Address': f.address || '',
         'Region': f.region || '',
         'Country': f.country || '',
-        'Is Active': f.isActive ? 'Yes' : 'No',
         'Created At': new Date(f.createdAt).toLocaleString('vi-VN'),
       }));
 
@@ -695,17 +969,22 @@ export const exportRouter = router({
     .mutation(async () => {
       const XLSX = await import('xlsx');
       
-      const workshops = await db.getWorkshops();
+      const allWorkshops = await db.getWorkshops();
       const factories = await db.getFactories();
       
-      const data = workshops.map((w: any) => {
+      // Filter only active items
+      const workshops = allWorkshops.filter((w: any) => w.isActive);
+      
+      // Limit to 10,000 rows
+      const limitedWorkshops = workshops.slice(0, 10000);
+      
+      const data = limitedWorkshops.map((w: any) => {
         const factory = factories.find(f => f.id === w.factoryId);
         return {
           'Factory Code': factory?.code || '',
           'Code': w.code,
           'Name': w.name,
           'Description': w.description || '',
-          'Is Active': w.isActive ? 'Yes' : 'No',
           'Created At': new Date(w.createdAt).toLocaleString('vi-VN'),
         };
       });
@@ -718,6 +997,131 @@ export const exportRouter = router({
       
       const { storagePut } = await import('../storage');
       const filename = `workshops_${Date.now()}.xlsx`;
+      const { url } = await storagePut(`exports/${filename}`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      
+      return { url, filename, count: data.length };
+    }),
+
+  exportLines: protectedProcedure
+    .use(requirePermission('settings_production_line', 'canExport'))
+    .mutation(async () => {
+      const XLSX = await import('xlsx');
+      
+      const allLines = await db.getProductionLines();
+      const workshops = await db.getWorkshops();
+      
+      // Filter only active items
+      const lines = allLines.filter((l: any) => l.isActive);
+      
+      // Limit to 10,000 rows
+      const limitedLines = lines.slice(0, 10000);
+      
+      const data = limitedLines.map((l: any) => {
+        const workshop = workshops.find(w => w.id === l.workshopId);
+        return {
+          'Workshop Code': workshop?.code || '',
+          'Code': l.code,
+          'Name': l.name,
+          'Description': l.description || '',
+          'Capacity Per Hour': l.capacityPerHour ?? '',
+          'Max Concurrent Orders': l.maxConcurrentOrders ?? '',
+          'Created At': new Date(l.createdAt).toLocaleString('vi-VN'),
+        };
+      });
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, ws, 'Lines');
+
+      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      
+      const { storagePut } = await import('../storage');
+      const filename = `lines_${Date.now()}.xlsx`;
+      const { url } = await storagePut(`exports/${filename}`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      
+      return { url, filename, count: data.length };
+    }),
+
+  exportStations: protectedProcedure
+    .use(requirePermission('settings_station', 'canExport'))
+    .mutation(async () => {
+      const XLSX = await import('xlsx');
+      
+      const allStations = await db.getStations();
+      const lines = await db.getProductionLines();
+      
+      // Filter only active items
+      const stations = allStations.filter((s: any) => s.isActive);
+      
+      // Limit to 10,000 rows
+      const limitedStations = stations.slice(0, 10000);
+      
+      const data = limitedStations.map((s: any) => {
+        const line = lines.find(l => l.id === s.lineId);
+        return {
+          'Line Code': line?.code || '',
+          'Code': s.code,
+          'Name': s.name,
+          'Description': s.description || '',
+          'Order Index': s.orderIndex ?? '',
+          'Created At': new Date(s.createdAt).toLocaleString('vi-VN'),
+        };
+      });
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, ws, 'Stations');
+
+      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      
+      const { storagePut } = await import('../storage');
+      const filename = `stations_${Date.now()}.xlsx`;
+      const { url } = await storagePut(`exports/${filename}`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      
+      return { url, filename, count: data.length };
+    }),
+
+  exportWorkstations: protectedProcedure
+    .use(requirePermission('settings_workstation', 'canExport'))
+    .mutation(async () => {
+      const XLSX = await import('xlsx');
+      
+      const allWorkstations = await db.getWorkstations();
+      const factories = await db.getFactories();
+      const workshops = await db.getWorkshops();
+      const lines = await db.getProductionLines();
+      
+      // Filter only active items
+      const workstations = allWorkstations.filter((ws: any) => ws.isActive);
+      
+      // Limit to 10,000 rows
+      const limitedWorkstations = workstations.slice(0, 10000);
+      
+      const data = limitedWorkstations.map((ws: any) => {
+        const factory = factories.find(f => f.id === ws.factoryId);
+        const workshop = workshops.find(w => w.id === ws.workshopId);
+        const line = lines.find(l => l.id === ws.lineId);
+        return {
+          'Code': ws.code,
+          'Name': ws.name,
+          'Description': ws.description || '',
+          'Factory Code': factory?.code || '',
+          'Workshop Code': workshop?.code || '',
+          'Line Code': line?.code || '',
+          'Process Type': ws.processType || '',
+          'Order Index': ws.orderIndex ?? '',
+          'Created At': new Date(ws.createdAt).toLocaleString('vi-VN'),
+        };
+      });
+
+      const wb = XLSX.utils.book_new();
+      const wsSheet = XLSX.utils.json_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, wsSheet, 'Workstations');
+
+      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      
+      const { storagePut } = await import('../storage');
+      const filename = `workstations_${Date.now()}.xlsx`;
       const { url } = await storagePut(`exports/${filename}`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       
       return { url, filename, count: data.length };

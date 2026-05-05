@@ -137,7 +137,7 @@ export default function AIPerformanceDashboard() {
           </div>
           <div className="flex items-center gap-2">
             <Select value={dateRange} onValueChange={(v: '7d' | '30d' | '90d' | 'all') => setDateRange(v)}>
-              <SelectTrigger className="w-[150px]">
+              <SelectTrigger className="w-37.5">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -261,7 +261,7 @@ export default function AIPerformanceDashboard() {
                 </CardHeader>
                 <CardContent>
                   {statsLoading ? (
-                    <Skeleton className="h-[200px]" />
+                    <Skeleton className="h-50" />
                   ) : dashboardStats ? (
                     <div className="space-y-4">
                       <div className="flex items-center justify-center gap-8">
@@ -321,7 +321,7 @@ export default function AIPerformanceDashboard() {
                       </div>
                     </div>
                   ) : (
-                    <div className="h-[200px] flex items-center justify-center text-muted-foreground">
+                    <div className="h-50 flex items-center justify-center text-muted-foreground">
                       {t('common.noData')}
                     </div>
                   )}
@@ -338,7 +338,7 @@ export default function AIPerformanceDashboard() {
                 </CardHeader>
                 <CardContent>
                   {statsLoading ? (
-                    <Skeleton className="h-[200px]" />
+                    <Skeleton className="h-50" />
                   ) : dashboardStats ? (
                     <div className="space-y-4">
                       <div className="grid grid-cols-2 gap-4">
@@ -363,7 +363,7 @@ export default function AIPerformanceDashboard() {
                       </div>
                     </div>
                   ) : (
-                    <div className="h-[200px] flex items-center justify-center text-muted-foreground">
+<div className="h-50 flex items-center justify-center text-muted-foreground">
                       {t('common.noData')}
                     </div>
                   )}
@@ -446,7 +446,7 @@ export default function AIPerformanceDashboard() {
                     </div>
                   </div>
                 ) : (
-                  <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                  <div className="h-75 flex items-center justify-center text-muted-foreground">
                     <div className="text-center">
                       <Brain className="h-12 w-12 mx-auto mb-3 opacity-50" />
                       <p>{t('reports.needMoreFeedback')}</p>
@@ -475,7 +475,7 @@ export default function AIPerformanceDashboard() {
                     {[1, 2, 3].map(i => <Skeleton key={i} className="h-16" />)}
                   </div>
                 ) : trainingBatches?.batches && trainingBatches.batches.length > 0 ? (
-                  <ScrollArea className="h-[400px]">
+                  <ScrollArea className="h-100">
                     <div className="space-y-2">
                       {trainingBatches.batches.map((batch) => (
                         <Dialog key={batch.id}>
@@ -565,7 +565,7 @@ export default function AIPerformanceDashboard() {
                     </div>
                   </ScrollArea>
                 ) : (
-                  <div className="h-[200px] flex items-center justify-center text-muted-foreground">
+                  <div className="h-50 flex items-center justify-center text-muted-foreground">
                     <div className="text-center">
                       <Database className="h-12 w-12 mx-auto mb-3 opacity-50" />
                       <p>{t('reports.noTrainingBatches')}</p>
@@ -594,7 +594,7 @@ export default function AIPerformanceDashboard() {
                     {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-16" />)}
                   </div>
                 ) : recentSuggestions?.suggestions && recentSuggestions.suggestions.length > 0 ? (
-                  <ScrollArea className="h-[400px]">
+                  <ScrollArea className="h-100">
                     <div className="space-y-2">
                       {recentSuggestions.suggestions.map((suggestion: any) => (
                         <div
@@ -642,7 +642,7 @@ export default function AIPerformanceDashboard() {
                     </div>
                   </ScrollArea>
                 ) : (
-                  <div className="h-[200px] flex items-center justify-center text-muted-foreground">
+                  <div className="h-50 flex items-center justify-center text-muted-foreground">
                     <div className="text-center">
                       <Brain className="h-12 w-12 mx-auto mb-3 opacity-50" />
                       <p>{t('reports.noSuggestions')}</p>

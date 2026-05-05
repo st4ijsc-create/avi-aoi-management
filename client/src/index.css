@@ -60,12 +60,12 @@
   --sidebar-primary: oklch(0.72 0.14 185);
   --sidebar-primary-foreground: oklch(0.145 0.015 260);
   
-  /* Chart colors for data visualization */
-  --chart-1: oklch(0.72 0.14 185);
-  --chart-2: oklch(0.72 0.17 145);
-  --chart-3: oklch(0.65 0.2 25);
-  --chart-4: oklch(0.78 0.15 75);
-  --chart-5: oklch(0.65 0.15 280);
+  /* Chart colors for data visualization - bright/vivid on dark bg */
+  --chart-1: oklch(0.78 0.16 185);
+  --chart-2: oklch(0.78 0.19 145);
+  --chart-3: oklch(0.72 0.22 25);
+  --chart-4: oklch(0.84 0.17 75);
+  --chart-5: oklch(0.72 0.17 280);
   
   /* Dark background */
   --background: oklch(0.145 0.015 260);
@@ -155,6 +155,13 @@
   --sidebar-accent-foreground: oklch(0.25 0.02 260);
   --sidebar-border: oklch(0.88 0.01 260);
   --sidebar-ring: oklch(0.55 0.14 185);
+  
+  /* Chart colors - darker/more saturated for light backgrounds */
+  --chart-1: oklch(0.50 0.16 185);
+  --chart-2: oklch(0.50 0.18 145);
+  --chart-3: oklch(0.52 0.22 25);
+  --chart-4: oklch(0.58 0.16 75);
+  --chart-5: oklch(0.50 0.18 280);
 }
 
 @layer base {
@@ -192,6 +199,57 @@
   input[type="radio"]:not(:disabled) {
     @apply cursor-pointer;
   }
+}
+
+/* ========== Recharts theme-aware overrides ========== */
+/* Axis tick labels */
+.recharts-cartesian-axis-tick-value,
+.recharts-text {
+  fill: var(--foreground) !important;
+  opacity: 0.75;
+}
+
+/* Grid lines */
+.recharts-cartesian-grid line {
+  stroke: var(--border) !important;
+  opacity: 0.35;
+}
+
+/* Axis lines */
+.recharts-cartesian-axis-line,
+.recharts-cartesian-axis-tick-line {
+  stroke: var(--border) !important;
+}
+
+/* Tooltip container */
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  color: var(--foreground) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.recharts-tooltip-wrapper .recharts-default-tooltip .recharts-tooltip-label {
+  color: var(--foreground) !important;
+  font-weight: 600;
+}
+.recharts-tooltip-wrapper .recharts-default-tooltip .recharts-tooltip-item {
+  color: var(--foreground) !important;
+}
+
+/* Legend text */
+.recharts-legend-item-text {
+  color: var(--foreground) !important;
+}
+
+/* Pie/donut label text */
+.recharts-pie-label-text {
+  fill: var(--foreground) !important;
+}
+
+/* Surface background - ensure transparent so card bg shows through */
+.recharts-surface {
+  background: transparent;
 }
 
 @layer components {
@@ -254,7 +312,7 @@
 
   /* Gradient text for headings */
   .gradient-text {
-    @apply bg-gradient-to-r from-primary via-primary/80 to-accent bg-clip-text text-transparent;
+    @apply bg-linear-to-r from-primary via-primary/80 to-accent bg-clip-text text-transparent;
   }
 
   /* Glow effects */
@@ -286,7 +344,7 @@
   }
   
   .mobile-table {
-    @apply min-w-[600px] md:min-w-0;
+    @apply min-w-150 md:min-w-0;
   }
   
   .mobile-form-grid {
@@ -435,7 +493,7 @@
   
   /* Mobile chart container */
   .mobile-chart {
-    @apply h-[200px] sm:h-[250px] md:h-[300px];
+    @apply h-50 sm:h-62.5 md:h-75;
   }
   
   /* Mobile sidebar toggle */

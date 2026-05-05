@@ -43,6 +43,7 @@ interface MeasurementPoint {
   referenceImageUrl?: string;
   cropWidth: number; // Chiều rộng vùng cắt ảnh mẫu
   cropHeight: number; // Chiều cao vùng cắt ảnh mẫu
+  workstationId?: number;
 }
 
 interface ProductModel {
@@ -59,6 +60,7 @@ interface ProductModel {
   referenceImageUrl?: string | null;
   imageWidth?: number | null;
   imageHeight?: number | null;
+  imageDisplayMode?: string | null;
 }
 
 export default function ProductModels() {
@@ -94,6 +96,7 @@ export default function ProductModels() {
   const [newProductTargetYield, setNewProductTargetYield] = useState("");
   const [newProductMinYield, setNewProductMinYield] = useState("");
   const [uploadedImageUrl, setUploadedImageUrl] = useState("");
+  const [newProductDisplayMode, setNewProductDisplayMode] = useState<"contain" | "cover" | "stretch" | "none">("contain");
 
   // Edit product form states
   const [editProductCode, setEditProductCode] = useState("");
@@ -108,6 +111,7 @@ export default function ProductModels() {
   const [editProductMinYield, setEditProductMinYield] = useState("");
   const [editProductImageUrl, setEditProductImageUrl] = useState("");
   const [editProductIsActive, setEditProductIsActive] = useState(true);
+  const [editProductDisplayMode, setEditProductDisplayMode] = useState<"contain" | "cover" | "stretch" | "none">("contain");
 
   // Point form states
   const [pointCode, setPointCode] = useState("");
@@ -431,6 +435,7 @@ export default function ProductModels() {
         referenceImageUrl: p.referenceImageUrl || undefined,
         cropWidth: (p as any).cropWidth || 100,
         cropHeight: (p as any).cropHeight || 100,
+        workstationId: (p as any).workstationId || undefined,
       })));
     }
   }, [points]);
@@ -599,6 +604,7 @@ export default function ProductModels() {
         setPointRadius(point.radius);
         setPointCropWidth(point.cropWidth || 100);
         setPointCropHeight(point.cropHeight || 100);
+        setPointWorkstationId(point.workstationId);
       } else {
         setSelectedPointIndex(null);
         resetPointForm();
@@ -678,6 +684,7 @@ export default function ProductModels() {
       targetYieldRate: newProductTargetYield || undefined,
       minYieldRate: newProductMinYield || undefined,
       referenceImageUrl: uploadedImageUrl || undefined,
+      imageDisplayMode: newProductDisplayMode,
     });
   };
 
@@ -700,6 +707,7 @@ export default function ProductModels() {
       targetYieldRate: editProductTargetYield || undefined,
       minYieldRate: editProductMinYield || undefined,
       referenceImageUrl: editProductImageUrl || undefined,
+      imageDisplayMode: editProductDisplayMode,
       isActive: editProductIsActive,
     });
   };
@@ -721,6 +729,7 @@ export default function ProductModels() {
     setEditProductTargetYield(selectedProduct.targetYieldRate || "");
     setEditProductMinYield(selectedProduct.minYieldRate || "");
     setEditProductImageUrl("");
+    setEditProductDisplayMode((selectedProduct.imageDisplayMode as any) || "contain");
     setIsEditProductDialogOpen(true);
   };
 
@@ -1122,6 +1131,20 @@ export default function ProductModels() {
                     />
                   </div>
                   <div className="space-y-2">
+                    <Label>{t("products.imageDisplayModeLabel")}</Label>
+                    <Select value={newProductDisplayMode} onValueChange={(value: any) => setNewProductDisplayMode(value)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="contain">{t("products.displayContain")}</SelectItem>
+                        <SelectItem value="cover">{t("products.displayCover")}</SelectItem>
+                        <SelectItem value="stretch">{t("products.displayStretch")}</SelectItem>
+                        <SelectItem value="none">{t("products.displayNone")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="productImage">{t("products.referenceImageLabel")}</Label>
                     <div className="flex items-center gap-2">
                       <Input
@@ -1177,7 +1200,7 @@ export default function ProductModels() {
               <div className="flex gap-2">
                 {/* Lifecycle Filter */}
                 <Select value={productLifecycleFilter} onValueChange={(val: any) => setProductLifecycleFilter(val)}>
-                  <SelectTrigger className="w-[140px]">
+                  <SelectTrigger className="w-35">
                     <SelectValue placeholder={t("common.status")} />
                   </SelectTrigger>
                   <SelectContent>
@@ -1230,7 +1253,7 @@ export default function ProductModels() {
               )}
             </div>
             
-            <ScrollArea className="h-[500px]">
+            <ScrollArea className="h-125">
               <div className="space-y-2">
                 {productModels?.map((product) => (
                   <div
@@ -1474,7 +1497,7 @@ export default function ProductModels() {
                     )}
                   </div>
 
-                  <div className="relative border rounded-lg overflow-auto bg-muted/30 max-h-[500px]">
+                  <div className="relative border rounded-lg overflow-auto bg-muted/30 max-h-125">
                     {selectedProduct.referenceImageUrl ? (
                       <canvas
                         ref={canvasRef}
@@ -1532,6 +1555,7 @@ export default function ProductModels() {
                             setPointRadius(point.radius);
                             setPointCropWidth(point.cropWidth || 100);
                             setPointCropHeight(point.cropHeight || 100);
+                            setPointWorkstationId(point.workstationId);
                           }}
                         >
                           <Target className="h-3 w-3 mr-1" />
@@ -1545,7 +1569,7 @@ export default function ProductModels() {
                 {/* Point Details Form */}
                 <div className="xl:col-span-1">
                   {selectedPointIndex !== null ? (
-                    <ScrollArea className="h-[550px]">
+                    <ScrollArea className="h-137.5">
                       <div className="space-y-4 p-4 border rounded-lg bg-muted/20">
                         <div className="flex items-center justify-between">
                           <h4 className="font-medium">{t("products.pointDetails")} #{selectedPointIndex + 1}</h4>
@@ -2034,6 +2058,20 @@ export default function ProductModels() {
               </div>
             </div>
             <div className="space-y-2">
+              <Label>{t("products.imageDisplayModeLabel")}</Label>
+              <Select value={editProductDisplayMode} onValueChange={(value: any) => setEditProductDisplayMode(value)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="contain">{t("products.displayContain")}</SelectItem>
+                  <SelectItem value="cover">{t("products.displayCover")}</SelectItem>
+                  <SelectItem value="stretch">{t("products.displayStretch")}</SelectItem>
+                  <SelectItem value="none">{t("products.displayNone")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="editProductImage">{t("products.newReferenceImage")}</Label>
               <Input
                 id="editProductImage"
@@ -2165,7 +2203,7 @@ export default function ProductModels() {
             {/* Apply Template Section */}
             <div className="space-y-4">
               <h4 className="font-medium">{t("products.applyExistingTemplate")}</h4>
-              <ScrollArea className="h-[200px] border rounded-md p-2">
+              <ScrollArea className="h-50 border rounded-md p-2">
                 {templates && templates.length > 0 ? (
                   <div className="space-y-2">
                     {templates.map((template) => (

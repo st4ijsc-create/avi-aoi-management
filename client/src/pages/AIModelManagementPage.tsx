@@ -878,7 +878,7 @@ function ModelDetailPanel({
                       </Badge>
                     </TableCell>
                     <TableCell className="text-xs">{formatFileSize(v.fileSize)}</TableCell>
-                    <TableCell className="text-xs max-w-[150px] truncate">
+                    <TableCell className="text-xs max-w-37.5 truncate">
                       {v.changeLog || <span className="italic text-muted-foreground">—</span>}
                     </TableCell>
                     <TableCell className="text-right">
@@ -1172,7 +1172,7 @@ export default function AIModelManagementPage() {
                 </div>
                 {/* Filters */}
                 <div className="flex flex-wrap gap-2 pt-2">
-                  <div className="relative flex-1 min-w-[200px]">
+                  <div className="relative flex-1 min-w-50">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
                       value={searchQuery}
@@ -1182,7 +1182,7 @@ export default function AIModelManagementPage() {
                     />
                   </div>
                   <Select value={filterFormat} onValueChange={setFilterFormat}>
-                    <SelectTrigger className="w-[130px]">
+                    <SelectTrigger className="w-32.5">
                       <SelectValue placeholder={t("aiModels.fields.format", "Format")} />
                     </SelectTrigger>
                     <SelectContent>
@@ -1193,7 +1193,7 @@ export default function AIModelManagementPage() {
                     </SelectContent>
                   </Select>
                   <Select value={filterStatus} onValueChange={setFilterStatus}>
-                    <SelectTrigger className="w-[130px]">
+                    <SelectTrigger className="w-32.5">
                       <SelectValue placeholder={t("aiModels.fields.status", "Status")} />
                     </SelectTrigger>
                     <SelectContent>

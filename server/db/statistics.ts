@@ -655,8 +655,16 @@ export async function getTopNGMeasurementPoints(params: {
   const pointDefIds = result.map(r => r.pointDefId);
   if (pointDefIds.length === 0) return [];
 
-  const pointDefs = await db.select()
+  const pointDefs = await db.select({
+    id: measurementPointDefs.id,
+    code: measurementPointDefs.code,
+    name: measurementPointDefs.name,
+    productModelId: measurementPointDefs.productModelId,
+    productCode: productModels.code,
+    productName: productModels.name,
+  })
     .from(measurementPointDefs)
+    .leftJoin(productModels, eq(measurementPointDefs.productModelId, productModels.id))
     .where(inArray(measurementPointDefs.id, pointDefIds));
 
   const pointDefMap = new Map(pointDefs.map(p => [p.id, p]));
@@ -675,6 +683,9 @@ export async function getTopNGMeasurementPoints(params: {
       pointDefId: r.pointDefId,
       code: pointDef?.code || 'Unknown',
       name: pointDef?.name || 'Unknown',
+      productModelId: pointDef?.productModelId || null,
+      productCode: pointDef?.productCode || null,
+      productName: pointDef?.productName || null,
       ngCount: Number(r.ngCount),
       percentage: totalNG > 0 ? (Number(r.ngCount) / totalNG * 100) : 0,
     };
@@ -915,17 +926,17 @@ export async function getDefectsByWorkstation(filters?: {
     // Simplified query: Use LEFT JOIN to handle cases with no measurement results
     const query = sql`
       SELECT 
-        w.id as workstationId,
-        w.code as workstationCode,
-        w.name as workstationName,
+        w.id as "workstationId",
+        w.code as "workstationCode",
+        w.name as "workstationName",
         w."processType",
-        mpd.id as measurementPointId,
-        mpd.code as measurementPointCode,
-        mpd.name as measurementPointName,
-        COALESCE(COUNT(mr.id), 0) as totalCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as okCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as ngCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount
+        mpd.id as "measurementPointId",
+        mpd.code as "measurementPointCode",
+        mpd.name as "measurementPointName",
+        COALESCE(COUNT(mr.id), 0) as "totalCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as "okCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as "ngCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as "ntfCount"
       FROM workstations w
       LEFT JOIN measurement_point_defs mpd ON mpd."workstationId" = w.id
       LEFT JOIN measurement_results mr ON mr."pointDefId" = mpd.id
@@ -937,7 +948,7 @@ export async function getDefectsByWorkstation(filters?: {
       ${filters?.machineId ? sql`AND (pi."machineId" IS NULL OR pi."machineId" = ${filters.machineId})` : sql``}
       GROUP BY w.id, w.code, w.name, w."processType", mpd.id, mpd.code, mpd.name
       HAVING mpd.id IS NOT NULL
-      ORDER BY ngCount DESC
+      ORDER BY "ngCount" DESC
     `;
     
     const result = await db.execute(query);
@@ -979,15 +990,15 @@ export async function getTopNGMeasurementPointsByWorkstation(filters?: {
     
     const query = sql`
       SELECT 
-        w.id as workstationId,
-        w.code as workstationCode,
-        w.name as workstationName,
-        mpd.id as measurementPointId,
-        mpd.code as measurementPointCode,
-        mpd.name as measurementPointName,
-        COALESCE(COUNT(mr.id), 0) as totalCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as ngCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount
+        w.id as "workstationId",
+        w.code as "workstationCode",
+        w.name as "workstationName",
+        mpd.id as "measurementPointId",
+        mpd.code as "measurementPointCode",
+        mpd.name as "measurementPointName",
+        COALESCE(COUNT(mr.id), 0) as "totalCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as "ngCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as "ntfCount"
       FROM measurement_point_defs mpd
       LEFT JOIN workstations w ON mpd."workstationId" = w.id
       LEFT JOIN measurement_results mr ON mr."pointDefId" = mpd.id AND mr.result IN ('NG', 'NTF')
@@ -997,7 +1008,7 @@ export async function getTopNGMeasurementPointsByWorkstation(filters?: {
       ${endDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" <= ${endDateStr})` : sql``}
       GROUP BY w.id, w.code, w.name, mpd.id, mpd.code, mpd.name
       HAVING SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) > 0 OR SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END) > 0
-      ORDER BY ngCount DESC
+      ORDER BY "ngCount" DESC
       LIMIT ${limitVal}
     `;
 
@@ -1036,16 +1047,16 @@ export async function getWorkstationSummary(filters?: {
     
     const query = sql`
       SELECT 
-        w.id as workstationId,
-        w.code as workstationCode,
-        w.name as workstationName,
+        w.id as "workstationId",
+        w.code as "workstationCode",
+        w.name as "workstationName",
         w."processType",
-        COALESCE(COUNT(DISTINCT mpd.id), 0) as measurementPointCount,
-        COALESCE(COUNT(mr.id), 0) as totalInspections,
-        COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as okCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as ngCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount,
-        COALESCE(ROUND(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as yieldRate
+        COALESCE(COUNT(DISTINCT mpd.id), 0) as "measurementPointCount",
+        COALESCE(COUNT(mr.id), 0) as "totalInspections",
+        COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as "okCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as "ngCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as "ntfCount",
+        COALESCE(ROUND(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as "yieldRate"
       FROM workstations w
       LEFT JOIN measurement_point_defs mpd ON mpd."workstationId" = w.id
       LEFT JOIN measurement_results mr ON mr."pointDefId" = mpd.id
@@ -1054,7 +1065,7 @@ export async function getWorkstationSummary(filters?: {
       ${startDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" >= ${startDateStr})` : sql``}
       ${endDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" <= ${endDateStr})` : sql``}
       GROUP BY w.id, w.code, w.name, w."processType"
-      ORDER BY ngCount DESC
+      ORDER BY "ngCount" DESC
     `;
     
     const result = await db.execute(query);
@@ -1095,28 +1106,28 @@ export async function getMeasurementPointsByWorkstation(filters: {
     
     const query = sql`
       SELECT 
-        mpd.id as measurementPointId,
-        mpd.code as measurementPointCode,
-        mpd.name as measurementPointName,
-        mpd.pointType,
-        mpd.lowerLimit,
-        mpd.upperLimit,
+        mpd.id as "measurementPointId",
+        mpd.code as "measurementPointCode",
+        mpd.name as "measurementPointName",
+        mpd."measurementType" as "pointType",
+        mpd."lowerLimit",
+        mpd."upperLimit",
         mpd.unit,
-        COALESCE(COUNT(mr.id), 0) as totalCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as okCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as ngCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount,
-        COALESCE(AVG(mr.measuredValue), 0) as avgValue,
-        COALESCE(MIN(mr.measuredValue), 0) as minValue,
-        COALESCE(MAX(mr.measuredValue), 0) as maxValue
+        COALESCE(COUNT(mr.id), 0) as "totalCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as "okCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as "ngCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as "ntfCount",
+        COALESCE(AVG(mr."measuredValue"), 0) as "avgValue",
+        COALESCE(MIN(mr."measuredValue"), 0) as "minValue",
+        COALESCE(MAX(mr."measuredValue"), 0) as "maxValue"
       FROM measurement_point_defs mpd
       LEFT JOIN measurement_results mr ON mr."pointDefId" = mpd.id
       LEFT JOIN product_inspections pi ON mr."inspectionId" = pi.id
       WHERE mpd."workstationId" = ${filters.workstationId}
       ${startDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" >= ${startDateStr})` : sql``}
       ${endDateStr ? sql`AND (pi."inspectionTime" IS NULL OR pi."inspectionTime" <= ${endDateStr})` : sql``}
-      GROUP BY mpd.id, mpd.code, mpd.name, mpd.pointType, mpd.lowerLimit, mpd.upperLimit, mpd.unit
-      ORDER BY ngCount DESC, mpd.code ASC
+      GROUP BY mpd.id, mpd.code, mpd.name, mpd."measurementType", mpd."lowerLimit", mpd."upperLimit", mpd.unit
+      ORDER BY "ngCount" DESC, mpd.code ASC
     `;
 
     const result = await db.execute(query);
@@ -1333,11 +1344,11 @@ export async function getNGTrendByDay(filters?: {
     const query = sql`
       SELECT 
         CAST(pi."inspectionTime" AS DATE) as date,
-        COALESCE(COUNT(mr.id), 0) as totalCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as okCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as ngCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount,
-        COALESCE(ROUND(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as ngRate
+        COALESCE(COUNT(mr.id), 0) as "totalCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as "okCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as "ngCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as "ntfCount",
+        COALESCE(ROUND(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as "ngRate"
       FROM measurement_results mr
       INNER JOIN product_inspections pi ON mr."inspectionId" = pi.id
       LEFT JOIN measurement_point_defs mpd ON mr."pointDefId" = mpd.id
@@ -1387,11 +1398,11 @@ export async function getNGComparison(filters: {
     // Get current period stats
     const currentQuery = sql`
       SELECT 
-        COALESCE(COUNT(mr.id), 0) as totalCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as okCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as ngCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount,
-        COALESCE(ROUND(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as ngRate
+        COALESCE(COUNT(mr.id), 0) as "totalCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as "okCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as "ngCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as "ntfCount",
+        COALESCE(ROUND(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as "ngRate"
       FROM measurement_results mr
       INNER JOIN product_inspections pi ON mr."inspectionId" = pi.id
       WHERE pi."inspectionTime" >= ${currentStartStr}
@@ -1401,11 +1412,11 @@ export async function getNGComparison(filters: {
     // Get previous period stats
     const previousQuery = sql`
       SELECT 
-        COALESCE(COUNT(mr.id), 0) as totalCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as okCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as ngCount,
-        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as ntfCount,
-        COALESCE(ROUND(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as ngRate
+        COALESCE(COUNT(mr.id), 0) as "totalCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END), 0) as "okCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END), 0) as "ngCount",
+        COALESCE(SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END), 0) as "ntfCount",
+        COALESCE(ROUND(SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(mr.id), 0), 2), 0) as "ngRate"
       FROM measurement_results mr
       INNER JOIN product_inspections pi ON mr."inspectionId" = pi.id
       WHERE pi."inspectionTime" >= ${previousStartStr}
@@ -1454,6 +1465,257 @@ export async function getNGComparison(filters: {
     console.error('getNGComparison error:', error);
     return null;
   }
+}
+
+// ============ FALLBACK NG FUNCTIONS (product_inspections-based) ============
+
+// Get NG summary by machine (fallback when workstation data is unavailable)
+export async function getNGSummaryByMachine(filters?: {
+  startDate?: Date;
+  endDate?: Date;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  try {
+    const startDateStr = filters?.startDate?.toISOString();
+    const endDateStr = filters?.endDate?.toISOString();
+
+    const query = sql`
+      SELECT 
+        m.id as "machineId",
+        m.code as "machineCode",
+        m.name as "machineName",
+        COALESCE(COUNT(pi.id), 0) as "totalInspections",
+        COALESCE(SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END), 0) as "okCount",
+        COALESCE(SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END), 0) as "ngCount",
+        COALESCE(SUM(CASE WHEN pi."overallResult" = 'NTF' THEN 1 ELSE 0 END), 0) as "ntfCount",
+        COALESCE(ROUND(SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(pi.id), 0), 2), 0) as "yieldRate"
+      FROM machines m
+      LEFT JOIN product_inspections pi ON pi."machineId" = m.id
+        ${startDateStr ? sql`AND pi."inspectionTime" >= ${startDateStr}` : sql``}
+        ${endDateStr ? sql`AND pi."inspectionTime" <= ${endDateStr}` : sql``}
+      WHERE m."isActive" = true
+      GROUP BY m.id, m.code, m.name
+      ORDER BY "ngCount" DESC
+    `;
+
+    const result = await db.execute(query);
+    const rows = (result as any).rows || result;
+    return (rows as unknown) as Array<{
+      machineId: number;
+      machineCode: string;
+      machineName: string;
+      totalInspections: number;
+      okCount: number;
+      ngCount: number;
+      ntfCount: number;
+      yieldRate: number;
+    }>;
+  } catch (error) {
+    console.error('getNGSummaryByMachine error:', error);
+    return [];
+  }
+}
+
+// Get NG trend by day from product_inspections directly (fallback)
+export async function getNGTrendByDayDirect(filters?: {
+  startDate?: Date;
+  endDate?: Date;
+  machineId?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  try {
+    const startDateStr = filters?.startDate?.toISOString();
+    const endDateStr = filters?.endDate?.toISOString();
+
+    const query = sql`
+      SELECT 
+        CAST(pi."inspectionTime" AS DATE) as date,
+        COALESCE(COUNT(pi.id), 0) as "totalCount",
+        COALESCE(SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END), 0) as "okCount",
+        COALESCE(SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END), 0) as "ngCount",
+        COALESCE(SUM(CASE WHEN pi."overallResult" = 'NTF' THEN 1 ELSE 0 END), 0) as "ntfCount",
+        COALESCE(ROUND(SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(pi.id), 0), 2), 0) as "ngRate"
+      FROM product_inspections pi
+      WHERE pi."inspectionTime" IS NOT NULL
+      ${startDateStr ? sql`AND pi."inspectionTime" >= ${startDateStr}` : sql``}
+      ${endDateStr ? sql`AND pi."inspectionTime" <= ${endDateStr}` : sql``}
+      ${filters?.machineId ? sql`AND pi."machineId" = ${filters.machineId}` : sql``}
+      GROUP BY CAST(pi."inspectionTime" AS DATE)
+      ORDER BY date ASC
+    `;
+
+    const result = await db.execute(query);
+    const rows = (result as any).rows || result;
+    return (rows as unknown) as Array<{
+      date: string;
+      totalCount: number;
+      okCount: number;
+      ngCount: number;
+      ntfCount: number;
+      ngRate: number;
+    }>;
+  } catch (error) {
+    console.error('getNGTrendByDayDirect error:', error);
+    return [];
+  }
+}
+
+// Get NG comparison from product_inspections directly (fallback)
+export async function getNGComparisonDirect(filters: {
+  currentStartDate: Date;
+  currentEndDate: Date;
+  previousStartDate: Date;
+  previousEndDate: Date;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+
+  try {
+    const currentStartStr = filters.currentStartDate.toISOString();
+    const currentEndStr = filters.currentEndDate.toISOString();
+    const previousStartStr = filters.previousStartDate.toISOString();
+    const previousEndStr = filters.previousEndDate.toISOString();
+
+    const currentQuery = sql`
+      SELECT 
+        COALESCE(COUNT(pi.id), 0) as "totalCount",
+        COALESCE(SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END), 0) as "okCount",
+        COALESCE(SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END), 0) as "ngCount",
+        COALESCE(SUM(CASE WHEN pi."overallResult" = 'NTF' THEN 1 ELSE 0 END), 0) as "ntfCount",
+        COALESCE(ROUND(SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(pi.id), 0), 2), 0) as "ngRate"
+      FROM product_inspections pi
+      WHERE pi."inspectionTime" >= ${currentStartStr}
+        AND pi."inspectionTime" <= ${currentEndStr}
+    `;
+
+    const previousQuery = sql`
+      SELECT 
+        COALESCE(COUNT(pi.id), 0) as "totalCount",
+        COALESCE(SUM(CASE WHEN pi."overallResult" = 'OK' THEN 1 ELSE 0 END), 0) as "okCount",
+        COALESCE(SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END), 0) as "ngCount",
+        COALESCE(SUM(CASE WHEN pi."overallResult" = 'NTF' THEN 1 ELSE 0 END), 0) as "ntfCount",
+        COALESCE(ROUND(SUM(CASE WHEN pi."overallResult" = 'NG' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(pi.id), 0), 2), 0) as "ngRate"
+      FROM product_inspections pi
+      WHERE pi."inspectionTime" >= ${previousStartStr}
+        AND pi."inspectionTime" <= ${previousEndStr}
+    `;
+
+    const [currentResult, previousResult] = await Promise.all([
+      db.execute(currentQuery),
+      db.execute(previousQuery),
+    ]);
+
+    const current = ((currentResult as any).rows?.[0] || (currentResult as any)[0]) || { totalCount: 0, okCount: 0, ngCount: 0, ntfCount: 0, ngRate: 0 };
+    const previous = ((previousResult as any).rows?.[0] || (previousResult as any)[0]) || { totalCount: 0, okCount: 0, ngCount: 0, ntfCount: 0, ngRate: 0 };
+
+    const ngRateChange = Number(current.ngRate) - Number(previous.ngRate);
+    const totalCountChange = Number(current.totalCount) - Number(previous.totalCount);
+    const ngCountChange = Number(current.ngCount) - Number(previous.ngCount);
+
+    return {
+      current: {
+        totalCount: Number(current.totalCount),
+        okCount: Number(current.okCount),
+        ngCount: Number(current.ngCount),
+        ntfCount: Number(current.ntfCount),
+        ngRate: Number(current.ngRate),
+      },
+      previous: {
+        totalCount: Number(previous.totalCount),
+        okCount: Number(previous.okCount),
+        ngCount: Number(previous.ngCount),
+        ntfCount: Number(previous.ntfCount),
+        ngRate: Number(previous.ngRate),
+      },
+      changes: {
+        ngRateChange,
+        ngRateChangePercent: previous.ngRate > 0 ? (ngRateChange / Number(previous.ngRate)) * 100 : 0,
+        totalCountChange,
+        totalCountChangePercent: previous.totalCount > 0 ? (totalCountChange / Number(previous.totalCount)) * 100 : 0,
+        ngCountChange,
+        ngCountChangePercent: previous.ngCount > 0 ? (ngCountChange / Number(previous.ngCount)) * 100 : 0,
+        isImproved: ngRateChange < 0,
+      },
+    };
+  } catch (error) {
+    console.error('getNGComparisonDirect error:', error);
+    return null;
+  }
+}
+
+// Get gallery images from measurement_results joined with product_inspections
+export async function getGalleryImages(params: {
+  factoryCode?: string;
+  workshopCode?: string;
+  lineCode?: string;
+  stationCode?: string;
+  machineCode?: string;
+  serialNumber?: string;
+  productModel?: string;
+  result?: "OK" | "NG" | "NTF";
+  startDate?: Date;
+  endDate?: Date;
+  limit?: number;
+  offset?: number;
+  userId?: number;
+  userRole?: string;
+}) {
+  const db = await getDb();
+  if (!db) return { data: [], total: 0 };
+
+  // Reuse searchInspections to get matching inspection IDs
+  const inspectionResult = await searchInspections({
+    ...params,
+    limit: params.limit || 100,
+    offset: params.offset || 0,
+  });
+
+  if (inspectionResult.data.length === 0) {
+    return { data: [], total: 0 };
+  }
+
+  const inspectionIds = inspectionResult.data.map(i => i.id);
+
+  // Fetch measurement results with images for these inspections
+  const results = await db.select({
+    id: measurementResults.id,
+    inspectionId: measurementResults.inspectionId,
+    pointDefId: measurementResults.pointDefId,
+    measuredValue: measurementResults.measuredValue,
+    measuredValueText: measurementResults.measuredValueText,
+    result: measurementResults.result,
+    imageUrl: measurementResults.imageUrl,
+    imageKey: measurementResults.imageKey,
+    remark: measurementResults.remark,
+    createdAt: measurementResults.createdAt,
+    // Point def info
+    pointCode: measurementPointDefs.code,
+    pointName: measurementPointDefs.name,
+    // Inspection info
+    serialNumber: productInspections.serialNumber,
+    overallResult: productInspections.overallResult,
+    inspectionTime: productInspections.inspectionTime,
+    productModel: productInspections.productModel,
+  }).from(measurementResults)
+    .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
+    .leftJoin(measurementPointDefs, eq(measurementResults.pointDefId, measurementPointDefs.id))
+    .where(
+      and(
+        inArray(measurementResults.inspectionId, inspectionIds),
+        sql`${measurementResults.imageUrl} IS NOT NULL AND ${measurementResults.imageUrl} != ''`
+      )
+    )
+    .orderBy(desc(productInspections.inspectionTime), measurementResults.id);
+
+  return {
+    data: results,
+    total: results.length,
+    inspectionCount: inspectionResult.total,
+  };
 }
 
 
@@ -1746,6 +2008,9 @@ export async function getTopNGMeasurementPointsEnhanced(filters: {
       pointCode: measurementPointDefs.code,
       pointName: measurementPointDefs.name,
       measurementType: measurementPointDefs.measurementType,
+      productModelId: measurementPointDefs.productModelId,
+      productCode: productModels.code,
+      productName: productModels.name,
       ngCount: sql<number>`COUNT(*)`,
       totalCount: sql<number>`(
         SELECT COUNT(*) FROM measurement_results mr2 
@@ -1754,9 +2019,10 @@ export async function getTopNGMeasurementPointsEnhanced(filters: {
     })
     .from(measurementResults)
     .leftJoin(measurementPointDefs, eq(measurementResults.pointDefId, measurementPointDefs.id))
+    .leftJoin(productModels, eq(measurementPointDefs.productModelId, productModels.id))
     .leftJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
     .where(whereClause)
-    .groupBy(measurementResults.pointDefId, measurementPointDefs.code, measurementPointDefs.name, measurementPointDefs.measurementType)
+    .groupBy(measurementResults.pointDefId, measurementPointDefs.code, measurementPointDefs.name, measurementPointDefs.measurementType, measurementPointDefs.productModelId, productModels.code, productModels.name)
     .orderBy(sql`COUNT(*) DESC`)
     .limit(limitCount);
   
@@ -1766,6 +2032,9 @@ export async function getTopNGMeasurementPointsEnhanced(filters: {
     pointCode: r.pointCode || 'N/A',
     pointName: r.pointName || 'Unknown',
     measurementType: r.measurementType || 'OTHER',
+    productModelId: r.productModelId || null,
+    productCode: r.productCode || null,
+    productName: r.productName || null,
     ngCount: Number(r.ngCount),
     totalCount: Number(r.totalCount),
     ngRate: Number(r.totalCount) > 0 

@@ -37,8 +37,8 @@ export const approvalStatusEnum = pgEnum("approvalstatusenum", ["PENDING", "APPR
 export const mappingTypeEnum = pgEnum("mappingtypeenum", ["AUTO", "MANUAL"]);
 export const connectionStatusEnum_1 = pgEnum("connectionstatusenum_1", ["ONLINE", "OFFLINE", "DISCONNECTED"]);
 export const summaryTypeEnum = pgEnum("summarytypeenum", ["DAILY", "WEEKLY"]);
-export const messageTypeEnum = pgEnum("messagetypeenum", ["NG_ALERT", "DAILY_SUMMARY", "WEEKLY_SUMMARY", "CUSTOM"]);
-export const deliveryStatusEnum = pgEnum("deliverystatusenum", ["PENDING", "DELIVERED", "FAILED"]);
+export const messageTypeEnum = pgEnum("messagetypeenum", ["NG_ALERT", "DAILY_SUMMARY", "WEEKLY_SUMMARY", "CUSTOM", "COMMAND"]);
+export const deliveryStatusEnum = pgEnum("deliverystatusenum", ["PENDING", "DELIVERED", "FAILED", "SENT"]);
 export const ruleTypeEnum = pgEnum("ruletypeenum", ["LATENCY_THRESHOLD", "BROKER_DISCONNECT", "MESSAGE_FAILURE_RATE", "THROUGHPUT_LOW", "THROUGHPUT_HIGH", "CLIENT_OFFLINE"]);
 export const comparisonOperatorEnum_2 = pgEnum("comparisonoperatorenum_2", ["GT", "GTE", "LT", "LTE", "EQ"]);
 export const dataTypeEnum = pgEnum("datatypeenum", ["STRING", "NUMBER", "BOOLEAN", "JSON"]);
@@ -93,7 +93,7 @@ export const syncOperationEnum = pgEnum("syncoperationenum", ["POINTS_PUSH", "PO
 export const syncStatusEnum = pgEnum("syncstatusenum", ["SUCCESS", "PARTIAL", "FAILED"]);
 
 // AI Model enums
-export const modelFormatEnum = pgEnum("modelformatenum", ["ONNX", "TENSORRT", "OPENVINO", "CUSTOM"]);
+export const modelFormatEnum = pgEnum("modelformatenum", ["ONNX", "TENSORRT", "OPENVINO", "CUSTOM", "GGUF"]);
 export const modelStatusEnum = pgEnum("modelstatusenum", ["UPLOADING", "VALIDATING", "READY", "ACTIVE", "INACTIVE", "FAILED", "ARCHIVED"]);
 export const inferenceStatusEnum = pgEnum("inferencestatusenum", ["PENDING", "RUNNING", "COMPLETED", "FAILED", "TIMEOUT"]);
 

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -18,15 +18,22 @@ import {
   User,
   Loader2,
   Wrench,
+  StopCircle,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useAIStream } from "@/hooks/useAIStream";
 
 export default function AIChatPage() {
   const { t } = useTranslation();
   const [selectedConvId, setSelectedConvId] = useState<number | null>(null);
   const [inputMessage, setInputMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Streaming hook
+  const { streamingText, isStreaming, error: streamError, startStream, stopStream } = useAIStream();
+  const [optimisticUserMsg, setOptimisticUserMsg] = useState<string | null>(null);
 
   // Conversations list
   const { data: conversations, isLoading: loadingConvs, refetch: refetchConvs } =
@@ -57,43 +64,89 @@ export default function AIChatPage() {
     },
   });
 
+  // Fallback: non-streaming chat mutation
   const chatMutation = trpc.aiChat.chat.useMutation({
     onSuccess: () => {
+      setOptimisticUserMsg(null);
       refetchConv();
     },
     onError: (err) => {
+      setOptimisticUserMsg(null);
       toast.error(err.message);
+    },
+  });
+
+  // Save streamed messages to DB
+  const saveStreamedMsg = trpc.aiChat.saveStreamedMessage.useMutation({
+    onSuccess: () => {
+      refetchConv();
     },
   });
 
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [conversation?.messages]);
+  }, [conversation?.messages, streamingText, optimisticUserMsg]);
+
+  // Show stream errors
+  useEffect(() => {
+    if (streamError) {
+      toast.error(streamError);
+    }
+  }, [streamError]);
 
   const handleSend = async () => {
     if (!inputMessage.trim()) return;
+    const userMsg = inputMessage;
+    setInputMessage("");
+    setOptimisticUserMsg(userMsg);
 
-    if (!selectedConvId) {
-      // Create new conversation first
-      const conv = await createConv.mutateAsync({ title: inputMessage.slice(0, 50) });
+    let convId = selectedConvId;
+
+    // Create conversation if none selected
+    if (!convId) {
+      try {
+        const conv = await createConv.mutateAsync({ title: userMsg.slice(0, 50) });
+        convId = conv.id;
+      } catch {
+        setOptimisticUserMsg(null);
+        return;
+      }
+    }
+
+    // Build messages for context — limit to last 10 messages to speed up GGUF inference
+    const existingMessages = (conversation?.messages ?? []).slice(-10).map((m: any) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    }));
+    const allMessages = [...existingMessages, { role: "user" as const, content: userMsg }];
+
+    // Try streaming first
+    const result = await startStream(allMessages, { maxTokens: 512, temperature: 0.7 });
+
+    if (result) {
+      // Streaming succeeded — persist messages
+      setOptimisticUserMsg(null);
+      saveStreamedMsg.mutate({
+        conversationId: convId!,
+        userMessage: userMsg,
+        assistantMessage: result.fullText,
+        tokensUsed: result.tokensGenerated,
+      });
+    } else if (!streamError?.includes("AbortError")) {
+      // Streaming failed — fall back to tRPC mutation
       chatMutation.mutate({
-        conversationId: conv.id,
-        userMessage: inputMessage,
-        messages: [{ role: "user" as const, content: inputMessage }],
+        conversationId: String(convId),
+        userMessage: userMsg,
+        messages: [{ role: "user" as const, content: userMsg }],
         language: "vi",
       });
     } else {
-      chatMutation.mutate({
-        conversationId: selectedConvId,
-        userMessage: inputMessage,
-        messages: [{ role: "user" as const, content: inputMessage }],
-        language: "vi",
-      });
+      setOptimisticUserMsg(null);
     }
-    setInputMessage("");
   };
 
+  const isBusy = isStreaming || chatMutation.isPending;
   const messages = conversation?.messages ?? [];
 
   return (
@@ -125,7 +178,7 @@ export default function AIChatPage() {
                   <div
                     key={conv.id}
                     className={cn(
-                      "flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer text-sm transition-colors",
+                      "group flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer text-sm transition-colors",
                       selectedConvId === conv.id
                         ? "bg-primary/10 text-primary font-medium"
                         : "hover:bg-muted"
@@ -215,7 +268,34 @@ export default function AIChatPage() {
                       )}
                     </div>
                   ))}
-                  {chatMutation.isPending && (
+                  {/* Optimistic user message */}
+                  {optimisticUserMsg && (
+                    <div className="flex gap-3 justify-end">
+                      <div className="max-w-[80%] rounded-lg px-4 py-2.5 text-sm bg-primary text-primary-foreground">
+                        <p className="whitespace-pre-wrap">{optimisticUserMsg}</p>
+                      </div>
+                      <div className="h-8 w-8 rounded-full bg-secondary flex items-center justify-center shrink-0">
+                        <User className="h-4 w-4" />
+                      </div>
+                    </div>
+                  )}
+                  {/* Streaming AI response */}
+                  {isStreaming && streamingText && (
+                    <div className="flex gap-3 justify-start">
+                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                        <Zap className="h-4 w-4 text-primary animate-pulse" />
+                      </div>
+                      <div className="max-w-[80%] rounded-lg px-4 py-2.5 text-sm bg-muted">
+                        <p className="whitespace-pre-wrap">{streamingText}</p>
+                        <Badge variant="outline" className="mt-1.5 text-xs">
+                          <Zap className="h-3 w-3 mr-1" />
+                          {t("aiChat.streaming", "Đang stream...")}
+                        </Badge>
+                      </div>
+                    </div>
+                  )}
+                  {/* Loading spinner (fallback non-streaming) */}
+                  {(chatMutation.isPending || (isStreaming && !streamingText)) && (
                     <div className="flex gap-3">
                       <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
                         <Bot className="h-4 w-4 text-primary" />
@@ -242,14 +322,20 @@ export default function AIChatPage() {
                         handleSend();
                       }
                     }}
-                    disabled={chatMutation.isPending}
+                    disabled={isBusy}
                   />
-                  <Button
-                    onClick={handleSend}
-                    disabled={!inputMessage.trim() || chatMutation.isPending}
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
+                  {isStreaming ? (
+                    <Button variant="destructive" onClick={stopStream}>
+                      <StopCircle className="h-4 w-4" />
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={handleSend}
+                      disabled={!inputMessage.trim() || isBusy}
+                    >
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               </div>
             </>

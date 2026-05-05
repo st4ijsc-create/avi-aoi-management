@@ -132,7 +132,7 @@ function DraggableOrder({
       {...listeners}
     >
       <div className="px-2 py-1 text-white text-xs truncate flex items-center gap-1">
-        <GripVertical className="w-3 h-3 opacity-60 flex-shrink-0" />
+        <GripVertical className="w-3 h-3 opacity-60 shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="font-medium truncate">{order.orderCode}</div>
           <div className="flex items-center gap-1 text-[10px] opacity-90">
@@ -959,7 +959,7 @@ export default function GanttChart({
                   {dateRange.days.map((day) => (
                     <div
                       key={day.toISOString()}
-                      className={`flex-shrink-0 p-1 text-center text-xs border-r ${
+                      className={`shrink-0 p-1 text-center text-xs border-r ${
                         isToday(day) ? "bg-primary/10 font-bold" : ""
                       } ${day.getDay() === 0 || day.getDay() === 6 ? "bg-muted/30" : ""}`}
                       style={{ width: `${cellWidth}px` }}
@@ -981,7 +981,7 @@ export default function GanttChart({
             </div>
             
             {/* Body - Lines and orders */}
-            <div className="max-h-[500px] overflow-y-auto">
+            <div className="max-h-125 overflow-y-auto">
               {filteredLines.length === 0 ? (
                 <div className="p-8 text-center text-muted-foreground">
                   {t('gantt.noLines')}
@@ -1063,7 +1063,7 @@ export default function GanttChart({
                           {dateRange.days.map((day) => (
                             <div
                               key={day.toISOString()}
-                              className={`flex-shrink-0 border-r ${
+                              className={`shrink-0 border-r ${
                                 isToday(day) ? "bg-primary/5" : ""
                               } ${day.getDay() === 0 || day.getDay() === 6 ? "bg-muted/20" : ""}`}
                               style={{ width: `${cellWidth}px` }}

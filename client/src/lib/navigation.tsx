@@ -177,7 +177,67 @@ export const navGroups: NavGroup[] = [
     ],
   },
 
-  // 3. MONITORING
+  // 3. PRODUCTION
+  {
+    id: "production",
+    label: "nav.productionGroup",
+    icon: <Factory className="h-4 w-4" />,
+    description: "nav.productionGroupDesc",
+    defaultOpen: true,
+    permissionCategory: "production",
+    items: [
+      {
+        href: "/production-dashboard",
+        label: "nav.productionDashboard",
+        icon: <Gauge className="h-4 w-4" />,
+        description: "nav.productionDashboardDesc",
+        requiredPermission: "dashboard_view",
+        permissionCategory: "dashboard",
+      },
+      { 
+        href: "/history", 
+        label: "nav.historyPage", 
+        icon: <History className="h-4 w-4" />,
+        description: "nav.historyPageDesc",
+        requiredPermission: "history_view",
+        permissionCategory: "history",
+      },
+      {
+        href: "/aoi-packages",
+        label: "nav.aoiPackages",
+        icon: <Camera className="h-4 w-4" />,
+        description: "nav.aoiPackagesDesc",
+        requiredPermission: "history_view",
+        permissionCategory: "history",
+      },
+      { 
+        href: "/history-export-scheduling", 
+        label: "nav.exportSchedule", 
+        icon: <Calendar className="h-4 w-4" />,
+        description: "nav.exportScheduleDesc",
+        requiredPermission: "reports_schedule",
+        permissionCategory: "reports",
+      },
+      { 
+        href: "/production-orders", 
+        label: "nav.productionOrdersPage", 
+        icon: <ClipboardList className="h-4 w-4" />,
+        description: "nav.productionOrdersDesc",
+        requiredPermission: "production_orders",
+        permissionCategory: "production",
+      },
+      {
+        href: "/production-scheduling",
+        label: "nav.productionScheduling",
+        icon: <Timer className="h-4 w-4" />,
+        description: "nav.productionSchedulingDesc",
+        requiredPermission: "production_orders",
+        permissionCategory: "production",
+      },
+    ],
+  },
+
+  // 4. MONITORING
   {
     id: "monitoring",
     label: "nav.monitoringGroup",
@@ -186,14 +246,6 @@ export const navGroups: NavGroup[] = [
     defaultOpen: true,
     permissionCategory: "machine_monitoring",
     items: [
-      { 
-        href: "/machine-status", 
-        label: "nav.machineStatusPage", 
-        icon: <MonitorCheck className="h-4 w-4" />,
-        description: "nav.machineStatusDesc",
-        requiredPermission: "machine_status",
-        permissionCategory: "machine_monitoring",
-      },
       { 
         href: "/mqtt-dashboard", 
         label: "nav.mqttDashboard", 
@@ -209,6 +261,14 @@ export const navGroups: NavGroup[] = [
         description: "nav.mqttBulletinDesc",
         requiredPermission: "mqtt_bulletin",
         permissionCategory: "mqtt",
+      },
+      { 
+        href: "/machine-status", 
+        label: "nav.machineStatusPage", 
+        icon: <MonitorCheck className="h-4 w-4" />,
+        description: "nav.machineStatusDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
       },
       { 
         href: "/oee-dashboard", 
@@ -237,111 +297,7 @@ export const navGroups: NavGroup[] = [
     ],
   },
 
-  // 4. ALERTS
-  {
-    id: "alerts",
-    label: "nav.alertsGroup",
-    icon: <Bell className="h-4 w-4" />,
-    description: "nav.alertsGroupDesc",
-    defaultOpen: false,
-    permissionCategory: "mqtt",
-    items: [
-      { 
-        href: "/alerts", 
-        label: "nav.alertsList", 
-        icon: <Bell className="h-4 w-4" />,
-        description: "nav.alertsListDesc",
-        requiredPermission: "mqtt_alerts",
-        permissionCategory: "mqtt",
-      },
-      { 
-        href: "/mqtt-alerts", 
-        label: "nav.alertRules", 
-        icon: <AlertTriangle className="h-4 w-4" />,
-        description: "nav.alertRulesDesc",
-        requiredPermission: "mqtt_alerts",
-        permissionCategory: "mqtt",
-      },
-      { 
-        href: "/predictive-alerts", 
-        label: "nav.predictiveAlerts", 
-        icon: <Sparkles className="h-4 w-4" />,
-        description: "nav.predictiveAlertsDesc",
-        requiredPermission: "analytics_predictive_alerts",
-        permissionCategory: "analytics",
-      },
-      { 
-        href: "/oee-target-settings", 
-        label: "nav.oeeTargets", 
-        icon: <Target className="h-4 w-4" />,
-        description: "nav.oeeTargetsDesc",
-        requiredPermission: "analytics_oee_targets",
-        permissionCategory: "analytics",
-      },
-    ],
-  },
-
-  // 5. PRODUCTION
-  {
-    id: "production",
-    label: "nav.productionGroup",
-    icon: <Factory className="h-4 w-4" />,
-    description: "nav.productionGroupDesc",
-    defaultOpen: true,
-    permissionCategory: "production",
-    items: [
-      {
-        href: "/production-dashboard",
-        label: "nav.productionDashboard",
-        icon: <Gauge className="h-4 w-4" />,
-        description: "nav.productionDashboardDesc",
-        requiredPermission: "dashboard_view",
-        permissionCategory: "dashboard",
-      },
-      { 
-        href: "/production-orders", 
-        label: "nav.productionOrdersPage", 
-        icon: <ClipboardList className="h-4 w-4" />,
-        description: "nav.productionOrdersDesc",
-        requiredPermission: "production_orders",
-        permissionCategory: "production",
-      },
-      { 
-        href: "/history", 
-        label: "nav.historyPage", 
-        icon: <History className="h-4 w-4" />,
-        description: "nav.historyPageDesc",
-        requiredPermission: "history_view",
-        permissionCategory: "history",
-      },
-      {
-        href: "/aoi-packages",
-        label: "nav.aoiPackages",
-        icon: <Camera className="h-4 w-4" />,
-        description: "nav.aoiPackagesDesc",
-        requiredPermission: "history_view",
-        permissionCategory: "history",
-      },
-      { 
-        href: "/history-export-scheduling", 
-        label: "nav.exportSchedule", 
-        icon: <Calendar className="h-4 w-4" />,
-        description: "nav.exportScheduleDesc",
-        requiredPermission: "reports_schedule",
-        permissionCategory: "reports",
-      },
-      {
-        href: "/production-scheduling",
-        label: "nav.productionScheduling",
-        icon: <Timer className="h-4 w-4" />,
-        description: "nav.productionSchedulingDesc",
-        requiredPermission: "production_orders",
-        permissionCategory: "production",
-      },
-    ],
-  },
-
-  // 6. ANALYTICS
+  // 5. ANALYTICS
   {
     id: "analytics",
     label: "nav.analyticsGroup",
@@ -401,107 +357,7 @@ export const navGroups: NavGroup[] = [
     ],
   },
 
-  // 7. DATA MANAGEMENT
-  {
-    id: "data-management",
-    label: "nav.dataGroup",
-    icon: <Database className="h-4 w-4" />,
-    description: "nav.dataGroupDesc",
-    defaultOpen: false,
-    permissionCategory: "settings",
-    items: [
-      { 
-        href: "/products", 
-        label: "nav.productsPage", 
-        icon: <Package className="h-4 w-4" />,
-        description: "nav.productsPageDesc",
-        requiredPermission: "settings_products",
-        permissionCategory: "settings",
-      },
-      { 
-        href: "/product-mapping", 
-        label: "nav.productMapping", 
-        icon: <Link className="h-4 w-4" />,
-        description: "nav.productMappingDesc",
-        requiredPermission: "settings_product_mapping",
-        permissionCategory: "settings",
-      },
-      { 
-        href: "/layout", 
-        label: "nav.factoryLayout", 
-        icon: <LayoutGrid className="h-4 w-4" />,
-        description: "nav.factoryLayoutDesc",
-        requiredPermission: "settings_factory",
-        permissionCategory: "settings",
-      },
-      { 
-        href: "/datasettings", 
-        label: "nav.dataSettingsPage", 
-        icon: <Database className="h-4 w-4" />,
-        description: "nav.dataSettingsPageDesc",
-        requiredPermission: "settings_factory",
-        permissionCategory: "settings",
-      },
-    ],
-  },
-
-  // 9. SETTINGS — General Settings
-  {
-    id: "settings",
-    label: "nav.generalSettings",
-    icon: <Settings className="h-4 w-4" />,
-    description: "nav.generalSettingsDesc",
-    defaultOpen: false,
-    permissionCategory: "settings",
-    items: [
-      { 
-        href: "/settings", 
-        label: "nav.generalSettings", 
-        icon: <Settings className="h-4 w-4" />,
-        description: "nav.generalSettingsDesc",
-        requiredPermission: "settings_view",
-        permissionCategory: "settings",
-      },
-    ],
-  },
-
-  // 10. ADMIN — System Administration
-  {
-    id: "admin",
-    label: "nav.adminGroup",
-    icon: <Shield className="h-4 w-4" />,
-    description: "nav.adminGroupDesc",
-    defaultOpen: false,
-    requiredRole: 'admin',
-    permissionCategory: "admin",
-    items: [
-      { 
-        href: "/users", 
-        label: "nav.usersPage", 
-        icon: <Users className="h-4 w-4" />,
-        description: "nav.usersPageDesc",
-        requiredRole: 'admin',
-        requiredPermission: "admin_users",
-        permissionCategory: "admin",
-      },
-      { 
-        href: "/user-guide", 
-        label: "nav.userGuide", 
-        icon: <BookOpen className="h-4 w-4" />,
-        description: "nav.userGuideDesc",
-      },
-      { 
-        href: "/admin-setting", 
-        label: "nav.adminSetting", 
-        icon: <Cog className="h-4 w-4" />,
-        description: "nav.adminSettingDesc",
-        requiredRole: 'admin',
-        requiredPermission: "admin_system",
-        permissionCategory: "admin",
-      },
-    ],
-  },
-  // AI Analytics group
+  // 6. AI ANALYTICS
   {
     id: "ai-analytics",
     label: "nav.aiAnalyticsGroup",
@@ -632,6 +488,151 @@ export const navGroups: NavGroup[] = [
         label: "nav.aiSettings",
         icon: <Cog className="h-4 w-4" />,
         description: "nav.aiSettingsDesc",
+        requiredRole: 'admin',
+        requiredPermission: "admin_system",
+        permissionCategory: "admin",
+      },
+    ],
+  },
+
+  // 7. DATA MANAGEMENT
+  {
+    id: "data-management",
+    label: "nav.dataGroup",
+    icon: <Database className="h-4 w-4" />,
+    description: "nav.dataGroupDesc",
+    defaultOpen: false,
+    permissionCategory: "settings",
+    items: [
+      { 
+        href: "/products", 
+        label: "nav.productsPage", 
+        icon: <Package className="h-4 w-4" />,
+        description: "nav.productsPageDesc",
+        requiredPermission: "settings_products",
+        permissionCategory: "settings",
+      },
+      { 
+        href: "/product-mapping", 
+        label: "nav.productMapping", 
+        icon: <Link className="h-4 w-4" />,
+        description: "nav.productMappingDesc",
+        requiredPermission: "settings_product_mapping",
+        permissionCategory: "settings",
+      },
+      { 
+        href: "/layout", 
+        label: "nav.factoryLayout", 
+        icon: <LayoutGrid className="h-4 w-4" />,
+        description: "nav.factoryLayoutDesc",
+        requiredPermission: "settings_factory",
+        permissionCategory: "settings",
+      },
+      { 
+        href: "/datasettings", 
+        label: "nav.dataSettingsPage", 
+        icon: <Database className="h-4 w-4" />,
+        description: "nav.dataSettingsPageDesc",
+        requiredPermission: "settings_factory",
+        permissionCategory: "settings",
+      },
+    ],
+  },
+
+  // 8. ALERTS
+  {
+    id: "alerts",
+    label: "nav.alertsGroup",
+    icon: <Bell className="h-4 w-4" />,
+    description: "nav.alertsGroupDesc",
+    defaultOpen: false,
+    permissionCategory: "mqtt",
+    items: [
+      { 
+        href: "/alerts", 
+        label: "nav.alertsList", 
+        icon: <Bell className="h-4 w-4" />,
+        description: "nav.alertsListDesc",
+        requiredPermission: "mqtt_alerts",
+        permissionCategory: "mqtt",
+      },
+      { 
+        href: "/mqtt-alerts", 
+        label: "nav.alertRules", 
+        icon: <AlertTriangle className="h-4 w-4" />,
+        description: "nav.alertRulesDesc",
+        requiredPermission: "mqtt_alerts",
+        permissionCategory: "mqtt",
+      },
+      { 
+        href: "/predictive-alerts", 
+        label: "nav.predictiveAlerts", 
+        icon: <Sparkles className="h-4 w-4" />,
+        description: "nav.predictiveAlertsDesc",
+        requiredPermission: "analytics_predictive_alerts",
+        permissionCategory: "analytics",
+      },
+      { 
+        href: "/oee-target-settings", 
+        label: "nav.oeeTargets", 
+        icon: <Target className="h-4 w-4" />,
+        description: "nav.oeeTargetsDesc",
+        requiredPermission: "analytics_oee_targets",
+        permissionCategory: "analytics",
+      },
+    ],
+  },
+
+  // 9. SETTINGS — General Settings
+  {
+    id: "settings",
+    label: "nav.generalSettings",
+    icon: <Settings className="h-4 w-4" />,
+    description: "nav.generalSettingsDesc",
+    defaultOpen: false,
+    permissionCategory: "settings",
+    items: [
+      { 
+        href: "/settings", 
+        label: "nav.generalSettings", 
+        icon: <Settings className="h-4 w-4" />,
+        description: "nav.generalSettingsDesc",
+        requiredPermission: "settings_view",
+        permissionCategory: "settings",
+      },
+    ],
+  },
+
+  // 10. ADMIN — System Administration
+  {
+    id: "admin",
+    label: "nav.adminGroup",
+    icon: <Shield className="h-4 w-4" />,
+    description: "nav.adminGroupDesc",
+    defaultOpen: false,
+    requiredRole: 'admin',
+    permissionCategory: "admin",
+    items: [
+      { 
+        href: "/users", 
+        label: "nav.usersPage", 
+        icon: <Users className="h-4 w-4" />,
+        description: "nav.usersPageDesc",
+        requiredRole: 'admin',
+        requiredPermission: "admin_users",
+        permissionCategory: "admin",
+      },
+      { 
+        href: "/user-guide", 
+        label: "nav.userGuide", 
+        icon: <BookOpen className="h-4 w-4" />,
+        description: "nav.userGuideDesc",
+      },
+      { 
+        href: "/admin-setting", 
+        label: "nav.adminSetting", 
+        icon: <Cog className="h-4 w-4" />,
+        description: "nav.adminSettingDesc",
         requiredRole: 'admin',
         requiredPermission: "admin_system",
         permissionCategory: "admin",

@@ -33,6 +33,13 @@ export interface ReportParams {
   language?: "en" | "vi";
 }
 
+export interface NarrativeMetadata {
+  generatedBy: "openai" | "gguf" | "offline";
+  confidence: number; // 0.1-1.0
+  timestamp: Date;
+  model?: string; // e.g., "gpt-4o-mini" or "llama-2"
+}
+
 export interface QualitySummary {
   period: string;
   totalInspections: number;
@@ -43,6 +50,7 @@ export interface QualitySummary {
   anomalies: string[];
   recommendations: string[];
   narrative: string;
+  narrativeMetadata?: NarrativeMetadata;
 }
 
 export interface RCAReport {
@@ -52,6 +60,7 @@ export interface RCAReport {
   correlations: Array<{ factor1: string; factor2: string; correlation: number }>;
   actionItems: string[];
   narrative: string;
+  narrativeMetadata?: NarrativeMetadata;
 }
 
 export interface ModelPerformanceReport {
@@ -66,6 +75,7 @@ export interface ModelPerformanceReport {
   }>;
   retrainRecommendations: string[];
   narrative: string;
+  narrativeMetadata?: NarrativeMetadata;
 }
 
 export interface ExecutiveSummary {
@@ -83,6 +93,7 @@ export interface ExecutiveSummary {
   concerns: string[];
   forecast: string;
   narrative: string;
+  narrativeMetadata?: NarrativeMetadata;
 }
 
 // ─── OpenAI Client ─────────────────────────────────────────────────────────
@@ -175,32 +186,104 @@ function generateOfflineNarrative(systemPrompt: string, data: string): string {
     : "Report generated automatically from local data (offline mode).";
 }
 
-async function generateNarrative(systemPrompt: string, data: string): Promise<string> {
-  const client = getOpenAI();
-  if (!client) return generateOfflineNarrative(systemPrompt, data);
+async function generateNarrative(systemPrompt: string, data: string): Promise<{ text: string; metadata: NarrativeMetadata }> {
+  const timestamp = new Date();
 
-  try {
-    const resp = await client.chat.completions.create({
-      model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: data },
-      ],
-      temperature: 0.3,
-      max_tokens: 1500,
-    });
-    return resp.choices[0]?.message?.content ?? "";
-  } catch (err) {
-    console.error("[aiReportGenerator] Narrative generation failed:", err);
-    return "";
+  // 1. Try OpenAI first (with timeout to avoid blocking)
+  const openaiStartTime = Date.now();
+  const client = getOpenAI();
+  if (client) {
+    try {
+      const openaiPromise = client.chat.completions.create({
+        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: data },
+        ],
+        temperature: 0.3,
+        max_tokens: 1500,
+      });
+
+      // Add 2-second timeout for OpenAI
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("OpenAI timeout")), 2000)
+      );
+
+      const resp = await Promise.race([openaiPromise, timeoutPromise]);
+      const text = (resp as any).choices[0]?.message?.content;
+      if (text) {
+        const elapsedMs = Date.now() - openaiStartTime;
+        console.log(`[aiReportGenerator] OpenAI narrative generated in ${elapsedMs}ms`);
+        return {
+          text,
+          metadata: {
+            generatedBy: "openai",
+            confidence: 0.95,
+            timestamp,
+            model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+          },
+        };
+      }
+    } catch (err) {
+      const elapsedMs = Date.now() - openaiStartTime;
+      if (elapsedMs > 1900) {
+        console.warn(`[aiReportGenerator] OpenAI timed out after ${elapsedMs}ms, falling back to GGUF`);
+      } else {
+        console.error(`[aiReportGenerator] OpenAI narrative generation failed:`, err);
+      }
+    }
   }
+
+  // 2. Try local GGUF model as fallback
+  try {
+    const ggufStartTime = Date.now();
+    const { generateText, isGgufAvailable } = await import("./aiGgufEngine");
+    if (await isGgufAvailable()) {
+      const result = await generateText({
+        systemPrompt,
+        prompt: data,
+        maxTokens: 1500,
+        temperature: 0.3,
+      });
+      if (result.text) {
+        const elapsedMs = Date.now() - ggufStartTime;
+        console.log(`[aiReportGenerator] GGUF narrative generated in ${elapsedMs}ms`);
+        return {
+          text: result.text,
+          metadata: {
+            generatedBy: "gguf",
+            confidence: 0.75,
+            timestamp,
+            model: "local-llm",
+          },
+        };
+      }
+    }
+  } catch (err) {
+    console.error(`[aiReportGenerator] GGUF fallback failed:`, err);
+  }
+
+  // 3. Static offline template (no external dependencies)
+  console.log("[aiReportGenerator] Falling back to offline template narrative");
+  return {
+    text: generateOfflineNarrative(systemPrompt, data),
+    metadata: {
+      generatedBy: "offline",
+      confidence: 0.4,
+      timestamp,
+      model: "template",
+    },
+  };
 }
 
 // ─── Data Collection ───────────────────────────────────────────────────────
 
 async function collectInspectionStats(startDate: Date, endDate: Date, machineId?: number) {
   const db = await getDb();
-  if (!db) return null;
+  if (!db) {
+    console.error("[collectInspectionStats] Database connection unavailable (DB_UNAVAILABLE)");
+    return null;
+  }
 
   const conditions: SQL[] = [
     gte(productInspections.inspectionTime, startDate),
@@ -225,7 +308,10 @@ async function collectInspectionStats(startDate: Date, endDate: Date, machineId?
 
 async function collectTopDefects(startDate: Date, endDate: Date, machineId?: number, limit = 10) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) {
+    console.error("[collectTopDefects] Database connection unavailable (DB_UNAVAILABLE)");
+    return [];
+  }
 
   const conditions: SQL[] = [
     gte(productInspections.inspectionTime, startDate),
@@ -258,7 +344,10 @@ async function collectTopDefects(startDate: Date, endDate: Date, machineId?: num
 
 async function collectMachinePerformance(startDate: Date, endDate: Date) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) {
+    console.error("[collectMachinePerformance] Database connection unavailable (DB_UNAVAILABLE)");
+    return [];
+  }
 
   const result = await db.select({
     machineId: productInspections.machineId,
@@ -288,7 +377,10 @@ async function collectMachinePerformance(startDate: Date, endDate: Date) {
 
 async function collectModelPerformanceData() {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) {
+    console.error("[collectModelPerformanceData] Database connection unavailable (DB_UNAVAILABLE)");
+    return [];
+  }
 
   const result = await db.select({
     modelId: aiModels.id,
@@ -371,7 +463,7 @@ export async function generateDailyQualitySummary(params: ReportParams): Promise
   recommendations.push("Continue monitoring and compare with previous periods");
 
   // Generate narrative
-  const narrative = await generateNarrative(
+  const narrativeResult = await generateNarrative(
     language === "vi"
       ? "Bạn là chuyên gia chất lượng AOI. Viết tóm tắt báo cáo chất lượng hàng ngày bằng tiếng Việt."
       : "You are an AOI quality expert. Write a brief daily quality summary report.",
@@ -387,7 +479,8 @@ export async function generateDailyQualitySummary(params: ReportParams): Promise
     topDefects: topDefectsFormatted,
     anomalies,
     recommendations,
-    narrative,
+    narrative: narrativeResult.text,
+    narrativeMetadata: narrativeResult.metadata,
   };
 }
 
@@ -444,7 +537,7 @@ export async function generateRCAReport(params: ReportParams & { triggerReason?:
   actionItems.push("Review process parameters for anomalous period");
   actionItems.push("Schedule preventive maintenance if machine degradation suspected");
 
-  const narrative = await generateNarrative(
+  const narrativeResult = await generateNarrative(
     language === "vi"
       ? "Bạn là chuyên gia phân tích nguyên nhân gốc AOI. Viết báo cáo RCA chi tiết bằng tiếng Việt."
       : "You are an AOI root cause analysis expert. Write a concise RCA report.",
@@ -457,7 +550,8 @@ export async function generateRCAReport(params: ReportParams & { triggerReason?:
     contributingFactors,
     correlations,
     actionItems,
-    narrative,
+    narrative: narrativeResult.text,
+    narrativeMetadata: narrativeResult.metadata,
   };
 }
 
@@ -485,14 +579,14 @@ export async function generateModelPerformanceReport(params: ReportParams): Prom
     retrainRecommendations.push("All models performing within acceptable ranges — no immediate action needed");
   }
 
-  const narrative = await generateNarrative(
+  const narrativeResult = await generateNarrative(
     language === "vi"
       ? "Bạn là chuyên gia AI/ML. Viết báo cáo hiệu suất model bằng tiếng Việt."
       : "You are an AI/ML expert. Write a brief model performance summary report.",
     JSON.stringify({ models, retrainRecommendations }),
   );
 
-  return { models, retrainRecommendations, narrative };
+  return { models, retrainRecommendations, narrative: narrativeResult.text, narrativeMetadata: narrativeResult.metadata };
 }
 
 /**
@@ -544,7 +638,7 @@ export async function generateExecutiveSummary(params: ReportParams): Promise<Ex
     ? "Positive trend — yield expected to continue improving with current practices"
     : "Declining trend — corrective actions recommended to prevent further degradation";
 
-  const narrative = await generateNarrative(
+  const narrativeResult = await generateNarrative(
     language === "vi"
       ? "Bạn là giám đốc chất lượng. Viết tóm tắt executive summary bằng tiếng Việt cho ban lãnh đạo."
       : "You are a quality director. Write a concise executive summary for management.",
@@ -568,7 +662,8 @@ export async function generateExecutiveSummary(params: ReportParams): Promise<Ex
     trends,
     concerns,
     forecast,
-    narrative,
+    narrative: narrativeResult.text,
+    narrativeMetadata: narrativeResult.metadata,
   };
 }
 

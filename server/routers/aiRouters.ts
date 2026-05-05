@@ -24,8 +24,18 @@ export const rootCauseRouter = router({
       
       const startTime = Date.now();
       
-      // Get inspection data for analysis
-      let query = sql`
+      // Build parameterized conditions  
+      const conditions: ReturnType<typeof sql>[] = [
+        sql`i."createdAt" BETWEEN ${input.startDate} AND ${input.endDate}`
+      ];
+      if (input.machineId) conditions.push(sql`m.id = ${input.machineId}`);
+      if (input.productModelId) conditions.push(sql`pm.id = ${input.productModelId}`);
+      if (input.factoryId) conditions.push(sql`f.id = ${input.factoryId}`);
+
+      const whereClause = sql.join(conditions, sql` AND `);
+
+      // Get inspection data for analysis with LIMIT to prevent unbounded load
+      const query = sql`
         SELECT 
           i.id, i."serialNumber", i."overallResult" as result, i."createdAt",
           m.id as machine_id, m.code as machine_code, m.name as machine_name,
@@ -42,17 +52,9 @@ export const rootCauseRouter = router({
         LEFT JOIN factories f ON w."factoryId" = f.id
         LEFT JOIN measurement_results mr ON mr."inspectionId" = i.id
         LEFT JOIN measurement_point_defs mpd ON mr."pointDefId" = mpd.id
-        WHERE i."createdAt" BETWEEN ${input.startDate} AND ${input.endDate}
+        WHERE ${whereClause}
+        LIMIT 500000
       `;
-      
-      const conditions: string[] = [];
-      if (input.machineId) conditions.push(`m.id = ${input.machineId}`);
-      if (input.productModelId) conditions.push(`pm.id = ${input.productModelId}`);
-      if (input.factoryId) conditions.push(`f.id = ${input.factoryId}`);
-      
-      if (conditions.length > 0) {
-        query = sql`${query} AND ${sql.raw(conditions.join(' AND '))}`;
-      }
       
       const result = await db.execute(query) as any;
       const rows = result.rows || [];

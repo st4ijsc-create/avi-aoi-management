@@ -285,3 +285,79 @@ function getScheduleReason(algorithm: string, order: SchedulableOrder): string {
       return "";
   }
 }
+
+// ─── AI Schedule Explanation ────────────────────────────────────────────────
+
+/**
+ * Generate AI-powered explanation for scheduling results.
+ * Explains conflicts, risk assessment, and recovery recommendations.
+ * Non-blocking — returns null on any failure.
+ */
+export async function explainScheduleWithAI(
+  result: ScheduleResult,
+): Promise<string | null> {
+  if (result.suggestions.length === 0) return null;
+
+  try {
+    const { generateText } = await import('./aiGgufEngine');
+
+    const summary = {
+      algorithm: result.algorithm,
+      totalOrders: result.totalOrders,
+      scheduledOrders: result.scheduledOrders,
+      unschedulable: result.unschedulableOrders.length,
+      conflicts: result.conflicts.slice(0, 10).map(c => ({
+        type: c.type,
+        severity: c.severity,
+        message: c.message,
+      })),
+      wipStatus: result.wipStatus.map(w => ({
+        line: w.lineName,
+        utilization: `${w.utilizationRate.toFixed(0)}%`,
+        completion: `${w.completionPercentage.toFixed(0)}%`,
+        inProgress: w.inProgressOrders,
+      })),
+    };
+
+    const response = await generateText({
+      systemPrompt: `You are a production planning expert. Analyze scheduling results and provide a clear explanation (3-5 sentences) covering: key conflicts and their impact, line utilization balance, risk areas, and one actionable recommendation.`,
+      prompt: `Schedule result: ${JSON.stringify(summary)}`,
+      maxTokens: 300,
+      temperature: 0.5,
+    });
+
+    return response.text?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Run scheduling with AI explanation
+ */
+export async function scheduleFIFOWithExplanation(
+  orders: SchedulableOrder[],
+  lines: Array<{ id: number; name: string; maxConcurrent?: number }>,
+): Promise<ScheduleResult & { aiExplanation: string | null }> {
+  const result = scheduleFIFO(orders, lines);
+  const aiExplanation = await explainScheduleWithAI(result);
+  return { ...result, aiExplanation };
+}
+
+export async function schedulePriorityWithExplanation(
+  orders: SchedulableOrder[],
+  lines: Array<{ id: number; name: string; maxConcurrent?: number }>,
+): Promise<ScheduleResult & { aiExplanation: string | null }> {
+  const result = schedulePriority(orders, lines);
+  const aiExplanation = await explainScheduleWithAI(result);
+  return { ...result, aiExplanation };
+}
+
+export async function scheduleEDFWithExplanation(
+  orders: SchedulableOrder[],
+  lines: Array<{ id: number; name: string; maxConcurrent?: number }>,
+): Promise<ScheduleResult & { aiExplanation: string | null }> {
+  const result = scheduleEDF(orders, lines);
+  const aiExplanation = await explainScheduleWithAI(result);
+  return { ...result, aiExplanation };
+}

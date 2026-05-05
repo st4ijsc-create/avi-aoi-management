@@ -8,6 +8,11 @@ export const productInspections = pgTable("product_inspections", {
   productModelId: integer("productModelId"), // Liên kết với Product Model
   corporateCode: varchar("corporateCode", { length: 50 }), // Mã tập đoàn
   factoryCode: varchar("factoryCode", { length: 50 }), // Mã nhà máy
+  workshopCode: varchar("workshopCode", { length: 50 }), // Mã nhà xưởng
+  lineCode: varchar("lineCode", { length: 50 }), // Mã dây chuyền
+  stageCode: varchar("stageCode", { length: 50 }), // Mã công đoạn
+  productionOrderCode: varchar("productionOrderCode", { length: 100 }), // Mã lệnh sản xuất
+  operatorId: varchar("operatorId", { length: 50 }), // Mã công nhân vận hành
   serialNumber: varchar("serialNumber", { length: 100 }).notNull(),
   productModel: varchar("productModel", { length: 100 }), // Backward compatibility
   batchNumber: varchar("batchNumber", { length: 100 }),
@@ -50,6 +55,9 @@ export const productInspections = pgTable("product_inspections", {
   // Composite index for common queries
   index("idx_inspections_machine_time").on(table.machineId, table.inspectionTime),
   index("idx_inspections_corporate_factory").on(table.corporateCode, table.factoryCode),
+  index("idx_inspections_workshop").on(table.workshopCode),
+  index("idx_inspections_line").on(table.lineCode),
+  index("idx_inspections_production_order").on(table.productionOrderCode),
 ]);
 
 export type ProductInspection = typeof productInspections.$inferSelect;

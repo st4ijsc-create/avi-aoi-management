@@ -1,5 +1,5 @@
 import { getDb } from "./connection";
-import { eq, and, desc, gte, lte, sql, isNotNull } from "drizzle-orm";
+import { eq, and, or, desc, gte, lte, sql, isNotNull, like } from "drizzle-orm";
 import {
   mqttClients,
   type InsertMqttClient,
@@ -709,7 +709,20 @@ export async function getMqttClientConnectionHistory(clientId: number, limit: nu
   const db = await getDb();
   if (!db) return [];
   
-  // Get from mqtt_message_logs where targetClientId matches
+  // Look up client's deviceId and clientId for topic-based matching
+  const client = await getMqttClientById(clientId);
+  const deviceIdPattern = client ? `%/${client.deviceId}/%` : null;
+  const clientIdPattern = client?.clientId ? `%/${client.clientId}/%` : null;
+  
+  // Match by targetClientId OR by topic containing the client's deviceId/clientId
+  const conditions = client
+    ? or(
+        eq(mqttMessageLogs.targetClientId, clientId),
+        ...(deviceIdPattern ? [like(mqttMessageLogs.topic, deviceIdPattern)] : []),
+        ...(clientIdPattern ? [like(mqttMessageLogs.topic, clientIdPattern)] : []),
+      )
+    : eq(mqttMessageLogs.targetClientId, clientId);
+  
   const results = await db.select({
     id: mqttMessageLogs.id,
     messageType: mqttMessageLogs.messageType,
@@ -718,7 +731,7 @@ export async function getMqttClientConnectionHistory(clientId: number, limit: nu
     payload: mqttMessageLogs.payload,
   })
     .from(mqttMessageLogs)
-    .where(eq(mqttMessageLogs.targetClientId, clientId))
+    .where(conditions!)
     .orderBy(desc(mqttMessageLogs.createdAt))
     .limit(limit);
   
@@ -736,19 +749,32 @@ export async function getMqttClientHealth(clientId: number) {
   // Get message stats for last 24 hours
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   
+  // Match by targetClientId OR by topic containing the client's deviceId/clientId
+  // (older records may not have targetClientId set)
+  const deviceIdPattern = `%/${client.deviceId}/%`;
+  const clientIdPattern = client.clientId ? `%/${client.clientId}/%` : null;
+  
   const messageStats = await db.select({
     total: sql<number>`COUNT(*)`,
     delivered: sql<number>`SUM(CASE WHEN ${mqttMessageLogs.deliveryStatus} = 'DELIVERED' THEN 1 ELSE 0 END)`,
     failed: sql<number>`SUM(CASE WHEN ${mqttMessageLogs.deliveryStatus} = 'FAILED' THEN 1 ELSE 0 END)`,
     pending: sql<number>`SUM(CASE WHEN ${mqttMessageLogs.deliveryStatus} = 'PENDING' THEN 1 ELSE 0 END)`,
+    sent: sql<number>`SUM(CASE WHEN ${mqttMessageLogs.deliveryStatus} = 'SENT' THEN 1 ELSE 0 END)`,
   })
     .from(mqttMessageLogs)
     .where(and(
-      eq(mqttMessageLogs.targetClientId, clientId),
+      or(
+        eq(mqttMessageLogs.targetClientId, clientId),
+        like(mqttMessageLogs.topic, deviceIdPattern),
+        ...(clientIdPattern ? [like(mqttMessageLogs.topic, clientIdPattern)] : []),
+      ),
       gte(mqttMessageLogs.createdAt, oneDayAgo)
     ));
   
-  const stats = messageStats[0] || { total: 0, delivered: 0, failed: 0, pending: 0 };
+  const stats = messageStats[0] || { total: 0, delivered: 0, failed: 0, pending: 0, sent: 0 };
+  
+  // SENT + DELIVERED are both successful deliveries
+  const successCount = Number(stats.delivered) + Number(stats.sent);
   
   // Calculate uptime (simplified - based on last heartbeat)
   const lastSeenMs = client.lastHeartbeat ? new Date(client.lastHeartbeat).getTime() : 0;
@@ -762,11 +788,11 @@ export async function getMqttClientHealth(clientId: number) {
     uptimeMs,
     messageStats: {
       total: Number(stats.total),
-      delivered: Number(stats.delivered),
+      delivered: successCount,
       failed: Number(stats.failed),
       pending: Number(stats.pending),
       successRate: Number(stats.total) > 0 
-        ? Math.round((Number(stats.delivered) / Number(stats.total)) * 100) 
+        ? Math.round((successCount / Number(stats.total)) * 100) 
         : 100,
     },
     healthScore: calculateClientHealthScore(client, stats),
@@ -781,8 +807,9 @@ function calculateClientHealthScore(client: any, stats: any): number {
   if (client.connectionStatus === 'DISCONNECTED') score -= 50;
   
   // Message success rate
+  const delivered = Number(stats.delivered) + Number(stats.sent || 0);
   const successRate = Number(stats.total) > 0 
-    ? Number(stats.delivered) / Number(stats.total) 
+    ? delivered / Number(stats.total) 
     : 1;
   score -= (1 - successRate) * 40;
   

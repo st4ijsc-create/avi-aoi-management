@@ -139,6 +139,13 @@ export async function listAllMeasurementPointDefs() {
     .orderBy(measurementPointDefs.orderIndex);
 }
 
+export async function getAllMeasurementPoints() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(measurementPointDefs)
+    .orderBy(measurementPointDefs.orderIndex);
+}
+
 export async function getMeasurementPointDefsByProductModel(productModelId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -152,6 +159,14 @@ export async function getMeasurementPointDefsByMachine(machineId: number) {
   if (!db) return [];
   return db.select().from(measurementPointDefs)
     .where(and(eq(measurementPointDefs.machineId, machineId), eq(measurementPointDefs.isActive, true)))
+    .orderBy(measurementPointDefs.orderIndex);
+}
+
+export async function getMeasurementPointDefsByWorkstation(workstationId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(measurementPointDefs)
+    .where(and(eq(measurementPointDefs.workstationId, workstationId), eq(measurementPointDefs.isActive, true)))
     .orderBy(measurementPointDefs.orderIndex);
 }
 

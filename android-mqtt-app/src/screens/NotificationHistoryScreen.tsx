@@ -20,14 +20,12 @@ import {
   Divider,
 } from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { useNavigation } from '@react-navigation/native';
 
 import { useNotificationStore, Notification } from '../store/notificationStore';
 
 type FilterType = 'all' | 'error' | 'warning' | 'info' | 'unread';
 
 export default function NotificationHistoryScreen() {
-  const navigation = useNavigation<any>();
   const {
     notifications,
     markAsRead,
@@ -59,10 +57,7 @@ export default function NotificationHistoryScreen() {
 
   const renderNotification = ({ item }: { item: Notification }) => (
     <TouchableOpacity
-      onPress={() => {
-        markAsRead(item.id);
-        navigation.navigate('NotificationDetail', { notification: item });
-      }}
+      onPress={() => markAsRead(item.id)}
       activeOpacity={0.7}
     >
       <Card style={[styles.notificationCard, !item.read && styles.unreadCard]}>

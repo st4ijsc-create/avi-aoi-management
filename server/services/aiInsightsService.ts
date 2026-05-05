@@ -47,6 +47,9 @@ export async function generateRCAInsights(
 ): Promise<RCAInsight> {
   const client = getClient();
   if (!client) {
+    // Try GGUF before rule-based fallback
+    const ggufResult = await tryGgufRCA(topFactors, stats, prompt);
+    if (ggufResult) return ggufResult;
     return buildFallbackInsights(topFactors, stats);
   }
 
@@ -104,6 +107,35 @@ Rules:
   } catch (err) {
     console.error("[aiInsightsService] LLM call failed, using fallback:", err);
     return buildFallbackInsights(topFactors, stats);
+  }
+}
+
+/**
+ * Try GGUF-powered RCA insights when OpenAI is unavailable.
+ */
+async function tryGgufRCA(
+  topFactors: TopFactor[],
+  stats: DefectStats,
+  prompt: string,
+): Promise<RCAInsight | null> {
+  try {
+    const { isGgufAvailable, generateText } = await import("./aiGgufEngine");
+    if (!(await isGgufAvailable())) return null;
+
+    const result = await generateText({
+      systemPrompt: "You are an AOI quality engineering expert. Respond ONLY with valid JSON.",
+      prompt,
+      maxTokens: 1024,
+      temperature: 0.2,
+      jsonMode: true,
+    });
+
+    const parsed = JSON.parse(result.text) as RCAInsight;
+    if (!parsed.summary || !Array.isArray(parsed.rootCauses)) return null;
+    return parsed;
+  } catch (err) {
+    console.error("[aiInsightsService] GGUF RCA failed:", err);
+    return null;
   }
 }
 

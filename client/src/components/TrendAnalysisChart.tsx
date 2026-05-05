@@ -319,10 +319,10 @@ export function TrendAnalysisChart({ machineId, productModelId, className }: Tre
 
         {/* Chart */}
         {isLoading ? (
-          <Skeleton className="h-[300px] w-full" />
+          <Skeleton className="h-75 w-full" />
         ) : trendData?.trends && trendData.trends.length > 0 ? (
           <div className="space-y-4">
-            <div className="h-[300px] relative">
+            <div className="h-75 relative">
               {/* Y-axis labels */}
               <div className="absolute left-0 top-0 bottom-8 w-12 flex flex-col justify-between text-xs text-muted-foreground">
                 <span>{maxValue}</span>
@@ -340,9 +340,9 @@ export function TrendAnalysisChart({ machineId, productModelId, className }: Tre
                   const ntfHeight = (item.ntfCount / maxValue) * 100;
                   
                   return (
-                    <div key={idx} className="flex-1 min-w-[30px] max-w-[60px] flex flex-col items-center group">
+                    <div key={idx} className="flex-1 min-w-7.5 max-w-15 flex flex-col items-center group">
                       {chartType === 'bar' ? (
-                        <div className="w-full flex flex-col-reverse h-[260px]">
+                        <div className="w-full flex flex-col-reverse h-65">
                           <div
                             className="bg-green-500 rounded-t transition-all hover:bg-green-400"
                             style={{ height: `${okHeight}%` }}
@@ -360,7 +360,7 @@ export function TrendAnalysisChart({ machineId, productModelId, className }: Tre
                           />
                         </div>
                       ) : (
-                        <div className="w-full h-[260px] relative">
+                        <div className="w-full h-65 relative">
                           <div
                             className="absolute bottom-0 left-1/2 w-2 h-2 rounded-full bg-red-500 transform -translate-x-1/2"
                             style={{ bottom: `${(parseFloat(item.defectRate) / 100) * 260}px` }}
@@ -384,7 +384,7 @@ export function TrendAnalysisChart({ machineId, productModelId, className }: Tre
                       </div>
                       
                       {/* Tooltip */}
-                      <div className="absolute bottom-full mb-2 hidden group-hover:block bg-popover border rounded-lg p-2 shadow-lg z-10 text-sm min-w-[150px]">
+                      <div className="absolute bottom-full mb-2 hidden group-hover:block bg-popover border rounded-lg p-2 shadow-lg z-10 text-sm min-w-37.5">
                         <div className="font-medium mb-1">{item.period}</div>
                         <div className="flex items-center gap-2">
                           <CheckCircle2 className="h-3 w-3 text-green-500" />
@@ -428,7 +428,7 @@ export function TrendAnalysisChart({ machineId, productModelId, className }: Tre
             </div>
           </div>
         ) : (
-          <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+          <div className="h-75 flex items-center justify-center text-muted-foreground">
             <div className="text-center">
               <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-50" />
               <p>{t('dashboard.noDataInRange')}</p>

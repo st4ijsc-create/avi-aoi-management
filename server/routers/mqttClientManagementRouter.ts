@@ -1853,7 +1853,7 @@ export const mqttClientManagementRouter = router({
         .from(mqttReconnectLogs)
         .where(gte(mqttReconnectLogs.timestamp, startDate))
         .groupBy(mqttReconnectLogs.profileId)
-        .orderBy(desc(sql`totalAttempts`))
+        .orderBy(desc(sql`"totalAttempts"`))
         .limit(limit);
       
       // Enrich with profile names

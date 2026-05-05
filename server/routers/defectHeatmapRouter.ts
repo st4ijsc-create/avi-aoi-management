@@ -47,7 +47,7 @@ export const defectHeatmapRouter = router({
         conditions.push(eq(productInspections.productModelId, input.productModelId));
       }
 
-      // Get NG measurement results
+      // Get NG measurement results (bounded to prevent OOM on large date ranges)
       const ngResults = await db
         .select({
           id: measurementResults.id,
@@ -57,7 +57,8 @@ export const defectHeatmapRouter = router({
         })
         .from(measurementResults)
         .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
-        .where(and(...conditions));
+        .where(and(...conditions))
+        .limit(500000);
 
       // Initialize heatmap grid
       const heatmapGrid: number[][] = [];

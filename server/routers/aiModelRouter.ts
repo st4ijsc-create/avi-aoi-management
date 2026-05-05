@@ -21,7 +21,7 @@ export const aiModelRouter = router({
   list: protectedProcedure
     .input(z.object({
       modelType: z.string().optional(),
-      format: z.enum(["ONNX", "TENSORRT", "OPENVINO", "CUSTOM"]).optional(),
+      format: z.enum(["ONNX", "TENSORRT", "OPENVINO", "CUSTOM", "GGUF"]).optional(),
       status: z.enum(["UPLOADING", "VALIDATING", "READY", "ACTIVE", "INACTIVE", "FAILED", "ARCHIVED"]).optional(),
       productModelId: z.number().optional(),
       limit: z.number().min(1).max(200).optional(),
@@ -53,7 +53,7 @@ export const aiModelRouter = router({
       name: z.string().min(1).max(255),
       description: z.string().optional(),
       modelType: z.string().min(1).max(100),
-      format: z.enum(["ONNX", "TENSORRT", "OPENVINO", "CUSTOM"]).optional(),
+      format: z.enum(["ONNX", "TENSORRT", "OPENVINO", "CUSTOM", "GGUF"]).optional(),
       inputShape: z.array(z.number()).optional(),
       outputShape: z.array(z.number()).optional(),
       labels: z.array(z.string()).optional(),

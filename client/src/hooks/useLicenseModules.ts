@@ -129,14 +129,18 @@ export function useLicenseModules() {
   }, [systemState?.licenseKey, systemState?.state]);
 
   // Use the guard's key if available and different from localStorage
-  const effectiveKey = (systemState?.licenseKey && systemState.state !== 'no_license')
-    ? systemState.licenseKey
-    : licenseKey;
+  // When licenseType is 'bypass', always use 'bypass' as the effective key
+  const isBypass = systemState?.licenseType === 'bypass';
+  const effectiveKey = isBypass
+    ? 'bypass'
+    : (systemState?.licenseKey && systemState.state !== 'no_license')
+      ? systemState.licenseKey
+      : licenseKey;
 
   const { data, isLoading, isError, refetch } = trpc.license.getAllowedModules.useQuery(
     { licenseKey: effectiveKey || "" },
     {
-      enabled: isAuthenticated && !!effectiveKey,
+      enabled: isAuthenticated && (!!effectiveKey || isBypass),
       staleTime: 5 * 60_000, // Cache 5 phút
       refetchOnWindowFocus: false,
       retry: 2,
@@ -163,6 +167,10 @@ export function useLicenseModules() {
   const cachedModules = useMemo(() => loadModulesCache(), []);
 
   const allowedModules = useMemo<string[]>(() => {
+    // When bypass is active, always use server response (which returns ALL modules)
+    if (isBypass && data?.modules && data.modules.length > 0) {
+      return data.modules;
+    }
     if (!effectiveKey) return [...CORE_MODULE_CODES];
     // Primary: use server response
     if (data?.modules && data.modules.length > 0) {
@@ -174,7 +182,7 @@ export function useLicenseModules() {
     }
     // Last resort: core modules only
     return [...CORE_MODULE_CODES];
-  }, [data?.modules, effectiveKey, cachedModules]);
+  }, [data?.modules, effectiveKey, cachedModules, isBypass]);
 
   const allowedSet = useMemo(() => new Set(allowedModules), [allowedModules]);
 

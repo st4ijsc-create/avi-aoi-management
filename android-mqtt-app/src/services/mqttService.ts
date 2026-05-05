@@ -3,7 +3,8 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
+import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import MQTT from 'sp-react-native-mqtt';
 import { showNotification, showBubbleNotification } from './notificationService';
 import { useNotificationStore } from '../store/notificationStore';
@@ -12,6 +13,14 @@ import { useNotificationStore } from '../store/notificationStore';
 let mqttClient: any = null;
 let mqttConnected = false;
 let reconnectTimer: NodeJS.Timeout | null = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_DELAY = 60000; // 60 seconds max backoff
+const BASE_RECONNECT_DELAY = 3000; // 3 seconds initial
+
+// Offline message queue
+const OFFLINE_QUEUE_KEY = '@mqtt_offline_queue';
+let netInfoUnsubscribe: (() => void) | null = null;
+let appStateSubscription: any = null;
 
 // Configuration keys
 const MQTT_CONFIG_KEY = '@mqtt_config';
@@ -25,8 +34,6 @@ export interface MqttConfig {
   clientId: string;
   topics: string[];
   enabled: boolean;
-  /** HTTP base URL of the AVI server (e.g. http://192.168.1.100:3000) for on-demand image loading */
-  serverUrl?: string;
 }
 
 export interface StationConfig {
@@ -50,7 +57,6 @@ const defaultConfig: MqttConfig = {
     'avi/quality/+/ng',
   ],
   enabled: false,
-  serverUrl: '',
 };
 
 /**
@@ -159,32 +165,42 @@ export async function connectMqtt(config: MqttConfig): Promise<void> {
       user: config.username,
       pass: config.password,
       auth: !!(config.username || config.password),
-      keepalive: 60,
+      keepalive: 120, // Increased from 60s for poor WiFi tolerance
       clean: true,
     });
 
     mqttClient.on('closed', () => {
       console.log('[MQTT] Connection closed');
       mqttConnected = false;
+      scheduleReconnect(config);
     });
 
     mqttClient.on('error', (msg: any) => {
       console.log('[MQTT] Error', msg);
+      mqttConnected = false;
+      scheduleReconnect(config);
     });
 
     mqttClient.on('connect', () => {
       console.log('[MQTT] Connected');
       mqttConnected = true;
+      reconnectAttempts = 0; // Reset backoff on successful connect
 
-      // Subscribe to configured topics when connected
+      // Subscribe to configured topics with QoS 1 for reliable delivery
       config.topics.forEach((topic) => {
         try {
-          mqttClient.subscribe(topic, 0);
+          mqttClient.subscribe(topic, 1);
         } catch (err) {
           console.log('[MQTT] Subscribe error', topic, err);
         }
       });
+
+      // Flush any queued offline messages
+      flushOfflineQueue();
     });
+
+    // Setup network change detection
+    setupNetworkMonitoring(config);
 
     mqttClient.on('message', (msg: any) => {
       try {
@@ -226,17 +242,107 @@ export async function disconnectMqtt(): Promise<void> {
 }
 
 /**
- * Schedule reconnection attempt
+ * Schedule reconnection with exponential backoff
  */
 function scheduleReconnect(config: MqttConfig): void {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
   }
-  
+
+  // Exponential backoff: 3s, 6s, 12s, 24s, 48s, 60s (capped)
+  const delay = Math.min(
+    BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts),
+    MAX_RECONNECT_DELAY
+  );
+  reconnectAttempts++;
+
+  console.log(`[MQTT] Scheduling reconnect in ${delay / 1000}s (attempt ${reconnectAttempts})`);
   reconnectTimer = setTimeout(() => {
-    console.log('Attempting MQTT reconnection...');
+    console.log('[MQTT] Attempting reconnection...');
     connectMqtt(config);
-  }, 5000); // Retry after 5 seconds
+  }, delay);
+}
+
+/**
+ * Monitor network state changes to auto-reconnect on WiFi recovery
+ */
+function setupNetworkMonitoring(config: MqttConfig): void {
+  // Clean up previous listeners
+  if (netInfoUnsubscribe) {
+    netInfoUnsubscribe();
+  }
+  if (appStateSubscription) {
+    appStateSubscription.remove();
+  }
+
+  let wasConnected = true;
+
+  // Listen for network state changes (WiFi drop/recovery)
+  netInfoUnsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
+    const isOnline = state.isConnected && state.isInternetReachable !== false;
+    console.log(`[MQTT] Network changed: type=${state.type}, connected=${isOnline}`);
+
+    if (isOnline && !mqttConnected && wasConnected) {
+      // Network recovered - reconnect immediately
+      console.log('[MQTT] Network recovered, reconnecting immediately...');
+      reconnectAttempts = 0; // Reset backoff for network recovery
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      connectMqtt(config);
+    }
+    wasConnected = !!isOnline;
+  });
+
+  // Listen for app returning to foreground
+  appStateSubscription = AppState.addEventListener('change', (nextState) => {
+    if (nextState === 'active' && !mqttConnected && config.enabled) {
+      console.log('[MQTT] App returned to foreground, checking connection...');
+      reconnectAttempts = 0;
+      connectMqtt(config);
+    }
+  });
+}
+
+/**
+ * Queue a message for delivery when back online
+ */
+export async function queueOfflineMessage(topic: string, message: string): Promise<void> {
+  try {
+    const stored = await AsyncStorage.getItem(OFFLINE_QUEUE_KEY);
+    const queue: Array<{ topic: string; message: string; timestamp: number }> = stored ? JSON.parse(stored) : [];
+    queue.push({ topic, message, timestamp: Date.now() });
+    // Keep max 200 messages, drop oldest
+    const trimmed = queue.slice(-200);
+    await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(trimmed));
+  } catch (error) {
+    console.error('[MQTT] Error queuing offline message:', error);
+  }
+}
+
+/**
+ * Flush offline message queue on reconnect
+ */
+async function flushOfflineQueue(): Promise<void> {
+  try {
+    const stored = await AsyncStorage.getItem(OFFLINE_QUEUE_KEY);
+    if (!stored) return;
+    const queue: Array<{ topic: string; message: string; timestamp: number }> = JSON.parse(stored);
+    if (queue.length === 0) return;
+
+    console.log(`[MQTT] Flushing ${queue.length} queued offline messages`);
+    // Process queued messages as notifications (they were received while offline)
+    for (const item of queue) {
+      // Only process messages less than 24 hours old
+      if (Date.now() - item.timestamp < 24 * 60 * 60 * 1000) {
+        handleMqttMessage(item.topic, item.message);
+      }
+    }
+    await AsyncStorage.removeItem(OFFLINE_QUEUE_KEY);
+  } catch (error) {
+    console.error('[MQTT] Error flushing offline queue:', error);
+  }
 }
 
 /**

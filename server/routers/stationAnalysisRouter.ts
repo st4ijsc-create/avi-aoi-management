@@ -14,8 +14,54 @@ import {
   productModels,
   productMachineMappings,
 } from "../../drizzle/schema";
+import {
+  mean as spcMean,
+  stdDev as spcStdDev,
+  createSubgroups,
+  computeControlLimits,
+  detectAllSpcRules,
+  calculateCapabilityIndices,
+  computeHistogramBins,
+  SPC_RULE_NAMES,
+} from "../utils/spc";
+
+/** Fake-UTC: shift a Date so its UTC components equal local time.
+ *  Drizzle calls .toISOString() which emits UTC — this trick makes
+ *  the UTC string match the local timestamp stored in PostgreSQL
+ *  `timestamp without time zone` columns.  */
+function toFakeUtc(d: Date): Date {
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+}
 
 export const stationAnalysisRouter = router({
+  /**
+   * Get product models available in a station (based on actual inspection data).
+   */
+  getStationProductModels: protectedProcedure
+    .input(z.object({
+      stationId: z.number(),
+    }))
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return [];
+
+      const machineIds = await getStationMachineIds(database, input.stationId);
+      if (machineIds.length === 0) return [];
+
+      const models = await database.select({
+        id: productModels.id,
+        code: productModels.code,
+        name: productModels.name,
+      })
+        .from(productInspections)
+        .innerJoin(productModels, eq(productInspections.productModelId, productModels.id))
+        .where(inArray(productInspections.machineId, machineIds))
+        .groupBy(productModels.id, productModels.code, productModels.name)
+        .orderBy(asc(productModels.name));
+
+      return models;
+    }),
+
   /**
    * Station header info + KPI summary.
    */
@@ -24,6 +70,7 @@ export const stationAnalysisRouter = router({
       stationId: z.number(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
+      productModelId: z.number().optional(),
     }))
     .query(async ({ input }) => {
       const database = await getDb();
@@ -63,15 +110,38 @@ export const stationAnalysisRouter = router({
       }
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
-      const stats = await database.select({
-        total: sql<number>`count(*)`,
-        ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
-        ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
-        ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
-      }).from(productInspections).where(and(...conditions));
+      // Build previous period query if date range provided
+      let prevQueryPromise: Promise<{ total: number; ok: number }[]> | null = null;
+      if (input.startDate && input.endDate) {
+        const duration = input.endDate.getTime() - input.startDate.getTime();
+        const prevEnd = new Date(input.startDate.getTime() - 1);
+        const prevStart = new Date(prevEnd.getTime() - duration);
+        const prevCond: SQL[] = [
+          inArray(productInspections.machineId, machineIds),
+          gte(productInspections.inspectionTime, toFakeUtc(prevStart)),
+          lte(productInspections.inspectionTime, toFakeUtc(prevEnd)),
+          ...(input.productModelId ? [eq(productInspections.productModelId, input.productModelId)] : []),
+        ];
+        prevQueryPromise = database.select({
+          total: sql<number>`count(*)`,
+          ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+        }).from(productInspections).where(and(...prevCond));
+      }
+
+      // Run current + previous period queries in parallel
+      const [stats, prevResult] = await Promise.all([
+        database.select({
+          total: sql<number>`count(*)`,
+          ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+          ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+          ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
+        }).from(productInspections).where(and(...conditions)),
+        prevQueryPromise ?? Promise.resolve(null),
+      ]);
 
       const { total: t, ok, ng, ntf } = {
         total: Number(stats[0]?.total) || 0,
@@ -86,21 +156,9 @@ export const stationAnalysisRouter = router({
 
       // Previous period yield change
       let yieldChange = 0;
-      if (input.startDate && input.endDate) {
-        const duration = input.endDate.getTime() - input.startDate.getTime();
-        const prevEnd = new Date(input.startDate.getTime() - 1);
-        const prevStart = new Date(prevEnd.getTime() - duration);
-        const prevCond: SQL[] = [
-          inArray(productInspections.machineId, machineIds),
-          gte(productInspections.inspectionTime, prevStart),
-          lte(productInspections.inspectionTime, prevEnd),
-        ];
-        const prev = await database.select({
-          total: sql<number>`count(*)`,
-          ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
-        }).from(productInspections).where(and(...prevCond));
-        const pt = Number(prev[0]?.total) || 0;
-        const po = Number(prev[0]?.ok) || 0;
+      if (prevResult) {
+        const pt = Number(prevResult[0]?.total) || 0;
+        const po = Number(prevResult[0]?.ok) || 0;
         const prevFPY = pt > 0 ? (po / pt) * 100 : 0;
         yieldChange = Math.round((fpy - prevFPY) * 100) / 100;
       }
@@ -127,6 +185,7 @@ export const stationAnalysisRouter = router({
       stationId: z.number(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
+      productModelId: z.number().optional(),
     }))
     .query(async ({ input }) => {
       const database = await getDb();
@@ -136,8 +195,9 @@ export const stationAnalysisRouter = router({
       if (machineIds.length === 0) return [];
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const rows = await database.select({
         hour: sql<number>`extract(hour from ${productInspections.inspectionTime})`.as('hour'),
@@ -171,6 +231,7 @@ export const stationAnalysisRouter = router({
       stationId: z.number(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
+      productModelId: z.number().optional(),
     }))
     .query(async ({ input }) => {
       const database = await getDb();
@@ -183,8 +244,9 @@ export const stationAnalysisRouter = router({
         eq(measurementResults.result, 'NG'),
         inArray(productInspections.machineId, machineIds),
       ];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const byType = await database.select({
         pointDefId: measurementResults.pointDefId,
@@ -200,7 +262,16 @@ export const stationAnalysisRouter = router({
       const totalNG = byType.reduce((s, r) => s + Number(r.ngCount), 0) || 1;
       const pointDefIds = byType.map(r => r.pointDefId);
       const pointDefs = pointDefIds.length > 0
-        ? await database.select().from(measurementPointDefs).where(inArray(measurementPointDefs.id, pointDefIds))
+        ? await database.select({
+            id: measurementPointDefs.id,
+            code: measurementPointDefs.code,
+            name: measurementPointDefs.name,
+            productModelId: measurementPointDefs.productModelId,
+            productCode: productModels.code,
+            productName: productModels.name,
+          }).from(measurementPointDefs)
+            .leftJoin(productModels, eq(measurementPointDefs.productModelId, productModels.id))
+            .where(inArray(measurementPointDefs.id, pointDefIds))
         : [];
       const defMap = new Map(pointDefs.map(p => [p.id, p]));
 
@@ -213,11 +284,253 @@ export const stationAnalysisRouter = router({
           pointDefId: r.pointDefId,
           code: def?.code || 'Unknown',
           name: def?.name || 'Unknown',
+          productModelId: def?.productModelId || null,
+          productCode: def?.productCode || null,
+          productName: def?.productName || null,
           ngCount: Number(r.ngCount),
           percentage: pct,
           cumPercentage: Math.round(cumPct * 100) / 100,
         };
       });
+    }),
+
+  /**
+   * Get measurement points available in a station for SPC analysis.
+   */
+  getStationMeasurementPoints: protectedProcedure
+    .input(z.object({
+      stationId: z.number(),
+      productModelId: z.number().optional(),
+    }))
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return [];
+
+      const machineIds = await getStationMachineIds(database, input.stationId);
+      if (machineIds.length === 0) return [];
+
+      const conditions: SQL[] = [
+        inArray(productInspections.machineId, machineIds),
+        isNotNull(measurementResults.measuredValue),
+      ];
+      if (input.productModelId) {
+        conditions.push(eq(productInspections.productModelId, input.productModelId));
+      }
+
+      const points = await database.selectDistinct({
+        id: measurementPointDefs.id,
+        code: measurementPointDefs.code,
+        name: measurementPointDefs.name,
+        upperLimit: measurementPointDefs.upperLimit,
+        lowerLimit: measurementPointDefs.lowerLimit,
+        nominalValue: measurementPointDefs.nominalValue,
+      })
+        .from(measurementResults)
+        .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
+        .innerJoin(measurementPointDefs, eq(measurementResults.pointDefId, measurementPointDefs.id))
+        .where(and(...conditions))
+        .orderBy(asc(measurementPointDefs.code));
+
+      return points;
+    }),
+
+  /**
+   * Measurement-value based SPC with X-bar/R chart, 8 rules, histogram, capability indices.
+   */
+  getMeasurementPointSPC: protectedProcedure
+    .input(z.object({
+      stationId: z.number(),
+      measurementPointDefId: z.number(),
+      productModelId: z.number().optional(),
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      subgroupSize: z.number().min(2).max(25).default(5),
+      enabledRules: z.array(z.number().min(1).max(8)).default([1, 2, 3, 4, 5, 6, 7, 8]),
+      uslOverride: z.number().nullable().optional(),
+      lslOverride: z.number().nullable().optional(),
+    }))
+    .query(async ({ input }) => {
+      const database = await getDb();
+      const emptyResult = {
+        subgroups: [] as any[], controlLimits: null, xBarPoints: [] as any[], rPoints: [] as any[],
+        ruleSummary: [] as any[], capability: null, specLimits: { usl: null as number | null, lsl: null as number | null, nominal: null as number | null },
+        xBarHistogram: [] as any[], rHistogram: [] as any[], sampleTable: [] as any[],
+        totalSamples: 0, totalSubgroups: 0, oocCount: 0,
+        pointDef: null as any,
+      };
+      if (!database) return emptyResult;
+
+      const machineIds = await getStationMachineIds(database, input.stationId);
+      if (machineIds.length === 0) return emptyResult;
+
+      // Get measurement point definition for spec limits
+      const pointDefRows = await database.select({
+        id: measurementPointDefs.id,
+        code: measurementPointDefs.code,
+        name: measurementPointDefs.name,
+        upperLimit: measurementPointDefs.upperLimit,
+        lowerLimit: measurementPointDefs.lowerLimit,
+        nominalValue: measurementPointDefs.nominalValue,
+      })
+        .from(measurementPointDefs)
+        .where(eq(measurementPointDefs.id, input.measurementPointDefId))
+        .limit(1);
+
+      const pointDef = pointDefRows[0] || null;
+
+      // USL/LSL: prefer user override, fallback to spec from measurementPointDefs
+      const usl = input.uslOverride !== undefined && input.uslOverride !== null
+        ? input.uslOverride
+        : (pointDef?.upperLimit != null ? Number(pointDef.upperLimit) : null);
+      const lsl = input.lslOverride !== undefined && input.lslOverride !== null
+        ? input.lslOverride
+        : (pointDef?.lowerLimit != null ? Number(pointDef.lowerLimit) : null);
+      const nominal = pointDef?.nominalValue != null ? Number(pointDef.nominalValue) : null;
+
+      // Fetch raw measurement data
+      const conditions: SQL[] = [
+        inArray(productInspections.machineId, machineIds),
+        eq(measurementResults.pointDefId, input.measurementPointDefId),
+        isNotNull(measurementResults.measuredValue),
+      ];
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
+
+      const rawData = await database.select({
+        value: measurementResults.measuredValue,
+        inspectionTime: productInspections.inspectionTime,
+        inspectionId: measurementResults.inspectionId,
+        result: measurementResults.result,
+      })
+        .from(measurementResults)
+        .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
+        .where(and(...conditions))
+        .orderBy(asc(productInspections.inspectionTime));
+
+      if (rawData.length < input.subgroupSize) return { ...emptyResult, pointDef, specLimits: { usl, lsl, nominal }, totalSamples: rawData.length };
+
+      // Convert to numeric
+      const numericData = rawData.map(d => ({
+        value: Number(d.value),
+        inspectionTime: d.inspectionTime!,
+      }));
+
+      // Create subgroups
+      const subgroups = createSubgroups(numericData, input.subgroupSize);
+      if (subgroups.length < 2) return { ...emptyResult, pointDef, specLimits: { usl, lsl, nominal }, totalSamples: rawData.length };
+
+      // Compute control limits
+      const limits = computeControlLimits(subgroups, input.subgroupSize);
+
+      // X-bar values for rule detection
+      const xBarValues = subgroups.map(g => g.mean);
+      const sigma = limits.estimatedSigma / Math.sqrt(input.subgroupSize);
+
+      // Detect SPC rule violations on X-bar chart
+      const violations = sigma > 0
+        ? detectAllSpcRules(xBarValues, limits.xBar.CL, sigma, input.enabledRules)
+        : new Map<number, number[]>();
+
+      // Build X-bar chart points
+      const xBarPoints = subgroups.map((g, i) => {
+        const rules = violations.get(i) || [];
+        const uniqueRules = [...new Set(rules)];
+        return {
+          index: i,
+          mean: Math.round(g.mean * 10000) / 10000,
+          timestamp: g.timestamp,
+          outOfControl: uniqueRules.length > 0,
+          violatedRules: uniqueRules,
+          ruleDescriptions: uniqueRules.map(r => SPC_RULE_NAMES[r] || `Rule ${r}`),
+          sampleCount: g.values.length,
+        };
+      });
+
+      // Detect R chart violations
+      const rValues = subgroups.map(g => g.range);
+      const rSigma = limits.range.CL > 0 ? (limits.range.UCL - limits.range.CL) / 3 : 0;
+      const rViolations = rSigma > 0
+        ? detectAllSpcRules(rValues, limits.range.CL, rSigma, input.enabledRules)
+        : new Map<number, number[]>();
+
+      const rPoints = subgroups.map((g, i) => {
+        const rules = rViolations.get(i) || [];
+        const uniqueRules = [...new Set(rules)];
+        return {
+          index: i,
+          range: Math.round(g.range * 10000) / 10000,
+          timestamp: g.timestamp,
+          outOfControl: uniqueRules.length > 0,
+          violatedRules: uniqueRules,
+        };
+      });
+
+      // Rule summary
+      const oocCount = xBarPoints.filter(p => p.outOfControl).length;
+      const ruleSummary: { rule: number; name: string; count: number }[] = [];
+      for (let r = 1; r <= 8; r++) {
+        if (!input.enabledRules.includes(r)) continue;
+        const count = xBarPoints.filter(p => p.violatedRules.includes(r)).length;
+        if (count > 0) ruleSummary.push({ rule: r, name: SPC_RULE_NAMES[r], count });
+      }
+
+      // Capability indices
+      const allValues = numericData.map(d => d.value);
+      const capability = calculateCapabilityIndices(allValues, usl, lsl, limits.estimatedSigma);
+
+      // Histograms
+      const xBarHistogram = computeHistogramBins(xBarValues, 20);
+      const rHistogram = computeHistogramBins(rValues, 15);
+
+      // Sample table data
+      const sampleTable = subgroups.map((g, i) => ({
+        index: i + 1,
+        values: g.values.map(v => Math.round(v * 10000) / 10000),
+        mean: Math.round(g.mean * 10000) / 10000,
+        range: Math.round(g.range * 10000) / 10000,
+        timestamp: g.timestamp,
+        outOfControl: xBarPoints[i]?.outOfControl || false,
+        violatedRules: xBarPoints[i]?.violatedRules || [],
+      }));
+
+      return {
+        subgroups: subgroups.map(g => ({ ...g, mean: Math.round(g.mean * 10000) / 10000, range: Math.round(g.range * 10000) / 10000 })),
+        controlLimits: {
+          xBar: {
+            UCL: Math.round(limits.xBar.UCL * 10000) / 10000,
+            CL: Math.round(limits.xBar.CL * 10000) / 10000,
+            LCL: Math.round(limits.xBar.LCL * 10000) / 10000,
+          },
+          range: {
+            UCL: Math.round(limits.range.UCL * 10000) / 10000,
+            CL: Math.round(limits.range.CL * 10000) / 10000,
+            LCL: Math.round(limits.range.LCL * 10000) / 10000,
+          },
+          estimatedSigma: Math.round(limits.estimatedSigma * 10000) / 10000,
+        },
+        xBarPoints,
+        rPoints,
+        ruleSummary,
+        capability: {
+          cp: capability.cp != null ? Math.round(capability.cp * 100) / 100 : null,
+          cpk: capability.cpk != null ? Math.round(capability.cpk * 100) / 100 : null,
+          pp: capability.pp != null ? Math.round(capability.pp * 100) / 100 : null,
+          ppk: capability.ppk != null ? Math.round(capability.ppk * 100) / 100 : null,
+          cpu: capability.cpu != null ? Math.round(capability.cpu * 100) / 100 : null,
+          cpl: capability.cpl != null ? Math.round(capability.cpl * 100) / 100 : null,
+          mean: Math.round(capability.mean * 10000) / 10000,
+          overallStdDev: Math.round(capability.overallStdDev * 10000) / 10000,
+        },
+        specLimits: { usl, lsl, nominal },
+        xBarHistogram,
+        rHistogram,
+        sampleTable,
+        totalSamples: numericData.length,
+        totalSubgroups: subgroups.length,
+        oocCount,
+        pointDef,
+      };
     }),
 
   /**
@@ -228,6 +541,7 @@ export const stationAnalysisRouter = router({
       stationId: z.number(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
+      productModelId: z.number().optional(),
     }))
     .query(async ({ input }) => {
       const database = await getDb();
@@ -237,8 +551,9 @@ export const stationAnalysisRouter = router({
       if (machineIds.length === 0) return { points: [], mean: 0, ucl: 100, lcl: 0, stddev: 0, cpk: 0, ppk: 0 };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const dailyRows = await database.select({
         day: sql`date_trunc('day', ${productInspections.inspectionTime})`.as('day'),
@@ -431,6 +746,7 @@ export const stationAnalysisRouter = router({
       stationId: z.number(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
+      productModelId: z.number().optional(),
       limit: z.number().min(1).max(200).default(50),
     }))
     .query(async ({ input }) => {
@@ -444,8 +760,9 @@ export const stationAnalysisRouter = router({
         inArray(productInspections.machineId, machineIds),
         eq(productInspections.overallResult, 'NG'),
       ];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const inspections = await database.select({
         id: productInspections.id,
@@ -473,9 +790,13 @@ export const stationAnalysisRouter = router({
         measuredValue: measurementResults.measuredValue,
         pointCode: measurementPointDefs.code,
         pointName: measurementPointDefs.name,
+        productModelId: measurementPointDefs.productModelId,
+        productCode: productModels.code,
+        productName: productModels.name,
       })
         .from(measurementResults)
         .innerJoin(measurementPointDefs, eq(measurementResults.pointDefId, measurementPointDefs.id))
+        .leftJoin(productModels, eq(measurementPointDefs.productModelId, productModels.id))
         .where(and(
           inArray(measurementResults.inspectionId, inspIds),
           eq(measurementResults.result, 'NG'),
@@ -502,6 +823,7 @@ export const stationAnalysisRouter = router({
       stationId: z.number(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
+      productModelId: z.number().optional(),
     }))
     .query(async ({ input }) => {
       const database = await getDb();
@@ -511,8 +833,9 @@ export const stationAnalysisRouter = router({
       if (machineIds.length === 0) return { alerts: [], patterns: [], recommendations: [] };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       // Get overall stats
       const stats = await database.select({
@@ -562,8 +885,9 @@ export const stationAnalysisRouter = router({
         eq(measurementResults.result, 'NG'),
         inArray(productInspections.machineId, machineIds),
       ];
-      if (input.startDate) ngConditions.push(gte(productInspections.inspectionTime, input.startDate));
-      if (input.endDate) ngConditions.push(lte(productInspections.inspectionTime, input.endDate));
+      if (input.startDate) ngConditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
+      if (input.endDate) ngConditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.productModelId) ngConditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const topDefects = await database.select({
         pointDefId: measurementResults.pointDefId,
@@ -578,7 +902,16 @@ export const stationAnalysisRouter = router({
 
       const pointDefIds = topDefects.map(r => r.pointDefId);
       const pointDefs = pointDefIds.length > 0
-        ? await database.select().from(measurementPointDefs).where(inArray(measurementPointDefs.id, pointDefIds))
+        ? await database.select({
+            id: measurementPointDefs.id,
+            code: measurementPointDefs.code,
+            name: measurementPointDefs.name,
+            productModelId: measurementPointDefs.productModelId,
+            productCode: productModels.code,
+            productName: productModels.name,
+          }).from(measurementPointDefs)
+            .leftJoin(productModels, eq(measurementPointDefs.productModelId, productModels.id))
+            .where(inArray(measurementPointDefs.id, pointDefIds))
         : [];
       const defMap = new Map(pointDefs.map(p => [p.id, p]));
 
@@ -673,9 +1006,10 @@ export const stationAnalysisRouter = router({
         const defInfo = defMap.get(topDef.pointDefId);
 
         if (topPct > 50) {
+          const productLabel = defInfo?.productCode ? `[${defInfo.productCode}] ` : '';
           patterns.push({
             type: 'Dominant defect',
-            description: `"${defInfo?.name || 'Unknown'}" accounts for ${topPct.toFixed(0)}% of all defects. Focusing on this single defect type would have the highest impact.`,
+            description: `"${productLabel}${defInfo?.name || 'Unknown'}" accounts for ${topPct.toFixed(0)}% of all defects. Focusing on this single defect type would have the highest impact.`,
             confidence: 0.9,
           });
         }
@@ -684,9 +1018,10 @@ export const stationAnalysisRouter = router({
       // Recommendations
       if (topDefects.length > 0) {
         const topDef = defMap.get(topDefects[0].pointDefId);
+        const productLabel = topDef?.productCode ? `[${topDef.productCode}] ` : '';
         recommendations.push({
           priority: 'high',
-          action: `Investigate top defect: ${topDef?.name || 'Unknown'} (${topDef?.code || ''})`,
+          action: `Investigate top defect: ${productLabel}${topDef?.name || 'Unknown'} (${topDef?.code || ''})`,
           rationale: `This is the most frequent defect type. Root cause analysis on this defect will have the highest impact on yield improvement.`,
         });
       }
@@ -739,6 +1074,7 @@ export const stationAnalysisRouter = router({
       stationId: z.number(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
+      productModelId: z.number().optional(),
       bins: z.number().min(5).max(50).default(20),
     }))
     .query(async ({ input }) => {
@@ -749,8 +1085,9 @@ export const stationAnalysisRouter = router({
       if (machineIds.length === 0) return { bins: [], stats: { mean: 0, median: 0, mode: 0, stddev: 0, skewness: 0, kurtosis: 0, n: 0, min: 0, max: 0 } };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const dailyRows = await database.select({
         day: sql`date_trunc('day', ${productInspections.inspectionTime})`.as('day'),
@@ -840,6 +1177,7 @@ export const stationAnalysisRouter = router({
       stationId: z.number(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
+      productModelId: z.number().optional(),
     }))
     .query(async ({ input }) => {
       const database = await getDb();
@@ -849,8 +1187,9 @@ export const stationAnalysisRouter = router({
       if (machineIds.length === 0) return { points: [], correlation: 0, rSquared: 0, trendLine: { slope: 0, intercept: 0 } };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       // Hourly data: total output (X) vs NG rate (Y)
       const hourlyRows = await database.select({
@@ -907,6 +1246,7 @@ export const stationAnalysisRouter = router({
       stationId: z.number(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
+      productModelId: z.number().optional(),
     }))
     .query(async ({ input }) => {
       const database = await getDb();
@@ -919,8 +1259,9 @@ export const stationAnalysisRouter = router({
         eq(measurementResults.result, 'NG'),
         inArray(productInspections.machineId, machineIds),
       ];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       const rows = await database.select({
         pointDefId: measurementResults.pointDefId,
@@ -974,6 +1315,7 @@ export const stationAnalysisRouter = router({
       stationId: z.number(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
+      productModelId: z.number().optional(),
     }))
     .query(async ({ input }) => {
       const database = await getDb();
@@ -986,8 +1328,9 @@ export const stationAnalysisRouter = router({
         eq(measurementResults.result, 'NG'),
         inArray(productInspections.machineId, machineIds),
       ];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       // Get top defect
       const topDefects = await database.select({
@@ -1022,8 +1365,9 @@ export const stationAnalysisRouter = router({
       })
         .from(productInspections)
         .where(and(inArray(productInspections.machineId, machineIds),
-          ...(input.startDate ? [gte(productInspections.inspectionTime, input.startDate)] : []),
-          ...(input.endDate ? [lte(productInspections.inspectionTime, input.endDate)] : [])))
+          ...(input.startDate ? [gte(productInspections.inspectionTime, toFakeUtc(input.startDate))] : []),
+          ...(input.endDate ? [lte(productInspections.inspectionTime, toFakeUtc(input.endDate))] : []),
+          ...(input.productModelId ? [eq(productInspections.productModelId, input.productModelId)] : [])))
         .groupBy(sql`shift`);
 
       // Get machine data for Machine category
@@ -1036,8 +1380,9 @@ export const stationAnalysisRouter = router({
         .from(productInspections)
         .innerJoin(machines, eq(productInspections.machineId, machines.id))
         .where(and(inArray(productInspections.machineId, machineIds),
-          ...(input.startDate ? [gte(productInspections.inspectionTime, input.startDate)] : []),
-          ...(input.endDate ? [lte(productInspections.inspectionTime, input.endDate)] : [])))
+          ...(input.startDate ? [gte(productInspections.inspectionTime, toFakeUtc(input.startDate))] : []),
+          ...(input.endDate ? [lte(productInspections.inspectionTime, toFakeUtc(input.endDate))] : []),
+          ...(input.productModelId ? [eq(productInspections.productModelId, input.productModelId)] : [])))
         .groupBy(machines.code, machines.name);
 
       // Build 6M Ishikawa categories with data-driven sub-causes
@@ -1111,6 +1456,7 @@ export const stationAnalysisRouter = router({
       stationId: z.number(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
+      productModelId: z.number().optional(),
     }))
     .query(async ({ input }) => {
       const database = await getDb();
@@ -1120,8 +1466,9 @@ export const stationAnalysisRouter = router({
       if (machineIds.length === 0) return { byMachine: [], byShift: [], byDay: [] };
 
       const baseCond: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) baseCond.push(gte(productInspections.inspectionTime, input.startDate));
-      if (input.endDate) baseCond.push(lte(productInspections.inspectionTime, input.endDate));
+      if (input.startDate) baseCond.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
+      if (input.endDate) baseCond.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.productModelId) baseCond.push(eq(productInspections.productModelId, input.productModelId));
 
       // By Machine
       const byMachine = await database.select({
@@ -1205,6 +1552,7 @@ export const stationAnalysisRouter = router({
       stationId: z.number(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
+      productModelId: z.number().optional(),
     }))
     .query(async ({ input }) => {
       const database = await getDb();
@@ -1214,8 +1562,9 @@ export const stationAnalysisRouter = router({
       if (machineIds.length === 0) return { anomalies: [], forecast: [], clusters: [], insights: [], processCapability: null };
 
       const conditions: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, input.startDate));
-      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, input.endDate));
+      if (input.startDate) conditions.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
+      if (input.endDate) conditions.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.productModelId) conditions.push(eq(productInspections.productModelId, input.productModelId));
 
       // Fetch daily yields
       const dailyRows = await database.select({
@@ -1412,6 +1761,7 @@ export const stationAnalysisRouter = router({
       stationId: z.number(),
       startDate: z.date().optional(),
       endDate: z.date().optional(),
+      productModelId: z.number().optional(),
     }))
     .query(async ({ input }) => {
       const database = await getDb();
@@ -1422,8 +1772,9 @@ export const stationAnalysisRouter = router({
 
       // Date filters for inspections
       const dateConds: SQL[] = [inArray(productInspections.machineId, machineIds)];
-      if (input.startDate) dateConds.push(gte(productInspections.inspectionTime, input.startDate));
-      if (input.endDate) dateConds.push(lte(productInspections.inspectionTime, input.endDate));
+      if (input.startDate) dateConds.push(gte(productInspections.inspectionTime, toFakeUtc(input.startDate)));
+      if (input.endDate) dateConds.push(lte(productInspections.inspectionTime, toFakeUtc(input.endDate)));
+      if (input.productModelId) dateConds.push(eq(productInspections.productModelId, input.productModelId));
 
       // Get the product model for this station (most used product)
       const pmRows = await database.select({
@@ -1456,12 +1807,14 @@ export const stationAnalysisRouter = router({
       }
 
       // Fetch all active measurement point defs for machines in this station
+      const pointDefConds: SQL[] = [
+        inArray(measurementPointDefs.machineId, machineIds),
+        eq(measurementPointDefs.isActive, true),
+      ];
+      if (input.productModelId) pointDefConds.push(eq(measurementPointDefs.productModelId, input.productModelId));
       const pointDefs = await database.select()
         .from(measurementPointDefs)
-        .where(and(
-          inArray(measurementPointDefs.machineId, machineIds),
-          eq(measurementPointDefs.isActive, true),
-        ))
+        .where(and(...pointDefConds))
         .orderBy(asc(measurementPointDefs.orderIndex));
 
       // Also include points by product model if no machine-specific points found

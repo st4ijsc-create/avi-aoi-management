@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from 'react-i18next';
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { 
   Cog, 
   Plus, 
@@ -19,8 +21,11 @@ import {
   Factory,
   GitBranch,
   Warehouse,
-  Search
+  Search,
+  Eye,
+  RotateCcw
 } from "lucide-react";
+import { ExcelImportExport } from "@/components/ExcelImportExport";
 
 type Workstation = {
   id: number;
@@ -46,6 +51,9 @@ const processTypes = [
 
 export default function WorkstationManagement() {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingWorkstation, setEditingWorkstation] = useState<Workstation | null>(null);
@@ -72,6 +80,7 @@ export default function WorkstationManagement() {
   const [wsFilterFactory, setWsFilterFactory] = useState("all");
   const [wsFilterLine, setWsFilterLine] = useState("all");
   const [wsFilterType, setWsFilterType] = useState("all");
+  const [showDeleted, setShowDeleted] = useState(false);
 
   const filteredWorkstations = useMemo(() => {
     if (!workstations) return [];
@@ -110,6 +119,24 @@ export default function WorkstationManagement() {
     onSuccess: () => {
       toast.success(t('workstations.deleted'));
       refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const importWorkstationsMutation = trpc.import.importWorkstations.useMutation();
+  const exportWorkstationsMutation = trpc.export.exportWorkstations.useMutation();
+
+  // Deleted items
+  const { data: deletedWorkstations, refetch: refetchDeletedWorkstations } = trpc.workstation.listDeleted.useQuery(
+    undefined, 
+    { enabled: showDeleted && isAdmin }
+  );
+
+  const restoreMutation = trpc.workstation.restore.useMutation({
+    onSuccess: () => {
+      toast.success(t('workstations.restored'));
+      refetch();
+      refetchDeletedWorkstations();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -206,6 +233,15 @@ export default function WorkstationManagement() {
                 {filteredWorkstations.length} {t('workstations.workstation')} {(wsSearch || wsFilterFactory !== "all" || wsFilterLine !== "all" || wsFilterType !== "all") && `(${t("common.filtered")})`}
               </CardDescription>
             </div>
+            <div className="flex items-center gap-2">
+            <ExcelImportExport
+              entityType="workstation"
+              templateData={[{ code: "WS001", name: "Workstation 1", description: "", factoryCode: "F001", workshopCode: "W001", lineCode: "L001", processType: "SMT", orderIndex: 1, isActive: true }]}
+              templateFilename="workstations_template.xlsx"
+              onImport={async (data, replaceIfExists) => importWorkstationsMutation.mutateAsync({ data, replaceIfExists })}
+              onExport={async () => exportWorkstationsMutation.mutateAsync()}
+              onImportComplete={() => refetch()}
+            />
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
                 <Button className="gap-2">
@@ -332,6 +368,7 @@ export default function WorkstationManagement() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -346,7 +383,7 @@ export default function WorkstationManagement() {
               />
             </div>
             <Select value={wsFilterFactory} onValueChange={setWsFilterFactory}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-45">
                 <SelectValue placeholder={t("dataSettings.filterByFactory")} />
               </SelectTrigger>
               <SelectContent>
@@ -357,7 +394,7 @@ export default function WorkstationManagement() {
               </SelectContent>
             </Select>
             <Select value={wsFilterLine} onValueChange={setWsFilterLine}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-45">
                 <SelectValue placeholder={t("dataSettings.filterByLine")} />
               </SelectTrigger>
               <SelectContent>
@@ -368,7 +405,7 @@ export default function WorkstationManagement() {
               </SelectContent>
             </Select>
             <Select value={wsFilterType} onValueChange={setWsFilterType}>
-              <SelectTrigger className="w-[150px]">
+              <SelectTrigger className="w-37.5">
                 <SelectValue placeholder={t("dataSettings.filterByType")} />
               </SelectTrigger>
               <SelectContent>
@@ -379,6 +416,24 @@ export default function WorkstationManagement() {
               </SelectContent>
             </Select>
           </div>
+          
+          {isAdmin && (
+            <div className="flex items-center gap-2 mb-4">
+              <Switch 
+                id="show-deleted-workstations" 
+                checked={showDeleted} 
+                onCheckedChange={setShowDeleted} 
+              />
+              <Label 
+                htmlFor="show-deleted-workstations" 
+                className="text-sm text-muted-foreground flex items-center gap-1 cursor-pointer"
+              >
+                <Eye className="h-4 w-4" />
+                {t("settings.showDeleted")}
+              </Label>
+            </div>
+          )}
+          
           <div className="rounded-md border">
             <Table>
               <TableHeader>
@@ -454,6 +509,51 @@ export default function WorkstationManagement() {
               </TableBody>
             </Table>
           </div>
+          
+          {/* Deleted Items Section */}
+          {isAdmin && showDeleted && deletedWorkstations && deletedWorkstations.length > 0 && (
+            <>
+              <div className="border-t pt-3 mt-3">
+                <p className="text-sm font-medium text-muted-foreground mb-2">
+                  {t("settings.deletedItems")}
+                </p>
+              </div>
+              <div className="space-y-2">
+                {deletedWorkstations.map((ws: Workstation) => (
+                  <div 
+                    key={ws.id} 
+                    className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 opacity-60 border border-dashed border-muted-foreground/30"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
+                        <Cog className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-muted-foreground line-through">{ws.name}</p>
+                          <Badge variant="outline" className="text-destructive border-destructive/50">
+                            {t("settings.deleted")}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{ws.code}</p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1"
+                      onClick={() => restoreMutation.mutate({ id: ws.id })}
+                      disabled={restoreMutation.isPending}
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      {t("settings.restore")}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          
         </CardContent>
       </Card>
 

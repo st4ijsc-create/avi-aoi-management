@@ -1,0 +1,20 @@
+{
+  "generatedAt": "2026-05-05T07:35:40.150Z",
+  "patterns": {
+    "protectedProcedureCount": 758,
+    "publicProcedureCount": 55,
+    "zodObjectCount": 975,
+    "totalSourceFiles": 633,
+    "totalRouterFiles": 79,
+    "totalServiceFiles": 46,
+    "totalDocsFiles": 63
+  },
+  "outputs": [
+    "knowledge/routers-catalog.json",
+    "knowledge/services-catalog.json",
+    "knowledge/types-dictionary.json",
+    "knowledge/code-graph.json",
+    "knowledge/docs-catalog.json",
+    "knowledge/patterns.json"
+  ]
+}

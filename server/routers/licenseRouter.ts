@@ -38,7 +38,7 @@ import { router, publicProcedure, protectedProcedure, adminProcedure } from "../
 import * as db from "../db";
 import { licenseService } from "../license/license-service";
 import { licenseGuard } from "../license/license-guard";
-import { SYSTEM_MODULES, toExportFormat, isRouteAllowed, CORE_MODULE_CODES } from "@shared/module-registry";
+import { SYSTEM_MODULES, toExportFormat, isRouteAllowed, CORE_MODULE_CODES, ALL_MODULE_CODES } from "@shared/module-registry";
 import { ENV } from "../_core/env";
 
 // ═══════════════════════════════════════════════════════════════
@@ -89,6 +89,22 @@ const publicLicenseRouter = router({
    * Used by UI to show warning banners and enforce read-only/locked mode
    */
   systemState: publicProcedure.query(() => {
+    if (ENV.licenseBypass) {
+      return {
+        state: 'normal' as const,
+        message: 'License bypass enabled (offline deployment)',
+        daysUntilExpiry: null,
+        expiresAt: null,
+        licenseKey: 'bypass',
+        customerName: 'Offline Deployment',
+        licenseType: 'bypass',
+        lastCheckedAt: Date.now(),
+        daysPastExpiry: null,
+        serverReachable: false,
+        lastSuccessfulOnlineCheck: null,
+        consecutiveOfflineChecks: 0,
+      };
+    }
     return licenseGuard.getStatus();
   }),
 
@@ -180,6 +196,18 @@ const publicLicenseRouter = router({
       licenseKey: z.string().min(1),
     }))
     .query(async ({ input }) => {
+      // ── LICENSE_BYPASS: return all modules ──
+      if (ENV.licenseBypass) {
+        return {
+          modules: [...ALL_MODULE_CODES],
+          isLicensed: true,
+          licenseStatus: 'normal',
+          expiresAt: null,
+          licenseType: 'bypass',
+          customerName: 'Offline Deployment',
+        };
+      }
+
       // ── Use LicenseGuard state as primary authority ──
       const guardStatus = licenseGuard.getStatus();
       const guardState = guardStatus.state; // normal | warning | readonly | locked | no_license
@@ -259,6 +287,11 @@ const publicLicenseRouter = router({
       routePath: z.string().min(1),
     }))
     .query(async ({ input }) => {
+      // ── LICENSE_BYPASS: all routes allowed ──
+      if (ENV.licenseBypass) {
+        return { allowed: true };
+      }
+
       // Use LicenseGuard state as primary authority
       const guardState = licenseGuard.getStatus().state;
       const isGuardAllowing = ['normal', 'warning', 'readonly'].includes(guardState);

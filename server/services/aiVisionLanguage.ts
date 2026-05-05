@@ -80,7 +80,9 @@ export async function describeDefect(
 ): Promise<DefectDescription> {
   const client = getClient();
   if (!client) {
-    return buildFallbackDescription(context?.existingLabels);
+    // Try GGUF text-based fallback before static fallback
+    const ggufResult = await ggufFallbackDescription(context);
+    return ggufResult ?? buildStaticFallbackDescription(context?.existingLabels);
   }
 
   const contextLines: string[] = [];
@@ -130,7 +132,8 @@ If no defect is found, set description to "No defect detected", severity to "low
     return parsed;
   } catch (err) {
     console.error("[aiVisionLanguage] describeDefect failed:", err);
-    return buildFallbackDescription(context?.existingLabels);
+    const ggufResult = await ggufFallbackDescription(context);
+    return ggufResult ?? buildStaticFallbackDescription(context?.existingLabels);
   }
 }
 
@@ -150,7 +153,8 @@ export async function compareImages(
 ): Promise<ImageComparison> {
   const client = getClient();
   if (!client) {
-    return buildFallbackComparison();
+    // Image comparison requires vision — GGUF can't help here
+    return buildStaticFallbackComparison();
   }
 
   const compType = context?.comparisonType ?? "side_by_side";
@@ -209,7 +213,7 @@ If the images look identical, return empty differences array, similarity 1.0, an
     return parsed;
   } catch (err) {
     console.error("[aiVisionLanguage] compareImages failed:", err);
-    return buildFallbackComparison();
+    return buildStaticFallbackComparison();
   }
 }
 
@@ -234,7 +238,9 @@ export async function generateQAReport(
 ): Promise<QAReport> {
   const client = getClient();
   if (!client) {
-    return buildFallbackReport(images.length);
+    // Try GGUF text-based fallback before static fallback
+    const ggufResult = await ggufFallbackReport(images, context);
+    return ggufResult ?? buildStaticFallbackReport(images.length);
   }
 
   // Limit to 10 images
@@ -308,18 +314,153 @@ Include one entry in inspections for each image. Be specific and technical.`;
     return parsed;
   } catch (err) {
     console.error("[aiVisionLanguage] generateQAReport failed:", err);
-    return buildFallbackReport(images.length);
+    const ggufResult = await ggufFallbackReport(images, context);
+    return ggufResult ?? buildStaticFallbackReport(images.length);
   }
 }
 
-// ─── Fallbacks ───────────────────────────────────────────────────
+// ─── GGUF Text-based Fallbacks ────────────────────────────────────
 
-function buildFallbackDescription(labels?: string[]): DefectDescription {
+/**
+ * Use local GGUF model to generate a rich defect description from metadata.
+ * Can't analyze images, but can reason about defect types from labels/context.
+ */
+async function ggufFallbackDescription(
+  context?: {
+    productModel?: string;
+    machineCode?: string;
+    inspectionPoint?: string;
+    existingLabels?: string[];
+  },
+): Promise<DefectDescription | null> {
+  const hasLabels = context?.existingLabels && context.existingLabels.length > 0;
+  if (!hasLabels && !context?.inspectionPoint) return null; // Not enough metadata
+
+  try {
+    const { chatCompletion, isGgufAvailable } = await import("./aiGgufEngine");
+    if (!(await isGgufAvailable())) return null;
+
+    const contextLines: string[] = [];
+    if (context?.productModel) contextLines.push(`Product model: ${context.productModel}`);
+    if (context?.machineCode) contextLines.push(`Machine: ${context.machineCode}`);
+    if (context?.inspectionPoint) contextLines.push(`Inspection point: ${context.inspectionPoint}`);
+    if (hasLabels) contextLines.push(`AI classification labels: ${context!.existingLabels!.join(", ")}`);
+
+    const prompt = `You are an AOI quality engineer. Based on the metadata below, provide a defect analysis.
+Note: You cannot see the image, your analysis is based on the metadata only.
+
+${contextLines.join("\n")}
+
+Respond with ONLY valid JSON:
+{
+  "description": "<detailed analysis based on the metadata>",
+  "severity": "<low|medium|high|critical>",
+  "location": "<likely location based on inspection point>",
+  "possibleCauses": ["<cause1>", "<cause2>"],
+  "suggestedActions": ["<action1>", "<action2>"]
+}`;
+
+    const result = await chatCompletion({
+      messages: [
+        { role: "system", content: "You are a manufacturing quality expert. Output ONLY valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      maxTokens: 512,
+      temperature: 0.2,
+    });
+
+    const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    const parsed = JSON.parse(jsonMatch[0]) as DefectDescription;
+    if (!parsed.description) return null;
+    parsed.description += " (Analysis based on metadata — local LLM, no image analysis)";
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Use local GGUF model to generate a QA report from image labels/metadata.
+ */
+async function ggufFallbackReport(
+  images: Array<{ label?: string; inspectionPoint?: string }>,
+  context?: {
+    productModel?: string;
+    machineCode?: string;
+    batchId?: string;
+    date?: string;
+  },
+): Promise<QAReport | null> {
+  const hasAnyLabels = images.some(img => img.label || img.inspectionPoint);
+  if (!hasAnyLabels) return null;
+
+  try {
+    const { chatCompletion, isGgufAvailable } = await import("./aiGgufEngine");
+    if (!(await isGgufAvailable())) return null;
+
+    const contextLines: string[] = [];
+    if (context?.productModel) contextLines.push(`Product: ${context.productModel}`);
+    if (context?.machineCode) contextLines.push(`Machine: ${context.machineCode}`);
+    if (context?.batchId) contextLines.push(`Batch: ${context.batchId}`);
+    if (context?.date) contextLines.push(`Date: ${context.date}`);
+
+    const imageDescriptions = images
+      .slice(0, 10)
+      .map((img, i) => {
+        const parts = [`Image ${i + 1}`];
+        if (img.label) parts.push(`label: ${img.label}`);
+        if (img.inspectionPoint) parts.push(`point: ${img.inspectionPoint}`);
+        return parts.join(", ");
+      })
+      .join("\n");
+
+    const prompt = `You are an AOI quality engineer generating a QA report from metadata.
+Note: You cannot see the images, your report is based on labels and metadata only.
+
+${contextLines.length > 0 ? `Context:\n${contextLines.join("\n")}\n` : ""}
+Image metadata:
+${imageDescriptions}
+
+Generate a QA report as ONLY valid JSON:
+{
+  "title": "<Report title>",
+  "summary": "<summary based on available metadata>",
+  "inspections": [
+    {"imageIndex": 0, "verdict": "<OK|NG|BORDERLINE>", "defects": ["<from label>"], "notes": "<analysis>"}
+  ],
+  "overallVerdict": "<PASS|FAIL|REVIEW_NEEDED>",
+  "recommendations": ["<recommendation>"]
+}`;
+
+    const result = await chatCompletion({
+      messages: [
+        { role: "system", content: "You are a manufacturing quality expert. Output ONLY valid JSON." },
+        { role: "user", content: prompt },
+      ],
+      maxTokens: 1024,
+      temperature: 0.3,
+    });
+
+    const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    const parsed = JSON.parse(jsonMatch[0]) as QAReport;
+    if (!parsed.title || !Array.isArray(parsed.inspections)) return null;
+    parsed.summary += " (Report based on metadata — local LLM, no image analysis)";
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Static Fallbacks ────────────────────────────────────────────
+
+function buildStaticFallbackDescription(labels?: string[]): DefectDescription {
   const hasLabels = labels && labels.length > 0;
   return {
     description: hasLabels
-      ? `AI classification detected: ${labels.join(", ")}. Detailed VLM description unavailable (OPENAI_API_KEY not configured).`
-      : "VLM analysis unavailable. Configure OPENAI_API_KEY to enable natural language defect descriptions.",
+      ? `AI classification detected: ${labels.join(", ")}. Detailed VLM description unavailable.`
+      : "VLM analysis unavailable. Configure OPENAI_API_KEY or load a GGUF model for defect descriptions.",
     severity: "medium",
     location: "Unknown — requires VLM analysis",
     possibleCauses: hasLabels
@@ -329,7 +470,7 @@ function buildFallbackDescription(labels?: string[]): DefectDescription {
   };
 }
 
-function buildFallbackComparison(): ImageComparison {
+function buildStaticFallbackComparison(): ImageComparison {
   return {
     summary: "Image comparison unavailable. Configure OPENAI_API_KEY to enable VLM-powered image comparison.",
     differences: [],
@@ -338,10 +479,10 @@ function buildFallbackComparison(): ImageComparison {
   };
 }
 
-function buildFallbackReport(imageCount: number): QAReport {
+function buildStaticFallbackReport(imageCount: number): QAReport {
   return {
     title: "QA Inspection Report (Limited)",
-    summary: `Report covers ${imageCount} inspection image(s). Detailed VLM analysis unavailable — configure OPENAI_API_KEY for full reports.`,
+    summary: `Report covers ${imageCount} inspection image(s). Detailed VLM analysis unavailable — configure OPENAI_API_KEY or load a GGUF model for full reports.`,
     inspections: Array.from({ length: imageCount }, (_, i) => ({
       imageIndex: i,
       verdict: "BORDERLINE" as const,

@@ -137,6 +137,12 @@ export const machineApiRouter = router({
       }
 
       // Create inspection record
+      // Fix timezone: Drizzle ORM serializes Date via .toISOString() (UTC),
+      // but timestamp without time zone strips Z → stores UTC value.
+      // Shift to "fake UTC" so PostgreSQL stores local time.
+      const rawInspTime = input.inspectionTime ? new Date(input.inspectionTime) : new Date();
+      const localInspTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneOffset() * 60000);
+
       const inspectionId = await db.createProductInspection({
         machineId: machine.id,
         serialNumber: input.serialNumber,
@@ -147,7 +153,12 @@ export const machineApiRouter = router({
         originalResult: input.overallResult,
         corporateCode: input.companyCode, // Mã tập đoàn
         factoryCode: input.factoryCode, // Mã nhà máy
-        inspectionTime: input.inspectionTime ? new Date(input.inspectionTime) : new Date(),
+        workshopCode: input.workshopCode, // Mã nhà xưởng
+        lineCode: input.lineCode, // Mã dây chuyền
+        stageCode: input.stageCode, // Mã công đoạn
+        productionOrderCode: input.productionOrderCode, // Mã lệnh sản xuất
+        operatorId: input.operatorId, // Mã công nhân vận hành
+        inspectionTime: localInspTime,
         cycleTime: input.cycleTime ? String(input.cycleTime) : undefined,
 
       });
@@ -319,13 +330,19 @@ export const machineApiRouter = router({
             // Measurement results with proper uploaded image URLs (not base64)
             measurementResults: input.measurements?.filter(m => m.result === 'NG').map(m => {
               const pointCode = m.pointId || m.pointCode || 'UNKNOWN';
+              const normalizedPc = pointCode.trim();
+              const def = productPointCache.get(normalizedPc) || machinePointCache.get(normalizedPc);
               return {
-                pointId: undefined,
+                pointId: def?.id,
                 pointCode,
                 result: m.result,
                 value: m.measuredValue,
                 imageUrl: pointImageMap.get(pointCode),
                 referenceImageUrl: pointRefImageMap.get(pointCode),
+                workstationId: def?.workstationId ?? undefined,
+                normalizedX: def?.normalizedX != null ? Number(def.normalizedX) : undefined,
+                normalizedY: def?.normalizedY != null ? Number(def.normalizedY) : undefined,
+                normalizedRadius: def?.normalizedRadius != null ? Number(def.normalizedRadius) : undefined,
               };
             }) || [],
             // Determine severity based on NG count

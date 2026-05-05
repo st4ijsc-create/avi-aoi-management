@@ -51,6 +51,16 @@ import {
 } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   CheckCircle2,
   XCircle,
   Clock,
@@ -68,6 +78,8 @@ import {
   ShieldCheck,
   ShieldX,
   Info,
+  Pencil,
+  Undo2,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { vi, zhCN, enUS } from "date-fns/locale";
@@ -122,6 +134,17 @@ export function MachineRegistrationContent() {
   const [rejectReason, setRejectReason] = useState("");
   const [rejectMachine, setRejectMachineState] = useState<PendingMachine | null>(null);
 
+  // Revoke dialog
+  const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
+  const [revokeMachine, setRevokeMachine] = useState<AllMachine | null>(null);
+
+  // Edit approved machine dialog
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editMachine, setEditMachine] = useState<AllMachine | null>(null);
+  const [editCode, setEditCode] = useState("");
+  const [editName, setEditName] = useState("");
+  const [editStationId, setEditStationId] = useState<number | undefined>();
+
   // API Key visibility
   const [visibleApiKeys, setVisibleApiKeys] = useState<Set<number>>(new Set());
 
@@ -158,6 +181,34 @@ export function MachineRegistrationContent() {
     },
     onError: (err) => {
       toast.error(t('machineRegistration.toast.rejectError'), { description: err.message });
+    },
+  });
+
+  // Revoke approval (set back to pending)
+  const revokeApprovalMutation = trpc.machine.update.useMutation({
+    onSuccess: () => {
+      toast.success(t('machineRegistration.toast.revokeSuccess'));
+      setRevokeDialogOpen(false);
+      setRevokeMachine(null);
+      utils.machine.listPending.invalidate();
+      utils.machine.list.invalidate();
+    },
+    onError: (err) => {
+      toast.error(t('machineRegistration.toast.revokeError'), { description: err.message });
+    },
+  });
+
+  // Edit approved machine
+  const editMachineMutation = trpc.machine.update.useMutation({
+    onSuccess: () => {
+      toast.success(t('machineRegistration.toast.editSuccess'));
+      setEditDialogOpen(false);
+      setEditMachine(null);
+      utils.machine.listPending.invalidate();
+      utils.machine.list.invalidate();
+    },
+    onError: (err) => {
+      toast.error(t('machineRegistration.toast.editError'), { description: err.message });
     },
   });
 
@@ -212,6 +263,36 @@ export function MachineRegistrationContent() {
     rejectMutation.mutate({
       id: rejectMachine.id,
       reason: rejectReason || undefined,
+    });
+  };
+
+  const handleOpenRevoke = (machine: AllMachine) => {
+    setRevokeMachine(machine);
+    setRevokeDialogOpen(true);
+  };
+
+  const handleRevoke = () => {
+    if (!revokeMachine) return;
+    revokeApprovalMutation.mutate({
+      id: revokeMachine.id,
+      registrationStatus: "pending",
+    });
+  };
+
+  const handleOpenEdit = (machine: AllMachine) => {
+    setEditMachine(machine);
+    setEditCode(machine.code);
+    setEditName(machine.name);
+    setEditStationId(machine.stationId);
+    setEditDialogOpen(true);
+  };
+
+  const handleEditSave = () => {
+    if (!editMachine) return;
+    editMachineMutation.mutate({
+      id: editMachine.id,
+      name: editName || undefined,
+      stationId: editStationId,
     });
   };
 
@@ -649,6 +730,36 @@ export function MachineRegistrationContent() {
                                     </Button>
                                   </div>
                                 )}
+                                {machine.registrationStatus === "approved" && (
+                                  <div className="flex gap-1 justify-end">
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7 text-blue-500 hover:text-blue-700"
+                                          onClick={() => handleOpenEdit(machine)}
+                                        >
+                                          <Pencil className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>{t('machineRegistration.actions.edit')}</TooltipContent>
+                                    </Tooltip>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7 text-orange-500 hover:text-orange-700"
+                                          onClick={() => handleOpenRevoke(machine)}
+                                        >
+                                          <Undo2 className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>{t('machineRegistration.actions.revokeApproval')}</TooltipContent>
+                                    </Tooltip>
+                                  </div>
+                                )}
                                 {machine.registrationStatus === "rejected" && (
                                   <Button
                                     variant="ghost"
@@ -882,6 +993,102 @@ export function MachineRegistrationContent() {
                 <XCircle className="h-4 w-4 mr-1" />
               )}
               {t('machineRegistration.rejectDialog.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Revoke Approval Dialog ── */}
+      <AlertDialog open={revokeDialogOpen} onOpenChange={setRevokeDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Undo2 className="h-5 w-5 text-orange-500" />
+              {t('machineRegistration.revokeDialog.title')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('machineRegistration.revokeDialog.description', { machine: revokeMachine?.name || revokeMachine?.code || '' })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('machineRegistration.revokeDialog.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-orange-600 hover:bg-orange-700"
+              onClick={handleRevoke}
+              disabled={revokeApprovalMutation.isPending}
+            >
+              {revokeApprovalMutation.isPending ? (
+                <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Undo2 className="h-4 w-4 mr-1" />
+              )}
+              {t('machineRegistration.revokeDialog.confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Edit Approved Machine Dialog ── */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5 text-blue-500" />
+              {t('machineRegistration.editDialog.title')}
+            </DialogTitle>
+            <DialogDescription>
+              {t('machineRegistration.editDialog.description')}{" "}
+              <strong>{editMachine?.serialNumber ?? editMachine?.code}</strong>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="edit-name">{t('machineRegistration.editDialog.nameLabel')}</Label>
+              <Input
+                id="edit-name"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder={t('machineRegistration.editDialog.namePlaceholder')}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-station">{t('machineRegistration.editDialog.stationLabel')}</Label>
+              <Select
+                value={editStationId?.toString() ?? ""}
+                onValueChange={(v) => setEditStationId(Number(v))}
+              >
+                <SelectTrigger id="edit-station">
+                  <SelectValue placeholder={t('machineRegistration.editDialog.stationPlaceholder')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {stations?.map((station) => (
+                    <SelectItem key={station.id} value={station.id.toString()}>
+                      {station.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditDialogOpen(false)}
+            >
+              {t('machineRegistration.editDialog.cancel')}
+            </Button>
+            <Button
+              onClick={handleEditSave}
+              disabled={editMachineMutation.isPending}
+            >
+              {editMachineMutation.isPending ? (
+                <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Pencil className="h-4 w-4 mr-1" />
+              )}
+              {t('machineRegistration.editDialog.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

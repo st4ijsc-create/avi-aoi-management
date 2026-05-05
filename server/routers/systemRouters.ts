@@ -94,6 +94,17 @@ export const workstationRouter = router({
       return { success: true };
     }),
 
+  listDeleted: adminProcedure.query(async () => {
+    return db.getDeletedWorkstations();
+  }),
+
+  restore: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.restoreWorkstation(input.id);
+      return { success: true };
+    }),
+
   defectsByWorkstation: protectedProcedure
     .input(z.object({
       startDate: z.date().optional(),
@@ -156,6 +167,39 @@ export const workstationRouter = router({
     }))
     .query(async ({ input }) => {
       return db.getNGComparison(input);
+    }),
+
+  // Fallback: NG summary by machine (from product_inspections)
+  ngSummaryByMachine: protectedProcedure
+    .input(z.object({
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getNGSummaryByMachine(input);
+    }),
+
+  // Fallback: NG trend by day from product_inspections
+  ngTrendDirect: protectedProcedure
+    .input(z.object({
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+      machineId: z.number().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.getNGTrendByDayDirect(input);
+    }),
+
+  // Fallback: NG comparison from product_inspections
+  ngComparisonDirect: protectedProcedure
+    .input(z.object({
+      currentStartDate: z.date(),
+      currentEndDate: z.date(),
+      previousStartDate: z.date(),
+      previousEndDate: z.date(),
+    }))
+    .query(async ({ input }) => {
+      return db.getNGComparisonDirect(input);
     }),
 });
 

@@ -459,3 +459,57 @@ export async function generateComparison(request: ComparisonRequest): Promise<Co
     topImprovedPoints: topChangedPoints,
   };
 }
+
+// ─── AI Comparison Narrative ────────────────────────────────────────────────
+
+/**
+ * Generate AI narrative for comparison results.
+ * Explains numeric deltas and infers likely root causes.
+ * Non-blocking — returns null on failure.
+ */
+async function narrateComparison(result: ComparisonResult): Promise<string | null> {
+  try {
+    const { generateText } = await import('./aiGgufEngine');
+
+    const summary = {
+      period: `${result.currentPeriod.start.slice(0, 10)} vs ${result.previousPeriod.start.slice(0, 10)}`,
+      yieldChange: result.changes.yieldRate,
+      ngChange: result.changes.ngCount,
+      volumeChange: result.changes.totalInspections,
+      topMachineChanges: result.machineComparison
+        .sort((a, b) => Math.abs(b.yieldChange) - Math.abs(a.yieldChange))
+        .slice(0, 5)
+        .map(m => `${m.machineName}: yield ${m.yieldChange > 0 ? '+' : ''}${m.yieldChange.toFixed(1)}%`),
+      topImproved: result.topImprovedPoints
+        .filter(p => p.improvement)
+        .slice(0, 3)
+        .map(p => `${p.pointName}: ${p.previousNG}→${p.currentNG}`),
+      topDeclined: result.topImprovedPoints
+        .filter(p => !p.improvement && p.change > 0)
+        .slice(0, 3)
+        .map(p => `${p.pointName}: ${p.previousNG}→${p.currentNG}`),
+    };
+
+    const response = await generateText({
+      systemPrompt: `You are a manufacturing data analyst. Given period-over-period comparison data, provide a concise narrative (3-5 sentences) explaining what changed, which machines/defects drove the change, and suggest likely root causes.`,
+      prompt: `Comparison: ${JSON.stringify(summary)}`,
+      maxTokens: 300,
+      temperature: 0.5,
+    });
+
+    return response.text?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Generate comparison with AI narrative explanation
+ */
+export async function generateComparisonWithNarration(
+  request: ComparisonRequest,
+): Promise<ComparisonResult & { narration: string | null }> {
+  const result = await generateComparison(request);
+  const narration = await narrateComparison(result);
+  return { ...result, narration };
+}

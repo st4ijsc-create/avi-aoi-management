@@ -52,12 +52,15 @@ export const productModelRouter = router({
       referenceImageKey: z.string().optional(),
       imageWidth: z.number().optional(),
       imageHeight: z.number().optional(),
+      imageDisplayMode: z.enum(["contain", "cover", "stretch", "none"]).optional(),
     }))
     .mutation(async ({ input }) => {
       let finalImageUrl = input.referenceImageUrl;
       let finalImageKey = input.referenceImageKey;
       
       // Check if referenceImageUrl is a base64 data URL and upload to S3
+      let autoImageWidth: number | undefined;
+      let autoImageHeight: number | undefined;
       if (input.referenceImageUrl && input.referenceImageUrl.startsWith('data:')) {
         const isForgeConfigured = !!(process.env.BUILT_IN_FORGE_API_URL && process.env.BUILT_IN_FORGE_API_KEY);
         if (!isForgeConfigured) {
@@ -86,6 +89,18 @@ export const productModelRouter = router({
               const { url, key } = await storagePut(fileKey, buffer, mimeType);
               finalImageUrl = url;
               finalImageKey = key;
+
+              // Auto-extract image dimensions if not provided
+              if (!input.imageWidth || !input.imageHeight) {
+                try {
+                  const sharp = (await import("sharp")).default;
+                  const metadata = await sharp(buffer).metadata();
+                  if (metadata.width && metadata.height) {
+                    autoImageWidth = metadata.width;
+                    autoImageHeight = metadata.height;
+                  }
+                } catch { /* sharp unavailable or invalid image */ }
+              }
             }
           } catch (error) {
             console.error('Failed to upload product model image to S3:', error);
@@ -98,6 +113,8 @@ export const productModelRouter = router({
         ...input,
         referenceImageUrl: finalImageUrl,
         referenceImageKey: finalImageKey,
+        imageWidth: input.imageWidth ?? autoImageWidth,
+        imageHeight: input.imageHeight ?? autoImageHeight,
       });
       return { id };
     }),
@@ -119,6 +136,7 @@ export const productModelRouter = router({
       referenceImageKey: z.string().optional(),
       imageWidth: z.number().optional(),
       imageHeight: z.number().optional(),
+      imageDisplayMode: z.enum(["contain", "cover", "stretch", "none"]).optional(),
       isActive: z.boolean().optional(),
     }))
     .mutation(async ({ input }) => {
@@ -167,6 +185,18 @@ export const productModelRouter = router({
               const { url, key } = await storagePut(fileKey, buffer, mimeType);
               finalData.referenceImageUrl = url;
               finalData.referenceImageKey = key;
+
+              // Auto-extract image dimensions if not provided
+              if (!data.imageWidth || !data.imageHeight) {
+                try {
+                  const sharp = (await import("sharp")).default;
+                  const metadata = await sharp(buffer).metadata();
+                  if (metadata.width && metadata.height) {
+                    finalData.imageWidth = finalData.imageWidth ?? metadata.width;
+                    finalData.imageHeight = finalData.imageHeight ?? metadata.height;
+                  }
+                } catch { /* sharp unavailable or invalid image */ }
+              }
             }
           } catch (error) {
             console.error('Failed to upload product model image to S3:', error);
@@ -235,7 +265,26 @@ export const measurementPointRouter = router({
       orderIndex: z.number().optional(),
     }))
     .mutation(async ({ input }) => {
-      const id = await db.createMeasurementPointDef(input);
+      // Auto-compute normalized coordinates from product model dimensions
+      let normalizedX: string | undefined;
+      let normalizedY: string | undefined;
+      let normalizedRadius: string | undefined;
+      if (input.positionX != null && input.positionY != null) {
+        const productModel = await db.getProductModelById(input.productModelId);
+        if (productModel?.imageWidth && productModel?.imageHeight) {
+          normalizedX = (input.positionX / productModel.imageWidth).toFixed(8);
+          normalizedY = (input.positionY / productModel.imageHeight).toFixed(8);
+          if (input.radius != null) {
+            normalizedRadius = (input.radius / productModel.imageWidth).toFixed(8);
+          }
+        }
+      }
+      const id = await db.createMeasurementPointDef({
+        ...input,
+        normalizedX,
+        normalizedY,
+        normalizedRadius,
+      });
       return { id };
     }),
 
@@ -263,7 +312,27 @@ export const measurementPointRouter = router({
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
-      await db.updateMeasurementPointDef(id, data);
+      // Auto-compute normalized coordinates when position changes
+      let normalizedData: Record<string, unknown> = { ...data };
+      if (data.positionX != null || data.positionY != null || data.radius != null) {
+        const existingPoint = await db.getMeasurementPointDefById(id);
+        if (existingPoint) {
+          const productModel = await db.getProductModelById(existingPoint.productModelId);
+          if (productModel?.imageWidth && productModel?.imageHeight) {
+            const px = data.positionX ?? existingPoint.positionX;
+            const py = data.positionY ?? existingPoint.positionY;
+            const r = data.radius ?? existingPoint.radius;
+            if (px != null && py != null) {
+              normalizedData.normalizedX = (px / productModel.imageWidth).toFixed(8);
+              normalizedData.normalizedY = (py / productModel.imageHeight).toFixed(8);
+              if (r != null) {
+                normalizedData.normalizedRadius = (r / productModel.imageWidth).toFixed(8);
+              }
+            }
+          }
+        }
+      }
+      await db.updateMeasurementPointDef(id, normalizedData);
       return { success: true };
     }),
 

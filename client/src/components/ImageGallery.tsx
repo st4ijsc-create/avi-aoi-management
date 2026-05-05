@@ -24,7 +24,12 @@ import {
   XCircle,
   AlertTriangle,
   CheckSquare,
-  Square
+  Square,
+  FlipHorizontal,
+  FlipVertical,
+  Sun,
+  Contrast,
+  RefreshCw,
 } from "lucide-react";
 import { BulkAnnotationToolbar } from "./BulkAnnotationToolbar";
 import { cn } from "@/lib/utils";
@@ -93,6 +98,14 @@ export function ImageGallery({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const imageRef = useRef<HTMLImageElement>(null);
+  
+  // Image processing state
+  const [brightness, setBrightness] = useState(100);
+  const [contrast, setContrast] = useState(100);
+  const [flipH, setFlipH] = useState(false);
+  const [flipV, setFlipV] = useState(false);
+  const [invert, setInvert] = useState(false);
+  const [showAdjustments, setShowAdjustments] = useState(false);
   
   // Multi-select state
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
@@ -187,6 +200,11 @@ export function ImageGallery({
     setZoom(1);
     setRotation(0);
     setPosition({ x: 0, y: 0 });
+    setBrightness(100);
+    setContrast(100);
+    setFlipH(false);
+    setFlipV(false);
+    setInvert(false);
     if (onImageClick) {
       onImageClick(filteredImages[index], index);
     }
@@ -197,6 +215,12 @@ export function ImageGallery({
     setZoom(1);
     setRotation(0);
     setPosition({ x: 0, y: 0 });
+    setBrightness(100);
+    setContrast(100);
+    setFlipH(false);
+    setFlipV(false);
+    setInvert(false);
+    setShowAdjustments(false);
     if (onLightboxClose) onLightboxClose();
   }, [onLightboxClose]);
 
@@ -221,6 +245,16 @@ export function ImageGallery({
   const handleZoomIn = () => setZoom((z) => Math.min(z + 0.25, 3));
   const handleZoomOut = () => setZoom((z) => Math.max(z - 0.25, 0.5));
   const handleRotate = () => setRotation((r) => (r + 90) % 360);
+  const handleResetAdjustments = () => {
+    setZoom(1);
+    setRotation(0);
+    setPosition({ x: 0, y: 0 });
+    setBrightness(100);
+    setContrast(100);
+    setFlipH(false);
+    setFlipV(false);
+    setInvert(false);
+  };
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (zoom > 1) {
@@ -404,7 +438,7 @@ export function ImageGallery({
         </div>
       ) : viewMode === "grid" ? (
         <div className={cn(
-          maxVisibleImages > 0 && "max-h-[280px] overflow-y-auto overscroll-contain scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent pr-0.5"
+          maxVisibleImages > 0 && "max-h-70 overflow-y-auto overscroll-contain scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent pr-0.5"
         )}>
           <div className={cn("grid", compact ? "gap-2" : "gap-4", getColumnClass())}>
           {filteredImages.map((image, index) => {
@@ -432,7 +466,7 @@ export function ImageGallery({
                 />
                 
                 {/* Overlay */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                <div className="absolute inset-0 bg-linear-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                 
                 {/* Selection Checkbox */}
                 {isMultiSelectMode && (
@@ -500,7 +534,7 @@ export function ImageGallery({
                 {/* Selection Checkbox */}
                 {isMultiSelectMode && (
                   <div 
-                    className="flex-shrink-0"
+                    className="shrink-0"
                     onClick={(e) => toggleImageSelection(imageId, e)}
                   >
                     <div className={cn(
@@ -513,7 +547,7 @@ export function ImageGallery({
                     </div>
                   </div>
                 )}
-                <div className="relative w-16 h-16 rounded-md overflow-hidden flex-shrink-0">
+                <div className="relative w-16 h-16 rounded-md overflow-hidden shrink-0">
                   <ImageWithLoader
                     src={image.thumbnailUrl || image.url}
                     alt={image.title}
@@ -536,7 +570,7 @@ export function ImageGallery({
                   )}
                 </div>
                 {image.result && (
-                  <div className="flex-shrink-0">
+                  <div className="shrink-0">
                     {getResultBadge(image.result)}
                   </div>
                 )}
@@ -567,7 +601,7 @@ export function ImageGallery({
                   </>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
                 <Button variant="ghost" size="icon" onClick={handleZoomOut} title={t('common.zoomOut') + ' (-)'}>
                   <ZoomOut className="h-4 w-4" />
                 </Button>
@@ -575,9 +609,27 @@ export function ImageGallery({
                 <Button variant="ghost" size="icon" onClick={handleZoomIn} title={t('common.zoomIn') + ' (+)'}>
                   <ZoomIn className="h-4 w-4" />
                 </Button>
+                <div className="w-px h-6 bg-border mx-1" />
                 <Button variant="ghost" size="icon" onClick={handleRotate} title={t('common.rotate') + ' (R)'}>
                   <RotateCw className="h-4 w-4" />
                 </Button>
+                <Button variant={flipH ? "secondary" : "ghost"} size="icon" onClick={() => setFlipH(f => !f)} title={t('common.flipHorizontal') || 'Flip H'}>
+                  <FlipHorizontal className="h-4 w-4" />
+                </Button>
+                <Button variant={flipV ? "secondary" : "ghost"} size="icon" onClick={() => setFlipV(f => !f)} title={t('common.flipVertical') || 'Flip V'}>
+                  <FlipVertical className="h-4 w-4" />
+                </Button>
+                <div className="w-px h-6 bg-border mx-1" />
+                <Button variant={showAdjustments ? "secondary" : "ghost"} size="icon" onClick={() => setShowAdjustments(s => !s)} title={t('common.adjustments') || 'Adjustments'}>
+                  <Sun className="h-4 w-4" />
+                </Button>
+                <Button variant={invert ? "secondary" : "ghost"} size="icon" onClick={() => setInvert(i => !i)} title={t('common.invert') || 'Invert'}>
+                  <Contrast className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={handleResetAdjustments} title={t('common.reset') || 'Reset'}>
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+                <div className="w-px h-6 bg-border mx-1" />
                 <Button variant="ghost" size="icon" onClick={handleDownload} title={t('common.download')}>
                   <Download className="h-4 w-4" />
                 </Button>
@@ -586,6 +638,36 @@ export function ImageGallery({
                 </Button>
               </div>
             </div>
+
+            {/* Brightness/Contrast Adjustments Panel */}
+            {showAdjustments && (
+              <div className="flex items-center gap-4 px-4 py-2 border-b bg-background/95">
+                <div className="flex items-center gap-2 flex-1">
+                  <Sun className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="text-xs text-muted-foreground w-20 shrink-0">{t('common.brightness') || 'Brightness'}: {brightness}%</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="200"
+                    value={brightness}
+                    onChange={(e) => setBrightness(Number(e.target.value))}
+                    className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                  />
+                </div>
+                <div className="flex items-center gap-2 flex-1">
+                  <Contrast className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="text-xs text-muted-foreground w-20 shrink-0">{t('common.contrast') || 'Contrast'}: {contrast}%</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="200"
+                    value={contrast}
+                    onChange={(e) => setContrast(Number(e.target.value))}
+                    className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Lightbox Content */}
             <div 
@@ -634,7 +716,8 @@ export function ImageGallery({
                     alt={selectedImage.title}
                     className="max-w-full max-h-full object-contain transition-transform"
                     style={{
-                      transform: `scale(${zoom}) rotate(${rotation}deg) translate(${position.x / zoom}px, ${position.y / zoom}px)`,
+                      transform: `scale(${zoom}) rotate(${rotation}deg) translate(${position.x / zoom}px, ${position.y / zoom}px) scaleX(${flipH ? -1 : 1}) scaleY(${flipV ? -1 : 1})`,
+                      filter: `brightness(${brightness}%) contrast(${contrast}%)${invert ? ' invert(1)' : ''}`,
                       cursor: zoom > 1 ? (isDragging ? "grabbing" : "grab") : "default",
                     }}
                     draggable={false}
@@ -690,7 +773,7 @@ export function ImageGallery({
                   <div
                     key={image.id}
                     className={cn(
-                      "relative w-16 h-16 rounded-md overflow-hidden flex-shrink-0 cursor-pointer border-2 transition-all",
+                      "relative w-16 h-16 rounded-md overflow-hidden shrink-0 cursor-pointer border-2 transition-all",
                       index === selectedIndex ? "border-primary ring-2 ring-primary/50" : "border-transparent hover:border-muted-foreground/50"
                     )}
                     onClick={() => {

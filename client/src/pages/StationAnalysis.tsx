@@ -1,15 +1,18 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import ReportExportButton, { type ReportExportConfig } from "@/components/ReportExportButton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import type { DateRange } from "react-day-picker";
 
 import { ImageGallery, type GalleryImage } from "@/components/ImageGallery";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
   ArrowLeft,
   CalendarDays,
@@ -23,6 +26,7 @@ import {
   ShieldAlert,
   Lightbulb,
   ChevronRight,
+  ChevronDown,
   XCircle,
   Brain,
   FileBarChart,
@@ -31,6 +35,8 @@ import {
   Layers,
   GitBranch,
   Crosshair,
+  Maximize2,
+  ImageIcon,
 } from "lucide-react";
 import {
   BarChart,
@@ -122,9 +128,29 @@ export default function StationAnalysis() {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [qcSubTab, setQcSubTab] = useState<QcSubTab>("histogram");
   const [aiSubTab, setAiSubTab] = useState<AiSubTab>("aianalysis");
-  const [datePreset, setDatePreset] = useState<DatePreset>("1w");
-  const [customRange, setCustomRange] = useState<DateRange | undefined>();
+  const search = useSearch();
+
+  // Initialize date state from URL search params (synced from ProductionDashboard)
+  const initialDateState = useMemo(() => {
+    const params = new URLSearchParams(search);
+    const dp = params.get("dp");
+    const from = params.get("from");
+    const to = params.get("to");
+    // Map ProductionDashboard preset names to StationAnalysis preset names
+    const presetMap: Record<string, DatePreset> = { today: "today", yesterday: "yesterday", week: "1w", month: "1m", year: "year", custom: "custom", "1w": "1w", "1m": "1m" };
+    const preset = (dp && presetMap[dp]) || "1w";
+    let range: DateRange | undefined;
+    if (preset === "custom" && from) {
+      range = { from: new Date(from), to: to ? new Date(to) : new Date() };
+    }
+    return { preset, range };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only on mount
+
+  const [datePreset, setDatePreset] = useState<DatePreset>(initialDateState.preset);
+  const [customRange, setCustomRange] = useState<DateRange | undefined>(initialDateState.range);
   const [customOpen, setCustomOpen] = useState(false);
+  const [productModelId, setProductModelId] = useState<number | undefined>();
 
   const dateRange = useMemo(() => {
     if (datePreset === "custom" && customRange?.from && customRange?.to) {
@@ -133,7 +159,10 @@ export default function StationAnalysis() {
     return getPresetDateRange(datePreset);
   }, [datePreset, customRange]);
 
-  const commonInput = { stationId, startDate: dateRange.from, endDate: dateRange.to };
+  // Fetch product models for this station
+  const { data: stationProductModels } = trpc.stationAnalysis.getStationProductModels.useQuery({ stationId });
+
+  const commonInput = { stationId, startDate: dateRange.from, endDate: dateRange.to, productModelId };
 
   // Queries (must be declared before useCallback that references them)
   const { data: summary, isLoading: summaryLoading } = trpc.stationAnalysis.getStationSummary.useQuery(commonInput);
@@ -588,24 +617,40 @@ export default function StationAnalysis() {
           )}
         </div>
 
-        {/* ── Toolbar: Tabs + Date Filter ── */}
+        {/* ── Toolbar: Product + Tabs + Date Filter ── */}
         <div className="flex items-center justify-between border-b border-border bg-card/60 backdrop-blur-sm px-7 py-2">
-          {/* Tabs */}
-          <div className="flex gap-0.5 bg-background border border-border rounded-lg p-0.5">
-            {TABS.map(({ id, icon: Icon }) => (
-              <button
-                key={id}
-                onClick={() => setActiveTab(id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  activeTab === id
-                    ? "bg-purple-600/15 text-purple-400 border border-purple-500/20"
-                    : "text-muted-foreground/60 hover:text-muted-foreground"
-                }`}
+          <div className="flex items-center gap-3">
+            {/* Product Model Filter (first) */}
+            {stationProductModels && stationProductModels.length > 0 && (
+              <select
+                value={productModelId ?? ""}
+                onChange={(e) => setProductModelId(e.target.value ? Number(e.target.value) : undefined)}
+                className="px-2.5 py-1.5 rounded-md text-[11px] font-medium bg-background border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-purple-500/50 min-w-30"
               >
-                <Icon className="h-3.5 w-3.5" />
-                {t(`stationAnalysis.tabs.${id}`)}
-              </button>
-            ))}
+                <option value="">{t("stationAnalysis.allProducts", "All Products")}</option>
+                {stationProductModels.map((pm) => (
+                  <option key={pm.id} value={pm.id}>{pm.code} - {pm.name}</option>
+                ))}
+              </select>
+            )}
+
+            {/* Tabs */}
+            <div className="flex gap-0.5 bg-background border border-border rounded-lg p-0.5">
+              {TABS.map(({ id, icon: Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => setActiveTab(id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    activeTab === id
+                      ? "bg-purple-600/15 text-purple-400 border border-purple-500/20"
+                      : "text-muted-foreground/60 hover:text-muted-foreground"
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {t(`stationAnalysis.tabs.${id}`)}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Date presets */}
@@ -678,7 +723,7 @@ export default function StationAnalysis() {
             />
           )}
           {activeTab === "defects" && <DefectsContent data={defectData} isLoading={defectLoading} failHistory={failHistory} failLoading={failLoading} t={t} />}
-          {activeTab === "spc" && <SpcContent data={spcData} isLoading={spcLoading} t={t} />}
+          {activeTab === "spc" && <SpcContent data={spcData} isLoading={spcLoading} t={t} stationId={stationId} productModelId={productModelId} dateRange={dateRange} />}
           {activeTab === "qctools" && (
             <div className="space-y-4">
               {/* QC Tool Sub-tabs */}
@@ -794,7 +839,7 @@ function OverviewContent({
             {t("stationAnalysis.overview.hourlyYield")}
           </h3>
           {hourlyLoading ? (
-            <Skeleton className="h-[220px]" />
+            <Skeleton className="h-55" />
           ) : (
             <ResponsiveContainer width="100%" height={220}>
               <ComposedChart data={hourlyData || []} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
@@ -818,9 +863,9 @@ function OverviewContent({
             {t("stationAnalysis.overview.topDefects")}
           </h3>
           {defectLoading ? (
-            <Skeleton className="h-[220px]" />
+            <Skeleton className="h-55" />
           ) : (
-            <div className="space-y-2 max-h-[220px] overflow-y-auto">
+            <div className="space-y-2 max-h-55 overflow-y-auto">
               {(defectData || []).slice(0, 8).map((d: any, i: number) => (
                 <div key={d.pointDefId} className="flex items-center gap-2 text-xs">
                   <span className="font-mono text-muted-foreground/50 w-4">{i + 1}</span>
@@ -855,7 +900,7 @@ function OverviewContent({
             )}
           </h3>
           {spcLoading ? (
-            <Skeleton className="h-[220px]" />
+            <Skeleton className="h-55" />
           ) : spcData?.points?.length > 1 ? (
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={spcData.points} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
@@ -896,9 +941,9 @@ function OverviewContent({
             {t("stationAnalysis.overview.aiInsights")}
           </h3>
           {diagLoading ? (
-            <Skeleton className="h-[220px]" />
+            <Skeleton className="h-55" />
           ) : (
-            <div className="space-y-2 max-h-[220px] overflow-y-auto">
+            <div className="space-y-2 max-h-55 overflow-y-auto">
               {diagnostics?.patterns?.map((p: any, i: number) => (
                 <div key={i} className="bg-muted/30 rounded-lg p-2.5">
                   <div className="flex items-center gap-2 text-xs font-semibold">
@@ -939,8 +984,8 @@ function DefectsContent({ data, isLoading, failHistory, failLoading, t }: any) {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <Skeleton className="h-[350px] rounded-xl" />
-        <Skeleton className="h-[250px] rounded-xl" />
+        <Skeleton className="h-87.5 rounded-xl" />
+        <Skeleton className="h-62.5 rounded-xl" />
       </div>
     );
   }
@@ -1053,12 +1098,135 @@ function DefectsContent({ data, isLoading, failHistory, failLoading, t }: any) {
 /* ══════════════════════════════════════════════════════════
    SPC Tab — Full Control Chart + Stats
    ══════════════════════════════════════════════════════════ */
-function SpcContent({ data, isLoading, t }: any) {
+function SpcContent({ data, isLoading, t, stationId, productModelId, dateRange }: any) {
+  const [spcMode, setSpcMode] = useState<"yield" | "measurement">("yield");
+  const [measurementPointDefId, setMeasurementPointDefId] = useState<number | undefined>();
+  const [subgroupSize, setSubgroupSize] = useState(5);
+  const [enabledRules, setEnabledRules] = useState<number[]>([1, 2, 3, 4, 5, 6, 7, 8]);
+  const [customUsl, setCustomUsl] = useState<string>("");
+  const [customLsl, setCustomLsl] = useState<string>("");
+  const [showSampleTable, setShowSampleTable] = useState(false);
+
+  const { data: mpPoints } = trpc.stationAnalysis.getStationMeasurementPoints.useQuery(
+    { stationId, productModelId },
+    { enabled: spcMode === "measurement" }
+  );
+
+  const { data: mpSpc, isLoading: mpSpcLoading } = trpc.stationAnalysis.getMeasurementPointSPC.useQuery(
+    {
+      stationId,
+      measurementPointDefId: measurementPointDefId!,
+      productModelId,
+      startDate: dateRange.from,
+      endDate: dateRange.to,
+      subgroupSize,
+      enabledRules,
+      uslOverride: customUsl ? Number(customUsl) : undefined,
+      lslOverride: customLsl ? Number(customLsl) : undefined,
+    },
+    { enabled: spcMode === "measurement" && !!measurementPointDefId }
+  );
+
+  // Auto-select first measurement point
+  useEffect(() => {
+    if (mpPoints && mpPoints.length > 0 && !measurementPointDefId) {
+      setMeasurementPointDefId(mpPoints[0].id);
+    }
+  }, [mpPoints, measurementPointDefId]);
+
+  const toggleRule = (rule: number) => {
+    setEnabledRules(prev => prev.includes(rule) ? prev.filter(r => r !== rule) : [...prev, rule].sort());
+  };
+
+  const RULE_COLORS: Record<number, string> = { 1: "#ef4444", 2: "#f97316", 3: "#eab308", 4: "#22c55e", 5: "#06b6d4", 6: "#3b82f6", 7: "#8b5cf6", 8: "#ec4899" };
+  const RULE_LABELS: Record<number, string> = {
+    1: "1σ Beyond 3σ", 2: "9 Same Side", 3: "6 Increasing/Decreasing",
+    4: "14 Alternating", 5: "2/3 Beyond 2σ", 6: "4/5 Beyond 1σ",
+    7: "15 Within 1σ", 8: "8 Beyond 1σ Both",
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Mode selector + controls */}
+      <div className="bg-card border border-border rounded-xl p-4 space-y-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex gap-0.5 bg-background border border-border rounded-lg p-0.5">
+            <button onClick={() => setSpcMode("yield")} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${spcMode === "yield" ? "bg-purple-600/15 text-purple-400 border border-purple-500/20" : "text-muted-foreground/60 hover:text-muted-foreground"}`}>
+              {t("stationAnalysis.spc.yieldMode")}
+            </button>
+            <button onClick={() => setSpcMode("measurement")} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${spcMode === "measurement" ? "bg-blue-600/15 text-blue-400 border border-blue-500/20" : "text-muted-foreground/60 hover:text-muted-foreground"}`}>
+              {t("stationAnalysis.spc.measurementMode")}
+            </button>
+          </div>
+        </div>
+
+        {spcMode === "measurement" && (
+          <div className="space-y-3">
+            {/* Measurement point selector + subgroup size */}
+            <div className="flex items-end gap-3 flex-wrap">
+              <div className="min-w-55">
+                <label className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-1 block">{t("stationAnalysis.spc.measurementPoint")}</label>
+                <select
+                  value={measurementPointDefId || ""}
+                  onChange={(e) => setMeasurementPointDefId(Number(e.target.value))}
+                  className="w-full h-9 rounded-md border border-border bg-background px-3 text-xs"
+                >
+                  <option value="">{t("stationAnalysis.spc.selectPoint")}</option>
+                  {mpPoints?.map((p: any) => (
+                    <option key={p.id} value={p.id}>{p.code} - {p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="w-24">
+                <label className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-1 block">{t("stationAnalysis.spc.subgroupSize")}</label>
+                <Input type="number" min={2} max={25} value={subgroupSize} onChange={(e) => setSubgroupSize(Math.max(2, Math.min(25, Number(e.target.value))))} className="h-9 text-xs" />
+              </div>
+              <div className="w-28">
+                <label className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-1 block">USL</label>
+                <Input type="number" step="any" value={customUsl} onChange={(e) => setCustomUsl(e.target.value)} placeholder={mpSpc?.specLimits?.usl != null ? String(mpSpc.specLimits.usl) : "—"} className="h-9 text-xs" />
+              </div>
+              <div className="w-28">
+                <label className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-1 block">LSL</label>
+                <Input type="number" step="any" value={customLsl} onChange={(e) => setCustomLsl(e.target.value)} placeholder={mpSpc?.specLimits?.lsl != null ? String(mpSpc.specLimits.lsl) : "—"} className="h-9 text-xs" />
+              </div>
+            </div>
+
+            {/* SPC Rules toggles */}
+            <div>
+              <label className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-2 block">{t("stationAnalysis.spc.enabledRules")}</label>
+              <div className="flex flex-wrap gap-2">
+                {[1, 2, 3, 4, 5, 6, 7, 8].map(r => (
+                  <label key={r} className="flex items-center gap-1.5 cursor-pointer text-xs" onClick={() => toggleRule(r)}>
+                    <Checkbox checked={enabledRules.includes(r)} className="h-3.5 w-3.5" />
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: RULE_COLORS[r] }} />
+                      R{r}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Render yield-based or measurement-based SPC */}
+      {spcMode === "yield" ? (
+        <YieldSpcView data={data} isLoading={isLoading} t={t} />
+      ) : (
+        <MeasurementSpcView data={mpSpc} isLoading={mpSpcLoading} t={t} RULE_COLORS={RULE_COLORS} RULE_LABELS={RULE_LABELS} showSampleTable={showSampleTable} setShowSampleTable={setShowSampleTable} />
+      )}
+    </div>
+  );
+}
+
+/* ── Yield-based SPC (original, unchanged logic) ── */
+function YieldSpcView({ data, isLoading, t }: any) {
   if (isLoading) {
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-4 gap-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-24 rounded-xl" />)}</div>
-        <Skeleton className="h-[400px] rounded-xl" />
+        <Skeleton className="h-100 rounded-xl" />
       </div>
     );
   }
@@ -1077,7 +1245,6 @@ function SpcContent({ data, isLoading, t }: any) {
 
   return (
     <div className="space-y-6">
-      {/* SPC KPI cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
         <SpcCard label={t("stationAnalysis.spc.meanLabel")} value={`${data.mean}%`} />
         <SpcCard label={t("stationAnalysis.spc.stdDevLabel")} value={data.stddev.toFixed(2)} />
@@ -1088,7 +1255,6 @@ function SpcContent({ data, isLoading, t }: any) {
         <SpcCard label={t("stationAnalysis.spc.outOfControl")} value={`${oocCount} / ${data.points.length}`} color={oocCount > 0 ? "text-red-500" : "text-emerald-500"} />
       </div>
 
-      {/* Western Electric Rules Summary */}
       {data.ruleSummary && data.ruleSummary.length > 0 && (
         <div className="bg-card border border-border rounded-xl p-6">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
@@ -1110,7 +1276,6 @@ function SpcContent({ data, isLoading, t }: any) {
         </div>
       )}
 
-      {/* X-bar chart */}
       <div id="chart-spc-xbar" className="bg-card border border-border rounded-xl p-6">
         <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
           <Target className="h-4 w-4 text-emerald-400" />
@@ -1119,78 +1284,51 @@ function SpcContent({ data, isLoading, t }: any) {
         <ResponsiveContainer width="100%" height={400}>
           <LineChart data={data.points} margin={{ top: 10, right: 30, bottom: 20, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
-            <XAxis
-              dataKey="day"
-              tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
-              tickFormatter={(d) => {
-                try { return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" }); }
-                catch { return d; }
-              }}
-              angle={-30}
-              textAnchor="end"
-            />
-            <YAxis
-              domain={[Math.max(0, Math.floor(data.lcl - 5)), Math.min(100, Math.ceil(data.ucl + 5))]}
-              tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-              tickFormatter={(v) => `${v}%`}
-            />
-            <Tooltip
-              contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11 }}
-              content={({ active, payload, label }: any) => {
-                if (!active || !payload?.[0]) return null;
-                const pt = payload[0].payload;
-                return (
-                  <div className="bg-card border border-border rounded-lg p-3 shadow-lg text-xs">
-                    <div className="font-semibold mb-1">{(() => { try { return new Date(label).toLocaleDateString(); } catch { return label; } })()}</div>
-                    <div>Yield: <span className="font-mono font-bold">{Number(pt.yield).toFixed(1)}%</span></div>
-                    <div>Zone: <span className="font-mono">{pt.zone}</span></div>
-                    {pt.violatedRules?.length > 0 && (
-                      <div className="mt-1.5 pt-1.5 border-t border-border space-y-0.5">
-                        <div className="text-red-400 font-semibold">{t("stationAnalysis.spc.ruleViolations")}</div>
-                        {pt.ruleDescriptions?.map((rd: string, i: number) => (
-                          <div key={i} className="flex items-start gap-1.5">
-                            <div className="w-2 h-2 rounded-full mt-0.5 shrink-0" style={{ backgroundColor: RULE_COLORS[pt.violatedRules[i]] || "#888" }} />
-                            <span className="text-muted-foreground">{rd}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              }}
-            />
+            <XAxis dataKey="day" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(d) => { try { return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" }); } catch { return d; } }} angle={-30} textAnchor="end" />
+            <YAxis domain={[Math.max(0, Math.floor(data.lcl - 5)), Math.min(100, Math.ceil(data.ucl + 5))]} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v) => `${v}%`} />
+            <Tooltip content={({ active, payload, label }: any) => {
+              if (!active || !payload?.[0]) return null;
+              const pt = payload[0].payload;
+              return (
+                <div className="bg-card border border-border rounded-lg p-3 shadow-lg text-xs">
+                  <div className="font-semibold mb-1">{(() => { try { return new Date(label).toLocaleDateString(); } catch { return label; } })()}</div>
+                  <div>Yield: <span className="font-mono font-bold">{Number(pt.yield).toFixed(1)}%</span></div>
+                  <div>Zone: <span className="font-mono">{pt.zone}</span></div>
+                  {pt.violatedRules?.length > 0 && (
+                    <div className="mt-1.5 pt-1.5 border-t border-border space-y-0.5">
+                      <div className="text-red-400 font-semibold">{t("stationAnalysis.spc.ruleViolations")}</div>
+                      {pt.ruleDescriptions?.map((rd: string, i: number) => (
+                        <div key={i} className="flex items-start gap-1.5"><div className="w-2 h-2 rounded-full mt-0.5 shrink-0" style={{ backgroundColor: RULE_COLORS[pt.violatedRules[i]] || "#888" }} /><span className="text-muted-foreground">{rd}</span></div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }} />
             <ReferenceLine y={data.ucl} stroke="#22c55e" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `UCL: ${data.ucl}%`, position: "insideTopRight", fontSize: 10, fill: "#22c55e" }} />
             <ReferenceLine y={data.mean} stroke="#a855f7" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: `X̄: ${data.mean}%`, position: "insideTopRight", fontSize: 10, fill: "#a855f7" }} />
             <ReferenceLine y={data.lcl} stroke="#ef4444" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `LCL: ${data.lcl}%`, position: "insideBottomRight", fontSize: 10, fill: "#ef4444" }} />
-            {/* Sigma zones shading */}
             <ReferenceLine y={data.mean + 2 * data.stddev} stroke="#22c55e" strokeDasharray="2 4" strokeWidth={0.5} opacity={0.4} />
             <ReferenceLine y={data.mean - 2 * data.stddev} stroke="#ef4444" strokeDasharray="2 4" strokeWidth={0.5} opacity={0.4} />
             <ReferenceLine y={data.mean + data.stddev} stroke="#6366f1" strokeDasharray="2 4" strokeWidth={0.5} opacity={0.3} />
             <ReferenceLine y={data.mean - data.stddev} stroke="#6366f1" strokeDasharray="2 4" strokeWidth={0.5} opacity={0.3} />
-            <Line
-              type="monotone"
-              dataKey="yield"
-              stroke="#3b82f6"
-              strokeWidth={2}
-              dot={(props: any) => {
-                const { cx, cy, payload } = props;
-                const ooc = payload.outOfControl;
-                const rules = payload.violatedRules || [];
-                const mainColor = rules.length > 0 ? (RULE_COLORS[rules[0]] || "#ef4444") : "#3b82f6";
-                return (
-                  <g key={`spc-${cx}-${cy}`}>
-                    {ooc && <circle cx={cx} cy={cy} r={8} fill={mainColor} opacity={0.15} />}
-                    <circle cx={cx} cy={cy} r={ooc ? 5 : 3} fill={ooc ? mainColor : "#3b82f6"} stroke={ooc ? "#fff" : "none"} strokeWidth={ooc ? 2 : 0} />
-                    {rules.length > 1 && <circle cx={cx} cy={cy} r={7} fill="none" stroke="#f97316" strokeWidth={1.5} strokeDasharray="3 2" />}
-                  </g>
-                );
-              }}
-            />
+            <Line type="monotone" dataKey="yield" stroke="#3b82f6" strokeWidth={2} dot={(props: any) => {
+              const { cx, cy, payload } = props;
+              const ooc = payload.outOfControl;
+              const rules = payload.violatedRules || [];
+              const mainColor = rules.length > 0 ? (RULE_COLORS[rules[0]] || "#ef4444") : "#3b82f6";
+              return (
+                <g key={`spc-${cx}-${cy}`}>
+                  {ooc && <circle cx={cx} cy={cy} r={8} fill={mainColor} opacity={0.15} />}
+                  <circle cx={cx} cy={cy} r={ooc ? 5 : 3} fill={ooc ? mainColor : "#3b82f6"} stroke={ooc ? "#fff" : "none"} strokeWidth={ooc ? 2 : 0} />
+                  {rules.length > 1 && <circle cx={cx} cy={cy} r={7} fill="none" stroke="#f97316" strokeWidth={1.5} strokeDasharray="3 2" />}
+                </g>
+              );
+            }} />
           </LineChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Moving Range chart */}
       <div id="chart-spc-mr" className="bg-card border border-border rounded-xl p-6">
         <h3 className="text-sm font-semibold mb-4">{t("stationAnalysis.spc.movingRange")}</h3>
         <ResponsiveContainer width="100%" height={200}>
@@ -1203,6 +1341,355 @@ function SpcContent({ data, isLoading, t }: any) {
             <Bar dataKey="movingRange" name="Moving Range" fill="#6366f1" opacity={0.6} radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+/* ── Measurement-value based SPC ── */
+function MeasurementSpcView({ data, isLoading, t, RULE_COLORS, RULE_LABELS, showSampleTable, setShowSampleTable }: any) {
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-4 gap-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-24 rounded-xl" />)}</div>
+        <Skeleton className="h-100 rounded-xl" />
+      </div>
+    );
+  }
+
+  if (!data || !data.xBarPoints || data.xBarPoints.length < 2) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-muted-foreground/50">
+        <Target className="h-12 w-12 mb-3" />
+        <p className="text-sm">{t("stationAnalysis.spc.notEnoughData")}</p>
+        {data?.totalSamples != null && <p className="text-xs mt-1">{t("stationAnalysis.spc.samplesCollected")}: {data.totalSamples}</p>}
+      </div>
+    );
+  }
+
+  const cl = data.controlLimits;
+  const cap = data.capability;
+
+  // Compute Y-axis domain for X̄ Chart to include all reference lines + data
+  const xBarYDomain = (() => {
+    const vals: number[] = [];
+    if (data.xBarPoints) data.xBarPoints.forEach((p: any) => { if (p.mean != null) vals.push(Number(p.mean)); });
+    vals.push(Number(cl.xBar.UCL), Number(cl.xBar.CL), Number(cl.xBar.LCL));
+    if (data.specLimits?.usl != null) vals.push(Number(data.specLimits.usl));
+    if (data.specLimits?.lsl != null) vals.push(Number(data.specLimits.lsl));
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    const padding = (max - min) * 0.1 || 1;
+    return [Math.floor((min - padding) * 1000) / 1000, Math.ceil((max + padding) * 1000) / 1000] as [number, number];
+  })();
+
+  // Compute Y-axis domain for R Chart
+  const rYDomain = (() => {
+    const vals: number[] = [0];
+    if (data.rPoints) data.rPoints.forEach((p: any) => { if (p.range != null) vals.push(Number(p.range)); });
+    vals.push(Number(cl.range.UCL), Number(cl.range.CL));
+    if (cl.range.LCL > 0) vals.push(Number(cl.range.LCL));
+    const max = Math.max(...vals);
+    const padding = max * 0.1 || 1;
+    return [0, Math.ceil((max + padding) * 1000) / 1000] as [number, number];
+  })();
+
+  // Compute X-axis domain for X̄ Histogram (numeric) to include all limits
+  const xBarHistXDomain = (() => {
+    if (!data.xBarHistogram?.length) return undefined;
+    const bins = data.xBarHistogram;
+    const vals: number[] = [Number(bins[0].binStart), Number(bins[bins.length - 1].binEnd), Number(cl.xBar.UCL), Number(cl.xBar.CL), Number(cl.xBar.LCL)];
+    if (data.specLimits?.usl != null) vals.push(Number(data.specLimits.usl));
+    if (data.specLimits?.lsl != null) vals.push(Number(data.specLimits.lsl));
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    const pad = (max - min) * 0.08 || 1;
+    return [min - pad, max + pad] as [number, number];
+  })();
+
+  // Compute X-axis domain for R Histogram (numeric) to include all limits
+  const rHistXDomain = (() => {
+    if (!data.rHistogram?.length) return undefined;
+    const bins = data.rHistogram;
+    const vals: number[] = [Number(bins[0].binStart), Number(bins[bins.length - 1].binEnd), Number(cl.range.UCL), Number(cl.range.CL)];
+    if (cl.range.LCL > 0) vals.push(Number(cl.range.LCL));
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    const pad = (max - min) * 0.08 || 1;
+    return [Math.max(0, min - pad), max + pad] as [number, number];
+  })();
+
+  // Compute bar width for histogram based on bin width
+  const xBarHistBarSize = data.xBarHistogram?.length > 0
+    ? Math.max(6, Math.round(600 / data.xBarHistogram.length * 0.75))
+    : 20;
+  const rHistBarSize = data.rHistogram?.length > 0
+    ? Math.max(6, Math.round(600 / data.rHistogram.length * 0.75))
+    : 20;
+
+  return (
+    <div className="space-y-6">
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
+        <SpcCard label="X̄ (CL)" value={String(cl.xBar.CL)} />
+        <SpcCard label="UCL" value={String(cl.xBar.UCL)} color="text-emerald-400" />
+        <SpcCard label="LCL" value={String(cl.xBar.LCL)} color="text-red-400" />
+        <SpcCard label="σ̂" value={String(cl.estimatedSigma)} />
+        {cap?.cpk != null && <SpcCard label="Cpk" value={String(cap.cpk)} color={cap.cpk < 1 ? "text-red-500" : cap.cpk >= 1.33 ? "text-emerald-500" : "text-yellow-500"} />}
+        {cap?.ppk != null && <SpcCard label="Ppk" value={String(cap.ppk)} color={cap.ppk < 1 ? "text-red-500" : "text-emerald-500"} />}
+        <SpcCard label={t("stationAnalysis.spc.outOfControl")} value={`${data.oocCount} / ${data.totalSubgroups}`} color={data.oocCount > 0 ? "text-red-500" : "text-emerald-500"} />
+        <SpcCard label={t("stationAnalysis.spc.samples")} value={String(data.totalSamples)} />
+      </div>
+
+      {/* Spec limits info */}
+      {(data.specLimits?.usl != null || data.specLimits?.lsl != null) && (
+        <div className="flex flex-wrap gap-3 text-xs">
+          {data.specLimits.usl != null && <span className="bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full border border-emerald-500/20">USL: {data.specLimits.usl}</span>}
+          {data.specLimits.nominal != null && <span className="bg-purple-500/10 text-purple-400 px-3 py-1 rounded-full border border-purple-500/20">Nominal: {data.specLimits.nominal}</span>}
+          {data.specLimits.lsl != null && <span className="bg-red-500/10 text-red-400 px-3 py-1 rounded-full border border-red-500/20">LSL: {data.specLimits.lsl}</span>}
+        </div>
+      )}
+
+      {/* Rule violations summary */}
+      {data.ruleSummary && data.ruleSummary.length > 0 && (
+        <div className="bg-card border border-border rounded-xl p-6">
+          <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-red-400" />
+            {t("stationAnalysis.spc.westernViolations")}
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {data.ruleSummary.map((rs: any) => (
+              <div key={rs.rule} className="flex items-center gap-2 bg-muted/30 rounded-lg p-3 border border-border">
+                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: RULE_COLORS[rs.rule] || "#888" }} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-semibold truncate">{t("stationAnalysis.spc.rule")} {rs.rule}</div>
+                  <div className="text-[10px] text-muted-foreground truncate">{rs.name}</div>
+                </div>
+                <span className="text-xs font-mono font-bold text-red-400">{rs.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* X-bar Chart */}
+      <div id="chart-spc-xbar-mp" className="bg-card border border-border rounded-xl p-6">
+        <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+          <Target className="h-4 w-4 text-emerald-400" />
+          X̄ Chart — {data.pointDef?.code || ""} {data.pointDef?.name || ""}
+        </h3>
+        <ResponsiveContainer width="100%" height={400}>
+          <LineChart data={data.xBarPoints} margin={{ top: 10, right: 30, bottom: 20, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+            <XAxis dataKey="index" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} label={{ value: t("stationAnalysis.spc.subgroupIndex"), position: "bottom", fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+            <YAxis domain={xBarYDomain} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+            <Tooltip content={({ active, payload }: any) => {
+              if (!active || !payload?.[0]) return null;
+              const pt = payload[0].payload;
+              return (
+                <div className="bg-card border border-border rounded-lg p-3 shadow-lg text-xs">
+                  <div className="font-semibold mb-1">{t("stationAnalysis.spc.subgroup")} #{pt.index + 1}</div>
+                  <div>X̄: <span className="font-mono font-bold">{pt.mean}</span></div>
+                  <div>{t("stationAnalysis.spc.samples")}: {pt.sampleCount}</div>
+                  {pt.timestamp && <div className="text-muted-foreground">{new Date(pt.timestamp).toLocaleString()}</div>}
+                  {pt.violatedRules?.length > 0 && (
+                    <div className="mt-1.5 pt-1.5 border-t border-border space-y-0.5">
+                      <div className="text-red-400 font-semibold">{t("stationAnalysis.spc.ruleViolations")}</div>
+                      {pt.ruleDescriptions?.map((rd: string, i: number) => (
+                        <div key={i} className="flex items-start gap-1.5"><div className="w-2 h-2 rounded-full mt-0.5 shrink-0" style={{ backgroundColor: RULE_COLORS[pt.violatedRules[i]] || "#888" }} /><span className="text-muted-foreground">{rd}</span></div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }} />
+            <ReferenceLine y={cl.xBar.UCL} stroke="#22c55e" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `UCL: ${cl.xBar.UCL}`, position: "insideTopRight", fontSize: 10, fill: "#22c55e" }} />
+            <ReferenceLine y={cl.xBar.CL} stroke="#a855f7" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: `X̄: ${cl.xBar.CL}`, position: "insideTopRight", fontSize: 10, fill: "#a855f7" }} />
+            <ReferenceLine y={cl.xBar.LCL} stroke="#ef4444" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `LCL: ${cl.xBar.LCL}`, position: "insideBottomRight", fontSize: 10, fill: "#ef4444" }} />
+            {data.specLimits?.usl != null && <ReferenceLine y={data.specLimits.usl} stroke="#10b981" strokeDasharray="8 4" strokeWidth={1} label={{ value: `USL: ${data.specLimits.usl}`, position: "insideTopLeft", fontSize: 9, fill: "#10b981" }} />}
+            {data.specLimits?.lsl != null && <ReferenceLine y={data.specLimits.lsl} stroke="#f43f5e" strokeDasharray="8 4" strokeWidth={1} label={{ value: `LSL: ${data.specLimits.lsl}`, position: "insideBottomLeft", fontSize: 9, fill: "#f43f5e" }} />}
+            <Line type="monotone" dataKey="mean" stroke="#3b82f6" strokeWidth={2} dot={(props: any) => {
+              const { cx, cy, payload } = props;
+              if (cx == null || cy == null) return <g key="empty" />;
+              const ooc = payload.outOfControl;
+              const rules = payload.violatedRules || [];
+              const mainColor = rules.length > 0 ? (RULE_COLORS[rules[0]] || "#ef4444") : "#3b82f6";
+              return (
+                <g key={`mp-xbar-${payload.index}`}>
+                  {ooc && <circle cx={cx} cy={cy} r={8} fill={mainColor} opacity={0.15} />}
+                  <circle cx={cx} cy={cy} r={ooc ? 5 : 3} fill={ooc ? mainColor : "#3b82f6"} stroke={ooc ? "#fff" : "none"} strokeWidth={ooc ? 2 : 0} />
+                  {rules.length > 1 && <circle cx={cx} cy={cy} r={7} fill="none" stroke="#f97316" strokeWidth={1.5} strokeDasharray="3 2" />}
+                </g>
+              );
+            }} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* R Chart */}
+      <div id="chart-spc-r-mp" className="bg-card border border-border rounded-xl p-6">
+        <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+          <BarChart3 className="h-4 w-4 text-blue-400" />
+          R Chart — {t("stationAnalysis.spc.rangeChart")}
+        </h3>
+        <ResponsiveContainer width="100%" height={250}>
+          <LineChart data={data.rPoints} margin={{ top: 10, right: 30, bottom: 20, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+            <XAxis dataKey="index" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
+            <YAxis domain={rYDomain} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+            <Tooltip content={({ active, payload }: any) => {
+              if (!active || !payload?.[0]) return null;
+              const pt = payload[0].payload;
+              return (
+                <div className="bg-card border border-border rounded-lg p-3 shadow-lg text-xs">
+                  <div className="font-semibold mb-1">{t("stationAnalysis.spc.subgroup")} #{pt.index + 1}</div>
+                  <div>R: <span className="font-mono font-bold">{pt.range}</span></div>
+                </div>
+              );
+            }} />
+            <ReferenceLine y={cl.range.UCL} stroke="#22c55e" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `UCL: ${cl.range.UCL}`, position: "insideTopRight", fontSize: 10, fill: "#22c55e" }} />
+            <ReferenceLine y={cl.range.CL} stroke="#a855f7" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: `R̄: ${cl.range.CL}`, position: "insideTopRight", fontSize: 10, fill: "#a855f7" }} />
+            <ReferenceLine y={cl.range.LCL} stroke="#ef4444" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `LCL: ${cl.range.LCL}`, position: "insideBottomRight", fontSize: 10, fill: "#ef4444" }} />
+            <Line type="monotone" dataKey="range" stroke="#6366f1" strokeWidth={2} dot={(props: any) => {
+              const { cx, cy, payload } = props;
+              if (cx == null || cy == null) return <g key="empty" />;
+              const ooc = payload.outOfControl;
+              return (
+                <g key={`mp-r-${payload.index}`}>
+                  <circle cx={cx} cy={cy} r={ooc ? 5 : 3} fill={ooc ? "#ef4444" : "#6366f1"} stroke={ooc ? "#fff" : "none"} strokeWidth={ooc ? 2 : 0} />
+                </g>
+              );
+            }} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Capability Summary Card */}
+      {cap && (cap.cp != null || cap.cpk != null) && (
+        <div className="bg-card border border-border rounded-xl p-6">
+          <h3 className="text-sm font-semibold mb-4">{t("stationAnalysis.spc.capabilityIndices")}</h3>
+          <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+            {cap.cp != null && <SpcCard label="Cp" value={String(cap.cp)} color={cap.cp < 1 ? "text-red-500" : cap.cp >= 1.33 ? "text-emerald-500" : "text-yellow-500"} />}
+            {cap.cpk != null && <SpcCard label="Cpk" value={String(cap.cpk)} color={cap.cpk < 1 ? "text-red-500" : cap.cpk >= 1.33 ? "text-emerald-500" : "text-yellow-500"} />}
+            {cap.pp != null && <SpcCard label="Pp" value={String(cap.pp)} color={cap.pp < 1 ? "text-red-500" : "text-emerald-500"} />}
+            {cap.ppk != null && <SpcCard label="Ppk" value={String(cap.ppk)} color={cap.ppk < 1 ? "text-red-500" : "text-emerald-500"} />}
+            {cap.cpu != null && <SpcCard label="Cpu" value={String(cap.cpu)} />}
+            {cap.cpl != null && <SpcCard label="Cpl" value={String(cap.cpl)} />}
+          </div>
+        </div>
+      )}
+
+      {/* X-bar Histogram with Normal Distribution Curve */}
+      {data.xBarHistogram?.length > 0 && (
+        <div id="chart-xbar-histogram" className="bg-card border border-border rounded-xl p-6">
+          <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+            <FileBarChart className="h-4 w-4 text-blue-400" />
+            X̄ {t("stationAnalysis.spc.histogram")}
+          </h3>
+          <ResponsiveContainer width="100%" height={320}>
+            <ComposedChart data={data.xBarHistogram} margin={{ top: 10, right: 20, bottom: 40, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+              <XAxis type="number" dataKey="binMid" domain={xBarHistXDomain} tick={{ fontSize: 8, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v: number) => v.toFixed(2)} />
+              <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+              <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11 }} labelFormatter={(v: number) => `Bin: ${v.toFixed(3)}`} />
+              <Bar dataKey="count" name="Frequency" fill="#3b82f6" opacity={0.7} radius={[3, 3, 0, 0]} barSize={xBarHistBarSize} />
+              <Line type="monotone" dataKey="normalCount" name="Normal Dist." stroke="#ef4444" strokeWidth={2.5} dot={false} />
+              <ReferenceLine x={Number(cl.xBar.CL)} stroke="#a855f7" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: `X̄: ${cl.xBar.CL}`, position: "top", fontSize: 9, fill: "#a855f7" }} />
+              <ReferenceLine x={Number(cl.xBar.UCL)} stroke="#22c55e" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `UCL: ${cl.xBar.UCL}`, position: "top", fontSize: 9, fill: "#22c55e" }} />
+              <ReferenceLine x={Number(cl.xBar.LCL)} stroke="#ef4444" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `LCL: ${cl.xBar.LCL}`, position: "top", fontSize: 9, fill: "#ef4444" }} />
+              {data.specLimits?.usl != null && <ReferenceLine x={Number(data.specLimits.usl)} stroke="#10b981" strokeDasharray="8 4" strokeWidth={1.5} label={{ value: `USL: ${data.specLimits.usl}`, position: "top", fontSize: 9, fill: "#10b981" }} />}
+              {data.specLimits?.lsl != null && <ReferenceLine x={Number(data.specLimits.lsl)} stroke="#f43f5e" strokeDasharray="8 4" strokeWidth={1.5} label={{ value: `LSL: ${data.specLimits.lsl}`, position: "top", fontSize: 9, fill: "#f43f5e" }} />}
+            </ComposedChart>
+          </ResponsiveContainer>
+          {/* Legend for reference lines */}
+          <div className="flex flex-wrap gap-3 mt-3 justify-center text-[10px]">
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-[#ef4444] inline-block" /> Normal Distribution</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-[#a855f7] inline-block" style={{ borderTop: "2px dashed #a855f7" }} /> X̄ (CL)</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-[#22c55e] inline-block" style={{ borderTop: "2px dashed #22c55e" }} /> UCL</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-[#ef4444] inline-block" style={{ borderTop: "2px dashed #ef4444" }} /> LCL</span>
+            {data.specLimits?.usl != null && <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-[#10b981] inline-block" style={{ borderTop: "2px dashed #10b981" }} /> USL</span>}
+            {data.specLimits?.lsl != null && <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-[#f43f5e] inline-block" style={{ borderTop: "2px dashed #f43f5e" }} /> LSL</span>}
+          </div>
+        </div>
+      )}
+
+      {/* R Histogram with Normal Distribution Curve */}
+      {data.rHistogram?.length > 0 && (
+        <div id="chart-r-histogram" className="bg-card border border-border rounded-xl p-6">
+          <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+            <FileBarChart className="h-4 w-4 text-purple-400" />
+            R {t("stationAnalysis.spc.histogram")}
+          </h3>
+          <ResponsiveContainer width="100%" height={280}>
+            <ComposedChart data={data.rHistogram} margin={{ top: 10, right: 20, bottom: 40, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.2} />
+              <XAxis type="number" dataKey="binMid" domain={rHistXDomain} tick={{ fontSize: 8, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v: number) => v.toFixed(2)} />
+              <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+              <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11 }} labelFormatter={(v: number) => `Bin: ${v.toFixed(3)}`} />
+              <Bar dataKey="count" name="Frequency" fill="#8b5cf6" opacity={0.7} radius={[3, 3, 0, 0]} barSize={rHistBarSize} />
+              <Line type="monotone" dataKey="normalCount" name="Normal Dist." stroke="#ef4444" strokeWidth={2.5} dot={false} />
+              <ReferenceLine x={Number(cl.range.CL)} stroke="#a855f7" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: `R̄: ${cl.range.CL}`, position: "top", fontSize: 9, fill: "#a855f7" }} />
+              <ReferenceLine x={Number(cl.range.UCL)} stroke="#22c55e" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `UCL: ${cl.range.UCL}`, position: "top", fontSize: 9, fill: "#22c55e" }} />
+              {cl.range.LCL > 0 && <ReferenceLine x={Number(cl.range.LCL)} stroke="#ef4444" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `LCL: ${cl.range.LCL}`, position: "top", fontSize: 9, fill: "#ef4444" }} />}
+            </ComposedChart>
+          </ResponsiveContainer>
+          <div className="flex flex-wrap gap-3 mt-3 justify-center text-[10px]">
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-[#ef4444] inline-block" /> Normal Distribution</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-[#a855f7] inline-block" style={{ borderTop: "2px dashed #a855f7" }} /> R̄ (CL)</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-[#22c55e] inline-block" style={{ borderTop: "2px dashed #22c55e" }} /> UCL</span>
+          </div>
+        </div>
+      )}
+
+      {/* Sample Data Table */}
+      <div className="bg-card border border-border rounded-xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Table2 className="h-4 w-4 text-blue-400" />
+            {t("stationAnalysis.spc.sampleTable")}
+          </h3>
+          <button onClick={() => setShowSampleTable(!showSampleTable)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+            {showSampleTable ? t("stationAnalysis.spc.hideTable") : t("stationAnalysis.spc.showTable")}
+          </button>
+        </div>
+        {showSampleTable && (
+          <div className="overflow-x-auto max-h-100 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-card">
+                <tr className="border-b border-border">
+                  <th className="text-left p-2 font-semibold">#</th>
+                  <th className="text-left p-2 font-semibold">{t("stationAnalysis.spc.values")}</th>
+                  <th className="text-right p-2 font-semibold">X̄</th>
+                  <th className="text-right p-2 font-semibold">R</th>
+                  <th className="text-left p-2 font-semibold">{t("stationAnalysis.spc.time")}</th>
+                  <th className="text-left p-2 font-semibold">{t("stationAnalysis.spc.rules")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.sampleTable?.map((row: any) => (
+                  <tr key={row.index} className={`border-b border-border/50 ${row.outOfControl ? "bg-red-500/5" : ""}`}>
+                    <td className="p-2 font-mono">{row.index}</td>
+                    <td className="p-2 font-mono text-muted-foreground">{row.values.join(", ")}</td>
+                    <td className="p-2 text-right font-mono font-semibold">{row.mean}</td>
+                    <td className="p-2 text-right font-mono">{row.range}</td>
+                    <td className="p-2 text-muted-foreground">{row.timestamp ? new Date(row.timestamp).toLocaleString() : "—"}</td>
+                    <td className="p-2">
+                      {row.violatedRules?.length > 0 && (
+                        <div className="flex gap-1">
+                          {row.violatedRules.map((r: number) => (
+                            <span key={r} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold" style={{ backgroundColor: `${RULE_COLORS[r]}20`, color: RULE_COLORS[r] }}>
+                              R{r}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1221,7 +1708,7 @@ function SpcCard({ label, value, color = "" }: { label: string; value: string; c
    Histogram Tab — Yield Distribution
    ══════════════════════════════════════════════════════════ */
 function HistogramContent({ data, isLoading, t }: any) {
-  if (isLoading) return <div className="space-y-6"><Skeleton className="h-24 rounded-xl" /><Skeleton className="h-[400px] rounded-xl" /></div>;
+  if (isLoading) return <div className="space-y-6"><Skeleton className="h-24 rounded-xl" /><Skeleton className="h-100 rounded-xl" /></div>;
   if (!data || !data.bins?.length) return <div className="flex flex-col items-center justify-center py-24 text-muted-foreground/50"><FileBarChart className="h-12 w-12 mb-3" /><p className="text-sm">{t("stationAnalysis.histogram.noData")}</p></div>;
 
   const { bins, stats } = data;
@@ -1268,7 +1755,7 @@ function HistogramContent({ data, isLoading, t }: any) {
    Scatter Tab — Output vs NG Rate
    ══════════════════════════════════════════════════════════ */
 function ScatterContent({ data, isLoading, t }: any) {
-  if (isLoading) return <div className="space-y-6"><Skeleton className="h-24 rounded-xl" /><Skeleton className="h-[400px] rounded-xl" /></div>;
+  if (isLoading) return <div className="space-y-6"><Skeleton className="h-24 rounded-xl" /><Skeleton className="h-100 rounded-xl" /></div>;
   if (!data || !data.points?.length) return <div className="flex flex-col items-center justify-center py-24 text-muted-foreground/50"><ScatterIcon className="h-12 w-12 mb-3" /><p className="text-sm">{t("stationAnalysis.scatter.noDataMsg")}</p></div>;
 
   const { points, correlation, rSquared, trendLine } = data;
@@ -1323,7 +1810,7 @@ const ISHIKAWA_COLORS: Record<string, string> = {
 };
 
 function IshikawaContent({ data, isLoading, t }: any) {
-  if (isLoading) return <div className="space-y-6"><Skeleton className="h-32 rounded-xl" /><Skeleton className="h-[450px] rounded-xl" /></div>;
+  if (isLoading) return <div className="space-y-6"><Skeleton className="h-32 rounded-xl" /><Skeleton className="h-112.5 rounded-xl" /></div>;
   if (!data || !data.categories?.length) return <div className="flex flex-col items-center justify-center py-24 text-muted-foreground/50"><GitBranch className="h-12 w-12 mb-3" /><p className="text-sm">{t("stationAnalysis.ishikawa.noData")}</p></div>;
 
   const { categories, topDefect } = data;
@@ -1383,7 +1870,7 @@ function IshikawaContent({ data, isLoading, t }: any) {
    Check Sheet Tab — Defect × Period matrix
    ══════════════════════════════════════════════════════════ */
 function CheckSheetContent({ data, isLoading, t }: any) {
-  if (isLoading) return <div className="space-y-6"><Skeleton className="h-24 rounded-xl" /><Skeleton className="h-[400px] rounded-xl" /></div>;
+  if (isLoading) return <div className="space-y-6"><Skeleton className="h-24 rounded-xl" /><Skeleton className="h-100 rounded-xl" /></div>;
   if (!data || !data.matrix?.length) return <div className="flex flex-col items-center justify-center py-24 text-muted-foreground/50"><Table2 className="h-12 w-12 mb-3" /><p className="text-sm">{t("stationAnalysis.checksheet.noData")}</p></div>;
 
   const { matrix, defectTypes, totals } = data;
@@ -1409,7 +1896,7 @@ function CheckSheetContent({ data, isLoading, t }: any) {
               <th className="text-left py-2 px-2 text-muted-foreground/60 font-semibold">{t("stationAnalysis.checksheet.date")}</th>
               {defectTypes.map((dt: any) => (
                 <th key={dt.id} className="text-center py-2 px-2 text-muted-foreground/60 font-semibold">
-                  <div className="truncate max-w-[80px]" title={dt.name}>{dt.code}</div>
+                  <div className="truncate max-w-20" title={dt.name}>{dt.code}</div>
                 </th>
               ))}
               <th className="text-center py-2 px-2 text-muted-foreground/60 font-semibold">Total</th>
@@ -1456,7 +1943,7 @@ function CheckSheetContent({ data, isLoading, t }: any) {
 const STRAT_COLORS = ["#a855f7", "#6366f1", "#3b82f6", "#22c55e", "#eab308", "#ef4444", "#06b6d4", "#ec4899"];
 
 function StratificationContent({ data, isLoading, t }: any) {
-  if (isLoading) return <div className="space-y-6"><Skeleton className="h-[350px] rounded-xl" /><Skeleton className="h-[300px] rounded-xl" /></div>;
+  if (isLoading) return <div className="space-y-6"><Skeleton className="h-87.5 rounded-xl" /><Skeleton className="h-75 rounded-xl" /></div>;
   if (!data) return <div className="flex flex-col items-center justify-center py-24 text-muted-foreground/50"><Layers className="h-12 w-12 mb-3" /><p className="text-sm">{t("stationAnalysis.stratification.noData")}</p></div>;
 
   const { byMachine, byShift, byDay } = data;
@@ -1627,7 +2114,7 @@ function AiAnalysisContent({ data, isLoading, t }: any) {
               <AlertTriangle className="h-4 w-4 text-red-400" />
               {t("stationAnalysis.ai.detectedAnomalies")} ({anomalies.length})
             </h3>
-            <div className="space-y-2 max-h-[250px] overflow-y-auto">
+            <div className="space-y-2 max-h-62.5 overflow-y-auto">
               {anomalies.map((a: any, i: number) => (
                 <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${
                   a.type === "unusually_low" ? "bg-red-500/10 border-red-500/25" : "bg-blue-500/10 border-blue-500/25"
@@ -1854,6 +2341,8 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
   const [showMarkers, setShowMarkers] = useState(true);
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [zoom, setZoom] = useState(100);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [visibleImageCount, setVisibleImageCount] = useState(5);
 
 
   const points: any[] = data?.points ?? [];
@@ -1883,6 +2372,7 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
     return selectedPoint.errorImages.map((img: any) => ({
       id: img.id,
       url: img.imageUrl,
+      thumbnailUrl: img.imageUrl.includes('?') ? `${img.imageUrl}&w=320&q=75` : `${img.imageUrl}?w=320&q=75`,
       title: `${selectedPoint.code} — ${img.serialNumber || 'NG'}`,
       description: `Val: ${img.measuredValue}`,
       result: "NG" as const,
@@ -1895,6 +2385,9 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
       timestamp: img.inspectionTime ? new Date(img.inspectionTime) : undefined,
     }));
   }, [selectedPoint]);
+
+  // Reset visible image count when selected point changes
+  useEffect(() => { setVisibleImageCount(5); }, [selectedPointId]);
 
   // Detect actual image natural dimensions for accurate point positioning
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
@@ -2021,7 +2514,7 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
           <div className="flex-1" />
           <div className="flex items-center gap-1">
             <button onClick={() => setZoom(z => Math.max(50, z - 10))} className="w-6 h-6 rounded border border-border bg-muted/30 text-muted-foreground hover:text-foreground text-sm grid place-items-center">−</button>
-            <span className="text-[11px] text-muted-foreground/60 min-w-[38px] text-center font-mono">{zoom}%</span>
+            <span className="text-[11px] text-muted-foreground/60 min-w-9.5 text-center font-mono">{zoom}%</span>
             <button onClick={() => setZoom(z => Math.min(200, z + 10))} className="w-6 h-6 rounded border border-border bg-muted/30 text-muted-foreground hover:text-foreground text-sm grid place-items-center">+</button>
             <button onClick={() => setZoom(100)} className="w-6 h-6 rounded border border-border bg-muted/30 text-muted-foreground hover:text-foreground text-xs grid place-items-center">⊙</button>
           </div>
@@ -2108,7 +2601,7 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
                     <div className={`w-5 h-5 rounded-full border-2 grid place-items-center bg-background/80 transition-transform ${ringColor} ${
                       isActive ? "scale-[1.4]" : "group-hover:scale-[1.3]"
                     }`}>
-                      <div className={`w-[7px] h-[7px] rounded-full ${dotColor} animate-pulse`} />
+                      <div className={`w-1.75 h-1.75 rounded-full ${dotColor} animate-pulse`} />
                     </div>
                     {/* Label on hover/active */}
                     <div className={`absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[8px] font-bold px-1 py-px rounded border bg-background ${
@@ -2126,7 +2619,7 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
               {showHeatmap && (
                 <div className="absolute bottom-3 left-3 bg-background/90 border border-border rounded-md px-3 py-2 z-20">
                   <div className="text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider mb-1.5">{t("stationAnalysis.stationDetail.defectRateHeatmap")}</div>
-                  <div className="w-36 h-2 rounded-full bg-gradient-to-r from-emerald-400/60 via-yellow-400/60 to-red-400/70 mb-1" />
+                  <div className="w-36 h-2 rounded-full bg-linear-to-r from-emerald-400/60 via-yellow-400/60 to-red-400/70 mb-1" />
                   <div className="flex justify-between text-[9px] text-muted-foreground/50">
                     <span className="text-emerald-400">0%</span>
                     <span>1%</span>
@@ -2141,9 +2634,9 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
 
         {/* Info bar */}
         <div className="flex items-center gap-4 px-3 py-1.5 border-t border-border bg-card/60 shrink-0 text-[10px] text-muted-foreground/60">
-          <span className="flex items-center gap-1.5"><span className="w-[7px] h-[7px] rounded-full bg-red-400" />{t("stationAnalysis.stationDetail.fail")} <strong className="text-foreground/80">{counts.fail}</strong></span>
-          <span className="flex items-center gap-1.5"><span className="w-[7px] h-[7px] rounded-full bg-yellow-400" />{t("stationAnalysis.stationDetail.warn")} <strong className="text-foreground/80">{counts.warn}</strong></span>
-          <span className="flex items-center gap-1.5"><span className="w-[7px] h-[7px] rounded-full bg-emerald-400" />{t("stationAnalysis.stationDetail.pass")} <strong className="text-foreground/80">{counts.pass}</strong></span>
+          <span className="flex items-center gap-1.5"><span className="w-1.75 h-1.75 rounded-full bg-red-400" />{t("stationAnalysis.stationDetail.fail")} <strong className="text-foreground/80">{counts.fail}</strong></span>
+          <span className="flex items-center gap-1.5"><span className="w-1.75 h-1.75 rounded-full bg-yellow-400" />{t("stationAnalysis.stationDetail.warn")} <strong className="text-foreground/80">{counts.warn}</strong></span>
+          <span className="flex items-center gap-1.5"><span className="w-1.75 h-1.75 rounded-full bg-emerald-400" />{t("stationAnalysis.stationDetail.pass")} <strong className="text-foreground/80">{counts.pass}</strong></span>
           <div className="flex-1" />
           {boardInfo && <span>{t("stationAnalysis.stationDetail.board")}: {boardInfo.code} · {boardInfo.model}</span>}
         </div>
@@ -2151,7 +2644,7 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
 
       {/* ── FLOATING DETAIL PANEL ── */}
       <div
-        className={`absolute top-0 right-0 h-full w-[370px] bg-card border-l border-border shadow-[-10px_0_36px_rgba(0,0,0,0.4)] flex flex-col z-30 transition-transform duration-300 ${
+        className={`absolute top-0 right-0 h-full w-92.5 bg-card border-l border-border shadow-[-10px_0_36px_rgba(0,0,0,0.4)] flex flex-col z-30 transition-transform duration-300 ${
           selectedPoint ? "translate-x-0" : "translate-x-full"
         }`}
       >
@@ -2183,12 +2676,12 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
 
             {/* Defect rate bar */}
             <div className="flex items-center gap-3 px-3.5 py-2.5 border-b border-border bg-background shrink-0">
-              <div className={`text-[28px] font-mono font-bold leading-none min-w-[70px] ${statusColor(selectedPoint.status)}`}>
+              <div className={`text-[28px] font-mono font-bold leading-none min-w-17.5 ${statusColor(selectedPoint.status)}`}>
                 {selectedPoint.defectRate}%
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-[9.5px] text-muted-foreground/50 uppercase tracking-wider mb-1">{t("stationAnalysis.stationDetail.defectRate")}</div>
-                <div className="h-[5px] bg-muted/40 rounded-full overflow-hidden">
+                <div className="h-1.25 bg-muted/40 rounded-full overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all duration-1000 ${statusBg(selectedPoint.status)}`}
                     style={{ width: `${Math.min(selectedPoint.defectRate * 20, 100)}%` }}
@@ -2299,7 +2792,7 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
                         <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
                           ev.result === "NG" ? "bg-red-400" : ev.result === "OK" ? "bg-emerald-400" : "bg-yellow-400"
                         }`} />
-                        <span className="text-muted-foreground/50 text-[10px] min-w-[36px] shrink-0">{ev.time}</span>
+                        <span className="text-muted-foreground/50 text-[10px] min-w-9 shrink-0">{ev.time}</span>
                         <span className="text-muted-foreground leading-snug">
                           <strong className="text-foreground/80">{ev.result}</strong> — {ev.serial ? `SN: ${ev.serial}` : ""} {ev.value !== "—" ? `Val: ${ev.value}` : ""}
                         </span>
@@ -2309,18 +2802,87 @@ function StationDetailContent({ data, isLoading, summary, t }: any) {
                 </div>
               )}
 
-              {/* Error Images (NG) — Inline Gallery */}
+              {/* Error Images (NG) — Hero + Grid Layout */}
               {galleryImages.length > 0 && (
                 <div className="px-3.5 py-3 border-b border-border">
+                  <h4 className="text-xs font-semibold mb-2 flex items-center gap-1.5">
+                    <ImageIcon className="h-3.5 w-3.5 text-red-400" />
+                    {selectedPoint.code} — {t("stationAnalysis.stationDetail.errorImages", "Ảnh lỗi")} ({galleryImages.length})
+                  </h4>
+
+                  {/* Hero image — latest fail */}
+                  <div
+                    className="relative w-full aspect-4/3 rounded-md overflow-hidden bg-muted cursor-pointer group mb-2"
+                    onClick={() => setLightboxIndex(0)}
+                  >
+                    <img
+                      src={galleryImages[0].thumbnailUrl || galleryImages[0].url}
+                      alt={galleryImages[0].title}
+                      className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                      loading="eager"
+                    />
+                    <div className="absolute inset-0 bg-linear-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className="absolute bottom-1.5 left-2 right-2 flex items-end justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span className="text-[10px] text-white/90 truncate">{galleryImages[0].title}</span>
+                      <Maximize2 className="h-3.5 w-3.5 text-white/80 shrink-0" />
+                    </div>
+                    <div className="absolute top-1.5 left-2">
+                      <span className="text-[9px] font-semibold bg-red-500/80 text-white px-1.5 py-0.5 rounded">NG</span>
+                    </div>
+                  </div>
+
+                  {/* 2×2 grid — next images */}
+                  {galleryImages.length > 1 && (
+                    <div className="grid grid-cols-2 gap-1.5 mb-2">
+                      {galleryImages.slice(1, visibleImageCount).map((img, idx) => (
+                        <div
+                          key={img.id}
+                          className="relative aspect-square rounded-md overflow-hidden bg-muted cursor-pointer group"
+                          onClick={() => setLightboxIndex(idx + 1)}
+                        >
+                          <img
+                            src={img.thumbnailUrl || img.url}
+                            alt={img.title}
+                            className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                            loading="lazy"
+                          />
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                          <div className="absolute bottom-0.5 left-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <span className="text-[9px] text-white/90 truncate block">{img.description}</span>
+                          </div>
+                          <div className="absolute top-0.5 right-1">
+                            <span className="text-[8px] font-semibold bg-red-500/70 text-white px-1 py-0.5 rounded">NG</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Load more button */}
+                  {visibleImageCount < galleryImages.length && (
+                    <button
+                      className="w-full flex items-center justify-center gap-1.5 py-1.5 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors"
+                      onClick={() => setVisibleImageCount(prev => Math.min(prev + 4, galleryImages.length))}
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                      {t("common.loadMore", "Xem thêm")} ({galleryImages.length - visibleImageCount})
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Lightbox — ImageGallery has its own internal Dialog portal */}
+              {lightboxIndex !== null && (
+                <div className="hidden">
                   <ImageGallery
                     images={galleryImages}
-                    title={`${selectedPoint.code} — ${t("stationAnalysis.stationDetail.errorImages", "Ảnh lỗi")} (${galleryImages.length})`}
+                    title={`${selectedPoint.code} — ${t("stationAnalysis.stationDetail.errorImages", "Ảnh lỗi")}`}
                     showFilters={false}
                     showSearch={false}
                     columns={3}
                     enableMultiSelect={false}
-                    maxVisibleImages={8}
-                    compact
+                    initialSelectedIndex={lightboxIndex}
+                    onLightboxClose={() => setLightboxIndex(null)}
                   />
                 </div>
               )}

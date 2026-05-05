@@ -1216,3 +1216,54 @@ export const aiSystemConfig = pgTable("ai_system_config", {
 
 export type AiSystemConfig = typeof aiSystemConfig.$inferSelect;
 export type InsertAiSystemConfig = typeof aiSystemConfig.$inferInsert;
+
+// ============= AI Specialist Agent Sessions =============
+export const aiSpecialistSessions = pgTable("ai_specialist_sessions", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull(),
+  sessionType: varchar("sessionType", { length: 30 }).default("single").notNull(),
+  moduleName: varchar("moduleName", { length: 255 }),
+  objective: text("objective").notNull(),
+  requestedAgents: json("requestedAgents").$type<string[]>(),
+  language: varchar("language", { length: 10 }).default("vi").notNull(),
+  status: varchar("status", { length: 30 }).default("running").notNull(),
+  summary: text("summary"),
+  aggregateOutput: json("aggregateOutput"),
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_specialist_sessions_user").on(table.userId),
+  index("idx_ai_specialist_sessions_module").on(table.moduleName),
+  index("idx_ai_specialist_sessions_status").on(table.status),
+  index("idx_ai_specialist_sessions_created").on(table.createdAt),
+]);
+
+export type AiSpecialistSession = typeof aiSpecialistSessions.$inferSelect;
+export type InsertAiSpecialistSession = typeof aiSpecialistSessions.$inferInsert;
+
+export const aiSpecialistSessionSteps = pgTable("ai_specialist_session_steps", {
+  id: serial("id").primaryKey(),
+  sessionId: integer("sessionId").notNull(),
+  stepOrder: integer("stepOrder").notNull(),
+  agentId: varchar("agentId", { length: 60 }).notNull(),
+  status: varchar("status", { length: 30 }).default("completed").notNull(),
+  inputPayload: json("inputPayload"),
+  outputPayload: json("outputPayload"),
+  modelId: varchar("modelId", { length: 255 }),
+  tokensPrompt: integer("tokensPrompt"),
+  tokensGenerated: integer("tokensGenerated"),
+  totalTimeMs: integer("totalTimeMs"),
+  tokensPerSecond: decimal("tokensPerSecond", { precision: 10, scale: 2 }),
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_specialist_steps_session").on(table.sessionId),
+  index("idx_ai_specialist_steps_agent").on(table.agentId),
+  index("idx_ai_specialist_steps_status").on(table.status),
+  index("idx_ai_specialist_steps_created").on(table.createdAt),
+]);
+
+export type AiSpecialistSessionStep = typeof aiSpecialistSessionSteps.$inferSelect;
+export type InsertAiSpecialistSessionStep = typeof aiSpecialistSessionSteps.$inferInsert;

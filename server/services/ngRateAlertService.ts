@@ -530,8 +530,9 @@ async function sendNgRateAlert(
     }
 
     // ── Save alert history ──
+    let alertHistoryId: number | null = null;
     try {
-      await db.insert(schema.mqttNgRateAlertHistory).values({
+      const [inserted] = await db.insert(schema.mqttNgRateAlertHistory).values({
         thresholdId: threshold.id,
         stationId: data.stationId,
         machineId: data.machineId,
@@ -551,9 +552,15 @@ async function sendNgRateAlert(
         sentFcm: sentFcm,
         payload: payload as any,
         triggeredAt: new Date(),
-      });
+      }).returning({ id: schema.mqttNgRateAlertHistory.id });
+      alertHistoryId = inserted?.id ?? null;
     } catch (err) {
       console.error("[NgRateAlert] Failed to save alert history:", err);
+    }
+
+    // ── Fire-and-forget AI enrichment (non-blocking) ──
+    if (alertHistoryId) {
+      fireAiEnrichment(db, alertHistoryId, payload);
     }
 
     // ── Update lastTriggeredAt trên threshold ──
@@ -572,6 +579,129 @@ async function sendNgRateAlert(
   } catch (error) {
     console.error("[NgRateAlert] Error sending alert:", error);
   }
+}
+
+// ─── AI Enrichment: Non-blocking root cause & recommendations ────────────────
+
+interface AiAlertEnrichment {
+  likelyCause: string;
+  confidence: "low" | "medium" | "high";
+  suggestedActions: string[];
+  trendContext: string;
+}
+
+/**
+ * Non-blocking AI enrichment for NG rate alerts.
+ * Queries recent defect data and uses GGUF to generate root cause hypothesis,
+ * suggested corrective actions, and trend context.
+ * Returns null if AI is unavailable or fails — alert delivery is never blocked.
+ */
+async function enrichAlertWithAI(
+  db: any,
+  payload: NgRateAlertPayload
+): Promise<AiAlertEnrichment | null> {
+  try {
+    const { generateText } = await import("./aiGgufEngine");
+
+    // Gather recent defect data for context
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    let topDefects: string[] = [];
+    try {
+      const defectRows = await db
+        .select({
+          label: schema.measurementResults.result,
+          cnt: sql<number>`COUNT(*)`.as("cnt"),
+        })
+        .from(schema.measurementResults)
+        .innerJoin(
+          schema.productInspections,
+          eq(schema.measurementResults.inspectionId, schema.productInspections.id)
+        )
+        .where(
+          and(
+            eq(schema.productInspections.stationId, payload.station.id),
+            gte(schema.productInspections.inspectionTime, todayStart),
+            eq(schema.measurementResults.result, "NG")
+          )
+        )
+        .groupBy(schema.measurementResults.result)
+        .orderBy(sql`COUNT(*) DESC`)
+        .limit(5);
+      topDefects = defectRows.map((r: any) => `${r.label}(${r.cnt})`);
+    } catch {
+      // Non-critical — continue without defect details
+    }
+
+    const prompt = `NG rate threshold alert triggered in AOI inspection system:
+- Station: ${payload.station.name} (Line: ${payload.station.line}, Workshop: ${payload.station.workshop})
+- Machine: ${payload.machine?.name || "N/A"} (Code: ${payload.machine?.code || "N/A"})
+- Measurement Point: ${payload.measurementPoint ? `${payload.measurementPoint.code} - ${payload.measurementPoint.name}` : "Overall"}
+- Product: ${payload.productModel?.name || "N/A"}
+- Current NG Rate: ${payload.ngRate.current}% (Threshold: ${payload.ngRate.threshold}%)
+- NG Count: ${payload.ngRate.ngCount} / ${payload.ngRate.totalInspections} inspections today
+- Severity: ${payload.severity}
+- Top defects today: ${topDefects.length > 0 ? topDefects.join(", ") : "N/A"}
+- Period: ${payload.period.date}
+
+Analyze this NG rate spike and respond in JSON format:
+{
+  "likelyCause": "Most likely root cause based on the data pattern",
+  "confidence": "low|medium|high",
+  "suggestedActions": ["Action 1", "Action 2", "Action 3"],
+  "trendContext": "Brief context about the trend severity and urgency"
+}`;
+
+    const result = await generateText({
+      systemPrompt:
+        "You are a manufacturing quality expert specializing in AOI (Automated Optical Inspection) systems. " +
+        "Analyze NG rate alerts and provide actionable root cause analysis. Be concise and specific.",
+      prompt,
+      maxTokens: 512,
+      temperature: 0.3,
+      jsonMode: true,
+    });
+
+    // Parse JSON response
+    const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    return {
+      likelyCause: parsed.likelyCause || "Unable to determine",
+      confidence: ["low", "medium", "high"].includes(parsed.confidence) ? parsed.confidence : "low",
+      suggestedActions: Array.isArray(parsed.suggestedActions) ? parsed.suggestedActions.slice(0, 5) : [],
+      trendContext: parsed.trendContext || "",
+    };
+  } catch (err) {
+    console.log("[NgRateAlert] AI enrichment skipped:", (err as Error).message);
+    return null;
+  }
+}
+
+/**
+ * Fire-and-forget: enrich alert history record with AI analysis after delivery.
+ * Updates the payload JSON field with aiAnalysis data.
+ */
+function fireAiEnrichment(db: any, alertHistoryId: number, payload: NgRateAlertPayload): void {
+  enrichAlertWithAI(db, payload)
+    .then(async (enrichment) => {
+      if (!enrichment) return;
+      try {
+        const enrichedPayload = { ...payload, aiAnalysis: enrichment };
+        await db
+          .update(schema.mqttNgRateAlertHistory)
+          .set({ payload: enrichedPayload as any })
+          .where(eq(schema.mqttNgRateAlertHistory.id, alertHistoryId));
+        console.log(`[NgRateAlert] AI enrichment saved for alert #${alertHistoryId}`);
+      } catch (err) {
+        console.error("[NgRateAlert] Failed to save AI enrichment:", err);
+      }
+    })
+    .catch(() => {
+      // Silently ignore — AI enrichment is optional
+    });
 }
 
 // ─── Utility: Get current NG rate stats for a station (for dashboard) ────────

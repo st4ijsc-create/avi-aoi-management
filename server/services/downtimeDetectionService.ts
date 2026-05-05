@@ -198,3 +198,69 @@ export function getDowntimeDetectionConfig() {
     trackedMachines: lastActivityMap.size,
   };
 }
+
+// ─── AI Root Cause Analysis ─────────────────────────────────────────────────
+
+export interface DowntimeRootCauseAnalysis {
+  likelyCause: string;
+  confidence: number;
+  possibleCauses: string[];
+  suggestedActions: string[];
+  estimatedRecoveryMinutes: number | null;
+}
+
+/**
+ * Generate AI-powered root cause analysis for a downtime event.
+ * Non-blocking — returns null on any failure.
+ */
+export async function analyzeDowntimeRootCause(params: {
+  machineId: number;
+  machineCode: string;
+  downtimeDurationMinutes: number;
+  category: string;
+  reason?: string;
+}): Promise<DowntimeRootCauseAnalysis | null> {
+  try {
+    const { generateText } = await import('./aiGgufEngine');
+    const db = await getDb();
+    if (!db) return null;
+
+    // Get recent downtime history for this machine
+    const recentDowntimes = await db.execute(sql.raw(`
+      SELECT category, reason, duration, "startTime", "endTime"
+      FROM downtime_events
+      WHERE "machineId" = ${params.machineId}
+        AND "startTime" > NOW() - INTERVAL '7 days'
+      ORDER BY "startTime" DESC
+      LIMIT 10
+    `));
+
+    const history = (recentDowntimes.rows || []).map((r: any) =>
+      `${r.category}: ${r.reason || 'unknown'} (${r.duration || '?'}min)`
+    ).join('; ');
+
+    const response = await generateText({
+      systemPrompt: `You are a manufacturing equipment reliability expert. Analyze machine downtime events and provide root cause analysis.
+Reply in JSON: { "likelyCause": string, "confidence": number(0-1), "possibleCauses": string[], "suggestedActions": string[], "estimatedRecoveryMinutes": number|null }`,
+      prompt: `Machine ${params.machineCode} (ID: ${params.machineId}) is down.
+Current downtime: ${params.downtimeDurationMinutes} minutes
+Category: ${params.category}
+Reason: ${params.reason || 'Auto-detected inactivity'}
+Recent 7-day history: ${history || 'No recent downtimes'}
+
+Analyze the likely root cause and suggest recovery actions.`,
+      maxTokens: 512,
+      temperature: 0.3,
+      jsonMode: true,
+    });
+
+    const parsed = JSON.parse(response.text);
+    if (parsed.likelyCause) return parsed;
+
+    const match = response.text.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    return null;
+  } catch {
+    return null;
+  }
+}

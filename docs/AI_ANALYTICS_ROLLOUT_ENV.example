@@ -1,0 +1,49 @@
+# AI Analytics Rollout Environment Template
+# Copy values to your host environment manager (systemd, nssm, container env, etc.)
+
+# ==========================================================
+# Common (all stages)
+# ==========================================================
+MONITOR_PATHS=/health,/api/network/health,/ai-inspection-analytics
+MONITOR_TIMEOUT_MS=8000
+MONITOR_INTERVAL_SECONDS=30
+MONITOR_MIN_AVAILABILITY=99
+MONITOR_MAX_P95_MS=1500
+
+# Optional auth for protected monitoring endpoints
+# MONITOR_AUTH_BEARER=
+# MONITOR_AUTH_COOKIE=
+
+# ==========================================================
+# Staging profile
+# ==========================================================
+# AI analytics fully enabled in staging
+AI_ANALYTICS_ROLLOUT_PERCENT=100
+MONITOR_BASE_URL=http://staging-host:3000
+MONITOR_DURATION_MINUTES=60
+
+# ==========================================================
+# Production profile - Canary 10%
+# ==========================================================
+# AI_ANALYTICS_ROLLOUT_PERCENT=10
+# MONITOR_BASE_URL=http://production-host:3000
+# MONITOR_DURATION_MINUTES=60
+
+# ==========================================================
+# Production profile - Canary 50%
+# ==========================================================
+# AI_ANALYTICS_ROLLOUT_PERCENT=50
+# MONITOR_BASE_URL=http://production-host:3000
+# MONITOR_DURATION_MINUTES=60
+
+# ==========================================================
+# Production profile - Full 100%
+# ==========================================================
+# AI_ANALYTICS_ROLLOUT_PERCENT=100
+# MONITOR_BASE_URL=http://production-host:3000
+# MONITOR_DURATION_MINUTES=60
+
+# ==========================================================
+# Rollback profile
+# ==========================================================
+# AI_ANALYTICS_ROLLOUT_PERCENT=0

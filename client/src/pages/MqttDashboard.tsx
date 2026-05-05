@@ -149,8 +149,8 @@ export default function MqttDashboard() {
     { lineId: Number(testLineId) },
     { enabled: showTestDialog && !!testLineId }
   );
-  const { data: machinesList } = trpc.machine.list.useQuery(
-    { stationId: testStationId ? Number(testStationId) : undefined },
+  const { data: machinesList } = trpc.machine.listByStation.useQuery(
+    { stationId: Number(testStationId) },
     { enabled: showTestDialog && !!testStationId }
   );
   // Product models and measurement points
@@ -268,7 +268,7 @@ export default function MqttDashboard() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-4 sm:space-y-6 mobile-safe-bottom">
+      <div className="space-y-3 sm:space-y-4 mobile-safe-bottom">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
           <div>
@@ -344,7 +344,7 @@ export default function MqttDashboard() {
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
           {/* Connected Clients */}
-          <Card className="bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border-emerald-500/20">
+          <Card className="bg-linear-to-br from-emerald-500/10 to-emerald-600/5 border-emerald-500/20">
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
                 <Wifi className="w-3 h-3 sm:w-4 sm:h-4 text-emerald-400" />
@@ -363,7 +363,7 @@ export default function MqttDashboard() {
           </Card>
 
           {/* Offline Clients */}
-          <Card className="bg-gradient-to-br from-amber-500/10 to-amber-600/5 border-amber-500/20">
+          <Card className="bg-linear-to-br from-amber-500/10 to-amber-600/5 border-amber-500/20">
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
                 <WifiOff className="w-3 h-3 sm:w-4 sm:h-4 text-amber-400" />
@@ -382,7 +382,7 @@ export default function MqttDashboard() {
           </Card>
 
           {/* Messages Today */}
-          <Card className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border-blue-500/20">
+          <Card className="bg-linear-to-br from-blue-500/10 to-blue-600/5 border-blue-500/20">
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
                 <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4 text-blue-400" />
@@ -401,7 +401,7 @@ export default function MqttDashboard() {
           </Card>
 
           {/* Delivery Rate */}
-          <Card className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 border-purple-500/20">
+          <Card className="bg-linear-to-br from-purple-500/10 to-purple-600/5 border-purple-500/20">
             <CardHeader className="p-3 sm:p-4 pb-2">
               <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
                 <Send className="w-3 h-3 sm:w-4 sm:h-4 text-purple-400" />
@@ -423,15 +423,15 @@ export default function MqttDashboard() {
         {/* Realtime Monitoring Section */}
         <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
           {/* Throughput - Last Minute */}
-          <Card className="bg-gradient-to-br from-cyan-500/10 to-cyan-600/5 border-cyan-500/20">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Zap className="w-4 h-4 text-cyan-400" />
+          <Card className="bg-linear-to-br from-cyan-500/10 to-cyan-600/5 border-cyan-500/20">
+            <CardHeader className="p-3 sm:p-4 pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
+                <Zap className="w-3 h-3 sm:w-4 sm:h-4 text-cyan-400" />
                 {t('mqtt.dashboard.throughput1min')}
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-cyan-400">
+            <CardContent className="p-3 sm:p-4 pt-0">
+              <div className="text-2xl sm:text-3xl font-bold text-cyan-400">
                 {realtimeStats?.throughput.lastMinute || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
@@ -441,15 +441,15 @@ export default function MqttDashboard() {
           </Card>
 
           {/* Throughput - Last 5 Minutes */}
-          <Card className="bg-gradient-to-br from-indigo-500/10 to-indigo-600/5 border-indigo-500/20">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-indigo-400" />
+          <Card className="bg-linear-to-br from-indigo-500/10 to-indigo-600/5 border-indigo-500/20">
+            <CardHeader className="p-3 sm:p-4 pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
+                <BarChart3 className="w-3 h-3 sm:w-4 sm:h-4 text-indigo-400" />
                 {t('mqtt.dashboard.throughput5min')}
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-indigo-400">
+            <CardContent className="p-3 sm:p-4 pt-0">
+              <div className="text-2xl sm:text-3xl font-bold text-indigo-400">
                 {realtimeStats?.throughput.last5Minutes || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
@@ -459,15 +459,15 @@ export default function MqttDashboard() {
           </Card>
 
           {/* Average Latency */}
-          <Card className="bg-gradient-to-br from-rose-500/10 to-rose-600/5 border-rose-500/20">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Timer className="w-4 h-4 text-rose-400" />
+          <Card className="bg-linear-to-br from-rose-500/10 to-rose-600/5 border-rose-500/20">
+            <CardHeader className="p-3 sm:p-4 pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
+                <Timer className="w-3 h-3 sm:w-4 sm:h-4 text-rose-400" />
                 Latency (Avg)
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-rose-400">
+            <CardContent className="p-3 sm:p-4 pt-0">
+              <div className="text-2xl sm:text-3xl font-bold text-rose-400">
                 {realtimeStats?.latency.avgMs || 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
@@ -477,14 +477,14 @@ export default function MqttDashboard() {
           </Card>
 
           {/* External Broker Status */}
-          <Card className="bg-gradient-to-br from-teal-500/10 to-teal-600/5 border-teal-500/20">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Gauge className="w-4 h-4 text-teal-400" />
+          <Card className="bg-linear-to-br from-teal-500/10 to-teal-600/5 border-teal-500/20">
+            <CardHeader className="p-3 sm:p-4 pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1 sm:gap-2">
+                <Gauge className="w-3 h-3 sm:w-4 sm:h-4 text-teal-400" />
                 External Broker
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-3 sm:p-4 pt-0">
               <div className="flex items-center gap-2">
                 {realtimeStats?.externalBroker.connected ? (
                   <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
@@ -524,7 +524,7 @@ export default function MqttDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="h-[250px]">
+            <div className="h-45">
               {!throughputHistory || throughputHistory.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-muted-foreground">
                   {t('common.noData')}
@@ -584,7 +584,7 @@ export default function MqttDashboard() {
         </Card>
 
         {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Message Trend Chart */}
           <Card className="lg:col-span-2">
             <CardHeader>
@@ -609,7 +609,7 @@ export default function MqttDashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="h-[300px]">
+              <div className="h-50">
                 {trendLoading ? (
                   <div className="h-full flex items-center justify-center text-muted-foreground">
                     {t('common.loading')}
@@ -649,7 +649,7 @@ export default function MqttDashboard() {
               <CardDescription>{t('mqtt.dashboard.today')}</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-[300px]">
+              <div className="h-50">
                 {pieData.length === 0 ? (
                   <div className="h-full flex items-center justify-center text-muted-foreground">
                     {t('mqtt.dashboard.noMessages')}
@@ -661,8 +661,8 @@ export default function MqttDashboard() {
                         data={pieData}
                         cx="50%"
                         cy="50%"
-                        innerRadius={60}
-                        outerRadius={100}
+                        innerRadius={40}
+                        outerRadius={70}
                         paddingAngle={5}
                         dataKey="value"
                         label={({ name, value }) => `${name}: ${value}`}
@@ -817,7 +817,7 @@ export default function MqttDashboard() {
                       recentMessages?.map((msg) => (
                         <TableRow key={msg.id}>
                           <TableCell>{getMessageTypeBadge(msg.messageType)}</TableCell>
-                          <TableCell className="font-mono text-xs max-w-[200px] truncate">
+                          <TableCell className="font-mono text-xs max-w-50 truncate">
                             {msg.topic}
                           </TableCell>
                           <TableCell>{getStatusBadge(msg.deliveryStatus)}</TableCell>
@@ -946,15 +946,15 @@ export default function MqttDashboard() {
                     }}>Tất cả NG</Button>
                   </div>
                 </div>
-                <div className="border rounded-md max-h-[250px] overflow-y-auto">
+                <div className="border rounded-md max-h-62.5 overflow-y-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[60px]">#</TableHead>
+                        <TableHead className="w-15">#</TableHead>
                         <TableHead>Code</TableHead>
                         <TableHead>Tên điểm đo</TableHead>
-                        <TableHead className="w-[100px]">Kết quả</TableHead>
-                        <TableHead className="w-[120px]">Giá trị</TableHead>
+                        <TableHead className="w-25">Kết quả</TableHead>
+                        <TableHead className="w-30">Giá trị</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1032,7 +1032,7 @@ export default function MqttDashboard() {
                   </div>
                 </button>
                 {jsonExpanded && (
-                  <pre className="px-3 pb-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-[300px] overflow-y-auto bg-black/30">
+                  <pre className="px-3 pb-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap break-all max-h-75 overflow-y-auto bg-black/30">
                     {JSON.stringify(lastTestResult, null, 2)}
                   </pre>
                 )}

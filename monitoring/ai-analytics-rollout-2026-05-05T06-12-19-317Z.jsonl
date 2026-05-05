@@ -1,0 +1,13 @@
+{"timestamp":"2026-05-05T06:12:19.321Z","endpointPath":"/health","url":"http://localhost:3000/health","ok":true,"status":200,"latencyMs":73,"bodySize":54,"error":null}
+{"timestamp":"2026-05-05T06:12:19.321Z","endpointPath":"/api/network/health","url":"http://localhost:3000/api/network/health","ok":true,"status":200,"latencyMs":15,"bodySize":153,"error":null}
+{"timestamp":"2026-05-05T06:12:19.321Z","endpointPath":"/ai-inspection-analytics","url":"http://localhost:3000/ai-inspection-analytics","ok":true,"status":200,"latencyMs":9,"bodySize":368331,"error":null}
+{"timestamp":"2026-05-05T06:12:34.450Z","endpointPath":"/health","url":"http://localhost:3000/health","ok":true,"status":200,"latencyMs":8,"bodySize":54,"error":null}
+{"timestamp":"2026-05-05T06:12:34.450Z","endpointPath":"/api/network/health","url":"http://localhost:3000/api/network/health","ok":true,"status":200,"latencyMs":7,"bodySize":153,"error":null}
+{"timestamp":"2026-05-05T06:12:34.450Z","endpointPath":"/ai-inspection-analytics","url":"http://localhost:3000/ai-inspection-analytics","ok":true,"status":200,"latencyMs":9,"bodySize":368331,"error":null}
+{"timestamp":"2026-05-05T06:12:49.492Z","endpointPath":"/health","url":"http://localhost:3000/health","ok":true,"status":200,"latencyMs":7,"bodySize":54,"error":null}
+{"timestamp":"2026-05-05T06:12:49.492Z","endpointPath":"/api/network/health","url":"http://localhost:3000/api/network/health","ok":true,"status":200,"latencyMs":4,"bodySize":153,"error":null}
+{"timestamp":"2026-05-05T06:12:49.492Z","endpointPath":"/ai-inspection-analytics","url":"http://localhost:3000/ai-inspection-analytics","ok":true,"status":200,"latencyMs":5,"bodySize":368331,"error":null}
+{"timestamp":"2026-05-05T06:13:04.528Z","endpointPath":"/health","url":"http://localhost:3000/health","ok":true,"status":200,"latencyMs":4,"bodySize":54,"error":null}
+{"timestamp":"2026-05-05T06:13:04.528Z","endpointPath":"/api/network/health","url":"http://localhost:3000/api/network/health","ok":true,"status":200,"latencyMs":3,"bodySize":153,"error":null}
+{"timestamp":"2026-05-05T06:13:04.528Z","endpointPath":"/ai-inspection-analytics","url":"http://localhost:3000/ai-inspection-analytics","ok":true,"status":200,"latencyMs":7,"bodySize":368331,"error":null}
+{"type":"summary","timestamp":"2026-05-05T06:13:04.550Z","baseUrl":"http://localhost:3000","totalChecks":12,"totalFailures":0,"availability":100,"durationMinutes":1,"intervalSeconds":15,"paths":["/health","/api/network/health","/ai-inspection-analytics"]}

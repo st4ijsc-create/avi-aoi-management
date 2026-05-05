@@ -277,7 +277,7 @@ export function CorporateFactoryStats() {
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4 text-muted-foreground" />
             <Select value={dateRange} onValueChange={(v) => setDateRange(v as any)}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-45">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -297,7 +297,7 @@ export function CorporateFactoryStats() {
                 setDrillLevel('factory');
               }
             }}>
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-50">
                 <SelectValue placeholder={t('corporate.selectCompany')} />
               </SelectTrigger>
               <SelectContent>
@@ -353,7 +353,7 @@ export function CorporateFactoryStats() {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <div className="h-[300px] flex items-center justify-center">
+            <div className="h-75 flex items-center justify-center">
               <p className="text-muted-foreground">{t('common.loading')}</p>
             </div>
           ) : currentYieldData && currentYieldData.length > 0 ? (
@@ -365,13 +365,13 @@ export function CorporateFactoryStats() {
                 }))}
                 onClick={(e) => e?.activePayload?.[0]?.payload && handleBarClick(e.activePayload[0].payload)}
               >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey={drillLevel === 'corporate' ? 'corporateCode' : 'factoryCode'} />
-                <YAxis domain={[0, 100]} label={{ value: 'Yield Rate (%)', angle: -90, position: 'insideLeft' }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
+                <XAxis dataKey={drillLevel === 'corporate' ? 'corporateCode' : 'factoryCode'} tick={{ fill: 'var(--foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
+                <YAxis domain={[0, 100]} label={{ value: 'Yield Rate (%)', angle: -90, position: 'insideLeft', fill: 'var(--foreground)' }} tick={{ fill: 'var(--foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
                 <Tooltip 
                   formatter={(value: any) => `${value}%`}
                   labelFormatter={(label) => drillLevel === 'corporate' ? `${t('corporate.company')}: ${label}` : `${t('corporate.factory')}: ${label}`}
-                  cursor={{ fill: 'rgba(0, 0, 0, 0.1)' }}
+                  cursor={{ fill: 'var(--muted)', opacity: 0.3 }}
                 />
                 <Legend />
                 <Bar 
@@ -392,7 +392,7 @@ export function CorporateFactoryStats() {
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-[300px] flex items-center justify-center">
+            <div className="h-75 flex items-center justify-center">
               <p className="text-muted-foreground">{t('common.noData')}</p>
             </div>
           )}
@@ -446,21 +446,23 @@ export function CorporateFactoryStats() {
         </CardHeader>
         <CardContent>
           {(drillLevel === 'corporate' ? loadingThroughput : loadingFactoryThroughput) ? (
-            <div className="h-[400px] flex items-center justify-center">
+            <div className="h-100 flex items-center justify-center">
               <p className="text-muted-foreground">{t('common.loading')}</p>
             </div>
           ) : throughputChartData.length > 0 ? (
             <ResponsiveContainer width="100%" height={400}>
               <LineChart data={throughputChartData}>
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
                 <XAxis 
                   dataKey="date" 
+                  tick={{ fill: 'var(--foreground)' }}
+                  axisLine={{ stroke: 'var(--border)' }}
                   tickFormatter={(value) => {
                     const date = new Date(value);
                     return `${date.getMonth() + 1}/${date.getDate()}`;
                   }}
                 />
-                <YAxis label={{ value: t('corporate.quantity'), angle: -90, position: 'insideLeft' }} />
+                <YAxis label={{ value: t('corporate.quantity'), angle: -90, position: 'insideLeft', fill: 'var(--foreground)' }} tick={{ fill: 'var(--foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
                 <Tooltip 
                   labelFormatter={(label) => {
                     const date = new Date(label);
@@ -483,7 +485,7 @@ export function CorporateFactoryStats() {
               </LineChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-[400px] flex items-center justify-center">
+            <div className="h-100 flex items-center justify-center">
               <p className="text-muted-foreground">{t('common.noData')}</p>
             </div>
           )}
@@ -591,7 +593,7 @@ export function CorporateFactoryStats() {
                           className="w-3 h-3 rounded-full" 
                           style={{ backgroundColor: colors[index % colors.length] }}
                         />
-                        <span className="text-sm min-w-[100px]">{code}</span>
+                        <span className="text-sm min-w-25">{code}</span>
                         <span className="text-sm text-muted-foreground">{item.totalInspections} ({percent}%)</span>
                       </div>
                     );

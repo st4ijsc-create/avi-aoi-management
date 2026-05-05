@@ -13,13 +13,10 @@ import {
   generateQAReport,
 } from "../services/aiVisionLanguage";
 import fs from "fs";
-import path from "path";
+import { resolveSafeImagePath } from "../utils/safeImagePath";
 
 function resolveImagePath(imageKey: string): string {
-  const uploadsRoot = process.env.LOCAL_STORAGE_DIR
-    ? path.resolve(process.env.LOCAL_STORAGE_DIR)
-    : path.join(process.cwd(), "uploads");
-  return path.join(uploadsRoot, imageKey);
+  return resolveSafeImagePath(imageKey);
 }
 
 function loadImage(imageKey: string): Buffer {

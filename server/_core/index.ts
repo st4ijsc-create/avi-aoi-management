@@ -7,7 +7,6 @@ import net from "net";
 import path from "path";
 import { eq } from "drizzle-orm";
 import helmet from "helmet";
-import rateLimit from "express-rate-limit";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
@@ -18,7 +17,7 @@ import { initializeSocket } from "./socket";
 import { startOfflineMonitor } from "./offlineMonitor";
 import { initializeEmailTransporter } from "./email";
 import { initializeScheduledReports, shutdownScheduledReports } from "../services/reportScheduler";
-import { initMqttBroker, shutdownMqttBroker } from "../services/mqttService";
+import { initMqttBroker, shutdownMqttBroker, publishFactoryAlertUpdate } from "../services/mqttService";
 import { startAlertEvaluationJob, stopAlertEvaluationJob } from "../services/alertEvaluationService";
 import { initSummaryScheduler, stopSummaryScheduler } from "../services/mqttSummaryScheduler";
 import { initBulletinScheduler, stopBulletinScheduler } from "../services/mqttBulletinService";
@@ -26,7 +25,24 @@ import { cacheWarmingService } from "../services/cacheWarmingService";
 import { initializeLicenseSystem, licenseEnforcementMiddleware } from "../license/license-middleware";
 import { initializeRuntimeSecurity, shutdownRuntimeSecurity } from "../license/runtime-security";
 import { registerExternalInspectionRoutes } from "../routes/externalInspectionApi";
+import { registerAiStreamingRoutes } from "../routes/aiStreamingApi";
+import { registerAiLocalKnowledgeRoutes } from "../routes/aiLocalKnowledgeApi";
 import logger from "../logger";
+import { createApiLimiter, createAuthLimiter } from "./rateLimitConfig";
+
+/** Strip trailing Z so dates are always parsed as local time, not UTC */
+// drizzle-orm serializes Date via toISOString() (UTC representation).
+// Our "timestamp without time zone" columns store LOCAL time values.
+// Without compensation, toISOString() shifts dates by -N hours (e.g. -7 for UTC+7).
+// Fix: return a "fake UTC" Date whose UTC components equal the intended local time.
+function parseLocalDate(dateStr: string, endOfDay = false): Date {
+  let clean = dateStr.endsWith('Z') ? dateStr.slice(0, -1) : dateStr;
+  // Date-only strings (e.g. "2026-04-03") are parsed as UTC midnight by JS spec.
+  // Append time component so they are parsed as LOCAL time instead.
+  if (!clean.includes('T')) clean += endOfDay ? 'T23:59:59.999' : 'T00:00:00';
+  const d = new Date(clean);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+}
 
 const HTTPS_ENABLED = process.env.HTTPS_ENABLED === "true";
 
@@ -107,8 +123,16 @@ async function startServer() {
   });
 
   // Configure body parser with larger size limit for file uploads
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  // Skip JSON parsing for raw binary upload routes (APK uploads etc.)
+  const rawUploadPaths = ["/api/factory-alert/upload", "/api/aoi/upload/"];
+  app.use((req, res, next) => {
+    if (rawUploadPaths.some((p) => req.path.startsWith(p))) return next();
+    express.json({ limit: "200mb" })(req, res, next);
+  });
+  app.use((req, res, next) => {
+    if (rawUploadPaths.some((p) => req.path.startsWith(p))) return next();
+    express.urlencoded({ limit: "200mb", extended: true })(req, res, next);
+  });
 
   // Security headers
   app.use(helmet({
@@ -117,29 +141,74 @@ async function startServer() {
   }));
 
   // Rate limiting for API endpoints
-  const apiLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 1000, // limit each IP to 1000 requests per windowMs
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: 'Too many requests, please try again later' },
-  });
+  const apiLimiter = createApiLimiter();
   app.use('/api/', apiLimiter);
   app.use('/trpc/', apiLimiter);
 
   // Stricter rate limit for auth endpoints
-  const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 30, // 30 login attempts per 15 minutes
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: 'Too many login attempts, please try again later' },
-  });
+  const authLimiter = createAuthLimiter();
   app.use('/api/auth/', authLimiter);
 
   // Health check endpoint
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // ============================================================
+  // Network monitoring endpoints (for FactoryAlertSystem)
+  // ============================================================
+
+  // Comprehensive server health for network monitor
+  app.get('/api/network/health', async (_req, res) => {
+    try {
+      const { isMqttRunning, getConnectedClientsCount } = await import("../services/mqttService");
+      const { getDb } = await import("../db/connection");
+
+      // Check DB
+      let dbStatus = 'disconnected';
+      try {
+        const dbInstance = await getDb();
+        if (dbInstance) dbStatus = 'connected';
+      } catch { dbStatus = 'error'; }
+
+      // Memory usage
+      const mem = process.memoryUsage();
+      const memoryUsageMB = Math.round(mem.heapUsed / 1024 / 1024);
+
+      // Uptime
+      const uptimeSec = Math.floor(process.uptime());
+      const hours = Math.floor(uptimeSec / 3600);
+      const minutes = Math.floor((uptimeSec % 3600) / 60);
+      const uptime = `${hours}h ${minutes}m`;
+
+      res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        mqttStatus: isMqttRunning() ? 'running' : 'stopped',
+        mqttClients: getConnectedClientsCount(),
+        dbStatus,
+        memoryUsageMB,
+        uptime,
+      });
+    } catch (error: any) {
+      res.status(500).json({ status: 'error', message: error?.message });
+    }
+  });
+
+  // Speed test endpoint — returns random bytes of configurable size
+  app.get('/api/network/speedtest', (req, res) => {
+    const sizeKB = Math.min(Math.max(parseInt(String(req.query.size)) || 100, 1), 1024);
+    const buffer = Buffer.alloc(sizeKB * 1024);
+    // Fill with random-ish data (fast)
+    for (let i = 0; i < buffer.length; i += 4) {
+      buffer.writeUInt32LE((Math.random() * 0xFFFFFFFF) >>> 0, i);
+    }
+    res.set({
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': String(buffer.length),
+      'Cache-Control': 'no-store',
+    });
+    res.send(buffer);
   });
 
   // Serve local uploads if STORAGE_MODE=local
@@ -152,8 +221,39 @@ async function startServer() {
       fs.mkdirSync(uploadsRoot, { recursive: true });
     }
 
+    // Ensure mqtt-releases subfolder exists for APK deploy
+    const mqttReleasesDir = path.join(uploadsRoot, "mqtt-releases");
+    if (!fs.existsSync(mqttReleasesDir)) {
+      fs.mkdirSync(mqttReleasesDir, { recursive: true });
+    }
+
+    // Ensure factory-alert-releases subfolder exists for FactoryAlertSystem OTA
+    const factoryAlertReleasesDir = path.join(uploadsRoot, "factory-alert-releases");
+    if (!fs.existsSync(factoryAlertReleasesDir)) {
+      fs.mkdirSync(factoryAlertReleasesDir, { recursive: true });
+    }
+
+    // Image resize middleware for /uploads (supports ?w=WIDTH&q=QUALITY like AOI package endpoint)
+    app.get("/uploads/*", async (req, res, next) => {
+      const w = req.query.w ? Math.min(Math.max(parseInt(String(req.query.w), 10) || 0, 32), 1920) : 0;
+      if (!w) return next(); // No resize requested, fall through to express.static
+      const q = req.query.q ? Math.min(Math.max(parseInt(String(req.query.q), 10) || 80, 10), 100) : 80;
+      const filePath = path.join(uploadsRoot, req.params[0]);
+      try {
+        if (!fs.existsSync(filePath)) return next();
+        const sharpMod = (await import("sharp")).default;
+        const resized = await sharpMod(filePath).resize({ width: w, withoutEnlargement: true }).jpeg({ quality: q }).toBuffer();
+        res.set("Content-Type", "image/jpeg");
+        res.set("Cache-Control", "public, max-age=86400");
+        res.send(resized);
+      } catch {
+        next(); // Sharp unavailable or error, fall through to static
+      }
+    });
     app.use("/uploads", express.static(uploadsRoot));
-    console.log(`[Storage] Local uploads enabled at /uploads (dir: ${uploadsRoot})`);
+    console.log(`[Storage] Local uploads enabled at /uploads (dir: ${uploadsRoot}) [resize support: ?w=&q=]`);
+    console.log(`[Storage] APK deploy folder: ${mqttReleasesDir}`);
+    console.log(`[Storage] FactoryAlertSystem releases folder: ${factoryAlertReleasesDir}`);
   }
 
   // REST endpoints for external machines (proxy to tRPC machineApi router)
@@ -537,6 +637,282 @@ async function startServer() {
     } catch (error: any) {
       console.error("[MachineAPI] heartbeat error:", error);
       res.status(400).json({ success: false, message: error?.message || "Heartbeat failed" });
+    }
+  });
+
+  // GET /api/mqtt/version.json — Public endpoint for FactoryAlertSystem OTA updates
+  app.get("/api/mqtt/version.json", async (_req, res) => {
+    try {
+      const { getDb } = await import("../db");
+      const { mqttSoftwareVersions } = await import("../../drizzle/schema/mqtt");
+      const { eq } = await import("drizzle-orm");
+      const database = await getDb();
+      if (!database) return res.status(503).json({ error: "Database not connected" });
+
+      const [latest] = await database
+        .select()
+        .from(mqttSoftwareVersions)
+        .where(eq(mqttSoftwareVersions.isLatest, true))
+        .limit(1);
+
+      if (!latest || !latest.apkFileUrl) {
+        return res.status(404).json({ error: "No version available" });
+      }
+
+      // Parse changelog: try JSON array, fallback to split by newline
+      let changelog: string[] = [];
+      if (latest.changelog) {
+        try {
+          changelog = JSON.parse(latest.changelog);
+        } catch {
+          changelog = latest.changelog.split("\n").filter(Boolean);
+        }
+      }
+
+      res.json({
+        version: latest.version,
+        versionCode: latest.versionCode,
+        releaseDate: latest.releaseDate?.toISOString().split("T")[0] ?? "",
+        apkUrl: latest.apkFileUrl,
+        changelog,
+        mandatory: latest.mandatory,
+        minVersionCode: latest.minVersionCode ?? undefined,
+      });
+    } catch (error: any) {
+      console.error("[MQTT] version.json error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // GET /api/factory-alert/version.json — Returns active version info for FactoryAlertSystem OTA
+  app.get("/api/factory-alert/version.json", async (_req, res) => {
+    try {
+      const { factoryAlertVersions } = await import("../../drizzle/schema/mqtt");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+      const [active] = await db.select().from(factoryAlertVersions).where(eq(factoryAlertVersions.isActive, true)).limit(1);
+      if (!active) {
+        return res.status(404).json({ error: "No active version" });
+      }
+      res.json({
+        version: active.version?.trim(),
+        versionCode: active.versionCode,
+        releaseDate: active.releaseDate ? new Date(active.releaseDate).toISOString().split("T")[0] : null,
+        apkUrl: `download/${active.version?.trim()}/${active.apkFileName?.trim()}`,
+        changelog: active.changelog ? active.changelog.split("\n").filter(Boolean) : [],
+        mandatory: active.mandatory,
+      });
+    } catch (error: any) {
+      console.error("[FactoryAlert] version.json error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // GET /api/factory-alert/versions — List all versions
+  app.get("/api/factory-alert/versions", async (_req, res) => {
+    try {
+      const { factoryAlertVersions } = await import("../../drizzle/schema/mqtt");
+      const { desc } = await import("drizzle-orm");
+      const db = await getDb();
+      const all = await db.select().from(factoryAlertVersions).orderBy(desc(factoryAlertVersions.versionCode));
+      res.json(all);
+    } catch (error: any) {
+      console.error("[FactoryAlert] list versions error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // GET /api/factory-alert/download/:version/:filename — Download APK from versioned folder
+  app.get("/api/factory-alert/download/:version/:filename", async (req, res) => {
+    try {
+      const { version, filename } = req.params;
+      const safeName = path.basename(filename);
+      const safeVersion = path.basename(version);
+      if (!safeName.endsWith(".apk")) {
+        return res.status(400).json({ error: "Invalid file type" });
+      }
+
+      const uploadsRoot = process.env.LOCAL_STORAGE_DIR
+        ? path.resolve(process.env.LOCAL_STORAGE_DIR)
+        : path.join(process.cwd(), "uploads");
+      const filePath = path.join(uploadsRoot, "factory-alert-releases", `v${safeVersion}`, safeName);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: "File not found" });
+      }
+
+      res.setHeader("Content-Type", "application/vnd.android.package-archive");
+      res.setHeader("Content-Disposition", `attachment; filename="${safeName}"`);
+      const stat = fs.statSync(filePath);
+      res.setHeader("Content-Length", stat.size);
+      fs.createReadStream(filePath).pipe(res);
+    } catch (error: any) {
+      console.error("[FactoryAlert] download error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // POST /api/factory-alert/push-update — Broadcast active version to all devices via MQTT
+  app.post("/api/factory-alert/push-update", async (req, res) => {
+    try {
+      const { factoryAlertVersions } = await import("../../drizzle/schema/mqtt");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+      const [active] = await db.select().from(factoryAlertVersions).where(eq(factoryAlertVersions.isActive, true)).limit(1);
+
+      if (!active) {
+        return res.status(404).json({ success: false, error: "No active version found" });
+      }
+
+      const versionData = {
+        version: active.version?.trim(),
+        versionCode: active.versionCode,
+        releaseDate: active.releaseDate ? new Date(active.releaseDate).toISOString().split("T")[0] : null,
+        apkUrl: `download/${active.version?.trim()}/${active.apkFileName?.trim()}`,
+        changelog: active.changelog ? active.changelog.split("\n").filter(Boolean) : [],
+        mandatory: active.mandatory,
+      };
+
+      await publishFactoryAlertUpdate(versionData);
+      console.log(`[FactoryAlert] Push update broadcast sent: v${active.version} (code: ${active.versionCode})`);
+      res.json({ success: true, version: active.version, versionCode: active.versionCode });
+    } catch (error: any) {
+      console.error("[FactoryAlert] push-update error:", error);
+      res.status(500).json({ success: false, error: error.message || "Internal server error" });
+    }
+  });
+
+  // POST /api/factory-alert/upload — Upload APK to versioned folder and save to DB
+  app.post("/api/factory-alert/upload", express.raw({ type: "*/*", limit: "200mb" }), async (req, res) => {
+    try {
+      const version = (req.query.version as string)?.trim();
+      const versionCode = parseInt(req.query.versionCode as string, 10);
+      const changelog = (req.query.changelog as string)?.trim() || `Release v${version}`;
+      const mandatory = req.query.mandatory === "true";
+
+      if (!version || !versionCode) {
+        return res.status(400).json({ success: false, error: "Missing version or versionCode" });
+      }
+
+      const uploadsRoot = process.env.LOCAL_STORAGE_DIR
+        ? path.resolve(process.env.LOCAL_STORAGE_DIR)
+        : path.join(process.cwd(), "uploads");
+      const versionDir = path.join(uploadsRoot, "factory-alert-releases", `v${version}`);
+      if (!fs.existsSync(versionDir)) {
+        fs.mkdirSync(versionDir, { recursive: true });
+      }
+
+      const targetApkName = `FactoryAlertSystem-v${version}.apk`;
+      const targetApkPath = path.join(versionDir, targetApkName);
+      fs.writeFileSync(targetApkPath, req.body);
+
+      const fileSize = Buffer.byteLength(req.body);
+      const apkFilePath = `factory-alert-releases/v${version}/${targetApkName}`;
+
+      // Insert into DB
+      const { factoryAlertVersions } = await import("../../drizzle/schema/mqtt");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+
+      // Check if version already exists, update if so
+      const [existing] = await db.select().from(factoryAlertVersions).where(eq(factoryAlertVersions.version, version)).limit(1);
+      if (existing) {
+        await db.update(factoryAlertVersions).set({
+          versionCode,
+          changelog,
+          mandatory,
+          apkFileName: targetApkName,
+          apkFilePath,
+          fileSize,
+          updatedAt: new Date(),
+        }).where(eq(factoryAlertVersions.id, existing.id));
+      } else {
+        await db.insert(factoryAlertVersions).values({
+          version,
+          versionCode,
+          changelog,
+          mandatory,
+          apkFileName: targetApkName,
+          apkFilePath,
+          fileSize,
+        });
+      }
+
+      const fileSizeMB = (fileSize / (1024 * 1024)).toFixed(2);
+      console.log(`[FactoryAlert] APK uploaded: ${targetApkName} (${fileSizeMB} MB) → v${version}/`);
+      res.json({ success: true, version, versionCode, fileName: targetApkName, fileSize: fileSizeMB });
+    } catch (error: any) {
+      console.error("[FactoryAlert] upload error:", error);
+      res.status(500).json({ success: false, error: error.message || "Internal server error" });
+    }
+  });
+
+  // POST /api/factory-alert/versions/:id/activate — Set a version as active (deactivate all others)
+  app.post("/api/factory-alert/versions/:id/activate", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const { factoryAlertVersions } = await import("../../drizzle/schema/mqtt");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+
+      // Deactivate all
+      await db.update(factoryAlertVersions).set({ isActive: false, updatedAt: new Date() });
+      // Activate target
+      await db.update(factoryAlertVersions).set({ isActive: true, updatedAt: new Date() }).where(eq(factoryAlertVersions.id, id));
+
+      const [activated] = await db.select().from(factoryAlertVersions).where(eq(factoryAlertVersions.id, id)).limit(1);
+      console.log(`[FactoryAlert] Activated version: v${activated?.version}`);
+      res.json({ success: true, version: activated });
+    } catch (error: any) {
+      console.error("[FactoryAlert] activate error:", error);
+      res.status(500).json({ success: false, error: error.message || "Internal server error" });
+    }
+  });
+
+  // POST /api/factory-alert/versions/:id/deactivate — Deactivate a version
+  app.post("/api/factory-alert/versions/:id/deactivate", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const { factoryAlertVersions } = await import("../../drizzle/schema/mqtt");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+
+      await db.update(factoryAlertVersions).set({ isActive: false, updatedAt: new Date() }).where(eq(factoryAlertVersions.id, id));
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[FactoryAlert] deactivate error:", error);
+      res.status(500).json({ success: false, error: error.message || "Internal server error" });
+    }
+  });
+
+  // DELETE /api/factory-alert/versions/:id — Delete a version and its files
+  app.delete("/api/factory-alert/versions/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const { factoryAlertVersions } = await import("../../drizzle/schema/mqtt");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+
+      const [ver] = await db.select().from(factoryAlertVersions).where(eq(factoryAlertVersions.id, id)).limit(1);
+      if (!ver) {
+        return res.status(404).json({ success: false, error: "Version not found" });
+      }
+
+      // Delete file folder
+      const uploadsRoot = process.env.LOCAL_STORAGE_DIR
+        ? path.resolve(process.env.LOCAL_STORAGE_DIR)
+        : path.join(process.cwd(), "uploads");
+      const versionDir = path.join(uploadsRoot, "factory-alert-releases", `v${ver.version}`);
+      if (fs.existsSync(versionDir)) {
+        fs.rmSync(versionDir, { recursive: true, force: true });
+      }
+
+      await db.delete(factoryAlertVersions).where(eq(factoryAlertVersions.id, id));
+      console.log(`[FactoryAlert] Deleted version: v${ver.version}`);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[FactoryAlert] delete error:", error);
+      res.status(500).json({ success: false, error: error.message || "Internal server error" });
     }
   });
 
@@ -1066,8 +1442,8 @@ async function startServer() {
       }
 
       // Parse dates
-      const parsedStart = new Date(startDate);
-      const parsedEnd = new Date(endDate);
+      const parsedStart = parseLocalDate(startDate);
+      const parsedEnd = parseLocalDate(endDate);
       if (isNaN(parsedStart.getTime()) || isNaN(parsedEnd.getTime())) {
         return res.status(400).json({
           success: false,
@@ -1165,7 +1541,8 @@ async function startServer() {
 
   app.get("/api/external/alerts", validateExternalAuth, async (req, res) => {
     try {
-      const database = getDb();
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
       const { alertHistory, alertSettings, mqttAlertHistory, mqttAlertRules, mqttConnectionAlerts } = await import("../../drizzle/schema");
       const { desc, sql, and, gte, lte, eq: eqOp, or } = await import("drizzle-orm");
 
@@ -1173,8 +1550,8 @@ async function startServer() {
       const status = req.query.status as string | undefined; // "pending" | "acknowledged" | "resolved"
       const severity = req.query.severity as string | undefined;
       const stationId = req.query.stationId ? parseInt(req.query.stationId as string, 10) : undefined;
-      const startDate = req.query.startDate ? new Date(req.query.startDate as string) : undefined;
-      const endDate = req.query.endDate ? new Date(req.query.endDate as string) : undefined;
+      const startDate = req.query.startDate ? parseLocalDate(req.query.startDate as string) : undefined;
+      const endDate = req.query.endDate ? parseLocalDate(req.query.endDate as string) : undefined;
       const limit = Math.min(parseInt(req.query.limit as string, 10) || 50, 200);
       const offset = parseInt(req.query.offset as string, 10) || 0;
 
@@ -1312,7 +1689,8 @@ async function startServer() {
 
   app.get("/api/external/alerts/:alertId", validateExternalAuth, async (req, res) => {
     try {
-      const database = getDb();
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
       const { alertHistory, alertSettings, mqttAlertHistory, mqttConnectionAlerts } = await import("../../drizzle/schema");
       const { eq: eqOp } = await import("drizzle-orm");
 
@@ -1348,19 +1726,19 @@ async function startServer() {
           .limit(1);
         if (rows.length > 0) {
           const r = rows[0];
-          detail = { id: alertId, source: "alert", ...r, status: r.acknowledgedAt ? "acknowledged" : "pending" };
+          detail = { source: "alert", ...r, id: alertId, status: r.acknowledgedAt ? "acknowledged" : "pending" };
         }
       } else if (source === "mqtt") {
         const rows = await database.select().from(mqttAlertHistory).where(eqOp(mqttAlertHistory.id, numId)).limit(1);
         if (rows.length > 0) {
           const r = rows[0];
-          detail = { id: alertId, source: "mqtt", ...r, status: r.isResolved ? "resolved" : "pending" };
+          detail = { source: "mqtt", ...r, id: alertId, status: r.isResolved ? "resolved" : "pending" };
         }
       } else if (source === "conn") {
         const rows = await database.select().from(mqttConnectionAlerts).where(eqOp(mqttConnectionAlerts.id, numId)).limit(1);
         if (rows.length > 0) {
           const r = rows[0];
-          detail = { id: alertId, source: "connection", ...r, status: r.isResolved ? "resolved" : r.isAcknowledged ? "acknowledged" : "pending" };
+          detail = { source: "connection", ...r, id: alertId, status: r.isResolved ? "resolved" : r.isAcknowledged ? "acknowledged" : "pending" };
         }
       } else {
         return res.status(400).json({ success: false, message: "Unknown alert source. Use: alert, mqtt, or conn" });
@@ -1379,7 +1757,8 @@ async function startServer() {
 
   app.post("/api/external/alerts/:alertId/acknowledge", validateExternalAuth, async (req, res) => {
     try {
-      const database = getDb();
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
       const { alertHistory, mqttConnectionAlerts } = await import("../../drizzle/schema");
       const { eq: eqOp } = await import("drizzle-orm");
 
@@ -1419,7 +1798,8 @@ async function startServer() {
 
   app.post("/api/external/alerts/:alertId/resolve", validateExternalAuth, async (req, res) => {
     try {
-      const database = getDb();
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
       const { mqttAlertHistory, mqttConnectionAlerts } = await import("../../drizzle/schema");
       const { eq: eqOp } = await import("drizzle-orm");
 
@@ -1464,13 +1844,14 @@ async function startServer() {
   // ============================================================
   app.get("/api/external/bulletins", validateExternalAuth, async (req, res) => {
     try {
-      const database = getDb();
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
       const { mqttBulletinHistory } = await import("../../drizzle/schema");
       const { desc, and, gte, lte, eq: eqOp } = await import("drizzle-orm");
 
       const stationId = req.query.stationId ? parseInt(req.query.stationId as string, 10) : undefined;
-      const startDate = req.query.startDate ? new Date(req.query.startDate as string) : undefined;
-      const endDate = req.query.endDate ? new Date(req.query.endDate as string) : undefined;
+      const startDate = req.query.startDate ? parseLocalDate(req.query.startDate as string) : undefined;
+      const endDate = req.query.endDate ? parseLocalDate(req.query.endDate as string) : undefined;
       const limit = Math.min(parseInt(req.query.limit as string, 10) || 50, 200);
       const offset = parseInt(req.query.offset as string, 10) || 0;
 
@@ -1489,7 +1870,7 @@ async function startServer() {
 
       res.json({
         success: true,
-        data: rows.map((r) => ({
+        data: rows.map((r: any) => ({
           id: r.id,
           stationId: r.stationId,
           bulletinType: r.bulletinType,
@@ -1518,7 +1899,8 @@ async function startServer() {
   // ============================================================
   app.get("/api/external/dashboard/summary", validateExternalAuth, async (req, res) => {
     try {
-      const database = getDb();
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
       const { alertHistory, mqttAlertHistory, mqttConnectionAlerts, mqttBulletinHistory } = await import("../../drizzle/schema");
       const { sql, count, eq: eqOp, gte } = await import("drizzle-orm");
 
@@ -1590,9 +1972,203 @@ async function startServer() {
   });
 
   // ============================================================
+  // Report Generation API — on-demand reports for mobile/third-party
+  // POST /api/external/reports/generate
+  // ============================================================
+  app.post("/api/external/reports/generate", validateExternalAuth, async (req, res) => {
+    try {
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
+
+      const { reportType, format, filters } = req.body || {};
+      const validTypes = ["daily_summary", "shift_report", "defect_analysis", "station_report"];
+      const validFormats = ["pdf", "csv", "excel"];
+
+      if (!reportType || !validTypes.includes(reportType)) {
+        return res.status(400).json({ success: false, message: `Invalid reportType. Must be one of: ${validTypes.join(", ")}` });
+      }
+      if (!format || !validFormats.includes(format)) {
+        return res.status(400).json({ success: false, message: `Invalid format. Must be one of: ${validFormats.join(", ")}` });
+      }
+
+      const { alertHistory, mqttAlertHistory, mqttConnectionAlerts, mqttBulletinHistory } = await import("../../drizzle/schema");
+      const { sql, count, gte, lte, and, eq: eqOp } = await import("drizzle-orm");
+
+      // Parse filters
+      const startDate = filters?.startDate ? parseLocalDate(filters.startDate) : new Date(new Date().setHours(0, 0, 0, 0));
+      const endDate = filters?.endDate ? parseLocalDate(filters.endDate) : new Date();
+      const stationIds: number[] = (filters?.stationIds || []).map((id: string) => parseInt(id, 10)).filter((id: number) => !isNaN(id));
+
+      // Gather summary data for the report
+      const conditions: any[] = [gte(alertHistory.createdAt, startDate), lte(alertHistory.createdAt, endDate)];
+      const [alertCount] = await database.select({ total: count() }).from(alertHistory).where(and(...conditions));
+      const [mqttAlertCount] = await database.select({ total: count() }).from(mqttAlertHistory)
+        .where(and(gte(mqttAlertHistory.triggeredAt, startDate), lte(mqttAlertHistory.triggeredAt, endDate)));
+      const [bulletinCount] = await database.select({ total: count() }).from(mqttBulletinHistory)
+        .where(and(gte(mqttBulletinHistory.createdAt, startDate), lte(mqttBulletinHistory.createdAt, endDate)));
+
+      // Generate a report ID (timestamp-based)
+      const reportId = `RPT-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+      res.json({
+        success: true,
+        reportId,
+        downloadUrl: `/api/external/reports/${reportId}/download`,
+        generatedAt: new Date().toISOString(),
+        summary: {
+          reportType,
+          format,
+          period: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
+          alerts: { total: (alertCount?.total || 0) + (mqttAlertCount?.total || 0) },
+          bulletins: { total: bulletinCount?.total || 0 },
+        },
+      });
+    } catch (error: any) {
+      console.error("[External] report generate error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to generate report" });
+    }
+  });
+
+  // ============================================================
+  // User Preferences API — sync notification/app prefs for mobile
+  // GET  /api/external/user/preferences
+  // PUT  /api/external/user/preferences
+  // ============================================================
+  app.get("/api/external/user/preferences", validateExternalAuth, async (req, res) => {
+    try {
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
+
+      // Extract userId from auth context (set by validateExternalAuth when JWT is present)
+      const userId = (req as any).userId || (req as any).user?.id;
+      if (!userId) {
+        return res.status(401).json({ success: false, message: "User context required. Please authenticate with JWT." });
+      }
+
+      const { userNotificationPreferences, userSettings } = await import("../../drizzle/schema");
+      const { eq: eqOp } = await import("drizzle-orm");
+
+      // Fetch notification preferences
+      const [notifPref] = await database.select().from(userNotificationPreferences).where(eqOp(userNotificationPreferences.userId, userId)).limit(1);
+
+      // Fetch user settings
+      const [settings] = await database.select().from(userSettings).where(eqOp(userSettings.userId, userId)).limit(1);
+
+      res.json({
+        success: true,
+        data: {
+          notifications: {
+            severityFilter: [], // Not stored in DB — client-only filter
+            quietHoursEnabled: notifPref?.quietHoursEnabled ?? false,
+            quietHoursStart: notifPref?.quietHoursStart ?? "22:00",
+            quietHoursEnd: notifPref?.quietHoursEnd ?? "07:00",
+            stationFilters: [], // Client-only
+            emailEnabled: notifPref?.emailEnabled ?? true,
+            pushEnabled: notifPref?.pushEnabled ?? true,
+            inAppEnabled: notifPref?.inAppEnabled ?? true,
+            soundEnabled: notifPref?.soundEnabled ?? true,
+          },
+          app: {
+            language: settings?.language ?? "vi",
+            theme: settings?.theme ?? "system",
+            maxQueueSize: 500, // Default — not stored in DB
+          },
+        },
+      });
+    } catch (error: any) {
+      console.error("[External] user preferences GET error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to get user preferences" });
+    }
+  });
+
+  app.put("/api/external/user/preferences", validateExternalAuth, async (req, res) => {
+    try {
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
+
+      const userId = (req as any).userId || (req as any).user?.id;
+      if (!userId) {
+        return res.status(401).json({ success: false, message: "User context required. Please authenticate with JWT." });
+      }
+
+      const { notifications, app: appPrefs } = req.body || {};
+      const { userNotificationPreferences, userSettings } = await import("../../drizzle/schema");
+      const { eq: eqOp } = await import("drizzle-orm");
+
+      // Upsert notification preferences
+      if (notifications) {
+        const existing = await database.select({ id: userNotificationPreferences.id }).from(userNotificationPreferences)
+          .where(eqOp(userNotificationPreferences.userId, userId)).limit(1);
+
+        const notifData: Record<string, any> = { updatedAt: new Date() };
+        if (notifications.quietHoursEnabled !== undefined) notifData.quietHoursEnabled = notifications.quietHoursEnabled;
+        if (notifications.quietHoursStart) notifData.quietHoursStart = notifications.quietHoursStart;
+        if (notifications.quietHoursEnd) notifData.quietHoursEnd = notifications.quietHoursEnd;
+        if (notifications.emailEnabled !== undefined) notifData.emailEnabled = notifications.emailEnabled;
+        if (notifications.pushEnabled !== undefined) notifData.pushEnabled = notifications.pushEnabled;
+        if (notifications.inAppEnabled !== undefined) notifData.inAppEnabled = notifications.inAppEnabled;
+        if (notifications.soundEnabled !== undefined) notifData.soundEnabled = notifications.soundEnabled;
+
+        if (existing.length > 0) {
+          await database.update(userNotificationPreferences).set(notifData).where(eqOp(userNotificationPreferences.userId, userId));
+        } else {
+          await database.insert(userNotificationPreferences).values({ userId, ...notifData });
+        }
+      }
+
+      // Upsert user settings
+      if (appPrefs) {
+        const existing = await database.select({ id: userSettings.id }).from(userSettings)
+          .where(eqOp(userSettings.userId, userId)).limit(1);
+
+        const settingsData: Record<string, any> = { updatedAt: new Date() };
+        if (appPrefs.language) settingsData.language = appPrefs.language;
+        if (appPrefs.theme) settingsData.theme = appPrefs.theme;
+
+        if (existing.length > 0) {
+          await database.update(userSettings).set(settingsData).where(eqOp(userSettings.userId, userId));
+        } else {
+          await database.insert(userSettings).values({ userId, ...settingsData });
+        }
+      }
+
+      // Return updated preferences
+      const [notifPref] = await database.select().from(userNotificationPreferences).where(eqOp(userNotificationPreferences.userId, userId)).limit(1);
+      const [settings] = await database.select().from(userSettings).where(eqOp(userSettings.userId, userId)).limit(1);
+
+      res.json({
+        success: true,
+        data: {
+          notifications: {
+            severityFilter: [],
+            quietHoursEnabled: notifPref?.quietHoursEnabled ?? false,
+            quietHoursStart: notifPref?.quietHoursStart ?? "22:00",
+            quietHoursEnd: notifPref?.quietHoursEnd ?? "07:00",
+            stationFilters: [],
+            emailEnabled: notifPref?.emailEnabled ?? true,
+            pushEnabled: notifPref?.pushEnabled ?? true,
+            inAppEnabled: notifPref?.inAppEnabled ?? true,
+            soundEnabled: notifPref?.soundEnabled ?? true,
+          },
+          app: {
+            language: settings?.language ?? "vi",
+            theme: settings?.theme ?? "system",
+            maxQueueSize: 500,
+          },
+        },
+      });
+    } catch (error: any) {
+      console.error("[External] user preferences PUT error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to update user preferences" });
+    }
+  });
+
+  // ============================================================
   // Station REST proxy — for third-party (non-tRPC) clients
   // GET /api/external/stations            — List all stations
+  // GET /api/external/stations/resolve-topic — Resolve MQTT topic → station info
   // GET /api/external/stations/:id        — Get station by ID
+  // GET /api/external/stations/:id/products — Products mapped to a station
   // GET /api/external/stations/:id/inspection-points — Get inspection points for station
   // GET /api/external/stations/:id/reference-image   — Get station reference image
   // ============================================================
@@ -1608,12 +2184,102 @@ async function startServer() {
     }
   });
 
+  // GET /api/external/stations/resolve-topic?topic=avi/{fId}/workshop/{wId}/station/{sId}/errors
+  // Parse MQTT topic string → return station info with full hierarchy
+  // NOTE: Must be registered BEFORE /stations/:id to avoid "resolve-topic" matching as :id
+  app.get("/api/external/stations/resolve-topic", validateExternalAuth, async (req, res) => {
+    try {
+      const topic = req.query.topic as string;
+      if (!topic) {
+        return res.status(400).json({ success: false, message: "Query param 'topic' is required (e.g. avi/1/workshop/2/station/3/errors)" });
+      }
+
+      // Pattern: avi/[factory/]{factoryId}/workshop/{workshopId}/station/{stationId}[/messageType]
+      // Accept both legacy "avi/{fId}/..." and new "avi/factory/{fId}/..." formats
+      // Also strip trailing MQTT wildcards (#, +) before matching
+      const cleanedTopic = topic.replace(/\/[#+]$/, '');
+      const match = cleanedTopic.match(/^avi\/(?:factory\/)?(\d+)\/workshop\/(\d+)\/station\/(\d+)(?:\/(.+))?$/);
+      if (!match) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid MQTT topic format. Expected: avi/{factoryId}/workshop/{workshopId}/station/{stationId}[/{messageType}]",
+        });
+      }
+
+      const factoryId = parseInt(match[1], 10);
+      const workshopId = parseInt(match[2], 10);
+      const stationId = parseInt(match[3], 10);
+      const messageType = match[4] || null;
+
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
+      const { stations, productionLines, workshops, factories } = await import("../../drizzle/schema");
+      const { eq: eqOp } = await import("drizzle-orm");
+
+      // Get station with full hierarchy in a single query
+      const rows = await database
+        .select({
+          stationId: stations.id,
+          stationCode: stations.code,
+          stationName: stations.name,
+          stationDescription: stations.description,
+          lineId: productionLines.id,
+          lineCode: productionLines.code,
+          lineName: productionLines.name,
+          workshopId: workshops.id,
+          workshopCode: workshops.code,
+          workshopName: workshops.name,
+          factoryId: factories.id,
+          factoryCode: factories.code,
+          factoryName: factories.name,
+        })
+        .from(stations)
+        .innerJoin(productionLines, eqOp(stations.lineId, productionLines.id))
+        .innerJoin(workshops, eqOp(productionLines.workshopId, workshops.id))
+        .innerJoin(factories, eqOp(workshops.factoryId, factories.id))
+        .where(eqOp(stations.id, stationId))
+        .limit(1);
+
+      if (rows.length === 0) {
+        return res.status(404).json({ success: false, message: `Station ${stationId} not found` });
+      }
+
+      const row = rows[0];
+
+      // Validate topic hierarchy matches DB
+      if (row.factoryId !== factoryId || row.workshopId !== workshopId) {
+        return res.status(400).json({
+          success: false,
+          message: "Topic hierarchy mismatch: factoryId or workshopId in topic does not match station's actual hierarchy",
+          expected: { factoryId: row.factoryId, workshopId: row.workshopId },
+          provided: { factoryId, workshopId },
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          station: { id: row.stationId, code: row.stationCode, name: row.stationName, description: row.stationDescription },
+          line: { id: row.lineId, code: row.lineCode, name: row.lineName },
+          workshop: { id: row.workshopId, code: row.workshopCode, name: row.workshopName },
+          factory: { id: row.factoryId, code: row.factoryCode, name: row.factoryName },
+          mqttTopic: topic,
+          messageType,
+        },
+      });
+    } catch (error: any) {
+      console.error("[External] station resolve-topic error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to resolve MQTT topic" });
+    }
+  });
+
   app.get("/api/external/stations/:id", validateExternalAuth, async (req, res) => {
     try {
       const stationId = parseInt(req.params.id, 10);
       if (isNaN(stationId)) return res.status(400).json({ success: false, message: "Invalid station ID" });
 
-      const database = getDb();
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
       const { stations } = await import("../../drizzle/schema");
       const { eq: eqOp } = await import("drizzle-orm");
       const rows = await database.select().from(stations).where(eqOp(stations.id, stationId)).limit(1);
@@ -1631,11 +2297,19 @@ async function startServer() {
       const stationId = parseInt(req.params.id, 10);
       if (isNaN(stationId)) return res.status(400).json({ success: false, message: "Invalid station ID" });
 
+      // Optional productModelId filter
+      const productModelIdParam = req.query.productModelId as string | undefined;
+      const filterProductModelId = productModelIdParam ? parseInt(productModelIdParam, 10) : null;
+      if (productModelIdParam && (isNaN(filterProductModelId!) || filterProductModelId! <= 0)) {
+        return res.status(400).json({ success: false, message: "Invalid productModelId" });
+      }
+
       const { getMachinesByStation } = await import("../db");
-      const { getMeasurementPointDefsByMachine } = await import("../db");
+      const { getMeasurementPointDefsByMachine, getMeasurementPointDefsByWorkstation } = await import("../db");
 
       // Verify station exists
-      const database = getDb();
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
       const { stations } = await import("../../drizzle/schema");
       const { eq: eqOp } = await import("drizzle-orm");
       const stationRows = await database.select().from(stations).where(eqOp(stations.id, stationId)).limit(1);
@@ -1646,9 +2320,12 @@ async function startServer() {
       const activeMachines = stationMachines.filter((m: any) => m.isActive);
 
       const allPoints: any[] = [];
+      const seenPointIds = new Set<number>();
       for (const machine of activeMachines) {
         const points = await getMeasurementPointDefsByMachine(machine.id);
         for (const p of points) {
+          if (seenPointIds.has(p.id)) continue;
+          seenPointIds.add(p.id);
           allPoints.push({
             id: p.id,
             code: p.code,
@@ -1659,7 +2336,20 @@ async function startServer() {
             lowerLimit: p.lowerLimit != null ? Number(p.lowerLimit) : null,
             upperLimit: p.upperLimit != null ? Number(p.upperLimit) : null,
             nominalValue: p.nominalValue != null ? Number(p.nominalValue) : null,
+            positionX: p.positionX,
+            positionY: p.positionY,
+            radius: p.radius,
+            normalizedX: p.normalizedX != null ? Number(p.normalizedX) : null,
+            normalizedY: p.normalizedY != null ? Number(p.normalizedY) : null,
+            normalizedRadius: p.normalizedRadius != null ? Number(p.normalizedRadius) : null,
+            cropWidth: p.cropWidth,
+            cropHeight: p.cropHeight,
             referenceImageUrl: p.referenceImageUrl,
+            workstationId: p.workstationId ?? null,
+            productModelId: p.productModelId,
+            imageWidth: null as number | null,
+            imageHeight: null as number | null,
+            imageDisplayMode: "contain" as string,
             machineId: machine.id,
             machineCode: machine.code,
             machineName: machine.name,
@@ -1667,10 +2357,159 @@ async function startServer() {
         }
       }
 
-      res.json({ success: true, data: allPoints, total: allPoints.length });
+      // Also get measurement point defs linked directly via workstationId (not through machine)
+      const workstationPoints = await getMeasurementPointDefsByWorkstation(stationId);
+      for (const p of workstationPoints) {
+        if (seenPointIds.has(p.id)) continue;
+        seenPointIds.add(p.id);
+        // Find the machine for this point (if any) for display purposes
+        const linkedMachine = activeMachines.find((m: any) => m.id === p.machineId);
+        allPoints.push({
+          id: p.id,
+          code: p.code,
+          name: p.name,
+          description: p.description,
+          measurementType: p.measurementType,
+          unit: p.unit,
+          lowerLimit: p.lowerLimit != null ? Number(p.lowerLimit) : null,
+          upperLimit: p.upperLimit != null ? Number(p.upperLimit) : null,
+          nominalValue: p.nominalValue != null ? Number(p.nominalValue) : null,
+          positionX: p.positionX,
+          positionY: p.positionY,
+          radius: p.radius,
+          normalizedX: p.normalizedX != null ? Number(p.normalizedX) : null,
+          normalizedY: p.normalizedY != null ? Number(p.normalizedY) : null,
+          normalizedRadius: p.normalizedRadius != null ? Number(p.normalizedRadius) : null,
+          cropWidth: p.cropWidth,
+          cropHeight: p.cropHeight,
+          referenceImageUrl: p.referenceImageUrl,
+          workstationId: p.workstationId ?? null,
+          productModelId: p.productModelId,
+          imageWidth: null as number | null,
+          imageHeight: null as number | null,
+          imageDisplayMode: "contain" as string,
+          machineId: linkedMachine?.id ?? null,
+          machineCode: linkedMachine?.code ?? null,
+          machineName: linkedMachine?.name ?? null,
+        });
+      }
+
+      // Filter by productModelId if specified
+      const pointsToReturn = filterProductModelId
+        ? allPoints.filter(p => p.productModelId === filterProductModelId)
+        : allPoints;
+
+      // Batch-fetch product model image dimensions for scaling
+      const uniqueModelIds = [...new Set(pointsToReturn.map(p => p.productModelId).filter(Boolean))] as number[];
+      if (uniqueModelIds.length > 0) {
+        const { productModels } = await import("../../drizzle/schema");
+        const { inArray } = await import("drizzle-orm");
+        const models = await database.select({
+          id: productModels.id,
+          imageWidth: productModels.imageWidth,
+          imageHeight: productModels.imageHeight,
+          imageDisplayMode: productModels.imageDisplayMode,
+        }).from(productModels).where(inArray(productModels.id, uniqueModelIds));
+        const modelMap = new Map(models.map(m => [m.id, { imageWidth: m.imageWidth, imageHeight: m.imageHeight, imageDisplayMode: m.imageDisplayMode }]));
+        for (const p of pointsToReturn) {
+          const model = modelMap.get(p.productModelId);
+          if (model) {
+            p.imageWidth = model.imageWidth;
+            p.imageHeight = model.imageHeight;
+            p.imageDisplayMode = model.imageDisplayMode || "contain";
+          }
+        }
+      }
+
+      res.json({ success: true, data: pointsToReturn, total: pointsToReturn.length });
     } catch (error: any) {
       console.error("[External] station inspection-points error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get inspection points" });
+    }
+  });
+
+  // GET /api/external/stations/:id/products — Products mapped to a station (via its machines)
+  app.get("/api/external/stations/:id/products", validateExternalAuth, async (req, res) => {
+    try {
+      const stationId = parseInt(req.params.id, 10);
+      if (isNaN(stationId)) return res.status(400).json({ success: false, message: "Invalid station ID" });
+
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
+      const { stations, machines, productMachineMappings, productModels } = await import("../../drizzle/schema");
+      const { eq: eqOp, and: andOp, desc: descOp } = await import("drizzle-orm");
+
+      // Verify station exists
+      const stationRows = await database.select().from(stations).where(eqOp(stations.id, stationId)).limit(1);
+      if (stationRows.length === 0) return res.status(404).json({ success: false, message: "Station not found" });
+
+      // Get products mapped to all machines of this station
+      const rows = await database
+        .select({
+          productId: productModels.id,
+          productCode: productModels.code,
+          productName: productModels.name,
+          description: productModels.description,
+          category: productModels.category,
+          lifecycleStatus: productModels.lifecycleStatus,
+          referenceImageUrl: productModels.referenceImageUrl,
+          imageWidth: productModels.imageWidth,
+          imageHeight: productModels.imageHeight,
+          targetYieldRate: productModels.targetYieldRate,
+          minYieldRate: productModels.minYieldRate,
+          machineId: machines.id,
+          machineCode: machines.code,
+          machineName: machines.name,
+          mappingPriority: productMachineMappings.priority,
+        })
+        .from(productMachineMappings)
+        .innerJoin(productModels, eqOp(productMachineMappings.productModelId, productModels.id))
+        .innerJoin(machines, eqOp(productMachineMappings.machineId, machines.id))
+        .where(andOp(
+          eqOp(machines.stationId, stationId),
+          eqOp(productModels.isActive, true),
+        ))
+        .orderBy(descOp(productMachineMappings.priority));
+
+      // Group by product to avoid duplicates (same product via different machines)
+      const productMap = new Map<number, any>();
+      for (const r of rows) {
+        if (!productMap.has(r.productId)) {
+          productMap.set(r.productId, {
+            id: r.productId,
+            code: r.productCode,
+            name: r.productName,
+            description: r.description,
+            category: r.category,
+            lifecycleStatus: r.lifecycleStatus,
+            hasReferenceImage: !!r.referenceImageUrl,
+            imageWidth: r.imageWidth ? Number(r.imageWidth) : null,
+            imageHeight: r.imageHeight ? Number(r.imageHeight) : null,
+            targetYieldRate: r.targetYieldRate != null ? Number(r.targetYieldRate) : null,
+            minYieldRate: r.minYieldRate != null ? Number(r.minYieldRate) : null,
+            machines: [],
+          });
+        }
+        productMap.get(r.productId).machines.push({
+          id: r.machineId,
+          code: r.machineCode,
+          name: r.machineName,
+          priority: r.mappingPriority ?? 0,
+        });
+      }
+
+      const products = Array.from(productMap.values());
+      res.json({
+        success: true,
+        data: {
+          station: { id: stationRows[0].id, code: stationRows[0].code, name: stationRows[0].name },
+          products,
+          total: products.length,
+        },
+      });
+    } catch (error: any) {
+      console.error("[External] station products error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to get station products" });
     }
   });
 
@@ -1680,7 +2519,8 @@ async function startServer() {
       if (isNaN(stationId)) return res.status(400).json({ success: false, message: "Invalid station ID" });
 
       // Find the latest product model assigned to this station's machine, then get its image
-      const database = getDb();
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
       const { machines, stations } = await import("../../drizzle/schema");
       const { eq: eqOp } = await import("drizzle-orm");
 
@@ -1718,6 +2558,1019 @@ async function startServer() {
     } catch (error: any) {
       console.error("[External] station reference-image error:", error);
       res.status(500).json({ success: false, message: error?.message || "Failed to get reference image" });
+    }
+  });
+
+  // ============================================================
+  // Server Time — allows clients to calculate clock offset
+  // ============================================================
+  app.get("/api/external/server-time", (_req, res) => {
+    res.json({ success: true, serverTime: new Date().toISOString() });
+  });
+
+  // ============================================================
+  // Station Statistics APIs — per-station KPIs, measurement point stats, fail history
+  // ============================================================
+
+  // A7. GET /api/external/stations/:id/statistics — Station KPI summary
+  app.get("/api/external/stations/:id/statistics", validateExternalAuth, async (req, res) => {
+    try {
+      const stationId = parseInt(req.params.id, 10);
+      if (isNaN(stationId)) return res.status(400).json({ success: false, message: "Invalid station ID" });
+
+      // Optional productModelId / productCode filter
+      const productModelIdParam = req.query.productModelId as string | undefined;
+      let filterProductModelId = productModelIdParam ? parseInt(productModelIdParam, 10) : null;
+      if (productModelIdParam && (isNaN(filterProductModelId!) || filterProductModelId! <= 0)) {
+        return res.status(400).json({ success: false, message: "Invalid productModelId" });
+      }
+      const productCodeFilter = (req.query.productCode as string) || null;
+
+      const startDateStr = req.query.startDate as string | undefined;
+      const endDateStr = req.query.endDate as string | undefined;
+      if (!startDateStr || !endDateStr) {
+        return res.status(400).json({ success: false, message: "startDate and endDate are required (ISO 8601 format)" });
+      }
+      const startDate = parseLocalDate(startDateStr);
+      const endDate = parseLocalDate(endDateStr, true);
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        return res.status(400).json({ success: false, message: "Invalid date format" });
+      }
+      if (startDate > endDate) {
+        return res.status(400).json({ success: false, message: "startDate must be before endDate" });
+      }
+
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
+      const { machines, stations, productionLines, workshops, factories, productInspections, productModels } = await import("../../drizzle/schema");
+      const { eq: eqOp, and: andOp, inArray, gte, lte, sql: sqlOp } = await import("drizzle-orm");
+
+      // Resolve productModelId from productCode if not provided directly
+      if (!filterProductModelId && productCodeFilter) {
+        const pmByCode = await database.select({ id: productModels.id })
+          .from(productModels).where(eqOp(productModels.code, productCodeFilter)).limit(1);
+        if (pmByCode.length > 0) filterProductModelId = pmByCode[0].id;
+      }
+
+      // Verify station exists with hierarchy
+      const stationRows = await database.select({
+        station: stations,
+        line: productionLines,
+        workshop: workshops,
+        factory: factories,
+      })
+        .from(stations)
+        .innerJoin(productionLines, eqOp(stations.lineId, productionLines.id))
+        .innerJoin(workshops, eqOp(productionLines.workshopId, workshops.id))
+        .innerJoin(factories, eqOp(workshops.factoryId, factories.id))
+        .where(eqOp(stations.id, stationId))
+        .limit(1);
+
+      if (stationRows.length === 0) return res.status(404).json({ success: false, message: "Station not found" });
+      const row = stationRows[0];
+
+      // Get machine IDs for this station
+      const machineRows = await database.select({ id: machines.id }).from(machines).where(eqOp(machines.stationId, stationId));
+      const machineIds = machineRows.map((r: any) => r.id);
+
+      if (machineIds.length === 0) {
+        return res.json({
+          success: true,
+          data: {
+            station: { id: row.station.id, code: row.station.code, name: row.station.name },
+            factory: { id: row.factory.id, code: row.factory.code, name: row.factory.name },
+            workshop: { id: row.workshop.id, code: row.workshop.code, name: row.workshop.name },
+            line: { id: row.line.id, code: row.line.code, name: row.line.name },
+            dateRange: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
+            machineCount: 0,
+            totalInspections: 0, okCount: 0, ngCount: 0, ntfCount: 0,
+            firstPassYield: 0, finalYield: 0, retestRate: 0, yieldChange: 0,
+          },
+        });
+      }
+
+      // Current period stats
+      // Use raw SQL with ::timestamp to avoid pg driver local-time serialization bug
+      const startStr = startDate.toISOString();
+      const endStr = endDate.toISOString();
+      const statsConditions = [
+        inArray(productInspections.machineId, machineIds),
+        sqlOp`${productInspections.inspectionTime} >= ${startStr}::timestamp`,
+        sqlOp`${productInspections.inspectionTime} <= ${endStr}::timestamp`,
+      ];
+      if (filterProductModelId) {
+        statsConditions.push(eqOp(productInspections.productModelId, filterProductModelId));
+      }
+      const stats = await database.select({
+        total: sqlOp<number>`count(*)`,
+        ok: sqlOp<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+        ng: sqlOp<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+        ntf: sqlOp<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
+      }).from(productInspections).where(andOp(...statsConditions));
+
+      const t = Number(stats[0]?.total) || 0;
+      const ok = Number(stats[0]?.ok) || 0;
+      const ng = Number(stats[0]?.ng) || 0;
+      const ntf = Number(stats[0]?.ntf) || 0;
+
+      const fpy = t > 0 ? Math.round((ok / t) * 10000) / 100 : 0;
+      const fy = t > 0 ? Math.round(((ok + ntf) / t) * 10000) / 100 : 0;
+      const retest = t > 0 ? Math.round((ntf / t) * 10000) / 100 : 0;
+
+      // Previous period yield change
+      const duration = endDate.getTime() - startDate.getTime();
+      const prevEnd = new Date(startDate.getTime() - 1);
+      const prevStart = new Date(prevEnd.getTime() - duration);
+      const prevStartStr = prevStart.toISOString();
+      const prevEndStr = prevEnd.toISOString();
+      const prevConditions = [
+        inArray(productInspections.machineId, machineIds),
+        sqlOp`${productInspections.inspectionTime} >= ${prevStartStr}::timestamp`,
+        sqlOp`${productInspections.inspectionTime} <= ${prevEndStr}::timestamp`,
+      ];
+      if (filterProductModelId) {
+        prevConditions.push(eqOp(productInspections.productModelId, filterProductModelId));
+      }
+      const prev = await database.select({
+        total: sqlOp<number>`count(*)`,
+        ok: sqlOp<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+      }).from(productInspections).where(andOp(...prevConditions));
+
+      const pt = Number(prev[0]?.total) || 0;
+      const po = Number(prev[0]?.ok) || 0;
+      const prevFPY = pt > 0 ? (po / pt) * 100 : 0;
+      const yieldChange = Math.round((fpy - prevFPY) * 100) / 100;
+
+      res.json({
+        success: true,
+        data: {
+          station: { id: row.station.id, code: row.station.code, name: row.station.name },
+          factory: { id: row.factory.id, code: row.factory.code, name: row.factory.name },
+          workshop: { id: row.workshop.id, code: row.workshop.code, name: row.workshop.name },
+          line: { id: row.line.id, code: row.line.code, name: row.line.name },
+          dateRange: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
+          machineCount: machineIds.length,
+          totalInspections: t,
+          okCount: ok,
+          ngCount: ng,
+          ntfCount: ntf,
+          firstPassYield: fpy,
+          finalYield: fy,
+          retestRate: retest,
+          yieldChange,
+        },
+      });
+    } catch (error: any) {
+      console.error("[External] station statistics error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to get station statistics" });
+    }
+  });
+
+  // A8. GET /api/external/stations/:id/measurement-stats — Per-measurement-point stats
+  app.get("/api/external/stations/:id/measurement-stats", validateExternalAuth, async (req, res) => {
+    try {
+      const stationId = parseInt(req.params.id, 10);
+      if (isNaN(stationId)) return res.status(400).json({ success: false, message: "Invalid station ID" });
+
+      const startDateStr = req.query.startDate as string | undefined;
+      const endDateStr = req.query.endDate as string | undefined;
+      if (!startDateStr || !endDateStr) {
+        return res.status(400).json({ success: false, message: "startDate and endDate are required (ISO 8601 format)" });
+      }
+      const startDate = parseLocalDate(startDateStr);
+      const endDate = parseLocalDate(endDateStr, true);
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        return res.status(400).json({ success: false, message: "Invalid date format" });
+      }
+      if (startDate > endDate) {
+        return res.status(400).json({ success: false, message: "startDate must be before endDate" });
+      }
+
+      const groupBy = (req.query.groupBy as string) || "none"; // none | hour | day | week
+      if (!["none", "hour", "day", "week"].includes(groupBy)) {
+        return res.status(400).json({ success: false, message: "groupBy must be one of: none, hour, day, week" });
+      }
+
+      // Optional: filter by productModelId or productCode
+      const productModelIdParam = req.query.productModelId as string | undefined;
+      const productCodeFilter = (req.query.productCode as string) || null;
+      let filterProductModelId = productModelIdParam ? parseInt(productModelIdParam, 10) : null;
+      if (productModelIdParam && (isNaN(filterProductModelId!) || filterProductModelId! <= 0)) {
+        return res.status(400).json({ success: false, message: "Invalid productModelId" });
+      }
+
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
+      const { machines, stations, productModels } = await import("../../drizzle/schema");
+      const { eq: eqOp, sql: sqlOp } = await import("drizzle-orm");
+
+      // Resolve productCode to productModelId if needed
+      if (!filterProductModelId && productCodeFilter) {
+        const pmRows = await database.select({ id: productModels.id }).from(productModels).where(eqOp(productModels.code, productCodeFilter)).limit(1);
+        if (pmRows.length > 0) filterProductModelId = pmRows[0].id;
+      }
+
+      // Verify station exists
+      const stationRows = await database.select().from(stations).where(eqOp(stations.id, stationId)).limit(1);
+      if (stationRows.length === 0) return res.status(404).json({ success: false, message: "Station not found" });
+
+      // Get machine IDs
+      const machineRows = await database.select({ id: machines.id }).from(machines).where(eqOp(machines.stationId, stationId));
+      const machineIds = machineRows.map((r: any) => r.id);
+
+      if (machineIds.length === 0) {
+        return res.json({ success: true, data: { dateRange: { startDate: startDateStr, endDate: endDateStr }, points: [] } });
+      }
+
+      const startStr = startDate.toISOString();
+      const endStr = endDate.toISOString();
+      const machineIdList = machineIds.join(",");
+
+      const productFilter = filterProductModelId ? sqlOp`AND mpd."productModelId" = ${filterProductModelId}` : sqlOp``;
+
+      if (groupBy === "none") {
+        // Aggregated stats per measurement point (no time breakdown)
+        const result = await database.execute(sqlOp`
+          SELECT
+            mpd.id AS "pointDefId",
+            mpd.code AS "pointCode",
+            mpd.name AS "pointName",
+            mpd."measurementType",
+            mpd."workstationId",
+            mpd."productModelId",
+            pm.code AS "productCode",
+            pm.name AS "productName",
+            COUNT(mr.id) AS "totalChecks",
+            SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) AS "okCount",
+            SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) AS "ngCount",
+            SUM(CASE WHEN mr.result = 'NTF' THEN 1 ELSE 0 END) AS "ntfCount",
+            COALESCE(ROUND(
+              SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) * 100.0
+              / NULLIF(COUNT(mr.id), 0), 2
+            ), 0) AS "ngRate",
+            COALESCE(AVG(mr."measuredValue"::numeric), 0) AS "avgValue",
+            COALESCE(MIN(mr."measuredValue"::numeric), 0) AS "minValue",
+            COALESCE(MAX(mr."measuredValue"::numeric), 0) AS "maxValue",
+            (SELECT COUNT(mr2.id) FROM measurement_results mr2
+              INNER JOIN product_inspections pi2 ON mr2."inspectionId" = pi2.id
+              WHERE mr2."pointDefId" = mpd.id
+                AND mr2.result = 'NG'
+                AND mr2."imageUrl" IS NOT NULL AND mr2."imageUrl" != ''
+                AND pi2."machineId" = ANY(ARRAY[${sqlOp.raw(machineIdList)}])
+                AND pi2."inspectionTime" >= ${startStr}::timestamp
+                AND pi2."inspectionTime" <= ${endStr}::timestamp
+            ) AS "ngImageCount"
+          FROM measurement_results mr
+          INNER JOIN product_inspections pi ON mr."inspectionId" = pi.id
+          INNER JOIN measurement_point_defs mpd ON mr."pointDefId" = mpd.id
+          LEFT JOIN product_models pm ON mpd."productModelId" = pm.id
+          WHERE pi."machineId" = ANY(ARRAY[${sqlOp.raw(machineIdList)}])
+            AND pi."inspectionTime" >= ${startStr}::timestamp
+            AND pi."inspectionTime" <= ${endStr}::timestamp
+            ${productFilter}
+          GROUP BY mpd.id, mpd.code, mpd.name, mpd."measurementType", mpd."workstationId",
+                   mpd."productModelId", pm.code, pm.name
+          ORDER BY COUNT(mr.id) DESC
+        `);
+
+        const rows = (result as any).rows || (result as any);
+        const points = (rows as any[]).map((r: any) => ({
+          pointDefId: Number(r.pointDefId),
+          pointCode: r.pointCode || "",
+          pointName: r.pointName || "",
+          measurementType: r.measurementType || "OTHER",
+          workstationId: r.workstationId != null ? Number(r.workstationId) : null,
+          productModelId: r.productModelId != null ? Number(r.productModelId) : null,
+          productCode: r.productCode || null,
+          productName: r.productName || null,
+          totalChecks: Number(r.totalChecks),
+          okCount: Number(r.okCount),
+          ngCount: Number(r.ngCount),
+          ntfCount: Number(r.ntfCount),
+          ngRate: Number(r.ngRate),
+          avgValue: r.avgValue != null ? Number(Number(r.avgValue).toFixed(6)) : null,
+          minValue: r.minValue != null ? Number(Number(r.minValue).toFixed(6)) : null,
+          maxValue: r.maxValue != null ? Number(Number(r.maxValue).toFixed(6)) : null,
+          ngImageCount: Number(r.ngImageCount || 0),
+        }));
+
+        return res.json({
+          success: true,
+          data: {
+            dateRange: { startDate: startStr, endDate: endStr },
+            station: { id: stationRows[0].id, code: stationRows[0].code, name: stationRows[0].name },
+            points,
+          },
+        });
+      }
+
+      // Time-series stats per measurement point (groupBy = hour | day | week)
+      const dateTrunc = groupBy === "hour" ? "hour" : groupBy === "week" ? "week" : "day";
+
+      const dateTruncLiteral = sqlOp.raw(`'${dateTrunc}'`);
+      const result = await database.execute(sqlOp`
+        SELECT
+          mpd.id AS "pointDefId",
+          mpd.code AS "pointCode",
+          mpd.name AS "pointName",
+          mpd."measurementType",
+          mpd."workstationId",
+          mpd."productModelId",
+          pm.code AS "productCode",
+          pm.name AS "productName",
+          date_trunc(${dateTruncLiteral}, pi."inspectionTime") AS "period",
+          COUNT(mr.id) AS "totalChecks",
+          SUM(CASE WHEN mr.result = 'OK' THEN 1 ELSE 0 END) AS "okCount",
+          SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) AS "ngCount",
+          COALESCE(ROUND(
+            SUM(CASE WHEN mr.result = 'NG' THEN 1 ELSE 0 END) * 100.0
+            / NULLIF(COUNT(mr.id), 0), 2
+          ), 0) AS "ngRate",
+          COALESCE(AVG(mr."measuredValue"::numeric), 0) AS "avgValue"
+        FROM measurement_results mr
+        INNER JOIN product_inspections pi ON mr."inspectionId" = pi.id
+        INNER JOIN measurement_point_defs mpd ON mr."pointDefId" = mpd.id
+        LEFT JOIN product_models pm ON mpd."productModelId" = pm.id
+        WHERE pi."machineId" = ANY(ARRAY[${sqlOp.raw(machineIdList)}])
+          AND pi."inspectionTime" >= ${startStr}::timestamp
+          AND pi."inspectionTime" <= ${endStr}::timestamp
+          ${productFilter}
+        GROUP BY mpd.id, mpd.code, mpd.name, mpd."measurementType", mpd."workstationId",
+                 mpd."productModelId", pm.code, pm.name,
+                 date_trunc(${dateTruncLiteral}, pi."inspectionTime")
+        ORDER BY mpd.code, "period"
+      `);
+
+      const rows = (result as any).rows || (result as any);
+
+      // Group by pointDefId → { point info, trend: [...] }
+      const pointMap = new Map<number, any>();
+      for (const r of rows as any[]) {
+        const pid = Number(r.pointDefId);
+        if (!pointMap.has(pid)) {
+          pointMap.set(pid, {
+            pointDefId: pid,
+            pointCode: r.pointCode || "",
+            pointName: r.pointName || "",
+            measurementType: r.measurementType || "OTHER",
+            workstationId: r.workstationId != null ? Number(r.workstationId) : null,
+            productModelId: r.productModelId != null ? Number(r.productModelId) : null,
+            productCode: r.productCode || null,
+            productName: r.productName || null,
+            trend: [],
+          });
+        }
+        pointMap.get(pid).trend.push({
+          period: r.period,
+          totalChecks: Number(r.totalChecks),
+          okCount: Number(r.okCount),
+          ngCount: Number(r.ngCount),
+          ngRate: Number(r.ngRate),
+          avgValue: r.avgValue != null ? Number(Number(r.avgValue).toFixed(6)) : null,
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          groupBy,
+          dateRange: { startDate: startStr, endDate: endStr },
+          station: { id: stationRows[0].id, code: stationRows[0].code, name: stationRows[0].name },
+          points: Array.from(pointMap.values()),
+        },
+      });
+    } catch (error: any) {
+      console.error("[External] station measurement-stats error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to get measurement stats" });
+    }
+  });
+
+  // A9. GET /api/external/stations/:id/fail-history — Recent NG inspections with failed point details
+  app.get("/api/external/stations/:id/fail-history", validateExternalAuth, async (req, res) => {
+    try {
+      const stationId = parseInt(req.params.id, 10);
+      if (isNaN(stationId)) return res.status(400).json({ success: false, message: "Invalid station ID" });
+
+      // Optional productModelId or productCode filter
+      const productModelIdParam = req.query.productModelId as string | undefined;
+      const productCodeFilter = (req.query.productCode as string) || null;
+      let filterProductModelId = productModelIdParam ? parseInt(productModelIdParam, 10) : null;
+      if (productModelIdParam && (isNaN(filterProductModelId!) || filterProductModelId! <= 0)) {
+        return res.status(400).json({ success: false, message: "Invalid productModelId" });
+      }
+
+      const startDateStr = req.query.startDate as string | undefined;
+      const endDateStr = req.query.endDate as string | undefined;
+      if (!startDateStr || !endDateStr) {
+        return res.status(400).json({ success: false, message: "startDate and endDate are required (ISO 8601 format)" });
+      }
+      const startDate = parseLocalDate(startDateStr);
+      const endDate = parseLocalDate(endDateStr, true);
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        return res.status(400).json({ success: false, message: "Invalid date format" });
+      }
+      if (startDate > endDate) {
+        return res.status(400).json({ success: false, message: "startDate must be before endDate" });
+      }
+
+      const limitParam = parseInt(req.query.limit as string, 10);
+      const limit = isNaN(limitParam) ? 50 : Math.min(Math.max(limitParam, 1), 200);
+      const offsetParam = parseInt(req.query.offset as string, 10);
+      const offset = isNaN(offsetParam) ? 0 : Math.max(offsetParam, 0);
+
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
+      const { machines, stations, productInspections, measurementResults, measurementPointDefs, productModels } = await import("../../drizzle/schema");
+      const { eq: eqOp, and: andOp, inArray, gte, lte, desc: descOp } = await import("drizzle-orm");
+
+      // Resolve productCode to productModelId if needed
+      if (!filterProductModelId && productCodeFilter) {
+        const pmRows = await database.select({ id: productModels.id }).from(productModels).where(eqOp(productModels.code, productCodeFilter)).limit(1);
+        if (pmRows.length > 0) filterProductModelId = pmRows[0].id;
+      }
+
+      // Verify station exists
+      const stationRows = await database.select().from(stations).where(eqOp(stations.id, stationId)).limit(1);
+      if (stationRows.length === 0) return res.status(404).json({ success: false, message: "Station not found" });
+
+      // Get machine IDs
+      const machineRows = await database.select({ id: machines.id }).from(machines).where(eqOp(machines.stationId, stationId));
+      const machineIds = machineRows.map((r: any) => r.id);
+
+      if (machineIds.length === 0) {
+        return res.json({
+          success: true,
+          data: {
+            dateRange: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
+            pagination: { total: 0, limit, offset, hasMore: false },
+            inspections: [],
+          },
+        });
+      }
+
+      // Count total NG inspections
+      const { sql: sqlOp } = await import("drizzle-orm");
+      const failStartStr = startDate.toISOString();
+      const failEndStr = endDate.toISOString();
+      const failConditions = [
+        inArray(productInspections.machineId, machineIds),
+        eqOp(productInspections.overallResult, "NG"),
+        sqlOp`${productInspections.inspectionTime} >= ${failStartStr}::timestamp`,
+        sqlOp`${productInspections.inspectionTime} <= ${failEndStr}::timestamp`,
+      ];
+      if (filterProductModelId) {
+        failConditions.push(eqOp(productInspections.productModelId, filterProductModelId));
+      }
+      const countResult = await database.select({
+        total: sqlOp<number>`count(*)`,
+      }).from(productInspections).where(andOp(...failConditions));
+      const total = Number(countResult[0]?.total) || 0;
+
+      // Get NG inspections with pagination
+      const inspections = await database.select({
+        id: productInspections.id,
+        serialNumber: productInspections.serialNumber,
+        inspectionTime: productInspections.inspectionTime,
+        overallResult: productInspections.overallResult,
+        machineId: productInspections.machineId,
+        machineCode: machines.code,
+        machineName: machines.name,
+        productModelId: productInspections.productModelId,
+      })
+        .from(productInspections)
+        .innerJoin(machines, eqOp(productInspections.machineId, machines.id))
+        .where(andOp(...failConditions))
+        .orderBy(descOp(productInspections.inspectionTime))
+        .limit(limit)
+        .offset(offset);
+
+      if (inspections.length === 0) {
+        return res.json({
+          success: true,
+          data: {
+            dateRange: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
+            pagination: { total, limit, offset, hasMore: false },
+            inspections: [],
+          },
+        });
+      }
+
+      // Get failed measurement points for these inspections
+      const inspIds = inspections.map(i => i.id);
+      const measResults = await database.select({
+        inspectionId: measurementResults.inspectionId,
+        pointDefId: measurementResults.pointDefId,
+        result: measurementResults.result,
+        measuredValue: measurementResults.measuredValue,
+        imageUrl: measurementResults.imageUrl,
+        pointCode: measurementPointDefs.code,
+        pointName: measurementPointDefs.name,
+        workstationId: measurementPointDefs.workstationId,
+        positionX: measurementPointDefs.positionX,
+        positionY: measurementPointDefs.positionY,
+        radius: measurementPointDefs.radius,
+        normalizedX: measurementPointDefs.normalizedX,
+        normalizedY: measurementPointDefs.normalizedY,
+        normalizedRadius: measurementPointDefs.normalizedRadius,
+      })
+        .from(measurementResults)
+        .innerJoin(measurementPointDefs, eqOp(measurementResults.pointDefId, measurementPointDefs.id))
+        .where(andOp(
+          inArray(measurementResults.inspectionId, inspIds),
+          eqOp(measurementResults.result, "NG"),
+        ));
+
+      const measMap = new Map<number, any[]>();
+      for (const m of measResults) {
+        const arr = measMap.get(m.inspectionId) || [];
+        arr.push({
+          pointDefId: m.pointDefId,
+          pointCode: m.pointCode || "",
+          pointName: m.pointName || "",
+          measuredValue: m.measuredValue,
+          imageUrl: m.imageUrl || null,
+          workstationId: m.workstationId ?? null,
+          positionX: m.positionX,
+          positionY: m.positionY,
+          radius: m.radius,
+          normalizedX: m.normalizedX != null ? Number(m.normalizedX) : null,
+          normalizedY: m.normalizedY != null ? Number(m.normalizedY) : null,
+          normalizedRadius: m.normalizedRadius != null ? Number(m.normalizedRadius) : null,
+        });
+        measMap.set(m.inspectionId, arr);
+      }
+
+      // Batch-fetch product model image dimensions for scaling
+      const uniquePmIds = [...new Set(inspections.map(i => i.productModelId).filter(Boolean))] as number[];
+      const pmDimMap = new Map<number, { imageWidth: number | null; imageHeight: number | null; imageDisplayMode: string }>();
+      if (uniquePmIds.length > 0) {
+        const pmDims = await database.select({
+          id: productModels.id,
+          imageWidth: productModels.imageWidth,
+          imageHeight: productModels.imageHeight,
+          imageDisplayMode: productModels.imageDisplayMode,
+        }).from(productModels).where(inArray(productModels.id, uniquePmIds));
+        for (const pm of pmDims) {
+          pmDimMap.set(pm.id, { imageWidth: pm.imageWidth, imageHeight: pm.imageHeight, imageDisplayMode: pm.imageDisplayMode || "contain" });
+        }
+      }
+
+      const data = inspections.map(insp => {
+        const pmDim = insp.productModelId ? pmDimMap.get(insp.productModelId) : null;
+        return {
+          inspectionId: insp.id,
+          serialNumber: insp.serialNumber || "",
+          inspectionTime: insp.inspectionTime,
+          machineId: insp.machineId,
+          machineCode: insp.machineCode || "",
+          machineName: insp.machineName || "",
+          productModelId: insp.productModelId,
+          imageWidth: pmDim?.imageWidth ?? null,
+          imageHeight: pmDim?.imageHeight ?? null,
+          imageDisplayMode: pmDim?.imageDisplayMode ?? "contain",
+          failedPoints: measMap.get(insp.id) || [],
+        };
+      });
+
+      res.json({
+        success: true,
+        data: {
+          dateRange: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
+          pagination: { total, limit, offset, hasMore: offset + limit < total },
+          inspections: data,
+        },
+      });
+    } catch (error: any) {
+      console.error("[External] station fail-history error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to get fail history" });
+    }
+  });
+
+  // A10. GET /api/external/stations/:id/point-detail — Per-point stats + NG images (like StationAnalysis Station Detail)
+  app.get("/api/external/stations/:id/point-detail", validateExternalAuth, async (req, res) => {
+    try {
+      const stationId = parseInt(req.params.id, 10);
+      if (isNaN(stationId)) return res.status(400).json({ success: false, message: "Invalid station ID" });
+
+      const startDateStr = req.query.startDate as string | undefined;
+      const endDateStr = req.query.endDate as string | undefined;
+      if (!startDateStr || !endDateStr) {
+        return res.status(400).json({ success: false, message: "startDate and endDate are required (ISO 8601 format)" });
+      }
+      const startDate = parseLocalDate(startDateStr);
+      const endDate = parseLocalDate(endDateStr, true);
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        return res.status(400).json({ success: false, message: "Invalid date format" });
+      }
+      if (startDate > endDate) {
+        return res.status(400).json({ success: false, message: "startDate must be before endDate" });
+      }
+
+      const productModelIdParam = parseInt(req.query.productModelId as string, 10);
+      const productModelIdFilter = isNaN(productModelIdParam) ? null : productModelIdParam;
+      const productCodeFilter = (req.query.productCode as string) || null;
+      const pointDefIdParam = parseInt(req.query.pointDefId as string, 10);
+      const pointDefIdFilter = isNaN(pointDefIdParam) ? null : pointDefIdParam;
+      const imageLimitParam = parseInt(req.query.imageLimit as string, 10);
+      const imageLimit = isNaN(imageLimitParam) ? 10 : Math.min(Math.max(imageLimitParam, 1), 50);
+
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
+      const {
+        machines, stations, productInspections, measurementResults,
+        measurementPointDefs, productModels,
+      } = await import("../../drizzle/schema");
+      const {
+        eq: eqOp, and: andOp, inArray, gte, lte, desc: descOp,
+        sql: sqlOp, asc: ascOp, isNotNull,
+      } = await import("drizzle-orm");
+
+      // Verify station
+      const stationRows = await database.select().from(stations).where(eqOp(stations.id, stationId)).limit(1);
+      if (stationRows.length === 0) return res.status(404).json({ success: false, message: "Station not found" });
+
+      // Get machine IDs
+      const machineRows = await database.select({ id: machines.id }).from(machines)
+        .where(andOp(eqOp(machines.stationId, stationId), eqOp(machines.isActive, true)));
+      const machineIds = machineRows.map((r: any) => r.id);
+
+      if (machineIds.length === 0) {
+        return res.json({
+          success: true,
+          data: {
+            dateRange: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
+            station: { id: stationRows[0].id, code: stationRows[0].code, name: stationRows[0].name },
+            productImage: null,
+            boardInfo: null,
+            points: [],
+          },
+        });
+      }
+
+      // Build inspection conditions — use raw SQL to avoid pg driver local-time serialization bug
+      const startStr = startDate.toISOString();
+      const endStr = endDate.toISOString();
+      const inspConds: any[] = [
+        inArray(productInspections.machineId, machineIds),
+        sqlOp`${productInspections.inspectionTime} >= ${startStr}::timestamp`,
+        sqlOp`${productInspections.inspectionTime} <= ${endStr}::timestamp`,
+      ];
+
+      // Resolve product model filter
+      let resolvedProductModelId = productModelIdFilter;
+      if (!resolvedProductModelId && productCodeFilter) {
+        const pmByCode = await database.select({ id: productModels.id })
+          .from(productModels).where(eqOp(productModels.code, productCodeFilter)).limit(1);
+        if (pmByCode.length > 0) resolvedProductModelId = pmByCode[0].id;
+      }
+
+      if (resolvedProductModelId) {
+        inspConds.push(eqOp(productInspections.productModelId, resolvedProductModelId));
+      }
+
+      // Determine the primary product model (most used in range, or the specified one)
+      let primaryModelId = resolvedProductModelId;
+      if (!primaryModelId) {
+        const pmRows = await database.select({
+          modelId: productInspections.productModelId,
+          cnt: sqlOp<number>`count(*)`.as('cnt'),
+        })
+          .from(productInspections)
+          .where(andOp(...inspConds))
+          .groupBy(productInspections.productModelId)
+          .orderBy(descOp(sqlOp`count(*)`))
+          .limit(1);
+        primaryModelId = pmRows.length > 0 ? pmRows[0].modelId : null;
+      }
+
+      // Fetch product model info (reference image)
+      let productImage: { url: string | null; width: number | null; height: number | null; imageDisplayMode: string } | null = null;
+      let boardInfo: { model: string; code: string } | null = null;
+      if (primaryModelId) {
+        const pm = await database.select({
+          code: productModels.code, name: productModels.name,
+          imageUrl: productModels.referenceImageUrl,
+          imageWidth: productModels.imageWidth, imageHeight: productModels.imageHeight,
+          imageDisplayMode: productModels.imageDisplayMode,
+        }).from(productModels).where(eqOp(productModels.id, primaryModelId)).limit(1);
+        if (pm.length > 0) {
+          productImage = { url: pm[0].imageUrl, width: pm[0].imageWidth, height: pm[0].imageHeight, imageDisplayMode: pm[0].imageDisplayMode || "contain" };
+          boardInfo = { model: pm[0].name, code: pm[0].code };
+        }
+      }
+
+      // Fetch measurement point definitions by machineId
+      const pointDefConds: any[] = [
+        inArray(measurementPointDefs.machineId, machineIds),
+        eqOp(measurementPointDefs.isActive, true),
+      ];
+      if (pointDefIdFilter) pointDefConds.push(eqOp(measurementPointDefs.id, pointDefIdFilter));
+
+      let allPointDefs: any[] = await database.select().from(measurementPointDefs)
+        .where(andOp(...pointDefConds)).orderBy(ascOp(measurementPointDefs.orderIndex));
+
+      // Also fetch by workstationId = stationId (points linked to workstation, not machine)
+      const wsConds: any[] = [
+        eqOp(measurementPointDefs.workstationId, stationId),
+        eqOp(measurementPointDefs.isActive, true),
+      ];
+      if (pointDefIdFilter) wsConds.push(eqOp(measurementPointDefs.id, pointDefIdFilter));
+      const wsPointDefs = await database.select().from(measurementPointDefs)
+        .where(andOp(...wsConds)).orderBy(ascOp(measurementPointDefs.orderIndex));
+
+      // Merge machineId + workstationId points with dedup
+      const seenPointIds = new Set(allPointDefs.map((p: any) => p.id));
+      for (const wp of wsPointDefs) {
+        if (!seenPointIds.has(wp.id)) {
+          allPointDefs.push(wp);
+          seenPointIds.add(wp.id);
+        }
+      }
+
+      // Always merge product model points (not just fallback) to include points without machineId
+      if (primaryModelId) {
+        const pmConds: any[] = [
+          eqOp(measurementPointDefs.productModelId, primaryModelId),
+          eqOp(measurementPointDefs.isActive, true),
+        ];
+        if (pointDefIdFilter) pmConds.push(eqOp(measurementPointDefs.id, pointDefIdFilter));
+        const pmPointDefs = await database.select().from(measurementPointDefs)
+          .where(andOp(...pmConds)).orderBy(ascOp(measurementPointDefs.orderIndex));
+        for (const pp of pmPointDefs) {
+          if (!seenPointIds.has(pp.id)) {
+            allPointDefs.push(pp);
+            seenPointIds.add(pp.id);
+          }
+        }
+      }
+
+      if (allPointDefs.length === 0) {
+        return res.json({
+          success: true,
+          data: {
+            dateRange: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
+            station: { id: stationRows[0].id, code: stationRows[0].code, name: stationRows[0].name },
+            productImage, boardInfo, points: [],
+          },
+        });
+      }
+
+      const pointDefIds = allPointDefs.map((p: any) => p.id);
+
+      // Per-point statistics
+      const pointStats = await database.select({
+        pointDefId: measurementResults.pointDefId,
+        total: sqlOp<number>`count(*)`.as('total'),
+        ng: sqlOp<number>`sum(case when ${measurementResults.result} = 'NG' then 1 else 0 end)`.as('ng'),
+        ntf: sqlOp<number>`sum(case when ${measurementResults.result} = 'NTF' then 1 else 0 end)`.as('ntf'),
+      })
+        .from(measurementResults)
+        .innerJoin(productInspections, eqOp(measurementResults.inspectionId, productInspections.id))
+        .where(andOp(inArray(measurementResults.pointDefId, pointDefIds), ...inspConds))
+        .groupBy(measurementResults.pointDefId);
+
+      const statsMap = new Map<number, { total: number; ng: number; ntf: number }>(
+        pointStats.map((s: any) => [s.pointDefId, { total: Number(s.total), ng: Number(s.ng), ntf: Number(s.ntf) }])
+      );
+
+      // Last measurement per point
+      const lastMeasurements = await database.select({
+        pointDefId: measurementResults.pointDefId,
+        measuredValue: measurementResults.measuredValue,
+        measuredValueText: measurementResults.measuredValueText,
+        result: measurementResults.result,
+      })
+        .from(measurementResults)
+        .innerJoin(productInspections, eqOp(measurementResults.inspectionId, productInspections.id))
+        .where(andOp(inArray(measurementResults.pointDefId, pointDefIds), ...inspConds))
+        .orderBy(descOp(productInspections.inspectionTime))
+        .limit(pointDefIds.length);
+
+      const lastMeasMap = new Map<number, { value: string; result: string }>();
+      for (const m of lastMeasurements) {
+        if (!lastMeasMap.has(m.pointDefId)) {
+          lastMeasMap.set(m.pointDefId, {
+            value: m.measuredValueText || (m.measuredValue != null ? String(m.measuredValue) : '—'),
+            result: m.result,
+          });
+        }
+      }
+
+      // NG error images per point (up to imageLimit per point)
+      const ngImages = await database.select({
+        id: measurementResults.id,
+        pointDefId: measurementResults.pointDefId,
+        imageUrl: measurementResults.imageUrl,
+        measuredValue: measurementResults.measuredValue,
+        measuredValueText: measurementResults.measuredValueText,
+        result: measurementResults.result,
+        inspectionTime: productInspections.inspectionTime,
+        serialNumber: productInspections.serialNumber,
+      })
+        .from(measurementResults)
+        .innerJoin(productInspections, eqOp(measurementResults.inspectionId, productInspections.id))
+        .where(andOp(
+          inArray(measurementResults.pointDefId, pointDefIds),
+          eqOp(measurementResults.result, 'NG'),
+          isNotNull(measurementResults.imageUrl),
+          ...inspConds,
+        ))
+        .orderBy(descOp(productInspections.inspectionTime))
+        .limit(pointDefIds.length * imageLimit);
+
+      const errorImagesMap = new Map<number, any[]>();
+      for (const img of ngImages) {
+        const arr = errorImagesMap.get(img.pointDefId) || [];
+        if (arr.length < imageLimit) {
+          arr.push({
+            id: img.id,
+            imageUrl: img.imageUrl,
+            measuredValue: img.measuredValueText || (img.measuredValue != null ? String(img.measuredValue) : '—'),
+            result: img.result,
+            inspectionTime: img.inspectionTime ? new Date(img.inspectionTime).toISOString() : '',
+            serialNumber: img.serialNumber || '',
+          });
+          errorImagesMap.set(img.pointDefId, arr);
+        }
+      }
+
+      // Assemble points
+      const points = allPointDefs.map((def: any) => {
+        const st = statsMap.get(def.id) || { total: 0, ng: 0, ntf: 0 };
+        const defectRate = st.total > 0 ? Math.round((st.ng / st.total) * 10000) / 100 : 0;
+        const ntfRate = st.total > 0 ? Math.round((st.ntf / st.total) * 10000) / 100 : 0;
+        const status: string = defectRate >= 2 ? 'fail' : defectRate >= 0.5 ? 'warn' : 'pass';
+        const lastMeas = lastMeasMap.get(def.id);
+
+        return {
+          id: def.id,
+          code: def.code,
+          name: def.name,
+          type: def.measurementType,
+          positionX: def.positionX,
+          positionY: def.positionY,
+          radius: def.radius,
+          normalizedX: def.normalizedX != null ? Number(def.normalizedX) : null,
+          normalizedY: def.normalizedY != null ? Number(def.normalizedY) : null,
+          normalizedRadius: def.normalizedRadius != null ? Number(def.normalizedRadius) : null,
+          cropWidth: def.cropWidth,
+          cropHeight: def.cropHeight,
+          workstationId: def.workstationId ?? null,
+          status,
+          defectRate,
+          totalInspected: st.total,
+          ngCount: st.ng,
+          ntfCount: st.ntf,
+          ntfRate,
+          lowerLimit: def.lowerLimit ? Number(def.lowerLimit) : null,
+          upperLimit: def.upperLimit ? Number(def.upperLimit) : null,
+          nominalValue: def.nominalValue ? Number(def.nominalValue) : null,
+          unit: def.unit,
+          lastValue: lastMeas?.value ?? null,
+          lastResult: lastMeas?.result ?? null,
+          errorImages: errorImagesMap.get(def.id) || [],
+        };
+      });
+
+      res.json({
+        success: true,
+        data: {
+          dateRange: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
+          station: { id: stationRows[0].id, code: stationRows[0].code, name: stationRows[0].name },
+          productImage,
+          boardInfo,
+          points,
+        },
+      });
+    } catch (error: any) {
+      console.error("[External] station point-detail error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to get point detail" });
+    }
+  });
+
+  // ============================================================
+  // A11. GET /api/external/workstations — List workstations for third-party apps
+  // ============================================================
+  app.get("/api/external/workstations", validateExternalAuth, async (req, res) => {
+    try {
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
+      const { workstations, factories, workshops, productionLines } = await import("../../drizzle/schema");
+      const { eq: eqOp, and: andOp } = await import("drizzle-orm");
+
+      // Optional filters
+      const factoryId = req.query.factoryId ? parseInt(req.query.factoryId as string, 10) : undefined;
+      const workshopId = req.query.workshopId ? parseInt(req.query.workshopId as string, 10) : undefined;
+      const lineId = req.query.lineId ? parseInt(req.query.lineId as string, 10) : undefined;
+
+      const conditions: any[] = [eqOp(workstations.isActive, true)];
+      if (factoryId && !isNaN(factoryId)) conditions.push(eqOp(workstations.factoryId, factoryId));
+      if (workshopId && !isNaN(workshopId)) conditions.push(eqOp(workstations.workshopId, workshopId));
+      if (lineId && !isNaN(lineId)) conditions.push(eqOp(workstations.lineId, lineId));
+
+      const rows = await database
+        .select({
+          id: workstations.id,
+          code: workstations.code,
+          name: workstations.name,
+          description: workstations.description,
+          processType: workstations.processType,
+          orderIndex: workstations.orderIndex,
+          lineId: workstations.lineId,
+          workshopId: workstations.workshopId,
+          factoryId: workstations.factoryId,
+          factoryName: factories.name,
+          workshopName: workshops.name,
+          lineName: productionLines.name,
+        })
+        .from(workstations)
+        .leftJoin(factories, eqOp(workstations.factoryId, factories.id))
+        .leftJoin(workshops, eqOp(workstations.workshopId, workshops.id))
+        .leftJoin(productionLines, eqOp(workstations.lineId, productionLines.id))
+        .where(andOp(...conditions))
+        .orderBy(workstations.orderIndex);
+
+      res.json({
+        success: true,
+        data: rows.map(r => ({
+          id: r.id,
+          code: r.code,
+          name: r.name,
+          description: r.description,
+          processType: r.processType,
+          orderIndex: r.orderIndex,
+          lineId: r.lineId,
+          workshopId: r.workshopId,
+          factoryId: r.factoryId,
+          factoryName: r.factoryName ?? null,
+          workshopName: r.workshopName ?? null,
+          lineName: r.lineName ?? null,
+        })),
+      });
+    } catch (error: any) {
+      console.error("[External] workstations list error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to get workstations" });
+    }
+  });
+
+  // A11b. GET /api/external/workstations/:id — Get workstation detail
+  app.get("/api/external/workstations/:id", validateExternalAuth, async (req, res) => {
+    try {
+      const wsId = parseInt(req.params.id, 10);
+      if (isNaN(wsId)) return res.status(400).json({ success: false, message: "Invalid workstation ID" });
+
+      const database = await getDb();
+      if (!database) return res.status(500).json({ success: false, message: "Database not available" });
+      const { workstations, factories, workshops, productionLines } = await import("../../drizzle/schema");
+      const { eq: eqOp } = await import("drizzle-orm");
+
+      const rows = await database
+        .select({
+          id: workstations.id,
+          code: workstations.code,
+          name: workstations.name,
+          description: workstations.description,
+          processType: workstations.processType,
+          orderIndex: workstations.orderIndex,
+          isActive: workstations.isActive,
+          lineId: workstations.lineId,
+          workshopId: workstations.workshopId,
+          factoryId: workstations.factoryId,
+          factoryName: factories.name,
+          workshopName: workshops.name,
+          lineName: productionLines.name,
+        })
+        .from(workstations)
+        .leftJoin(factories, eqOp(workstations.factoryId, factories.id))
+        .leftJoin(workshops, eqOp(workstations.workshopId, workshops.id))
+        .leftJoin(productionLines, eqOp(workstations.lineId, productionLines.id))
+        .where(eqOp(workstations.id, wsId))
+        .limit(1);
+
+      if (rows.length === 0) return res.status(404).json({ success: false, message: "Workstation not found" });
+      const r = rows[0];
+
+      res.json({
+        success: true,
+        data: {
+          id: r.id,
+          code: r.code,
+          name: r.name,
+          description: r.description,
+          processType: r.processType,
+          orderIndex: r.orderIndex,
+          isActive: r.isActive,
+          lineId: r.lineId,
+          workshopId: r.workshopId,
+          factoryId: r.factoryId,
+          factoryName: r.factoryName ?? null,
+          workshopName: r.workshopName ?? null,
+          lineName: r.lineName ?? null,
+        },
+      });
+    } catch (error: any) {
+      console.error("[External] workstation detail error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to get workstation" });
     }
   });
 
@@ -1928,6 +3781,17 @@ async function startServer() {
     try {
       const { packageId, fileName } = req.params;
 
+      // Detect content type from file extension (fallback: detect from magic bytes later)
+      const ext = (fileName.split('.').pop() || '').toLowerCase();
+      const mimeMap: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp', svg: 'image/svg+xml' };
+      const detectMime = (buf: Buffer) => {
+        if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'image/png';
+        if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg';
+        if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'image/gif';
+        if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46) return 'image/webp';
+        return mimeMap[ext] || 'image/jpeg';
+      };
+
       const database = await getDb();
       if (!database) {
         return res.status(500).json({ success: false, message: "Database unavailable" });
@@ -1959,15 +3823,56 @@ async function startServer() {
       const cacheKey = `${packageId}/${fileName}`;
       const cachePath = pathMod.join(CACHE_DIR, cacheKey);
 
+      // Thumbnail resize support: ?w=320&q=75
+      const thumbWidth = req.query.w ? Math.min(Math.max(parseInt(String(req.query.w), 10) || 0, 32), 1920) : 0;
+      const thumbQuality = req.query.q ? Math.min(Math.max(parseInt(String(req.query.q), 10) || 80, 10), 100) : 80;
+      const thumbCacheKey = thumbWidth ? `${packageId}/thumb_${thumbWidth}_${fileName}` : null;
+      const thumbCachePath = thumbCacheKey ? pathMod.join(CACHE_DIR, thumbCacheKey) : null;
+
+      // Helper: resize buffer with sharp if thumbnail requested
+      const maybeResize = async (buf: Buffer): Promise<Buffer> => {
+        if (!thumbWidth) return buf;
+        try {
+          const sharpMod = (await import("sharp")).default;
+          return await sharpMod(buf).resize({ width: thumbWidth, withoutEnlargement: true }).jpeg({ quality: thumbQuality }).toBuffer();
+        } catch { return buf; }
+      };
+
+      // Check thumbnail cache first
+      if (thumbCachePath && fsMod.existsSync(thumbCachePath)) {
+        const stat = fsMod.statSync(thumbCachePath);
+        const ageDays = (Date.now() - stat.mtimeMs) / (1000 * 60 * 60 * 24);
+        if (ageDays < CACHE_TTL_DAYS) {
+          const cachedBuf = fsMod.readFileSync(thumbCachePath);
+          res.setHeader("Content-Type", "image/jpeg");
+          res.setHeader("Cache-Control", "public, max-age=86400");
+          res.setHeader("X-Cache", "HIT");
+          return res.send(cachedBuf);
+        }
+      }
+
       // Check cache first
       if (fsMod.existsSync(cachePath)) {
         const stat = fsMod.statSync(cachePath);
         const ageDays = (Date.now() - stat.mtimeMs) / (1000 * 60 * 60 * 24);
         if (ageDays < CACHE_TTL_DAYS) {
-          res.setHeader("Content-Type", "image/jpeg");
+          const cachedBuf = fsMod.readFileSync(cachePath);
+          if (thumbWidth) {
+            const resized = await maybeResize(cachedBuf);
+            if (thumbCachePath) {
+              const td = pathMod.dirname(thumbCachePath);
+              if (!fsMod.existsSync(td)) fsMod.mkdirSync(td, { recursive: true });
+              fsMod.writeFileSync(thumbCachePath, resized);
+            }
+            res.setHeader("Content-Type", "image/jpeg");
+            res.setHeader("Cache-Control", "public, max-age=86400");
+            res.setHeader("X-Cache", "HIT-THUMB");
+            return res.send(resized);
+          }
+          res.setHeader("Content-Type", detectMime(cachedBuf));
           res.setHeader("Cache-Control", "public, max-age=3600");
           res.setHeader("X-Cache", "HIT");
-          return res.send(fsMod.readFileSync(cachePath));
+          return res.send(cachedBuf);
         }
       }
 
@@ -2000,7 +3905,21 @@ async function startServer() {
       if (!fsMod.existsSync(cacheDir)) fsMod.mkdirSync(cacheDir, { recursive: true });
       fsMod.writeFileSync(cachePath, imageBuffer);
 
-      res.setHeader("Content-Type", "image/jpeg");
+      // Return thumbnail if requested
+      if (thumbWidth) {
+        const resized = await maybeResize(imageBuffer);
+        if (thumbCachePath) {
+          const td = pathMod.dirname(thumbCachePath);
+          if (!fsMod.existsSync(td)) fsMod.mkdirSync(td, { recursive: true });
+          fsMod.writeFileSync(thumbCachePath, resized);
+        }
+        res.setHeader("Content-Type", "image/jpeg");
+        res.setHeader("Cache-Control", "public, max-age=86400");
+        res.setHeader("X-Cache", "MISS-THUMB");
+        return res.send(resized);
+      }
+
+      res.setHeader("Content-Type", detectMime(imageBuffer));
       res.setHeader("Cache-Control", "public, max-age=3600");
       res.setHeader("X-Cache", "MISS");
       return res.send(imageBuffer);
@@ -2087,7 +4006,7 @@ async function startServer() {
 
   // ────────────────────────────────────────────────────────────────────────────
   // REST proxy for publicProductApi (for non-tRPC clients: Android, C#, Python…)
-  // Auth: header X-API-Key / X-Machine-Code  OR  body apiKey / machineCode
+  // Auth: header X-Master-Key / X-API-Key / X-Machine-Code  OR  query masterKey / apiKey / machineCode
   // ────────────────────────────────────────────────────────────────────────────
   app.get("/api/public/products", async (req, res) => {
     try {
@@ -2095,11 +4014,13 @@ async function startServer() {
       const caller = appRouter.createCaller(ctx);
       const apiKey = req.header("x-api-key") || (req.query.apiKey as string) || "";
       const machineCode = req.header("x-machine-code") || (req.query.machineCode as string) || "";
+      const masterKey = req.header("x-master-key") || (req.query.masterKey as string) || "";
       const result = await caller.publicProductApi.listProducts({
         apiKey: apiKey || undefined,
         machineCode: machineCode || undefined,
+        masterKey: masterKey || undefined,
         search: (req.query.search as string) || undefined,
-        lifecycleStatus: (req.query.lifecycleStatus as string) || undefined,
+        lifecycleStatus: (req.query.lifecycleStatus as "development" | "active" | "eol" | "archived") || undefined,
         limit: req.query.limit ? Number(req.query.limit) : undefined,
         offset: req.query.offset ? Number(req.query.offset) : undefined,
       });
@@ -2116,9 +4037,11 @@ async function startServer() {
       const caller = appRouter.createCaller(ctx);
       const apiKey = req.header("x-api-key") || (req.query.apiKey as string) || "";
       const machineCode = req.header("x-machine-code") || (req.query.machineCode as string) || "";
+      const masterKey = req.header("x-master-key") || (req.query.masterKey as string) || "";
       const result = await caller.publicProductApi.getProductByCode({
         apiKey: apiKey || undefined,
         machineCode: machineCode || undefined,
+        masterKey: masterKey || undefined,
         code: req.params.code,
       });
       res.json(result);
@@ -2134,9 +4057,11 @@ async function startServer() {
       const caller = appRouter.createCaller(ctx);
       const apiKey = req.header("x-api-key") || (req.query.apiKey as string) || "";
       const machineCode = req.header("x-machine-code") || (req.query.machineCode as string) || "";
+      const masterKey = req.header("x-master-key") || (req.query.masterKey as string) || "";
       const result = await caller.publicProductApi.getProductById({
         apiKey: apiKey || undefined,
         machineCode: machineCode || undefined,
+        masterKey: masterKey || undefined,
         id: Number(req.params.id),
       });
       res.json(result);
@@ -2152,9 +4077,11 @@ async function startServer() {
       const caller = appRouter.createCaller(ctx);
       const apiKey = req.header("x-api-key") || (req.query.apiKey as string) || "";
       const machineCode = req.header("x-machine-code") || (req.query.machineCode as string) || "";
+      const masterKey = req.header("x-master-key") || (req.query.masterKey as string) || "";
       const result = await caller.publicProductApi.getMeasurementPoints({
         apiKey: apiKey || undefined,
         machineCode: machineCode || undefined,
+        masterKey: masterKey || undefined,
         productCode: req.params.productCode,
       });
       res.json(result);
@@ -2170,9 +4097,11 @@ async function startServer() {
       const caller = appRouter.createCaller(ctx);
       const apiKey = req.header("x-api-key") || (req.query.apiKey as string) || "";
       const machineCode = req.header("x-machine-code") || (req.query.machineCode as string) || "";
+      const masterKey = req.header("x-master-key") || (req.query.masterKey as string) || "";
       const result = await caller.publicProductApi.getProductImage({
         apiKey: apiKey || undefined,
         machineCode: machineCode || undefined,
+        masterKey: masterKey || undefined,
         productCode: req.params.productCode,
       });
       res.json(result);
@@ -2182,15 +4111,83 @@ async function startServer() {
     }
   });
 
+  // Serve reference image as binary HTTP response (not base64 in JSON)
+  // This avoids ~400KB base64 bloat in JSON responses and allows Image.getSize in React Native
+  app.get("/api/public/products/:productCode/reference-image-file", async (req, res) => {
+    try {
+      const masterKey = req.header("x-master-key") || (req.query.masterKey as string) || "";
+      const apiKey = req.header("x-api-key") || (req.query.apiKey as string) || "";
+      const machineCode = req.header("x-machine-code") || (req.query.machineCode as string) || "";
+      const MASTER_API_KEY = process.env.MASTER_API_KEY || "master_api_key_change_me";
+
+      // Validate access
+      let authorized = false;
+      if (masterKey && masterKey === MASTER_API_KEY) {
+        authorized = true;
+      } else if (apiKey) {
+        const machine = await import("../db").then(m => m.getMachineByApiKey(apiKey));
+        if (machine) authorized = true;
+      } else if (machineCode) {
+        const machine = await import("../db").then(m => m.getMachineByCode(machineCode.trim()));
+        if (machine) authorized = true;
+      }
+      if (!authorized) {
+        return res.status(401).json({ success: false, error: "Unauthorized" });
+      }
+
+      const db = await import("../db");
+      const product = await db.getProductModelByCode(req.params.productCode);
+      if (!product || !product.referenceImageUrl) {
+        return res.status(404).json({ success: false, error: "Product or image not found" });
+      }
+
+      let imageData: Buffer;
+      let contentType = "image/jpeg";
+
+      if (product.referenceImageUrl.startsWith('data:image/')) {
+        // Decode base64 data URI
+        const match = product.referenceImageUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
+        if (!match) {
+          return res.status(500).json({ success: false, error: "Invalid image data URI" });
+        }
+        contentType = match[1];
+        imageData = Buffer.from(match[2], 'base64');
+      } else if (product.referenceImageUrl.startsWith('/uploads/')) {
+        // Read from local file
+        const fs = await import("fs");
+        const path = await import("path");
+        const filePath = path.join(process.cwd(), product.referenceImageUrl);
+        if (!fs.existsSync(filePath)) {
+          return res.status(404).json({ success: false, error: "Image file not found" });
+        }
+        imageData = fs.readFileSync(filePath);
+        if (product.referenceImageUrl.endsWith('.png')) contentType = 'image/png';
+        else if (product.referenceImageUrl.endsWith('.webp')) contentType = 'image/webp';
+      } else {
+        return res.status(400).json({ success: false, error: "Unsupported image source" });
+      }
+
+      res.set('Content-Type', contentType);
+      res.set('Content-Length', String(imageData.length));
+      res.set('Cache-Control', 'public, max-age=3600');
+      res.send(imageData);
+    } catch (error: any) {
+      console.error('[ReferenceImageFile] Error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   app.get("/api/public/measurement-points/:pointId/image", async (req, res) => {
     try {
       const ctx = await createContext({ req, res });
       const caller = appRouter.createCaller(ctx);
       const apiKey = req.header("x-api-key") || (req.query.apiKey as string) || "";
       const machineCode = req.header("x-machine-code") || (req.query.machineCode as string) || "";
+      const masterKey = req.header("x-master-key") || (req.query.masterKey as string) || "";
       const result = await caller.publicProductApi.getPointImage({
         apiKey: apiKey || undefined,
         machineCode: machineCode || undefined,
+        masterKey: masterKey || undefined,
         pointId: Number(req.params.pointId),
       });
       res.json(result);
@@ -2199,6 +4196,10 @@ async function startServer() {
       res.status(status).json({ success: false, error: error.message });
     }
   });
+
+  // Register AI SSE streaming routes (before tRPC mount)
+  registerAiStreamingRoutes(app);
+  registerAiLocalKnowledgeRoutes(app);
 
   // License enforcement middleware (must be before tRPC mount)
   app.use("/api/trpc", licenseEnforcementMiddleware());
@@ -2267,22 +4268,15 @@ async function startServer() {
   });
   
   // Graceful shutdown
-  process.on("SIGTERM", () => {
-    logger.info("SIGTERM received, shutting down gracefully...");
-    shutdownScheduledReports();
-    cacheWarmingService.stop();
-    if (process.env.MQTT_ENABLED === 'true') {
-      shutdownMqttBroker();
-      stopSummaryScheduler();
-    }
-    server.close(() => {
-      logger.info("Server closed");
+  let isShuttingDown = false;
+
+  const gracefulShutdown = (signal: string) => {
+    if (isShuttingDown) {
+      logger.info("Force exit...");
       process.exit(0);
-    });
-  });
-  
-  process.on("SIGINT", () => {
-    logger.info("SIGINT received, shutting down gracefully...");
+    }
+    isShuttingDown = true;
+    logger.info(`${signal} received, shutting down gracefully...`);
     shutdownScheduledReports();
     shutdownRuntimeSecurity();
     cacheWarmingService.stop();
@@ -2294,7 +4288,15 @@ async function startServer() {
       logger.info("Server closed");
       process.exit(0);
     });
-  });
+    // Force exit after 5s if server.close() hangs (e.g. WebSocket/MQTT connections)
+    setTimeout(() => {
+      logger.info("Forcing exit after timeout...");
+      process.exit(0);
+    }, 5000).unref();
+  };
+
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
   // Global error handlers to prevent silent crashes
   process.on("unhandledRejection", (reason, promise) => {

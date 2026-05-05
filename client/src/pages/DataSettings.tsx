@@ -46,6 +46,7 @@ import WorkstationManagement from "@/components/WorkstationManagement";
 import { ProcessManagementContent } from "@/pages/ProcessManagement";
 import { ProductCategoryManagement } from "@/components/ProductCategoryManagement";
 import { ProductMachineMappingContent } from "@/components/ProductMachineMappingContent";
+import { ExcelImportExport } from "@/components/ExcelImportExport";
 
 import { useState, useEffect, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
@@ -53,6 +54,11 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation";
 import { ValidationMessage } from "@/components/ValidationMessage";
 import { DeleteConfirmDialog } from "@/components/ConfirmDialog";
+import { CascadeDeleteDialog } from "@/components/CascadeDeleteDialog";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { RotateCcw, Eye } from "lucide-react";
 
 type Factory = { id: number; code: string; name: string; address?: string | null; description?: string | null };
 type Workshop = { id: number; factoryId: number; code: string; name: string; description?: string | null };
@@ -184,6 +190,15 @@ export default function DataSettings() {
   const [deleteMachineDialogOpen, setDeleteMachineDialogOpen] = useState(false);
   const [machineToDelete, setMachineToDelete] = useState<Machine | null>(null);
 
+  // Cascade delete dialog states
+  const [factoryToDelete, setFactoryToDelete] = useState<Factory | null>(null);
+  const [workshopToDelete, setWorkshopToDelete] = useState<Workshop | null>(null);
+  const [lineToDelete, setLineToDelete] = useState<Line | null>(null);
+  const [stationToDelete, setStationToDelete] = useState<Station | null>(null);
+
+  // Show deleted items toggle (admin only)
+  const [showDeleted, setShowDeleted] = useState(false);
+
   // Shift form validation
   const shiftValidation = useFormValidation<{
     code: string;
@@ -216,6 +231,31 @@ export default function DataSettings() {
   const { data: machines, refetch: refetchMachines } = trpc.machine.list.useQuery();
   const { data: shifts, refetch: refetchShifts } = trpc.shiftConfig.list.useQuery();
   const { data: stages, refetch: refetchStages } = trpc.lineStage.list.useQuery();
+
+  // Cascade info queries (enabled when delete dialog is open)
+  const { data: factoryCascadeInfo, isLoading: factoryCascadeLoading } = trpc.factory.cascadeInfo.useQuery(
+    { id: factoryToDelete?.id ?? 0 },
+    { enabled: !!factoryToDelete }
+  );
+  const { data: workshopCascadeInfo, isLoading: workshopCascadeLoading } = trpc.workshop.cascadeInfo.useQuery(
+    { id: workshopToDelete?.id ?? 0 },
+    { enabled: !!workshopToDelete }
+  );
+  const { data: lineCascadeInfo, isLoading: lineCascadeLoading } = trpc.line.cascadeInfo.useQuery(
+    { id: lineToDelete?.id ?? 0 },
+    { enabled: !!lineToDelete }
+  );
+  const { data: stationCascadeInfo, isLoading: stationCascadeLoading } = trpc.station.cascadeInfo.useQuery(
+    { id: stationToDelete?.id ?? 0 },
+    { enabled: !!stationToDelete }
+  );
+
+  // Deleted items queries (admin only, enabled when toggle is on)
+  const { data: deletedFactories, refetch: refetchDeletedFactories } = trpc.factory.listDeleted.useQuery(undefined, { enabled: showDeleted && isAdmin });
+  const { data: deletedWorkshops, refetch: refetchDeletedWorkshops } = trpc.workshop.listDeleted.useQuery(undefined, { enabled: showDeleted && isAdmin });
+  const { data: deletedLines, refetch: refetchDeletedLines } = trpc.line.listDeleted.useQuery(undefined, { enabled: showDeleted && isAdmin });
+  const { data: deletedStations, refetch: refetchDeletedStations } = trpc.station.listDeleted.useQuery(undefined, { enabled: showDeleted && isAdmin });
+  const { data: deletedMachines, refetch: refetchDeletedMachines } = trpc.machine.listDeleted.useQuery(undefined, { enabled: showDeleted && isAdmin });
 
   // Filtered data
   const filteredFactories = useMemo(() => {
@@ -334,6 +374,18 @@ export default function DataSettings() {
     },
     onError: (error) => toast.error(error.message),
   });
+
+  // Import/Export Mutations
+  const importFactoriesMutation = trpc.import.importFactories.useMutation();
+  const importWorkshopsMutation = trpc.import.importWorkshops.useMutation();
+  const importLinesMutation = trpc.import.importLines.useMutation();
+  const importStationsMutation = trpc.import.importStations.useMutation();
+  const importMachinesMutation = trpc.import.importMachines.useMutation();
+  const exportFactoriesMutation = trpc.export.exportFactories.useMutation();
+  const exportWorkshopsMutation = trpc.export.exportWorkshops.useMutation();
+  const exportLinesMutation = trpc.export.exportLines.useMutation();
+  const exportStationsMutation = trpc.export.exportStations.useMutation();
+  const exportMachinesMutation = trpc.export.exportMachines.useMutation();
 
   // Update Mutations
   const updateFactoryMutation = trpc.factory.update.useMutation({
@@ -473,7 +525,9 @@ export default function DataSettings() {
   const deleteFactoryMutation = trpc.factory.delete.useMutation({
     onSuccess: () => {
       toast.success(t("settings.deleteFactorySuccess"));
+      setFactoryToDelete(null);
       refetchFactories();
+      if (showDeleted) refetchDeletedFactories();
     },
     onError: (error) => toast.error(error.message),
   });
@@ -481,7 +535,9 @@ export default function DataSettings() {
   const deleteWorkshopMutation = trpc.workshop.delete.useMutation({
     onSuccess: () => {
       toast.success(t("settings.deleteWorkshopSuccess"));
+      setWorkshopToDelete(null);
       refetchWorkshops();
+      if (showDeleted) refetchDeletedWorkshops();
     },
     onError: (error) => toast.error(error.message),
   });
@@ -489,7 +545,9 @@ export default function DataSettings() {
   const deleteLineMutation = trpc.line.delete.useMutation({
     onSuccess: () => {
       toast.success(t("settings.deleteLineSuccess"));
+      setLineToDelete(null);
       refetchLines();
+      if (showDeleted) refetchDeletedLines();
     },
     onError: (error) => toast.error(error.message),
   });
@@ -497,7 +555,9 @@ export default function DataSettings() {
   const deleteStationMutation = trpc.station.delete.useMutation({
     onSuccess: () => {
       toast.success(t("settings.deleteStationSuccess"));
+      setStationToDelete(null);
       refetchStations();
+      if (showDeleted) refetchDeletedStations();
     },
     onError: (error) => toast.error(error.message),
   });
@@ -506,6 +566,7 @@ export default function DataSettings() {
     onSuccess: () => {
       toast.success(t("settings.deleteMachineSuccess"));
       refetchMachines();
+      if (showDeleted) refetchDeletedMachines();
     },
     onError: (error) => toast.error(error.message),
   });
@@ -514,6 +575,52 @@ export default function DataSettings() {
     onSuccess: () => {
       toast.success(t("settings.deleteShiftSuccess"));
       refetchShifts();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  // Restore mutations
+  const restoreFactoryMutation = trpc.factory.restore.useMutation({
+    onSuccess: () => {
+      toast.success(t("settings.restoreSuccess"));
+      refetchFactories();
+      refetchDeletedFactories();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const restoreWorkshopMutation = trpc.workshop.restore.useMutation({
+    onSuccess: () => {
+      toast.success(t("settings.restoreSuccess"));
+      refetchWorkshops();
+      refetchDeletedWorkshops();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const restoreLineMutation = trpc.line.restore.useMutation({
+    onSuccess: () => {
+      toast.success(t("settings.restoreSuccess"));
+      refetchLines();
+      refetchDeletedLines();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const restoreStationMutation = trpc.station.restore.useMutation({
+    onSuccess: () => {
+      toast.success(t("settings.restoreSuccess"));
+      refetchStations();
+      refetchDeletedStations();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const restoreMachineMutation = trpc.machine.restore.useMutation({
+    onSuccess: () => {
+      toast.success(t("settings.restoreSuccess"));
+      refetchMachines();
+      refetchDeletedMachines();
     },
     onError: (error) => toast.error(error.message),
   });
@@ -857,6 +964,15 @@ export default function DataSettings() {
                     <CardTitle>{t("settings.factoryList")}</CardTitle>
                     <CardDescription>{t("settings.factoryCount", { count: filteredFactories.length })} {factorySearch && `(${t("common.filtered")})`}</CardDescription>
                   </div>
+                  <div className="flex items-center gap-2">
+                  <ExcelImportExport
+                    entityType="nhà máy"
+                    templateData={[{ code: "F001", name: "Factory 1", description: "", address: "", region: "", country: "", isActive: true }]}
+                    templateFilename="factories_template.xlsx"
+                    onImport={async (data, replaceIfExists) => importFactoriesMutation.mutateAsync({ data, replaceIfExists })}
+                    onExport={async () => exportFactoriesMutation.mutateAsync()}
+                    onImportComplete={() => refetchFactories()}
+                  />
                   <Dialog open={factoryDialogOpen} onOpenChange={setFactoryDialogOpen}>
                     <DialogTrigger asChild>
                       <Button className="gap-2">
@@ -907,9 +1023,19 @@ export default function DataSettings() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
+                {isAdmin && (
+                  <div className="flex items-center gap-2 mb-4">
+                    <Switch id="show-deleted" checked={showDeleted} onCheckedChange={setShowDeleted} />
+                    <Label htmlFor="show-deleted" className="text-sm text-muted-foreground flex items-center gap-1">
+                      <Eye className="h-4 w-4" />
+                      {t("settings.showDeleted")}
+                    </Label>
+                  </div>
+                )}
                 <div className="mb-4">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -937,31 +1063,49 @@ export default function DataSettings() {
                         <Button variant="ghost" size="icon" onClick={() => handleEditFactory(factory)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>{t("settings.confirmDelete")}</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                {t("settings.deleteFactoryConfirm", { name: factory.name })}
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-                              <AlertDialogAction 
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                onClick={() => deleteFactoryMutation.mutate({ id: factory.id })}
-                              >{t("common.delete")}</AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => setFactoryToDelete(factory)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
                   ))}
+                  {/* Deleted factories (admin) */}
+                  {showDeleted && isAdmin && deletedFactories && deletedFactories.length > 0 && (
+                    <>
+                      <div className="border-t pt-3 mt-3">
+                        <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
+                      </div>
+                      {deletedFactories.map((factory: Factory) => (
+                        <div key={factory.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 opacity-60 border border-dashed border-muted-foreground/30">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
+                              <Building2 className="h-5 w-5 text-muted-foreground" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-muted-foreground line-through">{factory.name}</p>
+                              <p className="text-sm text-muted-foreground">{factory.code}</p>
+                            </div>
+                            <Badge variant="outline" className="text-destructive border-destructive/50">{t("settings.deleted")}</Badge>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1"
+                            onClick={() => restoreFactoryMutation.mutate({ id: factory.id })}
+                            disabled={restoreFactoryMutation.isPending}
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                            {t("settings.restore")}
+                          </Button>
+                        </div>
+                      ))}
+                    </>
+                  )}
                   {filteredFactories.length === 0 && (
                     <p className="text-center text-muted-foreground py-8">{factorySearch ? t("common.noResults") : t("settings.noFactory")}</p>
                   )}
@@ -979,6 +1123,15 @@ export default function DataSettings() {
                     <CardTitle>{t("settings.workshopList")}</CardTitle>
                     <CardDescription>{t("settings.workshopCount", { count: filteredWorkshops.length })} {(workshopSearch || workshopFilterFactory !== "all") && `(${t("common.filtered")})`}</CardDescription>
                   </div>
+                  <div className="flex items-center gap-2">
+                  <ExcelImportExport
+                    entityType="phân xưởng"
+                    templateData={[{ factoryCode: "F001", code: "W001", name: "Workshop 1", description: "", isActive: true }]}
+                    templateFilename="workshops_template.xlsx"
+                    onImport={async (data, replaceIfExists) => importWorkshopsMutation.mutateAsync({ data, replaceIfExists })}
+                    onExport={async () => exportWorkshopsMutation.mutateAsync()}
+                    onImportComplete={() => refetchWorkshops()}
+                  />
                   <Dialog open={workshopDialogOpen} onOpenChange={setWorkshopDialogOpen}>
                     <DialogTrigger asChild>
                       <Button className="gap-2">
@@ -1032,6 +1185,7 @@ export default function DataSettings() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
@@ -1046,7 +1200,7 @@ export default function DataSettings() {
                     />
                   </div>
                   <Select value={workshopFilterFactory} onValueChange={setWorkshopFilterFactory}>
-                    <SelectTrigger className="w-[200px]">
+                    <SelectTrigger className="w-50">
                       <SelectValue placeholder={t("dataSettings.filterByFactory")} />
                     </SelectTrigger>
                     <SelectContent>
@@ -1075,32 +1229,50 @@ export default function DataSettings() {
                           <Button variant="ghost" size="icon" onClick={() => handleEditWorkshop(workshop)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>{t("settings.confirmDelete")}</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  {t("settings.deleteWorkshopConfirm", { name: workshop.name })}
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-                                <AlertDialogAction 
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  onClick={() => deleteWorkshopMutation.mutate({ id: workshop.id })}
-                                >{t("common.delete")}</AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => setWorkshopToDelete(workshop)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
                     );
                   })}
+                  {/* Deleted workshops (admin) */}
+                  {showDeleted && isAdmin && deletedWorkshops && deletedWorkshops.length > 0 && (
+                    <>
+                      <div className="border-t pt-3 mt-3">
+                        <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
+                      </div>
+                      {deletedWorkshops.map((workshop: Workshop) => (
+                        <div key={workshop.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 opacity-60 border border-dashed border-muted-foreground/30">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
+                              <Warehouse className="h-5 w-5 text-muted-foreground" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-muted-foreground line-through">{workshop.name}</p>
+                              <p className="text-sm text-muted-foreground">{workshop.code}</p>
+                            </div>
+                            <Badge variant="outline" className="text-destructive border-destructive/50">{t("settings.deleted")}</Badge>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1"
+                            onClick={() => restoreWorkshopMutation.mutate({ id: workshop.id })}
+                            disabled={restoreWorkshopMutation.isPending}
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                            {t("settings.restore")}
+                          </Button>
+                        </div>
+                      ))}
+                    </>
+                  )}
                   {filteredWorkshops.length === 0 && (
                     <p className="text-center text-muted-foreground py-8">{(workshopSearch || workshopFilterFactory !== "all") ? t("common.noResults") : t("settings.noWorkshop")}</p>
                   )}
@@ -1118,6 +1290,15 @@ export default function DataSettings() {
                     <CardTitle>{t("settings.lineList")}</CardTitle>
                     <CardDescription>{t("settings.lineCount", { count: filteredLines.length })} {(lineSearch || lineFilterWorkshop !== "all") && `(${t("common.filtered")})`}</CardDescription>
                   </div>
+                  <div className="flex items-center gap-2">
+                  <ExcelImportExport
+                    entityType="dây chuyền"
+                    templateData={[{ workshopCode: "W001", code: "L001", name: "Line 1", description: "", capacityPerHour: 100, maxConcurrentOrders: 1, isActive: true }]}
+                    templateFilename="lines_template.xlsx"
+                    onImport={async (data, replaceIfExists) => importLinesMutation.mutateAsync({ data, replaceIfExists })}
+                    onExport={async () => exportLinesMutation.mutateAsync()}
+                    onImportComplete={() => refetchLines()}
+                  />
                   <Dialog open={lineDialogOpen} onOpenChange={setLineDialogOpen}>
                     <DialogTrigger asChild>
                       <Button className="gap-2">
@@ -1182,6 +1363,7 @@ export default function DataSettings() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
@@ -1196,7 +1378,7 @@ export default function DataSettings() {
                     />
                   </div>
                   <Select value={lineFilterWorkshop} onValueChange={setLineFilterWorkshop}>
-                    <SelectTrigger className="w-[200px]">
+                    <SelectTrigger className="w-50">
                       <SelectValue placeholder={t("dataSettings.filterByWorkshop")} />
                     </SelectTrigger>
                     <SelectContent>
@@ -1225,32 +1407,50 @@ export default function DataSettings() {
                           <Button variant="ghost" size="icon" onClick={() => handleEditLine(line)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>{t("settings.confirmDelete")}</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  {t("settings.deleteLineConfirm", { name: line.name })}
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-                                <AlertDialogAction 
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  onClick={() => deleteLineMutation.mutate({ id: line.id })}
-                                >{t("common.delete")}</AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => setLineToDelete(line)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
                     );
                   })}
+                  {/* Deleted lines (admin) */}
+                  {showDeleted && isAdmin && deletedLines && deletedLines.length > 0 && (
+                    <>
+                      <div className="border-t pt-3 mt-3">
+                        <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
+                      </div>
+                      {deletedLines.map((line: any) => (
+                        <div key={line.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 opacity-60 border border-dashed border-muted-foreground/30">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
+                              <GitBranch className="h-5 w-5 text-muted-foreground" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-muted-foreground line-through">{line.name}</p>
+                              <p className="text-sm text-muted-foreground">{line.code}</p>
+                            </div>
+                            <Badge variant="outline" className="text-destructive border-destructive/50">{t("settings.deleted")}</Badge>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1"
+                            onClick={() => restoreLineMutation.mutate({ id: line.id })}
+                            disabled={restoreLineMutation.isPending}
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                            {t("settings.restore")}
+                          </Button>
+                        </div>
+                      ))}
+                    </>
+                  )}
                   {filteredLines.length === 0 && (
                     <p className="text-center text-muted-foreground py-8">{(lineSearch || lineFilterWorkshop !== "all") ? t("common.noResults") : t("settings.noLine")}</p>
                   )}
@@ -1268,6 +1468,15 @@ export default function DataSettings() {
                     <CardTitle>{t("settings.stationList")}</CardTitle>
                     <CardDescription>{t("settings.stationCount", { count: filteredStations.length })} {(stationSearch || stationFilterLine !== "all") && `(${t("common.filtered")})`}</CardDescription>
                   </div>
+                  <div className="flex items-center gap-2">
+                  <ExcelImportExport
+                    entityType="trạm"
+                    templateData={[{ lineCode: "L001", code: "S001", name: "Station 1", description: "", orderIndex: 1, isActive: true }]}
+                    templateFilename="stations_template.xlsx"
+                    onImport={async (data, replaceIfExists) => importStationsMutation.mutateAsync({ data, replaceIfExists })}
+                    onExport={async () => exportStationsMutation.mutateAsync()}
+                    onImportComplete={() => refetchStations()}
+                  />
                   <Dialog open={stationDialogOpen} onOpenChange={setStationDialogOpen}>
                     <DialogTrigger asChild>
                       <Button className="gap-2">
@@ -1358,6 +1567,7 @@ export default function DataSettings() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
@@ -1372,7 +1582,7 @@ export default function DataSettings() {
                     />
                   </div>
                   <Select value={stationFilterLine} onValueChange={setStationFilterLine}>
-                    <SelectTrigger className="w-[200px]">
+                    <SelectTrigger className="w-50">
                       <SelectValue placeholder={t("dataSettings.filterByLine")} />
                     </SelectTrigger>
                     <SelectContent>
@@ -1401,32 +1611,50 @@ export default function DataSettings() {
                           <Button variant="ghost" size="icon" onClick={() => handleEditStation(station)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>{t("settings.confirmDelete")}</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  {t("settings.deleteStationConfirm", { name: station.name })}
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-                                <AlertDialogAction 
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  onClick={() => deleteStationMutation.mutate({ id: station.id })}
-                                >{t("common.delete")}</AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => setStationToDelete(station)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
                     );
                   })}
+                  {/* Deleted stations (admin) */}
+                  {showDeleted && isAdmin && deletedStations && deletedStations.length > 0 && (
+                    <>
+                      <div className="border-t pt-3 mt-3">
+                        <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
+                      </div>
+                      {deletedStations.map((station: any) => (
+                        <div key={station.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 opacity-60 border border-dashed border-muted-foreground/30">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
+                              <Cpu className="h-5 w-5 text-muted-foreground" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-muted-foreground line-through">{station.name}</p>
+                              <p className="text-sm text-muted-foreground">{station.code}</p>
+                            </div>
+                            <Badge variant="outline" className="text-destructive border-destructive/50">{t("settings.deleted")}</Badge>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1"
+                            onClick={() => restoreStationMutation.mutate({ id: station.id })}
+                            disabled={restoreStationMutation.isPending}
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                            {t("settings.restore")}
+                          </Button>
+                        </div>
+                      ))}
+                    </>
+                  )}
                   {filteredStations.length === 0 && (
                     <p className="text-center text-muted-foreground py-8">{(stationSearch || stationFilterLine !== "all") ? t("common.noResults") : t("settings.noStation")}</p>
                   )}
@@ -1444,6 +1672,15 @@ export default function DataSettings() {
                     <CardTitle>{t("settings.machineList")}</CardTitle>
                     <CardDescription>{t("settings.machineCount", { count: filteredMachines.length })} {(machineSearch || machineFilterStation !== "all" || machineFilterType !== "all") && `(${t("common.filtered")})`}</CardDescription>
                   </div>
+                  <div className="flex items-center gap-2">
+                  <ExcelImportExport
+                    entityType="máy"
+                    templateData={[{ stationCode: "S001", code: "M001", name: "Machine 1", machineType: "AVI", model: "", manufacturer: "", isActive: true }]}
+                    templateFilename="machines_template.xlsx"
+                    onImport={async (data, replaceIfExists) => importMachinesMutation.mutateAsync({ data, replaceIfExists })}
+                    onExport={async () => exportMachinesMutation.mutateAsync()}
+                    onImportComplete={() => refetchMachines()}
+                  />
                   <Dialog open={machineDialogOpen} onOpenChange={setMachineDialogOpen}>
                     <DialogTrigger asChild>
                       <Button className="gap-2">
@@ -1565,6 +1802,7 @@ export default function DataSettings() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
@@ -1579,7 +1817,7 @@ export default function DataSettings() {
                     />
                   </div>
                   <Select value={machineFilterStation} onValueChange={setMachineFilterStation}>
-                    <SelectTrigger className="w-[200px]">
+                    <SelectTrigger className="w-50">
                       <SelectValue placeholder={t("dataSettings.filterByStation")} />
                     </SelectTrigger>
                     <SelectContent>
@@ -1590,7 +1828,7 @@ export default function DataSettings() {
                     </SelectContent>
                   </Select>
                   <Select value={machineFilterType} onValueChange={setMachineFilterType}>
-                    <SelectTrigger className="w-[160px]">
+                    <SelectTrigger className="w-40">
                       <SelectValue placeholder={t("dataSettings.filterByType")} />
                     </SelectTrigger>
                     <SelectContent>
@@ -1645,6 +1883,38 @@ export default function DataSettings() {
                   })}
                   {filteredMachines.length === 0 && (
                     <p className="text-center text-muted-foreground py-8">{(machineSearch || machineFilterStation !== "all" || machineFilterType !== "all") ? t("common.noResults") : t("settings.noMachine")}</p>
+                  )}
+                  {/* Deleted machines (admin) */}
+                  {showDeleted && isAdmin && deletedMachines && deletedMachines.length > 0 && (
+                    <>
+                      <div className="border-t pt-3 mt-3">
+                        <p className="text-sm font-medium text-muted-foreground mb-2">{t("settings.deletedItems")}</p>
+                      </div>
+                      {deletedMachines.map((machine: any) => (
+                        <div key={machine.id} className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 opacity-60 border border-dashed border-muted-foreground/30">
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
+                              <Cpu className="h-5 w-5 text-muted-foreground" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-muted-foreground line-through">{machine.name}</p>
+                              <p className="text-sm text-muted-foreground">{machine.code}</p>
+                            </div>
+                            <Badge variant="outline" className="text-destructive border-destructive/50">{t("settings.deleted")}</Badge>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1"
+                            onClick={() => restoreMachineMutation.mutate({ id: machine.id })}
+                            disabled={restoreMachineMutation.isPending}
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                            {t("settings.restore")}
+                          </Button>
+                        </div>
+                      ))}
+                    </>
                   )}
                 </div>
               </CardContent>
@@ -2836,6 +3106,55 @@ export default function DataSettings() {
           }
         }}
         isLoading={deleteMachineMutation.isPending}
+      />
+
+      {/* Cascade Delete Dialogs for hierarchy entities */}
+      <CascadeDeleteDialog
+        open={!!factoryToDelete}
+        onOpenChange={(open) => !open && setFactoryToDelete(null)}
+        entityType="factory"
+        entityName={factoryToDelete?.name}
+        cascadeInfo={factoryCascadeInfo}
+        isLoadingInfo={factoryCascadeLoading}
+        onDeleteSingle={() => factoryToDelete && deleteFactoryMutation.mutate({ id: factoryToDelete.id })}
+        onDeleteCascade={() => factoryToDelete && deleteFactoryMutation.mutate({ id: factoryToDelete.id, cascade: true })}
+        isDeleting={deleteFactoryMutation.isPending}
+      />
+
+      <CascadeDeleteDialog
+        open={!!workshopToDelete}
+        onOpenChange={(open) => !open && setWorkshopToDelete(null)}
+        entityType="workshop"
+        entityName={workshopToDelete?.name}
+        cascadeInfo={workshopCascadeInfo}
+        isLoadingInfo={workshopCascadeLoading}
+        onDeleteSingle={() => workshopToDelete && deleteWorkshopMutation.mutate({ id: workshopToDelete.id })}
+        onDeleteCascade={() => workshopToDelete && deleteWorkshopMutation.mutate({ id: workshopToDelete.id, cascade: true })}
+        isDeleting={deleteWorkshopMutation.isPending}
+      />
+
+      <CascadeDeleteDialog
+        open={!!lineToDelete}
+        onOpenChange={(open) => !open && setLineToDelete(null)}
+        entityType="line"
+        entityName={lineToDelete?.name}
+        cascadeInfo={lineCascadeInfo}
+        isLoadingInfo={lineCascadeLoading}
+        onDeleteSingle={() => lineToDelete && deleteLineMutation.mutate({ id: lineToDelete.id })}
+        onDeleteCascade={() => lineToDelete && deleteLineMutation.mutate({ id: lineToDelete.id, cascade: true })}
+        isDeleting={deleteLineMutation.isPending}
+      />
+
+      <CascadeDeleteDialog
+        open={!!stationToDelete}
+        onOpenChange={(open) => !open && setStationToDelete(null)}
+        entityType="station"
+        entityName={stationToDelete?.name}
+        cascadeInfo={stationCascadeInfo}
+        isLoadingInfo={stationCascadeLoading}
+        onDeleteSingle={() => stationToDelete && deleteStationMutation.mutate({ id: stationToDelete.id })}
+        onDeleteCascade={() => stationToDelete && deleteStationMutation.mutate({ id: stationToDelete.id, cascade: true })}
+        isDeleting={deleteStationMutation.isPending}
       />
     </DashboardLayout>
   );

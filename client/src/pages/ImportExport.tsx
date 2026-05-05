@@ -442,7 +442,7 @@ export function ImportExportContent() {
               <div className="flex items-center gap-4">
                 <Calendar className="h-4 w-4 text-muted-foreground" />
                 <Select value={exportDateRange} onValueChange={(v) => setExportDateRange(v as any)}>
-                  <SelectTrigger className="w-[200px]">
+                  <SelectTrigger className="w-50">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

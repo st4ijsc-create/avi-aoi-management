@@ -490,7 +490,7 @@ export function AnnotationExportImport() {
             </DialogDescription>
           </DialogHeader>
           
-          <ScrollArea className="h-[500px]">
+          <ScrollArea className="h-125">
             <div className="space-y-4">
               {previewData.map((item, idx) => (
                 <Card key={idx}>

@@ -253,3 +253,71 @@ export function getOnlineUserCount(): number {
 export function isUserOnline(userId: number): boolean {
   return userSockets.has(userId) && (userSockets.get(userId)?.size || 0) > 0;
 }
+
+// ─── AI Notification Summary ────────────────────────────────────────────────
+
+/**
+ * Generate AI-powered summary for a batch of notifications.
+ * Useful for daily digests or when a user has many unread notifications.
+ * Non-blocking — returns null on any failure.
+ */
+export async function generateNotificationSummary(
+  notifications: Array<{ type: string; title: string; message: string; priority?: string; createdAt?: string }>,
+): Promise<string | null> {
+  if (notifications.length === 0) return null;
+
+  try {
+    const { generateText } = await import('./aiGgufEngine');
+
+    const notifList = notifications.slice(0, 20).map((n, i) =>
+      `${i + 1}. [${n.type}${n.priority ? '/' + n.priority : ''}] ${n.title}: ${n.message}`
+    ).join('\n');
+
+    const response = await generateText({
+      systemPrompt: `You are a factory notification assistant. Summarize a batch of notifications into a concise digest (2-4 sentences). Highlight urgent items first, then group related alerts. Use clear, actionable language.`,
+      prompt: `Summarize these ${notifications.length} notifications:\n${notifList}`,
+      maxTokens: 256,
+      temperature: 0.5,
+    });
+
+    return response.text?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Personalize notification content based on user role.
+ * Operators get actionable steps, supervisors get summary + impact, managers get KPI impact.
+ * Non-blocking — returns original payload on failure.
+ */
+export async function personalizeNotificationForRole(
+  payload: NotificationPayload,
+  role: 'operator' | 'supervisor' | 'manager' | 'admin',
+): Promise<NotificationPayload> {
+  if (role === 'admin') return payload; // admins get raw data
+
+  try {
+    const { generateText } = await import('./aiGgufEngine');
+
+    const response = await generateText({
+      systemPrompt: `You are a factory notification system. Rewrite the notification message for a ${role}.
+- Operator: focus on what to do RIGHT NOW, specific machine/station actions.
+- Supervisor: focus on impact scope, which lines/machines affected, delegation.
+- Manager: focus on KPI impact, trend context, strategic implications.
+Reply in JSON: { "title": string, "message": string }`,
+      prompt: `Original notification:\nType: ${payload.type}, Priority: ${payload.priority || 'NORMAL'}\nTitle: ${payload.title}\nMessage: ${payload.message}\n${payload.metadata ? 'Context: ' + JSON.stringify(payload.metadata).slice(0, 500) : ''}`,
+      maxTokens: 200,
+      temperature: 0.3,
+      jsonMode: true,
+    });
+
+    const parsed = JSON.parse(response.text);
+    if (parsed.title && parsed.message) {
+      return { ...payload, title: parsed.title, message: parsed.message };
+    }
+    return payload;
+  } catch {
+    return payload;
+  }
+}

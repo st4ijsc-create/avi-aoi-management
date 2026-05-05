@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
 import { trpc } from '@/lib/trpc';
@@ -406,13 +406,15 @@ function ModelConfigSection() {
   const [autoscaleEnabled, setAutoscaleEnabled] = useState(false);
 
   // Sync config when loaded
-  if (config && !defaultModel) {
-    if (config.defaultModelId) setDefaultModel(String(config.defaultModelId));
-    if (config.confidenceThreshold) setConfidenceThreshold(String(config.confidenceThreshold));
-    if (config.maxConcurrentInferences) setMaxConcurrentInferences(String(config.maxConcurrentInferences));
-    if (config.gpuAcceleration !== undefined) setEnableGpuAcceleration(config.gpuAcceleration);
-    if (config.autoScale !== undefined) setAutoscaleEnabled(config.autoScale);
-  }
+  useEffect(() => {
+    if (config) {
+      if (config.defaultModelId) setDefaultModel(String(config.defaultModelId));
+      if (config.confidenceThreshold) setConfidenceThreshold(String(config.confidenceThreshold));
+      if (config.maxConcurrentInferences) setMaxConcurrentInferences(String(config.maxConcurrentInferences));
+      if (config.gpuAcceleration !== undefined) setEnableGpuAcceleration(config.gpuAcceleration);
+      if (config.autoScale !== undefined) setAutoscaleEnabled(config.autoScale);
+    }
+  }, [config]);
 
   const handleSave = () => {
     updateConfigMutation.mutate({
@@ -569,9 +571,15 @@ function SystemConfigSection() {
   const [retentionDays, setRetentionDays] = useState('90');
   const [maxUploadSizeMb, setMaxUploadSizeMb] = useState('500');
 
-  if (sysConfig && enableAiFeatures === true && !sysConfig.aiEnabled) {
-    // Sync once
-  }
+  // Sync system config when loaded
+  useEffect(() => {
+    if (sysConfig) {
+      if (sysConfig.aiEnabled !== undefined) setEnableAiFeatures(sysConfig.aiEnabled);
+      if (sysConfig.inferenceLogging !== undefined) setLogInferenceRequests(sysConfig.inferenceLogging);
+      if (sysConfig.dataRetentionDays) setRetentionDays(String(sysConfig.dataRetentionDays));
+      if (sysConfig.maxUploadSizeMb) setMaxUploadSizeMb(String(sysConfig.maxUploadSizeMb));
+    }
+  }, [sysConfig]);
 
   const handleSave = () => {
     updateMutation.mutate({

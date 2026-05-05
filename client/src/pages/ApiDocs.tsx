@@ -1198,7 +1198,7 @@ defer res.Body.Close()`,
         {/* Main Content */}
         <div className="flex-1 space-y-6">
           {/* Header */}
-          <section className="overflow-hidden rounded-3xl border bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 p-8 text-white shadow-2xl">
+          <section className="overflow-hidden rounded-3xl border bg-linear-to-r from-slate-900 via-indigo-900 to-slate-900 p-8 text-white shadow-2xl">
             <div className="space-y-4">
               <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1 text-sm font-medium">
                 <Languages className="h-4 w-4" />

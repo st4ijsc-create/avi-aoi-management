@@ -40,7 +40,7 @@ import {
 } from "recharts";
 import type { DateRange } from "react-day-picker";
 
-/* ── Date Preset Helpers ── */
+/* â”€â”€ Date Preset Helpers â”€â”€ */
 
 type DatePreset = "today" | "yesterday" | "week" | "month" | "year" | "custom";
 
@@ -78,7 +78,7 @@ const PARETO_COLORS = [
   "#64748b", "#d946ef", "#0ea5e9", "#84cc16", "#f43f5e",
 ];
 
-/* ── Helpers ── */
+/* â”€â”€ Helpers â”€â”€ */
 
 function getYieldLevel(value: number | null): "good" | "warn" | "bad" | "none" {
   if (value === null || value === undefined) return "none";
@@ -105,18 +105,18 @@ function getDefectTagStyle(code: string, name: string) {
   const lower = (code + " " + name).toLowerCase();
   if (lower.includes("irregular") || lower.includes("shift") || lower.includes("gap") || lower.includes("misalign") || lower.includes("loose") || lower.includes("flatness"))
     return { label: "Irregular", cls: "text-purple-400 border-purple-600/25 bg-purple-600/5" };
-  if (lower.includes("assy") || lower.includes("missing") || lower.includes("thiếu") || lower.includes("screw") || lower.includes("clip") || lower.includes("orient") || lower.includes("lắp") || lower.includes("lệch") || lower.includes("ssd"))
+  if (lower.includes("assy") || lower.includes("missing") || lower.includes("thiáº¿u") || lower.includes("screw") || lower.includes("clip") || lower.includes("orient") || lower.includes("láº¯p") || lower.includes("lá»‡ch") || lower.includes("ssd"))
     return { label: "ASSY", cls: "text-blue-400 border-blue-500/25 bg-blue-500/5" };
   if (lower.includes("damage") || lower.includes("buckle") || lower.includes("wrinkle") || lower.includes("scratch") || lower.includes("crack"))
     return { label: "Damage", cls: "text-red-400 border-red-500/25 bg-red-500/5" };
   if (lower.includes("pollution") || lower.includes("spot") || lower.includes("stain") || lower.includes("dirt") || lower.includes("dust"))
     return { label: "Pollution", cls: "text-yellow-400 border-yellow-500/25 bg-yellow-500/5" };
-  if (lower.includes("ntf") || lower.includes("cable") || lower.includes("contact") || lower.includes("lỏng") || lower.includes("flying") || lower.includes("blockage"))
+  if (lower.includes("ntf") || lower.includes("cable") || lower.includes("contact") || lower.includes("lá»ng") || lower.includes("flying") || lower.includes("blockage"))
     return { label: "NTF", cls: "text-emerald-400 border-emerald-500/25 bg-emerald-500/5" };
   return { label: code || "Other", cls: "text-muted-foreground border-border bg-muted/30" };
 }
 
-/* ── PCB Thumbnail ── */
+/* â”€â”€ PCB Thumbnail â”€â”€ */
 
 function PcbThumbnail({ seed }: { seed: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -169,13 +169,13 @@ function PcbThumbnail({ seed }: { seed: number }) {
   }, [seed]);
 
   return (
-    <div className="w-[68px] h-[52px] rounded-md border border-border/50 overflow-hidden shrink-0 bg-[#252a38]">
+    <div className="w-17 h-13 rounded-md border border-border/50 overflow-hidden shrink-0 bg-[#252a38]">
       <canvas ref={canvasRef} className="w-full h-full" />
     </div>
   );
 }
 
-/* ── Row skeleton ── */
+/* â”€â”€ Row skeleton â”€â”€ */
 
 const GRID_COLS = "280px 110px 110px 110px 80px 80px 1fr 140px";
 
@@ -183,7 +183,7 @@ function StationRowSkeleton() {
   return (
     <div className="grid items-center px-7 py-3.5 border-b border-border" style={{ gridTemplateColumns: GRID_COLS }}>
       <div className="flex items-center gap-3">
-        <Skeleton className="w-[68px] h-[52px] rounded-md" />
+        <Skeleton className="w-17 h-13 rounded-md" />
         <div className="space-y-1.5">
           <Skeleton className="h-3.5 w-36" />
           <Skeleton className="h-3 w-24" />
@@ -201,7 +201,7 @@ function StationRowSkeleton() {
   );
 }
 
-/* ── Main Component ── */
+/* â”€â”€ Main Component â”€â”€ */
 
 export default function ProductionDashboard() {
   const { t } = useTranslation();
@@ -275,7 +275,7 @@ export default function ProductionDashboard() {
   );
 
   const getExportConfig = useCallback((): ReportExportConfig => {
-    const dateStr = `${dateRange.start.toLocaleDateString()} — ${dateRange.end.toLocaleDateString()}`;
+    const dateStr = `${dateRange.start.toLocaleDateString()} â€” ${dateRange.end.toLocaleDateString()}`;
     const sections: ReportExportConfig["sections"] = [];
 
     sections.push({
@@ -303,12 +303,12 @@ export default function ProductionDashboard() {
       });
     }
 
-    if (defectData?.topDefects) {
+    if (defectData?.defectsByType?.length) {
       sections.push({
         title: "Top Defects",
         type: "table",
         tableHeaders: ["Code", "Name", "Count", "Rate"],
-        tableRows: defectData.topDefects.map((d: any) => [d.code || d.defectCode, d.name || d.defectName, d.count, `${d.percentage || d.rate || 0}%`]),
+        tableRows: defectData.defectsByType.map((d: any) => [d.code, d.name, d.ngCount, `${d.percentage || 0}%`]),
       });
     }
 
@@ -324,7 +324,7 @@ export default function ProductionDashboard() {
   return (
     <DashboardLayout>
       <div className="flex flex-col min-h-0">
-        {/* ── Summary Strip ── */}
+        {/* â”€â”€ Summary Strip â”€â”€ */}
         <div className="bg-card border-b border-border px-7 py-2.5 flex items-center gap-8 overflow-x-auto">
           {/* Live badge */}
           <div className="flex items-center gap-2 border border-emerald-500/30 bg-emerald-500/10 rounded-full px-3 py-1 shrink-0">
@@ -387,7 +387,7 @@ export default function ProductionDashboard() {
           </div>
         </div>
 
-        {/* ── Toolbar ── */}
+        {/* â”€â”€ Toolbar â”€â”€ */}
         <div className="bg-card border-b border-border px-7 py-2.5 flex items-center gap-3 overflow-x-auto">
           {/* Tabs */}
           <div className="flex gap-0.5 bg-background border border-border rounded-lg p-0.5 shrink-0">
@@ -445,7 +445,7 @@ export default function ProductionDashboard() {
                 >
                   <CalendarDays className="h-3 w-3" />
                   {datePreset === "custom" && customRange?.from
-                    ? `${customRange.from.toLocaleDateString("en-US", { month: "short", day: "numeric" })}${customRange.to ? ` – ${customRange.to.toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}`
+                    ? `${customRange.from.toLocaleDateString("en-US", { month: "short", day: "numeric" })}${customRange.to ? ` â€“ ${customRange.to.toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}`
                     : t("productionDashboard.custom", "Custom")}
                 </button>
               </PopoverTrigger>
@@ -474,7 +474,7 @@ export default function ProductionDashboard() {
               setSelectedLine("all");
             }}
           >
-            <SelectTrigger className="w-[160px] h-8 text-xs shrink-0">
+            <SelectTrigger className="w-40 h-8 text-xs shrink-0">
               <Filter className="h-3 w-3 mr-1.5 opacity-50" />
               <SelectValue placeholder={t("productionDashboard.allFactories", "All Factories")} />
             </SelectTrigger>
@@ -489,7 +489,7 @@ export default function ProductionDashboard() {
           </Select>
 
           <Select value={selectedLine} onValueChange={setSelectedLine}>
-            <SelectTrigger className="w-[160px] h-8 text-xs shrink-0">
+            <SelectTrigger className="w-40 h-8 text-xs shrink-0">
               <SelectValue placeholder={t("productionDashboard.allLines", "All Lines")} />
             </SelectTrigger>
             <SelectContent>
@@ -505,7 +505,7 @@ export default function ProductionDashboard() {
           <ReportExportButton getConfig={getExportConfig} />
         </div>
 
-        {/* ── Tab Content ── */}
+        {/* â”€â”€ Tab Content â”€â”€ */}
         <div className="overflow-auto flex-1">
           {activeTab === "station" && (
             <StationViewTab
@@ -513,6 +513,8 @@ export default function ProductionDashboard() {
               isLoading={isLoading}
               navigate={navigate}
               t={t}
+              datePreset={datePreset}
+              dateRange={dateRange}
             />
           )}
 
@@ -541,6 +543,8 @@ export default function ProductionDashboard() {
               isLoading={spcLoading}
               navigate={navigate}
               t={t}
+              datePreset={datePreset}
+              dateRange={dateRange}
             />
           )}
         </div>
@@ -556,20 +560,24 @@ export default function ProductionDashboard() {
   );
 }
 
-/* ══════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    Station View Tab (existing table)
-   ══════════════════════════════════════════════════════════ */
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 function StationViewTab({
   stationData,
   isLoading,
   navigate,
   t,
+  datePreset,
+  dateRange,
 }: {
   stationData: any[];
   isLoading: boolean;
   navigate: (path: string) => void;
   t: any;
+  datePreset: string;
+  dateRange: { start: Date; end: Date };
 }) {
   const [searchText, setSearchText] = useState("");
 
@@ -586,7 +594,7 @@ function StationViewTab({
   }, [stationData, searchText]);
 
   return (
-    <div className="min-w-[1100px]">
+    <div className="min-w-275">
       {/* Search Bar */}
       <div className="px-7 py-2.5 border-b border-border bg-card sticky top-0 z-20">
         <div className="relative max-w-xs">
@@ -603,7 +611,7 @@ function StationViewTab({
               onClick={() => setSearchText("")}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground text-xs"
             >
-              ✕
+              âœ•
             </button>
           )}
         </div>
@@ -611,7 +619,7 @@ function StationViewTab({
 
       {/* Table Header */}
       <div
-        className="grid px-7 py-2.5 border-b border-border bg-card sticky top-[41px] z-10"
+        className="grid px-7 py-2.5 border-b border-border bg-card sticky top-10.25 z-10"
         style={{ gridTemplateColumns: GRID_COLS }}
       >
         {[
@@ -674,7 +682,7 @@ function StationViewTab({
                 {/* Station Info */}
                 <div className="flex items-center gap-3 min-w-0">
                   {row.latestProductImage ? (
-                    <div className="w-[68px] h-[52px] rounded-md border border-border/50 overflow-hidden shrink-0 bg-[#252a38]">
+                    <div className="w-17 h-13 rounded-md border border-border/50 overflow-hidden shrink-0 bg-[#252a38]">
                       <img
                         src={row.latestProductImage}
                         alt={row.station.name}
@@ -705,9 +713,9 @@ function StationViewTab({
                       isNoData ? "text-muted-foreground/40" : yieldColorMap[fpyLevel]
                     }`}
                   >
-                    {isNoData ? "— %" : `${row.firstPassYield.toFixed(1)}%`}
+                    {isNoData ? "â€” %" : `${row.firstPassYield.toFixed(1)}%`}
                   </span>
-                  <div className="h-[3px] bg-border rounded-sm overflow-hidden mt-1 w-full">
+                  <div className="h-0.75 bg-border rounded-sm overflow-hidden mt-1 w-full">
                     <div
                       className={`h-full rounded-sm transition-all duration-1000 ease-out ${yieldBarBg[fpyLevel]}`}
                       style={{ width: isNoData ? "0%" : `${Math.min(row.firstPassYield, 100)}%` }}
@@ -730,8 +738,8 @@ function StationViewTab({
                     }`}
                   >
                     {isNoData ? "--" : `${Math.abs(row.yieldChange).toFixed(1)}%`}
-                    {changeDir === "up" && <span className="text-[10px]">▲</span>}
-                    {changeDir === "down" && <span className="text-[10px]">▼</span>}
+                    {changeDir === "up" && <span className="text-[10px]">â–²</span>}
+                    {changeDir === "down" && <span className="text-[10px]">â–¼</span>}
                   </span>
                   <span className="text-[10px] text-muted-foreground/50 leading-none mt-0.5">
                     Point change
@@ -745,9 +753,9 @@ function StationViewTab({
                       isNoData ? "text-muted-foreground/40" : ""
                     }`}
                   >
-                    {isNoData ? "— %" : `${row.finalYield.toFixed(1)}%`}
+                    {isNoData ? "â€” %" : `${row.finalYield.toFixed(1)}%`}
                   </span>
-                  <div className="h-[3px] bg-border rounded-sm overflow-hidden mt-1 w-full">
+                  <div className="h-0.75 bg-border rounded-sm overflow-hidden mt-1 w-full">
                     <div
                       className={`h-full rounded-sm transition-all duration-1000 ease-out ${yieldBarBg[fyLevel]}`}
                       style={{ width: isNoData ? "0%" : `${Math.min(row.finalYield, 100)}%` }}
@@ -777,7 +785,7 @@ function StationViewTab({
                           : ""
                     }`}
                   >
-                    {isNoData ? "— %" : `${row.retestRate.toFixed(1)}%`}
+                    {isNoData ? "â€” %" : `${row.retestRate.toFixed(1)}%`}
                   </span>
                   <span className="text-[10px] text-muted-foreground/50 leading-none mt-0.5">Retests</span>
                 </div>
@@ -798,17 +806,17 @@ function StationViewTab({
                           >
                             [{tag.label}]
                           </span>
-                          <span className="text-muted-foreground truncate max-w-[130px]">
+                          <span className="text-muted-foreground truncate max-w-32.5">
                             {defect.name}
                           </span>
-                          <span className="font-mono font-semibold min-w-[32px] text-right">
+                          <span className="font-mono font-semibold min-w-8 text-right">
                             {defect.percentage.toFixed(1)}%
                           </span>
                           <button
                             onClick={() => navigate(`/correlation-analysis?pointDefId=${defect.pointDefId}`)}
                             className="text-[10px] text-purple-400 hover:underline whitespace-nowrap shrink-0"
                           >
-                            Correlate ↗
+                            Correlate â†—
                           </button>
                         </div>
                       );
@@ -819,7 +827,7 @@ function StationViewTab({
                 {/* View Button */}
                 <div className="flex justify-end">
                   <button
-                    onClick={() => navigate(`/station-analysis/${row.station.id}`)}
+                    onClick={() => navigate(`/station-analysis/${row.station.id}?dp=${datePreset}&from=${dateRange.start.toISOString()}&to=${dateRange.end.toISOString()}`)}
                     className="bg-purple-600 hover:bg-purple-700 active:translate-y-0 text-white rounded-md px-3.5 py-2 text-xs font-semibold transition-all hover:-translate-y-px whitespace-nowrap"
                   >
                     {t("productionDashboard.viewTopIssues", "View top issues")}
@@ -834,9 +842,9 @@ function StationViewTab({
   );
 }
 
-/* ══════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    Defect Analysis Tab
-   ══════════════════════════════════════════════════════════ */
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 function DefectAnalysisTab({
   data,
@@ -855,7 +863,7 @@ function DefectAnalysisTab({
         {[1, 2, 3, 4].map(i => (
           <div key={i} className="bg-card border border-border rounded-xl p-6">
             <Skeleton className="h-5 w-40 mb-4" />
-            <Skeleton className="h-[260px] w-full" />
+            <Skeleton className="h-65 w-full" />
           </div>
         ))}
       </div>
@@ -924,7 +932,7 @@ function DefectAnalysisTab({
           <h3 className="text-sm font-semibold mb-4">
             {t("productionDashboard.topDefectTypes", "Top Defect Types")}
           </h3>
-          <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
+          <div className="space-y-1.5 max-h-75 overflow-y-auto">
             {defectsByType.map((d: any, i: number) => {
               const tag = getDefectTagStyle(d.code, d.name);
               return (
@@ -993,9 +1001,9 @@ function DefectAnalysisTab({
   );
 }
 
-/* ══════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    Trend Tab
-   ══════════════════════════════════════════════════════════ */
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 function TrendTab({
   data,
@@ -1024,8 +1032,8 @@ function TrendTab({
     return (
       <div className="p-7 space-y-6">
         <Skeleton className="h-8 w-60" />
-        <Skeleton className="h-[350px] w-full rounded-xl" />
-        <Skeleton className="h-[250px] w-full rounded-xl" />
+        <Skeleton className="h-87.5 w-full rounded-xl" />
+        <Skeleton className="h-62.5 w-full rounded-xl" />
       </div>
     );
   }
@@ -1129,20 +1137,24 @@ function getISOWeek(d: Date): number {
   return Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
 }
 
-/* ══════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    SPC Tab
-   ══════════════════════════════════════════════════════════ */
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 function SpcTab({
   data,
   isLoading,
   navigate,
   t,
+  datePreset,
+  dateRange,
 }: {
   data: any[];
   isLoading: boolean;
   navigate: (path: string) => void;
   t: any;
+  datePreset: string;
+  dateRange: { start: Date; end: Date };
 }) {
   const spcRows = Array.isArray(data) ? data : [];
 
@@ -1155,7 +1167,7 @@ function SpcTab({
             <div className="grid grid-cols-5 gap-4">
               {[1, 2, 3, 4, 5].map(j => <Skeleton key={j} className="h-16" />)}
             </div>
-            <Skeleton className="h-[120px] mt-4" />
+            <Skeleton className="h-30 mt-4" />
           </div>
         ))}
       </div>
@@ -1177,12 +1189,12 @@ function SpcTab({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <SpcKpiCard
           label="Avg Cpk"
-          value={spcRows.length > 0 ? (spcRows.reduce((s: number, r: any) => s + (r?.cpk || 0), 0) / spcRows.length).toFixed(2) : "—"}
+          value={spcRows.length > 0 ? (spcRows.reduce((s: number, r: any) => s + (r?.cpk || 0), 0) / spcRows.length).toFixed(2) : "â€”"}
           color={spcRows.some((r: any) => r?.cpk < 1) ? "text-red-500" : "text-emerald-500"}
         />
         <SpcKpiCard
           label="Avg Yield"
-          value={spcRows.length > 0 ? `${(spcRows.reduce((s: number, r: any) => s + (r?.fpy || 0), 0) / spcRows.length).toFixed(1)}%` : "—"}
+          value={spcRows.length > 0 ? `${(spcRows.reduce((s: number, r: any) => s + (r?.fpy || 0), 0) / spcRows.length).toFixed(1)}%` : "â€”"}
           color="text-blue-400"
         />
         <SpcKpiCard
@@ -1221,10 +1233,10 @@ function SpcTab({
               )}
             </div>
             <button
-              onClick={() => navigate(`/station-analysis/${row?.stationId}`)}
+              onClick={() => navigate(`/station-analysis/${row?.stationId}?dp=${datePreset}&from=${dateRange.start.toISOString()}&to=${dateRange.end.toISOString()}`)}
               className="text-[11px] text-purple-400 hover:underline"
             >
-              Deep analysis →
+              Deep analysis â†’
             </button>
           </div>
 

@@ -119,27 +119,13 @@ export const pdfReportRouter = router({
     .mutation(async ({ input }) => {
       const { startDate, endDate, factoryId, workshopId, lineId } = input;
 
-      // Get dashboard stats
-      const stats = await db.getDashboardStats({
-        startDate,
-        endDate,
-        factoryId,
-        workshopId,
-      });
-
-      // Get daily trend
-      const trendData = await db.getNGTrendByDay({ startDate, endDate });
-
-      // Get top NG points
-      const topNG = await db.getTopNGMeasurementPoints({ startDate, endDate, limit: 10 });
-
-      // Get machine stats
-      const topMachines = await db.getTopBottomMachines({
-        startDate,
-        endDate,
-        factoryId,
-        workshopId,
-      });
+      // Run all 4 data queries in parallel instead of sequentially
+      const [stats, trendData, topNG, topMachines] = await Promise.all([
+        db.getDashboardStats({ startDate, endDate, factoryId, workshopId }),
+        db.getNGTrendByDay({ startDate, endDate }),
+        db.getTopNGMeasurementPoints({ startDate, endDate, limit: 10 }),
+        db.getTopBottomMachines({ startDate, endDate, factoryId, workshopId }),
+      ]);
 
       // Build report data
       const data: QualityReportData = {

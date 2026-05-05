@@ -97,9 +97,32 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
   // Step 3: Check patterns for recurring alerts
   const suggestedAction = await checkPatterns(db, event);
 
+  // Step 3.5: AI reasoning enrichment (non-blocking)
+  const aiReasoning = await enrichRoutingWithAI(event, targets, suggestedAction)
+    .catch(() => null);
+
   // Step 4: Send notifications
   for (const target of targets) {
     await sendSmartNotification(target, event);
+  }
+
+  // Build AI analysis payload
+  const aiAnalysisPayload: Record<string, unknown> = {
+    factors: [],
+    recommendations: suggestedAction ? [suggestedAction] : [],
+    dataPoints: 0,
+    modelUsed: "smart-alert-router",
+  };
+
+  if (aiReasoning) {
+    aiAnalysisPayload.reasoning = aiReasoning.reasoning;
+    aiAnalysisPayload.suggestedRootCause = aiReasoning.suggestedRootCause;
+    aiAnalysisPayload.urgencyExplanation = aiReasoning.urgencyExplanation;
+    aiAnalysisPayload.recommendations = [
+      ...(suggestedAction ? [suggestedAction] : []),
+      ...aiReasoning.recommendations,
+    ];
+    aiAnalysisPayload.modelUsed = "smart-alert-router+gguf";
   }
 
   // Step 5: Record in predictive_alerts table
@@ -116,12 +139,7 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
       currentValue: event.data.currentValue ? String(event.data.currentValue) : null,
       threshold: event.data.threshold ? String(event.data.threshold) : null,
       confidenceScore: event.data.confidence ? String(event.data.confidence) : null,
-      aiAnalysis: {
-        factors: [],
-        recommendations: suggestedAction ? [suggestedAction] : [],
-        dataPoints: 0,
-        modelUsed: "smart-alert-router",
-      },
+      aiAnalysis: aiAnalysisPayload,
       status: "ACTIVE",
       notificationSent: true,
       notificationSentAt: new Date(),
@@ -143,7 +161,7 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
     consolidated,
     consolidationGroup: consolidated ? consolidationKey : undefined,
     escalationLevel: "L1",
-    suggestedAction: suggestedAction ?? undefined,
+    suggestedAction: aiReasoning?.reasoning || suggestedAction || undefined,
   };
 }
 
@@ -396,6 +414,70 @@ export async function acknowledgeAlert(
 
   pendingAlerts.delete(alertId);
   return true;
+}
+
+// ─── AI Reasoning Layer ──────────────────────────────────────────────────────
+
+interface AiRoutingReasoning {
+  reasoning: string;
+  suggestedRootCause: string;
+  urgencyExplanation: string;
+  recommendations: string[];
+}
+
+/**
+ * Non-blocking GGUF reasoning for smart alert routing.
+ * Provides context-aware explanation of severity, root cause hypothesis,
+ * and actionable recommendations.
+ */
+async function enrichRoutingWithAI(
+  event: SmartAlertEvent,
+  targets: RouteTarget[],
+  patternSuggestion: string | null
+): Promise<AiRoutingReasoning | null> {
+  try {
+    const { generateText } = await import("./aiGgufEngine");
+
+    const prompt = `Manufacturing alert routing analysis:
+- Alert Type: ${event.type}
+- Severity: ${event.severity}
+- Message: ${event.message}
+- Data: ${JSON.stringify(event.data)}
+- Routed to: ${targets.map(t => `${t.role} (${t.reason})`).join("; ") || "No targets"}
+- Historical pattern: ${patternSuggestion || "No recurring pattern detected"}
+
+Analyze this alert and respond in JSON format:
+{
+  "reasoning": "Why this severity level is appropriate and who should handle it",
+  "suggestedRootCause": "Most likely root cause based on alert type and data",
+  "urgencyExplanation": "How urgent this is and what happens if not addressed",
+  "recommendations": ["Immediate action 1", "Follow-up action 2"]
+}`;
+
+    const result = await generateText({
+      systemPrompt:
+        "You are an expert alert routing system in a manufacturing factory with AOI inspection. " +
+        "Analyze alerts and provide concise, actionable reasoning for routing decisions. Be specific to manufacturing context.",
+      prompt,
+      maxTokens: 256,
+      temperature: 0.3,
+      jsonMode: true,
+    });
+
+    const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    return {
+      reasoning: parsed.reasoning || "",
+      suggestedRootCause: parsed.suggestedRootCause || "",
+      urgencyExplanation: parsed.urgencyExplanation || "",
+      recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations.slice(0, 5) : [],
+    };
+  } catch (err) {
+    console.log("[SmartAlert] AI reasoning skipped:", (err as Error).message);
+    return null;
+  }
 }
 
 // ─── Defect Spike Detection ──────────────────────────────────────────────────

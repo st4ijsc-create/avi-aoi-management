@@ -9,7 +9,6 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import fs from "fs";
-import path from "path";
 
 // ─── Service imports ──────────────────────────────────────────
 import {
@@ -19,7 +18,6 @@ import {
 } from "../services/aiVisionLanguage";
 
 import {
-  extractEmbedding,
   findSimilarById,
   searchByImage,
 } from "../services/aiImageEmbedding";
@@ -39,12 +37,11 @@ import {
   generateExecutiveSummary,
 } from "../services/aiReportGenerator";
 
+import { resolveSafeImagePath } from "../utils/safeImagePath";
+
 // ─── Helpers ──────────────────────────────────────────────────
 function resolveImagePath(imageKey: string): string {
-  const uploadsRoot = process.env.LOCAL_STORAGE_DIR
-    ? path.resolve(process.env.LOCAL_STORAGE_DIR)
-    : path.join(process.cwd(), "uploads");
-  return path.join(uploadsRoot, imageKey);
+  return resolveSafeImagePath(imageKey);
 }
 
 function loadImage(imageKey: string): Buffer {
@@ -258,7 +255,6 @@ export const aiAnalysisHubRouter = router({
     }))
     .mutation(async ({ input }) => {
       const imageBuffer = await fs.promises.readFile(resolveImagePath(input.imageKey));
-      const embedding = await extractEmbedding(input.modelId, imageBuffer);
       const results = await searchByImage(
         input.modelId,
         imageBuffer,

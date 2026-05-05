@@ -3,6 +3,8 @@ import { eq, and, desc, asc, gte, lte, gt, lt, like, sql, or, isNull, isNotNull,
 import {
   productInspections, InsertProductInspection,
   measurementResults, InsertMeasurementResult,
+  measurementPointDefs,
+  productModels,
   alertHistory,
   mqttAlertHistory,
   machines,
@@ -165,7 +167,30 @@ export async function createMeasurementResults(dataList: InsertMeasurementResult
 export async function getMeasurementResultsByInspection(inspectionId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(measurementResults)
+  return db.select({
+    id: measurementResults.id,
+    inspectionId: measurementResults.inspectionId,
+    pointDefId: measurementResults.pointDefId,
+    measuredValue: measurementResults.measuredValue,
+    measuredValueText: measurementResults.measuredValueText,
+    result: measurementResults.result,
+    imageUrl: measurementResults.imageUrl,
+    imageKey: measurementResults.imageKey,
+    remark: measurementResults.remark,
+    aiAnalysisResult: measurementResults.aiAnalysisResult,
+    aiConfidence: measurementResults.aiConfidence,
+    aiComparisonScore: measurementResults.aiComparisonScore,
+    createdAt: measurementResults.createdAt,
+    // Point def info
+    pointCode: measurementPointDefs.code,
+    pointName: measurementPointDefs.name,
+    // Product info
+    productModelId: measurementPointDefs.productModelId,
+    productCode: productModels.code,
+    productName: productModels.name,
+  }).from(measurementResults)
+    .leftJoin(measurementPointDefs, eq(measurementResults.pointDefId, measurementPointDefs.id))
+    .leftJoin(productModels, eq(measurementPointDefs.productModelId, productModels.id))
     .where(eq(measurementResults.inspectionId, inspectionId))
     .orderBy(measurementResults.id);
 }

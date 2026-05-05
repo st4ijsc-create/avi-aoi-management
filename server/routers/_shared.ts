@@ -5,6 +5,8 @@ import * as db from "../db";
 import { storagePut } from "../storage";
 import { protectedProcedure } from "../_core/trpc";
 
+export { protectedProcedure };
+
 export type PointDefRecord = Awaited<ReturnType<typeof db.getMeasurementPointDefById>>;
 export type PointDefCache = Map<string, PointDefRecord | null>;
 
@@ -143,7 +145,7 @@ export async function uploadProductReferenceImage(
   imageBase64?: string,
   mimeType?: string,
   imageUrl?: string,
-) {
+): Promise<{ url: string; key: string | undefined; imageWidth?: number; imageHeight?: number } | undefined> {
   if (imageUrl && imageUrl.trim().length > 0) {
     return { url: imageUrl.trim(), key: undefined as string | undefined };
   }
@@ -170,7 +172,22 @@ export async function uploadProductReferenceImage(
     const ext = inferImageExtension(actualMime);
     const fileKey = `product-models/${productModelId}/ref-${Date.now()}-${nanoid(6)}.${ext}`;
     const upload = await storagePut(fileKey, buffer, actualMime);
-    return upload;
+
+    // Auto-extract image dimensions using sharp
+    let imageWidth: number | undefined;
+    let imageHeight: number | undefined;
+    try {
+      const sharp = (await import("sharp")).default;
+      const metadata = await sharp(buffer).metadata();
+      if (metadata.width && metadata.height) {
+        imageWidth = metadata.width;
+        imageHeight = metadata.height;
+      }
+    } catch {
+      // sharp not available or invalid image — skip dimension extraction
+    }
+
+    return { ...upload, imageWidth, imageHeight };
   } catch (error) {
     throw new TRPCError({ code: "BAD_REQUEST", message: `Invalid image payload for product model ${productModelId}` });
   }

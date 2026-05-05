@@ -12,7 +12,7 @@
 import Aedes from 'aedes';
 import { createServer } from 'aedes-server-factory';
 import { drizzle } from 'drizzle-orm/mysql2';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, lt } from 'drizzle-orm';
 import * as schema from '../../drizzle/schema';
 import mqtt, { MqttClient } from 'mqtt';
 
@@ -67,6 +67,10 @@ interface NGAlertPayload {
     expectedValue?: string;
     imageUrl?: string;
     referenceImageUrl?: string;
+    workstationId?: number;
+    normalizedX?: number;
+    normalizedY?: number;
+    normalizedRadius?: number;
   }>;
   totalNG: number;
   imageUrl?: string;
@@ -107,6 +111,7 @@ let mqttPortConflictDetected = false;
 
 // External MQTT client (for cloud broker)
 let externalMqttClient: MqttClient | null = null;
+let staleClientTimer: NodeJS.Timeout | null = null;
 
 // Configuration
 const MQTT_PORT = parseInt(process.env.MQTT_PORT || '1883');
@@ -210,6 +215,9 @@ export function initMqttBroker() {
 
   // Initialize external MQTT client if enabled
   initExternalMqttClient();
+
+  // Start stale client detection
+  startStaleClientChecker();
 }
 
 /**
@@ -298,24 +306,31 @@ function setupEventHandlers() {
         const mqttClient = existingClient[0];
         
         // Check if approved
-        if (mqttClient.approvalStatus === 'REJECTED') {
+        if (mqttClient.approvalStatus === 'REJECTED' && mqttClient.isActive) {
           callback({ returnCode: 5 } as any, false);
           return;
         }
 
+        // Re-activate soft-deleted client as PENDING so it reappears in the UI
+        const reactivateFields: Record<string, any> = {
+          clientId: client.id,
+          deviceName: deviceName || mqttClient.deviceName,
+          deviceModel: deviceModel || mqttClient.deviceModel,
+          connectionStatus: 'ONLINE',
+          lastConnectedAt: new Date(),
+          lastHeartbeat: new Date(),
+        };
+        if (!mqttClient.isActive) {
+          reactivateFields.isActive = true;
+          reactivateFields.approvalStatus = 'PENDING';
+        }
+
         // Update client info
         await db!.update(schema.mqttClients)
-          .set({
-            clientId: client.id,
-            deviceName: deviceName || mqttClient.deviceName,
-            deviceModel: deviceModel || mqttClient.deviceModel,
-            connectionStatus: 'ONLINE',
-            lastConnectedAt: new Date(),
-            lastHeartbeat: new Date(),
-          })
+          .set(reactivateFields)
           .where(eq(schema.mqttClients.id, mqttClient.id));
 
-        console.log(`[MQTT] Client reconnected: ${client.id} (${deviceId})`);
+        console.log(`[MQTT] Client reconnected${!mqttClient.isActive ? ' (re-activated)' : ''}: ${client.id} (${deviceId})`);
         callback(null, true);
       } else {
         // New client - create pending registration
@@ -340,6 +355,16 @@ function setupEventHandlers() {
       callback({ returnCode: 4 } as any, false);
     }
   };
+
+  // Client-level errors (e.g., protocol violations, write failures)
+  aedes.on('clientError', (client, error) => {
+    console.error(`[MQTT] Client error for ${client.id}:`, error.message);
+  });
+
+  // Connection-level errors (before client is fully established)
+  aedes.on('connectionError', (client, error) => {
+    console.error(`[MQTT] Connection error for ${client.id}:`, error.message);
+  });
 
   // Client connected
   aedes.on('client', async (client) => {
@@ -413,11 +438,251 @@ function setupEventHandlers() {
       console.error('[MQTT] Error updating heartbeat:', error);
     }
   });
+
+  // Handle published messages from clients (DEVICE_INFO, ACK, etc.)
+  aedes.on('publish', async (packet, client) => {
+    // Ignore system messages (starting with $) and messages without a client
+    if (!client || packet.topic.startsWith('$')) return;
+
+    try {
+      // Handle DEVICE_INFO messages: avi/client/{deviceId}/info
+      const deviceInfoMatch = packet.topic.match(/^avi\/client\/([^/]+)\/info$/);
+      if (deviceInfoMatch) {
+        const payload = JSON.parse(packet.payload.toString());
+        if (payload.type === 'DEVICE_INFO') {
+          const deviceId = deviceInfoMatch[1];
+          const updateData: Record<string, any> = {
+            updatedAt: new Date(),
+          };
+          if (payload.brand) updateData.brand = payload.brand;
+          if (payload.manufacturer) updateData.manufacturer = payload.manufacturer;
+          if (payload.osVersion) updateData.osVersion = payload.osVersion;
+          if (payload.appVersion) updateData.appVersion = payload.appVersion;
+          if (payload.screenResolution) updateData.screenResolution = payload.screenResolution;
+          if (payload.networkType) updateData.networkType = payload.networkType;
+
+          // Prefer app-reported IP (real WiFi IP from device) over TCP connection IP
+          if (payload.ipAddress && payload.ipAddress !== 'Unknown') {
+            updateData.ipAddress = payload.ipAddress;
+          } else {
+            // Fallback to TCP connection source (may be NAT/adb reverse address)
+            const remoteAddress = (client.conn as any)?.remoteAddress;
+            if (remoteAddress) {
+              updateData.ipAddress = remoteAddress.replace(/^::ffff:/, '');
+            }
+          }
+
+          // Update device name from app (real device name instead of hardcoded)
+          if (payload.deviceName && payload.deviceName !== 'FactoryAlertApp') {
+            updateData.deviceName = payload.deviceName;
+          }
+
+          await db!.update(schema.mqttClients)
+            .set(updateData)
+            .where(eq(schema.mqttClients.deviceId, deviceId));
+
+          console.log(`[MQTT] Updated device info for ${deviceId}:`, Object.keys(updateData).join(', '));
+        }
+        return;
+      }
+
+      // Handle CONFIGURE_ACK messages: avi/client/{deviceId}/ack
+      const ackMatch = packet.topic.match(/^avi\/client\/([^/]+)\/ack$/);
+      if (ackMatch) {
+        const payload = JSON.parse(packet.payload.toString());
+        if (payload.type === 'CONFIGURE_ACK') {
+          console.log(`[MQTT] Configure ACK from ${ackMatch[1]}: command=${payload.commandId} status=${payload.status}`);
+          // Look up client for targetClientId
+          const ackClient = await db!.select({ id: schema.mqttClients.id, stationId: schema.mqttClients.stationId })
+            .from(schema.mqttClients)
+            .where(eq(schema.mqttClients.deviceId, ackMatch[1]))
+            .limit(1);
+          // Log the ACK
+          await db!.insert(schema.mqttMessageLogs).values({
+            messageType: 'COMMAND',
+            topic: packet.topic,
+            payload: payload,
+            targetClientId: ackClient[0]?.id ?? null,
+            stationId: ackClient[0]?.stationId ?? null,
+            deliveryStatus: payload.status === 'applied' ? 'DELIVERED' : 'FAILED',
+            deliveredAt: new Date(),
+            errorMessage: payload.error || null,
+          });
+        }
+        return;
+      }
+    } catch (error) {
+      console.error('[MQTT] Error handling published message:', error);
+    }
+  });
 }
 
 /**
- * Publish NG alert to relevant clients with enhanced payload structure
+ * Send a CONFIGURE command to a specific device via MQTT
  */
+export async function sendConfigureCommand(deviceId: string, command: {
+  stationId?: number;
+  processId?: number;
+  topics?: string[];
+  settings?: Record<string, any>;
+}): Promise<{ success: boolean; commandId: string }> {
+  if (!aedes || !db) {
+    throw new Error('MQTT broker not initialized');
+  }
+
+  const commandId = `cfg-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const topic = `avi/client/${deviceId}/configure`;
+  const payload = {
+    type: 'CONFIGURE',
+    commandId,
+    ...command,
+    timestamp: new Date().toISOString(),
+  };
+
+  return new Promise((resolve, reject) => {
+    const packet = {
+      topic,
+      payload: Buffer.from(JSON.stringify(payload)),
+      qos: 1 as const,
+      retain: false,
+    };
+
+    aedes!.publish(packet as any, (err) => {
+      if (err) {
+        console.error(`[MQTT] Error sending configure to ${deviceId}:`, err);
+        reject(err);
+        return;
+      }
+
+      console.log(`[MQTT] Sent CONFIGURE to ${deviceId}: ${commandId}`);
+
+      // Look up client for targetClientId
+      db!.select({ id: schema.mqttClients.id, stationId: schema.mqttClients.stationId })
+        .from(schema.mqttClients)
+        .where(eq(schema.mqttClients.deviceId, deviceId))
+        .limit(1)
+        .then(clients => {
+          return db!.insert(schema.mqttMessageLogs).values({
+            messageType: 'COMMAND',
+            topic,
+            payload,
+            targetClientId: clients[0]?.id ?? null,
+            stationId: clients[0]?.stationId ?? null,
+            deliveryStatus: 'SENT',
+          });
+        })
+        .catch(logErr => console.error('[MQTT] Error logging command:', logErr));
+
+      resolve({ success: true, commandId });
+    });
+  });
+}
+
+/**
+ * Send a SOFTWARE_UPDATE command to a specific device via MQTT
+ * Separate from CONFIGURE — dedicated message type for update operations
+ */
+export async function sendSoftwareUpdateCommand(deviceId: string, command: 'CHECK_UPDATE' | 'FORCE_UPDATE', data?: Record<string, any>): Promise<{ success: boolean; commandId: string }> {
+  if (!aedes || !db) {
+    throw new Error('MQTT broker not initialized');
+  }
+
+  const commandId = `upd-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const topic = `avi/client/${deviceId}/configure`;
+  const payload = {
+    type: 'SOFTWARE_UPDATE',
+    commandId,
+    command,
+    ...(data || {}),
+    timestamp: new Date().toISOString(),
+  };
+
+  return new Promise((resolve, reject) => {
+    const packet = {
+      topic,
+      payload: Buffer.from(JSON.stringify(payload)),
+      qos: 1 as const,
+      retain: false,
+    };
+
+    aedes!.publish(packet as any, (err) => {
+      if (err) {
+        console.error(`[MQTT] Error sending SOFTWARE_UPDATE to ${deviceId}:`, err);
+        reject(err);
+        return;
+      }
+
+      console.log(`[MQTT] Sent SOFTWARE_UPDATE (${command}) to ${deviceId}: ${commandId}`);
+
+      // Look up client for targetClientId
+      db!.select({ id: schema.mqttClients.id, stationId: schema.mqttClients.stationId })
+        .from(schema.mqttClients)
+        .where(eq(schema.mqttClients.deviceId, deviceId))
+        .limit(1)
+        .then(clients => {
+          return db!.insert(schema.mqttMessageLogs).values({
+            messageType: 'COMMAND',
+            topic,
+            payload,
+            targetClientId: clients[0]?.id ?? null,
+            stationId: clients[0]?.stationId ?? null,
+            deliveryStatus: 'SENT',
+          });
+        })
+        .catch(logErr => console.error('[MQTT] Error logging command:', logErr));
+
+      resolve({ success: true, commandId });
+    });
+  });
+}
+
+/**
+ * Publish a FACTORY_ALERT_UPDATE broadcast to all FactoryAlertSystem devices
+ * Topic: avi/factory-alert/update
+ */
+export async function publishFactoryAlertUpdate(versionInfo: Record<string, any>): Promise<{ success: boolean }> {
+  if (!aedes) {
+    throw new Error('MQTT broker not initialized');
+  }
+
+  const topic = 'avi/factory-alert/update';
+  const payload = {
+    type: 'FACTORY_ALERT_UPDATE',
+    ...versionInfo,
+    timestamp: new Date().toISOString(),
+  };
+
+  return new Promise((resolve, reject) => {
+    const packet = {
+      topic,
+      payload: Buffer.from(JSON.stringify(payload)),
+      qos: 1 as const,
+      retain: false,
+    };
+
+    aedes!.publish(packet as any, (err) => {
+      if (err) {
+        console.error(`[MQTT] Error publishing factory alert update:`, err);
+        reject(err);
+        return;
+      }
+
+      console.log(`[MQTT] Published FACTORY_ALERT_UPDATE to ${topic}`);
+
+      if (db) {
+        db.insert(schema.mqttMessageLogs).values({
+          messageType: 'COMMAND',
+          topic,
+          payload,
+          deliveryStatus: 'SENT',
+        }).catch(logErr => console.error('[MQTT] Error logging update broadcast:', logErr));
+      }
+
+      resolve({ success: true });
+    });
+  });
+}
+
 export async function publishNGAlert(data: {
   machineId: number;
   machineName: string;
@@ -444,6 +709,10 @@ export async function publishNGAlert(data: {
     expectedValue?: string | number | null;
     imageUrl?: string;
     referenceImageUrl?: string;
+    workstationId?: number;
+    normalizedX?: number;
+    normalizedY?: number;
+    normalizedRadius?: number;
   }>;
   // Main error image URL
   errorImageUrl?: string;
@@ -559,13 +828,17 @@ export async function publishNGAlert(data: {
         code: data.machineCode,
       },
       ngPoints: data.measurementResults.filter(m => m.result === 'NG').map((m, i) => ({
-        pointId: m.pointId || i,
+        pointId: m.pointId ?? i,
         pointName: m.pointCode,
         result: m.result,
         actualValue: m.value?.toString(),
         expectedValue: m.expectedValue?.toString(),
         imageUrl: (ngAlertConfig?.includePointImages !== false) ? m.imageUrl : undefined,
         referenceImageUrl: (ngAlertConfig?.includeReferenceImages !== false) ? m.referenceImageUrl : undefined,
+        workstationId: m.workstationId,
+        normalizedX: m.normalizedX,
+        normalizedY: m.normalizedY,
+        normalizedRadius: m.normalizedRadius,
       })),
       totalNG: ngCount,
       imageUrl: (ngAlertConfig?.includeImages !== false) ? mainImageUrl : undefined,
@@ -579,13 +852,16 @@ export async function publishNGAlert(data: {
     }
 
     // ALWAYS publish to local MQTT broker for real-time error delivery
+    // retain: true ensures reconnected clients receive the last NG alert
+    // (prevents message loss during brief reconnect windows)
     {
       const message = JSON.stringify(payload);
+      const retainFlag = ngAlertConfig?.retain ?? true;
       aedes.publish({
         topic,
         payload: Buffer.from(message),
         qos: (ngAlertConfig?.qos ?? 1) as 0 | 1 | 2,
-        retain: ngAlertConfig?.retain ?? false,
+        retain: retainFlag,
         cmd: 'publish',
         dup: false,
       }, (error) => {
@@ -593,7 +869,7 @@ export async function publishNGAlert(data: {
           console.error('[MQTT] Publish error:', error);
         }
       });
-      console.log(`[MQTT] Published NG alert to ${topic}`);
+      console.log(`[MQTT] Published NG alert to ${topic} (retain=${retainFlag})`);
     }
 
     // Log message
@@ -940,6 +1216,55 @@ export async function sendClientCommand(
 }
 
 /**
+ * Periodically detect and mark stale MQTT clients.
+ * Clients with connectionStatus='ONLINE' whose lastHeartbeat is older than
+ * STALE_THRESHOLD_MS are marked as 'DISCONNECTED' (silent disconnect on bad WiFi).
+ */
+const STALE_CHECK_INTERVAL_MS = 3 * 60 * 1000; // Check every 3 minutes
+const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes without heartbeat = stale
+
+function startStaleClientChecker() {
+  if (staleClientTimer) return; // Already running
+
+  staleClientTimer = setInterval(async () => {
+    if (!db) return;
+
+    try {
+      const threshold = new Date(Date.now() - STALE_THRESHOLD_MS);
+      const result = await db.update(schema.mqttClients)
+        .set({
+          connectionStatus: 'DISCONNECTED',
+          lastDisconnectedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.mqttClients.connectionStatus, 'ONLINE'),
+            lt(schema.mqttClients.lastHeartbeat, threshold)
+          )
+        );
+
+      // Log only when stale clients are found
+      const affected = (result as any)?.[0]?.affectedRows ?? (result as any)?.rowCount ?? 0;
+      if (affected > 0) {
+        console.log(`[MQTT] Stale client check: marked ${affected} client(s) as DISCONNECTED`);
+      }
+    } catch (error) {
+      console.error('[MQTT] Error in stale client check:', error);
+    }
+  }, STALE_CHECK_INTERVAL_MS);
+
+  console.log('[MQTT] Stale client checker started (interval: 3min, threshold: 5min)');
+}
+
+function stopStaleClientChecker() {
+  if (staleClientTimer) {
+    clearInterval(staleClientTimer);
+    staleClientTimer = null;
+    console.log('[MQTT] Stale client checker stopped');
+  }
+}
+
+/**
  * Get connected clients count
  */
 export function getConnectedClientsCount(): number {
@@ -958,6 +1283,7 @@ export function isMqttRunning(): boolean {
  * Shutdown MQTT broker
  */
 export function shutdownMqttBroker(): Promise<void> {
+  stopStaleClientChecker();
   return new Promise((resolve) => {
     if (mqttServer) {
       mqttServer.close(() => {

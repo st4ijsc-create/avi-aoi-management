@@ -1,0 +1,15 @@
+{"timestamp":"2026-05-05T06:05:20.548Z","endpointPath":"/health","url":"http://localhost:3000/health","ok":false,"status":0,"latencyMs":48,"bodySize":0,"error":"fetch failed"}
+{"timestamp":"2026-05-05T06:05:20.548Z","endpointPath":"/api/network/health","url":"http://localhost:3000/api/network/health","ok":false,"status":0,"latencyMs":2,"bodySize":0,"error":"fetch failed"}
+{"timestamp":"2026-05-05T06:05:20.548Z","endpointPath":"/ai-inspection-analytics","url":"http://localhost:3000/ai-inspection-analytics","ok":false,"status":0,"latencyMs":2,"bodySize":0,"error":"fetch failed"}
+{"timestamp":"2026-05-05T06:05:50.622Z","endpointPath":"/health","url":"http://localhost:3000/health","ok":false,"status":0,"latencyMs":6,"bodySize":0,"error":"fetch failed"}
+{"timestamp":"2026-05-05T06:05:50.622Z","endpointPath":"/api/network/health","url":"http://localhost:3000/api/network/health","ok":false,"status":0,"latencyMs":6,"bodySize":0,"error":"fetch failed"}
+{"timestamp":"2026-05-05T06:05:50.622Z","endpointPath":"/ai-inspection-analytics","url":"http://localhost:3000/ai-inspection-analytics","ok":false,"status":0,"latencyMs":5,"bodySize":0,"error":"fetch failed"}
+{"timestamp":"2026-05-05T06:06:20.654Z","endpointPath":"/health","url":"http://localhost:3000/health","ok":false,"status":0,"latencyMs":5,"bodySize":0,"error":"fetch failed"}
+{"timestamp":"2026-05-05T06:06:20.654Z","endpointPath":"/api/network/health","url":"http://localhost:3000/api/network/health","ok":false,"status":0,"latencyMs":5,"bodySize":0,"error":"fetch failed"}
+{"timestamp":"2026-05-05T06:06:20.654Z","endpointPath":"/ai-inspection-analytics","url":"http://localhost:3000/ai-inspection-analytics","ok":false,"status":0,"latencyMs":5,"bodySize":0,"error":"fetch failed"}
+{"timestamp":"2026-05-05T06:06:50.677Z","endpointPath":"/health","url":"http://localhost:3000/health","ok":false,"status":0,"latencyMs":6,"bodySize":0,"error":"fetch failed"}
+{"timestamp":"2026-05-05T06:06:50.677Z","endpointPath":"/api/network/health","url":"http://localhost:3000/api/network/health","ok":false,"status":0,"latencyMs":5,"bodySize":0,"error":"fetch failed"}
+{"timestamp":"2026-05-05T06:06:50.677Z","endpointPath":"/ai-inspection-analytics","url":"http://localhost:3000/ai-inspection-analytics","ok":false,"status":0,"latencyMs":4,"bodySize":0,"error":"fetch failed"}
+{"timestamp":"2026-05-05T06:07:20.697Z","endpointPath":"/health","url":"http://localhost:3000/health","ok":false,"status":0,"latencyMs":6,"bodySize":0,"error":"fetch failed"}
+{"timestamp":"2026-05-05T06:07:20.697Z","endpointPath":"/api/network/health","url":"http://localhost:3000/api/network/health","ok":false,"status":0,"latencyMs":6,"bodySize":0,"error":"fetch failed"}
+{"timestamp":"2026-05-05T06:07:20.697Z","endpointPath":"/ai-inspection-analytics","url":"http://localhost:3000/ai-inspection-analytics","ok":false,"status":0,"latencyMs":5,"bodySize":0,"error":"fetch failed"}

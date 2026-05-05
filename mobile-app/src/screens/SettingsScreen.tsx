@@ -35,6 +35,7 @@ export default function SettingsScreen() {
   const [port, setPort] = useState(String(settings.port));
   const [username, setUsername] = useState(settings.username);
   const [password, setPassword] = useState(settings.password);
+  const [apiUrl, setApiUrl] = useState(settings.apiUrl || '');
   const [alertDuration, setAlertDuration] = useState(String(settings.alertDisplayDuration));
   
   // Notification test states
@@ -48,6 +49,7 @@ export default function SettingsScreen() {
     setPort(String(settings.port));
     setUsername(settings.username);
     setPassword(settings.password);
+    setApiUrl(settings.apiUrl || '');
     setAlertDuration(String(settings.alertDisplayDuration));
     
     // Check notification permissions and get token
@@ -190,6 +192,7 @@ export default function SettingsScreen() {
       port: parseInt(port) || 1883,
       username,
       password,
+      apiUrl,
       alertDisplayDuration: parseInt(alertDuration) || 60,
     });
     Alert.alert('Thành công', 'Đã lưu cài đặt');
@@ -423,6 +426,19 @@ export default function SettingsScreen() {
             secureTextEntry
           />
         </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>API URL</Text>
+          <TextInput
+            style={styles.input}
+            value={apiUrl}
+            onChangeText={setApiUrl}
+            placeholder="http://192.168.1.100:3000"
+            placeholderTextColor="#666"
+            autoCapitalize="none"
+          />
+          <Text style={styles.hint}>URL server để gửi test notification và đồng bộ dữ liệu</Text>
+        </View>
       </View>
 
       {/* Alert Settings */}
@@ -478,6 +494,24 @@ export default function SettingsScreen() {
             onValueChange={(value) => handleToggleNotification('receiveWeeklySummary', value)}
             trackColor={{ false: '#333', true: '#3b82f6' }}
             thumbColor={settings.receiveWeeklySummary ? '#fff' : '#888'}
+          />
+        </View>
+      </View>
+
+      {/* App Settings */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Cài đặt ứng dụng</Text>
+
+        <View style={styles.switchRow}>
+          <View style={styles.switchInfo}>
+            <Text style={styles.switchLabel}>Tự động kết nối lại</Text>
+            <Text style={styles.switchHint}>Tự động kết nối MQTT khi mở app hoặc quay lại foreground</Text>
+          </View>
+          <Switch
+            value={settings.autoReconnect}
+            onValueChange={(value) => updateSettings({ autoReconnect: value })}
+            trackColor={{ false: '#333', true: '#10b981' }}
+            thumbColor={settings.autoReconnect ? '#fff' : '#888'}
           />
         </View>
       </View>

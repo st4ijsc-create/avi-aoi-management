@@ -1,0 +1,2974 @@
+[
+  {
+    "from": "server/aiInspectionAnalytics.test.ts",
+    "to": "../server/services/aiInspectionAnalytics"
+  },
+  {
+    "from": "server/aiInspectionAnalytics.test.ts",
+    "to": "../server/services/cacheService"
+  },
+  {
+    "from": "server/aiInspectionAnalytics.test.ts",
+    "to": "../server/db/connection"
+  },
+  {
+    "from": "server/aiReportGenerator.test.ts",
+    "to": "../server/services/aiReportGenerator"
+  },
+  {
+    "from": "server/alert.test.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/api.test.ts",
+    "to": "./routers"
+  },
+  {
+    "from": "server/api.test.ts",
+    "to": "./_core/context"
+  },
+  {
+    "from": "server/auth.logout.test.ts",
+    "to": "./routers"
+  },
+  {
+    "from": "server/auth.logout.test.ts",
+    "to": "../shared/const"
+  },
+  {
+    "from": "server/auth.logout.test.ts",
+    "to": "./_core/context"
+  },
+  {
+    "from": "server/auth.setupAdmin.test.ts",
+    "to": "./routers"
+  },
+  {
+    "from": "server/auth.setupAdmin.test.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/cacheService.test.ts",
+    "to": "./services/cacheService"
+  },
+  {
+    "from": "server/correctResult.test.ts",
+    "to": "./routers"
+  },
+  {
+    "from": "server/correctResult.test.ts",
+    "to": "./_core/context"
+  },
+  {
+    "from": "server/db/ai.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/ai.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/aiAdvanced.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/aiAdvanced.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/aiSpecialist.security.test.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/db/aiSpecialist.security.test.ts",
+    "to": "../db/aiSpecialist"
+  },
+  {
+    "from": "server/db/aiSpecialist.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/aiSpecialist.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/alerts.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/alerts.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/auth.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/auth.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/auth.ts",
+    "to": "../_core/env"
+  },
+  {
+    "from": "server/db/connection.ts",
+    "to": "../_core/env"
+  },
+  {
+    "from": "server/db/dashboard.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/dashboard.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/hierarchy.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/hierarchy.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./auth"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./hierarchy"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./product"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./inspection"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./layout"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./statistics"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./alerts"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./production"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./machine"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./mqtt"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./system"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./dashboard"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./integration"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./spc"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./license"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./ai"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./aiAdvanced"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./aiSpecialist"
+  },
+  {
+    "from": "server/db/inspection.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/inspection.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/inspection.ts",
+    "to": "./auth"
+  },
+  {
+    "from": "server/db/integration.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/integration.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/layout.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/layout.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/license.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/license.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/machine.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/machine.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/mqtt.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/mqtt.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/product.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/product.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/production.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/production.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/spc.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/spc.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/statistics.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/statistics.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/statistics.ts",
+    "to": "./auth"
+  },
+  {
+    "from": "server/db/system.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/system.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/emptystate-errorboundary-seed.test.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/exportWorkflow.test.ts",
+    "to": "../client/src/lib/exportUtils"
+  },
+  {
+    "from": "server/functions/cachedStatistics.ts",
+    "to": "../services/redisService"
+  },
+  {
+    "from": "server/functions/cachedStatistics.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/inspection.corporate.test.ts",
+    "to": "./routers"
+  },
+  {
+    "from": "server/inspection.corporate.test.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/license/license-guard.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/license/license-guard.ts",
+    "to": "./license-service"
+  },
+  {
+    "from": "server/license/license-guard.ts",
+    "to": "./license-service"
+  },
+  {
+    "from": "server/license/license-middleware.ts",
+    "to": "./license-service"
+  },
+  {
+    "from": "server/license/license-middleware.ts",
+    "to": "./license-guard"
+  },
+  {
+    "from": "server/license/license-middleware.ts",
+    "to": "../_core/env"
+  },
+  {
+    "from": "server/license/license-service.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/license/license-service.ts",
+    "to": "../_core/env"
+  },
+  {
+    "from": "server/license/license-service.ts",
+    "to": "./sdk/index.d.ts"
+  },
+  {
+    "from": "server/license/license-service.ts",
+    "to": "./sdk/index.d.ts"
+  },
+  {
+    "from": "server/machineStatus.test.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/manualMapping.test.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/mqtt.test.ts",
+    "to": "./routers"
+  },
+  {
+    "from": "server/mqtt.test.ts",
+    "to": "./_core/context"
+  },
+  {
+    "from": "server/mqttAlertScheduler.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/mqttAlertScheduler.ts",
+    "to": "../drizzle/schema"
+  },
+  {
+    "from": "server/mqttAlertScheduler.ts",
+    "to": "./_core/notification"
+  },
+  {
+    "from": "server/ngTrend.filter.test.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/queryValidationMiddleware.ts",
+    "to": "./queryValidator"
+  },
+  {
+    "from": "server/queryValidationMiddleware.ts",
+    "to": "./queryMonitor"
+  },
+  {
+    "from": "server/rateLimitConfig.test.ts",
+    "to": "./_core/rateLimitConfig"
+  },
+  {
+    "from": "server/routers/aiActiveLearningRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiActiveLearningRouter.ts",
+    "to": "../services/aiActiveLearning"
+  },
+  {
+    "from": "server/routers/aiAdvancedRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiAdvancedRouter.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/aiAdvancedRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aiAdvancedRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/aiAdvancedRouter.ts",
+    "to": "../../drizzle/schema/ai"
+  },
+  {
+    "from": "server/routers/aiAdvancedRouter.ts",
+    "to": "../services/aiBatchEngine"
+  },
+  {
+    "from": "server/routers/aiAdvancedRouter.ts",
+    "to": "../services/aiTrainingPipeline"
+  },
+  {
+    "from": "server/routers/aiAdvancedRouter.ts",
+    "to": "../services/aiABTesting"
+  },
+  {
+    "from": "server/routers/aiAdvancedRouter.ts",
+    "to": "../services/aiMonitoring"
+  },
+  {
+    "from": "server/routers/aiAdvancedRouter.ts",
+    "to": "../services/aiEdgeDeployment"
+  },
+  {
+    "from": "server/routers/aiAnalysisHubRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiAnalysisHubRouter.ts",
+    "to": "../services/aiVisionLanguage"
+  },
+  {
+    "from": "server/routers/aiAnalysisHubRouter.ts",
+    "to": "../services/aiImageEmbedding"
+  },
+  {
+    "from": "server/routers/aiAnalysisHubRouter.ts",
+    "to": "../services/aiTimeSeriesEngine"
+  },
+  {
+    "from": "server/routers/aiAnalysisHubRouter.ts",
+    "to": "../services/aiReportGenerator"
+  },
+  {
+    "from": "server/routers/aiAnalysisHubRouter.ts",
+    "to": "../utils/safeImagePath"
+  },
+  {
+    "from": "server/routers/aiChatRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiChatRouter.ts",
+    "to": "../services/aiChatAssistant"
+  },
+  {
+    "from": "server/routers/aiChatRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/aiChatRouter.ts",
+    "to": "../../drizzle/schema/ai"
+  },
+  {
+    "from": "server/routers/aiEdgeEnhancedRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiEdgeEnhancedRouter.ts",
+    "to": "../services/aiEdgeEnhanced"
+  },
+  {
+    "from": "server/routers/aiFeedbackRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiFeedbackRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aiFeedbackRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/aiGgufRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiGgufRouter.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/aiGgufRouter.ts",
+    "to": "../services/aiGgufEngine"
+  },
+  {
+    "from": "server/routers/aiGgufRouter.ts",
+    "to": "../services/aiProviderManager"
+  },
+  {
+    "from": "server/routers/aiImageSearchRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiImageSearchRouter.ts",
+    "to": "../services/aiImageEmbedding"
+  },
+  {
+    "from": "server/routers/aiInspectionAnalyticsRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiInspectionAnalyticsRouter.ts",
+    "to": "../services/aiInspectionAnalytics"
+  },
+  {
+    "from": "server/routers/aiLocalTrainingRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiLocalTrainingRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/aiLocalTrainingRouter.ts",
+    "to": "../../drizzle/schema/ai"
+  },
+  {
+    "from": "server/routers/aiLocalTrainingRouter.ts",
+    "to": "../services/aiLocalTraining"
+  },
+  {
+    "from": "server/routers/aiModelRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiModelRouter.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/aiModelRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aiModelRouter.ts",
+    "to": "../services/aiModelService"
+  },
+  {
+    "from": "server/routers/aiModelRouter.ts",
+    "to": "../services/aiInferenceEngine"
+  },
+  {
+    "from": "server/routers/aiQualityGateRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiQualityGateRouter.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/aiQualityGateRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aiQualityGateRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/aiQualityGateRouter.ts",
+    "to": "../services/aiQualityGate"
+  },
+  {
+    "from": "server/routers/aiReportRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiReportRouter.ts",
+    "to": "../services/aiReportGenerator"
+  },
+  {
+    "from": "server/routers/aiRouters.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aiRouters.ts",
+    "to": "../utils/statistics"
+  },
+  {
+    "from": "server/routers/aiRouters.ts",
+    "to": "../services/aiInsightsService"
+  },
+  {
+    "from": "server/routers/aiSettingsRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiSettingsRouter.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/aiSettingsRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/aiSettingsRouter.ts",
+    "to": "../../drizzle/schema/ai"
+  },
+  {
+    "from": "server/routers/aiSmartAlertRoutingRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiSmartAlertRoutingRouter.ts",
+    "to": "../services/aiSmartAlertRouter"
+  },
+  {
+    "from": "server/routers/aiSpecialistAgentRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiSpecialistAgentRouter.ts",
+    "to": "../services/aiSpecialistAgentService"
+  },
+  {
+    "from": "server/routers/aiSpecialistAgentRouter.ts",
+    "to": "../db/aiSpecialist"
+  },
+  {
+    "from": "server/routers/aiTimeSeriesRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiTimeSeriesRouter.ts",
+    "to": "../services/aiTimeSeriesEngine"
+  },
+  {
+    "from": "server/routers/aiTimeSeriesRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/aiTimeSeriesRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/aiVisionLanguageRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiVisionLanguageRouter.ts",
+    "to": "../services/aiVisionLanguage"
+  },
+  {
+    "from": "server/routers/aiVisionLanguageRouter.ts",
+    "to": "../utils/safeImagePath"
+  },
+  {
+    "from": "server/routers/alertRouters.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/alertRouters.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/alertRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/annotationComparisonRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/annotationComparisonRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/annotationComparisonRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/annotationRouters.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/annotationRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/annotationRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/annotationRouters.ts",
+    "to": "../_core/llm"
+  },
+  {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "../storage"
+  },
+  {
+    "from": "server/routers/aoiPackageRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/auditRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/auditRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/auditRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/backupRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/backupRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/backupRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/dashboardStatsRouters.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/dashboardStatsRouters.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/dashboardStatsRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/dashboardStatsRouters.ts",
+    "to": "../_core/cache"
+  },
+  {
+    "from": "server/routers/dashboardWidgetRouters.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/dashboardWidgetRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/dashboardWidgetRouters.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/dataComparisonRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/dataComparisonRouter.ts",
+    "to": "../services/dataComparisonService"
+  },
+  {
+    "from": "server/routers/dataComparisonRouter.ts",
+    "to": "../services/dataComparisonService"
+  },
+  {
+    "from": "server/routers/dataRouters.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/dataRouters.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/dataRouters.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/dataRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/dataRouters.ts",
+    "to": "../functions/cachedStatistics"
+  },
+  {
+    "from": "server/routers/defectHeatmapRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/defectHeatmapRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/defectHeatmapRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/enhancedAuditRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/enhancedAuditRouter.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/enhancedAuditRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/enhancedAuditRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/enhancedAuditRouter.ts",
+    "to": "../services/auditTrailService"
+  },
+  {
+    "from": "server/routers/hierarchyRouters.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/hierarchyRouters.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/hierarchyRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/hierarchyRouters.ts",
+    "to": "../storage"
+  },
+  {
+    "from": "server/routers/hierarchyTreeRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/hierarchyTreeRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/inspectionRouters.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/inspectionRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/inspectionRouters.ts",
+    "to": "../_core/llm"
+  },
+  {
+    "from": "server/routers/layoutRouters.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/layoutRouters.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/layoutRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/licenseRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/licenseRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/licenseRouter.ts",
+    "to": "../license/license-service"
+  },
+  {
+    "from": "server/routers/licenseRouter.ts",
+    "to": "../license/license-guard"
+  },
+  {
+    "from": "server/routers/licenseRouter.ts",
+    "to": "../_core/env"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../storage"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../_core/socket"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../_core/cache"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../functions/cachedStatistics"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../services/mqttService"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/mqttBulletinRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/mqttBulletinRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/mqttBulletinRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/mqttBulletinRouter.ts",
+    "to": "../services/mqttBulletinService"
+  },
+  {
+    "from": "server/routers/mqttBulletinRouter.ts",
+    "to": "../services/mqttService"
+  },
+  {
+    "from": "server/routers/mqttClientManagementRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/mqttClientManagementRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/mqttClientManagementRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/mqttNgAlertSettingsRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/mqttNgAlertSettingsRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/mqttNgAlertSettingsRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/mqttOeeRouters.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/mqttOeeRouters.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/mqttOeeRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/mqttSoftwareVersionRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/mqttSoftwareVersionRouter.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/mqttSoftwareVersionRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/mqttSoftwareVersionRouter.ts",
+    "to": "../storage"
+  },
+  {
+    "from": "server/routers/ngRateThresholdRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/ngRateThresholdRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/ngRateThresholdRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/ngRateThresholdRouter.ts",
+    "to": "../services/ngRateAlertService"
+  },
+  {
+    "from": "server/routers/notificationRouters.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/notificationRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/notificationRouters.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/paretoAnalysisRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/paretoAnalysisRouter.ts",
+    "to": "../services/paretoAnalysisService"
+  },
+  {
+    "from": "server/routers/pdfReportRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/pdfReportRouter.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/pdfReportRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/pdfReportRouter.ts",
+    "to": "../services/pdfTemplateService"
+  },
+  {
+    "from": "server/routers/pdfReportRouter.ts",
+    "to": "../services/pdfTemplateService"
+  },
+  {
+    "from": "server/routers/permissionsRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/permissionsRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/permissionsRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/powerpointRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/powerpointRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/powerpointRouter.ts",
+    "to": "../services/powerpointService"
+  },
+  {
+    "from": "server/routers/powerpointRouter.ts",
+    "to": "../services/dataComparisonService"
+  },
+  {
+    "from": "server/routers/powerpointRouter.ts",
+    "to": "../services/pdfTemplateService"
+  },
+  {
+    "from": "server/routers/powerpointRouter.ts",
+    "to": "../services/dataComparisonService"
+  },
+  {
+    "from": "server/routers/powerpointRouter.ts",
+    "to": "../services/powerpointService"
+  },
+  {
+    "from": "server/routers/processRouter.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/processRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/processRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/productionDashboardRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/productionDashboardRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/productionDashboardRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/productionDashboardRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/productionDashboardRouter.ts",
+    "to": "../_core/cache"
+  },
+  {
+    "from": "server/routers/productionRouters.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/productionRouters.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/productionRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/productRouters.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/productRouters.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/productRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/productRouters.ts",
+    "to": "../storage"
+  },
+  {
+    "from": "server/routers/publicProductApiRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/publicProductApiRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/publicProductApiRouter.ts",
+    "to": "../storage"
+  },
+  {
+    "from": "server/routers/publicProductApiRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/publicProductApiRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/qualityGateTemplateRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/qualityGateTemplateRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/qualityGateTemplateRouter.ts",
+    "to": "../services/qualityGateTemplateService"
+  },
+  {
+    "from": "server/routers/qualityGateTemplateRouter.ts",
+    "to": "../../drizzle/schema/spc"
+  },
+  {
+    "from": "server/routers/reportBuilderRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/reportBuilderRouter.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/reportBuilderRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/reportBuilderRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/reportScheduleRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/reportScheduleRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/reportScheduleRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/sessionRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/sessionRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/sessionRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/shiftConfigRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/shiftConfigRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/spcAdvancedRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/spcAdvancedRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/spcAnalysisRouter.test.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/spcAnalysisRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/spcAnalysisRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/stationAnalysisRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/stationAnalysisRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/stationAnalysisRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/stationAnalysisRouter.ts",
+    "to": "../utils/spc"
+  },
+  {
+    "from": "server/routers/statusTemplateRouters.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/statusTemplateRouters.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/statusTemplateRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/systemRouters.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/systemRouters.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/systemRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/systemRouters.ts",
+    "to": "../functions/cachedStatistics"
+  },
+  {
+    "from": "server/routers/systemRouters.ts",
+    "to": "../services/reportScheduler"
+  },
+  {
+    "from": "server/routers/trainingBatchCommentsRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/trainingBatchCommentsRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/trainingBatchCommentsRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/twoFactorRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/twoFactorRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/twoFactorRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/userRouters.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/userRouters.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/userRouters.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/webhookRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/webhookRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/webhookRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/_shared.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/_shared.ts",
+    "to": "../storage"
+  },
+  {
+    "from": "server/routers/_shared.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./_core/cookies"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./_core/systemRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./_core/sdk"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./_core/oauthProviders"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./_core/trpc"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/processRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/spcAnalysisRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/twoFactorRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/sessionRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/annotationComparisonRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/defectHeatmapRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiFeedbackRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/trainingBatchCommentsRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/mqttClientManagementRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/mqttBulletinRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aoiPackageRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/permissionsRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/backupRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/webhookRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/spcAdvancedRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/hierarchyRouters"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/productRouters"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/inspectionRouters"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/layoutRouters"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/dashboardStatsRouters"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/machineApiRouters"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/publicProductApiRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/shiftConfigRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/userRouters"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/alertRouters"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/productionRouters"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/statusTemplateRouters"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/mqttOeeRouters"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/systemRouters"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/dataRouters"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/notificationRouters"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/dashboardWidgetRouters"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/annotationRouters"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiRouters"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/pdfReportRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/dataComparisonRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/powerpointRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/reportBuilderRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/enhancedAuditRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/paretoAnalysisRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/qualityGateTemplateRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/licenseRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/ngRateThresholdRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/productionDashboardRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/stationAnalysisRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/hierarchyTreeRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/mqttNgAlertSettingsRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/mqttSoftwareVersionRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiModelRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiAdvancedRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiQualityGateRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiVisionLanguageRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiImageSearchRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiActiveLearningRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiTimeSeriesRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiReportRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiSmartAlertRoutingRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiEdgeEnhancedRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiLocalTrainingRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiChatRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiAnalysisHubRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiSettingsRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiGgufRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiInspectionAnalyticsRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiSpecialistAgentRouter"
+  },
+  {
+    "from": "server/routes/aiStreamingApi.ts",
+    "to": "../_core/sdk"
+  },
+  {
+    "from": "server/routes/aiStreamingApi.ts",
+    "to": "../services/aiGgufEngine"
+  },
+  {
+    "from": "server/scheduledReport.test.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/services/aiABTesting.ts",
+    "to": "../db/aiAdvanced"
+  },
+  {
+    "from": "server/services/aiABTesting.ts",
+    "to": "./aiInferenceEngine"
+  },
+  {
+    "from": "server/services/aiABTesting.ts",
+    "to": "../db/ai"
+  },
+  {
+    "from": "server/services/aiActiveLearning.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiActiveLearning.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiActiveLearning.ts",
+    "to": "./aiInferenceEngine"
+  },
+  {
+    "from": "server/services/aiActiveLearning.ts",
+    "to": "../db/ai"
+  },
+  {
+    "from": "server/services/aiActiveLearning.ts",
+    "to": "./aiImageEmbedding"
+  },
+  {
+    "from": "server/services/aiActiveLearning.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiBatchEngine.ts",
+    "to": "./aiInferenceEngine"
+  },
+  {
+    "from": "server/services/aiBatchEngine.ts",
+    "to": "../db/aiAdvanced"
+  },
+  {
+    "from": "server/services/aiBatchEngine.ts",
+    "to": "../db/ai"
+  },
+  {
+    "from": "server/services/aiChatAssistant.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiChatAssistant.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiChatAssistant.ts",
+    "to": "../../drizzle/schema/ai"
+  },
+  {
+    "from": "server/services/aiEdgeDeployment.ts",
+    "to": "../db/aiAdvanced"
+  },
+  {
+    "from": "server/services/aiEdgeDeployment.ts",
+    "to": "../db/ai"
+  },
+  {
+    "from": "server/services/aiEdgeDeployment.ts",
+    "to": "../storage"
+  },
+  {
+    "from": "server/services/aiEdgeEnhanced.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiEdgeEnhanced.ts",
+    "to": "../../drizzle/schema/ai"
+  },
+  {
+    "from": "server/services/aiEdgeEnhanced.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiEdgeEnhanced.ts",
+    "to": "../db/aiAdvanced"
+  },
+  {
+    "from": "server/services/aiEdgeEnhanced.ts",
+    "to": "../storage"
+  },
+  {
+    "from": "server/services/aiImageEmbedding.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiImageEmbedding.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiImageEmbedding.ts",
+    "to": "../db/ai"
+  },
+  {
+    "from": "server/services/aiImageEmbedding.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiInferenceEngine.ts",
+    "to": "../db/ai"
+  },
+  {
+    "from": "server/services/aiInferenceEngine.ts",
+    "to": "../db/ai"
+  },
+  {
+    "from": "server/services/aiInferenceEngine.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiInspectionAnalytics.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiInspectionAnalytics.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiInspectionAnalytics.ts",
+    "to": "./cacheService"
+  },
+  {
+    "from": "server/services/aiLocalTraining.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiLocalTraining.ts",
+    "to": "../db/ai"
+  },
+  {
+    "from": "server/services/aiLocalTraining.ts",
+    "to": "../db/aiAdvanced"
+  },
+  {
+    "from": "server/services/aiLocalTraining.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiModelService.ts",
+    "to": "../storage"
+  },
+  {
+    "from": "server/services/aiModelService.ts",
+    "to": "../db/ai"
+  },
+  {
+    "from": "server/services/aiModelService.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiMonitoring.ts",
+    "to": "../db/aiAdvanced"
+  },
+  {
+    "from": "server/services/aiQualityGate.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiQualityGate.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiQualityGate.ts",
+    "to": "./aiInferenceEngine"
+  },
+  {
+    "from": "server/services/aiQualityGate.ts",
+    "to": "../db/ai"
+  },
+  {
+    "from": "server/services/aiReportGenerator.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiReportGenerator.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiReportGenerator.ts",
+    "to": "../../drizzle/schema/ai"
+  },
+  {
+    "from": "server/services/aiSmartAlertRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiSmartAlertRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiSmartAlertRouter.ts",
+    "to": "./notificationService"
+  },
+  {
+    "from": "server/services/aiSmartAlertRouter.ts",
+    "to": "./emailService"
+  },
+  {
+    "from": "server/services/aiSpecialistAgentService.ts",
+    "to": "./aiGgufEngine"
+  },
+  {
+    "from": "server/services/aiTimeSeriesEngine.ts",
+    "to": "../utils/statistics"
+  },
+  {
+    "from": "server/services/aiTrainingPipeline.ts",
+    "to": "../db/aiAdvanced"
+  },
+  {
+    "from": "server/services/aiTrainingPipeline.ts",
+    "to": "../db/ai"
+  },
+  {
+    "from": "server/services/aiTrainingPipeline.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/alertEvaluationService.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/alertEvaluationService.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/alertEvaluationService.ts",
+    "to": "../_core/notification"
+  },
+  {
+    "from": "server/services/alertEvaluationService.ts",
+    "to": "./emailService"
+  },
+  {
+    "from": "server/services/alertEvaluationService.ts",
+    "to": "./mqttService"
+  },
+  {
+    "from": "server/services/auditTrailService.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/cacheWarmingService.ts",
+    "to": "./redisService"
+  },
+  {
+    "from": "server/services/cacheWarmingService.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/dataComparisonService.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/dataComparisonService.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/downtimeDetectionService.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/downtimeDetectionService.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/enhancedScheduledReportService.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/enhancedScheduledReportService.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/enhancedScheduledReportService.ts",
+    "to": "../_core/email"
+  },
+  {
+    "from": "server/services/enhancedScheduledReportService.ts",
+    "to": "./pdfTemplateService"
+  },
+  {
+    "from": "server/services/enhancedScheduledReportService.ts",
+    "to": "./dataComparisonService"
+  },
+  {
+    "from": "server/services/enhancedScheduledReportService.ts",
+    "to": "./powerpointService"
+  },
+  {
+    "from": "server/services/fcmService.ts",
+    "to": "../_core/env"
+  },
+  {
+    "from": "server/services/fcmService.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/mqttBulletinService.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/mqttBulletinService.ts",
+    "to": "./mqttService"
+  },
+  {
+    "from": "server/services/mqttService.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/mqttSummaryScheduler.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/mqttSummaryScheduler.ts",
+    "to": "./mqttService"
+  },
+  {
+    "from": "server/services/ngRateAlertService.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/ngRateAlertService.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/notificationService.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/paretoAnalysisService.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/pdfTemplateService.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/powerpointService.ts",
+    "to": "./pdfTemplateService"
+  },
+  {
+    "from": "server/services/reportGenerator.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/reportScheduler.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/reportScheduler.ts",
+    "to": "../_core/email"
+  },
+  {
+    "from": "server/services/reportScheduler.ts",
+    "to": "./reportGenerator"
+  },
+  {
+    "from": "server/services/scheduledReportService.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/scheduledReportService.ts",
+    "to": "../_core/email"
+  },
+  {
+    "from": "server/services/scheduledReportService.ts",
+    "to": "../_core/notification"
+  },
+  {
+    "from": "server/storage.ts",
+    "to": "./_core/env"
+  },
+  {
+    "from": "server/templateDb.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/templateDb.ts",
+    "to": "../drizzle/schema"
+  },
+  {
+    "from": "server/uptimeTimeline.test.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/user.test.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/utils/safeImagePath.test.ts",
+    "to": "./safeImagePath"
+  },
+  {
+    "from": "server/widgetStylePresets.test.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/yieldThreshold.test.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/yieldThresholdHistory.test.ts",
+    "to": "./_core/trpc"
+  },
+  {
+    "from": "server/yieldThresholdHistory.test.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/_core/accessControl.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/_core/accessControl.ts",
+    "to": "../db/auth"
+  },
+  {
+    "from": "server/_core/accessControl.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/_core/accessControl.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/_core/accessControl.ts",
+    "to": "./trpc"
+  },
+  {
+    "from": "server/_core/accessControl.ts",
+    "to": "./context"
+  },
+  {
+    "from": "server/_core/context.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/_core/context.ts",
+    "to": "./sdk"
+  },
+  {
+    "from": "server/_core/dataApi.ts",
+    "to": "./env"
+  },
+  {
+    "from": "server/_core/imageGeneration.ts",
+    "to": "./env"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "./oauth"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../routers"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "./context"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "./vite"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "./socket"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "./offlineMonitor"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "./email"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../services/reportScheduler"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../services/mqttService"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../services/alertEvaluationService"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../services/mqttSummaryScheduler"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../services/mqttBulletinService"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../services/cacheWarmingService"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../license/license-middleware"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../license/runtime-security"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../routes/externalInspectionApi"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../routes/aiStreamingApi"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../logger"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "./rateLimitConfig"
+  },
+  {
+    "from": "server/_core/llm.ts",
+    "to": "./env"
+  },
+  {
+    "from": "server/_core/map.ts",
+    "to": "./env"
+  },
+  {
+    "from": "server/_core/notification.ts",
+    "to": "./env"
+  },
+  {
+    "from": "server/_core/oauth.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/_core/oauth.ts",
+    "to": "./cookies"
+  },
+  {
+    "from": "server/_core/oauth.ts",
+    "to": "./oauthProviders"
+  },
+  {
+    "from": "server/_core/oauth.ts",
+    "to": "./sdk"
+  },
+  {
+    "from": "server/_core/oauthProviders.ts",
+    "to": "./env"
+  },
+  {
+    "from": "server/_core/offlineMonitor.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/_core/offlineMonitor.ts",
+    "to": "./notification"
+  },
+  {
+    "from": "server/_core/offlineMonitor.ts",
+    "to": "./socket"
+  },
+  {
+    "from": "server/_core/sdk.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/_core/sdk.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/_core/sdk.ts",
+    "to": "./env"
+  },
+  {
+    "from": "server/_core/sdk.ts",
+    "to": "./types/manusTypes"
+  },
+  {
+    "from": "server/_core/socket.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/_core/systemRouter.ts",
+    "to": "./notification"
+  },
+  {
+    "from": "server/_core/systemRouter.ts",
+    "to": "./trpc"
+  },
+  {
+    "from": "server/_core/systemRouter.ts",
+    "to": "../queryMonitor"
+  },
+  {
+    "from": "server/_core/trpc.ts",
+    "to": "./context"
+  },
+  {
+    "from": "server/_core/voiceTranscription.ts",
+    "to": "./env"
+  },
+  {
+    "from": "server/_core/voiceTranscription.ts",
+    "to": "./_core/voiceTranscription"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./components/ErrorBoundary"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./contexts/ThemeContext"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/Home"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/Dashboard"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/History"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/InspectionDetail"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/Layout"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/Settings"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/DataSettings"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/ApiDocs"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/ProductModels"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/CorporateLayout"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/Reports"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/Alerts"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/Users"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/ProductMachineMapping"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/ProductionOrders"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/MachineStatusMonitor"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/Login"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/Profile"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/ChangePassword"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/AuditLogs"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/SessionManagement"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/ProductComparison"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/Setup"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/MqttDashboard"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/MqttAlertRules"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/MqttClientManagement"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/MqttProfileManagement"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/MqttTopicsMessages"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/CustomDashboard"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/SystemConfiguration"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/ImportExport"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/UserAssignments"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/ScheduledReports"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/SPCAnalysis"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/ProcessManagement"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/WorkstationManagement"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/CategoryAnalytics"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/UserGuide"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/DashboardTemplates"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/BackupRestore"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/TemplateMarketplace"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/OEEDashboard"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/MQTTReplay"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/OEETargetSettings"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/MachineHealthMonitoring"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/DrillDownDashboard"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/AnnotationStatistics"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/AnnotationComparisonPage"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/DefectHeatmapPage"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/DefectPredictionPage"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/RootCauseAnalysisPage"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/PredictiveAlertsPage"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/DashboardMarketplace"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/HistoryExportScheduling"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/CorporateDashboard"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/TestAnnotationPage"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/AOIPackages"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/MqttBulletin"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/SPCAdvanced"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/CorrelationAnalysis"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/QualityGates"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/RoleBuilder"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/EnhancedAuditLogs"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/PdfReports"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/DataComparison"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/ReportBuilder"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/PowerPointExport"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/EnhancedScheduledReports"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/ParetoAnalysis"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/QualityGateTemplates"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/ProductionScheduling"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/MachineRegistration"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/CorporateManagement"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/LicenseManagement"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/MqttNgRateThreshold"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/MonitoringSettings"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/AnalyticsSettings"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/AdminSettings"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/DashboardCenter"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/ProductionDashboard"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/StationAnalysis"
+  },
+  {
+    "from": "client/src/components/BatchImageExport.tsx",
+    "to": "./ImageGallery"
+  },
+  {
+    "from": "client/src/components/CorporateFactoryStats.tsx",
+    "to": "./MachineAnalyticsView"
+  },
+  {
+    "from": "client/src/components/CorporateFactoryStats.tsx",
+    "to": "./ExportDashboardButton"
+  },
+  {
+    "from": "client/src/components/CustomDashboardViewer.tsx",
+    "to": "./DashboardWidgetRenderer"
+  },
+  {
+    "from": "client/src/components/CustomDashboardViewer.tsx",
+    "to": "./DashboardWidgetLibrary"
+  },
+  {
+    "from": "client/src/components/DashboardLayout.tsx",
+    "to": "./NotificationCenter"
+  },
+  {
+    "from": "client/src/components/DashboardLayout.tsx",
+    "to": "./LanguageSwitcher"
+  },
+  {
+    "from": "client/src/components/DashboardLayout.tsx",
+    "to": "./ThemeToggle"
+  },
+  {
+    "from": "client/src/components/DashboardLayout.tsx",
+    "to": "./DashboardLayoutSkeleton"
+  },
+  {
+    "from": "client/src/components/DashboardLayout.tsx",
+    "to": "./ui/button"
+  },
+  {
+    "from": "client/src/components/DashboardLayout.tsx",
+    "to": "./LicenseEnforcementBanner"
+  },
+  {
+    "from": "client/src/components/DashboardLayoutEditor.tsx",
+    "to": "./DashboardWidgetLibrary"
+  },
+  {
+    "from": "client/src/components/DashboardLayoutEditor.tsx",
+    "to": "./DashboardWidgetRenderer"
+  },
+  {
+    "from": "client/src/components/DashboardLayoutSkeleton.tsx",
+    "to": "./ui/skeleton"
+  },
+  {
+    "from": "client/src/components/ImageAnnotation.tsx",
+    "to": "./AIAnnotationAssistant"
+  },
+  {
+    "from": "client/src/components/ImageComparison.tsx",
+    "to": "./ImageGallery"
+  },
+  {
+    "from": "client/src/components/ImageGallery.tsx",
+    "to": "./BulkAnnotationToolbar"
+  },
+  {
+    "from": "client/src/components/LicenseGate.tsx",
+    "to": "../../../shared/module-registry"
+  },
+  {
+    "from": "client/src/components/ReportExportButton.tsx",
+    "to": "../lib/resolveOklchColors"
+  },
+  {
+    "from": "client/src/components/ResizableDashboard.tsx",
+    "to": "./TemplatePreview"
+  },
+  {
+    "from": "client/src/components/ResizableDashboard.tsx",
+    "to": "./WidgetDataExport"
+  },
+  {
+    "from": "client/src/components/ResizableDashboard.tsx",
+    "to": "./WidgetStyleEditor"
+  },
+  {
+    "from": "client/src/components/ScheduledReports.tsx",
+    "to": "./ConfirmDialog"
+  },
+  {
+    "from": "client/src/components/TemplatePreview.tsx",
+    "to": "./ResizableDashboard"
+  },
+  {
+    "from": "client/src/hooks/useComposition.ts",
+    "to": "./usePersistFn"
+  },
+  {
+    "from": "client/src/hooks/useLicenseModules.ts",
+    "to": "../../../shared/module-registry"
+  },
+  {
+    "from": "client/src/i18n/index.ts",
+    "to": "./locales/vi.json"
+  },
+  {
+    "from": "client/src/i18n/index.ts",
+    "to": "./locales/en.json"
+  },
+  {
+    "from": "client/src/i18n/index.ts",
+    "to": "./locales/zh.json"
+  },
+  {
+    "from": "client/src/lib/exportUtils.test.ts",
+    "to": "./exportUtils"
+  },
+  {
+    "from": "client/src/lib/pdfExport.ts",
+    "to": "./resolveOklchColors"
+  },
+  {
+    "from": "client/src/lib/trpc.ts",
+    "to": "../../../server/routers"
+  },
+  {
+    "from": "client/src/main.tsx",
+    "to": "./App"
+  },
+  {
+    "from": "client/src/main.tsx",
+    "to": "./const"
+  },
+  {
+    "from": "client/src/pages/MqttClientManagement.tsx",
+    "to": "./SoftwareVersionsTab"
+  },
+  {
+    "from": "client/src/_core/hooks/usePermissions.ts",
+    "to": "./useAuth"
+  },
+  {
+    "from": "shared/types.ts",
+    "to": "../drizzle/schema"
+  },
+  {
+    "from": "shared/types.ts",
+    "to": "./_core/errors"
+  },
+  {
+    "from": "drizzle/relations.ts",
+    "to": "./schema"
+  },
+  {
+    "from": "drizzle/schema/ai.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/alerts.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/auth.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/dashboard.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/hierarchy.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "../drizzle/schema"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./auth"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./hierarchy"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./product"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./inspection"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./layout"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./production"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./machine"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./alerts"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./mqtt"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./dashboard"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./system"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./ai"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./oee"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./integration"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./spc"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./license"
+  },
+  {
+    "from": "drizzle/schema/inspection.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/integration.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/layout.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/machine.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/mqtt.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/oee.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/product.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/production.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/spc.ts",
+    "to": "./auth"
+  },
+  {
+    "from": "drizzle/schema/spc.ts",
+    "to": "./hierarchy"
+  },
+  {
+    "from": "drizzle/schema/spc.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/system.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/system.ts",
+    "to": "./auth"
+  }
+]

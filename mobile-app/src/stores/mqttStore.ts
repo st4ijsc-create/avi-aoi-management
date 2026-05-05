@@ -65,6 +65,8 @@ interface MqttSettings {
   clientId: string;
   deviceId: string;
   stationId?: number;
+  apiUrl: string;
+  autoReconnect: boolean;
   alertDisplayDuration: number; // seconds
   receiveNGAlerts: boolean;
   receiveDailySummary: boolean;
@@ -111,6 +113,8 @@ const defaultSettings: MqttSettings = {
   clientId: '',
   deviceId: '',
   stationId: undefined,
+  apiUrl: '',
+  autoReconnect: false,
   alertDisplayDuration: 60, // 1 minute default
   receiveNGAlerts: true,
   receiveDailySummary: true,
@@ -177,7 +181,8 @@ export const useMqttStore = create<MqttState>((set, get) => ({
         username: settings.username,
         password: settings.password,
         clean: true,
-        reconnectPeriod: 5000,
+        keepalive: 120, // Increased for poor WiFi tolerance (was implicit default)
+        reconnectPeriod: 10000, // 10s reconnect interval (better for poor WiFi)
         connectTimeout: 30000,
       };
 

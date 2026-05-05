@@ -9,7 +9,7 @@ export type TrpcContext = {
 };
 
 export async function createContext(
-  opts: CreateExpressContextOptions
+  opts: { req: CreateExpressContextOptions["req"]; res: CreateExpressContextOptions["res"]; info?: unknown }
 ): Promise<TrpcContext> {
   let user: User | null = null;
 

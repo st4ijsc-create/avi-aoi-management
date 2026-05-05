@@ -210,7 +210,7 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
             </Card>
           ))}
         </div>
-        <Skeleton className="h-[400px] w-full" />
+        <Skeleton className="h-100 w-full" />
       </div>
     );
   }
@@ -336,7 +336,7 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-[350px]">
+            <div className="h-87.5">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" />
@@ -376,7 +376,7 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-[350px]">
+            <div className="h-87.5">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -481,13 +481,13 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[50px]">#</TableHead>
+                <TableHead className="w-12.5">#</TableHead>
                 <TableHead>{t('workstations.workstation')}</TableHead>
                 <TableHead className="text-right">{t('workstations.ngCount')}</TableHead>
                 <TableHead className="text-right">{t('workstations.totalInspections')}</TableHead>
                 <TableHead className="text-right">{t('workstations.ngRate')}</TableHead>
-                <TableHead className="w-[200px]">{t('workstations.chart')}</TableHead>
-                <TableHead className="w-[100px]">{t('common.details')}</TableHead>
+                <TableHead className="w-50">{t('workstations.chart')}</TableHead>
+                <TableHead className="w-25">{t('common.details')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -617,13 +617,13 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[50px]">#</TableHead>
+                      <TableHead className="w-12.5">#</TableHead>
                       <TableHead>{t('workstations.pointCode')}</TableHead>
                       <TableHead>{t('workstations.pointName')}</TableHead>
                       <TableHead className="text-right">{t('workstations.ngCount')}</TableHead>
                       <TableHead className="text-right">{t('common.total')}</TableHead>
                       <TableHead className="text-right">{t('workstations.ngRate')}</TableHead>
-                      <TableHead className="w-[150px]">{t('workstations.chart')}</TableHead>
+                      <TableHead className="w-37.5">{t('workstations.chart')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -668,7 +668,7 @@ export function WorkstationAnalysis({ startDate, endDate, machineId, factoryCode
                       <CardTitle className="text-sm">{t('workstations.ngByMeasurementPoint')}</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="h-[250px]">
+                      <div className="h-62.5">
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart 
                             data={measurementPointsData.slice(0, 10).map((mp, i) => ({

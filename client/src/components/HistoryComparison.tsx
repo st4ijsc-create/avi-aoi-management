@@ -130,7 +130,7 @@ export default function HistoryComparison() {
   const { data: period1Data, isLoading: loading1 } = trpc.inspection.search.useQuery({
     startDate: dateRanges.period1.start,
     endDate: dateRanges.period1.end,
-    limit: 10000,
+    limit: 1000,
     offset: 0,
   });
 
@@ -138,7 +138,7 @@ export default function HistoryComparison() {
   const { data: period2Data, isLoading: loading2 } = trpc.inspection.search.useQuery({
     startDate: dateRanges.period2.start,
     endDate: dateRanges.period2.end,
-    limit: 10000,
+    limit: 1000,
     offset: 0,
   });
 
@@ -259,7 +259,7 @@ export default function HistoryComparison() {
             <div className="space-y-2">
               <Label>{t('history.comparison.compareType')}</Label>
               <Select value={comparePreset} onValueChange={(v) => setComparePreset(v as ComparePreset)}>
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="w-50">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -280,14 +280,14 @@ export default function HistoryComparison() {
                       type="date"
                       value={period1Start}
                       onChange={(e) => setPeriod1Start(e.target.value)}
-                      className="w-[140px]"
+                      className="w-35"
                     />
                     <span className="self-center">-</span>
                     <Input
                       type="date"
                       value={period1End}
                       onChange={(e) => setPeriod1End(e.target.value)}
-                      className="w-[140px]"
+                      className="w-35"
                     />
                   </div>
                 </div>
@@ -299,14 +299,14 @@ export default function HistoryComparison() {
                       type="date"
                       value={period2Start}
                       onChange={(e) => setPeriod2Start(e.target.value)}
-                      className="w-[140px]"
+                      className="w-35"
                     />
                     <span className="self-center">-</span>
                     <Input
                       type="date"
                       value={period2End}
                       onChange={(e) => setPeriod2End(e.target.value)}
-                      className="w-[140px]"
+                      className="w-35"
                     />
                   </div>
                 </div>

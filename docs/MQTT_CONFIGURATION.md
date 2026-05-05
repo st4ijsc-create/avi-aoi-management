@@ -1,5 +1,35 @@
 # Hướng dẫn Cấu hình MQTT Broker
 
+> **📚 Tài liệu liên quan**:
+> - **[Quick Start Guide](./MQTT_QUICK_START.md)** - Hướng dẫn nhanh 5 phút cho lập trình viên
+> - **[Third-Party Integration Guide](./THIRD_PARTY_MQTT_INTEGRATION_GUIDE.md)** - Hướng dẫn tích hợp ứng dụng bên thứ 3 (REST API + MQTT)
+> - **[Mobile App Documentation](../android-mqtt-app/README.md)** - Android MQTT client
+
+---
+
+## Mục lục
+
+1. [Tổng quan](#tổng-quan)
+2. [Kiến trúc MQTT](#kiến-trúc-mqtt)
+3. [Cấu hình Environment Variables](#cấu-hình-environment-variables)
+   - 3.1. [Local Broker Variables](#server-side-variables)
+   - 3.2. [External MQTT Broker](#external-mqtt-broker-configuration)
+4. [Cấu hình MQTT Broker](#cấu-hình-mqtt-broker)
+   - 4.1. [Option 1: Mosquitto](#option-1-mosquitto-self-hosted)
+   - 4.2. [Option 2: HiveMQ Cloud](#option-2-hivemq-cloud-managed)
+   - 4.3. [Option 3: EMQX](#option-3-emqx-enterprise)
+5. [MQTT Topics Structure](#mqtt-topics-structure)
+6. [Message Formats](#message-formats)
+7. [Sample Code cho Máy AVI/AOI](#sample-code-cho-máy-aviaoi)
+8. [Third-Party Integration](#third-party-integration) ⭐ NEW
+9. [Kiểm tra Kết nối](#kiểm-tra-kết-nối)
+10. [Testing với Tools](#testing-với-tools) ⭐ NEW
+11. [Troubleshooting](#troubleshooting)
+12. [Bảo mật](#bảo-mật)
+13. [Liên hệ Hỗ trợ](#liên-hệ-hỗ-trợ)
+
+---
+
 ## Tổng quan
 
 Hệ thống MES AVI/AOI sử dụng MQTT protocol để nhận dữ liệu real-time từ các máy kiểm tra AVI/AOI. Tài liệu này hướng dẫn cách cấu hình MQTT broker và kết nối với hệ thống.
@@ -600,6 +630,172 @@ process.on('SIGINT', () => {
 console.log('AVI/AOI MQTT Client started. Press Ctrl+C to stop.');
 ```
 
+---
+
+## Third-Party Integration
+
+### Tổng quan
+
+Ngoài việc nhận dữ liệu từ máy AVI/AOI, hệ thống còn hỗ trợ **tích hợp với ứng dụng bên thứ 3** (MES, ERP, Analytics, Dashboard) thông qua:
+
+1. **REST API + MQTT** (Recommended) - Sử dụng REST API để khám phá topics, sau đó subscribe MQTT
+2. **Direct MQTT** - Kết nối trực tiếp với wildcards
+3. **Mobile App** - Android MQTT client (React Native)
+
+### REST API for Topic Discovery
+
+Hệ thống cung cấp REST API để:
+- Lấy danh sách topics theo hierarchy (factory/workshop/line/station)
+- Filter theo message types
+- Authentication với Master API Key
+
+#### Endpoints
+
+**1. Lấy MQTT Topics**
+
+```http
+GET /api/external/hierarchy/mqtt-topics
+Headers:
+  X-Master-Key: your_master_api_key_here
+Query Parameters:
+  level: all | factory | workshop | line | station
+  factoryId: 1
+  workshopId: 2
+  lineId: 3
+  stationId: 4
+  messageTypes: errors,inspection  (optional)
+```
+
+**2. Lấy Message Types**
+
+```http
+GET /api/external/hierarchy/mqtt-message-types
+Headers:
+  X-Master-Key: your_master_api_key_here
+```
+
+### Quick Example (JavaScript)
+
+```javascript
+const axios = require('axios');
+const mqtt = require('mqtt');
+
+// 1. Get topics from REST API
+const { data } = await axios.get('http://localhost:3001/api/external/hierarchy/mqtt-topics', {
+  params: { level: 'factory', factoryId: 1, messageTypes: 'errors,inspection' },
+  headers: { 'X-Master-Key': process.env.MASTER_API_KEY }
+});
+
+// 2. Connect to MQTT and subscribe
+const client = mqtt.connect('mqtt://broker.hivemq.com', {
+  username: 'your_username',
+  password: 'your_password'
+});
+
+client.on('connect', () => {
+  data.data.forEach(topic => {
+    client.subscribe(topic.topic, { qos: topic.qos });
+  });
+});
+
+client.on('message', (topic, message) => {
+  const data = JSON.parse(message.toString());
+  console.log(`Received ${data.type}:`, data);
+});
+```
+
+### Tài liệu chi tiết
+
+📖 **Xem hướng dẫn đầy đủ**: [THIRD_PARTY_MQTT_INTEGRATION_GUIDE.md](./THIRD_PARTY_MQTT_INTEGRATION_GUIDE.md)
+
+Bao gồm:
+- ✅ Kiến trúc dual-broker chi tiết
+- ✅ Code examples: JavaScript, Python, Java (470+ lines)
+- ✅ Message format specifications đầy đủ
+- ✅ Testing procedures với MQTT Explorer, mosquitto_sub
+- ✅ Troubleshooting guide 7 vấn đề thường gặp
+
+### Mobile App
+
+📱 **Android MQTT Client**: Xem [android-mqtt-app/README.md](../android-mqtt-app/README.md)
+
+React Native app với:
+- ✅ Real-time MQTT connection với reconnect logic
+- ✅ Firebase Push Notifications khi có NG Alert
+- ✅ Inspection result & NG alert display
+- ✅ Multi-factory/workshop support
+
+---
+
+## Testing với Tools
+
+### 1. MQTT Explorer (GUI - Recommended)
+
+**Download**: http://mqtt-explorer.com/
+
+**Cấu hình**:
+1. Host: `broker.hivemq.com` (hoặc broker của bạn)
+2. Port: `1883`
+3. Username/Password: Theo cấu hình broker
+4. Subscribe: `avi/#` (tất cả messages)
+
+**Ưu điểm**:
+- ✅ Giao diện đồ họa dễ dùng
+- ✅ Xem message history
+- ✅ Publish test messages
+- ✅ Hỗ trợ TLS/SSL
+
+### 2. mosquitto_sub (CLI)
+
+```bash
+# Subscribe all messages from factory 1
+mosquitto_sub -h broker.hivemq.com -p 1883 \
+  -u your_username -P your_password \
+  -t "avi/1/#" -v
+
+# Only NG alerts
+mosquitto_sub -h broker.hivemq.com -p 1883 \
+  -u your_username -P your_password \
+  -t "avi/+/workshop/+/station/+/errors" -v
+
+# With QoS 2
+mosquitto_sub -h broker.hivemq.com -p 1883 \
+  -u your_username -P your_password \
+  -t "avi/#" -q 2 -v
+```
+
+### 3. MQTTX (Desktop/CLI)
+
+**Download**: https://mqttx.app/
+
+Tương tự MQTT Explorer nhưng có thêm:
+- ✅ Cross-platform (Windows, macOS, Linux)
+- ✅ Benchmarking tools
+- ✅ Scripting support
+
+### 4. HiveMQ WebSocket Client
+
+**URL**: http://www.hivemq.com/demos/websocket-client/
+
+Test nhanh qua browser:
+- ✅ Không cần install
+- ✅ Kết nối WebSocket (port 8883)
+- ✅ Subscribe/Publish online
+
+### Validation Checklist
+
+- [ ] **Authentication**: REST API trả về 200 (không phải 401)
+- [ ] **Topics**: REST API trả về ít nhất 1 topic
+- [ ] **MQTT Connection**: MQTT Explorer/mosquitto_sub kết nối thành công
+- [ ] **Subscription**: Subscribe `avi/#` thành công
+- [ ] **Message Reception**: Nhận được messages từ AVI/AOI machines
+- [ ] **Message Format**: JSON parse thành công, có field `type`
+- [ ] **QoS Levels**: Messages có QoS đúng (errors=2, inspection=1, status=0)
+- [ ] **Reconnection**: Client tự động reconnect sau disconnect
+- [ ] **Performance**: Latency < 100ms, no message loss
+
+---
+
 ## Kiểm tra Kết nối
 
 ### Test với mosquitto_pub/sub
@@ -621,23 +817,156 @@ mosquitto_pub -h broker.hivemq.com -t "avi/1/workshop/1/station/1/test" -m '{"te
 
 ## Troubleshooting
 
-### Không kết nối được MQTT Broker
+> 📖 **Hướng dẫn Troubleshooting chi tiết**: Xem [THIRD_PARTY_MQTT_INTEGRATION_GUIDE.md - Section 9](./THIRD_PARTY_MQTT_INTEGRATION_GUIDE.md#9-khắc-phục-sự-cố) để biết giải pháp cho 7 vấn đề thường gặp nhất.
 
-1. Kiểm tra firewall cho phép port 1883/8883
-2. Kiểm tra username/password đúng
-3. Kiểm tra broker đang chạy: `systemctl status mosquitto`
+### Quick Fixes
 
-### Messages không được nhận
+#### 1. Không kết nối được MQTT Broker
 
-1. Kiểm tra topic name đúng format
-2. Kiểm tra QoS level phù hợp
-3. Kiểm tra client đã subscribe đúng topic
+**Triệu chứng**: `ECONNREFUSED`, `Connection refused`
 
-### Connection bị ngắt liên tục
+**Giải pháp**:
+```bash
+# Kiểm tra broker đang chạy
+systemctl status mosquitto   # Linux
+netstat -an | findstr 1883   # Windows
 
-1. Kiểm tra network stability
-2. Tăng keepalive interval
-3. Kiểm tra client ID không bị trùng
+# Test kết nối
+telnet broker.hivemq.com 1883
+mosquitto_sub -h broker.hivemq.com -t "test" -v
+
+# Kiểm tra firewall
+sudo ufw allow 1883   # Linux
+netsh advfirewall firewall add rule name="MQTT" dir=in action=allow protocol=TCP localport=1883   # Windows
+```
+
+#### 2. Authentication Failed (401 Unauthorized)
+
+**Triệu chứng**: REST API trả về `401`, header `X-Master-Key` không được nhận diện
+
+**Giải pháp**:
+```bash
+# Kiểm tra .env
+grep MASTER_API_KEY .env
+
+# Test với curl
+curl -X GET "http://localhost:3001/api/external/hierarchy/mqtt-message-types" \
+  -H "X-Master-Key: your_master_api_key_here"
+
+# Đảm bảo header case-sensitive
+```
+
+#### 3. Messages không được nhận
+
+**Triệu chứng**: MQTT connect thành công nhưng không nhận messages
+
+**Giải pháp**:
+```bash
+# 1. Dùng MQTT Explorer subscribe "#" (all topics)
+# 2. Kiểm tra broker logs
+tail -f /var/log/mosquitto/mosquitto.log
+
+# 3. Verify publisher đang gửi messages
+mosquitto_sub -h broker.hivemq.com -t "#" -v
+
+# 4. Test subscription callback
+client.on('message', (topic, message) => {
+  console.log('Topic:', topic);
+  console.log('Message:', message.toString());
+});
+```
+
+#### 4. Connection bị ngắt liên tục
+
+**Triệu chứng**: `Connection lost`, reconnect liên tục
+
+**Giải pháp**:
+```javascript
+// Tăng keepalive, reconnect period
+const client = mqtt.connect('mqtt://broker.hivemq.com', {
+  keepalive: 60,        // Tăng từ 30s → 60s
+  reconnectPeriod: 5000, // 5 giây
+  connectTimeout: 30000  // 30 giây
+});
+```
+
+#### 5. Port Conflict
+
+**Triệu chứng**: `EADDRINUSE`, port 1883 đã được sử dụng
+
+**Giải pháp**:
+```bash
+# Tìm process đang dùng port
+netstat -ano | findstr :1883   # Windows
+lsof -i :1883                  # Linux/macOS
+
+# Kill process
+taskkill /PID <PID> /F         # Windows
+kill -9 <PID>                  # Linux/macOS
+
+# Hoặc đổi port trong .env
+MQTT_PORT=1884
+EXTERNAL_MQTT_PORT=1884
+```
+
+#### 6. TLS/SSL Error
+
+**Triệu chứng**: `unable to verify the first certificate`, SSL handshake failed
+
+**Giải pháp**:
+```javascript
+// Kiểm tra protocol (mqtt:// vs mqtts://)
+const client = mqtt.connect('mqtts://secure-broker.com:8883', {
+  ca: fs.readFileSync('./certs/ca.crt'),
+  cert: fs.readFileSync('./certs/client.crt'),
+  key: fs.readFileSync('./certs/client.key'),
+  rejectUnauthorized: true  // false chỉ dùng cho development
+});
+
+// Test với openssl
+openssl s_client -connect secure-broker.com:8883 -CAfile ca.crt
+```
+
+#### 7. Messages Bị Duplicate
+
+**Triệu chứng**: Nhận cùng message nhiều lần
+
+**Giải pháp**:
+```javascript
+// 1. Sử dụng clean session
+const client = mqtt.connect('mqtt://broker.hivemq.com', {
+  clean: true  // Không giữ session cũ
+});
+
+// 2. Deduplicate với Set
+const processedMessages = new Set();
+
+client.on('message', (topic, message) => {
+  const data = JSON.parse(message.toString());
+  const messageId = data.inspectionId || data.alertId || data.timestamp;
+  
+  if (processedMessages.has(messageId)) {
+    console.log('Duplicate message, skipping:', messageId);
+    return;
+  }
+  
+  processedMessages.add(messageId);
+  // Process message...
+});
+```
+
+### Xem thêm
+
+📖 **Comprehensive Troubleshooting**: [THIRD_PARTY_MQTT_INTEGRATION_GUIDE.md](./THIRD_PARTY_MQTT_INTEGRATION_GUIDE.md#9-khắc-phục-sự-cố)
+
+Bao gồm:
+- ✅ Memory leak & high CPU fixes
+- ✅ Firewall configuration (Windows/Linux)
+- ✅ Network debugging với tcpdump/Wireshark
+- ✅ Broker logs analysis
+- ✅ Client reconnection best practices
+
+---
 
 ## Bảo mật
 

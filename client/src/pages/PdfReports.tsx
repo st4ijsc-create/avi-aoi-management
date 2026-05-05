@@ -302,7 +302,7 @@ export function PdfReportsContent() {
                 </CardHeader>
                 <CardContent>
                   <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
-                    <div className="w-32 h-40 mx-auto bg-gradient-to-br from-red-500/20 to-blue-500/20 rounded-lg flex flex-col items-center justify-center mb-4 border">
+                    <div className="w-32 h-40 mx-auto bg-linear-to-br from-red-500/20 to-blue-500/20 rounded-lg flex flex-col items-center justify-center mb-4 border">
                       <FileText className="h-10 w-10 text-primary mb-2" />
                       <div className="text-xs text-muted-foreground">Quality Report</div>
                       <div className="text-[10px] text-muted-foreground mt-1">PDF Template</div>

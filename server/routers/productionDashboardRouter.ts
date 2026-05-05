@@ -136,13 +136,56 @@ export const productionDashboardRouter = router({
         if (input.startDate) inspConditions.push(gte(productInspections.inspectionTime, input.startDate));
         if (input.endDate) inspConditions.push(lte(productInspections.inspectionTime, input.endDate));
 
-        // Aggregate stats
-        const statsResult = await database.select({
-          total: sql<number>`count(*)`,
-          ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
-          ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
-          ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
-        }).from(productInspections).where(and(...inspConditions));
+        // Build previous period conditions
+        let prevQueryPromise: Promise<{ total: number; ok: number }[]> | null = null;
+        if (input.startDate && input.endDate) {
+          const duration = input.endDate.getTime() - input.startDate.getTime();
+          const prevEnd = new Date(input.startDate.getTime() - 1);
+          const prevStart = new Date(prevEnd.getTime() - duration);
+          const prevConditions: SQL[] = [
+            inArray(productInspections.machineId, machineIds),
+            gte(productInspections.inspectionTime, prevStart),
+            lte(productInspections.inspectionTime, prevEnd),
+          ];
+          prevQueryPromise = database.select({
+            total: sql<number>`count(*)`,
+            ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+          }).from(productInspections).where(and(...prevConditions));
+        }
+
+        // Run all independent queries in parallel
+        const [statsResult, topDefects, mpCount, latestInsp, prevResult] = await Promise.all([
+          // Aggregate stats
+          database.select({
+            total: sql<number>`count(*)`,
+            ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
+            ng: sql<number>`sum(case when ${productInspections.overallResult} = 'NG' then 1 else 0 end)`,
+            ntf: sql<number>`sum(case when ${productInspections.overallResult} = 'NTF' then 1 else 0 end)`,
+          }).from(productInspections).where(and(...inspConditions)),
+          // Top 3 defects
+          getTopDefectsForMachines(database, machineIds, input.startDate, input.endDate, 3),
+          // Measurement point count
+          database.select({
+            count: sql<number>`count(distinct ${measurementPointDefs.id})`,
+          })
+            .from(measurementResults)
+            .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
+            .innerJoin(measurementPointDefs, eq(measurementResults.pointDefId, measurementPointDefs.id))
+            .where(and(inArray(productInspections.machineId, machineIds))),
+          // Latest product image
+          database.select({
+            productModelId: productInspections.productModelId,
+          })
+            .from(productInspections)
+            .where(and(
+              inArray(productInspections.machineId, machineIds),
+              sql`${productInspections.productModelId} IS NOT NULL`,
+            ))
+            .orderBy(desc(productInspections.inspectionTime))
+            .limit(1),
+          // Previous period (null if no date range)
+          prevQueryPromise ?? Promise.resolve(null),
+        ]);
 
         const stats = statsResult[0] || { total: 0, ok: 0, ng: 0, ntf: 0 };
         const total = Number(stats.total) || 0;
@@ -153,55 +196,17 @@ export const productionDashboardRouter = router({
         const finalYield = total > 0 ? Math.round(((ok + ntf) / total) * 10000) / 100 : 0;
         const retestRate = total > 0 ? Math.round((ntf / total) * 10000) / 100 : 0;
 
-        // Compute previous period yield for change calculation
+        // Compute yield change from previous period
         let yieldChange = 0;
-        if (input.startDate && input.endDate) {
-          const duration = input.endDate.getTime() - input.startDate.getTime();
-          const prevEnd = new Date(input.startDate.getTime() - 1);
-          const prevStart = new Date(prevEnd.getTime() - duration);
-
-          const prevConditions: SQL[] = [
-            inArray(productInspections.machineId, machineIds),
-            gte(productInspections.inspectionTime, prevStart),
-            lte(productInspections.inspectionTime, prevEnd),
-          ];
-
-          const prevResult = await database.select({
-            total: sql<number>`count(*)`,
-            ok: sql<number>`sum(case when ${productInspections.overallResult} = 'OK' then 1 else 0 end)`,
-          }).from(productInspections).where(and(...prevConditions));
-
+        if (prevResult) {
           const prevTotal = Number(prevResult[0]?.total) || 0;
           const prevOk = Number(prevResult[0]?.ok) || 0;
           const prevFPY = prevTotal > 0 ? (prevOk / prevTotal) * 100 : 0;
           yieldChange = Math.round((firstPassYield - prevFPY) * 100) / 100;
         }
 
-        // Top 3 defects by NG measurement points
-        const topDefects = await getTopDefectsForMachines(database, machineIds, input.startDate, input.endDate, 3);
-
-        // Count measurement point definitions linked to station machines' products
-        const mpCount = await database.select({
-          count: sql<number>`count(distinct ${measurementPointDefs.id})`,
-        })
-          .from(measurementResults)
-          .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
-          .innerJoin(measurementPointDefs, eq(measurementResults.pointDefId, measurementPointDefs.id))
-          .where(and(inArray(productInspections.machineId, machineIds)));
-
-        // Get latest product image from the most recent inspection
+        // Get product image from latest inspection
         let latestProductImage: string | null = null;
-        const latestInsp = await database.select({
-          productModelId: productInspections.productModelId,
-        })
-          .from(productInspections)
-          .where(and(
-            inArray(productInspections.machineId, machineIds),
-            sql`${productInspections.productModelId} IS NOT NULL`,
-          ))
-          .orderBy(desc(productInspections.inspectionTime))
-          .limit(1);
-
         if (latestInsp.length > 0 && latestInsp[0].productModelId) {
           const pm = await database.select({ referenceImageUrl: productModels.referenceImageUrl })
             .from(productModels)

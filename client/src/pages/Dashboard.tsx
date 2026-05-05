@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { DashboardAIWidget } from "@/components/DashboardAIWidget";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -593,6 +594,47 @@ export default function Dashboard() {
   // Fetch NG comparison data
   const { data: ngComparisonData, isLoading: ngComparisonLoading } = trpc.workstation.ngComparison.useQuery(ngComparisonDates);
 
+  // Fallback: NG summary by machine (when workstation data is unavailable)
+  const { data: ngMachineSummary } = trpc.workstation.ngSummaryByMachine.useQuery({
+    startDate: ngDateRange.startDate,
+    endDate: ngDateRange.endDate,
+  });
+
+  // Fallback: NG trend from product_inspections directly
+  const { data: ngTrendDirectData } = trpc.workstation.ngTrendDirect.useQuery({
+    startDate: ngDateRange.startDate,
+    endDate: ngDateRange.endDate,
+    machineId: trendFilterWorkstationId, // reuse filter for machine
+  });
+
+  // Fallback: NG comparison from product_inspections directly
+  const { data: ngComparisonDirectData } = trpc.workstation.ngComparisonDirect.useQuery(ngComparisonDates);
+
+  // Determine effective NG data: prefer workstation-based, fallback to machine-based
+  const effectiveNGSummary = useMemo(() => {
+    const wsData = ngWorkstationSummary as any[] | undefined;
+    if (wsData && wsData.length > 0 && wsData.some((w: any) => Number(w.totalInspections) > 0)) {
+      return { source: 'workstation' as const, data: wsData };
+    }
+    const machData = ngMachineSummary as any[] | undefined;
+    if (machData && machData.length > 0 && machData.some((m: any) => Number(m.totalInspections) > 0)) {
+      return { source: 'machine' as const, data: machData };
+    }
+    return { source: 'none' as const, data: [] as any[] };
+  }, [ngWorkstationSummary, ngMachineSummary]);
+
+  const effectiveNGTrend = useMemo(() => {
+    const wsData = ngTrendData as any[] | undefined;
+    if (wsData && wsData.length > 0) return wsData;
+    return (ngTrendDirectData as any[]) || [];
+  }, [ngTrendData, ngTrendDirectData]);
+
+  const effectiveNGComparison = useMemo(() => {
+    if (ngComparisonData && (ngComparisonData as any)?.current?.totalCount > 0) return ngComparisonData;
+    if (ngComparisonDirectData && (ngComparisonDirectData as any)?.current?.totalCount > 0) return ngComparisonDirectData;
+    return ngComparisonData || ngComparisonDirectData;
+  }, [ngComparisonData, ngComparisonDirectData]);
+
   // Fetch all workstations for filter dropdown
   const { data: allWorkstations } = trpc.workstation.list.useQuery();
 
@@ -1035,7 +1077,7 @@ export default function Dashboard() {
               setSelectedWorkshop("all");
               setSelectedLine("all");
             }}>
-              <SelectTrigger className="w-[120px] sm:w-[160px] shrink-0">
+              <SelectTrigger className="w-30 sm:w-40 shrink-0">
                 <Factory className="h-4 w-4 mr-1 sm:hidden" />
                 <SelectValue placeholder={t("dashboard.factory")} />
               </SelectTrigger>
@@ -1053,7 +1095,7 @@ export default function Dashboard() {
               setSelectedWorkshop(v);
               setSelectedLine("all");
             }}>
-              <SelectTrigger className="w-[120px] sm:w-[160px] shrink-0">
+              <SelectTrigger className="w-30 sm:w-40 shrink-0">
                 <SelectValue placeholder={t("dashboard.workshop")} />
               </SelectTrigger>
               <SelectContent>
@@ -1067,7 +1109,7 @@ export default function Dashboard() {
             </Select>
 
             <Select value={selectedLine} onValueChange={setSelectedLine}>
-              <SelectTrigger className="w-[100px] sm:w-[160px] shrink-0">
+              <SelectTrigger className="w-25 sm:w-40 shrink-0">
                 <SelectValue placeholder="Line" />
               </SelectTrigger>
               <SelectContent>
@@ -1081,7 +1123,7 @@ export default function Dashboard() {
             </Select>
 
             <Select value={timeRange} onValueChange={(value) => setTimeRange(value as DashboardTimeRange)}>
-              <SelectTrigger className="w-[90px] sm:w-[120px] shrink-0">
+              <SelectTrigger className="w-22.5 sm:w-30 shrink-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1100,14 +1142,14 @@ export default function Dashboard() {
                   type="date"
                   value={customFromDate}
                   onChange={(e) => setCustomFromDate(e.target.value)}
-                  className="w-[140px] sm:w-[160px] shrink-0"
+                  className="w-35 sm:w-40 shrink-0"
                   aria-label="From date"
                 />
                 <Input
                   type="date"
                   value={customToDate}
                   onChange={(e) => setCustomToDate(e.target.value)}
-                  className="w-[140px] sm:w-[160px] shrink-0"
+                  className="w-35 sm:w-40 shrink-0"
                   aria-label="To date"
                 />
               </>
@@ -1134,7 +1176,7 @@ export default function Dashboard() {
               </TooltipProvider>
               
               <Select value={autoRefreshInterval} onValueChange={setAutoRefreshInterval}>
-                <SelectTrigger className="w-[90px] border-0">
+                <SelectTrigger className="w-22.5 border-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1488,7 +1530,7 @@ export default function Dashboard() {
                   <div key={machine.id} className="flex items-center justify-between p-2 rounded-lg bg-success/5 border border-success/20">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-success w-5">#{index + 1}</span>
-                      <span className="text-sm truncate max-w-[120px]">{machine.name}</span>
+                      <span className="text-sm truncate max-w-30">{machine.name}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">{machine.total} sp</span>
@@ -1517,7 +1559,7 @@ export default function Dashboard() {
                   <div key={machine.id} className="flex items-center justify-between p-2 rounded-lg bg-destructive/5 border border-destructive/20">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-destructive w-5">#{index + 1}</span>
-                      <span className="text-sm truncate max-w-[120px]">{machine.name}</span>
+                      <span className="text-sm truncate max-w-30">{machine.name}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">{machine.total} sp</span>
@@ -1544,7 +1586,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <ChartErrorBoundary>
-            <div className="h-[300px]">
+            <div className="h-75">
               {hourlyStats && hourlyStats.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
@@ -1557,16 +1599,17 @@ export default function Dashboard() {
                     }))}
                     margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
                     <XAxis 
                       dataKey="time" 
-                      tick={{ fontSize: 10 }}
+                      tick={{ fontSize: 10, fill: 'var(--foreground)' }}
+                      axisLine={{ stroke: 'var(--border)' }}
                       interval="preserveStartEnd"
                     />
                     <YAxis 
                       key="yaxis-left"
                       yAxisId="left"
-                      tick={{ fontSize: 10 }}
+                      tick={{ fontSize: 10, fill: 'var(--foreground)' }}
                       domain={[0, 100]}
                       label={{ value: '%', angle: -90, position: 'insideLeft', fontSize: 10 }}
                     />
@@ -1574,15 +1617,16 @@ export default function Dashboard() {
                       key="yaxis-right"
                       yAxisId="right"
                       orientation="right"
-                      tick={{ fontSize: 10 }}
+                      tick={{ fontSize: 10, fill: 'var(--foreground)' }}
                       label={{ value: 'Output', angle: 90, position: 'insideRight', fontSize: 10 }}
                     />
                     <RechartsTooltip 
                       contentStyle={{ 
-                        backgroundColor: 'rgba(0,0,0,0.8)', 
-                        border: 'none',
+                        backgroundColor: 'var(--card)',
+                        border: '1px solid var(--border)',
                         borderRadius: '8px',
-                        fontSize: '12px'
+                        fontSize: '12px',
+                        color: 'var(--foreground)'
                       }}
                     />
                     <Legend />
@@ -1644,7 +1688,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <ChartErrorBoundary>
-              <div className="h-[200px]">
+              <div className="h-50">
                 {pieData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -1681,7 +1725,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <ChartErrorBoundary>
-              <div className="h-[200px]">
+              <div className="h-50">
                 {machinesStats && (machinesStats as any[]).length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
@@ -1697,11 +1741,11 @@ export default function Dashboard() {
                       layout="vertical"
                       margin={{ left: 60 }}
                     >
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-                      <XAxis type="number" tick={{ fontSize: 10 }} />
-                      <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
+                      <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
+                      <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: 'var(--foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
                       <RechartsTooltip />
-                      <Bar dataKey="output" fill="hsl(200, 60%, 55%)" radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="output" fill="var(--chart-1)" radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (
@@ -1764,6 +1808,9 @@ export default function Dashboard() {
             </CardContent>
           </Card>
             </div>
+
+            {/* AI Insights Widget */}
+            <DashboardAIWidget />
           </TabsContent>
 
           {/* NG Visual Tab */}
@@ -1793,7 +1840,7 @@ export default function Dashboard() {
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                   <Select value={ngTimeFilter} onValueChange={(v) => setNgTimeFilter(v as "day" | "week" | "month")}>
-                    <SelectTrigger className="w-[140px]">
+                    <SelectTrigger className="w-35">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1806,7 +1853,7 @@ export default function Dashboard() {
                     variant="outline"
                     size="sm"
                     onClick={handleExportPDF}
-                    disabled={exportingPDF || (!ngWorkstationSummary && !ngTopNGPoints)}
+                    disabled={exportingPDF || (effectiveNGSummary.source === 'none' && !ngTopNGPoints)}
                     className="flex items-center gap-1"
                   >
                     {exportingPDF ? (
@@ -1833,15 +1880,15 @@ export default function Dashboard() {
                       <div className="h-16 flex items-center justify-center">
                         <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
                       </div>
-                    ) : ngComparisonData ? (
+                    ) : effectiveNGComparison ? (
                       <div className="space-y-2">
                         <div className="flex items-baseline gap-2">
-                          <span className="text-2xl font-bold">{ngComparisonData.current.ngRate.toFixed(2)}%</span>
+                          <span className="text-2xl font-bold">{(effectiveNGComparison as any).current.ngRate.toFixed(2)}%</span>
                           <span className="text-sm text-muted-foreground">{t("dashboard.ngRate")}</span>
                         </div>
                         <div className="flex items-center gap-4 text-sm">
-                          <span className="text-muted-foreground">{t("common.total")}: {ngComparisonData.current.totalCount.toLocaleString()}</span>
-                          <span className="text-red-500">NG: {ngComparisonData.current.ngCount.toLocaleString()}</span>
+                          <span className="text-muted-foreground">{t("common.total")}: {(effectiveNGComparison as any).current.totalCount.toLocaleString()}</span>
+                          <span className="text-red-500">NG: {(effectiveNGComparison as any).current.ngCount.toLocaleString()}</span>
                         </div>
                       </div>
                     ) : (
@@ -1862,15 +1909,15 @@ export default function Dashboard() {
                       <div className="h-16 flex items-center justify-center">
                         <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
                       </div>
-                    ) : ngComparisonData ? (
+                    ) : effectiveNGComparison ? (
                       <div className="space-y-2">
                         <div className="flex items-baseline gap-2">
-                          <span className="text-2xl font-bold">{ngComparisonData.previous.ngRate.toFixed(2)}%</span>
+                          <span className="text-2xl font-bold">{(effectiveNGComparison as any).previous.ngRate.toFixed(2)}%</span>
                           <span className="text-sm text-muted-foreground">{t("dashboard.ngRate")}</span>
                         </div>
                         <div className="flex items-center gap-4 text-sm">
-                          <span className="text-muted-foreground">{t("common.total")}: {ngComparisonData.previous.totalCount.toLocaleString()}</span>
-                          <span className="text-red-500">NG: {ngComparisonData.previous.ngCount.toLocaleString()}</span>
+                          <span className="text-muted-foreground">{t("common.total")}: {(effectiveNGComparison as any).previous.totalCount.toLocaleString()}</span>
+                          <span className="text-red-500">NG: {(effectiveNGComparison as any).previous.ngCount.toLocaleString()}</span>
                         </div>
                       </div>
                     ) : (
@@ -1880,7 +1927,7 @@ export default function Dashboard() {
                 </Card>
 
                 {/* Change Indicator */}
-                <Card className={`${cardStyleProps.className} ${ngComparisonData?.changes.isImproved ? 'border-green-500/50' : 'border-red-500/50'}`} style={cardStyleProps.style}>
+                <Card className={`${cardStyleProps.className} ${(effectiveNGComparison as any)?.changes?.isImproved ? 'border-green-500/50' : 'border-red-500/50'}`} style={cardStyleProps.style}>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium" style={{ opacity: 0.7 }}>{t("dashboard.ngCompare")}</CardTitle>
                   </CardHeader>
@@ -1889,22 +1936,22 @@ export default function Dashboard() {
                       <div className="h-16 flex items-center justify-center">
                         <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
                       </div>
-                    ) : ngComparisonData ? (
+                    ) : effectiveNGComparison ? (
                       <div className="space-y-2">
                         <div className="flex items-baseline gap-2">
-                          {ngComparisonData.changes.isImproved ? (
+                          {(effectiveNGComparison as any).changes.isImproved ? (
                             <TrendingDown className="h-6 w-6 text-green-500" />
                           ) : (
                             <TrendingUp className="h-6 w-6 text-red-500" />
                           )}
-                          <span className={`text-2xl font-bold ${ngComparisonData.changes.isImproved ? 'text-green-500' : 'text-red-500'}`}>
-                            {ngComparisonData.changes.ngRateChange > 0 ? '+' : ''}{ngComparisonData.changes.ngRateChange.toFixed(2)}%
+                          <span className={`text-2xl font-bold ${(effectiveNGComparison as any).changes.isImproved ? 'text-green-500' : 'text-red-500'}`}>
+                            {(effectiveNGComparison as any).changes.ngRateChange > 0 ? '+' : ''}{(effectiveNGComparison as any).changes.ngRateChange.toFixed(2)}%
                           </span>
                         </div>
                         <div className="text-sm">
-                          {ngComparisonData.changes.isImproved ? (
+                          {(effectiveNGComparison as any).changes.isImproved ? (
                             <span className="text-green-500">{t("dashboard.improvedVsPrevious")}</span>
-                          ) : ngComparisonData.changes.ngRateChange === 0 ? (
+                          ) : (effectiveNGComparison as any).changes.ngRateChange === 0 ? (
                             <span className="text-muted-foreground">{t("dashboard.noChange")}</span>
                           ) : (
                             <span className="text-red-500">{t("dashboard.increasedVsPrevious")}</span>
@@ -1942,7 +1989,7 @@ export default function Dashboard() {
                           setTrendFilterMeasurementPointId(undefined); // Reset measurement point filter
                         }}
                       >
-                        <SelectTrigger className="w-[180px]">
+                        <SelectTrigger className="w-45">
                           <SelectValue placeholder={t("dashboard.selectWorkstation")} />
                         </SelectTrigger>
                         <SelectContent>
@@ -1960,7 +2007,7 @@ export default function Dashboard() {
                           value={trendFilterMeasurementPointId?.toString() || "all"} 
                           onValueChange={(v) => setTrendFilterMeasurementPointId(v === "all" ? undefined : Number(v))}
                         >
-                          <SelectTrigger className="w-[200px]">
+                          <SelectTrigger className="w-50">
                             <SelectValue placeholder={t("dashboard.selectPoint")} />
                           </SelectTrigger>
                           <SelectContent>
@@ -1997,10 +2044,10 @@ export default function Dashboard() {
                     <div className="flex items-center justify-center h-64">
                       <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
                     </div>
-                  ) : ngTrendData && ngTrendData.length > 0 ? (
+                  ) : effectiveNGTrend && effectiveNGTrend.length > 0 ? (
                     <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={ngTrendData.map((item: any) => ({
+                        <LineChart data={effectiveNGTrend.map((item: any) => ({
                           date: new Date(item.date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
                           ngRate: Number(item.ngRate),
                           totalCount: Number(item.totalCount),
@@ -2068,15 +2115,15 @@ export default function Dashboard() {
                     <div className="flex items-center justify-center h-32">
                       <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
                     </div>
-                  ) : ngWorkstationSummary && (ngWorkstationSummary as any[]).length > 0 ? (
+                  ) : effectiveNGSummary.data.length > 0 ? (
                     <WorkstationNGHeatmap
-                      data={(ngWorkstationSummary as any[]).map((ws: any) => ({
-                        id: ws.workstationId,
-                        code: ws.workstationCode || '',
-                        name: ws.workstationName || 'Unknown',
-                        total: ws.totalInspections || 0,
-                        ng: ws.ngCount || 0,
-                        ngRate: ws.totalInspections > 0 ? ((ws.ngCount || 0) / ws.totalInspections * 100) : 0,
+                      data={effectiveNGSummary.data.map((ws: any) => ({
+                        id: ws.workstationId || ws.machineId,
+                        code: ws.workstationCode || ws.machineCode || '',
+                        name: ws.workstationName || ws.machineName || 'Unknown',
+                        total: Number(ws.totalInspections) || 0,
+                        ng: Number(ws.ngCount) || 0,
+                        ngRate: Number(ws.totalInspections) > 0 ? ((Number(ws.ngCount) || 0) / Number(ws.totalInspections) * 100) : 0,
                       }))}
                       onWorkstationClick={(ws) => {
                         setSelectedWorkstationForDrilldown({ id: ws.id, code: ws.code, name: ws.name });
@@ -2146,7 +2193,7 @@ export default function Dashboard() {
             <div className="flex items-center gap-2">
               {/* Machine Status Filter */}
               <Select value={machineStatusFilter} onValueChange={(v: "all" | "online" | "offline") => setMachineStatusFilter(v)}>
-                <SelectTrigger className="w-[140px]">
+                <SelectTrigger className="w-35">
                   <SelectValue placeholder={t("common.status")} />
                 </SelectTrigger>
                 <SelectContent>
@@ -2206,7 +2253,7 @@ export default function Dashboard() {
                 return (
                   <Card key={lineName} className="glass-card overflow-hidden">
                     {/* Line Header */}
-                    <div className="bg-gradient-to-r from-primary/10 to-transparent border-b border-border/50 px-6 py-4">
+                    <div className="bg-linear-to-r from-primary/10 to-transparent border-b border-border/50 px-6 py-4">
                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div className="flex items-center gap-3">
                           <div className="h-10 w-10 rounded-lg bg-primary/20 flex items-center justify-center">
@@ -2312,7 +2359,7 @@ export default function Dashboard() {
                               </div>
 
                               {/* Machine Image - Large */}
-                              <div className="relative h-40 w-full bg-gradient-to-br from-slate-800 to-slate-900">
+                              <div className="relative h-40 w-full bg-linear-to-br from-slate-800 to-slate-900">
                                 {machineImage ? (
                                   <>
                                     <img
@@ -2320,7 +2367,7 @@ export default function Dashboard() {
                                       alt={machine.name}
                                       className="w-full h-full object-contain p-2"
                                     />
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    <div className="absolute inset-0 bg-linear-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                                   </>
                                 ) : (
                                   <div className="w-full h-full flex items-center justify-center">
@@ -2470,12 +2517,12 @@ export default function Dashboard() {
               {selectedMachine && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Left: Machine Image */}
-                  <div className="flex flex-col items-center justify-center rounded-xl border border-border/50 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-4 min-h-[280px]">
+                  <div className="flex flex-col items-center justify-center rounded-xl border border-border/50 bg-linear-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-4 min-h-70">
                     {(selectedMachine.image2DUrl || selectedMachine.image3DUrl) ? (
                       <img
                         src={selectedMachine.image2DUrl || selectedMachine.image3DUrl || ''}
                         alt={selectedMachine.name}
-                        className="max-h-[250px] w-full object-contain rounded-lg"
+                        className="max-h-62.5 w-full object-contain rounded-lg"
                       />
                     ) : (
                       <div className="flex flex-col items-center justify-center text-muted-foreground gap-3">
@@ -2491,7 +2538,7 @@ export default function Dashboard() {
 
                   {/* Right: Pie Chart + Bar breakdown */}
                   <div className="flex flex-col gap-4">
-                    <div className="h-[220px] rounded-xl border border-border/50 bg-card p-3">
+                    <div className="h-55 rounded-xl border border-border/50 bg-card p-3">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
@@ -2522,16 +2569,16 @@ export default function Dashboard() {
                       </ResponsiveContainer>
                     </div>
                     {/* Bar Chart showing OK/NG/NTF counts */}
-                    <div className="h-[120px] rounded-xl border border-border/50 bg-card p-3">
+                    <div className="h-30 rounded-xl border border-border/50 bg-card p-3">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={[
                           { name: "OK", value: selectedMachine.ok, fill: "oklch(0.72 0.17 145)" },
                           { name: "NG", value: selectedMachine.ng, fill: "oklch(0.65 0.2 25)" },
                           { name: "NTF", value: selectedMachine.ntf, fill: "oklch(0.78 0.15 75)" },
                         ]}>
-                          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                          <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                          <YAxis tick={{ fontSize: 11 }} />
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
+                          <XAxis dataKey="name" tick={{ fontSize: 12, fill: 'var(--foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
+                          <YAxis tick={{ fontSize: 11, fill: 'var(--foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
                           <RechartsTooltip />
                           <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                             {[
@@ -2571,7 +2618,7 @@ export default function Dashboard() {
                   </Button>
                 </div>
               )}
-              <ScrollArea className="h-[400px]">
+              <ScrollArea className="h-100">
                 <div className="space-y-2">
                   {filteredInspectionsLoading ? (
                     <div className="flex items-center justify-center py-8">

@@ -10,6 +10,11 @@ export const mqttClients = pgTable("mqtt_clients", {
   deviceModel: varchar("deviceModel", { length: 100 }), // Model thiết bị (Samsung, Xiaomi, etc.)
   osVersion: varchar("osVersion", { length: 50 }), // Android version
   appVersion: varchar("appVersion", { length: 50 }), // App version
+  ipAddress: varchar("ipAddress", { length: 45 }), // Device IP address
+  brand: varchar("brand", { length: 100 }), // Device brand (Samsung, Xiaomi, etc.)
+  manufacturer: varchar("manufacturer", { length: 100 }), // Device manufacturer
+  screenResolution: varchar("screenResolution", { length: 50 }), // Screen resolution
+  networkType: varchar("networkType", { length: 50 }), // Network type (wifi, cellular, etc.)
   // Mapping to station
   stationId: integer("stationId"), // Công trạm được gán
   processId: integer("processId"), // Công đoạn được gán (optional, for filtering)
@@ -774,3 +779,52 @@ export const mqttNgAlertSettings = pgTable("mqtt_ng_alert_settings", {
 
 export type MqttNgAlertSetting = typeof mqttNgAlertSettings.$inferSelect;
 export type InsertMqttNgAlertSetting = typeof mqttNgAlertSettings.$inferInsert;
+
+// ─── Software Version Management ─────────────────────────────────────────────
+export const mqttSoftwareVersions = pgTable("mqtt_software_versions", {
+  id: serial("id").primaryKey(),
+  version: varchar("version", { length: 50 }).notNull(),
+  versionCode: integer("versionCode").notNull().unique(),
+  releaseDate: timestamp("releaseDate").defaultNow().notNull(),
+  changelog: text("changelog"),
+  apkFileKey: varchar("apkFileKey", { length: 500 }),
+  apkFileUrl: text("apkFileUrl"),
+  apkFileName: varchar("apkFileName", { length: 255 }),
+  fileSize: integer("fileSize"),
+  mandatory: boolean("mandatory").default(false).notNull(),
+  minVersionCode: integer("minVersionCode"),
+  isLatest: boolean("isLatest").default(false).notNull(),
+  uploadedBy: integer("uploadedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_sw_version_code").on(table.versionCode),
+  index("idx_sw_version_latest").on(table.isLatest),
+]);
+
+export type MqttSoftwareVersion = typeof mqttSoftwareVersions.$inferSelect;
+export type InsertMqttSoftwareVersion = typeof mqttSoftwareVersions.$inferInsert;
+
+// ─── FactoryAlertSystem Version Management ───────────────────────────────────
+export const factoryAlertVersions = pgTable("factory_alert_versions", {
+  id: serial("id").primaryKey(),
+  version: varchar("version", { length: 50 }).notNull(),
+  versionCode: integer("versionCode").notNull(),
+  releaseDate: timestamp("releaseDate").defaultNow().notNull(),
+  changelog: text("changelog"),
+  apkFileName: varchar("apkFileName", { length: 255 }),
+  apkFilePath: varchar("apkFilePath", { length: 500 }),
+  fileSize: integer("fileSize"),
+  mandatory: boolean("mandatory").default(false).notNull(),
+  minVersionCode: integer("minVersionCode"),
+  isActive: boolean("isActive").default(false).notNull(),
+  uploadedBy: integer("uploadedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_fa_version_code").on(table.versionCode),
+  index("idx_fa_version_active").on(table.isActive),
+]);
+
+export type FactoryAlertVersion = typeof factoryAlertVersions.$inferSelect;
+export type InsertFactoryAlertVersion = typeof factoryAlertVersions.$inferInsert;

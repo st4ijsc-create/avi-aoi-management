@@ -274,7 +274,7 @@ export function EnhancedAuditLogsContent() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[160px]">
+                      <TableHead className="w-40">
                         <Button
                           variant="ghost" size="sm"
                           onClick={() => setFilters(f => ({
@@ -301,7 +301,7 @@ export function EnhancedAuditLogsContent() {
                       </TableHead>
                       <TableHead>{t('audit.entity')}</TableHead>
                       <TableHead>{t('audit.description')}</TableHead>
-                      <TableHead className="w-[80px]">{t('audit.details')}</TableHead>
+                      <TableHead className="w-20">{t('audit.details')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -351,7 +351,7 @@ export function EnhancedAuditLogsContent() {
                                 {log.entityId ? ` #${log.entityId}` : ""}
                               </button>
                             </TableCell>
-                            <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
+                            <TableCell className="text-sm text-muted-foreground max-w-50 truncate">
                               {log.description || log.details || "-"}
                             </TableCell>
                             <TableCell>
@@ -436,7 +436,7 @@ export function EnhancedAuditLogsContent() {
           <TabsContent value="stats" className="space-y-4">
             <div className="flex gap-2 mb-4">
               <Select value={statsGroupBy} onValueChange={(v: any) => setStatsGroupBy(v)}>
-                <SelectTrigger className="w-[200px]"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-50"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="day">{t('audit.byDay')}</SelectItem>
                   <SelectItem value="action">{t('audit.byAction')}</SelectItem>
@@ -453,7 +453,7 @@ export function EnhancedAuditLogsContent() {
                   <CardTitle className="text-base">{t('audit.activityDistribution')}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[300px]">
+                  <div className="h-75">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={statsData?.stats || []}>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
@@ -479,7 +479,7 @@ export function EnhancedAuditLogsContent() {
                   <CardTitle className="text-base">{t('audit.ratioByType')}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[300px]">
+                  <div className="h-75">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
@@ -573,7 +573,7 @@ export function EnhancedAuditLogsContent() {
                           {changeDiff.before && (
                             <div>
                               <span className="text-xs text-red-400 block mb-1">{t('audit.before')}</span>
-                              <pre className="bg-muted rounded p-2 text-xs whitespace-pre-wrap overflow-auto max-h-[300px]">
+                              <pre className="bg-muted rounded p-2 text-xs whitespace-pre-wrap overflow-auto max-h-75">
                                 {JSON.stringify(changeDiff.before, null, 2)}
                               </pre>
                             </div>
@@ -581,7 +581,7 @@ export function EnhancedAuditLogsContent() {
                           {changeDiff.after && (
                             <div>
                               <span className="text-xs text-green-400 block mb-1">{t('audit.after')}</span>
-                              <pre className="bg-muted rounded p-2 text-xs whitespace-pre-wrap overflow-auto max-h-[300px]">
+                              <pre className="bg-muted rounded p-2 text-xs whitespace-pre-wrap overflow-auto max-h-75">
                                 {JSON.stringify(changeDiff.after, null, 2)}
                               </pre>
                             </div>

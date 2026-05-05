@@ -237,7 +237,7 @@ export default function AOIPackages() {
             <Card>
               <CardContent className="p-4">
                 <div className="flex flex-wrap gap-3 items-end">
-                  <div className="flex-1 min-w-[200px]">
+                  <div className="flex-1 min-w-50">
                     <label className="text-xs font-medium text-muted-foreground mb-1 block">Serial Number</label>
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -249,7 +249,7 @@ export default function AOIPackages() {
                       />
                     </div>
                   </div>
-                  <div className="min-w-[130px]">
+                  <div className="min-w-32.5">
                     <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('packages.machineCode')}</label>
                     <Input
                       placeholder={t('packages.machineCodePlaceholder')}
@@ -257,7 +257,7 @@ export default function AOIPackages() {
                       onChange={(e) => { setFilterMachineCode(e.target.value); setPage(1); }}
                     />
                   </div>
-                  <div className="min-w-[130px]">
+                  <div className="min-w-32.5">
                     <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('common.status')}</label>
                     <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v); setPage(1); }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
@@ -270,7 +270,7 @@ export default function AOIPackages() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="min-w-[120px]">
+                  <div className="min-w-30">
                     <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('packages.result')}</label>
                     <Select value={filterResult} onValueChange={(v) => { setFilterResult(v); setPage(1); }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
@@ -281,11 +281,11 @@ export default function AOIPackages() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="min-w-[140px]">
+                  <div className="min-w-35">
                     <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('packages.fromDate')}</label>
                     <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} />
                   </div>
-                  <div className="min-w-[140px]">
+                  <div className="min-w-35">
                     <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('packages.toDate')}</label>
                     <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} />
                   </div>
@@ -495,7 +495,7 @@ export default function AOIPackages() {
                           )}
                           {metric.lastErrorMessage && (
                             <div className="text-xs text-red-500 flex items-start gap-1">
-                              <AlertTriangle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                              <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
                               {metric.lastErrorMessage}
                             </div>
                           )}
@@ -603,7 +603,7 @@ export default function AOIPackages() {
                       {packageDetailQuery.data.errorMessage && (
                         <div className="rounded-lg border border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950 p-4">
                           <div className="flex items-start gap-3">
-                            <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                            <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
                             <div>
                               <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">{t('packages.uploadError')}</h4>
                               <p className="text-sm text-red-700 dark:text-red-300 mt-1 whitespace-pre-wrap break-all">
@@ -874,17 +874,58 @@ export default function AOIPackages() {
 
         {/* Image Viewer Dialog */}
         <Dialog open={!!viewImageDialog} onOpenChange={(open) => !open && setViewImageDialog(null)}>
-          <DialogContent className="max-w-3xl">
+          <DialogContent
+            className="max-w-3xl"
+            onKeyDown={(e) => {
+              if (!viewImageDialog || !packageDetailQuery.data?.images) return;
+              const images = packageDetailQuery.data.images;
+              const idx = images.findIndex((img) => img.fileName === viewImageDialog.fileName);
+              if (e.key === "ArrowLeft" && idx > 0) {
+                e.preventDefault();
+                const prev = images[idx - 1];
+                setViewImageDialog({ packageId: viewImageDialog.packageId, pointCode: prev.pointCode, fileName: prev.fileName });
+              } else if (e.key === "ArrowRight" && idx < images.length - 1) {
+                e.preventDefault();
+                const next = images[idx + 1];
+                setViewImageDialog({ packageId: viewImageDialog.packageId, pointCode: next.pointCode, fileName: next.fileName });
+              }
+            }}
+          >
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <ImageIcon className="h-5 w-5" />
                 {viewImageDialog?.pointCode || viewImageDialog?.fileName}
+                {viewImageDialog && packageDetailQuery.data?.images && (() => {
+                  const idx = packageDetailQuery.data.images.findIndex((img) => img.fileName === viewImageDialog.fileName);
+                  return idx >= 0 ? (
+                    <span className="text-sm font-normal text-muted-foreground ml-auto">
+                      {idx + 1} / {packageDetailQuery.data.images.length}
+                    </span>
+                  ) : null;
+                })()}
               </DialogTitle>
               <DialogDescription>
                 Package: {viewImageDialog?.packageId}
               </DialogDescription>
             </DialogHeader>
-            <div className="flex items-center justify-center min-h-[400px] bg-muted rounded-lg overflow-hidden">
+            <div className="relative flex items-center justify-center min-h-100 bg-muted rounded-lg overflow-hidden group">
+              {/* Previous arrow */}
+              {viewImageDialog && packageDetailQuery.data?.images && (() => {
+                const images = packageDetailQuery.data.images;
+                const idx = images.findIndex((img) => img.fileName === viewImageDialog.fileName);
+                return idx > 0 ? (
+                  <button
+                    className="absolute left-2 z-10 p-1.5 rounded-full bg-background/80 hover:bg-background shadow-md border opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => {
+                      const prev = images[idx - 1];
+                      setViewImageDialog({ packageId: viewImageDialog.packageId, pointCode: prev.pointCode, fileName: prev.fileName });
+                    }}
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                ) : null;
+              })()}
+
               {viewImageDialog && (
                 <img
                   src={`/api/aoi/image/${viewImageDialog.packageId}/${viewImageDialog.fileName}`}
@@ -897,6 +938,23 @@ export default function AOIPackages() {
                   }}
                 />
               )}
+
+              {/* Next arrow */}
+              {viewImageDialog && packageDetailQuery.data?.images && (() => {
+                const images = packageDetailQuery.data.images;
+                const idx = images.findIndex((img) => img.fileName === viewImageDialog.fileName);
+                return idx >= 0 && idx < images.length - 1 ? (
+                  <button
+                    className="absolute right-2 z-10 p-1.5 rounded-full bg-background/80 hover:bg-background shadow-md border opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => {
+                      const next = images[idx + 1];
+                      setViewImageDialog({ packageId: viewImageDialog.packageId, pointCode: next.pointCode, fileName: next.fileName });
+                    }}
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
+                ) : null;
+              })()}
             </div>
             <div className="flex justify-end gap-2 mt-2">
               <Button

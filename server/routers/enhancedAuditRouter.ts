@@ -44,67 +44,45 @@ export const enhancedAuditRouter = router({
       const conn = await getDb();
       if (!conn) return { items: [], total: 0 };
 
-      const conditions: string[] = ["1=1"];
-      const params: Record<string, any> = {};
+      // Build parameterized conditions using Drizzle sql template tags
+      const conditions: ReturnType<typeof sql>[] = [sql`1=1`];
 
-      if (input.userId) conditions.push(`al."userId" = ${input.userId}`);
-      if (input.action) conditions.push(`al."action" = '${input.action}'`);
+      if (input.userId) conditions.push(sql`al."userId" = ${input.userId}`);
+      if (input.action) conditions.push(sql`al."action" = ${input.action}`);
       if (input.actions?.length) {
-        const actionList = input.actions.map(a => `'${a}'`).join(",");
-        conditions.push(`al."action" IN (${actionList})`);
+        conditions.push(sql`al."action" IN ${sql`(${sql.join(input.actions.map(a => sql`${a}`), sql`, `)})`}`);
       }
-      if (input.entityType) conditions.push(`al."entityType" = '${input.entityType}'`);
-      if (input.entityId) conditions.push(`al."entityId" = ${input.entityId}`);
-      if (input.status) conditions.push(`al."status" = '${input.status}'`);
-      if (input.source) conditions.push(`al."details"->>'source' = '${input.source}'`);
+      if (input.entityType) conditions.push(sql`al."entityType" = ${input.entityType}`);
+      if (input.entityId) conditions.push(sql`al."entityId" = ${input.entityId}`);
+      if (input.status) conditions.push(sql`al."status" = ${input.status}`);
+      if (input.source) conditions.push(sql`al."details"->>'source' = ${input.source}`);
+      if (input.startDate) conditions.push(sql`al."createdAt" >= ${input.startDate}`);
+      if (input.endDate) conditions.push(sql`al."createdAt" <= ${input.endDate}`);
 
-      const whereClause = conditions.join(" AND ");
+      const whereClause = sql.join(conditions, sql` AND `);
 
-      // Use parameterized queries via sql template
-      let query;
-      if (input.startDate && input.endDate) {
-        query = sql.raw(`
-          SELECT al.*, u."name" as "displayUserName"
-          FROM audit_logs al
-          LEFT JOIN users u ON u.id = al."userId"
-          WHERE ${whereClause}
-            AND al."createdAt" >= '${input.startDate.toISOString()}'
-            AND al."createdAt" <= '${input.endDate.toISOString()}'
-          ORDER BY al."${input.sortBy}" ${input.sortOrder}
-          LIMIT ${input.limit} OFFSET ${input.offset}
-        `);
-      } else if (input.startDate) {
-        query = sql.raw(`
-          SELECT al.*, u."name" as "displayUserName"
-          FROM audit_logs al
-          LEFT JOIN users u ON u.id = al."userId"
-          WHERE ${whereClause}
-            AND al."createdAt" >= '${input.startDate.toISOString()}'
-          ORDER BY al."${input.sortBy}" ${input.sortOrder}
-          LIMIT ${input.limit} OFFSET ${input.offset}
-        `);
-      } else {
-        query = sql.raw(`
-          SELECT al.*, u."name" as "displayUserName"
-          FROM audit_logs al
-          LEFT JOIN users u ON u.id = al."userId"
-          WHERE ${whereClause}
-          ORDER BY al."${input.sortBy}" ${input.sortOrder}
-          LIMIT ${input.limit} OFFSET ${input.offset}
-        `);
-      }
+      // Whitelist sort column and direction to prevent injection
+      const sortColumn = ({ createdAt: '"createdAt"', action: '"action"', entityType: '"entityType"' } as const)[input.sortBy];
+      const sortDir = input.sortOrder === 'asc' ? sql`ASC` : sql`DESC`;
+
+      const query = sql`
+        SELECT al.*, u."name" as "displayUserName"
+        FROM audit_logs al
+        LEFT JOIN users u ON u.id = al."userId"
+        WHERE ${whereClause}
+        ORDER BY al.${sql.raw(sortColumn)} ${sortDir}
+        LIMIT ${input.limit} OFFSET ${input.offset}
+      `;
 
       const result: any = await conn.execute(query);
       const rows = result.rows || result;
 
-      // Count total
-      const countQuery = sql.raw(`
+      // Count total with same parameterized conditions
+      const countQuery = sql`
         SELECT COUNT(*)::int as total
         FROM audit_logs al
         WHERE ${whereClause}
-        ${input.startDate ? `AND al."createdAt" >= '${input.startDate.toISOString()}'` : ''}
-        ${input.endDate ? `AND al."createdAt" <= '${input.endDate.toISOString()}'` : ''}
-      `);
+      `;
       const countResult: any = await conn.execute(countQuery);
       const countRows = countResult.rows || countResult;
 

@@ -158,7 +158,7 @@ function YieldRateWidget({ config, size }: { config: Record<string, any>; size: 
   return (
     <div className="h-full flex flex-col items-center justify-center gap-1 px-2">
       {/* Gauge */}
-      <svg viewBox="0 0 120 70" className="w-full max-w-[160px]">
+      <svg viewBox="0 0 120 70" className="w-full max-w-40">
         {/* background arc */}
         <path
           d="M 10 65 A 50 50 0 0 1 110 65"
@@ -245,10 +245,10 @@ function ProductionVolumeWidget({ config, size }: { config: Record<string, any>;
       <div className="flex-1 min-h-0">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-muted/30" />
-            <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-            <YAxis tick={{ fontSize: 10 }} />
-            <RechartsTooltip contentStyle={{ fontSize: 12 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
+            <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
+            <YAxis tick={{ fontSize: 10, fill: 'var(--foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
+            <RechartsTooltip contentStyle={{ fontSize: 12, backgroundColor: 'var(--card)', border: '1px solid var(--border)', color: 'var(--foreground)' }} />
             {showStacked ? (
               <>
                 <Bar dataKey="OK" stackId="a" fill={STATUS_COLORS.ok} radius={[0, 0, 0, 0]} />
@@ -307,7 +307,7 @@ function MachineStatusWidget({ config, size }: { config: Record<string, any>; si
               <div key={m.machine?.id ?? i} className="flex items-center justify-between text-xs p-1.5 rounded hover:bg-muted/50">
                 <div className="flex items-center gap-2">
                   {isActive ? <Wifi className="w-3 h-3 text-green-500" /> : <WifiOff className="w-3 h-3 text-muted-foreground" />}
-                  <span className="font-medium truncate max-w-[120px]">{m.machine?.name || `Machine ${i + 1}`}</span>
+                  <span className="font-medium truncate max-w-30">{m.machine?.name || `Machine ${i + 1}`}</span>
                 </div>
                 <div className="flex gap-2 text-muted-foreground">
                   <span className="text-green-600">{m.stats?.ok ?? 0}</span>
@@ -470,10 +470,10 @@ function TopNGPointsWidget({ config, size }: { config: Record<string, any>; size
       <div className="flex-1 min-h-0">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} margin={{ top: 4, right: config.showPareto ? 30 : 4, bottom: 0, left: -20 }}>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-muted/30" />
-            <XAxis dataKey="name" tick={{ fontSize: 9 }} interval={0} angle={-30} textAnchor="end" height={50} />
-            <YAxis yAxisId="left" tick={{ fontSize: 10 }} />
-            <RechartsTooltip contentStyle={{ fontSize: 12 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
+            <XAxis dataKey="name" tick={{ fontSize: 9, fill: 'var(--foreground)' }} interval={0} angle={-30} textAnchor="end" height={50} axisLine={{ stroke: 'var(--border)' }} />
+            <YAxis yAxisId="left" tick={{ fontSize: 10, fill: 'var(--foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
+            <RechartsTooltip contentStyle={{ fontSize: 12, backgroundColor: 'var(--card)', border: '1px solid var(--border)', color: 'var(--foreground)' }} />
             <Bar yAxisId="left" dataKey="NG" fill="#ef4444" radius={[2, 2, 0, 0]} />
             {config.showPareto !== false && (
               <>
@@ -550,7 +550,7 @@ function ThroughputWidget({ config, size }: { config: Record<string, any>; size:
       )}
 
       {hourly.length > 0 && size !== "small" && (
-        <div className="w-full flex-1 min-h-0 max-h-[80px]">
+        <div className="w-full flex-1 min-h-0 max-h-20">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={hourly.slice(-12)} margin={{ top: 2, right: 2, bottom: 0, left: 2 }}>
               <Area type="monotone" dataKey="value" fill="#3b82f6" fillOpacity={0.15} stroke="#3b82f6" strokeWidth={1.5} />
@@ -621,10 +621,10 @@ function BarChartWidget({ config, size }: { config: Record<string, any>; size: s
   return (
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-        <CartesianGrid strokeDasharray="3 3" className="stroke-muted/30" />
-        <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-        <YAxis tick={{ fontSize: 10 }} />
-        <RechartsTooltip contentStyle={{ fontSize: 12 }} />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
+        <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
+        <YAxis tick={{ fontSize: 10, fill: 'var(--foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
+        <RechartsTooltip contentStyle={{ fontSize: 12, backgroundColor: 'var(--card)', border: '1px solid var(--border)', color: 'var(--foreground)' }} />
         <Bar dataKey="value" fill={config.color || CHART_COLORS[0]} radius={[2, 2, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
@@ -653,10 +653,10 @@ function LineChartWidget({ config, size }: { config: Record<string, any>; size: 
   return (
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-        <CartesianGrid strokeDasharray="3 3" className="stroke-muted/30" />
-        <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-        <YAxis tick={{ fontSize: 10 }} />
-        <RechartsTooltip contentStyle={{ fontSize: 12 }} />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
+        <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
+        <YAxis tick={{ fontSize: 10, fill: 'var(--foreground)' }} axisLine={{ stroke: 'var(--border)' }} />
+        <RechartsTooltip contentStyle={{ fontSize: 12, backgroundColor: 'var(--card)', border: '1px solid var(--border)', color: 'var(--foreground)' }} />
         <Line type="monotone" dataKey="value" stroke={config.color || CHART_COLORS[0]} strokeWidth={2} dot={false} />
       </LineChart>
     </ResponsiveContainer>
@@ -702,7 +702,7 @@ function PieChartWidget({ config }: { config: Record<string, any> }) {
             <Cell key={i} fill={entry.color} />
           ))}
         </Pie>
-        <RechartsTooltip contentStyle={{ fontSize: 12 }} />
+        <RechartsTooltip contentStyle={{ fontSize: 12, backgroundColor: 'var(--card)', border: '1px solid var(--border)', color: 'var(--foreground)' }} />
       </PieChart>
     </ResponsiveContainer>
   );
@@ -730,7 +730,7 @@ function GaugeWidget({ config }: { config: Record<string, any> }) {
 
   return (
     <div className="h-full flex flex-col items-center justify-center">
-      <svg viewBox="0 0 120 80" className="w-full max-w-[180px]">
+      <svg viewBox="0 0 120 80" className="w-full max-w-45">
         <path d="M 10 70 A 50 50 0 0 1 110 70" fill="none" stroke="currentColor" className="text-muted/20" strokeWidth="10" strokeLinecap="round" />
         <path
           d="M 10 70 A 50 50 0 0 1 110 70"
@@ -783,7 +783,7 @@ function TableWidget({ config }: { config: Record<string, any> }) {
         <tbody>
           {items.slice(0, limit).map((item: any, i: number) => (
             <tr key={item.id ?? i} className="border-b border-muted/30 hover:bg-muted/30">
-              <td className="p-1 font-mono truncate max-w-[100px]">{item.serialNumber || "—"}</td>
+              <td className="p-1 font-mono truncate max-w-25">{item.serialNumber || "—"}</td>
               <td className="p-1">
                 <Badge variant={item.overallResult === "OK" ? "default" : "destructive"} className="text-[10px] px-1 py-0">
                   {item.overallResult}

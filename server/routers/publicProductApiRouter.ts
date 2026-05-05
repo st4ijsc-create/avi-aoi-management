@@ -14,29 +14,74 @@ import {
   productModels,
 } from "../../drizzle/schema";
 
+/**
+ * Extract image dimensions from a base64 data URI (JPEG or PNG).
+ * Uses Node.js Buffer — reliable on server side.
+ */
+function extractImageDimensionsFromDataUri(dataUri: string): { width: number; height: number } | null {
+  try {
+    if (!dataUri.startsWith('data:image/')) return null;
+    const base64Data = dataUri.split(',')[1];
+    if (!base64Data) return null;
+
+    const buf = Buffer.from(base64Data, 'base64');
+
+    // PNG: bytes 0-7 = signature, IHDR at 8, width at 16, height at 20
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) {
+      const width = buf.readUInt32BE(16);
+      const height = buf.readUInt32BE(20);
+      if (width > 0 && height > 0) return { width, height };
+    }
+
+    // JPEG: scan for SOF0 (0xFFC0) or SOF2 (0xFFC2) marker
+    if (buf[0] === 0xFF && buf[1] === 0xD8) {
+      for (let i = 2; i < buf.length - 9; i++) {
+        if (buf[i] === 0xFF && (buf[i + 1] === 0xC0 || buf[i + 1] === 0xC2)) {
+          const height = buf.readUInt16BE(i + 5);
+          const width = buf.readUInt16BE(i + 7);
+          if (width > 0 && height > 0) return { width, height };
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[PublicProductAPI] extractImageDimensionsFromDataUri error:', e);
+  }
+  return null;
+}
+
 // ============ PUBLIC PRODUCT API ROUTER (for third-party app integration) ============
 // Cho phép ứng dụng bên thứ 3 truy xuất thông tin sản phẩm, ảnh mẫu và điểm đo
-// Xác thực bằng apiKey hoặc machineCode (giống machineApiRouter)
+// Xác thực bằng masterKey, apiKey hoặc machineCode
 
-async function validateAccess(input: { apiKey?: string; machineCode?: string }) {
+const MASTER_API_KEY = process.env.MASTER_API_KEY || "master_api_key_change_me";
+
+async function validateAccess(input: { apiKey?: string; machineCode?: string; masterKey?: string }) {
+  // Option 1: Master API Key (cho app bên thứ 3 dùng x-master-key)
+  if (input.masterKey) {
+    if (input.masterKey === MASTER_API_KEY) return null;
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid master key" });
+  }
+  // Option 2: Machine API Key
   if (input.apiKey) {
     const machine = await db.getMachineByApiKey(input.apiKey);
     if (!machine) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid API key" });
     return machine;
   }
+  // Option 3: Machine Code
   if (input.machineCode) {
     const machine = await db.getMachineByCode(input.machineCode.trim());
     if (!machine) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid machine code" });
     return machine;
   }
-  throw new TRPCError({ code: "UNAUTHORIZED", message: "Either apiKey or machineCode must be provided" });
+  throw new TRPCError({ code: "UNAUTHORIZED", message: "Either masterKey, apiKey, or machineCode must be provided" });
 }
 
 const authInput = z.object({
   apiKey: z.string().optional(),
   machineCode: z.string().optional(),
-}).refine(data => data.apiKey || data.machineCode, {
-  message: "Either apiKey or machineCode must be provided",
+  masterKey: z.string().optional(),
+}).refine(data => data.apiKey || data.machineCode || data.masterKey, {
+  message: "Either masterKey, apiKey, or machineCode must be provided",
 });
 
 export const publicProductApiRouter = router({
@@ -45,12 +90,13 @@ export const publicProductApiRouter = router({
     .input(z.object({
       apiKey: z.string().optional(),
       machineCode: z.string().optional(),
+      masterKey: z.string().optional(),
       search: z.string().optional(),
       lifecycleStatus: z.enum(["development", "active", "eol", "archived"]).optional(),
       limit: z.number().min(1).max(100).default(50),
       offset: z.number().min(0).default(0),
-    }).refine(data => data.apiKey || data.machineCode, {
-      message: "Either apiKey or machineCode must be provided",
+    }).refine(data => data.apiKey || data.machineCode || data.masterKey, {
+      message: "Either masterKey, apiKey, or machineCode must be provided",
     }))
     .query(async ({ input }) => {
       await validateAccess(input);
@@ -91,9 +137,10 @@ export const publicProductApiRouter = router({
     .input(z.object({
       apiKey: z.string().optional(),
       machineCode: z.string().optional(),
+      masterKey: z.string().optional(),
       code: z.string().min(1),
-    }).refine(data => data.apiKey || data.machineCode, {
-      message: "Either apiKey or machineCode must be provided",
+    }).refine(data => data.apiKey || data.machineCode || data.masterKey, {
+      message: "Either masterKey, apiKey, or machineCode must be provided",
     }))
     .query(async ({ input }) => {
       await validateAccess(input);
@@ -105,6 +152,24 @@ export const publicProductApiRouter = router({
 
       const measurementPoints = await db.getMeasurementPointDefsByProductModel(product.id);
 
+      // Auto-compute image dimensions from base64 data URI if DB has null values
+      let imageWidth = product.imageWidth;
+      let imageHeight = product.imageHeight;
+      if ((!imageWidth || !imageHeight) && product.referenceImageUrl?.startsWith('data:image/')) {
+        const dims = extractImageDimensionsFromDataUri(product.referenceImageUrl);
+        if (dims) {
+          imageWidth = dims.width;
+          imageHeight = dims.height;
+          console.log(`[PublicProductAPI] Auto-computed image dims for ${product.code}: ${dims.width}x${dims.height}`);
+        }
+      }
+
+      // Return referenceImageUrl as a relative endpoint URL (not the raw base64 data)
+      // so clients can fetch the binary image separately via /api/public/products/:code/reference-image-file
+      const referenceImageUrl = product.referenceImageUrl?.startsWith('data:')
+        ? `/api/public/products/${encodeURIComponent(product.code)}/reference-image-file`
+        : product.referenceImageUrl;
+
       return {
         success: true,
         data: {
@@ -117,9 +182,9 @@ export const publicProductApiRouter = router({
             productLine: product.productLine,
             variant: product.variant,
             lifecycleStatus: product.lifecycleStatus,
-            referenceImageUrl: product.referenceImageUrl,
-            imageWidth: product.imageWidth,
-            imageHeight: product.imageHeight,
+            referenceImageUrl,
+            imageWidth,
+            imageHeight,
             targetYieldRate: product.targetYieldRate,
             minYieldRate: product.minYieldRate,
           },
@@ -143,6 +208,7 @@ export const publicProductApiRouter = router({
             cropWidth: mp.cropWidth,
             cropHeight: mp.cropHeight,
             orderIndex: mp.orderIndex,
+            workstationId: mp.workstationId,
           })),
         },
       };
@@ -153,9 +219,10 @@ export const publicProductApiRouter = router({
     .input(z.object({
       apiKey: z.string().optional(),
       machineCode: z.string().optional(),
+      masterKey: z.string().optional(),
       id: z.number(),
-    }).refine(data => data.apiKey || data.machineCode, {
-      message: "Either apiKey or machineCode must be provided",
+    }).refine(data => data.apiKey || data.machineCode || data.masterKey, {
+      message: "Either masterKey, apiKey, or machineCode must be provided",
     }))
     .query(async ({ input }) => {
       await validateAccess(input);
@@ -167,6 +234,21 @@ export const publicProductApiRouter = router({
 
       const measurementPoints = await db.getMeasurementPointDefsByProductModel(product.id);
 
+      // Auto-compute image dimensions from base64 data URI if DB has null values
+      let imageWidth = product.imageWidth;
+      let imageHeight = product.imageHeight;
+      if ((!imageWidth || !imageHeight) && product.referenceImageUrl?.startsWith('data:image/')) {
+        const dims = extractImageDimensionsFromDataUri(product.referenceImageUrl);
+        if (dims) {
+          imageWidth = dims.width;
+          imageHeight = dims.height;
+        }
+      }
+
+      const referenceImageUrl = product.referenceImageUrl?.startsWith('data:')
+        ? `/api/public/products/${encodeURIComponent(product.code)}/reference-image-file`
+        : product.referenceImageUrl;
+
       return {
         success: true,
         data: {
@@ -179,9 +261,9 @@ export const publicProductApiRouter = router({
             productLine: product.productLine,
             variant: product.variant,
             lifecycleStatus: product.lifecycleStatus,
-            referenceImageUrl: product.referenceImageUrl,
-            imageWidth: product.imageWidth,
-            imageHeight: product.imageHeight,
+            referenceImageUrl,
+            imageWidth,
+            imageHeight,
             targetYieldRate: product.targetYieldRate,
             minYieldRate: product.minYieldRate,
           },
@@ -205,6 +287,7 @@ export const publicProductApiRouter = router({
             cropWidth: mp.cropWidth,
             cropHeight: mp.cropHeight,
             orderIndex: mp.orderIndex,
+            workstationId: mp.workstationId,
           })),
         },
       };
@@ -215,9 +298,10 @@ export const publicProductApiRouter = router({
     .input(z.object({
       apiKey: z.string().optional(),
       machineCode: z.string().optional(),
+      masterKey: z.string().optional(),
       productCode: z.string().min(1),
-    }).refine(data => data.apiKey || data.machineCode, {
-      message: "Either apiKey or machineCode must be provided",
+    }).refine(data => data.apiKey || data.machineCode || data.masterKey, {
+      message: "Either masterKey, apiKey, or machineCode must be provided",
     }))
     .query(async ({ input }) => {
       await validateAccess(input);
@@ -253,6 +337,7 @@ export const publicProductApiRouter = router({
           cropWidth: mp.cropWidth,
           cropHeight: mp.cropHeight,
           orderIndex: mp.orderIndex,
+          workstationId: mp.workstationId,
         })),
         total: points.length,
       };
@@ -263,9 +348,10 @@ export const publicProductApiRouter = router({
     .input(z.object({
       apiKey: z.string().optional(),
       machineCode: z.string().optional(),
+      masterKey: z.string().optional(),
       productCode: z.string().min(1),
-    }).refine(data => data.apiKey || data.machineCode, {
-      message: "Either apiKey or machineCode must be provided",
+    }).refine(data => data.apiKey || data.machineCode || data.masterKey, {
+      message: "Either masterKey, apiKey, or machineCode must be provided",
     }))
     .query(async ({ input }) => {
       await validateAccess(input);
@@ -289,14 +375,25 @@ export const publicProductApiRouter = router({
       // Convert relative /uploads/ URLs to base64 data URLs for external clients
       const imageUrl = await resolveImageToDataUrl(downloadUrl);
 
+      // Auto-compute image dimensions if DB has null values
+      let imageWidth = product.imageWidth;
+      let imageHeight = product.imageHeight;
+      if ((!imageWidth || !imageHeight) && imageUrl?.startsWith('data:image/')) {
+        const dims = extractImageDimensionsFromDataUri(imageUrl);
+        if (dims) {
+          imageWidth = dims.width;
+          imageHeight = dims.height;
+        }
+      }
+
       return {
         success: true,
         data: {
           productCode: product.code,
           productName: product.name,
           imageUrl,
-          imageWidth: product.imageWidth,
-          imageHeight: product.imageHeight,
+          imageWidth,
+          imageHeight,
         },
       };
     }),
@@ -306,11 +403,12 @@ export const publicProductApiRouter = router({
     .input(z.object({
       apiKey: z.string().optional(),
       machineCode: z.string().optional(),
+      masterKey: z.string().optional(),
       pointId: z.number().optional(),
       pointCode: z.string().optional(),
       productCode: z.string().optional(),
-    }).refine(data => data.apiKey || data.machineCode, {
-      message: "Either apiKey or machineCode must be provided",
+    }).refine(data => data.apiKey || data.machineCode || data.masterKey, {
+      message: "Either masterKey, apiKey, or machineCode must be provided",
     }).refine(data => data.pointId || (data.pointCode && data.productCode), {
       message: "Provide pointId, or both pointCode and productCode",
     }))
@@ -363,12 +461,13 @@ export const publicProductApiRouter = router({
     .input(z.object({
       apiKey: z.string().optional(),
       machineCode: z.string().optional(),
+      masterKey: z.string().optional(),
       stationCode: z.string().min(1),
       productCode: z.string().optional(),
       startDate: z.string().optional(), // ISO date string
       endDate: z.string().optional(),
-    }).refine(data => data.apiKey || data.machineCode, {
-      message: "Either apiKey or machineCode must be provided",
+    }).refine(data => data.apiKey || data.machineCode || data.masterKey, {
+      message: "Either masterKey, apiKey, or machineCode must be provided",
     }))
     .query(async ({ input }) => {
       await validateAccess(input);
@@ -522,6 +621,7 @@ export const publicProductApiRouter = router({
     .input(z.object({
       apiKey: z.string().optional(),
       machineCode: z.string().optional(),
+      masterKey: z.string().optional(),
       stationCode: z.string().min(1),
       pointCode: z.string().min(1),
       productCode: z.string().optional(),
@@ -530,8 +630,8 @@ export const publicProductApiRouter = router({
       endDate: z.string().optional(),
       limit: z.number().min(1).max(200).default(50),
       offset: z.number().min(0).default(0),
-    }).refine(data => data.apiKey || data.machineCode, {
-      message: "Either apiKey or machineCode must be provided",
+    }).refine(data => data.apiKey || data.machineCode || data.masterKey, {
+      message: "Either masterKey, apiKey, or machineCode must be provided",
     }))
     .query(async ({ input }) => {
       await validateAccess(input);

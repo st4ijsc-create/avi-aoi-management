@@ -18,6 +18,7 @@
 
 import { licenseService } from './license-service';
 import { licenseGuard } from './license-guard';
+import { ENV } from '../_core/env';
 import type { Request, Response, NextFunction } from 'express';
 
 // ═══════════════════════════════════════════════════════════════
@@ -38,6 +39,11 @@ let licenseInitError: string | null = null;
  * - Should be called before tRPC routes are mounted
  */
 export async function initializeLicenseSystem(): Promise<void> {
+  if (ENV.licenseBypass) {
+    console.log('[License] LICENSE_BYPASS=true — skipping license system initialization');
+    licenseInitialized = true;
+    return;
+  }
   try {
     console.log('[License] Initializing license system...');
     await licenseService.initializeKeys();
@@ -116,6 +122,7 @@ const ALWAYS_ALLOWED_PROCEDURES = new Set([
  */
 export function licenseEnforcementMiddleware() {
   return (req: Request, res: Response, next: NextFunction) => {
+    if (ENV.licenseBypass) return next();
     const state = licenseGuard.getState();
 
     // Normal and warning states: allow everything

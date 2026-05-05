@@ -1,0 +1,90 @@
+{
+  "apiKey": "<YOUR_API_KEY>",
+  "serialNumber": "<SERIAL_NUMBER>",
+  "productModel": "PCB-SMT-001",
+  "batchNumber": "BATCH-2026-01",
+  "overallResult": "NG",
+  "cycleTime": 3.8,
+  "inspectionTime": "2026-04-07T05:53:44.288Z",
+  "companyCode": "FOXCONN",
+  "factoryCode": "FAC-SZ-001",
+  "workshopCode": "WS-A3",
+  "lineCode": "LINE-05",
+  "stageCode": "SMT-AOI",
+  "productionOrderCode": "PO-2026-00152",
+  "operatorId": "OP-0088",
+  "measurements": [
+    {
+      "pointCode": "MP-001",
+      "measuredValue": 0.12,
+      "result": "OK",
+      "remark": "Resistor R101 - Position check OK"
+    },
+    {
+      "pointCode": "MP-002",
+      "measuredValue": 0.08,
+      "result": "OK",
+      "remark": "Resistor R102 - Solder joint OK"
+    },
+    {
+      "pointCode": "MP-003",
+      "measuredValue": 0.55,
+      "result": "NG",
+      "remark": "Capacitor C201 - Solder bridge detected"
+    },
+    {
+      "pointCode": "MP-004",
+      "measuredValue": 0.03,
+      "result": "OK",
+      "remark": "Capacitor C202 - Alignment OK"
+    },
+    {
+      "pointCode": "MP-005",
+      "measuredValue": "MISSING",
+      "result": "NG",
+      "remark": "IC U301 - Component absent"
+    },
+    {
+      "pointCode": "MP-006",
+      "measuredValue": 0.22,
+      "result": "OK",
+      "remark": "IC U302 - Pin alignment OK"
+    },
+    {
+      "pointCode": "MP-007",
+      "measuredValue": 0.41,
+      "result": "NG",
+      "remark": "Connector J1 - Lifted lead detected"
+    },
+    {
+      "pointCode": "MP-008",
+      "measuredValue": 0.09,
+      "result": "OK",
+      "remark": "Connector J2 - Solder quality OK"
+    },
+    {
+      "pointCode": "MP-009",
+      "measuredValue": 0.15,
+      "result": "OK",
+      "remark": "Diode D1 - Polarity correct"
+    },
+    {
+      "pointCode": "MP-010",
+      "measuredValue": 0.33,
+      "result": "NG",
+      "remark": "Diode D2 - Tombstone detected"
+    },
+    {
+      "pointCode": "MP-011",
+      "measuredValue": 0.05,
+      "result": "OK",
+      "remark": "Transistor Q1 - Position OK"
+    },
+    {
+      "pointCode": "MP-012",
+      "measuredValue": 0.07,
+      "result": "OK",
+      "remark": "Crystal Y1 - Placement OK"
+    }
+  ]
+}

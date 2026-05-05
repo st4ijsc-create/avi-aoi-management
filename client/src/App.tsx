@@ -76,6 +76,8 @@ const AITimeSeriesPage = React.lazy(() => import("./pages/AITimeSeriesPage"));
 const AISettingsPage = React.lazy(() => import("./pages/AISettingsPage"));
 const AIDataProcessingPage = React.lazy(() => import("./pages/AIDataProcessingPage"));
 const AIModelManagementPage = React.lazy(() => import("./pages/AIModelManagementPage"));
+const AIInspectionAnalyticsPage = React.lazy(() => import("./pages/AIInspectionAnalyticsPage"));
+const AIGgufModelsPage = React.lazy(() => import("./pages/AIGgufModelsPage"));
 import TestAnnotationPage from "./pages/TestAnnotationPage";
 import AOIPackages from "./pages/AOIPackages";
 import MqttBulletin from "./pages/MqttBulletin";
@@ -196,6 +198,8 @@ function Router() {
       <Route path="/model-versions"><AIPageWrapper><ModelVersionsPage /></AIPageWrapper></Route>
       <Route path="/ai-settings"><AIPageWrapper><AISettingsPage /></AIPageWrapper></Route>
       <Route path="/ai-data-processing"><AIPageWrapper><AIDataProcessingPage /></AIPageWrapper></Route>
+      <Route path="/ai-inspection-analytics"><AIPageWrapper><AIInspectionAnalyticsPage /></AIPageWrapper></Route>
+      <Route path="/ai-gguf-models"><AIPageWrapper><AIGgufModelsPage /></AIPageWrapper></Route>
       <Route path="/test-annotation" component={TestAnnotationPage} />
       <Route path="/aoi-packages" component={AOIPackages} />
       <Route path="/mqtt-bulletin" component={MqttBulletin} />

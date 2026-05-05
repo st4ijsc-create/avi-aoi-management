@@ -1,4 +1,4 @@
-import { eq, and, desc, like, or } from "drizzle-orm";
+import { eq, and, desc, like, or, sql, inArray } from "drizzle-orm";
 import { getDb } from "./connection";
 import {
   factories, InsertFactory,
@@ -20,7 +20,7 @@ export async function createFactory(data: InsertFactory) {
 export async function getFactories() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(factories).orderBy(factories.name);
+  return db.select().from(factories).where(eq(factories.isActive, true)).orderBy(factories.name);
 }
 
 export async function getFactoryById(id: number) {
@@ -54,14 +54,14 @@ export async function getWorkshopsByFactory(factoryId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(workshops)
-    .where(eq(workshops.factoryId, factoryId))
+    .where(and(eq(workshops.factoryId, factoryId), eq(workshops.isActive, true)))
     .orderBy(workshops.name);
 }
 
 export async function getWorkshops() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(workshops).orderBy(workshops.name);
+  return db.select().from(workshops).where(eq(workshops.isActive, true)).orderBy(workshops.name);
 }
 
 export async function getWorkshopById(id: number) {
@@ -95,14 +95,14 @@ export async function getProductionLinesByWorkshop(workshopId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(productionLines)
-    .where(eq(productionLines.workshopId, workshopId))
+    .where(and(eq(productionLines.workshopId, workshopId), eq(productionLines.isActive, true)))
     .orderBy(productionLines.name);
 }
 
 export async function getProductionLines() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(productionLines).orderBy(productionLines.name);
+  return db.select().from(productionLines).where(eq(productionLines.isActive, true)).orderBy(productionLines.name);
 }
 
 export async function getLineById(id: number) {
@@ -185,14 +185,14 @@ export async function getMachinesByStation(stationId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(machines)
-    .where(eq(machines.stationId, stationId))
+    .where(and(eq(machines.stationId, stationId), eq(machines.isActive, true)))
     .orderBy(machines.name);
 }
 
 export async function getMachines() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(machines).orderBy(machines.name);
+  return db.select().from(machines).where(eq(machines.isActive, true)).orderBy(machines.name);
 }
 
 // Get machines with full hierarchy info (line, workshop, factory)
@@ -506,4 +506,221 @@ export async function getFactoryHierarchyFlat(factoryId: number) {
       stations.orderIndex,
       machines.name,
     );
+}
+
+// ============ CASCADE DELETE FUNCTIONS ============
+
+// Get counts of children under a factory
+export async function getFactoryCascadeInfo(factoryId: number) {
+  const db = await getDb();
+  if (!db) return { workshops: 0, lines: 0, stations: 0, machines: 0 };
+  const ws = await db.select({ id: workshops.id }).from(workshops)
+    .where(and(eq(workshops.factoryId, factoryId), eq(workshops.isActive, true)));
+  const wsIds = ws.map(w => w.id);
+  if (wsIds.length === 0) return { workshops: 0, lines: 0, stations: 0, machines: 0 };
+  const ln = await db.select({ id: productionLines.id }).from(productionLines)
+    .where(and(inArray(productionLines.workshopId, wsIds), eq(productionLines.isActive, true)));
+  const lnIds = ln.map(l => l.id);
+  let stCount = 0, mcCount = 0;
+  if (lnIds.length > 0) {
+    const st = await db.select({ id: stations.id }).from(stations)
+      .where(and(inArray(stations.lineId, lnIds), eq(stations.isActive, true)));
+    stCount = st.length;
+    const stIds = st.map(s => s.id);
+    if (stIds.length > 0) {
+      const mc = await db.select({ id: machines.id }).from(machines)
+        .where(and(inArray(machines.stationId, stIds), eq(machines.isActive, true)));
+      mcCount = mc.length;
+    }
+  }
+  return { workshops: wsIds.length, lines: lnIds.length, stations: stCount, machines: mcCount };
+}
+
+// Get counts of children under a workshop
+export async function getWorkshopCascadeInfo(workshopId: number) {
+  const db = await getDb();
+  if (!db) return { lines: 0, stations: 0, machines: 0 };
+  const ln = await db.select({ id: productionLines.id }).from(productionLines)
+    .where(and(eq(productionLines.workshopId, workshopId), eq(productionLines.isActive, true)));
+  const lnIds = ln.map(l => l.id);
+  if (lnIds.length === 0) return { lines: 0, stations: 0, machines: 0 };
+  const st = await db.select({ id: stations.id }).from(stations)
+    .where(and(inArray(stations.lineId, lnIds), eq(stations.isActive, true)));
+  const stIds = st.map(s => s.id);
+  let mcCount = 0;
+  if (stIds.length > 0) {
+    const mc = await db.select({ id: machines.id }).from(machines)
+      .where(and(inArray(machines.stationId, stIds), eq(machines.isActive, true)));
+    mcCount = mc.length;
+  }
+  return { lines: lnIds.length, stations: stIds.length, machines: mcCount };
+}
+
+// Get counts of children under a line
+export async function getLineCascadeInfo(lineId: number) {
+  const db = await getDb();
+  if (!db) return { stations: 0, machines: 0 };
+  const st = await db.select({ id: stations.id }).from(stations)
+    .where(and(eq(stations.lineId, lineId), eq(stations.isActive, true)));
+  const stIds = st.map(s => s.id);
+  let mcCount = 0;
+  if (stIds.length > 0) {
+    const mc = await db.select({ id: machines.id }).from(machines)
+      .where(and(inArray(machines.stationId, stIds), eq(machines.isActive, true)));
+    mcCount = mc.length;
+  }
+  return { stations: stIds.length, machines: mcCount };
+}
+
+// Get counts of children under a station
+export async function getStationCascadeInfo(stationId: number) {
+  const db = await getDb();
+  if (!db) return { machines: 0 };
+  const mc = await db.select({ id: machines.id }).from(machines)
+    .where(and(eq(machines.stationId, stationId), eq(machines.isActive, true)));
+  return { machines: mc.length };
+}
+
+// Cascade soft-delete factory and all children
+export async function cascadeDeleteFactory(factoryId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const ws = await db.select({ id: workshops.id }).from(workshops)
+    .where(and(eq(workshops.factoryId, factoryId), eq(workshops.isActive, true)));
+  const wsIds = ws.map(w => w.id);
+  if (wsIds.length > 0) {
+    const ln = await db.select({ id: productionLines.id }).from(productionLines)
+      .where(and(inArray(productionLines.workshopId, wsIds), eq(productionLines.isActive, true)));
+    const lnIds = ln.map(l => l.id);
+    if (lnIds.length > 0) {
+      const st = await db.select({ id: stations.id }).from(stations)
+        .where(and(inArray(stations.lineId, lnIds), eq(stations.isActive, true)));
+      const stIds = st.map(s => s.id);
+      if (stIds.length > 0) {
+        await db.update(machines).set({ isActive: false }).where(and(inArray(machines.stationId, stIds), eq(machines.isActive, true)));
+        await db.update(stations).set({ isActive: false }).where(inArray(stations.id, stIds));
+      }
+      await db.update(productionLines).set({ isActive: false }).where(inArray(productionLines.id, lnIds));
+    }
+    await db.update(workshops).set({ isActive: false }).where(inArray(workshops.id, wsIds));
+  }
+  await db.update(factories).set({ isActive: false }).where(eq(factories.id, factoryId));
+}
+
+// Cascade soft-delete workshop and all children
+export async function cascadeDeleteWorkshop(workshopId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const ln = await db.select({ id: productionLines.id }).from(productionLines)
+    .where(and(eq(productionLines.workshopId, workshopId), eq(productionLines.isActive, true)));
+  const lnIds = ln.map(l => l.id);
+  if (lnIds.length > 0) {
+    const st = await db.select({ id: stations.id }).from(stations)
+      .where(and(inArray(stations.lineId, lnIds), eq(stations.isActive, true)));
+    const stIds = st.map(s => s.id);
+    if (stIds.length > 0) {
+      await db.update(machines).set({ isActive: false }).where(and(inArray(machines.stationId, stIds), eq(machines.isActive, true)));
+      await db.update(stations).set({ isActive: false }).where(inArray(stations.id, stIds));
+    }
+    await db.update(productionLines).set({ isActive: false }).where(inArray(productionLines.id, lnIds));
+  }
+  await db.update(workshops).set({ isActive: false }).where(eq(workshops.id, workshopId));
+}
+
+// Cascade soft-delete line and all children
+export async function cascadeDeleteLine(lineId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const st = await db.select({ id: stations.id }).from(stations)
+    .where(and(eq(stations.lineId, lineId), eq(stations.isActive, true)));
+  const stIds = st.map(s => s.id);
+  if (stIds.length > 0) {
+    await db.update(machines).set({ isActive: false }).where(and(inArray(machines.stationId, stIds), eq(machines.isActive, true)));
+    await db.update(stations).set({ isActive: false }).where(inArray(stations.id, stIds));
+  }
+  await db.update(productionLines).set({ isActive: false }).where(eq(productionLines.id, lineId));
+}
+
+// Cascade soft-delete station and all children
+export async function cascadeDeleteStation(stationId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(machines).set({ isActive: false }).where(and(eq(machines.stationId, stationId), eq(machines.isActive, true)));
+  await db.update(stations).set({ isActive: false }).where(eq(stations.id, stationId));
+}
+
+// ============ LIST DELETED (INACTIVE) FUNCTIONS ============
+
+export async function getDeletedFactories() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(factories).where(eq(factories.isActive, false)).orderBy(factories.name);
+}
+
+export async function getDeletedWorkshops() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(workshops).where(eq(workshops.isActive, false)).orderBy(workshops.name);
+}
+
+export async function getDeletedLines() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(productionLines).where(eq(productionLines.isActive, false)).orderBy(productionLines.name);
+}
+
+export async function getDeletedStations() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(stations).where(eq(stations.isActive, false)).orderBy(stations.orderIndex);
+}
+
+export async function getDeletedMachines() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(machines).where(eq(machines.isActive, false)).orderBy(machines.name);
+}
+
+export async function getDeletedWorkstations() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(workstations).where(eq(workstations.isActive, false)).orderBy(workstations.orderIndex);
+}
+
+// ============ RESTORE FUNCTIONS ============
+
+export async function restoreFactory(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(factories).set({ isActive: true }).where(eq(factories.id, id));
+}
+
+export async function restoreWorkshop(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(workshops).set({ isActive: true }).where(eq(workshops.id, id));
+}
+
+export async function restoreLine(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(productionLines).set({ isActive: true }).where(eq(productionLines.id, id));
+}
+
+export async function restoreStation(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(stations).set({ isActive: true }).where(eq(stations.id, id));
+}
+
+export async function restoreMachine(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(machines).set({ isActive: true }).where(eq(machines.id, id));
+}
+
+export async function restoreWorkstation(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(workstations).set({ isActive: true }).where(eq(workstations.id, id));
 }

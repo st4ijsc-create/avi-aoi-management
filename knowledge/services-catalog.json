@@ -1,0 +1,696 @@
+[
+  {
+    "file": "server/services/aiABTesting.ts",
+    "exportedFunctions": [
+      "createExperiment",
+      "startExperiment",
+      "runABInference",
+      "submitABFeedback",
+      "getExperimentStats",
+      "concludeExperiment"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/aiAdvanced",
+      "./aiInferenceEngine",
+      "../db/ai"
+    ]
+  },
+  {
+    "file": "server/services/aiActiveLearning.ts",
+    "exportedFunctions": [
+      "autoLabelImages",
+      "getReviewQueue",
+      "submitHumanLabel",
+      "skipQueueItem",
+      "assignToReviewer",
+      "runUncertaintySampling",
+      "runDiversitySampling",
+      "runCommitteeSampling",
+      "checkRetrainThreshold",
+      "getActiveLearningStats",
+      "getLabelAccuracy"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema",
+      "./aiInferenceEngine",
+      "../db/ai",
+      "./aiImageEmbedding"
+    ]
+  },
+  {
+    "file": "server/services/aiBatchEngine.ts",
+    "exportedFunctions": [
+      "createBatchJob",
+      "cancelBatchJob",
+      "getBatchJobProgress"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiInferenceEngine",
+      "../db/aiAdvanced",
+      "../db/ai"
+    ]
+  },
+  {
+    "file": "server/services/aiChatAssistant.ts",
+    "exportedFunctions": [
+      "processChat",
+      "getAvailableTools"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema",
+      "../../drizzle/schema/ai"
+    ]
+  },
+  {
+    "file": "server/services/aiEdgeDeployment.ts",
+    "exportedFunctions": [
+      "createEdgeDeployment",
+      "packageModelForEdge",
+      "updateDeploymentStatus",
+      "recordHeartbeat",
+      "syncEdgeResults",
+      "getDeviceDeployments",
+      "checkStaleDeployments"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/aiAdvanced",
+      "../db/ai",
+      "../storage"
+    ]
+  },
+  {
+    "file": "server/services/aiEdgeEnhanced.ts",
+    "exportedFunctions": [
+      "quantizeModel",
+      "getQuantizationOptions",
+      "initiateOTAUpdate",
+      "getOTAUpdateStatus",
+      "rollbackDevice",
+      "getFleetOverview",
+      "batchDeploy",
+      "compareDevicePerformance",
+      "getDeviceHealthHistory",
+      "syncWithConflictResolution",
+      "getSyncStatusSummary"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema/ai",
+      "../../drizzle/schema",
+      "../db/aiAdvanced",
+      "../storage"
+    ]
+  },
+  {
+    "file": "server/services/aiGgufEngine.ts",
+    "exportedFunctions": [
+      "loadGgufModel",
+      "unloadGgufModel",
+      "generateText",
+      "chatCompletion",
+      "countTokens",
+      "analyzeDefect",
+      "generateQualityInsights",
+      "listGgufModels",
+      "getLoadedGgufModels",
+      "isGgufAvailable",
+      "getLoadedGgufModelNames",
+      "getEngineHealth",
+      "generateEmbedding",
+      "generateEmbeddings"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/aiImageEmbedding.ts",
+    "exportedFunctions": [
+      "evictEmbeddingSessionCache",
+      "extractEmbedding",
+      "storeEmbedding",
+      "findSimilarById",
+      "findSimilarByVector",
+      "searchByImage",
+      "batchStoreEmbeddings",
+      "clusterDefects",
+      "getEmbeddingStats"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema",
+      "../db/ai"
+    ]
+  },
+  {
+    "file": "server/services/aiInferenceEngine.ts",
+    "exportedFunctions": [
+      "evictSessionCache",
+      "runInference",
+      "getLoadedModels"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/ai",
+      "../../drizzle/schema"
+    ]
+  },
+  {
+    "file": "server/services/aiInsightsService.ts",
+    "exportedFunctions": [
+      "generateRCAInsights"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/aiInspectionAnalytics.ts",
+    "exportedFunctions": [
+      "buildAnalyticsConditions",
+      "getDefectTrend",
+      "getDefectPareto",
+      "getMachinePerformance",
+      "forecastYield",
+      "getCorrelationAnalysis",
+      "assessRisks",
+      "getControlChart",
+      "getShiftAnalysis",
+      "getDefectHeatmap",
+      "generateComprehensiveReport",
+      "getDefectTrendWithNarration",
+      "getDefectParetoWithNarration",
+      "getMachinePerformanceWithNarration",
+      "getCorrelationAnalysisWithNarration",
+      "assessRisksWithNarration",
+      "getControlChartWithNarration",
+      "interpretSPCViolations",
+      "generateComprehensiveReportWithNarration"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema",
+      "./cacheService"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTraining.ts",
+    "exportedFunctions": [
+      "runTransferLearning",
+      "runFewShotLearning",
+      "runIncrementalLearning",
+      "startLocalTraining",
+      "getTrainingCapabilities",
+      "predictWithLocalClassifier"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../db/ai",
+      "../db/aiAdvanced",
+      "../../drizzle/schema"
+    ]
+  },
+  {
+    "file": "server/services/aiModelService.ts",
+    "exportedFunctions": [
+      "uploadModelFile",
+      "uploadModelVersion",
+      "activateModelVersion",
+      "getModelFileUrl",
+      "registerModel"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../storage",
+      "../db/ai",
+      "../../drizzle/schema"
+    ]
+  },
+  {
+    "file": "server/services/aiMonitoring.ts",
+    "exportedFunctions": [
+      "collectPerformanceSnapshot",
+      "getModelHealth",
+      "acknowledgeDriftAlert",
+      "resolveDriftAlert"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/aiAdvanced"
+    ]
+  },
+  {
+    "file": "server/services/aiProviderManager.ts",
+    "exportedFunctions": [
+      "getAIProviderStatus",
+      "getActiveProvider",
+      "getProviderLabel"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/aiQualityGate.ts",
+    "exportedFunctions": [
+      "getQualityGateConfig",
+      "invalidateConfigCache",
+      "processQualityGate",
+      "getQualityGateStats"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema",
+      "./aiInferenceEngine",
+      "../db/ai"
+    ]
+  },
+  {
+    "file": "server/services/aiReportGenerator.ts",
+    "exportedFunctions": [
+      "generateDailyQualitySummary",
+      "generateRCAReport",
+      "generateModelPerformanceReport",
+      "generateExecutiveSummary",
+      "generateReport"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema",
+      "../../drizzle/schema/ai"
+    ]
+  },
+  {
+    "file": "server/services/aiSmartAlertRouter.ts",
+    "exportedFunctions": [
+      "routeAlert",
+      "processAutoEscalation",
+      "acknowledgeAlert",
+      "detectDefectSpike",
+      "detectYieldDrop",
+      "getAlertRoutingStats",
+      "cleanupStaleAlerts"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema",
+      "./notificationService",
+      "./emailService"
+    ]
+  },
+  {
+    "file": "server/services/aiSpecialistAgentService.ts",
+    "exportedFunctions": [
+      "listSpecialistAgents",
+      "buildWorkflowAgentOrder",
+      "runSpecialistWorkflowChain",
+      "runSpecialistAgent",
+      "listModuleAuditPresets",
+      "getModuleAuditPreset"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiGgufEngine"
+    ]
+  },
+  {
+    "file": "server/services/aiTimeSeriesEngine.ts",
+    "exportedFunctions": [
+      "ewma",
+      "ewmaForecast",
+      "holtWinters",
+      "isolationForest",
+      "seasonalDecompose",
+      "detectChangePoints",
+      "analyzeTimeSeries",
+      "analyzeMultivariate",
+      "forecastWithConfidenceInterval"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../utils/statistics"
+    ]
+  },
+  {
+    "file": "server/services/aiTrainingPipeline.ts",
+    "exportedFunctions": [
+      "createTrainingJob",
+      "createDataset",
+      "cancelTrainingJob",
+      "checkAutoRetrainTrigger"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/aiAdvanced",
+      "../db/ai",
+      "../../drizzle/schema"
+    ]
+  },
+  {
+    "file": "server/services/aiVisionLanguage.ts",
+    "exportedFunctions": [
+      "describeDefect",
+      "compareImages",
+      "generateQAReport"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/alertEvaluationService.ts",
+    "exportedFunctions": [
+      "evaluateAllAlertRules",
+      "startAlertEvaluationJob",
+      "stopAlertEvaluationJob"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db",
+      "../../drizzle/schema",
+      "../_core/notification",
+      "./emailService",
+      "./mqttService"
+    ]
+  },
+  {
+    "file": "server/services/auditTrailService.ts",
+    "exportedFunctions": [
+      "computeChanges",
+      "generateBatchId",
+      "generateRequestId",
+      "logCrudOperation",
+      "logCreate",
+      "logUpdate",
+      "logDelete",
+      "logBulkOperation",
+      "logFailure",
+      "createAuditContext"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db"
+    ]
+  },
+  {
+    "file": "server/services/cacheService.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/cacheWarmingService.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./redisService",
+      "../db"
+    ]
+  },
+  {
+    "file": "server/services/dataComparisonService.ts",
+    "exportedFunctions": [
+      "calculatePreviousPeriod",
+      "generateComparison",
+      "generateComparisonWithNarration"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db",
+      "../db/connection"
+    ]
+  },
+  {
+    "file": "server/services/downtimeDetectionService.ts",
+    "exportedFunctions": [
+      "recordMachineActivity",
+      "startDowntimeDetection",
+      "stopDowntimeDetection",
+      "getDowntimeDetectionConfig",
+      "analyzeDowntimeRootCause"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db",
+      "../../drizzle/schema"
+    ]
+  },
+  {
+    "file": "server/services/emailService.ts",
+    "exportedFunctions": [
+      "initEmailService",
+      "sendAlertEmail"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/enhancedScheduledReportService.ts",
+    "exportedFunctions": [
+      "executeEnhancedReport",
+      "executeScheduledEnhancedReport"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db",
+      "../db/connection",
+      "../_core/email",
+      "./pdfTemplateService",
+      "./dataComparisonService",
+      "./powerpointService"
+    ]
+  },
+  {
+    "file": "server/services/fcmService.ts",
+    "exportedFunctions": [
+      "sendNGAlertPushNotification",
+      "sendSummaryPushNotification",
+      "sendCustomPushNotification",
+      "isFCMConfigured",
+      "testFCMConnection"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../_core/env",
+      "../db"
+    ]
+  },
+  {
+    "file": "server/services/mqttBulletinService.ts",
+    "exportedFunctions": [
+      "initBulletinScheduler",
+      "startBulletinForStation",
+      "stopBulletinForStation",
+      "reloadBulletinForStation",
+      "generateAndSendBulletin",
+      "triggerBulletinForStation",
+      "getBulletinSchedulerStatus",
+      "stopBulletinScheduler"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../drizzle/schema",
+      "./mqttService"
+    ]
+  },
+  {
+    "file": "server/services/mqttService.ts",
+    "exportedFunctions": [
+      "initMqttBroker",
+      "sendConfigureCommand",
+      "sendSoftwareUpdateCommand",
+      "publishFactoryAlertUpdate",
+      "publishNGAlert",
+      "publishSummary",
+      "publishBulletin",
+      "sendClientCommand",
+      "getConnectedClientsCount",
+      "isMqttRunning",
+      "shutdownMqttBroker",
+      "isExternalMqttConnected",
+      "publishToExternalMqtt",
+      "getExternalMqttInfo",
+      "publishPointsConfigChanged"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../drizzle/schema"
+    ]
+  },
+  {
+    "file": "server/services/mqttSummaryScheduler.ts",
+    "exportedFunctions": [
+      "initSummaryScheduler",
+      "generateAndSendDailySummary",
+      "generateAndSendWeeklySummary",
+      "stopSummaryScheduler",
+      "triggerDailySummary",
+      "triggerWeeklySummary"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../drizzle/schema",
+      "./mqttService"
+    ]
+  },
+  {
+    "file": "server/services/ngRateAlertService.ts",
+    "exportedFunctions": [
+      "checkNgRateAfterInspection",
+      "getNgRateStatsForStation"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection",
+      "../../drizzle/schema"
+    ]
+  },
+  {
+    "file": "server/services/notificationService.ts",
+    "exportedFunctions": [
+      "initNotificationService",
+      "sendNotification",
+      "sendBroadcastNotification",
+      "sendAlertNotification",
+      "sendReportNotification",
+      "sendSystemNotification",
+      "emitNotificationRead",
+      "emitAllNotificationsRead",
+      "getOnlineUserCount",
+      "isUserOnline",
+      "generateNotificationSummary",
+      "personalizeNotificationForRole"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db"
+    ]
+  },
+  {
+    "file": "server/services/paretoAnalysisService.ts",
+    "exportedFunctions": [
+      "paretoByDefectType",
+      "paretoByMachine",
+      "paretoByLine",
+      "paretoByTimePeriod",
+      "paretoByDefectTypeWithRecommendations",
+      "paretoByMachineWithRecommendations",
+      "paretoByLineWithRecommendations",
+      "paretoByTimePeriodWithRecommendations"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db/connection"
+    ]
+  },
+  {
+    "file": "server/services/pdfTemplateService.ts",
+    "exportedFunctions": [
+      "generateInspectionReportPDF",
+      "generateQualityReportPDF"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db"
+    ]
+  },
+  {
+    "file": "server/services/powerpointService.ts",
+    "exportedFunctions": [
+      "exportDashboardToPowerPoint",
+      "exportQualityReportToPowerPoint",
+      "exportComparisonToPowerPoint"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "./pdfTemplateService"
+    ]
+  },
+  {
+    "file": "server/services/productionSchedulingService.ts",
+    "exportedFunctions": [
+      "scheduleFIFO",
+      "schedulePriority",
+      "scheduleEDF",
+      "explainScheduleWithAI",
+      "scheduleFIFOWithExplanation",
+      "schedulePriorityWithExplanation",
+      "scheduleEDFWithExplanation"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/qualityGateTemplateService.ts",
+    "exportedFunctions": [
+      "getBuiltinTemplates",
+      "getBuiltinTemplate"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/redisService.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": []
+  },
+  {
+    "file": "server/services/reportGenerator.ts",
+    "exportedFunctions": [
+      "generateNGVisualReport",
+      "generateNGVisualEmailHTML",
+      "generateNGVisualPDF",
+      "generateNGVisualExcel",
+      "generateReport"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db"
+    ]
+  },
+  {
+    "file": "server/services/reportScheduler.ts",
+    "exportedFunctions": [
+      "scheduleReport",
+      "stopScheduledReport",
+      "initializeScheduledReports",
+      "shutdownScheduledReports"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../db",
+      "../_core/email",
+      "./reportGenerator"
+    ]
+  },
+  {
+    "file": "server/services/scheduledReportService.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "../db",
+      "../_core/email",
+      "../_core/notification"
+    ]
+  },
+  {
+    "file": "server/services/universalExportService.ts",
+    "exportedFunctions": [
+      "generateExcelReport",
+      "generatePdfReport"
+    ],
+    "exportedClasses": [],
+    "localImports": []
+  }
+]

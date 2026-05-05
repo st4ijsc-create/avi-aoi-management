@@ -47,6 +47,12 @@ function hashFile(filePath: string): string {
  * Call this during server startup, after license system init
  */
 export function initializeRuntimeSecurity(): void {
+  // Skip if LICENSE_BYPASS is enabled
+  if (process.env.LICENSE_BYPASS === 'true') {
+    console.log('[Security] Runtime security skipped (LICENSE_BYPASS=true)');
+    return;
+  }
+
   // Only enable runtime security in production
   if (process.env.NODE_ENV !== 'production') {
     console.log('[Security] Runtime security skipped (development mode)');

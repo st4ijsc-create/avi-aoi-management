@@ -189,6 +189,13 @@ export const aiChatRouter = router({
       if (db) {
         const convIdNum = parseInt(input.conversationId, 10);
         if (!isNaN(convIdNum)) {
+          const [conv] = await db.select({ id: aiChatConversations.id }).from(aiChatConversations)
+            .where(and(eq(aiChatConversations.id, convIdNum), eq(aiChatConversations.userId, ctx.user.id)))
+            .limit(1);
+          if (!conv) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
+          }
+
           // Save user message
           await db.insert(aiChatMessages).values({
             conversationId: convIdNum,
@@ -211,10 +218,52 @@ export const aiChatRouter = router({
               updatedAt: new Date(),
             })
             .where(eq(aiChatConversations.id, convIdNum));
+        } else {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid conversationId" });
         }
       }
 
       return result;
+    }),
+
+  /** Save messages from SSE streaming (no AI processing — already done via stream) */
+  saveStreamedMessage: protectedProcedure
+    .input(z.object({
+      conversationId: z.number(),
+      userMessage: z.string().min(1).max(5000),
+      assistantMessage: z.string().min(1),
+      tokensUsed: z.number().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      // Verify ownership
+      const [conv] = await db.select({ id: aiChatConversations.id }).from(aiChatConversations)
+        .where(and(eq(aiChatConversations.id, input.conversationId), eq(aiChatConversations.userId, ctx.user.id)))
+        .limit(1);
+      if (!conv) throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
+      // Save user message
+      await db.insert(aiChatMessages).values({
+        conversationId: input.conversationId,
+        role: "user",
+        content: input.userMessage,
+      });
+      // Save assistant response
+      await db.insert(aiChatMessages).values({
+        conversationId: input.conversationId,
+        role: "assistant",
+        content: input.assistantMessage,
+        tokensUsed: input.tokensUsed,
+      });
+      // Update conversation stats
+      await db.update(aiChatConversations)
+        .set({
+          messageCount: sql`${aiChatConversations.messageCount} + 2`,
+          lastMessageAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(aiChatConversations.id, input.conversationId));
+      return { success: true };
     }),
 
   // ─── Get Available Chat Tools ────────────────────────────────

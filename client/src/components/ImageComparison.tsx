@@ -180,7 +180,7 @@ export function ImageComparison({
     if (!image || !show) return null;
     return (
       <div className={cn(
-        "absolute bottom-0 p-3 bg-gradient-to-t from-black/80 to-transparent text-white text-sm",
+        "absolute bottom-0 p-3 bg-linear-to-t from-black/80 to-transparent text-white text-sm",
         side === 'left' ? 'left-0 right-1/2' : 'left-1/2 right-0'
       )}>
         <div className="flex items-center gap-2 mb-1">
@@ -225,6 +225,7 @@ export function ImageComparison({
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose?.()}>
       <DialogContent className="max-w-[95vw] max-h-[95vh] w-full h-full p-0">
+        <DialogTitle className="sr-only">Image Comparison</DialogTitle>
         <div className="flex flex-col h-full">
           {/* Toolbar */}
           <div className="flex items-center gap-2 p-2 border-b bg-muted/50 flex-wrap">
@@ -311,7 +312,7 @@ export function ImageComparison({
 
             {/* Overlay opacity (only in overlay mode) */}
             {mode === 'overlay' && (
-              <div className="flex items-center gap-2 border-r pr-2 min-w-[150px]">
+              <div className="flex items-center gap-2 border-r pr-2 min-w-37.5">
                 <Label className="text-xs whitespace-nowrap">{t('common.opacity')}:</Label>
                 <Slider
                   value={[overlayOpacity * 100]}

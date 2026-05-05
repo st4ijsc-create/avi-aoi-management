@@ -1,0 +1,134 @@
+{
+  "machineCode": "<MACHINE_CODE>",
+  "inspectionId": "<INSPECTION_ID>",
+  "serialNumber": "<SERIAL_NUMBER>",
+  "productModel": "PCB-SMT-001",
+  "batchNumber": "BATCH-2026-01",
+  "overallResult": "NG",
+  "startedAt": "2026-04-07T05:53:40.906Z",
+  "finishedAt": "2026-04-07T05:53:45.906Z",
+  "cycleTime": 3.8,
+  "companyCode": "FOXCONN",
+  "factoryCode": "FAC-SZ-001",
+  "workshopCode": "WS-A3",
+  "lineCode": "LINE-05",
+  "stageCode": "SMT-AOI",
+  "productionOrderCode": "PO-2026-00152",
+  "operatorId": "OP-0088",
+  "measurements": [
+    {
+      "pointCode": "MP-001",
+      "name": "Measurement Point 1",
+      "fileName": "MP-001.jpg",
+      "result": "OK",
+      "measuredValue": 0.12,
+      "unit": "mm",
+      "remark": "Resistor R101 - Position check OK"
+    },
+    {
+      "pointCode": "MP-002",
+      "name": "Measurement Point 2",
+      "fileName": "MP-002.jpg",
+      "result": "OK",
+      "measuredValue": 0.08,
+      "unit": "mm",
+      "remark": "Resistor R102 - Solder joint OK"
+    },
+    {
+      "pointCode": "MP-003",
+      "name": "Measurement Point 3",
+      "fileName": "MP-003.jpg",
+      "result": "NG",
+      "measuredValue": 0.55,
+      "unit": "mm",
+      "remark": "Capacitor C201 - Solder bridge detected"
+    },
+    {
+      "pointCode": "MP-004",
+      "name": "Measurement Point 4",
+      "fileName": "MP-004.jpg",
+      "result": "OK",
+      "measuredValue": 0.03,
+      "unit": "mm",
+      "remark": "Capacitor C202 - Alignment OK"
+    },
+    {
+      "pointCode": "MP-005",
+      "name": "Measurement Point 5",
+      "fileName": "MP-005.jpg",
+      "result": "NG",
+      "measuredValue": "MISSING",
+      "unit": "mm",
+      "remark": "IC U301 - Component absent"
+    },
+    {
+      "pointCode": "MP-006",
+      "name": "Measurement Point 6",
+      "fileName": "MP-006.jpg",
+      "result": "OK",
+      "measuredValue": 0.22,
+      "unit": "mm",
+      "remark": "IC U302 - Pin alignment OK"
+    },
+    {
+      "pointCode": "MP-007",
+      "name": "Measurement Point 7",
+      "fileName": "MP-007.jpg",
+      "result": "NG",
+      "measuredValue": 0.41,
+      "unit": "mm",
+      "remark": "Connector J1 - Lifted lead detected"
+    },
+    {
+      "pointCode": "MP-008",
+      "name": "Measurement Point 8",
+      "fileName": "MP-008.jpg",
+      "result": "OK",
+      "measuredValue": 0.09,
+      "unit": "mm",
+      "remark": "Connector J2 - Solder quality OK"
+    },
+    {
+      "pointCode": "MP-009",
+      "name": "Measurement Point 9",
+      "fileName": "MP-009.jpg",
+      "result": "OK",
+      "measuredValue": 0.15,
+      "unit": "mm",
+      "remark": "Diode D1 - Polarity correct"
+    },
+    {
+      "pointCode": "MP-010",
+      "name": "Measurement Point 10",
+      "fileName": "MP-010.jpg",
+      "result": "NG",
+      "measuredValue": 0.33,
+      "unit": "mm",
+      "remark": "Diode D2 - Tombstone detected"
+    },
+    {
+      "pointCode": "MP-011",
+      "name": "Measurement Point 11",
+      "fileName": "MP-011.jpg",
+      "result": "OK",
+      "measuredValue": 0.05,
+      "unit": "mm",
+      "remark": "Transistor Q1 - Position OK"
+    },
+    {
+      "pointCode": "MP-012",
+      "name": "Measurement Point 12",
+      "fileName": "MP-012.jpg",
+      "result": "OK",
+      "measuredValue": 0.07,
+      "unit": "mm",
+      "remark": "Crystal Y1 - Placement OK"
+    }
+  ],
+  "summary": {
+    "totalPoints": 12,
+    "ok": 8,
+    "ng": 4,
+    "ntf": 0
+  }
+}

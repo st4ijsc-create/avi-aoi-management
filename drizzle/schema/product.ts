@@ -22,6 +22,7 @@ export const productModels = pgTable("product_models", {
   referenceImageKey: varchar("referenceImageKey", { length: 255 }),
   imageWidth: integer("imageWidth"), // Kích thước ảnh gốc
   imageHeight: integer("imageHeight"),
+  imageDisplayMode: varchar("imageDisplayMode", { length: 20 }).default("contain"), // contain | cover | stretch | none
   // Quality targets
   targetYieldRate: decimal("targetYieldRate", { precision: 5, scale: 2 }), // Target FPY %
   minYieldRate: decimal("minYieldRate", { precision: 5, scale: 2 }), // Minimum acceptable FPY %
@@ -227,7 +228,7 @@ export const syncLogs = pgTable("sync_logs", {
   index("idx_sync_logs_product").on(table.productModelId),
   index("idx_sync_logs_operation").on(table.syncOperation),
   index("idx_sync_logs_status").on(table.syncStatus),
-  index("idx_sync_logs_created").on(table.createdAt),
+  index("idx_sync_logs_created_at").on(table.createdAt),
   index("idx_sync_logs_machine_product").on(table.machineId, table.productModelId),
 ]);
 

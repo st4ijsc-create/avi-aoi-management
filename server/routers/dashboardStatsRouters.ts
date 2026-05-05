@@ -50,10 +50,21 @@ export const dashboardRouter = router({
       endDate: z.date().optional(),
     }))
     .query(async ({ input }) => {
+      // Check cache first to avoid N+1 queries
+      const cacheKey = statsCache.generateKey(CACHE_KEYS.MACHINE_STATS + '_all', input);
+      const cached = statsCache.get(cacheKey);
+      if (cached) return cached;
+
       const machinesWithHierarchy = await db.getMachinesWithHierarchy();
       const stats = await Promise.all(
         machinesWithHierarchy.map(async (item) => {
-          const machineStats = await db.getMachineStats(item.machine.id, input.startDate, input.endDate);
+          // Use per-machine cache to avoid redundant DB calls
+          const perMachineCacheKey = statsCache.generateKey(CACHE_KEYS.MACHINE_STATS, { machineId: item.machine.id, startDate: input.startDate, endDate: input.endDate });
+          let machineStats = statsCache.get(perMachineCacheKey);
+          if (!machineStats) {
+            machineStats = await db.getMachineStats(item.machine.id, input.startDate, input.endDate);
+            statsCache.set(perMachineCacheKey, machineStats, CACHE_TTL.SHORT);
+          }
           return {
             machine: item.machine,
             station: item.station,
@@ -64,6 +75,8 @@ export const dashboardRouter = router({
           };
         })
       );
+
+      statsCache.set(cacheKey, stats, CACHE_TTL.SHORT);
       return stats;
     }),
 

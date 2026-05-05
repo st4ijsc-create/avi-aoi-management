@@ -1,0 +1,92 @@
+name: AI Analytics Rollout
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollout_stage:
+        description: "Target stage"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - canary-10
+          - canary-50
+          - production-100
+      monitor_base_url:
+        description: "Base URL to monitor"
+        required: true
+        default: "http://localhost:3000"
+      monitor_minutes:
+        description: "Monitoring duration in minutes"
+        required: true
+        default: "30"
+      monitor_interval_seconds:
+        description: "Monitoring interval in seconds"
+        required: true
+        default: "30"
+
+jobs:
+  qa-build-and-monitor:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run AI analytics tests
+        run: pnpm test server/aiInspectionAnalytics.test.ts server/aiInspectionAnalyticsRouter.test.ts server/aiReportGenerator.test.ts server/rateLimitConfig.test.ts server/exportWorkflow.test.ts
+
+      - name: Build
+        run: pnpm build
+
+      - name: Rollout stage note
+        run: |
+          echo "rollout_stage=${{ inputs.rollout_stage }}"
+          echo "Set env var AI_ANALYTICS_ROLLOUT_PERCENT on target host before restarting service:"
+          if [ "${{ inputs.rollout_stage }}" = "staging" ]; then
+            echo "AI_ANALYTICS_ROLLOUT_PERCENT=100"
+          elif [ "${{ inputs.rollout_stage }}" = "canary-10" ]; then
+            echo "AI_ANALYTICS_ROLLOUT_PERCENT=10"
+          elif [ "${{ inputs.rollout_stage }}" = "canary-50" ]; then
+            echo "AI_ANALYTICS_ROLLOUT_PERCENT=50"
+          else
+            echo "AI_ANALYTICS_ROLLOUT_PERCENT=100"
+          fi
+
+      - name: Synthetic monitoring
+        env:
+          MONITOR_BASE_URL: ${{ inputs.monitor_base_url }}
+          MONITOR_DURATION_MINUTES: ${{ inputs.monitor_minutes }}
+          MONITOR_INTERVAL_SECONDS: ${{ inputs.monitor_interval_seconds }}
+          MONITOR_MIN_AVAILABILITY: "99"
+        run: pnpm monitor:ai-analytics
+
+      - name: Analyze latest monitoring output
+        shell: bash
+        run: |
+          latest_file=$(ls -t monitoring/ai-analytics-rollout-*.jsonl | head -n 1)
+          echo "latest_file=$latest_file"
+          node scripts/analyze-ai-analytics-metrics.mjs "$latest_file"
+
+      - name: Upload monitoring artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-analytics-rollout-monitoring
+          path: monitoring/*.jsonl
+          if-no-files-found: warn

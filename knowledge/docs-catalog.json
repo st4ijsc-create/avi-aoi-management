@@ -1,0 +1,380 @@
+[
+  {
+    "file": "docs/AI_ANALYTICS_COMPREHENSIVE_QA_REPORT.md",
+    "title": "AI Analytics Module - Comprehensive QA Report (Post-Implementation)",
+    "length": 17370,
+    "headings": 15
+  },
+  {
+    "file": "docs/AI_ANALYTICS_FIXES_REPORT.md",
+    "title": "AVI-AOI Backend AI Analytics Module - 5 Critical Fixes Report",
+    "length": 12516,
+    "headings": 12
+  },
+  {
+    "file": "docs/AI_ANALYTICS_FRONTEND_IMPROVEMENTS.md",
+    "title": "AI Analytics Frontend Improvements - Implementation Summary",
+    "length": 12879,
+    "headings": 10
+  },
+  {
+    "file": "docs/AI_ANALYTICS_GO_NO_GO_CHECKLIST.md",
+    "title": "AI Analytics Go-No-Go Checklist",
+    "length": 1731,
+    "headings": 8
+  },
+  {
+    "file": "docs/AI_ANALYTICS_ROLLBACK_INCIDENT_TEMPLATE.md",
+    "title": "AI Analytics Rollback Incident Note Template",
+    "length": 4919,
+    "headings": 11
+  },
+  {
+    "file": "docs/AI_ANALYTICS_ROLLOUT_RUNBOOK.md",
+    "title": "AI Analytics Rollout Runbook",
+    "length": 4659,
+    "headings": 10
+  },
+  {
+    "file": "docs/AI_ANALYTICS_ROLLOUT_TOOLKIT_SUMMARY.md",
+    "title": "AI Analytics Rollout Toolkit — Complete Delivery Summary",
+    "length": 8134,
+    "headings": 13
+  },
+  {
+    "file": "docs/AI_ANALYTICS_TASK_SCHEDULER_SETUP.md",
+    "title": "Task Scheduler Setup for AI Analytics Hourly Monitor",
+    "length": 4661,
+    "headings": 4
+  },
+  {
+    "file": "docs/AI_GGUF_UPGRADE_PLAN.md",
+    "title": "Kế hoạch Nâng cấp Module AI — GGUF Integration",
+    "length": 19050,
+    "headings": 9
+  },
+  {
+    "file": "docs/AI_LOCAL_KNOWLEDGE_BASE_CONCEPT.md",
+    "title": "AI Local System Knowledge Base — Concept & Implementation Plan",
+    "length": 15887,
+    "headings": 11
+  },
+  {
+    "file": "docs/AI_LOCAL_KNOWLEDGE_BASE_EXECUTIVE_SUMMARY.md",
+    "title": "AI Local System Knowledge Base — Executive Summary & Next Steps",
+    "length": 7338,
+    "headings": 14
+  },
+  {
+    "file": "docs/AI_LOCAL_KNOWLEDGE_BASE_IMPLEMENTATION_ROADMAP.md",
+    "title": "AI Local Knowledge Base — Implementation Roadmap & Task Breakdown",
+    "length": 30087,
+    "headings": 13
+  },
+  {
+    "file": "docs/AI_SETTINGS_DATA_PROCESSING.md",
+    "title": "AI Settings & Data Processing",
+    "length": 4516,
+    "headings": 5
+  },
+  {
+    "file": "docs/AI_SPECIALIST_AGENTS_GGUF.md",
+    "title": "AI Specialist Agents (Local GGUF)",
+    "length": 3158,
+    "headings": 7
+  },
+  {
+    "file": "docs/AI_UPGRADE_PLAN.md",
+    "title": "Kế Hoạch Nâng Cấp Hệ Thống AI — AVI-AOI Management",
+    "length": 25439,
+    "headings": 8
+  },
+  {
+    "file": "docs/AI_USAGE_GUIDE.md",
+    "title": "Hướng Dẫn Sử Dụng Các Chức Năng AI — AVI AOI Management",
+    "length": 18214,
+    "headings": 16
+  },
+  {
+    "file": "docs/ANALYTICS_COMPONENTS_API_REFERENCE.md",
+    "title": "Analytics Components & Hooks - API Reference",
+    "length": 15061,
+    "headings": 6
+  },
+  {
+    "file": "docs/ANALYTICS_IMPROVEMENTS_SUMMARY.md",
+    "title": "AI Analytics Frontend Improvements - Deployment & Executive Summary",
+    "length": 10395,
+    "headings": 15
+  },
+  {
+    "file": "docs/AOI_HISTORY_INTEGRATION_TEST_GUIDE.md",
+    "title": "AOI Package Upload & History Integration - Testing Guide",
+    "length": 10372,
+    "headings": 7
+  },
+  {
+    "file": "docs/API_REFERENCE.md",
+    "title": "API Reference - Hệ Thống MES AVI/AOI",
+    "length": 39841,
+    "headings": 18
+  },
+  {
+    "file": "docs/BEFORE_AFTER_COMPARISON.md",
+    "title": "Before & After Comparison - Code Examples & Performance",
+    "length": 16464,
+    "headings": 4
+  },
+  {
+    "file": "docs/CODEBASE_RESEARCH_REPORT.md",
+    "title": "Comprehensive Codebase Research Report",
+    "length": 43109,
+    "headings": 7
+  },
+  {
+    "file": "docs/COMPLETION_SUMMARY.md",
+    "title": "🎉 AI Analytics Frontend Improvements - COMPLETION SUMMARY",
+    "length": 12974,
+    "headings": 17
+  },
+  {
+    "file": "docs/CSHARP_CLIENT_UPLOAD_GUIDE.md",
+    "title": "Hướng dẫn Upload từ phần mềm C# (AOI/AVI)",
+    "length": 10434,
+    "headings": 7
+  },
+  {
+    "file": "docs/DEPLOYMENT_GUIDE.md",
+    "title": "Hướng Dẫn Triển Khai Hệ Thống MES AVI/AOI",
+    "length": 10573,
+    "headings": 13
+  },
+  {
+    "file": "docs/E2E_TESTING_GUIDE.md",
+    "title": "Hướng dẫn Test End-to-End với Thiết bị Thật",
+    "length": 7422,
+    "headings": 10
+  },
+  {
+    "file": "docs/examples/CSharp_API_Examples.md",
+    "title": "C# API Examples - AVI/AOI Management System",
+    "length": 36160,
+    "headings": 11
+  },
+  {
+    "file": "docs/examples/README.md",
+    "title": "AOI Package Examples",
+    "length": 4572,
+    "headings": 5
+  },
+  {
+    "file": "docs/FIREBASE_PUSH_NOTIFICATIONS.md",
+    "title": "Hướng dẫn Cấu hình Firebase Push Notifications",
+    "length": 7634,
+    "headings": 15
+  },
+  {
+    "file": "docs/FIREBASE_SETUP_GUIDE.md",
+    "title": "Hướng dẫn Cấu hình Firebase - Step by Step",
+    "length": 5917,
+    "headings": 9
+  },
+  {
+    "file": "docs/FIXES_COMPLETION_SUMMARY.md",
+    "title": "✅ COMPLETION SUMMARY: 5 Critical Fixes for Backend AI Analytics Module",
+    "length": 11243,
+    "headings": 13
+  },
+  {
+    "file": "docs/FIX_SUBMITINSPECTION_POINTID.md",
+    "title": "Fix: submitInspection không lưu measurement khi pointId chưa tồn tại",
+    "length": 11175,
+    "headings": 10
+  },
+  {
+    "file": "docs/I18N_AUDIT_REPORT.md",
+    "title": "i18n Audit Report — Hardcoded Strings",
+    "length": 80138,
+    "headings": 32
+  },
+  {
+    "file": "docs/IMPLEMENTATION_CHECKLIST.md",
+    "title": "AI Analytics Frontend Improvements - Implementation Checklist & Quick Start",
+    "length": 12207,
+    "headings": 9
+  },
+  {
+    "file": "docs/INDEX.md",
+    "title": "AI Analytics Frontend Improvements - Complete Documentation Index",
+    "length": 13585,
+    "headings": 15
+  },
+  {
+    "file": "docs/INDEX_OPTIMIZATION_GUIDE.md",
+    "title": "Database Index Optimization Guide",
+    "length": 7448,
+    "headings": 7
+  },
+  {
+    "file": "docs/module-evaluation.md",
+    "title": "Module Evaluation Report - Dashboard & History",
+    "length": 3276,
+    "headings": 3
+  },
+  {
+    "file": "docs/MQTT_CONFIGURATION.md",
+    "title": "Hướng dẫn Cấu hình MQTT Broker",
+    "length": 27016,
+    "headings": 14
+  },
+  {
+    "file": "docs/MQTT_INDEX.md",
+    "title": "📡 MQTT Documentation - Navigation Guide",
+    "length": 11035,
+    "headings": 6
+  },
+  {
+    "file": "docs/MQTT_QUICK_START.md",
+    "title": "🚀 Quick Start: MQTT Integration",
+    "length": 6625,
+    "headings": 9
+  },
+  {
+    "file": "docs/POSTGRESQL_MIGRATION_ASSESSMENT.md",
+    "title": "Đánh giá Chuyển đổi PostgreSQL cho Môi trường Tập đoàn Lớn",
+    "length": 11399,
+    "headings": 8
+  },
+  {
+    "file": "docs/QUICK_REFERENCE.md",
+    "title": "AI Analytics Components - Quick Reference Card",
+    "length": 5365,
+    "headings": 10
+  },
+  {
+    "file": "docs/SERVER_PERFORMANCE_ASSESSMENT.md",
+    "title": "Đánh giá Hiệu suất Hệ thống cho 20 Máy trên Mạng LAN",
+    "length": 10812,
+    "headings": 9
+  },
+  {
+    "file": "docs/SETUP_ADMIN_GUIDE.md",
+    "title": "Hướng Dẫn Thiết Lập Admin Lần Đầu",
+    "length": 4246,
+    "headings": 9
+  },
+  {
+    "file": "docs/STATION_DETAIL_INSPECTION_PROCESS.md",
+    "title": "StationDetailInspection Process (FactoryAlertSystem)",
+    "length": 9811,
+    "headings": 7
+  },
+  {
+    "file": "docs/SYSTEM_AUDIT_REPORT.md",
+    "title": "AVI-AOI Management System — System Audit Report",
+    "length": 18529,
+    "headings": 6
+  },
+  {
+    "file": "docs/SYSTEM_EVALUATION_REPORT.md",
+    "title": "Báo Cáo Đánh Giá Hệ Thống MES AVI/AOI",
+    "length": 9806,
+    "headings": 8
+  },
+  {
+    "file": "docs/THIRD_PARTY_MQTT_INTEGRATION_GUIDE.md",
+    "title": "Hướng dẫn Tích hợp MQTT cho Ứng dụng Bên Thứ 3",
+    "length": 36229,
+    "headings": 12
+  },
+  {
+    "file": "docs/UNIFIED_API_STRUCTURE.md",
+    "title": "Unified API Structure - Cấu trúc JSON đồng bộ",
+    "length": 14488,
+    "headings": 16
+  },
+  {
+    "file": "docs/UPGRADE_IMPROVEMENT_PLAN.md",
+    "title": "AVI-AOI Management System — Upgrade & Improvement Plan",
+    "length": 20000,
+    "headings": 10
+  },
+  {
+    "file": "docs/USER_GUIDE.md",
+    "title": "Hướng Dẫn Sử Dụng Hệ Thống MES AVI/AOI",
+    "length": 9726,
+    "headings": 11
+  },
+  {
+    "file": "apidocs/AI_MODEL_API.md",
+    "title": "AI Model API — Quản lý mô hình AI & Inference",
+    "length": 14095,
+    "headings": 20
+  },
+  {
+    "file": "apidocs/AUTHENTICATION.md",
+    "title": "Authentication — Xác thực API",
+    "length": 2931,
+    "headings": 5
+  },
+  {
+    "file": "apidocs/ERROR_CODES.md",
+    "title": "Error Codes — Mã lỗi API",
+    "length": 4651,
+    "headings": 6
+  },
+  {
+    "file": "apidocs/EXAMPLES.md",
+    "title": "Integration Examples — Ví dụ tích hợp đa ngôn ngữ",
+    "length": 16453,
+    "headings": 7
+  },
+  {
+    "file": "apidocs/EXTERNAL_INSPECTION_API.md",
+    "title": "External Inspection API — Third-party Integration",
+    "length": 85243,
+    "headings": 11
+  },
+  {
+    "file": "apidocs/MACHINE_API.md",
+    "title": "Machine API — Tích hợp máy kiểm tra AOI",
+    "length": 17825,
+    "headings": 14
+  },
+  {
+    "file": "apidocs/PRODUCT_API.md",
+    "title": "Product API — Tra cứu sản phẩm và điểm đo",
+    "length": 13703,
+    "headings": 10
+  },
+  {
+    "file": "apidocs/REACT_NATIVE_ANDROID_GUIDE.md",
+    "title": "Hướng dẫn tích hợp AVI-AOI API cho React Native Android",
+    "length": 28916,
+    "headings": 11
+  },
+  {
+    "file": "apidocs/README.md",
+    "title": "AVI-AOI Management System — API Documentation",
+    "length": 7240,
+    "headings": 8
+  },
+  {
+    "file": "apidocs/STATION_ANALYSIS_ANDROID_GUIDE.md",
+    "title": "Station Analysis — Hướng dẫn phát triển Android App",
+    "length": 48719,
+    "headings": 14
+  },
+  {
+    "file": "apidocs/SYNC_API.md",
+    "title": "API Đồng bộ Ảnh & Điểm đo cho bên thứ 3",
+    "length": 36124,
+    "headings": 13
+  },
+  {
+    "file": "apidocs/SYNPOINT_GUIDE.md",
+    "title": "Huong Dan Chi Tiet Chuc Nang Synpoint (Sync Point)",
+    "length": 4545,
+    "headings": 8
+  }
+]

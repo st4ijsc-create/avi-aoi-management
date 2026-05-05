@@ -66,8 +66,8 @@ const sdkHash = crypto.createHmac('sha256', INTEGRITY_SECRET)
 // Inject integrity check code at the top of the server bundle
 const integrityCode = `
 // ═══ INTEGRITY VERIFICATION ═══
-import { createHmac, createHash } from 'crypto';
-import { readFileSync, existsSync } from 'fs';
+import * as _cr from 'crypto';
+import { readFileSync as _rf, existsSync as _ex } from 'fs';
 import { fileURLToPath as _flu } from 'url';
 import { dirname as _dn, join as _jn } from 'path';
 
@@ -79,12 +79,12 @@ const _d = _dn(_flu(import.meta.url));
   const _e = '${sdkHash}';
   try {
     const _f = _jn(_d, 'index.cjs');
-    if (!existsSync(_f)) {
+    if (!_ex(_f)) {
       console.error('[SECURITY] Critical file missing. Server cannot start.');
       process.exit(1);
     }
-    const _c = readFileSync(_f);
-    const _h = createHmac('sha256', _s).update(_c).digest('hex');
+    const _c = _rf(_f);
+    const _h = _cr.createHmac('sha256', _s).update(_c).digest('hex');
     if (_h !== _e) {
       console.error('[SECURITY] File integrity check failed. Server cannot start.');
       process.exit(1);

@@ -1,0 +1,12 @@
+{
+  "generatedAt": "2026-05-05T07:35:40.341Z",
+  "maxChunkChars": 1800,
+  "totalChunks": 883,
+  "byType": {
+    "router": 79,
+    "service": 46,
+    "type": 114,
+    "pattern": 1,
+    "doc": 643
+  }
+}

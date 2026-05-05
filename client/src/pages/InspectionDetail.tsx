@@ -29,7 +29,8 @@ import {
   Edit3,
   Save,
   List,
-  X
+  X,
+  ArrowLeftRight
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import { useState, useRef, useEffect, useMemo } from "react";
@@ -47,8 +48,11 @@ interface MeasurementPoint {
   aiAnalysisResult: string | null;
   aiConfidence: string | null;
   referenceImageUrl?: string | null;
-  pointCode?: string;
-  pointName?: string;
+  pointCode?: string | null;
+  pointName?: string | null;
+  productModelId?: number | null;
+  productCode?: string | null;
+  productName?: string | null;
   x?: number;
   y?: number;
 }
@@ -77,11 +81,15 @@ export default function InspectionDetail() {
   const [lightboxOffset, setLightboxOffset] = useState({ x: 0, y: 0 });
   const lightboxDragRef = useRef<{ startX: number; startY: number; ox: number; oy: number } | null>(null);
 
-  const openLightbox = (src: string, title: string) => {
+  // Track which side the lightbox is showing so we can switch
+  const [lightboxSide, setLightboxSide] = useState<'reference' | 'actual' | null>(null);
+
+  const openLightbox = (src: string, title: string, side?: 'reference' | 'actual') => {
     setLightboxSrc(src);
     setLightboxTitle(title);
     setLightboxZoom(1);
     setLightboxOffset({ x: 0, y: 0 });
+    setLightboxSide(side ?? null);
   };
   const closeLightbox = () => {
     setLightboxSrc(null);
@@ -194,21 +202,21 @@ export default function InspectionDetail() {
     switch (result) {
       case "OK":
         return (
-          <Badge className={`status-ok gap-1 ${baseClass}`}>
+          <Badge className={`bg-success/20 text-success border-success/30 gap-1 ${baseClass}`}>
             <CheckCircle2 className={size === "lg" ? "h-5 w-5" : "h-3 w-3"} />
             OK
           </Badge>
         );
       case "NG":
         return (
-          <Badge className={`status-ng gap-1 ${baseClass}`}>
+          <Badge className={`bg-destructive/20 text-destructive border-destructive/30 gap-1 ${baseClass}`}>
             <XCircle className={size === "lg" ? "h-5 w-5" : "h-3 w-3"} />
             NG
           </Badge>
         );
       case "NTF":
         return (
-          <Badge className={`status-ntf gap-1 ${baseClass}`}>
+          <Badge className={`bg-warning/20 text-warning border-warning/30 gap-1 ${baseClass}`}>
             <AlertTriangle className={size === "lg" ? "h-5 w-5" : "h-3 w-3"} />
             NTF
           </Badge>
@@ -506,7 +514,7 @@ export default function InspectionDetail() {
                           {/* Tooltip on hover */}
                           {isHovered && (
                             <div 
-                              className="absolute z-50 left-full ml-2 top-1/2 -translate-y-1/2 bg-popover border border-border rounded-lg p-3 shadow-xl min-w-[200px]"
+                              className="absolute z-50 left-full ml-2 top-1/2 -translate-y-1/2 bg-popover border border-border rounded-lg p-3 shadow-xl min-w-50"
                             >
                               <div className="flex items-center gap-2 mb-2">
                                 <span className="font-semibold">{m.pointCode || `Point ${index + 1}`}</span>
@@ -568,7 +576,7 @@ export default function InspectionDetail() {
               <CardDescription>{t('inspection.measurementListDescription')}</CardDescription>
             </CardHeader>
             <CardContent className="p-0">
-              <ScrollArea className="h-[500px]">
+              <ScrollArea className="h-125">
                 <div className="p-6 space-y-3">
                   {measurementsWithCoords.length > 0 ? (
                     measurementsWithCoords.map((measurement: MeasurementPoint, index: number) => (
@@ -662,7 +670,7 @@ export default function InspectionDetail() {
           setActivePointIndex(null);
         }
       }}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[90vw] max-w-[90vw] md:w-[75vw] md:max-w-[75vw] lg:w-[60vw] lg:max-w-[60vw] xl:w-[50vw] xl:max-w-[50vw] max-h-[90vh] p-4 overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <SplitSquareVertical className="h-5 w-5" /> 
@@ -688,13 +696,13 @@ export default function InspectionDetail() {
                     <Target className="h-4 w-4" />
                     {t('inspection.referenceImage')}
                   </div>
-                  <div className="border rounded-lg p-2 bg-secondary/20 min-h-[400px] flex items-center justify-center overflow-hidden">
+                  <div className="border rounded-lg p-2 bg-secondary/20 flex items-center justify-center overflow-hidden aspect-square">
                     {selectedMeasurement.referenceImageUrl ? (
                       <img
                         src={selectedMeasurement.referenceImageUrl}
                         alt="Reference"
-                        className="max-w-full max-h-[65vh] object-contain rounded cursor-zoom-in hover:opacity-90 transition-opacity"
-                        onClick={() => openLightbox(selectedMeasurement.referenceImageUrl!, t('inspection.referenceImage'))}
+                        className="max-w-full max-h-full object-contain rounded cursor-zoom-in hover:opacity-90 transition-opacity"
+                        onClick={() => openLightbox(selectedMeasurement.referenceImageUrl!, t('inspection.referenceImage'), 'reference')}
                       />
                     ) : (
                       <div className="text-center text-muted-foreground">
@@ -710,13 +718,13 @@ export default function InspectionDetail() {
                     <ImageIcon className="h-4 w-4" />
                     {t('inspection.actualImage')}
                   </div>
-                  <div className="border rounded-lg p-2 bg-secondary/20 min-h-[400px] flex items-center justify-center overflow-hidden">
+                  <div className="border rounded-lg p-2 bg-secondary/20 flex items-center justify-center overflow-hidden aspect-square">
                     {selectedMeasurement.imageUrl ? (
                       <img
                         src={selectedMeasurement.imageUrl}
                         alt="Actual"
-                        className="max-w-full max-h-[65vh] object-contain rounded cursor-zoom-in hover:opacity-90 transition-opacity"
-                        onClick={() => openLightbox(selectedMeasurement.imageUrl!, t('inspection.actualImage'))}
+                        className="max-w-full max-h-full object-contain rounded cursor-zoom-in hover:opacity-90 transition-opacity"
+                        onClick={() => openLightbox(selectedMeasurement.imageUrl!, t('inspection.actualImage'), 'actual')}
                       />
                     ) : (
                       <div className="text-center text-muted-foreground">
@@ -828,7 +836,10 @@ export default function InspectionDetail() {
 
       {/* Lightbox – fullscreen image viewer with zoom/pan */}
       <Dialog open={!!lightboxSrc} onOpenChange={(open) => { if (!open) closeLightbox(); }}>
-        <DialogContent className="max-w-[95vw] w-[95vw] max-h-[95vh] h-[95vh] p-0 overflow-hidden flex flex-col bg-black/95 border-0">
+        <DialogContent className="max-w-[85vh] w-[85vh] max-h-[85vh] h-[85vh] aspect-square p-0 overflow-hidden flex flex-col bg-black/95 border-0">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{lightboxTitle}</DialogTitle>
+          </DialogHeader>
           {/* Toolbar */}
           <div className="flex items-center justify-between px-4 py-2 bg-black/80 shrink-0 z-10">
             <span className="text-white text-sm font-medium truncate max-w-[60%]">{lightboxTitle}</span>
@@ -843,6 +854,18 @@ export default function InspectionDetail() {
               <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={lbReset} title="Đặt lại">
                 <RotateCcw className="h-4 w-4" />
               </Button>
+              {/* Switch to other image button */}
+              {lightboxSide && selectedMeasurement && (() => {
+                const otherSrc = lightboxSide === 'reference' ? selectedMeasurement.imageUrl : selectedMeasurement.referenceImageUrl;
+                const otherTitle = lightboxSide === 'reference' ? t('inspection.actualImage') : t('inspection.referenceImage');
+                const otherSide = lightboxSide === 'reference' ? 'actual' as const : 'reference' as const;
+                if (!otherSrc) return null;
+                return (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={() => openLightbox(otherSrc, otherTitle, otherSide)} title={otherTitle}>
+                    <ArrowLeftRight className="h-4 w-4" />
+                  </Button>
+                );
+              })()}
               <div className="w-px h-5 bg-white/20 mx-1" />
               <Button variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/20" onClick={closeLightbox} title="Đóng">
                 <X className="h-4 w-4" />

@@ -580,11 +580,13 @@ export const aoiPackageRouter = router({
               linkedInspectionId = inspections[0].id;
             } else {
               // Create new inspection record from AOI package data
-              const inspectionTime = metaData.inspectionTime 
+              // Fix timezone: shift to "fake UTC" so Drizzle stores local time in timestamp without time zone
+              const rawInspTime = metaData.inspectionTime 
                 ? new Date(metaData.inspectionTime) 
                 : metaData.startedAt 
                 ? new Date(metaData.startedAt) 
                 : new Date();
+              const inspectionTime = new Date(rawInspTime.getTime() - rawInspTime.getTimezoneOffset() * 60000);
               
               // Determine overall result
               const overallResult = metaData.overallResult 
@@ -620,25 +622,97 @@ export const aoiPackageRouter = router({
 
               linkedInspectionId = newInspection.id;
               createdInspection = true;
+            }
 
-              // Create measurement results with image URLs pointing to AOI package images
-              // Use normalizedMeasurements (supports both measurements and points fields)
-              if (normalizedMeasurements.length > 0) {
-                const { measurementResults } = await import("../../drizzle/schema");
-                
-                const measurementRecords = normalizedMeasurements
-                  .filter((point) => point.fileName) // Only points with images
-                  .map((point, idx) => {
-                    // Support both new and old field names
+            // Create or update measurement results with image URLs pointing to AOI package images
+            // Applies for BOTH new and existing inspections
+            if (linkedInspectionId && normalizedMeasurements.length > 0) {
+              const { measurementResults } = await import("../../drizzle/schema");
+
+              const inspectionTime2Raw = metaData.inspectionTime
+                ? new Date(metaData.inspectionTime)
+                : metaData.startedAt
+                ? new Date(metaData.startedAt)
+                : new Date();
+              const inspectionTime = new Date(inspectionTime2Raw.getTime() - inspectionTime2Raw.getTimezoneOffset() * 60000);
+              
+              const pointsWithImages = normalizedMeasurements
+                .filter((point) => point.fileName);
+
+              if (pointsWithImages.length > 0) {
+                // For existing inspections, try to update existing records instead of creating duplicates
+                if (!createdInspection) {
+                  const existingRecords = await database
+                    .select({ id: measurementResults.id, remark: measurementResults.remark })
+                    .from(measurementResults)
+                    .where(eq(measurementResults.inspectionId, linkedInspectionId!))
+                    .orderBy(measurementResults.id);
+
+                  if (existingRecords.length > 0) {
+                    // Update existing records by index order (both lists correspond 1:1)
+                    const updateCount = Math.min(existingRecords.length, pointsWithImages.length);
+                    for (let i = 0; i < updateCount; i++) {
+                      const point = pointsWithImages[i];
+                      await database
+                        .update(measurementResults)
+                        .set({ imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}` })
+                        .where(eq(measurementResults.id, existingRecords[i].id));
+                    }
+
+                    // Insert any extra AOI measurements beyond existing count
+                    if (pointsWithImages.length > existingRecords.length) {
+                      const extraRecords = pointsWithImages.slice(existingRecords.length).map((point, idx) => {
+                        const realIdx = existingRecords.length + idx;
+                        const pointCode = point.pointId || point.pointCode || point.code || `Point_${realIdx + 1}`;
+                        const pointName = point.name || pointCode;
+                        const measuredVal = point.measuredValue !== undefined ? point.measuredValue : point.value;
+                        const measuredStr = measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null;
+                        const isNumeric = measuredStr !== null && !isNaN(Number(measuredStr)) && measuredStr.trim() !== '';
+                        return {
+                          inspectionId: linkedInspectionId!,
+                          pointDefId: 0,
+                          measuredValue: isNumeric ? measuredStr : null,
+                          measuredValueText: measuredStr,
+                          result: (point.result || "NTF") as "OK" | "NG" | "NTF",
+                          imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
+                          remark: point.remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`,
+                          createdAt: inspectionTime,
+                        };
+                      });
+                      await database.insert(measurementResults).values(extraRecords);
+                    }
+                  } else {
+                    // Existing inspection but no measurement records yet — insert all
+                    const measurementRecords = pointsWithImages.map((point, idx) => {
+                      const pointCode = point.pointId || point.pointCode || point.code || `Point_${idx + 1}`;
+                      const pointName = point.name || pointCode;
+                      const measuredVal = point.measuredValue !== undefined ? point.measuredValue : point.value;
+                      const measuredStr = measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null;
+                      const isNumeric = measuredStr !== null && !isNaN(Number(measuredStr)) && measuredStr.trim() !== '';
+                      return {
+                        inspectionId: linkedInspectionId!,
+                        pointDefId: 0,
+                        measuredValue: isNumeric ? measuredStr : null,
+                        measuredValueText: measuredStr,
+                        result: (point.result || "NTF") as "OK" | "NG" | "NTF",
+                        imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
+                        remark: point.remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`,
+                        createdAt: inspectionTime,
+                      };
+                    });
+                    await database.insert(measurementResults).values(measurementRecords);
+                  }
+                } else {
+                  // New inspection — insert all measurement records
+                  const measurementRecords = pointsWithImages.map((point, idx) => {
                     const pointCode = point.pointId || point.pointCode || point.code || `Point_${idx + 1}`;
                     const pointName = point.name || pointCode;
                     const measuredVal = point.measuredValue !== undefined ? point.measuredValue : point.value;
                     const measuredStr = measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null;
                     const isNumeric = measuredStr !== null && !isNaN(Number(measuredStr)) && measuredStr.trim() !== '';
-                    
                     return {
                       inspectionId: linkedInspectionId!,
-                      pointDefId: 0, // No point definition from AOI
+                      pointDefId: 0,
                       measuredValue: isNumeric ? measuredStr : null,
                       measuredValueText: measuredStr,
                       result: (point.result || "NTF") as "OK" | "NG" | "NTF",
@@ -647,8 +721,6 @@ export const aoiPackageRouter = router({
                       createdAt: inspectionTime,
                     };
                   });
-
-                if (measurementRecords.length > 0) {
                   await database.insert(measurementResults).values(measurementRecords);
                 }
               }
@@ -902,6 +974,10 @@ export const aoiPackageRouter = router({
       packageId: z.string(),
       pointCode: z.string().optional(),
       fileName: z.string().optional(),
+      // Image optimization params for slow networks
+      quality: z.number().min(10).max(100).optional(), // JPEG quality (default: 85)
+      maxWidth: z.number().min(50).max(4000).optional(), // Max width for resize
+      thumbnail: z.boolean().optional(), // Quick thumbnail (320px, quality 60)
     }).refine(data => data.pointCode || data.fileName, {
       message: "Either pointCode or fileName must be provided",
     }))
@@ -955,11 +1031,30 @@ export const aoiPackageRouter = router({
         `User: ${ctx.user?.name || ctx.user?.username || "N/A"}`,
       ];
 
-      const { buffer, fromCache } = await getOrExtractImage(pkg, targetFileName, watermarkLines);
+      const { buffer: rawBuffer, fromCache } = await getOrExtractImage(pkg, targetFileName, watermarkLines);
+
+      // Apply image optimization (resize/compress) for slow networks
+      let finalBuffer = rawBuffer;
+      try {
+        const sharp = await import("sharp");
+        const isThumbnail = input.thumbnail;
+        const targetWidth = isThumbnail ? 320 : input.maxWidth;
+        const targetQuality = isThumbnail ? 60 : (input.quality || 85);
+
+        if (targetWidth || targetQuality !== 85) {
+          let pipeline = sharp.default(rawBuffer);
+          if (targetWidth) {
+            pipeline = pipeline.resize({ width: targetWidth, withoutEnlargement: true });
+          }
+          finalBuffer = await pipeline.jpeg({ quality: targetQuality }).toBuffer();
+        }
+      } catch {
+        // sharp not available, serve original
+      }
 
       // Return as base64 for tRPC transport
       return {
-        imageBase64: buffer.toString("base64"),
+        imageBase64: finalBuffer.toString("base64"),
         mimeType: "image/jpeg",
         fileName: targetFileName,
         fromCache,
