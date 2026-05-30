@@ -115,3 +115,11 @@ mobile-app/node_modules/
 # Deployment packages
 offline-deploy/
 _deploy/
+
+# Large binary upload artifacts (never push to GitHub — >100MB limit)
+uploads/gguf-models/
+uploads/factory-alert-releases/
+*.gguf
+*.apk
+# Edge model packages produced by WS-2 deployment
+uploads/edge-packages/
