@@ -184,7 +184,7 @@
     "paused": "已暂停",
     "notifyMethod": "通知方式",
     "noHistory": "无历史",
-    "noAlertsDesc": "无alertsdesc",
+    "noAlertsDesc": "尚未配置警报规则",
     "noAlerts": "没有告警",
     "minutes": "分钟",
     "loading": "加载中",
@@ -1257,6 +1257,9 @@
     "noCustomTemplates": "无自定义模板",
     "noCustomDashboard": "无自定义仪表板",
     "noAlerts": "没有警报",
+    "noTodayDataTitle": "今日暂无检测数据",
+    "noTodayDataDesc": "今天暂时没有记录。可切换到更长时间范围查看近期生产趋势。",
+    "viewLast7Days": "查看最近7天",
     "ngWarning": "Ng警告",
     "ngRateByWorkstationDescription": "Ng率按工位描述",
     "ngRateByWorkstation": "按工站的NG率",
@@ -1627,7 +1630,141 @@
     },
     "cannotLoadTrendAnalysis": "Cannotload趋势分析",
     "cannotLoadPrediction": "无法加载预测数据",
-    "cannotLoadHeatmap": "无法加载热力图"
+    "cannotLoadHeatmap": "无法加载热力图",
+    "catalog": {
+      "INSUFFICIENT_SOLDER": {
+        "name": "焊锡不足",
+        "description": "焊点焊脚未达到 IPC-A-610 规定的最低润湿/填充要求。"
+      },
+      "EXCESS_SOLDER": {
+        "name": "焊锡过多",
+        "description": "焊锡量超出焊脚/焊盘最大范围,可能遮挡检测或违反间距要求。"
+      },
+      "SOLDER_BRIDGE": {
+        "name": "锡桥 / 短路",
+        "description": "本应电气隔离的相邻导电体之间出现意外焊锡连接。"
+      },
+      "COLD_SOLDER": {
+        "name": "冷焊 / 扰动焊点",
+        "description": "焊点表面颗粒状/无光泽或开裂,因加热不足或凝固时受扰动所致。"
+      },
+      "SOLDER_BALL": {
+        "name": "锡珠",
+        "description": "板面上的游离锡珠,可能移动并造成短路。"
+      },
+      "SOLDER_VOID": {
+        "name": "焊点空洞 (BGA / QFN)",
+        "description": "焊点内部空腔超过面积百分比限值(通常 Class 2 >25%,Class 3 散热焊盘 >9%)。"
+      },
+      "NON_WETTING": {
+        "name": "不润湿",
+        "description": "焊锡未润湿金属表面,原始表面仍可见。"
+      },
+      "DEWETTING": {
+        "name": "退润湿",
+        "description": "焊锡先润湿后收缩,留下不规则锡堆并露出底材。"
+      },
+      "EXPOSED_BASE_METAL": {
+        "name": "底材外露",
+        "description": "在设计要求覆盖或焊接的位置露出导体底材。"
+      },
+      "FLUX_RESIDUE": {
+        "name": "助焊剂残留",
+        "description": "可见的助焊剂残留超出清洁度限值;免清洗工艺在外观限值内可接受。"
+      },
+      "TOMBSTONING": {
+        "name": "立碑(曼哈顿)",
+        "description": "片式元件单端翘起垂直于焊盘,常因回流加热不均所致。"
+      },
+      "BILLBOARDING": {
+        "name": "侧立(广告牌)",
+        "description": "片式元件以侧面立于焊盘而非平贴。"
+      },
+      "MISALIGNMENT": {
+        "name": "元件偏位",
+        "description": "元件偏离焊盘超过该等级允许的侧悬或端悬限值。"
+      },
+      "MISSING_COMPONENT": {
+        "name": "缺件",
+        "description": "BOM/设计指定位置缺失元件。"
+      },
+      "WRONG_COMPONENT": {
+        "name": "错件",
+        "description": "元件参数/料号与 BOM 不符。"
+      },
+      "REVERSED_POLARITY": {
+        "name": "极性反向",
+        "description": "有极性元件(二极管、电解电容、IC)装反方向。"
+      },
+      "LIFTED_LEAD": {
+        "name": "引脚翘起",
+        "description": "元件引脚未与焊盘/焊脚接触。"
+      },
+      "BENT_LEAD": {
+        "name": "引脚变形 / 损伤",
+        "description": "引脚变形超出成型公差,可能影响共面性。"
+      },
+      "INSUFFICIENT_HOLE_FILL": {
+        "name": "通孔填锡不足",
+        "description": "镀通孔垂直焊锡填充低于 75% (Class 2) 或 100% (Class 3)。"
+      },
+      "PIN_PROTRUSION_INSUFFICIENT": {
+        "name": "引脚伸出不足",
+        "description": "引脚在板焊接面伸出长度不足。"
+      },
+      "CONTAMINATION_PARTICULATE": {
+        "name": "颗粒污染",
+        "description": "组件表面有松散颗粒、异物或碎屑。"
+      },
+      "MARKING_ILLEGIBLE": {
+        "name": "标识 / 标签不清",
+        "description": "必需的标识因模糊、对比度低或打印缺陷而无法识读。"
+      },
+      "BARCODE_UNREADABLE": {
+        "name": "条码 / DMC 无法读取",
+        "description": "机读码在要求的等级(通常 ISO/IEC 15415 C 级以上)无法解码。"
+      },
+      "PCB_SCRATCH": {
+        "name": "PCB 表面划伤",
+        "description": "PCB 基材或阻焊层表面划伤但未露铜。"
+      },
+      "SOLDERMASK_DAMAGE": {
+        "name": "阻焊层损伤",
+        "description": "阻焊层翘起、缺失或开裂,导致导体外露。"
+      },
+      "LAMINATE_DAMAGE": {
+        "name": "基材损伤 / 白斑",
+        "description": "PCB 基材内部分层或白斑(白点、微裂、起泡)。"
+      },
+      "DAMAGED_INSULATION": {
+        "name": "导线绝缘层损伤",
+        "description": "导线绝缘层被切割、烧焦或磨损导致导体外露。"
+      },
+      "EDGE_BURR": {
+        "name": "边缘毛刺(机加工外壳)",
+        "description": "加工边缘的锋利毛刺超出最大允许高度。"
+      },
+      "CHIP_OUT": {
+        "name": "崩边 / 边角破损",
+        "description": "边缘或角部材料崩落,破坏设计轮廓。"
+      },
+      "DENT": {
+        "name": "凹陷 / 变形",
+        "description": "局部凹陷变形超出外观或功能限值。"
+      },
+      "COSMETIC_SCRATCH": {
+        "name": "外观划痕",
+        "description": "可见外观区域划痕超出分区 (A/B/C) 长度/宽度规格。"
+      },
+      "COLOR_MISMATCH": {
+        "name": "颜色 / 光泽不符",
+        "description": "色差 (ΔE) 或光泽度 (GU) 超出标准样板公差。"
+      },
+      "CONTAMINATION_FINGERPRINT": {
+        "name": "指纹 / 污渍",
+        "description": "外观 A 面有油污或指纹印迹。"
+      }
+    }
   },
   "errors": {
     "widgetError": "小部件错误",
@@ -2374,6 +2511,14 @@
     "browserNotSupportExport": "浏览器非support导出"
   },
   "machines": {
+    "predictiveMaintenance": "预测性维护",
+    "predictiveMaintenanceDesc": "基于统计的故障风险、RUL 预测与可靠性",
+    "failureRisk": "故障风险",
+    "confidence": "置信度",
+    "mtbf": "MTBF",
+    "mttr": "MTTR",
+    "rulForecast": "预测故障",
+    "recommendedMaintenance": "建议维护时间",
     "wsDisconnected": "WS已断开",
     "wsConnected": "WS已连接",
     "workstationName": "工位名称",
@@ -3350,6 +3495,8 @@
     "monitoringGroupDesc": "设备和机器监控",
     "machineStatusPage": "设备状态",
     "machineStatusDesc": "实时设备状态监控",
+    "machineOnboarding": "新设备向导",
+    "machineOnboardingDesc": "端到端设备部署：连接、签发API密钥、部署AI模型",
     "mqttDashboard": "MQTT仪表板",
     "mqttDashboardDesc": "MQTT消息监控仪表板",
     "mqttClients": "MQTT客户端",
@@ -3434,6 +3581,8 @@
     "analyticsSettingDesc": "配置高级分析、报告和预测",
     "productionScheduling": "生产排程",
     "productionSchedulingDesc": "排程、优化算法、WIP跟踪",
+    "productionSignoff": "会话签核 (21 CFR)",
+    "productionSignoffDesc": "生产会话的 HMAC-SHA256 电子签名",
     "productionDashboard": "生产仪表板",
     "productionDashboardDesc": "实时工站级生产总览",
     "dataGroup": "数据管理",
@@ -3516,6 +3665,8 @@
     "apiDocsPageDesc": "REST API参考文档",
     "userGuide": "用户指南",
     "userGuideDesc": "应用程序用户指南",
+    "aboutSystem": "系统介绍",
+    "aboutSystemDesc": "系统、公司与开发团队信息",
     "licenseManagement": "许可证管理",
     "licenseManagementDesc": "管理许可证激活和权限",
     "settingsScheduledReports": "定时报表",
@@ -3560,6 +3711,52 @@
     "aiModelManagementDesc": "注册、管理和部署AI模型",
     "aiSettings": "AI 设置",
     "aiSettingsDesc": "API密钥、模型配置和AI系统设置"
+  },
+  "aboutPage": {
+    "layoutTitle": "系统介绍",
+    "hero": {
+      "title": "AVI/AOI 管理系统",
+      "description": "面向自动化检测产线的生产与质量管理平台，帮助企业实时监控运营、降低缺陷并优化绩效。",
+      "version": "版本 1.0.0",
+      "updated": "更新日期：13/05/2026"
+    },
+    "system": {
+      "title": "系统简介",
+      "description": "AVI/AOI Management 平台在生产运营中的核心能力。",
+      "highlights": [
+        "通过 MQTT 与可视化仪表板实现 AVI/AOI 设备实时监控。",
+        "标准化检测数据，并按产品、工序与设备追溯缺陷。",
+        "提供 SPC、热力图、根因分析、预警与自动报表等质量分析能力。",
+        "支持角色权限、审计日志，以及从工厂到集团的多层级运营管理。"
+      ]
+    },
+    "stack": {
+      "title": "技术栈",
+      "description": "主要架构与技术组件。",
+      "items": [
+        "前端：React + TypeScript + Tailwind UI",
+        "后端：Node.js + tRPC",
+        "数据：PostgreSQL",
+        "实时：MQTT + WebSocket"
+      ]
+    },
+    "company": {
+      "title": "公司介绍",
+      "name": "AVI/AOI 解决方案公司",
+      "description": "负责方案实施与运营的组织。",
+      "paragraph1": "该系统面向智能制造场景，聚焦质量检测自动化、数据标准化，以及跨多工厂的可扩展性。",
+      "paragraph2": "公司以三项原则推动制造数字化转型：数据透明、快速响应异常、以及基于实际分析的持续改进。"
+    },
+    "developer": {
+      "title": "系统开发团队",
+      "description": "开发与维护团队信息。",
+      "teamLabel": "开发团队",
+      "teamValue": "AVI/AOI Management Platform 工程团队",
+      "roleLabel": "主要职责",
+      "roleValue": "系统架构设计、业务功能开发、性能优化，以及生产环境下的持续运行保障。",
+      "contactLabel": "内部联系人",
+      "contactValue": "请根据贵组织情况补充具体负责人联系方式。"
+    }
   },
   "notifications": {
     "yieldWarning": "良率警告",
@@ -3649,7 +3846,7 @@
     "notesPlaceholder": "备注placeholder",
     "notes": "备注",
     "noTargetsConfigured": "无targetsconfigured",
-    "noOeeData": "无OEE数据",
+    "noOeeData": "尚无 OEE 数据",
     "noDowntimeEvents": "无downtimeevents",
     "noDowntimeData": "无downtime数据",
     "noDataToExport": "无数据到导出",
@@ -3844,55 +4041,84 @@
     "addProcess": "添加工序"
   },
   "production": {
-    "workshop": "车间",
-    "updateSuccess": "更新成功",
-    "totalOutput": "总产量",
-    "totalOrders": "总订单数",
     "title": "生产工单",
-    "targetQuantity": "目标数量",
-    "statusPending": "待处理",
-    "statusPaused": "已暂停",
-    "statusInProgress": "进行中",
-    "statusCompleted": "已完成",
-    "statusCancelled": "状态已取消",
-    "status": "状态",
-    "selectWorkshop": "选择车间",
-    "selectProduct": "选择产品",
-    "selectLine": "选择line",
-    "selectFactory": "选择工厂",
-    "searchPlaceholder": "搜索占位符",
-    "progress": "进度",
-    "product": "产品",
-    "priorityUrgent": "优先级urgent",
-    "priorityNormal": "优先级正常",
-    "priorityHigh": "优先级高",
-    "priority": "优先级",
-    "orderListDescription": "顺序列表描述",
-    "orderList": "顺序列表",
-    "orderCode": "顺序code",
-    "notesPlaceholder": "备注placeholder",
-    "notes": "备注",
-    "noOrders": "未找到生产工单",
-    "list": "列表",
-    "line": "产线",
-    "ganttChart": "Gantt图表",
-    "fillRequiredFields": "Fill必填fields",
-    "factory": "工厂",
-    "editTitle": "编辑标题",
-    "editDescription": "编辑描述",
-    "description": "描述",
-    "deleteSuccess": "删除成功",
-    "createSuccess": "创建成功",
+    "description": "按工厂和产线管理与跟踪生产工单",
+    "orderList": "工单列表",
+    "orderListDescription": "所有生产工单",
+    "okNgNtf": "OK / NG / NTF",
     "createOrder": "创建工单",
-    "createNewTitle": "创建新建标题",
-    "createNewDescription": "创建新建描述",
-    "createNew": "创建新建",
-    "confirmDelete": "确认删除",
-    "companyCode": "公司代码",
+    "createNew": "新建工单",
+    "createNewTitle": "创建生产工单",
+    "createNewDescription": "填写信息以创建新生产工单",
+    "editTitle": "编辑生产工单",
+    "editDescription": "更新生产工单信息",
+    "confirmDelete": "确定要删除此工单吗？",
+    "confirmDeleteDetail": "确定要删除生产订单 {{code}} 吗？此操作无法撤销。",
+    "createSuccess": "创建工单成功",
+    "updateSuccess": "更新工单成功",
+    "deleteSuccess": "删除工单成功",
+    "fillRequiredFields": "请填写所有必填字段",
+    "noOrders": "未找到生产工单",
+    "orderCode": "工单编号",
     "company": "公司",
-    "allStatuses": "全部statuses"
+    "companyCode": "公司代码",
+    "factory": "工厂",
+    "workshop": "车间",
+    "line": "产线",
+    "product": "产品",
+    "targetQuantity": "目标数量",
+    "totalOutput": "总产量",
+    "totalOrders": "总工单数",
+    "progress": "进度",
+    "priority": "优先级",
+    "priorityUrgent": "紧急",
+    "priorityHigh": "高",
+    "priorityNormal": "普通",
+    "status": "状态",
+    "statusPending": "待处理",
+    "statusInProgress": "进行中",
+    "statusPaused": "已暂停",
+    "statusCompleted": "已完成",
+    "statusCancelled": "已取消",
+    "allStatuses": "全部状态",
+    "selectFactory": "选择工厂",
+    "selectWorkshop": "选择车间",
+    "selectLine": "选择产线",
+    "selectProduct": "选择产品",
+    "searchPlaceholder": "按工单号、产品、客户搜索…",
+    "notes": "备注",
+    "notesPlaceholder": "该工单的备注（可选）",
+    "list": "列表",
+    "ganttChart": "甘特图",
+    "orderCodePlaceholder": "例如 PO-2024-001",
+    "companyCodePlaceholder": "例如 CORP-001",
+    "targetQuantityPlaceholder": "例如 1000",
+    "editOrder": "编辑工单",
+    "deleteOrder": "删除工单"
   },
   "products": {
+    "documents": "文档",
+    "attachDocument": "附加文档",
+    "noDocuments": "暂无文档",
+    "foundationSection": "P3 基础（仪器 / 抽样 / 视图）",
+    "instruments": "测量仪器",
+    "samplingPlans": "抽样计划",
+    "productViews": "产品视图",
+    "msaStudies": "MSA 研究",
+    "addInstrument": "添加仪器",
+    "addSamplingPlan": "添加抽样计划",
+    "addProductView": "添加视图",
+    "startMsaWizard": "启动 MSA 向导",
+    "strategy": "策略",
+    "viewType": "视图类型",
+    "strategyFixedN": "固定样本量",
+    "strategyAql": "AQL",
+    "strategyRiskBased": "基于风险",
+    "viewTop": "顶视",
+    "viewBottom": "底视",
+    "viewSide": "侧视",
+    "viewIsometric": "等轴测",
+    "viewCustom": "自定义",
     "variantExample": "变体示例",
     "upperLimit": "Upper Limit",
     "uploadJsonFile": "上传JSON文件",
@@ -5836,6 +6062,16 @@
     "selectLineRequired": "请选择产线"
   },
   "scheduling": {
+    "autoScheduleRun": "自动排程 (运行)",
+    "whatIf": "假设分析 (-30% 产能)",
+    "generating": "生成中...",
+    "runGenerated": "已创建排程 (运行 #{{id}})：{{count}} 个订单，{{conflicts}} 个冲突",
+    "runApplied": "已应用 {{count}} 个订单",
+    "applyRun": "应用运行 #{{id}}",
+    "whatIfResult": "假设分析结果",
+    "capacityReduced": "产能降低 {{pct}}%",
+    "lateOrdersChange": "延误订单：{{base}} → {{sim}}",
+    "hoursLate": "延误 {{h}} 小时",
     "title": "生产排程",
     "subtitle": "排程、优化和跟踪生产进度",
     "algorithm": "算法",
@@ -5847,6 +6083,7 @@
     "edfDesc": "优先处理截止日期最近的订单",
     "optimize": "优化",
     "optimizing": "优化中...",
+    "lastOptimized": "最后优化：{{time}} · {{algorithm}}",
     "ganttChart": "甘特图",
     "wipTracking": "WIP跟踪",
     "orderList": "订单列表",
@@ -5872,6 +6109,8 @@
     "activeOrders": "活跃订单",
     "algorithmSelection": "算法选择",
     "apply": "应用",
+    "applyConfirmTitle": "确认应用此建议？",
+    "applyConfirmDescription": "此操作将覆盖所选订单的当前排程。请在继续前确认。",
     "applySuccess": "排程应用成功",
     "cancelled": "已取消",
     "endDate": "结束日期",
@@ -5886,7 +6125,17 @@
     "startDate": "开始日期",
     "suggestedEnd": "建议结束",
     "suggestedStart": "建议开始",
-    "utilization": "利用率"
+    "utilization": "利用率",
+    "conflictOverlap": "排程重叠",
+    "conflictDependency": "订单依赖",
+    "conflictCapacity": "超出产能",
+    "conflictDeadline": "错过截止日期",
+    "fifoLabel": "FIFO（先进先出）",
+    "fifoDescLong": "按工单创建时间排程 — 较早创建的工单优先生产",
+    "priorityLabel": "优先级排程",
+    "priorityDescLong": "优先级最高的工单优先；同优先级按最近截止日期排序",
+    "edfLabel": "EDF（最早截止日期优先）",
+    "edfDescLong": "截止日期最近的工单优先安排生产"
   },
   "widgets": {
     "kpiCard": {
@@ -6029,10 +6278,88 @@
       "perDay": "每天"
     }
   },
+  "onboarding": {
+    "title": "新设备向导",
+    "subtitle": "10 分钟内完成新设备端到端部署",
+    "next": "下一步",
+    "back": "上一步",
+    "finish": "完成",
+    "steps": {
+      "info": "信息",
+      "test": "连接",
+      "assign": "工位",
+      "deploy": "部署",
+      "verify": "校验"
+    },
+    "stepDesc": {
+      "0": "输入设备信息和网络地址",
+      "1": "测试与设备的连接（HTTP/TCP/WebSocket）",
+      "2": "将设备分配到工位并签发API密钥",
+      "3": "选择产品和AI模型并部署",
+      "4": "查看心跳和部署状态"
+    },
+    "fields": {
+      "code": "设备编号",
+      "name": "设备名称",
+      "machineType": "设备类型",
+      "serialNumber": "序列号",
+      "ipAddress": "IP地址",
+      "port": "端口",
+      "protocol": "协议"
+    },
+    "step2": {
+      "runTest": "测试连接",
+      "testing": "测试中...",
+      "ok": "连接成功",
+      "failed": "连接失败",
+      "reachable": "可达",
+      "unreachable": "不可达",
+      "hint": "即使设备尚未上线也可继续（离线优先）。"
+    },
+    "step3": {
+      "station": "工位",
+      "selectStation": "选择工位",
+      "createAndApprove": "创建设备并签发API密钥",
+      "creating": "创建中...",
+      "granted": "已创建设备并签发API密钥",
+      "approved": "已审批",
+      "createError": "创建设备失败",
+      "copied": "已复制API密钥",
+      "copy": "复制",
+      "apiKeyHint": "请将此API密钥保存到AOI/AVI设备用于认证。",
+      "selectStationFirst": "请先选择工位"
+    },
+    "step4": {
+      "product": "产品",
+      "selectProduct": "选择产品",
+      "model": "AI模型",
+      "selectModel": "选择AI模型",
+      "deploy": "打包并部署",
+      "deploying": "部署中...",
+      "deployed": "已部署（READY）",
+      "deployPartial": "部署未完成",
+      "deployError": "部署失败",
+      "noVersion": "模型没有当前版本",
+      "deploymentCreated": "已创建部署 #{{id}}",
+      "notifyHint": "设备将通过MQTT/Socket收到更新信号并自动拉取安装包。"
+    },
+    "step5": {
+      "deploymentStatus": "部署状态",
+      "machine": "设备",
+      "deploymentId": "部署ID",
+      "packageVersion": "安装包版本",
+      "lastHeartbeat": "最近心跳",
+      "activeOk": "设备处于ACTIVE — 部署完成！",
+      "waitingHeartbeat": "等待设备拉取安装包并发送心跳...",
+      "refresh": "刷新",
+      "unknown": "未知"
+    }
+  },
   "machineRegistration": {
     "pageTitle": "设备注册管理",
     "pageSubtitle": "审批、拒绝和管理远程AOI/AVI设备注册",
     "refresh": "刷新",
+    "openWizard": "新设备向导",
     "tabs": {
       "pending": "待审批",
       "all": "全部设备",
@@ -6522,6 +6849,9 @@
     "totalOutput": "总产量",
     "avgRetests": "平均复测",
     "lowYieldStations": "低良率工站",
+    "lowYieldFilterHint": "点击筛选低良率工站",
+    "lowYieldFilterChip": "低良率工站 (FPY < 70%)",
+    "clearLowYieldFilter": "清除筛选",
     "tabStation": "工站视图",
     "tabDefect": "缺陷分析",
     "tabTrend": "趋势",
@@ -6534,6 +6864,22 @@
     "custom": "自定义",
     "allFactories": "所有工厂",
     "allLines": "所有产线",
+    "copyLink": "复制链接",
+    "linkCopied": "链接已复制到剪贴板",
+    "linkCopyFailed": "复制链接失败",
+    "autoRefreshLabel": "自动刷新",
+    "autoRefreshOnLabel": "自动 30 秒",
+    "toggleAutoRefresh": "切换自动刷新",
+    "autoRefreshOn": "已启用自动刷新（每 30 秒）",
+    "autoRefreshOff": "已禁用自动刷新",
+    "compareFactories": "对比",
+    "compareOn": "已启用工厂对比",
+    "compareOff": "已禁用工厂对比",
+    "compareTitle": "工厂对比",
+    "compareHint": "跨工厂对比 KPI",
+    "toggleCompare": "切换工厂对比",
+    "factoriesShort": "个工厂",
+    "drilldownFactory": "点击按此工厂筛选",
     "colStation": "工站",
     "colFPY": "首次通过率",
     "colChange": "点变化",
@@ -6552,7 +6898,19 @@
     "noTrendData": "所选时间段无趋势数据",
     "yieldTrend": "良率趋势",
     "outputTrend": "产量与NG趋势",
-    "noSpcData": "所选时间段无SPC数据"
+    "noSpcData": "所选时间段无SPC数据",
+    "live": "实时",
+    "todayLabel": "今天",
+    "exportTitle": "生产仪表板报告",
+    "searchStation": "搜索工站名称、代码、产线…",
+    "exportOverview": "概览",
+    "exportStationPerf": "工站表现",
+    "exportTopDefects": "主要缺陷",
+    "colCategory": "分类",
+    "colCode": "代码",
+    "colName": "名称",
+    "colCount": "数量",
+    "colRate": "占比"
   },
   "aiHub": {
     "subtitle": "AI驱动的检测智能功能",
@@ -6564,21 +6922,66 @@
     "genReport": "生成报告",
     "title": "AI 中心",
     "features": {
-      "chat": { "title": "AI 聊天助手", "desc": "用自然语言查询检测数据、缺陷趋势和质量见解" },
-      "qualityGate": { "title": "质量门", "desc": "使用集成AI模型和可配置阈值自动做出通过/失败决策" },
-      "activeLearning": { "title": "主动学习", "desc": "人机协作标注，通过不确定性采样提升模型精度" },
-      "imageSearch": { "title": "图像搜索", "desc": "在检测图像中进行向量相似性搜索，查找相似缺陷模式" },
-      "timeSeries": { "title": "时间序列分析", "desc": "EWMA和Holt-Winters生产指标异常检测与预测" },
-      "reports": { "title": "AI报告", "desc": "自动化每日质量摘要、根本原因分析和管理报告" },
-      "performance": { "title": "模型性能", "desc": "跟踪AI模型准确率、推理统计和版本历史" },
-      "batchInference": { "title": "批量推理", "desc": "使用并行AI推理任务处理大批量图像" },
-      "abTesting": { "title": "A/B测试", "desc": "通过流量分割和统计分析并排比较两个模型版本" },
-      "monitoring": { "title": "模型监控", "desc": "检测模型漂移，跟踪性能快照，管理质量警报" },
-      "dataProcessing": { "title": "数据处理", "desc": "处理、增强和准备图像数据用于AI模型训练" },
-      "modelManagement": { "title": "AI模型管理", "desc": "注册、管理和部署AI模型和版本" },
-      "inspectionAnalytics": { "title": "检测分析", "desc": "缺陷趋势、良率预测、SPC、帕累托分析和风险评估" },
-      "ggufModels": { "title": "GGUF模型", "desc": "管理和使用本地LLM模型(.gguf)进行分析和对话" },
-      "settings": { "title": "AI设置", "desc": "管理API密钥、模型配置和系统设置" }
+      "chat": {
+        "title": "AI 聊天助手",
+        "desc": "用自然语言查询检测数据、缺陷趋势和质量见解"
+      },
+      "qualityGate": {
+        "title": "质量门",
+        "desc": "使用集成AI模型和可配置阈值自动做出通过/失败决策"
+      },
+      "activeLearning": {
+        "title": "主动学习",
+        "desc": "人机协作标注，通过不确定性采样提升模型精度"
+      },
+      "imageSearch": {
+        "title": "图像搜索",
+        "desc": "在检测图像中进行向量相似性搜索，查找相似缺陷模式"
+      },
+      "timeSeries": {
+        "title": "时间序列分析",
+        "desc": "EWMA和Holt-Winters生产指标异常检测与预测"
+      },
+      "reports": {
+        "title": "AI报告",
+        "desc": "自动化每日质量摘要、根本原因分析和管理报告"
+      },
+      "performance": {
+        "title": "模型性能",
+        "desc": "跟踪AI模型准确率、推理统计和版本历史"
+      },
+      "batchInference": {
+        "title": "批量推理",
+        "desc": "使用并行AI推理任务处理大批量图像"
+      },
+      "abTesting": {
+        "title": "A/B测试",
+        "desc": "通过流量分割和统计分析并排比较两个模型版本"
+      },
+      "monitoring": {
+        "title": "模型监控",
+        "desc": "检测模型漂移，跟踪性能快照，管理质量警报"
+      },
+      "dataProcessing": {
+        "title": "数据处理",
+        "desc": "处理、增强和准备图像数据用于AI模型训练"
+      },
+      "modelManagement": {
+        "title": "AI模型管理",
+        "desc": "注册、管理和部署AI模型和版本"
+      },
+      "inspectionAnalytics": {
+        "title": "检测分析",
+        "desc": "缺陷趋势、良率预测、SPC、帕累托分析和风险评估"
+      },
+      "ggufModels": {
+        "title": "GGUF模型",
+        "desc": "管理和使用本地LLM模型(.gguf)进行分析和对话"
+      },
+      "settings": {
+        "title": "AI设置",
+        "desc": "管理API密钥、模型配置和系统设置"
+      }
     },
     "processData": "数据处理",
     "manageSettings": "AI设置"
@@ -6661,7 +7064,20 @@
     "checkRetrain": "检查是否需要重新训练",
     "retrainRequired": "需要重新训练",
     "retrainNotRequired": "无需重新训练",
-    "retrainDesc": "新标注样本已准备好用于模型重新训练"
+    "retrainDesc": "新标注样本已准备好用于模型重新训练",
+    "scanHard": "自动扫描难样本",
+    "scanDone": "扫描完成：新增 {{enqueued}} 张图片（跳过 {{skipped}} 张重复）",
+    "scanUncertainty": "扫描不确定性 → 队列",
+    "scanCommittee": "扫描委员会（≥2 个模型）",
+    "strategy": "策略",
+    "disagreement": "分歧"
+  },
+  "mv": {
+    "metrics": "指标 (Acc / F1)",
+    "gate": "质量门",
+    "gatePass": "通过",
+    "gateFail": "未通过",
+    "gateWarn": "该版本未通过质量门（准确率较基线下降）。仍要激活吗？"
   },
   "is": {
     "title": "图像搜索",
@@ -6684,7 +7100,24 @@
     "indexed": "已索引",
     "totalImages": "图像总数",
     "cluster": "聚类",
-    "clusters": "聚类列表"
+    "clusters": "聚类列表",
+    "defectType": "缺陷类型",
+    "labelFilter": "标签",
+    "machineId": "设备ID",
+    "filters": "搜索过滤器",
+    "optional": "可选",
+    "minSimilarity": "最低相似度",
+    "selectImage": "选择图像",
+    "selectFile": "选择要搜索的图像",
+    "searchByImage": "按图像搜索",
+    "searching": "搜索中…",
+    "uploadSearch": "使用上传的图像搜索",
+    "pgvectorOff": "pgvector 未就绪 — 使用回退方案",
+    "searchMode": "模式",
+    "modeHnsw": "HNSW（快速）",
+    "modeExact": "精确（全扫描）",
+    "modeBruteforce": "暴力计算（Node）",
+    "modeMetadata": "元数据（回退）"
   },
   "rp": {
     "title": "AI报告",
@@ -6939,8 +7372,18 @@
     "description": "处理、增强和准备图像数据用于AI模型训练",
     "tabs": {
       "pipeline": "数据管道",
+      "dataset": "数据集划分",
       "preprocessing": "图像处理",
       "augmentation": "数据增强"
+    },
+    "dataset": {
+      "title": "构建数据集划分",
+      "description": "从已标注数据生成 train/val/test 数据集",
+      "build": "构建数据集",
+      "built": "数据集已构建：{{count}} 个样本",
+      "totalSamples": "样本总数",
+      "splitRatio": "训练/验证/测试比例",
+      "labelDistribution": "标签分布"
     },
     "pipeline": {
       "title": "数据管道",
@@ -6987,6 +7430,41 @@
       "multiplier": "增强倍数",
       "multiplierDesc": "每张原始图像的增强副本数量"
     }
+  },
+  "aiEval": {
+    "selectModel": "选择模型...",
+    "noModels": "暂无模型",
+    "selectDataset": "选择数据集...",
+    "noDatasets": "暂无数据集",
+    "datasetIdPlaceholder": "数据集 ID...",
+    "model": "模型",
+    "dataset": "数据集",
+    "split": "划分",
+    "beforeAfterTab": "评估（前/后）",
+    "runCompare": "运行前/后评估",
+    "runCompareDesc": "在同一测试集上比较候选模型与基线模型",
+    "candidatePath": "候选分类器路径",
+    "baselinePath": "基线路径（可选）",
+    "compareRun": "比较",
+    "compareDone": "比较完成",
+    "before": "之前",
+    "after": "之后",
+    "metricsCompare": "前后指标对比（%）",
+    "gatePass": "质量门：通过",
+    "gateFail": "质量门：未通过",
+    "candidateConfusion": "混淆矩阵（候选）",
+    "confusionHint": "行 = 实际标签，列 = 预测标签",
+    "evaluated": "已评估",
+    "skipped": "已跳过",
+    "trainModel": "训练模型",
+    "trainingJobs": "训练任务",
+    "noJobs": "暂无训练任务",
+    "startTraining": "启动训练流程",
+    "startTrainingDesc": "为其训练新版本",
+    "pipelineStarted": "训练任务已启动",
+    "classLabels": "类别标签（≥2，逗号分隔）",
+    "labelsCount": "个标签",
+    "strategy": "策略"
   },
   "aiAnalytics": {
     "title": "AI检测分析",
@@ -7077,5 +7555,80 @@
     "gpuMode": "GPU模式",
     "engineHealth": "引擎健康",
     "embedding": "嵌入向量"
+  },
+  "measurementPointP1": {
+    "shape": {
+      "title": "形状",
+      "circle": "圆形",
+      "rectangle": "矩形",
+      "polygon": "多边形",
+      "line": "直线",
+      "ring": "圆环",
+      "mask": "掩膜",
+      "array": "阵列"
+    },
+    "tool": {
+      "select": "选择",
+      "addCircle": "添加圆形",
+      "addRectangle": "添加矩形",
+      "addPolygon": "添加多边形",
+      "addLine": "添加直线",
+      "addRing": "添加圆环",
+      "addArray": "添加阵列",
+      "delete": "删除",
+      "coordinateMode": "坐标模式",
+      "pixel": "像素",
+      "mm": "毫米"
+    },
+    "fiducial": {
+      "title": "基准标记",
+      "tabLabel": "基准点",
+      "addButton": "添加基准",
+      "edit": "编辑基准",
+      "delete": "删除基准",
+      "confirmDelete": "删除此基准标记？",
+      "empty": "尚未定义基准标记。",
+      "code": "代码",
+      "name": "名称",
+      "type": "类型",
+      "position": "位置 (X, Y)",
+      "searchWindow": "搜索窗口 (宽 × 高)",
+      "templateImage": "模板图像",
+      "uploadTemplate": "上传模板",
+      "orderIndex": "顺序",
+      "types": {
+        "cross": "十字",
+        "circle": "圆形",
+        "square": "方形",
+        "custom": "自定义"
+      }
+    }
+  },
+  "measurementPointP2": {
+    "measurementTypeCode": "测量类型代码",
+    "selectMeasurementTypeCode": "选择详细测量类型",
+    "toleranceMode": "公差模式",
+    "toleranceModes": {
+      "min_only": "仅最小值",
+      "max_only": "仅最大值",
+      "range": "范围",
+      "bilateral": "双边 (+/-)"
+    },
+    "tolPlus": "公差 +",
+    "tolMinus": "公差 -",
+    "datumRefs": "基准引用",
+    "materialCondition": "材料条件",
+    "fitClass": "配合等级",
+    "positionZ": "Z 坐标",
+    "heightMin": "高度最小值",
+    "heightMax": "高度最大值",
+    "heightUnit": "高度单位",
+    "areaMin": "面积最小值",
+    "areaMax": "面积最大值",
+    "areaUnit": "面积单位",
+    "volumeMin": "体积最小值",
+    "volumeMax": "体积最大值",
+    "volumeUnit": "体积单位",
+    "voidPctMax": "空洞率最大值 (%)"
   }
 }

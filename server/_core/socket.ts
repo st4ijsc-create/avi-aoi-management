@@ -2,6 +2,7 @@ import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
 import { nanoid } from "nanoid";
 import * as db from "../db";
+import { sdk } from "./sdk";
 
 let io: Server | null = null;
 
@@ -56,16 +57,55 @@ export interface DashboardUpdate {
 }
 
 export function initializeSocket(server: HttpServer): Server {
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+
   io = new Server(server, {
     cors: {
-      origin: "*",
+      origin: allowedOrigins.length > 0 ? allowedOrigins : true,
       methods: ["GET", "POST"],
+      credentials: true,
     },
     path: "/api/socket.io",
   });
 
+  // Handshake auth middleware — IEC 62443-2-1 CL2 realtime channel hardening.
+  // Browser clients must present a valid session cookie; machine clients
+  // (clientType === 'machine') bypass cookie check because they authenticate
+  // per-event via apiKey (see machine:request_config / machine:sync_started).
+  io.use(async (socket, next) => {
+    try {
+      const clientType = (socket.handshake.auth as any)?.clientType;
+      if (clientType === "machine") {
+        (socket.data as any).clientType = "machine";
+        return next();
+      }
+
+      const cookieHeader = socket.handshake.headers.cookie ?? "";
+      const reqLike = {
+        headers: { cookie: cookieHeader, ...socket.handshake.headers },
+        cookies: {},
+      } as any;
+
+      const user = await sdk.authenticateRequest(reqLike);
+      if (!user) {
+        return next(new Error("UNAUTHORIZED"));
+      }
+      (socket.data as any).user = user;
+      (socket.data as any).clientType = "browser";
+      return next();
+    } catch (err) {
+      console.error("[Socket.io] Handshake auth failed:", err);
+      return next(new Error("UNAUTHORIZED"));
+    }
+  });
+
   io.on("connection", (socket: Socket) => {
-    console.log(`[Socket.io] Client connected: ${socket.id}`);
+    const u = (socket.data as any)?.user;
+    const ct = (socket.data as any)?.clientType ?? "unknown";
+    console.log(`[Socket.io] Client connected: ${socket.id} type=${ct}${u ? ` user=${u.id}` : ""}`);
 
     // Join room for specific factory/workshop/machine updates
     socket.on("subscribe", (data: { factoryId?: number; workshopId?: number; machineId?: number }) => {
@@ -621,6 +661,27 @@ export function emitDashboardUpdate(update: DashboardUpdate): void {
   }
 }
 
+// WS-2 — Notify a machine that a new model package is available (signal only).
+// The binary is pulled over the apiKey-verified HTTP proxy, never via Socket.io.
+export function emitMachineModelAvailable(payload: {
+  machineId?: number | null;
+  deviceId: string;
+  deploymentId: number;
+  packageVersion?: string | null;
+  packageHash?: string | null;
+}): void {
+  if (!io) {
+    console.warn("[Socket.io] Cannot emit model_available: Socket.io not initialized");
+    return;
+  }
+  const event = { ...payload, timestamp: new Date() };
+  io.to("global").emit("machine:model_available", event);
+  if (payload.machineId) {
+    io.to(`machine:${payload.machineId}`).emit("machine:model_available", event);
+  }
+  console.log(`[Socket.io] Emitted machine:model_available for deployment ${payload.deploymentId} (device ${payload.deviceId})`);
+}
+
 // Emit yield rate warning when below threshold
 export function emitYieldWarning(
   machineId: number,
@@ -679,6 +740,50 @@ export interface MqttMessageEvent {
 // Store recent MQTT messages for replay (last 1000 messages)
 const mqttMessageHistory: MqttMessageEvent[] = [];
 const MAX_MESSAGE_HISTORY = 1000;
+
+// Emit SPC rule violation alert
+export interface SpcViolationAlert {
+  ruleId: string;
+  ruleName: string;
+  severity: "critical" | "warning" | "info";
+  metric: string;
+  machineId?: number;
+  machineCode?: string;
+  pointIndices: number[];
+  violationCount: number;
+  detectedAt: Date;
+  message: string;
+}
+
+export function emitSpcViolationAlert(alert: SpcViolationAlert): void {
+  if (!io) return;
+  io.to("global").emit("spc:violation", alert);
+  if (alert.machineId) {
+    io.to(`machine:${alert.machineId}`).emit("spc:violation", alert);
+  }
+  console.log(`[SPC] ${alert.severity.toUpperCase()} violation: ${alert.ruleName} (${alert.metric})`);
+}
+
+// Emit alert escalation event
+export interface AlertEscalationEvent {
+  alertId: number;
+  alertTitle: string;
+  fromLevel: number;
+  toLevel: number;
+  severity: string;
+  reason: string;
+  machineId?: number;
+  escalatedAt: Date;
+}
+
+export function emitAlertEscalation(event: AlertEscalationEvent): void {
+  if (!io) return;
+  io.to("global").emit("alert:escalation", event);
+  if (event.machineId) {
+    io.to(`machine:${event.machineId}`).emit("alert:escalation", event);
+  }
+  console.log(`[Escalation] Alert ${event.alertId} → L${event.toLevel} (${event.severity}): ${event.reason}`);
+}
 
 // Emit MQTT message to connected clients
 export function emitMqttMessage(event: MqttMessageEvent): void {

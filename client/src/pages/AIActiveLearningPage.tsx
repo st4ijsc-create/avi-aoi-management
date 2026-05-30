@@ -77,6 +77,33 @@ export default function AIActiveLearningPage() {
 
   const { data: uncertaintyData } = trpc.aiActiveLearning.uncertaintySampling.useQuery({});
 
+  // WS-1: automatic "scan hard images" (uncertainty / committee) into the queue.
+  const scanUncertainty = trpc.aiEval.scanUncertainty.useMutation({
+    onSuccess: (data) => {
+      toast.success(
+        t("al.scanDone", "Quét xong: thêm {{enqueued}} ảnh (bỏ qua {{skipped}} trùng)", {
+          enqueued: data?.enqueued ?? 0,
+          skipped: data?.skippedExisting ?? 0,
+        }),
+      );
+      refetchQueue();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const scanCommittee = trpc.aiEval.scanCommittee.useMutation({
+    onSuccess: (data) => {
+      toast.success(
+        t("al.scanDone", "Quét xong: thêm {{enqueued}} ảnh (bỏ qua {{skipped}} trùng)", {
+          enqueued: data?.enqueued ?? 0,
+          skipped: data?.skippedExisting ?? 0,
+        }),
+      );
+      refetchQueue();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   const { data: retrainData, refetch: refetchRetrain } = trpc.aiActiveLearning.checkRetrain.useQuery(
     { modelId: 1 },
     { enabled: false },
@@ -101,6 +128,15 @@ export default function AIActiveLearningPage() {
             </div>
           </div>
           <div className="flex gap-2">
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => scanUncertainty.mutate({ modelId: 1, sinceHours: 24 })}
+              disabled={scanUncertainty.isPending}
+            >
+              <GraduationCap className="h-4 w-4 mr-1.5" />
+              {t("al.scanHard", "Tự quét ảnh khó")}
+            </Button>
             <Button variant="outline" size="sm" onClick={() => refetchRetrain()}>
               {t("al.checkRetrain", "Kiểm tra retrain")}
             </Button>
@@ -275,6 +311,7 @@ export default function AIActiveLearningPage() {
                       <TableRow>
                         <TableHead>ID</TableHead>
                         <TableHead>{t("al.predicted", "Dự đoán")}</TableHead>
+                        <TableHead>{t("al.strategy", "Chiến lược")}</TableHead>
                         <TableHead>{t("al.uncertainty", "Uncertainty")}</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -286,13 +323,18 @@ export default function AIActiveLearningPage() {
                             <Badge variant="outline">{item.predictedLabel || "-"}</Badge>
                           </TableCell>
                           <TableCell className="text-xs">
-                            {item.uncertainty != null ? `${(item.uncertainty * 100).toFixed(1)}%` : "-"}
+                            <Badge variant="secondary">{item.samplingStrategy || "-"}</Badge>
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {item.samplingStrategy === "COMMITTEE" && item.ensembleDisagreement != null
+                              ? `${(Number(item.ensembleDisagreement) * 100).toFixed(1)}% ${t("al.disagreement", "bất đồng")}`
+                              : item.uncertainty != null ? `${(Number(item.uncertainty) * 100).toFixed(1)}%` : "-"}
                           </TableCell>
                         </TableRow>
                       ))}
                       {(!queue || queue.length <= 1) && (
                         <TableRow>
-                          <TableCell colSpan={3} className="text-center text-muted-foreground py-4">
+                          <TableCell colSpan={4} className="text-center text-muted-foreground py-4">
                             {t("al.noMore", "Không có mẫu tiếp theo")}
                           </TableCell>
                         </TableRow>
@@ -315,11 +357,28 @@ export default function AIActiveLearningPage() {
                   <p className="text-sm text-muted-foreground mb-4">
                     {t("al.uncertaintyDesc", "Lấy mẫu các items mà mô hình không chắc chắn nhất để gán nhãn.")}
                   </p>
-                  <p className="text-sm">
+                  <p className="text-sm mb-3">
                     {uncertaintyData
                       ? t("al.samplingResult", "Đã tìm thấy {{count}} mẫu uncertain", { count: Array.isArray(uncertaintyData) ? uncertaintyData.length : 0 })
                       : t("al.samplingLoading", "Đang tải dữ liệu sampling...")}
                   </p>
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => scanUncertainty.mutate({ modelId: 1, uncertaintyThreshold: 0.5, sinceHours: 24 })}
+                      disabled={scanUncertainty.isPending}
+                    >
+                      {t("al.scanUncertainty", "Quét uncertainty → hàng đợi")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => scanCommittee.mutate({ modelIds: [1, 2], disagreementThreshold: 0.5, sinceHours: 24 })}
+                      disabled={scanCommittee.isPending}
+                    >
+                      {t("al.scanCommittee", "Quét committee (≥2 model)")}
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
               <Card>

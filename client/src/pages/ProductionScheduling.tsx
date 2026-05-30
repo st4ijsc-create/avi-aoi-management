@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
+import { useLocaleDate, getActiveLocale } from "@/lib/format";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -9,6 +10,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import GanttChart from "@/components/GanttChart";
@@ -31,41 +43,62 @@ import { toast } from "sonner";
 
 type AlgorithmType = "fifo" | "priority" | "edf";
 
-const ALGORITHM_INFO: Record<AlgorithmType, { label: string; desc: string; icon: any }> = {
-  fifo: {
-    label: "FIFO (First In First Out)",
-    desc: "Xếp lịch theo thứ tự tạo đơn - đơn tạo trước được sản xuất trước",
-    icon: ListOrdered,
-  },
-  priority: {
-    label: "Priority Scheduling",
-    desc: "Ưu tiên đơn hàng có mức priority cao nhất, cùng priority thì xét deadline",
-    icon: ArrowUpDown,
-  },
-  edf: {
-    label: "EDF (Earliest Deadline First)",
-    desc: "Đơn hàng có deadline gần nhất được ưu tiên sản xuất trước",
-    icon: Timer,
-  },
-};
-
 const CONFLICT_SEVERITY_CONFIG = {
   warning: { color: "bg-yellow-500", textColor: "text-yellow-500", icon: AlertTriangle },
   error: { color: "bg-red-500", textColor: "text-red-500", icon: AlertTriangle },
 };
 
-const CONFLICT_TYPE_LABELS: Record<string, string> = {
-  overlap: "Chồng chéo lịch",
-  dependency: "Phụ thuộc đơn",
-  capacity: "Vượt công suất",
-  deadline: "Trễ deadline",
-};
-
 export default function ProductionScheduling() {
   const { t } = useTranslation();
+  const formatDate = useLocaleDate();
+
+  const ALGORITHM_INFO = useMemo<
+    Record<AlgorithmType, { label: string; desc: string; icon: any }>
+  >(
+    () => ({
+      fifo: {
+        label: t("scheduling.fifoLabel", "FIFO (First In First Out)"),
+        desc: t(
+          "scheduling.fifoDescLong",
+          "Schedule by order creation time — earliest orders run first",
+        ),
+        icon: ListOrdered,
+      },
+      priority: {
+        label: t("scheduling.priorityLabel", "Priority Scheduling"),
+        desc: t(
+          "scheduling.priorityDescLong",
+          "Highest priority first; ties broken by earliest deadline",
+        ),
+        icon: ArrowUpDown,
+      },
+      edf: {
+        label: t("scheduling.edfLabel", "EDF (Earliest Deadline First)"),
+        desc: t(
+          "scheduling.edfDescLong",
+          "Orders with the nearest deadline are scheduled first",
+        ),
+        icon: Timer,
+      },
+    }),
+    [t],
+  );
+
+  const CONFLICT_TYPE_LABELS = useMemo<Record<string, string>>(
+    () => ({
+      overlap: t("scheduling.conflictOverlap", "Schedule overlap"),
+      dependency: t("scheduling.conflictDependency", "Order dependency"),
+      capacity: t("scheduling.conflictCapacity", "Capacity exceeded"),
+      deadline: t("scheduling.conflictDeadline", "Deadline missed"),
+    }),
+    [t],
+  );
+
   const [activeTab, setActiveTab] = useState("gantt");
   const [selectedAlgorithm, setSelectedAlgorithm] = useState<AlgorithmType>("priority");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [lastOptimizedAt, setLastOptimizedAt] = useState<Date | null>(null);
+  const [lastOptimizedAlgo, setLastOptimizedAlgo] = useState<AlgorithmType | null>(null);
 
   // Data queries
   const { data: orders, isLoading: ordersLoading, refetch: refetchOrders } = trpc.productionOrder.list.useQuery(
@@ -76,6 +109,8 @@ export default function ProductionScheduling() {
   // Optimize schedule mutation
   const optimizeMutation = trpc.productionOrder.optimizeSchedule.useMutation({
     onSuccess: (data: any) => {
+      setLastOptimizedAt(new Date());
+      setLastOptimizedAlgo(selectedAlgorithm);
       toast.success(
         t("scheduling.optimizeSuccess", "Tối ưu thành công: {{count}} gợi ý", {
           count: data?.suggestions?.length || 0,
@@ -92,6 +127,44 @@ export default function ProductionScheduling() {
     (optimizeMutation as any).mutate({ factoryId: 1, algorithm: selectedAlgorithm });
   };
 
+  // WS-4: persistable auto-schedule run (DRAFT) + apply + what-if
+  const generateRunMutation = trpc.productionOrder.generateScheduleRun.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(
+        t("scheduling.runGenerated", "Đã tạo lịch (run #{{id}}): {{count}} đơn, {{conflicts}} xung đột", {
+          id: data?.runId,
+          count: data?.suggestions?.length || 0,
+          conflicts: data?.conflicts?.length || 0,
+        })
+      );
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const applyRunMutation = trpc.productionOrder.applyScheduleRun.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(t("scheduling.runApplied", "Đã áp dụng {{count}} đơn", { count: data?.applied || 0 }));
+      refetchOrders();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const whatIfMutation = trpc.productionOrder.whatIf.useMutation({
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleGenerateRun = () => {
+    (generateRunMutation as any).mutate({ factoryId: 1, algorithm: selectedAlgorithm });
+  };
+
+  const handleWhatIf = () => {
+    const lineId = (lines && lines[0]?.id) || 1;
+    (whatIfMutation as any).mutate({ factoryId: 1, lineId, algorithm: selectedAlgorithm, capacityReductionPct: 30 });
+  };
+
+  const scheduleRun: any = generateRunMutation.data;
+  const whatIfResult: any = whatIfMutation.data;
+
   const applyMutation = trpc.productionOrder.applyScheduleSuggestion.useMutation({
     onSuccess: () => {
       toast.success(t("scheduling.applySuccess", "Đã áp dụng gợi ý lịch"));
@@ -99,6 +172,30 @@ export default function ProductionScheduling() {
     },
     onError: (err) => toast.error(err.message),
   });
+
+  const rescheduleMutation = trpc.productionOrder.reschedule.useMutation({
+    onSuccess: () => {
+      refetchOrders();
+    },
+    onError: (error) => {
+      toast.error(error.message);
+      throw error;
+    },
+  });
+
+  const handleOrderReschedule = async (
+    orderId: number,
+    newStartDate: Date,
+    newEndDate: Date,
+    newLineId?: number,
+  ) => {
+    await rescheduleMutation.mutateAsync({
+      id: orderId,
+      scheduledStartDate: newStartDate,
+      scheduledEndDate: newEndDate,
+      lineId: newLineId,
+    });
+  };
 
   // Calculate stats
   const stats = {
@@ -118,12 +215,12 @@ export default function ProductionScheduling() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 p-6">
+      <div className="space-y-6 p-3 sm:p-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-bold flex items-center gap-2">
-              <CalendarDays className="h-8 w-8 text-primary" />
+            <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
+              <CalendarDays className="h-7 w-7 sm:h-8 sm:w-8 text-primary" />
               {t("scheduling.title", "Lập lịch sản xuất")}
             </h1>
             <p className="text-muted-foreground mt-1">
@@ -173,7 +270,7 @@ export default function ProductionScheduling() {
         </div>
 
         {/* Algorithm Selection + Optimize */}
-        <Card>
+        <Card className="sticky top-2 z-20 shadow-md">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
               <Zap className="h-5 w-5" />
@@ -181,8 +278,8 @@ export default function ProductionScheduling() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex items-start gap-6">
-              <div className="grid grid-cols-3 gap-4 flex-1">
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-start gap-4 lg:gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 flex-1">
                 {(Object.entries(ALGORITHM_INFO) as [AlgorithmType, typeof ALGORITHM_INFO["fifo"]][]).map(
                   ([key, info]) => {
                     const Icon = info.icon;
@@ -206,22 +303,92 @@ export default function ProductionScheduling() {
                   }
                 )}
               </div>
-              <Button
-                size="lg"
-                onClick={handleOptimize}
-                disabled={optimizeMutation.isPending}
-                className="min-w-[160px]"
-              >
-                <Play className="h-4 w-4 mr-2" />
-                {optimizeMutation.isPending
-                  ? t("scheduling.optimizing", "Đang tối ưu...")
-                  : t("scheduling.optimize", "Tối ưu lịch")}
-              </Button>
+              <div className="flex flex-col items-end gap-1">
+                <Button
+                  size="lg"
+                  onClick={handleOptimize}
+                  disabled={optimizeMutation.isPending}
+                  className="min-w-[160px]"
+                >
+                  <Play className="h-4 w-4 mr-2" />
+                  {optimizeMutation.isPending
+                    ? t("scheduling.optimizing", "Đang tối ưu...")
+                    : t("scheduling.optimize", "Tối ưu lịch")}
+                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={handleGenerateRun}
+                    disabled={generateRunMutation.isPending}
+                  >
+                    {generateRunMutation.isPending
+                      ? t("scheduling.generating", "Đang tạo...")
+                      : t("scheduling.autoScheduleRun", "Auto-schedule (run)")}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleWhatIf}
+                    disabled={whatIfMutation.isPending}
+                  >
+                    {t("scheduling.whatIf", "What-if (-30% công suất)")}
+                  </Button>
+                </div>
+                {scheduleRun?.runId && (
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={() => (applyRunMutation as any).mutate({ runId: scheduleRun.runId })}
+                    disabled={applyRunMutation.isPending}
+                  >
+                    {t("scheduling.applyRun", "Áp dụng run #{{id}}", { id: scheduleRun.runId })}
+                  </Button>
+                )}
+                {lastOptimizedAt && lastOptimizedAlgo && (
+                  <div className="text-xs text-muted-foreground">
+                    {t("scheduling.lastOptimized", "Last optimized: {{time}} · {{algorithm}}", {
+                      time: lastOptimizedAt.toLocaleTimeString(getActiveLocale()),
+                      algorithm: ALGORITHM_INFO[lastOptimizedAlgo].label,
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
 
         {/* Optimization Results */}
+        {/* WS-4: What-if simulation result */}
+        {whatIfResult && (
+          <Card className="border-amber-500">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">
+                {t("scheduling.whatIfResult", "Kết quả What-if")} — {t("scheduling.capacityReduced", "giảm công suất {{pct}}%", { pct: whatIfResult.capacityReductionPct })}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-sm">
+                {t("scheduling.lateOrdersChange", "Đơn trễ: {{base}} → {{sim}}", {
+                  base: whatIfResult.baselineLateCount,
+                  sim: whatIfResult.simulatedLateCount,
+                })}
+              </p>
+              {whatIfResult.lateOrders?.length > 0 && (
+                <div className="space-y-1">
+                  {whatIfResult.lateOrders.map((o: any) => (
+                    <div key={o.orderId} className="flex items-center justify-between text-sm p-2 rounded bg-muted/50">
+                      <span>{o.orderCode}</span>
+                      <span className="text-red-500">{t("scheduling.hoursLate", "trễ {{h}}h", { h: o.hoursLate })}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {whatIfResult.aiExplanation && (
+                <p className="text-xs text-muted-foreground italic">{whatIfResult.aiExplanation}</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {optimizeResult && (
           <div className="space-y-4">
             {/* Conflicts */}
@@ -259,8 +426,9 @@ export default function ProductionScheduling() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
+                  <div className="max-h-[60vh] overflow-auto rounded-md border">
                   <Table>
-                    <TableHeader>
+                    <TableHeader className="sticky top-0 z-10 bg-background">
                       <TableRow>
                         <TableHead>{t("scheduling.orderCode", "Mã đơn")}</TableHead>
                         <TableHead>{t("common.line", "Dây chuyền")}</TableHead>
@@ -275,32 +443,57 @@ export default function ProductionScheduling() {
                         <TableRow key={i}>
                           <TableCell className="font-mono font-semibold">{s.orderCode}</TableCell>
                           <TableCell>{s.lineName}</TableCell>
-                          <TableCell>{new Date(s.suggestedStartDate).toLocaleString("vi-VN")}</TableCell>
-                          <TableCell>{new Date(s.suggestedEndDate).toLocaleString("vi-VN")}</TableCell>
+                          <TableCell>{new Date(s.suggestedStartDate).toLocaleString(getActiveLocale())}</TableCell>
+                          <TableCell>{new Date(s.suggestedEndDate).toLocaleString(getActiveLocale())}</TableCell>
                           <TableCell className="text-sm text-muted-foreground">{s.reason}</TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                (applyMutation as any).mutate({
-                                  orderId: s.orderId,
-                                  suggestedLineId: s.suggestedLineId || s.lineId || 1,
-                                  suggestedStartDate: new Date(s.suggestedStartDate),
-                                  suggestedEndDate: new Date(s.suggestedEndDate),
-                                  reason: s.reason || "Schedule optimization",
-                                  score: s.score || 0,
-                                })
-                              }
-                              disabled={applyMutation.isPending}
-                            >
-                              {t("scheduling.apply", "Áp dụng")}
-                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={applyMutation.isPending}
+                                >
+                                  {t("scheduling.apply", "Áp dụng")}
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>
+                                    {t("scheduling.applyConfirmTitle", "Xác nhận áp dụng gợi ý?")}
+                                  </AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    {t(
+                                      "scheduling.applyConfirmDescription",
+                                      "Thao tác này sẽ ghi đè lịch hiện tại của đơn hàng. Vui lòng xác nhận trước khi tiếp tục."
+                                    )}
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>{t("common.cancel", "Hủy")}</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() =>
+                                      (applyMutation as any).mutate({
+                                        orderId: s.orderId,
+                                        suggestedLineId: s.suggestedLineId || s.lineId || 1,
+                                        suggestedStartDate: new Date(s.suggestedStartDate),
+                                        suggestedEndDate: new Date(s.suggestedEndDate),
+                                        reason: s.reason || "Schedule optimization",
+                                        score: s.score || 0,
+                                      })
+                                    }
+                                  >
+                                    {t("scheduling.apply", "Áp dụng")}
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                           </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
+                  </div>
                 </CardContent>
               </Card>
             )}
@@ -337,6 +530,7 @@ export default function ProductionScheduling() {
                     workshops={[] as any}
                     factories={[] as any}
                     products={[] as any}
+                    onOrderReschedule={handleOrderReschedule}
                   />
                 ) : (
                   <div className="flex flex-col items-center justify-center py-16">
@@ -389,7 +583,7 @@ export default function ProductionScheduling() {
                         <div className="flex items-center gap-1 text-sm text-muted-foreground">
                           <Clock className="h-3 w-3" />
                           {t("scheduling.estimatedEnd", "Dự kiến xong")}:{" "}
-                          {new Date(wip.estimatedCompletionTime).toLocaleString("vi-VN")}
+                          {new Date(wip.estimatedCompletionTime).toLocaleString(getActiveLocale())}
                         </div>
                       )}
                     </CardContent>
@@ -428,8 +622,9 @@ export default function ProductionScheduling() {
                 {ordersLoading ? (
                   <Skeleton className="h-[300px] w-full" />
                 ) : (
+                  <div className="max-h-[60vh] overflow-auto rounded-md border">
                   <Table>
-                    <TableHeader>
+                    <TableHeader className="sticky top-0 z-10 bg-background">
                       <TableRow>
                         <TableHead>{t("scheduling.orderCode", "Mã đơn")}</TableHead>
                         <TableHead>{t("common.line", "Dây chuyền")}</TableHead>
@@ -455,12 +650,12 @@ export default function ProductionScheduling() {
                           </TableCell>
                           <TableCell className="text-sm">
                             {order.scheduledStartDate
-                              ? new Date(order.scheduledStartDate).toLocaleDateString("vi-VN")
+                              ? formatDate.short(order.scheduledStartDate)
                               : "-"}
                           </TableCell>
                           <TableCell className="text-sm">
                             {order.scheduledEndDate
-                              ? new Date(order.scheduledEndDate).toLocaleDateString("vi-VN")
+                              ? formatDate.short(order.scheduledEndDate)
                               : "-"}
                           </TableCell>
                           <TableCell className="text-center">
@@ -470,6 +665,7 @@ export default function ProductionScheduling() {
                       ))}
                     </TableBody>
                   </Table>
+                  </div>
                 )}
               </CardContent>
             </Card>

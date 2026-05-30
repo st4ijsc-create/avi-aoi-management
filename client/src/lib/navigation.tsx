@@ -35,6 +35,7 @@
   Workflow,
   Brain,
   Wrench,
+  Rocket,
   LayoutTemplate,
   Archive,
   Store,
@@ -234,6 +235,14 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "production_orders",
         permissionCategory: "production",
       },
+      {
+        href: "/production-signoff",
+        label: "nav.productionSignoff",
+        icon: <ShieldCheck className="h-4 w-4" />,
+        description: "nav.productionSignoffDesc",
+        requiredPermission: "production_orders",
+        permissionCategory: "production",
+      },
     ],
   },
 
@@ -262,11 +271,19 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "mqtt_bulletin",
         permissionCategory: "mqtt",
       },
-      { 
-        href: "/machine-status", 
-        label: "nav.machineStatusPage", 
+      {
+        href: "/machine-status",
+        label: "nav.machineStatusPage",
         icon: <MonitorCheck className="h-4 w-4" />,
         description: "nav.machineStatusDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+      },
+      {
+        href: "/machine-onboarding",
+        label: "nav.machineOnboarding",
+        icon: <Rocket className="h-4 w-4" />,
+        description: "nav.machineOnboardingDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
       },
@@ -627,6 +644,12 @@ export const navGroups: NavGroup[] = [
         label: "nav.userGuide", 
         icon: <BookOpen className="h-4 w-4" />,
         description: "nav.userGuideDesc",
+      },
+      {
+        href: "/about-system",
+        label: "nav.aboutSystem",
+        icon: <Building2 className="h-4 w-4" />,
+        description: "nav.aboutSystemDesc",
       },
       { 
         href: "/admin-setting", 

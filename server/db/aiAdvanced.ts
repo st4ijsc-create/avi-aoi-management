@@ -12,9 +12,13 @@ import {
   edgeDeployments, InsertEdgeDeployment,
   edgeInferenceSync, InsertEdgeInferenceSync,
   aiFeedback,
+  aiSuggestions,
+  aiLabelQueue,
+  aiModels,
   modelVersions,
   inferenceResults,
 } from "../../drizzle/schema";
+import { inArray } from "drizzle-orm";
 
 // ============ BATCH INFERENCE JOB FUNCTIONS ============
 
@@ -390,16 +394,60 @@ export async function getTrainingJobs(options?: {
   return db.select().from(trainingJobs).where(where).orderBy(desc(trainingJobs.createdAt)).limit(options?.limit ?? 50).offset(options?.offset ?? 0);
 }
 
+/**
+ * Training-data statistics for ONE model (WS-1).
+ *
+ * Previous impl summed `ai_feedback` globally (no model filter) AND filtered on
+ * lowercase feedbackType values that never match the UPPERCASE enum
+ * (CORRECT/INCORRECT/PARTIAL/UNSURE) — so every count was 0. Fixed by:
+ *  - `labeledCount` from ai_label_queue filtered by modelId (the real per-model
+ *    human-label supply, includes LABELED + AUTO_LABELED).
+ *  - feedback correctness from ai_feedback ⋈ ai_suggestions where the suggestion
+ *    modelName matches this model's `code` (ai_feedback has no modelId column).
+ *
+ * `totalFeedback` is kept as the labeled-sample count for backward-compat with
+ * the auto-retrain trigger which reads `totalFeedback`.
+ */
 export async function getTrainingDataStats(modelId: number) {
   const db = await getDb();
   if (!db) return null;
-  const [result] = await db.select({
-    totalFeedback: sql<number>`count(*)::int`,
-    incorrectCount: sql<number>`count(*) filter (where "feedbackType" = 'incorrect')::int`,
-    correctCount: sql<number>`count(*) filter (where "feedbackType" = 'correct')::int`,
-    partialCount: sql<number>`count(*) filter (where "feedbackType" = 'partial')::int`,
-  }).from(aiFeedback);
-  return result ?? null;
+
+  // Per-model labeled samples from the active-learning queue.
+  const [queueStats] = await db.select({
+    labeledCount: sql<number>`count(*) filter (where ${aiLabelQueue.status} in ('LABELED','AUTO_LABELED'))::int`,
+    totalQueue: sql<number>`count(*)::int`,
+  }).from(aiLabelQueue).where(eq(aiLabelQueue.modelId, modelId));
+
+  // Resolve model code to scope feedback by suggestion.modelName.
+  const [model] = await db.select({ code: aiModels.code }).from(aiModels).where(eq(aiModels.id, modelId)).limit(1);
+
+  let correctCount = 0;
+  let incorrectCount = 0;
+  let partialCount = 0;
+  if (model?.code) {
+    const [fb] = await db.select({
+      correctCount: sql<number>`count(*) filter (where ${aiFeedback.feedbackType} = 'CORRECT')::int`,
+      incorrectCount: sql<number>`count(*) filter (where ${aiFeedback.feedbackType} = 'INCORRECT')::int`,
+      partialCount: sql<number>`count(*) filter (where ${aiFeedback.feedbackType} = 'PARTIAL')::int`,
+    })
+      .from(aiFeedback)
+      .innerJoin(aiSuggestions, eq(aiFeedback.suggestionId, aiSuggestions.id))
+      .where(eq(aiSuggestions.modelName, model.code));
+    correctCount = fb?.correctCount ?? 0;
+    incorrectCount = fb?.incorrectCount ?? 0;
+    partialCount = fb?.partialCount ?? 0;
+  }
+
+  const labeledCount = queueStats?.labeledCount ?? 0;
+  return {
+    // totalFeedback retained for back-compat (auto-retrain reads it).
+    totalFeedback: labeledCount,
+    labeledCount,
+    totalQueue: queueStats?.totalQueue ?? 0,
+    incorrectCount,
+    correctCount,
+    partialCount,
+  };
 }
 
 // ============ TRAINING DATASET FUNCTIONS ============

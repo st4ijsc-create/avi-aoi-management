@@ -8,6 +8,8 @@ import { emitNGAlert, emitYieldWarning, emitDashboardUpdate } from "../_core/soc
 import { statsCache, CACHE_KEYS } from "../_core/cache";
 import * as cachedStats from "../functions/cachedStatistics";
 import { publishPointsConfigChanged } from "../services/mqttService";
+import * as aiAdvancedDb from "../db/aiAdvanced";
+import { confirmDeployment as svcConfirmDeployment, recordEdgeHeartbeat as svcRecordHeartbeat, syncEdgeResults as svcSyncEdgeResults } from "../services/aiEdgeEnhanced";
 import {
   type PointDefCache,
   type WorkstationCache,
@@ -19,6 +21,12 @@ import {
   uploadPointReferenceImage,
   uploadProductReferenceImage,
 } from "./_shared";
+import {
+  pointShapeEnum,
+  measurementGeometrySchema,
+  expandArrayGeometry,
+  type MeasurementGeometry,
+} from "../lib/measurementGeometry";
 
 const measurementTypeValueList = [
   "DIMENSION",
@@ -58,6 +66,9 @@ const measurementPointSyncSchema = z.object({
   imageBase64: z.string().optional(),
   imageMimeType: z.string().optional(),
   imageUrl: z.string().url().optional(),
+  // P1: optional shape + geometry (additive). When present, server persists them.
+  shape: pointShapeEnum.optional(),
+  geometry: measurementGeometrySchema.optional(),
 });
 
 // ============ MACHINE API ROUTER (for external machine integration) ============
@@ -98,6 +109,19 @@ export const machineApiRouter = router({
         result: z.enum(["OK", "NG", "NTF"]), // Kết quả
         remark: z.string().optional(), // Ghi chú
         imageBase64: z.string().optional(), // Hình ảnh base64 (optional)
+        valueZ: z.union([z.number(), z.string()]).optional(),
+        valueHeight: z.union([z.number(), z.string()]).optional(),
+        valueArea: z.union([z.number(), z.string()]).optional(),
+        valueVolume: z.union([z.number(), z.string()]).optional(),
+        valueVoidPct: z.union([z.number(), z.string()]).optional(),
+        valueCoplanarity: z.union([z.number(), z.string()]).optional(),
+        valueWarpage: z.union([z.number(), z.string()]).optional(),
+        valueOffsetX: z.union([z.number(), z.string()]).optional(),
+        valueOffsetY: z.union([z.number(), z.string()]).optional(),
+        valueTilt: z.union([z.number(), z.string()]).optional(),
+        valueThickness: z.union([z.number(), z.string()]).optional(),
+        defectCatalogCode: z.string().max(50).optional(),
+        defectSeverity: z.enum(["critical", "major", "minor", "cosmetic"]).optional(),
       })),
     }).refine(data => data.apiKey || data.machineCode, {
       message: "Either apiKey or machineCode must be provided"
@@ -178,6 +202,7 @@ export const machineApiRouter = router({
       const measurementResults = [];
       const productPointCache: PointDefCache = new Map();
       const machinePointCache: PointDefCache = new Map();
+      const defectCatalogCache = new Map<string, number | null>();
       const missingPointCodes: string[] = []; // Track missing point definitions
       
       for (const measurement of input.measurements) {
@@ -243,11 +268,37 @@ export const machineApiRouter = router({
           }
         }
 
+        let defectCatalogId: number | undefined;
+        if (measurement.defectCatalogCode) {
+          const defectCode = measurement.defectCatalogCode.trim();
+          if (defectCode) {
+            if (!defectCatalogCache.has(defectCode)) {
+              const defect = await db.getDefectCatalogByCode(defectCode);
+              defectCatalogCache.set(defectCode, defect?.id ?? null);
+            }
+            const cachedDefectId = defectCatalogCache.get(defectCode);
+            defectCatalogId = cachedDefectId ?? undefined;
+          }
+        }
+
         measurementResults.push({
           inspectionId,
           pointDefId: pointDef?.id || 0,
           measuredValue: numericValue,
           measuredValueText: textValue,
+          valueZ: toOptionalDecimal(measurement.valueZ),
+          valueHeight: toOptionalDecimal(measurement.valueHeight),
+          valueArea: toOptionalDecimal(measurement.valueArea),
+          valueVolume: toOptionalDecimal(measurement.valueVolume),
+          valueVoidPct: toOptionalDecimal(measurement.valueVoidPct),
+          valueCoplanarity: toOptionalDecimal(measurement.valueCoplanarity),
+          valueWarpage: toOptionalDecimal(measurement.valueWarpage),
+          valueOffsetX: toOptionalDecimal(measurement.valueOffsetX),
+          valueOffsetY: toOptionalDecimal(measurement.valueOffsetY),
+          valueTilt: toOptionalDecimal(measurement.valueTilt),
+          valueThickness: toOptionalDecimal(measurement.valueThickness),
+          defectCatalogId,
+          defectSeverity: measurement.defectSeverity,
           result: measurement.result,
           remark: measurement.remark || (pointDef ? undefined : `Point: ${pointCode}`),
           imageUrl: uploadedImageUrl,
@@ -607,6 +658,8 @@ export const machineApiRouter = router({
               workstationId,
               machineId: machine.id,
               isActive: point.isActive ?? true,
+              shape: point.shape,
+              geometry: point.geometry,
               updatedAt: new Date(),
               lastModifiedAt: new Date(),
             });
@@ -647,6 +700,8 @@ export const machineApiRouter = router({
               cropHeight: point.cropHeight ?? 100,
               orderIndex: point.orderIndex ?? index,
               isActive: point.isActive ?? true,
+              shape: point.shape,
+              geometry: point.geometry,
               lastModifiedAt: new Date(),
             };
 
@@ -1365,14 +1420,25 @@ export const machineApiRouter = router({
         toVersion: currentVersion,
       }).catch(() => {});
 
-      return {
-        success: true,
-        hasChanges: true,
-        currentVersion,
-        sinceVersion: input.sinceVersion,
-        serverImageWidth: productModel.imageWidth,
-        serverImageHeight: productModel.imageHeight,
-        points: points.map((p) => ({
+      // P1: load fiducial marks (additive top-level field)
+      const fiducialRows = await db.getFiducialMarksByProductModel(productModel.id).catch(() => [] as any[]);
+      const fiducials = fiducialRows.map((f: any) => ({
+        id: f.id,
+        code: f.code,
+        name: f.name,
+        type: f.type,
+        positionX: f.positionX,
+        positionY: f.positionY,
+        normalizedX: f.normalizedX != null ? Number(f.normalizedX) : null,
+        normalizedY: f.normalizedY != null ? Number(f.normalizedY) : null,
+        searchWindowW: f.searchWindowW,
+        searchWindowH: f.searchWindowH,
+        templateImageUrl: f.templateImageUrl ?? null,
+        orderIndex: f.orderIndex,
+      }));
+
+      const projectedPoints = points.map((p) => {
+        const base: Record<string, unknown> = {
           id: p.id,
           code: p.code,
           name: p.name,
@@ -1392,8 +1458,32 @@ export const machineApiRouter = router({
           cropHeight: p.cropHeight,
           orderIndex: p.orderIndex,
           isActive: p.isActive,
+          // P1: shape + geometry (additive)
+          shape: (p as any).shape ?? "circle",
+          geometry: (p as any).geometry ?? null,
           lastModifiedAt: p.lastModifiedAt?.toISOString() ?? null,
-        })),
+        };
+        // P1: server-side expansion of array shape into individual cells.
+        if ((p as any).shape === "array" && (p as any).geometry) {
+          try {
+            base.cells = expandArrayGeometry((p as any).geometry as any);
+          } catch {
+            base.cells = [];
+          }
+        }
+        return base;
+      });
+
+      return {
+        success: true,
+        hasChanges: true,
+        currentVersion,
+        sinceVersion: input.sinceVersion,
+        serverImageWidth: productModel.imageWidth,
+        serverImageHeight: productModel.imageHeight,
+        coordinateMode: (productModel as any).coordinateMode ?? "pixel",
+        fiducials,
+        points: projectedPoints,
       };
     }),
 
@@ -1443,5 +1533,212 @@ export const machineApiRouter = router({
         machineCode: machine.code,
         logs,
       };
+    }),
+
+  // ============================================================
+  // WS-2 — EDGE DEPLOYMENT (machine-facing). Same apiKey|machineCode auth as
+  // the rest of this router. Additive — does NOT change any existing endpoint.
+  // ============================================================
+
+  // checkModelVersion — machine polls for its READY (or already-DEPLOYED/ACTIVE)
+  // deployments so it can compare its local model hash vs packageHash.
+  checkModelVersion: publicProcedure
+    .input(z.object({
+      machineCode: z.string().optional(),
+      apiKey: z.string().optional(),
+    }).refine((d) => d.apiKey || d.machineCode, {
+      message: 'Either apiKey or machineCode must be provided',
+    }))
+    .query(async ({ input }) => {
+      let machine;
+      if (input.apiKey) machine = await db.getMachineByApiKey(input.apiKey);
+      else if (input.machineCode) machine = await db.getMachineByCode(input.machineCode!.trim());
+      if (!machine) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: input.apiKey ? 'Invalid API key' : 'Invalid machine code' });
+      }
+      await db.updateMachineHeartbeat(machine.id).catch(() => {});
+
+      // Deployments addressed to this machine, by machineId or deviceId === code.
+      const byMachine = await aiAdvancedDb.getEdgeDeployments({ machineId: machine.id, limit: 100 });
+      const byDevice = await aiAdvancedDb.getEdgeDeploymentsByDevice(machine.code);
+      const seen = new Set<number>();
+      const all = [...byMachine, ...byDevice].filter((d) => {
+        if (seen.has(d.id)) return false;
+        seen.add(d.id);
+        return true;
+      });
+
+      const deployments = all
+        .filter((d) => ["READY", "DOWNLOADING", "DEPLOYED", "ACTIVE", "OUTDATED"].includes(d.status))
+        .map((d) => ({
+          deploymentId: d.id,
+          modelId: d.modelId,
+          modelVersion: d.modelVersion,
+          packageVersion: d.packageVersion,
+          packageHash: d.packageHash,
+          packageSize: d.packageSize,
+          status: d.status,
+        }));
+
+      return { success: true, machineId: machine.id, machineCode: machine.code, deployments };
+    }),
+
+  // getModelPackage — returns download metadata (proxy URL, hash, size, config)
+  // for a specific deployment and flips READY → DOWNLOADING. Never returns a raw
+  // storage URL — only the apiKey-verified proxy path.
+  getModelPackage: publicProcedure
+    .input(z.object({
+      machineCode: z.string().optional(),
+      apiKey: z.string().optional(),
+      deploymentId: z.number().int().positive(),
+    }).refine((d) => d.apiKey || d.machineCode, {
+      message: 'Either apiKey or machineCode must be provided',
+    }))
+    .mutation(async ({ input }) => {
+      let machine;
+      if (input.apiKey) machine = await db.getMachineByApiKey(input.apiKey);
+      else if (input.machineCode) machine = await db.getMachineByCode(input.machineCode!.trim());
+      if (!machine) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: input.apiKey ? 'Invalid API key' : 'Invalid machine code' });
+      }
+
+      const deployment = await aiAdvancedDb.getEdgeDeployment(input.deploymentId);
+      if (!deployment) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deployment not found' });
+
+      const owns = (deployment.machineId != null && deployment.machineId === machine.id)
+        || (!!deployment.deviceId && deployment.deviceId === machine.code);
+      if (!owns) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Deployment does not belong to this machine' });
+      }
+      if (!deployment.packageKey || !deployment.packageHash) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Package not ready' });
+      }
+
+      if (deployment.status === "READY") {
+        await aiAdvancedDb.updateEdgeDeployment(deployment.id, { status: "DOWNLOADING" }).catch(() => {});
+      }
+
+      return {
+        success: true,
+        deploymentId: deployment.id,
+        // apiKey-verified proxy download path (machine sends its apiKey header).
+        downloadUrl: `/api/edge/download/${deployment.id}`,
+        packageHash: deployment.packageHash,
+        packageSize: deployment.packageSize,
+        packageVersion: deployment.packageVersion,
+        modelId: deployment.modelId,
+        modelVersion: deployment.modelVersion,
+        deployConfig: deployment.deployConfig ?? null,
+      };
+    }),
+
+  // confirmDeployment — machine reports local hash after download+verify.
+  // Match → DEPLOYED; mismatch → FAILED.
+  confirmDeployment: publicProcedure
+    .input(z.object({
+      machineCode: z.string().optional(),
+      apiKey: z.string().optional(),
+      deploymentId: z.number().int().positive(),
+      localHash: z.string().min(1).max(128),
+    }).refine((d) => d.apiKey || d.machineCode, {
+      message: 'Either apiKey or machineCode must be provided',
+    }))
+    .mutation(async ({ input }) => {
+      let machine;
+      if (input.apiKey) machine = await db.getMachineByApiKey(input.apiKey);
+      else if (input.machineCode) machine = await db.getMachineByCode(input.machineCode!.trim());
+      if (!machine) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: input.apiKey ? 'Invalid API key' : 'Invalid machine code' });
+      }
+
+      const deployment = await aiAdvancedDb.getEdgeDeployment(input.deploymentId);
+      if (!deployment) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deployment not found' });
+      const owns = (deployment.machineId != null && deployment.machineId === machine.id)
+        || (!!deployment.deviceId && deployment.deviceId === machine.code);
+      if (!owns) throw new TRPCError({ code: 'FORBIDDEN', message: 'Deployment does not belong to this machine' });
+
+      const result = await svcConfirmDeployment(input.deploymentId, input.localHash);
+      return { success: result.matched, ...result };
+    }),
+
+  // edgeHeartbeat — periodic liveness. DEPLOYED → ACTIVE; refreshes machine
+  // lastHeartbeat. Backward-compatible signal for the stale checker.
+  edgeHeartbeat: publicProcedure
+    .input(z.object({
+      machineCode: z.string().optional(),
+      apiKey: z.string().optional(),
+      deploymentId: z.number().int().positive(),
+    }).refine((d) => d.apiKey || d.machineCode, {
+      message: 'Either apiKey or machineCode must be provided',
+    }))
+    .mutation(async ({ input }) => {
+      let machine;
+      if (input.apiKey) machine = await db.getMachineByApiKey(input.apiKey);
+      else if (input.machineCode) machine = await db.getMachineByCode(input.machineCode!.trim());
+      if (!machine) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: input.apiKey ? 'Invalid API key' : 'Invalid machine code' });
+      }
+
+      const deployment = await aiAdvancedDb.getEdgeDeployment(input.deploymentId);
+      if (!deployment) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deployment not found' });
+      const owns = (deployment.machineId != null && deployment.machineId === machine.id)
+        || (!!deployment.deviceId && deployment.deviceId === machine.code);
+      if (!owns) throw new TRPCError({ code: 'FORBIDDEN', message: 'Deployment does not belong to this machine' });
+
+      const result = await svcRecordHeartbeat(input.deploymentId);
+      return { success: true, ...result };
+    }),
+
+  // syncEdgeResults — machine pushes offline inference results. Idempotent via
+  // localResultId (re-sending the same batch never duplicates rows).
+  syncEdgeResults: publicProcedure
+    .input(z.object({
+      machineCode: z.string().optional(),
+      apiKey: z.string().optional(),
+      deploymentId: z.number().int().positive(),
+      results: z.array(z.object({
+        localResultId: z.string().min(1).max(100),
+        inputReference: z.string().optional(),
+        predictions: z.array(z.object({ label: z.string(), confidence: z.number() })),
+        confidence: z.number(),
+        topLabel: z.string().max(100),
+        processingTimeMs: z.number().int().nonnegative().optional(),
+        inferredAt: z.union([z.string(), z.date()]),
+        inspectionId: z.number().int().positive().optional(),
+      })).max(500),
+    }).refine((d) => d.apiKey || d.machineCode, {
+      message: 'Either apiKey or machineCode must be provided',
+    }))
+    .mutation(async ({ input }) => {
+      let machine;
+      if (input.apiKey) machine = await db.getMachineByApiKey(input.apiKey);
+      else if (input.machineCode) machine = await db.getMachineByCode(input.machineCode!.trim());
+      if (!machine) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: input.apiKey ? 'Invalid API key' : 'Invalid machine code' });
+      }
+
+      const deployment = await aiAdvancedDb.getEdgeDeployment(input.deploymentId);
+      if (!deployment) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deployment not found' });
+      const owns = (deployment.machineId != null && deployment.machineId === machine.id)
+        || (!!deployment.deviceId && deployment.deviceId === machine.code);
+      if (!owns) throw new TRPCError({ code: 'FORBIDDEN', message: 'Deployment does not belong to this machine' });
+
+      await db.updateMachineHeartbeat(machine.id).catch(() => {});
+
+      const result = await svcSyncEdgeResults(
+        input.deploymentId,
+        input.results.map((r) => ({
+          localResultId: r.localResultId,
+          inputReference: r.inputReference,
+          predictions: r.predictions,
+          confidence: r.confidence,
+          topLabel: r.topLabel,
+          processingTimeMs: r.processingTimeMs,
+          inferredAt: typeof r.inferredAt === "string" ? new Date(r.inferredAt) : r.inferredAt,
+          inspectionId: r.inspectionId,
+        })),
+      );
+
+      return { success: true, ...result };
     }),
 });

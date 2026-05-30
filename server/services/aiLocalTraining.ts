@@ -15,15 +15,20 @@ import fs from "fs";
 import { getDb } from "../db/connection";
 import { getAiModelById } from "../db/ai";
 import * as dbAdvanced from "../db/aiAdvanced";
-import { sql, eq, and, gte, desc, count } from "drizzle-orm";
+import { sql, eq, and, gte, desc, count, inArray } from "drizzle-orm";
 import {
-  aiModels,
-  trainingJobs,
-  productInspections,
-  aiInferenceResults,
-  aiAnnotations,
+  aiLabelQueue,
   aiFeedback,
+  aiSuggestions,
+  measurementResults,
 } from "../../drizzle/schema";
+import {
+  softmax,
+  argmax,
+  buildConfusionMatrix,
+  computeMetrics,
+  normalizeLabel,
+} from "./aiMetrics";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -108,7 +113,7 @@ export async function runTransferLearning(request: LocalTrainingRequest): Promis
     name: `Transfer-${request.modelId}-${request.targetVersion}`,
     modelId: request.modelId,
     targetVersion: request.targetVersion,
-    datasetConfig: { strategy: "transfer", classLabels: request.classLabels },
+    datasetConfig: { strategy: "transfer", classLabels: request.classLabels } as any,
     trainingConfig: config,
     totalEpochs: config.epochs,
     createdBy: request.createdBy,
@@ -367,7 +372,7 @@ export async function runFewShotLearning(request: LocalTrainingRequest): Promise
     name: `FewShot-${request.modelId}-${request.targetVersion}`,
     modelId: request.modelId,
     targetVersion: request.targetVersion,
-    datasetConfig: { strategy: "fewshot", classLabels: request.classLabels, samplesPerClass },
+    datasetConfig: { strategy: "fewshot", classLabels: request.classLabels, samplesPerClass } as any,
     trainingConfig: { samplesPerClass },
     totalEpochs: 1,
     createdBy: request.createdBy,
@@ -541,7 +546,7 @@ export async function runIncrementalLearning(request: LocalTrainingRequest): Pro
     name: `Incremental-${request.modelId}-${request.targetVersion}`,
     modelId: request.modelId,
     targetVersion: request.targetVersion,
-    datasetConfig: { strategy: "incremental", classLabels: request.classLabels, since: since.toISOString() },
+    datasetConfig: { strategy: "incremental", classLabels: request.classLabels, since: since.toISOString() } as any,
     trainingConfig: config,
     totalEpochs: config.epochs,
     createdBy: request.createdBy,
@@ -810,11 +815,17 @@ export async function getTrainingCapabilities(modelId: number) {
   const db = await getDb();
   if (!db) return null;
 
-  const feedbackCount = await db.select({ cnt: count() })
-    .from(aiFeedback)
-    .where(eq(aiFeedback.modelId, modelId));
+  // Real label availability comes from the human-labeled queue for THIS model
+  // (ai_label_queue.modelId), not the global ai_feedback table (which has no
+  // modelId column). LABELED + AUTO_LABELED rows are usable training samples.
+  const labeledCount = await db.select({ cnt: count() })
+    .from(aiLabelQueue)
+    .where(and(
+      eq(aiLabelQueue.modelId, modelId),
+      inArray(aiLabelQueue.status, ["LABELED", "AUTO_LABELED"]),
+    ));
 
-  const totalFeedback = feedbackCount[0]?.cnt ?? 0;
+  const totalFeedback = labeledCount[0]?.cnt ?? 0;
 
   // Check for existing trained classifiers
   const outputDir = path.join(process.cwd(), "uploads", "models", "trained");
@@ -1024,6 +1035,19 @@ interface LabeledSample {
   label: string;
 }
 
+/**
+ * Collect REAL labeled samples for a model from the two canonical sources:
+ *
+ *  Source 1 — ai_label_queue (status LABELED/AUTO_LABELED): imageUrl +
+ *    humanLabel (preferred) or predictedLabel, filtered by modelId.
+ *  Source 2 — ai_feedback ⋈ ai_suggestions (suggestionId → inspectionId,
+ *    modelName, correctedValue). The image is taken from
+ *    measurement_results.imageUrl (NOT product_inspections.imagePath which does
+ *    not exist). Filtered to suggestions whose modelName matches this model's code.
+ *
+ * Labels are normalized (trim + NFC + lowercase) so "xước" and " Xước " collapse.
+ * Samples are deduped by image url. classLabels are matched on the normalized form.
+ */
 async function collectLabeledData(
   modelId: number,
   classLabels: string[],
@@ -1034,47 +1058,94 @@ async function collectLabeledData(
   const db = await getDb();
   if (!db) return { trainData: [], valData: [] };
 
-  // Collect from ai_feedback entries that have correction labels
-  const conditions = [eq(aiFeedback.modelId, modelId)];
-  if (since) {
-    conditions.push(gte(aiFeedback.createdAt, since));
+  const model = await getAiModelById(modelId);
+  const modelCode = model?.code;
+
+  // Map requested labels by their normalized key for matching.
+  const labelByNorm = new Map<string, string>();
+  for (const l of classLabels) labelByNorm.set(normalizeLabel(l), l);
+
+  const byUrl = new Map<string, string>(); // imageUrl → canonical label (first wins)
+
+  // ── Source 1: ai_label_queue ────────────────────────────────
+  const queueConds = [
+    eq(aiLabelQueue.modelId, modelId),
+    inArray(aiLabelQueue.status, ["LABELED", "AUTO_LABELED"]),
+  ];
+  if (since) queueConds.push(gte(aiLabelQueue.createdAt, since));
+
+  const queueRows = await db.select({
+    imageUrl: aiLabelQueue.imageUrl,
+    humanLabel: aiLabelQueue.humanLabel,
+    predictedLabel: aiLabelQueue.predictedLabel,
+  })
+    .from(aiLabelQueue)
+    .where(and(...queueConds))
+    .orderBy(desc(aiLabelQueue.createdAt));
+
+  for (const row of queueRows) {
+    if (!row.imageUrl) continue;
+    const canonical = labelByNorm.get(normalizeLabel(row.humanLabel ?? row.predictedLabel));
+    if (!canonical) continue;
+    if (!byUrl.has(row.imageUrl)) byUrl.set(row.imageUrl, canonical);
   }
 
-  const feedbackRows = await db.select({
-    imagePath: productInspections.imagePath,
-    correctedLabel: aiFeedback.correctedLabel,
-  })
-    .from(aiFeedback)
-    .innerJoin(
-      productInspections,
-      eq(aiFeedback.inspectionId, productInspections.id)
-    )
-    .where(and(...conditions))
-    .orderBy(desc(aiFeedback.createdAt));
+  // ── Source 2: ai_feedback ⋈ ai_suggestions ⋈ measurement_results ─
+  if (modelCode) {
+    const fbConds = [eq(aiSuggestions.modelName, modelCode)];
+    if (since) fbConds.push(gte(aiFeedback.feedbackAt, since));
 
-  // Filter to only include requested class labels and have valid image paths
+    const fbRows = await db.select({
+      imageUrl: measurementResults.imageUrl,
+      correctedValue: aiFeedback.correctedValue,
+    })
+      .from(aiFeedback)
+      .innerJoin(aiSuggestions, eq(aiFeedback.suggestionId, aiSuggestions.id))
+      .innerJoin(measurementResults, eq(aiSuggestions.inspectionId, measurementResults.inspectionId))
+      .where(and(...fbConds))
+      .orderBy(desc(aiFeedback.feedbackAt));
+
+    for (const row of fbRows) {
+      if (!row.imageUrl || !row.correctedValue) continue;
+      const canonical = labelByNorm.get(normalizeLabel(row.correctedValue));
+      if (!canonical) continue;
+      if (!byUrl.has(row.imageUrl)) byUrl.set(row.imageUrl, canonical);
+    }
+  }
+
+  // Apply maxPerClass cap.
   const allSamples: LabeledSample[] = [];
   const perClassCount: Record<string, number> = {};
-
-  for (const row of feedbackRows) {
-    if (!row.imagePath || !row.correctedLabel) continue;
-    const label = row.correctedLabel;
-    if (!classLabels.includes(label)) continue;
-
+  for (const [imageUrl, label] of byUrl) {
     perClassCount[label] = (perClassCount[label] ?? 0) + 1;
     if (maxPerClass && perClassCount[label]! > maxPerClass) continue;
-
-    allSamples.push({ imagePath: row.imagePath, label });
+    allSamples.push({ imagePath: imageUrl, label });
   }
 
-  // Shuffle deterministically
-  const shuffled = allSamples.sort(() => Math.random() - 0.5);
+  // Deterministic shuffle (seeded by modelId) for reproducibility.
+  const shuffled = seededShuffleLocal(allSamples, modelId);
   const splitIdx = Math.floor(shuffled.length * (1 - validationSplit));
 
   return {
     trainData: shuffled.slice(0, splitIdx),
     valData: shuffled.slice(splitIdx),
   };
+}
+
+function seededShuffleLocal<T>(items: T[], seed: number): T[] {
+  const arr = items.slice();
+  let a = (seed >>> 0) || 1;
+  const rand = () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [arr[i], arr[j]] = [arr[j]!, arr[i]!];
+  }
+  return arr;
 }
 
 async function loadExistingClassifier(modelId: number): Promise<{
@@ -1110,27 +1181,7 @@ async function loadExistingClassifier(modelId: number): Promise<{
   return null;
 }
 
-function softmax(logits: Float32Array): Float32Array {
-  const max = logits.reduce((a, b) => Math.max(a, b), -Infinity);
-  const exps = new Float32Array(logits.length);
-  let sum = 0;
-  for (let i = 0; i < logits.length; i++) {
-    exps[i] = Math.exp(logits[i]! - max);
-    sum += exps[i]!;
-  }
-  for (let i = 0; i < exps.length; i++) {
-    exps[i] /= sum;
-  }
-  return exps;
-}
-
-function argmax(arr: Float32Array): number {
-  let maxIdx = 0;
-  for (let i = 1; i < arr.length; i++) {
-    if (arr[i]! > arr[maxIdx]!) maxIdx = i;
-  }
-  return maxIdx;
-}
+// softmax / argmax are imported from ./aiMetrics (shared with eval harness).
 
 function shuffleIndices(length: number): number[] {
   const indices = Array.from({ length }, (_, i) => i);
@@ -1167,46 +1218,16 @@ function computeConfusionMatrix(
 }
 
 function buildConfusionFromPredictions(predictions: number[], labels: number[], numClasses: number): number[][] {
-  const matrix = Array.from({ length: numClasses }, () => new Array(numClasses).fill(0) as number[]);
-  for (let i = 0; i < predictions.length; i++) {
-    matrix[labels[i]!]![predictions[i]!]++;
-  }
-  return matrix;
+  // matrix[actual][predicted] — delegated to shared helper.
+  return buildConfusionMatrix(predictions, labels, numClasses);
 }
 
-function computePRF1(confusionMatrix: number[][], numClasses: number): {
+function computePRF1(confusionMatrix: number[][], _numClasses: number): {
   precision: number;
   recall: number;
   f1Score: number;
 } {
-  let totalPrecision = 0;
-  let totalRecall = 0;
-  let validClasses = 0;
-
-  for (let c = 0; c < numClasses; c++) {
-    let tp = confusionMatrix[c]?.[c] ?? 0;
-    let fp = 0;
-    let fn = 0;
-    for (let i = 0; i < numClasses; i++) {
-      if (i !== c) {
-        fp += confusionMatrix[i]?.[c] ?? 0;
-        fn += confusionMatrix[c]?.[i] ?? 0;
-      }
-    }
-    if (tp + fp + fn > 0) {
-      totalPrecision += tp / Math.max(tp + fp, 1);
-      totalRecall += tp / Math.max(tp + fn, 1);
-      validClasses++;
-    }
-  }
-
-  const precision = validClasses > 0 ? totalPrecision / validClasses : 0;
-  const recall = validClasses > 0 ? totalRecall / validClasses : 0;
-  const f1Score = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
-
-  return {
-    precision: Number(precision.toFixed(4)),
-    recall: Number(recall.toFixed(4)),
-    f1Score: Number(f1Score.toFixed(4)),
-  };
+  // Reuse shared macro-averaged metrics (single source of truth).
+  const m = computeMetrics(confusionMatrix);
+  return { precision: m.precision, recall: m.recall, f1Score: m.f1Score };
 }

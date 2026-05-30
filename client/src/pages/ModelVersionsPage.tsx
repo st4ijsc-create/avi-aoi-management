@@ -65,7 +65,16 @@ export default function ModelVersionsPage() {
     },
   });
 
-  const handleActivate = (modelId: number, versionId: number) => {
+  const handleActivate = (modelId: number, versionId: number, gatePass?: boolean, gateReason?: string) => {
+    // WS-1: warn before activating a version that FAILED the quality gate
+    // (accuracy regressed vs. baseline).
+    if (gatePass === false) {
+      const ok = window.confirm(
+        t('mv.gateWarn', 'Phiên bản này KHÔNG vượt quality gate (accuracy giảm so với baseline). Vẫn kích hoạt?') +
+          (gateReason ? `\n\n${gateReason}` : ''),
+      );
+      if (!ok) return;
+    }
     setActivatingId(versionId);
     activateVersion.mutate({ modelId, versionId });
   };
@@ -155,8 +164,9 @@ export default function ModelVersionsPage() {
                       <TableRow>
                         <TableHead>Version</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead>{t('mv.metrics', 'Metrics (Acc / F1)')}</TableHead>
+                        <TableHead>{t('mv.gate', 'Quality Gate')}</TableHead>
                         <TableHead>Changelog</TableHead>
-                        <TableHead>File Size</TableHead>
                         <TableHead>Created</TableHead>
                         <TableHead className="text-right">Action</TableHead>
                       </TableRow>
@@ -167,6 +177,9 @@ export default function ModelVersionsPage() {
                         const cfg = STATUS_CONFIG[statusKey] ?? STATUS_CONFIG.INACTIVE;
                         const isActive = v.status === 'ACTIVE';
                         const isActivating = activatingId === v.id;
+                        const m = (v.metrics ?? {}) as { accuracy?: number; f1Score?: number };
+                        const gatePass = (v.evalReport as any)?.gate?.pass as boolean | undefined;
+                        const gateReason = (v.evalReport as any)?.gate?.reason as string | undefined;
 
                         return (
                           <TableRow key={v.id} className={cn(isActive && 'bg-primary/5')}>
@@ -179,15 +192,24 @@ export default function ModelVersionsPage() {
                             <TableCell>
                               <Badge variant={cfg.variant}>{cfg.label}</Badge>
                             </TableCell>
+                            <TableCell className="text-sm">
+                              {m.accuracy != null
+                                ? `${(m.accuracy * 100).toFixed(1)}% / ${m.f1Score != null ? (m.f1Score * 100).toFixed(1) + '%' : '—'}`
+                                : <span className="italic opacity-50">—</span>}
+                            </TableCell>
+                            <TableCell>
+                              {gatePass === undefined ? (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              ) : gatePass ? (
+                                <Badge variant="default">{t('mv.gatePass', 'Pass')}</Badge>
+                              ) : (
+                                <Badge variant="destructive" title={gateReason}>{t('mv.gateFail', 'Fail')}</Badge>
+                              )}
+                            </TableCell>
                             <TableCell className="max-w-xs">
                               <p className="text-sm text-muted-foreground truncate">
                                 {v.changeLog ?? <span className="italic opacity-50">No changelog</span>}
                               </p>
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {v.fileSizeBytes
-                                ? `${(v.fileSizeBytes / 1_048_576).toFixed(1)} MB`
-                                : '—'}
                             </TableCell>
                             <TableCell className="text-sm text-muted-foreground">
                               <div className="flex items-center gap-1">
@@ -203,7 +225,7 @@ export default function ModelVersionsPage() {
                                   size="sm"
                                   variant="outline"
                                   disabled={isActivating || activateVersion.isPending}
-                                  onClick={() => handleActivate(selectedModelId, v.id)}
+                                  onClick={() => handleActivate(selectedModelId, v.id, gatePass, gateReason)}
                                 >
                                   {isActivating ? (
                                     <RefreshCw className="h-3 w-3 mr-1 animate-spin" />

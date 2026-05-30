@@ -9,6 +9,7 @@ import {
   machineStatusLogs, InsertMachineStatusLog,
   machineHeartbeats, InsertMachineHeartbeat,
   manualMachineConnections, InsertManualMachineConnection,
+  machineHealthHistory, type InsertMachineHealthHistory,
   alertSettings,
   productInspections,
 } from "../../drizzle/schema";
@@ -638,4 +639,50 @@ export async function getWorkstationErrorSummary(filters: {
     byHour: byHour.map(h => ({ hour: h.hour, count: Number(h.count) })),
     byDefectType: [], // Would need measurement results join
   };
+}
+
+// ============ MACHINE HEALTH HISTORY ============
+
+export async function recordMachineHealthSnapshot(data: InsertMachineHealthHistory) {
+  const db = await getDb();
+  if (!db) return null;
+  const [row] = await db
+    .insert(machineHealthHistory)
+    .values(data)
+    .returning({ id: machineHealthHistory.id });
+  return row?.id ?? null;
+}
+
+export async function getMachineHealthHistory(
+  machineId: number,
+  range: "day" | "week" | "month" = "week",
+  limit: number = 500
+) {
+  const db = await getDb();
+  if (!db) return [];
+  const hours = range === "day" ? 24 : range === "week" ? 24 * 7 : 24 * 30;
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+  return db
+    .select({
+      id: machineHealthHistory.id,
+      timestamp: machineHealthHistory.timestamp,
+      healthScore: machineHealthHistory.healthScore,
+      oeeScore: machineHealthHistory.oeeScore,
+      uptimeScore: machineHealthHistory.uptimeScore,
+      errorRateScore: machineHealthHistory.errorRateScore,
+      cycleTimeScore: machineHealthHistory.cycleTimeScore,
+      currentOEE: machineHealthHistory.currentOEE,
+      uptimePercentage: machineHealthHistory.uptimePercentage,
+      errorCount: machineHealthHistory.errorCount,
+      predictedFailureRisk: machineHealthHistory.predictedFailureRisk,
+      recommendedMaintenanceDate: machineHealthHistory.recommendedMaintenanceDate,
+      maintenanceUrgency: machineHealthHistory.maintenanceUrgency,
+    })
+    .from(machineHealthHistory)
+    .where(and(
+      eq(machineHealthHistory.machineId, machineId),
+      gte(machineHealthHistory.timestamp, since),
+    ))
+    .orderBy(machineHealthHistory.timestamp)
+    .limit(limit);
 }

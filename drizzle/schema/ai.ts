@@ -1,5 +1,24 @@
 // Schema domain: AI & Annotation tables
-import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, index, uniqueIndex, customType } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+
+/**
+ * pgvector `vector(N)` column type.
+ *
+ * Drizzle không có native vector type, nên khai báo qua customType để TS biết
+ * cột tồn tại. Giá trị đọc/ghi ở dạng chuỗi `"[v1,v2,...]"` (đúng định dạng
+ * pgvector). Dimension được nhúng vào DDL qua dataType().
+ *
+ * LƯU Ý: index HNSW cho cột này KHÔNG khai báo ở đây — nó được giữ thủ công
+ * trong migration SQL (drizzle/0091_image_embeddings_pgvector.sql) vì
+ * drizzle-kit không sinh được `USING hnsw (... vector_cosine_ops)`.
+ */
+const pgvector = (dimensions: number) =>
+  customType<{ data: string; driverData: string }>({
+    dataType() {
+      return `vector(${dimensions})`;
+    },
+  });
 import { changeTypeEnum, alertTypeEnum_1, maintenanceUrgencyEnum, statusEnum_5, analysisTypeEnum, statusEnum_6, statusEnum_8, periodTypeEnum_1, suggestionTypeEnum, statusEnum_9, feedbackTypeEnum, errorCategoryEnum, accuracyTrendEnum, exportFormatEnum_1, statusEnum_10, modelFormatEnum, modelStatusEnum, inferenceStatusEnum, batchJobStatusEnum, batchItemStatusEnum, abTestStatusEnum, abTestVariantEnum, abTestWinnerEnum, driftAlertTypeEnum, driftSeverityEnum, edgeDeployStatusEnum, trainingJobStatusEnum, aiDecisionEnum, ensembleStrategyEnum, labelQueueStatusEnum, samplingStrategyEnum, chatRoleEnum, apiKeyProviderEnum, apiKeyStatusEnum } from "./enums";
 
 // ============= Image Annotations =============
@@ -109,6 +128,9 @@ export const predictiveAlerts = pgTable("predictive_alerts", {
   // Notification
   notificationSent: boolean("notificationSent").default(false).notNull(),
   notificationSentAt: timestamp("notificationSentAt"),
+  // Escalation tracking (0=none, 1=supervisor, 2=manager, 3=executive)
+  escalationLevel: integer("escalationLevel").default(0).notNull(),
+  lastEscalatedAt: timestamp("lastEscalatedAt"),
   // Timestamps
   expiresAt: timestamp("expiresAt"), // Alert expiration
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -122,10 +144,27 @@ export const predictiveAlerts = pgTable("predictive_alerts", {
   index("idx_predictive_alerts_factory").on(table.factoryId),
   index("idx_predictive_alerts_created").on(table.createdAt),
   index("idx_predictive_alerts_expires").on(table.expiresAt),
+  index("idx_predictive_alerts_escalation").on(table.escalationLevel),
 ]);
 
 export type PredictiveAlert = typeof predictiveAlerts.$inferSelect;
 export type InsertPredictiveAlert = typeof predictiveAlerts.$inferInsert;
+
+/**
+ * Alert Escalations - Audit log of all escalation events
+ */
+export const alertEscalations = pgTable("alert_escalations", {
+  id: serial("id").primaryKey(),
+  alertId: integer("alertId").notNull(),
+  fromLevel: integer("fromLevel").notNull(),
+  toLevel: integer("toLevel").notNull(),
+  reason: varchar("reason", { length: 255 }).notNull(),
+  notifiedUserIds: json("notifiedUserIds").$type<number[]>().default([]),
+  escalatedAt: timestamp("escalatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_alert_esc_alert").on(table.alertId),
+  index("idx_alert_esc_at").on(table.escalatedAt),
+]);
 
 
 // ============= Root Cause Analysis =============
@@ -531,6 +570,8 @@ export const aiModels = pgTable("ai_models", {
   filePath: text("filePath"),
   fileKey: varchar("fileKey", { length: 255 }),
   fileSize: integer("fileSize"),
+  // ── WS-2 (additive, nullable) — integrity hash for edge package verification ──
+  fileHash: varchar("fileHash", { length: 128 }),
   inputShape: json("inputShape").$type<number[]>(), // e.g. [1, 3, 224, 224]
   outputShape: json("outputShape").$type<number[]>(), // e.g. [1, 1000]
   labels: json("labels").$type<string[]>(), // e.g. ["OK", "NG_scratch", "NG_crack"]
@@ -573,6 +614,8 @@ export const modelVersions = pgTable("model_versions", {
   filePath: text("filePath"),
   fileKey: varchar("fileKey", { length: 255 }),
   fileSize: integer("fileSize"),
+  // ── WS-2 (additive, nullable) — sha256 of the model file (two-sided verify) ──
+  fileHash: varchar("fileHash", { length: 128 }),
   changeLog: text("changeLog"),
   metrics: json("metrics").$type<{
     accuracy?: number;
@@ -584,6 +627,10 @@ export const modelVersions = pgTable("model_versions", {
   }>(),
   accuracy: decimal("accuracy", { precision: 5, scale: 2 }),
   status: modelStatusEnum("status").default("UPLOADING").notNull(),
+  // ── WS-1 (additive, nullable) ──
+  datasetId: integer("datasetId"),                 // training_datasets.id used to train
+  baselineVersionId: integer("baselineVersionId"), // version compared against for the gate
+  evalReport: json("evalReport"),                  // full before/after CompareReport
   createdBy: integer("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
@@ -866,6 +913,9 @@ export const trainingJobs = pgTable("training_jobs", {
   }>(),
   outputModelPath: text("outputModelPath"),
   outputModelKey: varchar("outputModelKey", { length: 255 }),
+  // ── WS-1 (additive, nullable) ──
+  datasetId: integer("datasetId"),                                // training_datasets.id
+  trainingMode: varchar("trainingMode", { length: 40 }).default("local-embedding"),
   trainingDataCount: integer("trainingDataCount").default(0).notNull(),
   validationDataCount: integer("validationDataCount").default(0).notNull(),
   errorMessage: text("errorMessage"),
@@ -931,6 +981,8 @@ export const edgeDeployments = pgTable("edge_deployments", {
   packageKey: varchar("packageKey", { length: 255 }),
   packageSize: integer("packageSize"),
   packageHash: varchar("packageHash", { length: 128 }),
+  // ── WS-2 (additive, nullable) — packaging version + deploy/activate audit ──
+  packageVersion: varchar("packageVersion", { length: 50 }),
   status: edgeDeployStatusEnum("status").default("PENDING").notNull(),
   deployConfig: json("deployConfig").$type<{
     quantization?: "fp32" | "fp16" | "int8";
@@ -940,6 +992,8 @@ export const edgeDeployments = pgTable("edge_deployments", {
   }>(),
   lastSyncAt: timestamp("lastSyncAt"),
   lastHeartbeatAt: timestamp("lastHeartbeatAt"),
+  deployedAt: timestamp("deployedAt"),
+  activatedAt: timestamp("activatedAt"),
   offlineResultsPending: integer("offlineResultsPending").default(0).notNull(),
   errorMessage: text("errorMessage"),
   createdBy: integer("createdBy"),
@@ -974,12 +1028,19 @@ export const edgeInferenceSync = pgTable("edge_inference_sync", {
   syncedAt: timestamp("syncedAt"),
   inspectionId: integer("inspectionId"),
   measurementResultId: integer("measurementResultId"),
+  // ── WS-2 (additive, nullable) — client-supplied id for idempotent sync ──
+  localResultId: varchar("localResultId", { length: 100 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_edge_sync_deployment").on(table.deploymentId),
   index("idx_edge_sync_device").on(table.deviceId),
   index("idx_edge_sync_synced").on(table.synced),
   index("idx_edge_sync_inferred").on(table.inferredAt),
+  // Idempotent offline sync: at most one row per (deployment, localResultId).
+  // Partial (localResultId NOT NULL) so legacy rows without an id are not blocked.
+  uniqueIndex("uq_edge_sync_deployment_localresult")
+    .on(table.deploymentId, table.localResultId)
+    .where(sql`"localResultId" IS NOT NULL`),
 ]);
 
 export type EdgeInferenceSync = typeof edgeInferenceSync.$inferSelect;
@@ -1078,7 +1139,11 @@ export const aiImageEmbeddings = pgTable("ai_image_embeddings", {
   inspectionId: integer("inspectionId"),
   measurementResultId: integer("measurementResultId"),
   imageUrl: text("imageUrl").notNull(),
-  embedding: text("embedding").notNull(), // stored as text "[0.1,0.2,...]", cast to vector in SQL
+  embedding: text("embedding").notNull(), // stored as text "[0.1,0.2,...]", cast to vector in SQL (raw/back-compat)
+  // pgvector(1024) — WS-3. Nullable: chỉ điền cho dòng 1024-dim (mxbai-embed-large, L2-normalized).
+  // Index HNSW (idx_image_emb_vec_hnsw, vector_cosine_ops) giữ thủ công trong
+  // drizzle/0091_image_embeddings_pgvector.sql (drizzle-kit không sinh được hnsw).
+  embeddingVec: pgvector(1024)("embedding_vec"),
   embeddingDim: integer("embeddingDim").notNull(),
   modelCode: varchar("modelCode", { length: 100 }).notNull(),
   label: varchar("label", { length: 255 }),

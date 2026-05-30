@@ -177,7 +177,7 @@
     "deleteSuccess": "Xóa thành công",
     "createSuccess": "Tạo thành công",
     "notifyMethod": "Phương thức thông báo",
-    "noAlertsDesc": "Không Cảnh báo desc",
+    "noAlertsDesc": "Chưa có quy tắc cảnh báo nào được cấu hình",
     "acknowledged": "Đã xác nhận",
     "tabSettings": "Tab cài đặt",
     "inAppNotify": "Trong app notify",
@@ -1349,6 +1349,9 @@
     "perShift": "Mỗi Ca làm việc",
     "overview": "Tổng quan",
     "noAlerts": "Không Cảnh báo",
+    "noTodayDataTitle": "Hôm nay chưa có dữ liệu kiểm tra",
+    "noTodayDataDesc": "Hiện chưa có bản ghi trong hôm nay. Hãy chuyển sang khoảng thời gian rộng hơn để xem xu hướng sản xuất gần đây.",
+    "viewLast7Days": "Xem 7 ngày gần đây",
     "moveDown": "Di chuyển down",
     "featured": "Nổi bật",
     "download": "Tải xuống",
@@ -1627,7 +1630,141 @@
     },
     "cannotLoadTrendAnalysis": "Cannot Tải Xu hướng analysis",
     "cannotLoadPrediction": "Cannot Tải Dự đoán",
-    "cannotLoadHeatmap": "Cannot Tải Bản đồ nhiệt"
+    "cannotLoadHeatmap": "Cannot Tải Bản đồ nhiệt",
+    "catalog": {
+      "INSUFFICIENT_SOLDER": {
+        "name": "Thiếu thiếc",
+        "description": "Mối hàn không đạt mức ngấm / điền đầy tối thiểu theo IPC-A-610."
+      },
+      "EXCESS_SOLDER": {
+        "name": "Dư thiếc",
+        "description": "Lượng thiếc vượt quá kích thước mối hàn / pad cho phép, có thể che khuất kiểm tra hoặc vi phạm khoảng cách an toàn."
+      },
+      "SOLDER_BRIDGE": {
+        "name": "Cầu hàn / chập",
+        "description": "Kết nối thiếc không mong muốn giữa hai điểm dẫn điện liền kề lẽ ra phải cách điện."
+      },
+      "COLD_SOLDER": {
+        "name": "Mối hàn nguội",
+        "description": "Mối hàn bề mặt sần / mờ hoặc nứt do nhiệt không đủ hoặc rung trong quá trình đông cứng."
+      },
+      "SOLDER_BALL": {
+        "name": "Bi thiếc",
+        "description": "Hạt thiếc rời trên bo mạch có thể di chuyển và gây chập."
+      },
+      "SOLDER_VOID": {
+        "name": "Lỗ rỗng trong mối hàn",
+        "description": "Khoang rỗng bên trong mối hàn vượt giới hạn diện tích (thường >25% Class 2, >9% Class 3 đối với thermal pad)."
+      },
+      "NON_WETTING": {
+        "name": "Không ngấm thiếc",
+        "description": "Thiếc không ngấm vào bề mặt kim loại; bề mặt gốc vẫn lộ ra."
+      },
+      "DEWETTING": {
+        "name": "Thiếc co rút",
+        "description": "Thiếc ban đầu ngấm sau đó co lại, để lại gò không đều và lộ kim loại nền."
+      },
+      "EXPOSED_BASE_METAL": {
+        "name": "Lộ kim loại nền",
+        "description": "Kim loại nền của dây dẫn lộ ra ở vị trí thiết kế yêu cầu phủ / hàn."
+      },
+      "FLUX_RESIDUE": {
+        "name": "Cặn nhựa thông",
+        "description": "Cặn nhựa thông nhìn thấy vượt giới hạn sạch; chấp nhận được với loại no-clean trong giới hạn ngoại quan."
+      },
+      "TOMBSTONING": {
+        "name": "Linh kiện dựng đứng (tombstone)",
+        "description": "Linh kiện chip dựng đứng khỏi một pad, thường do nhiệt reflow không đều."
+      },
+      "BILLBOARDING": {
+        "name": "Linh kiện nằm nghiêng",
+        "description": "Linh kiện chip đứng nghiêng trên cạnh thay vì nằm phẳng."
+      },
+      "MISALIGNMENT": {
+        "name": "Linh kiện lệch vị trí",
+        "description": "Linh kiện lệch khỏi pad vượt giới hạn lệch ngang / lệch đầu của cấp chất lượng."
+      },
+      "MISSING_COMPONENT": {
+        "name": "Thiếu linh kiện",
+        "description": "Linh kiện không có ở vị trí quy định theo BOM / thiết kế."
+      },
+      "WRONG_COMPONENT": {
+        "name": "Sai linh kiện",
+        "description": "Giá trị / mã linh kiện không khớp BOM."
+      },
+      "REVERSED_POLARITY": {
+        "name": "Sai cực tính",
+        "description": "Linh kiện có cực tính (diode, tụ hóa, IC) lắp ngược hướng."
+      },
+      "LIFTED_LEAD": {
+        "name": "Chân linh kiện bị nâng",
+        "description": "Chân linh kiện không tiếp xúc với pad / mối hàn."
+      },
+      "BENT_LEAD": {
+        "name": "Chân linh kiện cong",
+        "description": "Chân biến dạng vượt dung sai cho phép, có thể ảnh hưởng độ đồng phẳng."
+      },
+      "INSUFFICIENT_HOLE_FILL": {
+        "name": "Thiếu thiếc lỗ xuyên",
+        "description": "Độ điền thiếc theo chiều dọc trong lỗ mạ thấp hơn 75% (Class 2) hoặc 100% (Class 3)."
+      },
+      "PIN_PROTRUSION_INSUFFICIENT": {
+        "name": "Chân chưa ló đủ",
+        "description": "Chân không nhô ra đủ phía mặt hàn của bo mạch."
+      },
+      "CONTAMINATION_PARTICULATE": {
+        "name": "Bụi / dị vật",
+        "description": "Hạt rời, dị vật hoặc mảnh vụn trên bề mặt bo mạch."
+      },
+      "MARKING_ILLEGIBLE": {
+        "name": "Nhãn / mã không đọc được",
+        "description": "Nhãn / mã yêu cầu không đọc được do nhòe, độ tương phản thấp hoặc lỗi in."
+      },
+      "BARCODE_UNREADABLE": {
+        "name": "Mã vạch / DMC không quét được",
+        "description": "Mã đọc bằng máy không giải mã được ở mức chất lượng yêu cầu (thường tối thiểu ISO/IEC 15415 grade C)."
+      },
+      "PCB_SCRATCH": {
+        "name": "Trầy xước PCB",
+        "description": "Trầy xước trên bề mặt PCB hoặc lớp solder mask nhưng chưa lộ đồng."
+      },
+      "SOLDERMASK_DAMAGE": {
+        "name": "Hỏng lớp phủ hàn",
+        "description": "Lớp solder mask bong, mất hoặc nứt làm lộ dây dẫn."
+      },
+      "LAMINATE_DAMAGE": {
+        "name": "Hỏng lớp nền PCB",
+        "description": "Tách lớp / đốm trắng bên trong lớp nền PCB (measling, crazing, blistering)."
+      },
+      "DAMAGED_INSULATION": {
+        "name": "Hỏng lớp cách điện dây",
+        "description": "Cắt, cháy hoặc mài mòn lớp cách điện làm lộ dây dẫn."
+      },
+      "EDGE_BURR": {
+        "name": "Bavia mép gia công",
+        "description": "Bavia sắc dọc theo mép gia công vượt chiều cao tối đa cho phép."
+      },
+      "CHIP_OUT": {
+        "name": "Sứt mép",
+        "description": "Vật liệu bị sứt ở mép hoặc góc, phá vỡ biên dạng thiết kế."
+      },
+      "DENT": {
+        "name": "Móp / lõm",
+        "description": "Biến dạng lõm cục bộ vượt giới hạn ngoại quan / chức năng."
+      },
+      "COSMETIC_SCRATCH": {
+        "name": "Trầy xước bề mặt",
+        "description": "Trầy xước trên vùng ngoại quan nhìn thấy vượt quy cách độ dài / rộng theo vùng (A/B/C)."
+      },
+      "COLOR_MISMATCH": {
+        "name": "Lệch màu / độ bóng",
+        "description": "Sai lệch màu (ΔE) hoặc độ bóng (GU) ngoài dung sai mẫu chuẩn."
+      },
+      "CONTAMINATION_FINGERPRINT": {
+        "name": "Vết tay / vết bẩn",
+        "description": "Dầu / dấu tay trên bề mặt ngoại quan A."
+      }
+    }
   },
   "errors": {
     "cannotLoadDataDescription": "Cannot Tải Dữ liệu Mô tả",
@@ -2374,6 +2511,14 @@
     "edit": "Sửa"
   },
   "machines": {
+    "predictiveMaintenance": "Bảo trì dự đoán",
+    "predictiveMaintenanceDesc": "Rủi ro hỏng theo thống kê, dự báo RUL và độ tin cậy",
+    "failureRisk": "Rủi ro hỏng",
+    "confidence": "Độ tin cậy",
+    "mtbf": "MTBF",
+    "mttr": "MTTR",
+    "rulForecast": "Dự báo hỏng",
+    "recommendedMaintenance": "Bảo trì đề xuất",
     "selectMachineForHealthMonitoring": "Chọn Máy cho health monitoring",
     "addMachineToLayoutDescription": "Thêm Máy đến Bố trí Mô tả",
     "noWorkstationDataDescription": "Không Trạm làm việc Dữ liệu Mô tả",
@@ -3378,6 +3523,8 @@
     "monitoringGroupDesc": "Giám sát máy móc và thiết bị",
     "machineStatusPage": "Trạng thái máy",
     "machineStatusDesc": "Giám sát trạng thái máy thời gian thực",
+    "machineOnboarding": "Wizard cài máy mới",
+    "machineOnboardingDesc": "Cài đặt máy mới đầu-cuối: kết nối, cấp API key, triển khai model AI",
     "mqttDashboard": "Bảng điều khiển MQTT",
     "mqttDashboardDesc": "Bảng giám sát tin nhắn MQTT",
     "mqttClients": "MQTT Clients",
@@ -3464,6 +3611,8 @@
     "analyticsSettingDesc": "Cấu hình phân tích nâng cao, báo cáo và dự đoán",
     "productionScheduling": "Lập lịch sản xuất",
     "productionSchedulingDesc": "Lập lịch, thuật toán tối ưu, theo dõi WIP",
+    "productionSignoff": "Ký duyệt phiên (21 CFR)",
+    "productionSignoffDesc": "Ký điện tử HMAC-SHA256 cho phiên sản xuất",
     "productionDashboard": "Bảng điều khiển sản xuất",
     "productionDashboardDesc": "Tổng quan sản xuất theo trạm kiểm tra thời gian thực",
     "dataGroup": "Quản lý dữ liệu",
@@ -3546,6 +3695,8 @@
     "apiDocsPageDesc": "Tài liệu tham khảo REST API",
     "userGuide": "Hướng dẫn sử dụng",
     "userGuideDesc": "Hướng dẫn sử dụng ứng dụng",
+    "aboutSystem": "Giới thiệu hệ thống",
+    "aboutSystemDesc": "Thông tin hệ thống, công ty và đội ngũ phát triển",
     "licenseManagement": "Quản lý bản quyền",
     "licenseManagementDesc": "Quản lý kích hoạt và giấy phép bản quyền",
     "settingsScheduledReports": "Báo cáo định kỳ",
@@ -3590,6 +3741,52 @@
     "aiModelManagementDesc": "Đăng ký, quản lý và triển khai mô hình AI",
     "aiSettings": "Cài Đặt AI",
     "aiSettingsDesc": "API keys, cấu hình mô hình và cài đặt hệ thống AI"
+  },
+  "aboutPage": {
+    "layoutTitle": "Giới thiệu hệ thống",
+    "hero": {
+      "title": "Hệ thống quản lý AVI/AOI",
+      "description": "Nền tảng quản trị sản xuất và chất lượng dành cho dây chuyền kiểm tra tự động, giúp doanh nghiệp theo dõi vận hành theo thời gian thực, giảm lỗi và tối ưu hiệu suất.",
+      "version": "Version 1.0.0",
+      "updated": "Cập nhật: 13/05/2026"
+    },
+    "system": {
+      "title": "Giới thiệu về hệ thống",
+      "description": "Các năng lực chính của nền tảng AVI/AOI Management trong vận hành sản xuất.",
+      "highlights": [
+        "Giám sát máy AVI/AOI theo thời gian thực qua MQTT và dashboard trực quan.",
+        "Chuẩn hóa dữ liệu kiểm tra, truy vết lỗi theo từng sản phẩm, công đoạn và máy.",
+        "Phân tích chất lượng với SPC, heatmap, root cause, cảnh báo sớm và báo cáo tự động.",
+        "Hỗ trợ phân quyền, nhật ký kiểm toán và vận hành nhiều cấp từ nhà máy đến tập đoàn."
+      ]
+    },
+    "stack": {
+      "title": "Công nghệ sử dụng",
+      "description": "Kiến trúc và thành phần kỹ thuật chính.",
+      "items": [
+        "Frontend: React + TypeScript + Tailwind UI",
+        "Backend: Node.js + tRPC",
+        "Data: PostgreSQL",
+        "Realtime: MQTT + WebSocket"
+      ]
+    },
+    "company": {
+      "title": "Giới thiệu công ty",
+      "name": "Công ty giải pháp AVI/AOI",
+      "description": "Đơn vị triển khai và vận hành giải pháp.",
+      "paragraph1": "Hệ thống được phát triển cho mô hình sản xuất thông minh, tập trung vào tự động hóa kiểm tra chất lượng, chuẩn hóa dữ liệu và khả năng mở rộng theo nhiều nhà máy.",
+      "paragraph2": "Công ty định hướng chuyển đổi số sản xuất theo tiêu chí: minh bạch dữ liệu, phản ứng nhanh với sự cố và cải tiến liên tục dựa trên phân tích thực tế."
+    },
+    "developer": {
+      "title": "Người phát triển hệ thống",
+      "description": "Thông tin đội ngũ phát triển và bảo trì.",
+      "teamLabel": "Nhóm phát triển",
+      "teamValue": "Đội kỹ thuật AVI/AOI Management Platform",
+      "roleLabel": "Vai trò chính",
+      "roleValue": "Thiết kế kiến trúc hệ thống, phát triển tính năng nghiệp vụ, tối ưu hiệu năng, và vận hành liên tục trong môi trường sản xuất.",
+      "contactLabel": "Liên hệ nội bộ",
+      "contactValue": "Vui lòng cập nhật thông tin người phụ trách cụ thể theo tổ chức của bạn."
+    }
   },
   "notifications": {
     "maxCustomSoundsReached": "Tối đa Tùy chỉnh sounds reached",
@@ -3722,7 +3919,7 @@
     "startTime": "Bắt đầu Thời gian",
     "oeeTarget": "OEE Mục tiêu",
     "oeeDetail": "OEE detail",
-    "noOeeData": "Không OEE Dữ liệu",
+    "noOeeData": "Chưa có dữ liệu OEE",
     "exportCsv": "Xuất csv",
     "calculate": "Tính toán",
     "breakdown": "Hỏng máy",
@@ -3874,55 +4071,84 @@
     "code": "Mã"
   },
   "production": {
-    "orderListDescription": "Order Danh sách Mô tả",
-    "createNewDescription": "Tạo Mới Mô tả",
-    "fillRequiredFields": "Fill Bắt buộc Trường",
-    "searchPlaceholder": "Nhập từ khóa tìm kiếm...",
-    "statusInProgress": "Trạng thái trong Tiến độ",
-    "notesPlaceholder": "Ghi chú Chỗ nhập...",
-    "statusCompleted": "Trạng thái completed",
-    "statusCancelled": "Trạng thái cancelled",
-    "editDescription": "Sửa Mô tả",
-    "targetQuantity": "Mục tiêu Số lượng",
-    "selectWorkshop": "Chọn Xưởng",
-    "priorityUrgent": "Ưu tiên Khẩn cấp",
-    "priorityNormal": "Ưu tiên Bình thường",
-    "createNewTitle": "Tạo Mới Tiêu đề",
-    "updateSuccess": "Cập nhật thành công",
-    "statusPending": "Trạng thái Đang chờ",
-    "selectProduct": "Chọn Sản phẩm",
-    "selectFactory": "Chọn Nhà máy",
-    "deleteSuccess": "Xóa thành công",
-    "createSuccess": "Tạo thành công",
-    "confirmDelete": "Xác nhận xóa",
-    "statusPaused": "Trạng thái Đã tạm dừng",
-    "priorityHigh": "Ưu tiên Cao",
-    "totalOutput": "Tổng sản lượng",
-    "totalOrders": "Tổng đơn hàng",
-    "description": "Mô tả",
-    "createOrder": "Tạo order",
-    "companyCode": "Công ty Mã",
-    "allStatuses": "Tất cả statuses",
-    "selectLine": "Chọn Dây chuyền",
-    "ganttChart": "Gantt Biểu đồ",
-    "orderList": "Order Danh sách",
-    "orderCode": "Order Mã",
-    "editTitle": "Sửa Tiêu đề",
-    "createNew": "Tạo Mới",
+    "title": "Lệnh sản xuất",
+    "description": "Quản lý và theo dõi lệnh sản xuất theo nhà máy và dây chuyền",
+    "orderList": "Danh sách lệnh",
+    "orderListDescription": "Tất cả lệnh sản xuất",
+    "okNgNtf": "Đạt / Không đạt / NTF",
+    "createOrder": "Tạo lệnh",
+    "createNew": "Lệnh mới",
+    "createNewTitle": "Tạo lệnh sản xuất",
+    "createNewDescription": "Điền thông tin để tạo lệnh sản xuất mới",
+    "editTitle": "Sửa lệnh sản xuất",
+    "editDescription": "Cập nhật thông tin lệnh sản xuất",
+    "confirmDelete": "Bạn có chắc chắn muốn xóa lệnh này?",
+    "confirmDeleteDetail": "Bạn có chắc muốn xóa lệnh sản xuất {{code}}? Hành động này không thể hoàn tác.",
+    "createSuccess": "Tạo lệnh thành công",
+    "updateSuccess": "Cập nhật lệnh thành công",
+    "deleteSuccess": "Xóa lệnh thành công",
+    "fillRequiredFields": "Vui lòng điền đầy đủ các trường bắt buộc",
+    "noOrders": "Không có lệnh sản xuất",
+    "orderCode": "Mã lệnh",
+    "company": "Công ty",
+    "companyCode": "Mã công ty",
+    "factory": "Nhà máy",
     "workshop": "Xưởng",
+    "line": "Dây chuyền",
+    "product": "Sản phẩm",
+    "targetQuantity": "Số lượng mục tiêu",
+    "totalOutput": "Tổng sản lượng",
+    "totalOrders": "Tổng số lệnh",
     "progress": "Tiến độ",
     "priority": "Ưu tiên",
-    "noOrders": "Không orders",
-    "product": "Sản phẩm",
-    "factory": "Nhà máy",
-    "company": "Công ty",
+    "priorityUrgent": "Khẩn cấp",
+    "priorityHigh": "Cao",
+    "priorityNormal": "Bình thường",
     "status": "Trạng thái",
-    "title": "Tiêu đề",
+    "statusPending": "Chờ xử lý",
+    "statusInProgress": "Đang sản xuất",
+    "statusPaused": "Tạm dừng",
+    "statusCompleted": "Hoàn thành",
+    "statusCancelled": "Đã hủy",
+    "allStatuses": "Tất cả trạng thái",
+    "selectFactory": "Chọn nhà máy",
+    "selectWorkshop": "Chọn xưởng",
+    "selectLine": "Chọn dây chuyền",
+    "selectProduct": "Chọn sản phẩm",
+    "searchPlaceholder": "Tìm theo mã lệnh, sản phẩm, khách hàng…",
     "notes": "Ghi chú",
+    "notesPlaceholder": "Ghi chú cho lệnh này (tùy chọn)",
     "list": "Danh sách",
-    "line": "Dây chuyền"
+    "ganttChart": "Biểu đồ Gantt",
+    "orderCodePlaceholder": "vd: PO-2024-001",
+    "companyCodePlaceholder": "vd: CORP-001",
+    "targetQuantityPlaceholder": "vd: 1000",
+    "editOrder": "Sửa đơn hàng",
+    "deleteOrder": "Xóa đơn hàng"
   },
   "products": {
+    "documents": "Tài liệu",
+    "attachDocument": "Đính kèm tài liệu",
+    "noDocuments": "Chưa có tài liệu",
+    "foundationSection": "P3 Nền tảng (Thiết bị đo / Kế hoạch mẫu / Khung nhìn)",
+    "instruments": "Thiết bị đo",
+    "samplingPlans": "Kế hoạch lấy mẫu",
+    "productViews": "Khung nhìn sản phẩm",
+    "msaStudies": "Nghiên cứu MSA",
+    "addInstrument": "Thêm thiết bị",
+    "addSamplingPlan": "Thêm kế hoạch mẫu",
+    "addProductView": "Thêm khung nhìn",
+    "startMsaWizard": "Bắt đầu MSA Wizard",
+    "strategy": "Chiến lược",
+    "viewType": "Loại khung nhìn",
+    "strategyFixedN": "Cỡ mẫu cố định",
+    "strategyAql": "AQL",
+    "strategyRiskBased": "Dựa trên rủi ro",
+    "viewTop": "Mặt trên",
+    "viewBottom": "Mặt dưới",
+    "viewSide": "Mặt bên",
+    "viewIsometric": "3D",
+    "viewCustom": "Tùy chỉnh",
     "bulkImport": {
       "invalidMeasurementType": "Không hợp lệ Phép đo Loại",
       "templateDescription": "Mẫu Mô tả",
@@ -5866,6 +6092,16 @@
     "selectLineRequired": "Vui lòng chọn dây chuyền"
   },
   "scheduling": {
+    "autoScheduleRun": "Auto-schedule (run)",
+    "whatIf": "What-if (-30% công suất)",
+    "generating": "Đang tạo...",
+    "runGenerated": "Đã tạo lịch (run #{{id}}): {{count}} đơn, {{conflicts}} xung đột",
+    "runApplied": "Đã áp dụng {{count}} đơn",
+    "applyRun": "Áp dụng run #{{id}}",
+    "whatIfResult": "Kết quả What-if",
+    "capacityReduced": "giảm công suất {{pct}}%",
+    "lateOrdersChange": "Đơn trễ: {{base}} → {{sim}}",
+    "hoursLate": "trễ {{h}}h",
     "title": "Lập lịch sản xuất",
     "subtitle": "Lập lịch, tối ưu hóa và theo dõi tiến trình sản xuất",
     "algorithm": "Thuật toán",
@@ -5877,6 +6113,7 @@
     "edfDesc": "Ưu tiên đơn hàng có deadline gần nhất",
     "optimize": "Tối ưu hóa",
     "optimizing": "Đang tối ưu...",
+    "lastOptimized": "Tối ưu lần cuối: {{time}} · {{algorithm}}",
     "ganttChart": "Biểu đồ Gantt",
     "wipTracking": "Theo dõi WIP",
     "orderList": "Danh sách đơn hàng",
@@ -5902,6 +6139,8 @@
     "activeOrders": "Đơn hàng đang xử lý",
     "algorithmSelection": "Chọn thuật toán",
     "apply": "Áp dụng lịch",
+    "applyConfirmTitle": "Xác nhận áp dụng gợi ý?",
+    "applyConfirmDescription": "Thao tác này sẽ ghi đè lịch hiện tại của đơn hàng. Vui lòng xác nhận trước khi tiếp tục.",
     "applySuccess": "Áp dụng lịch thành công",
     "cancelled": "Đã hủy",
     "endDate": "Ngày kết thúc",
@@ -5916,7 +6155,17 @@
     "startDate": "Ngày bắt đầu",
     "suggestedEnd": "Kết thúc đề xuất",
     "suggestedStart": "Bắt đầu đề xuất",
-    "utilization": "Tỷ lệ sử dụng"
+    "utilization": "Tỷ lệ sử dụng",
+    "conflictOverlap": "Chồng chéo lịch",
+    "conflictDependency": "Phụ thuộc đơn",
+    "conflictCapacity": "Vượt công suất",
+    "conflictDeadline": "Trễ deadline",
+    "fifoLabel": "FIFO (Vào trước - Ra trước)",
+    "fifoDescLong": "Xếp lịch theo thứ tự tạo đơn — đơn tạo trước được sản xuất trước",
+    "priorityLabel": "Xếp lịch theo độ ưu tiên",
+    "priorityDescLong": "Ưu tiên đơn có mức cao nhất; cùng mức xét theo deadline gần nhất",
+    "edfLabel": "EDF (Deadline gần nhất trước)",
+    "edfDescLong": "Đơn hàng có deadline gần nhất được ưu tiên sản xuất trước"
   },
   "widgets": {
     "kpiCard": {
@@ -6059,10 +6308,88 @@
       "perDay": "Mỗi ngày"
     }
   },
+  "onboarding": {
+    "title": "Wizard cài máy mới",
+    "subtitle": "Cài đặt máy mới đầu-cuối trong dưới 10 phút",
+    "next": "Tiếp tục",
+    "back": "Quay lại",
+    "finish": "Hoàn tất",
+    "steps": {
+      "info": "Thông tin",
+      "test": "Kết nối",
+      "assign": "Gán trạm",
+      "deploy": "Triển khai",
+      "verify": "Kiểm tra"
+    },
+    "stepDesc": {
+      "0": "Nhập thông tin máy và địa chỉ mạng",
+      "1": "Kiểm tra kết nối tới máy (HTTP/TCP/WebSocket)",
+      "2": "Gán máy vào trạm và cấp API key",
+      "3": "Chọn sản phẩm và model AI rồi triển khai",
+      "4": "Theo dõi heartbeat và trạng thái triển khai"
+    },
+    "fields": {
+      "code": "Mã máy",
+      "name": "Tên máy",
+      "machineType": "Loại máy",
+      "serialNumber": "Số serial",
+      "ipAddress": "Địa chỉ IP",
+      "port": "Cổng",
+      "protocol": "Giao thức"
+    },
+    "step2": {
+      "runTest": "Kiểm tra kết nối",
+      "testing": "Đang kiểm tra...",
+      "ok": "Kết nối thành công",
+      "failed": "Kết nối thất bại",
+      "reachable": "Kết nối được",
+      "unreachable": "Không kết nối được",
+      "hint": "Có thể tiếp tục ngay cả khi máy chưa online (offline-first)."
+    },
+    "step3": {
+      "station": "Trạm sản xuất",
+      "selectStation": "Chọn trạm",
+      "createAndApprove": "Tạo máy & cấp API key",
+      "creating": "Đang tạo...",
+      "granted": "Đã tạo máy và cấp API key",
+      "approved": "Đã duyệt",
+      "createError": "Lỗi tạo máy",
+      "copied": "Đã sao chép API key",
+      "copy": "Sao chép",
+      "apiKeyHint": "Lưu API key này vào máy AOI/AVI để xác thực.",
+      "selectStationFirst": "Vui lòng chọn trạm trước"
+    },
+    "step4": {
+      "product": "Sản phẩm",
+      "selectProduct": "Chọn sản phẩm",
+      "model": "Model AI",
+      "selectModel": "Chọn model AI",
+      "deploy": "Đóng gói & triển khai",
+      "deploying": "Đang triển khai...",
+      "deployed": "Đã triển khai (READY)",
+      "deployPartial": "Triển khai chưa hoàn tất",
+      "deployError": "Lỗi triển khai",
+      "noVersion": "Model chưa có phiên bản hiện hành",
+      "deploymentCreated": "Đã tạo deployment #{{id}}",
+      "notifyHint": "Máy sẽ nhận tín hiệu cập nhật qua MQTT/Socket và tự tải gói."
+    },
+    "step5": {
+      "deploymentStatus": "Trạng thái triển khai",
+      "machine": "Máy",
+      "deploymentId": "Mã deployment",
+      "packageVersion": "Phiên bản gói",
+      "lastHeartbeat": "Heartbeat gần nhất",
+      "activeOk": "Máy đang hoạt động (ACTIVE) — cài đặt hoàn tất!",
+      "waitingHeartbeat": "Đang chờ máy tải gói và gửi heartbeat...",
+      "refresh": "Làm mới",
+      "unknown": "Chưa rõ"
+    }
+  },
   "machineRegistration": {
     "pageTitle": "Quản lý đăng ký máy",
     "pageSubtitle": "Duyệt, từ chối và quản lý đăng ký máy AOI/AVI từ xa",
     "refresh": "Làm mới",
+    "openWizard": "Wizard cài máy mới",
     "tabs": {
       "pending": "Chờ duyệt",
       "all": "Tất cả máy",
@@ -6493,7 +6820,7 @@
       "stationAnalysis": "Phân Tích Trạm"
     },
     "invalidStationId": "ID trạm không hợp lệ",
-    "backToDashboard": "\u2190 Quay lại bảng điều khiển",
+    "backToDashboard": "← Quay lại bảng điều khiển",
     "stationNotFound": "Không tìm thấy trạm",
     "machines": "máy",
     "kpi": {
@@ -6571,6 +6898,9 @@
     "totalOutput": "Tổng Sản Lượng",
     "avgRetests": "Kiểm Tra Lại TB",
     "lowYieldStations": "Trạm Tỷ Lệ Thấp",
+    "lowYieldFilterHint": "Nhấn để lọc trạm có tỷ lệ thấp",
+    "lowYieldFilterChip": "Trạm Tỷ Lệ Thấp (FPY < 70%)",
+    "clearLowYieldFilter": "Bỏ lọc",
     "tabStation": "Xem Trạm",
     "tabDefect": "Phân Tích Lỗi",
     "tabTrend": "Xu Hướng",
@@ -6583,6 +6913,22 @@
     "custom": "Tùy Chỉnh",
     "allFactories": "Tất Cả Nhà Máy",
     "allLines": "Tất Cả Dây Chuyền",
+    "copyLink": "Sao chép liên kết",
+    "linkCopied": "Đã sao chép liên kết vào clipboard",
+    "linkCopyFailed": "Không sao chép được liên kết",
+    "autoRefreshLabel": "Tự động làm mới",
+    "autoRefreshOnLabel": "Tự động 30 giây",
+    "toggleAutoRefresh": "Bật/tắt tự động làm mới",
+    "autoRefreshOn": "Đã bật tự động làm mới (mỗi 30 giây)",
+    "autoRefreshOff": "Đã tắt tự động làm mới",
+    "compareFactories": "So sánh",
+    "compareOn": "Đã bật so sánh nhà máy",
+    "compareOff": "Đã tắt so sánh nhà máy",
+    "compareTitle": "So sánh nhà máy",
+    "compareHint": "So sánh KPI giữa các nhà máy",
+    "toggleCompare": "Bật/tắt so sánh nhà máy",
+    "factoriesShort": "nhà máy",
+    "drilldownFactory": "Bấm để lọc theo nhà máy này",
     "colStation": "Trạm",
     "colFPY": "Tỷ Lệ Đạt Lần Đầu",
     "colChange": "Thay Đổi Điểm",
@@ -6605,7 +6951,15 @@
     "live": "Trực Tiếp",
     "todayLabel": "Hôm Nay",
     "exportTitle": "Báo Cáo Bảng Điều Khiển Sản Xuất",
-    "searchStation": "Tìm tên, mã trạm, dây chuyền..."
+    "searchStation": "Tìm tên, mã trạm, dây chuyền...",
+    "exportOverview": "Tổng quan",
+    "exportStationPerf": "Hiệu suất trạm",
+    "exportTopDefects": "Lỗi hàng đầu",
+    "colCategory": "Phân loại",
+    "colCode": "Mã",
+    "colName": "Tên",
+    "colCount": "Số lượng",
+    "colRate": "Tỷ lệ"
   },
   "aiHub": {
     "subtitle": "Các tính năng AI cho trí tuệ kiểm tra",
@@ -6617,21 +6971,66 @@
     "genReport": "Tạo Báo Cáo",
     "title": "AI Hub",
     "features": {
-      "chat": { "title": "Trợ Lý AI Chat", "desc": "Truy vấn ngôn ngữ tự nhiên cho dữ liệu kiểm tra, xu hướng lỗi và thông tin chất lượng" },
-      "qualityGate": { "title": "Cổng Chất Lượng", "desc": "Quyết định pass/fail tự động bằng mô hình AI tổng hợp với ngưỡng có thể cấu hình" },
-      "activeLearning": { "title": "Học Tích Cực", "desc": "Gán nhãn có sự tham gia của con người để cải thiện độ chính xác mô hình" },
-      "imageSearch": { "title": "Tìm Kiếm Hình Ảnh", "desc": "Tìm kiếm tương đồng vector qua các ảnh kiểm tra để tìm mẫu lỗi tương tự" },
-      "timeSeries": { "title": "Phân Tích Chuỗi Thời Gian", "desc": "Phát hiện bất thường và dự báo EWMA/Holt-Winters cho các chỉ số sản xuất" },
-      "reports": { "title": "Báo Cáo AI", "desc": "Tóm tắt chất lượng hàng ngày, phân tích nguyên nhân gốc và báo cáo quản lý" },
-      "performance": { "title": "Hiệu Năng Mô Hình", "desc": "Theo dõi độ chính xác, thống kê suy luận và lịch sử phiên bản" },
-      "batchInference": { "title": "Suy Luận Hàng Loạt", "desc": "Xử lý lô ảnh lớn với các công việc AI song song" },
-      "abTesting": { "title": "Kiểm Tra A/B", "desc": "So sánh hai phiên bản mô hình với phân chia lưu lượng và phân tích thống kê" },
-      "monitoring": { "title": "Giám Sát Mô Hình", "desc": "Phát hiện trôi dạt mô hình, theo dõi ảnh chụp hiệu suất và quản lý cảnh báo" },
-      "dataProcessing": { "title": "Xử Lý Dữ Liệu", "desc": "Xử lý, tăng cường và chuẩn bị dữ liệu ảnh cho huấn luyện mô hình AI" },
-      "modelManagement": { "title": "Quản Lý Mô Hình", "desc": "Đăng ký, quản lý và triển khai mô hình AI và phiên bản" },
-      "inspectionAnalytics": { "title": "Phân Tích Kiểm Tra", "desc": "Xu hướng lỗi, dự báo yield, SPC, Pareto và đánh giá rủi ro cho dữ liệu kiểm tra" },
-      "ggufModels": { "title": "GGUF Models", "desc": "Quản lý và sử dụng local LLM models (.gguf) cho phân tích và chat" },
-      "settings": { "title": "Cài Đặt AI", "desc": "Quản lý API key, cấu hình mô hình và cài đặt hệ thống" }
+      "chat": {
+        "title": "Trợ Lý AI Chat",
+        "desc": "Truy vấn ngôn ngữ tự nhiên cho dữ liệu kiểm tra, xu hướng lỗi và thông tin chất lượng"
+      },
+      "qualityGate": {
+        "title": "Cổng Chất Lượng",
+        "desc": "Quyết định pass/fail tự động bằng mô hình AI tổng hợp với ngưỡng có thể cấu hình"
+      },
+      "activeLearning": {
+        "title": "Học Tích Cực",
+        "desc": "Gán nhãn có sự tham gia của con người để cải thiện độ chính xác mô hình"
+      },
+      "imageSearch": {
+        "title": "Tìm Kiếm Hình Ảnh",
+        "desc": "Tìm kiếm tương đồng vector qua các ảnh kiểm tra để tìm mẫu lỗi tương tự"
+      },
+      "timeSeries": {
+        "title": "Phân Tích Chuỗi Thời Gian",
+        "desc": "Phát hiện bất thường và dự báo EWMA/Holt-Winters cho các chỉ số sản xuất"
+      },
+      "reports": {
+        "title": "Báo Cáo AI",
+        "desc": "Tóm tắt chất lượng hàng ngày, phân tích nguyên nhân gốc và báo cáo quản lý"
+      },
+      "performance": {
+        "title": "Hiệu Năng Mô Hình",
+        "desc": "Theo dõi độ chính xác, thống kê suy luận và lịch sử phiên bản"
+      },
+      "batchInference": {
+        "title": "Suy Luận Hàng Loạt",
+        "desc": "Xử lý lô ảnh lớn với các công việc AI song song"
+      },
+      "abTesting": {
+        "title": "Kiểm Tra A/B",
+        "desc": "So sánh hai phiên bản mô hình với phân chia lưu lượng và phân tích thống kê"
+      },
+      "monitoring": {
+        "title": "Giám Sát Mô Hình",
+        "desc": "Phát hiện trôi dạt mô hình, theo dõi ảnh chụp hiệu suất và quản lý cảnh báo"
+      },
+      "dataProcessing": {
+        "title": "Xử Lý Dữ Liệu",
+        "desc": "Xử lý, tăng cường và chuẩn bị dữ liệu ảnh cho huấn luyện mô hình AI"
+      },
+      "modelManagement": {
+        "title": "Quản Lý Mô Hình",
+        "desc": "Đăng ký, quản lý và triển khai mô hình AI và phiên bản"
+      },
+      "inspectionAnalytics": {
+        "title": "Phân Tích Kiểm Tra",
+        "desc": "Xu hướng lỗi, dự báo yield, SPC, Pareto và đánh giá rủi ro cho dữ liệu kiểm tra"
+      },
+      "ggufModels": {
+        "title": "GGUF Models",
+        "desc": "Quản lý và sử dụng local LLM models (.gguf) cho phân tích và chat"
+      },
+      "settings": {
+        "title": "Cài Đặt AI",
+        "desc": "Quản lý API key, cấu hình mô hình và cài đặt hệ thống"
+      }
     },
     "processData": "Xử Lý Dữ Liệu",
     "manageSettings": "Cài Đặt AI"
@@ -6714,7 +7113,20 @@
     "checkRetrain": "Kiểm tra xem có cần huấn luyện lại không",
     "retrainRequired": "Cần Huấn Luyện Lại",
     "retrainNotRequired": "Không Cần Huấn Luyện Lại",
-    "retrainDesc": "Các mẫu được gán nhãn mới sẵn sàng để huấn luyện lại mô hình"
+    "retrainDesc": "Các mẫu được gán nhãn mới sẵn sàng để huấn luyện lại mô hình",
+    "scanHard": "Tự quét ảnh khó",
+    "scanDone": "Quét xong: thêm {{enqueued}} ảnh (bỏ qua {{skipped}} trùng)",
+    "scanUncertainty": "Quét uncertainty → hàng đợi",
+    "scanCommittee": "Quét committee (≥2 model)",
+    "strategy": "Chiến lược",
+    "disagreement": "bất đồng"
+  },
+  "mv": {
+    "metrics": "Chỉ số (Acc / F1)",
+    "gate": "Quality Gate",
+    "gatePass": "Đạt",
+    "gateFail": "Trượt",
+    "gateWarn": "Phiên bản này KHÔNG vượt quality gate (accuracy giảm so với baseline). Vẫn kích hoạt?"
   },
   "is": {
     "title": "Tìm Kiếm Hình Ảnh",
@@ -6737,7 +7149,24 @@
     "indexed": "Đã Lập Chỉ Mục",
     "totalImages": "Tổng Hình Ảnh",
     "cluster": "Cụm",
-    "clusters": "Các Cụm"
+    "clusters": "Các Cụm",
+    "defectType": "Loại lỗi (defect type)",
+    "labelFilter": "Nhãn (label)",
+    "machineId": "Machine ID",
+    "filters": "Bộ lọc tìm kiếm",
+    "optional": "Tùy chọn",
+    "minSimilarity": "Độ tương đồng tối thiểu",
+    "selectImage": "Chọn ảnh",
+    "selectFile": "Chọn ảnh để tìm kiếm",
+    "searchByImage": "Tìm theo ảnh",
+    "searching": "Đang tìm…",
+    "uploadSearch": "Tìm kiếm bằng ảnh tải lên",
+    "pgvectorOff": "pgvector chưa sẵn sàng — dùng fallback",
+    "searchMode": "Chế độ",
+    "modeHnsw": "HNSW (nhanh)",
+    "modeExact": "Chính xác (full-scan)",
+    "modeBruteforce": "Brute-force (Node)",
+    "modeMetadata": "Metadata (fallback)"
   },
   "rp": {
     "title": "Báo Cáo AI",
@@ -6992,8 +7421,18 @@
     "description": "Xử lý, tăng cường và chuẩn bị dữ liệu ảnh cho huấn luyện mô hình AI",
     "tabs": {
       "pipeline": "Pipeline Dữ Liệu",
+      "dataset": "Chia Dataset",
       "preprocessing": "Xử Lý Ảnh",
       "augmentation": "Tăng Cường Dữ Liệu"
+    },
+    "dataset": {
+      "title": "Tạo Dataset Split",
+      "description": "Materialize dataset train/val/test từ dữ liệu đã gán nhãn",
+      "build": "Build Dataset",
+      "built": "Đã build dataset: {{count}} mẫu",
+      "totalSamples": "Tổng số mẫu",
+      "splitRatio": "Tỉ lệ Train/Val/Test",
+      "labelDistribution": "Phân bố nhãn"
     },
     "pipeline": {
       "title": "Pipeline Dữ Liệu",
@@ -7040,6 +7479,41 @@
       "multiplier": "Hệ Số Tăng Cường",
       "multiplierDesc": "Số bản sao tăng cường cho mỗi ảnh gốc"
     }
+  },
+  "aiEval": {
+    "selectModel": "Chọn model...",
+    "noModels": "Chưa có model",
+    "selectDataset": "Chọn dataset...",
+    "noDatasets": "Chưa có dataset",
+    "datasetIdPlaceholder": "Dataset ID...",
+    "model": "Model",
+    "dataset": "Dataset",
+    "split": "Split",
+    "beforeAfterTab": "Đánh giá (Before/After)",
+    "runCompare": "Chạy đánh giá Before/After",
+    "runCompareDesc": "So sánh model ứng viên với baseline trên cùng split test",
+    "candidatePath": "Đường dẫn classifier ứng viên",
+    "baselinePath": "Đường dẫn baseline (tùy chọn)",
+    "compareRun": "So sánh",
+    "compareDone": "Đã so sánh xong",
+    "before": "Trước",
+    "after": "Sau",
+    "metricsCompare": "Chỉ số Before vs After (%)",
+    "gatePass": "Quality gate: ĐẠT",
+    "gateFail": "Quality gate: KHÔNG ĐẠT",
+    "candidateConfusion": "Confusion Matrix (ứng viên)",
+    "confusionHint": "Hàng = nhãn thực tế, Cột = nhãn dự đoán",
+    "evaluated": "Đã đánh giá",
+    "skipped": "Bỏ qua",
+    "trainModel": "Huấn luyện Model",
+    "trainingJobs": "Training Jobs",
+    "noJobs": "Chưa có training job",
+    "startTraining": "Khởi tạo Training Pipeline",
+    "startTrainingDesc": "Huấn luyện phiên bản mới cho",
+    "pipelineStarted": "Đã khởi tạo training job",
+    "classLabels": "Class Labels (≥2, phân tách bằng dấu phẩy)",
+    "labelsCount": "nhãn",
+    "strategy": "Strategy"
   },
   "aiAnalytics": {
     "title": "Phân Tích Kiểm Tra AI",
@@ -7130,5 +7604,80 @@
     "gpuMode": "GPU Mode",
     "engineHealth": "Engine Health",
     "embedding": "Embedding"
+  },
+  "measurementPointP1": {
+    "shape": {
+      "title": "Hình dạng",
+      "circle": "Hình tròn",
+      "rectangle": "Hình chữ nhật",
+      "polygon": "Đa giác",
+      "line": "Đường thẳng",
+      "ring": "Vòng khuyên",
+      "mask": "Mặt nạ",
+      "array": "Mảng"
+    },
+    "tool": {
+      "select": "Chọn",
+      "addCircle": "Thêm hình tròn",
+      "addRectangle": "Thêm hình chữ nhật",
+      "addPolygon": "Thêm đa giác",
+      "addLine": "Thêm đường thẳng",
+      "addRing": "Thêm vòng khuyên",
+      "addArray": "Thêm mảng",
+      "delete": "Xóa",
+      "coordinateMode": "Hệ tọa độ",
+      "pixel": "Pixel",
+      "mm": "Milimét"
+    },
+    "fiducial": {
+      "title": "Điểm chuẩn (fiducial)",
+      "tabLabel": "Điểm chuẩn",
+      "addButton": "Thêm điểm chuẩn",
+      "edit": "Sửa điểm chuẩn",
+      "delete": "Xóa điểm chuẩn",
+      "confirmDelete": "Xóa điểm chuẩn này?",
+      "empty": "Chưa có điểm chuẩn nào.",
+      "code": "Mã",
+      "name": "Tên",
+      "type": "Kiểu",
+      "position": "Vị trí (X, Y)",
+      "searchWindow": "Cửa sổ dò (W × H)",
+      "templateImage": "Ảnh mẫu",
+      "uploadTemplate": "Tải ảnh mẫu",
+      "orderIndex": "Thứ tự",
+      "types": {
+        "cross": "Chữ thập",
+        "circle": "Hình tròn",
+        "square": "Hình vuông",
+        "custom": "Tùy chỉnh"
+      }
+    }
+  },
+  "measurementPointP2": {
+    "measurementTypeCode": "Mã loại đo",
+    "selectMeasurementTypeCode": "Chọn loại đo chi tiết",
+    "toleranceMode": "Chế độ dung sai",
+    "toleranceModes": {
+      "min_only": "Chỉ giới hạn dưới",
+      "max_only": "Chỉ giới hạn trên",
+      "range": "Khoảng giới hạn",
+      "bilateral": "Hai phía (+/-)"
+    },
+    "tolPlus": "Dung sai +",
+    "tolMinus": "Dung sai -",
+    "datumRefs": "Mốc chuẩn (datum)",
+    "materialCondition": "Điều kiện vật liệu",
+    "fitClass": "Cấp lắp ghép",
+    "positionZ": "Tọa độ Z",
+    "heightMin": "Chiều cao min",
+    "heightMax": "Chiều cao max",
+    "heightUnit": "Đơn vị chiều cao",
+    "areaMin": "Diện tích min",
+    "areaMax": "Diện tích max",
+    "areaUnit": "Đơn vị diện tích",
+    "volumeMin": "Thể tích min",
+    "volumeMax": "Thể tích max",
+    "volumeUnit": "Đơn vị thể tích",
+    "voidPctMax": "Tỷ lệ rỗ tối đa (%)"
   }
 }

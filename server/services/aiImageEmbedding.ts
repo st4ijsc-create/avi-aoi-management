@@ -7,6 +7,7 @@ import { aiImageEmbeddings } from "../../drizzle/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { getAiModelById } from "../db/ai";
 import type { AiModel } from "../../drizzle/schema";
+import { describeDefect } from "./aiVisionLanguage";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -30,6 +31,121 @@ export interface SimilarImage {
   createdAt: Date;
 }
 
+/**
+ * Cờ chế độ tìm kiếm trả về UI (offline-first, nhiều tầng fallback):
+ *  - "hnsw":      dùng HNSW index trên cột embedding_vec (nhanh nhất).
+ *  - "exact":     cast runtime embedding::vector(D) <=> ... (full scan, chính xác).
+ *  - "bruteforce": parse TEXT + cosine trong Node (khi DB không cast được).
+ *  - "metadata":  fallback keyword theo label/defectType (khi không có vector/Ollama).
+ */
+export type SearchMode = "hnsw" | "exact" | "bruteforce" | "metadata";
+
+/** Số chiều thống nhất với knowledge base (mxbai-embed-large). */
+export const DEFAULT_EMBEDDING_DIM = 1024;
+/** modelCode ghi cho embedding sinh từ pipeline text-of-image Ollama. */
+export const TEXT_OF_IMAGE_MODEL_CODE = "ollama-text-of-image:mxbai-embed-large";
+
+const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434").replace(/\/$/, "");
+const OLLAMA_EMBED_MODEL = process.env.OLLAMA_EMBED_MODEL ?? "mxbai-embed-large";
+/** Giới hạn số dòng quét cho brute-force cosine trong Node (bảo vệ RAM/CPU). */
+const BRUTEFORCE_SCAN_LIMIT = Number(process.env.IMG_EMB_BRUTEFORCE_LIMIT ?? 5000);
+
+// ─── Vector math helpers (exported for unit tests) ─────────────────────────────
+
+/** L2-normalize → unit vector. Vector 0 trả lại nguyên (norm=1). */
+export function l2normalize(vec: number[]): number[] {
+  const norm = Math.sqrt(vec.reduce((acc, v) => acc + v * v, 0)) || 1;
+  return vec.map((v) => v / norm);
+}
+
+/**
+ * Cosine similarity. Khi cả hai đã L2-normalize, đây chính là dot product.
+ * Trả về 0 nếu khác chiều hoặc rỗng.
+ */
+export function cosineSimilarity(a: number[], b: number[]): number {
+  if (!a.length || a.length !== b.length) return 0;
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  const denom = Math.sqrt(na) * Math.sqrt(nb);
+  if (denom === 0) return 0;
+  return dot / denom;
+}
+
+/** Format vector → chuỗi pgvector `"[v1,v2,...]"`. */
+export function formatVectorLiteral(vec: number[]): string {
+  return `[${vec.join(",")}]`;
+}
+
+/** Parse chuỗi pgvector/JSON `"[v1,...]"` → number[]. Trả [] khi hỏng. */
+export function parseVectorLiteral(raw: string | null | undefined): number[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(Number) : [];
+  } catch {
+    return [];
+  }
+}
+
+// ─── Text-of-image embedding pipeline (Ollama mxbai-embed-large, 1024-dim) ─────
+
+/**
+ * Embed text qua Ollama /api/embed (mxbai-embed-large), trả vector đã L2-normalize.
+ * Thống nhất pipeline với knowledge base. Ném lỗi nếu Ollama không khả dụng →
+ * caller fallback sang metadata search.
+ */
+export async function embedTextOllama(text: string): Promise<number[]> {
+  const res = await fetch(`${OLLAMA_BASE_URL}/api/embed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: OLLAMA_EMBED_MODEL, input: text }),
+  });
+  if (!res.ok) {
+    throw new Error(`Ollama /api/embed failed: ${res.status} ${await res.text().catch(() => "")}`);
+  }
+  const json = (await res.json()) as { embeddings?: number[][] };
+  const vec = json.embeddings?.[0];
+  if (!Array.isArray(vec) || vec.length === 0) {
+    throw new Error("Ollama /api/embed returned no embeddings");
+  }
+  return l2normalize(vec);
+}
+
+/**
+ * Mô tả ảnh bằng LLM (describeDefect) → ghép thành text → embed qua Ollama.
+ * Đây là nguồn embedding ảnh đã chốt cho WS-3 (text-of-image, offline-first).
+ */
+export async function embedImageAsText(
+  imageBuffer: Buffer,
+  context?: { productModel?: string; machineCode?: string; existingLabels?: string[] },
+): Promise<EmbeddingResult> {
+  const startTime = Date.now();
+  const description = await describeDefect(imageBuffer, { ...context, useCloudVision: false });
+  const text = [
+    description.description,
+    description.location,
+    ...(description.possibleCauses ?? []),
+    ...(description.suggestedActions ?? []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  const embedding = await embedTextOllama(text || "inspection image");
+  return {
+    embedding,
+    dim: embedding.length,
+    modelCode: TEXT_OF_IMAGE_MODEL_CODE,
+    processingTimeMs: Date.now() - startTime,
+  };
+}
+
 export interface ClusterResult {
   clusterId: number;
   centroidImageId: number;
@@ -40,6 +156,113 @@ export interface ClusterResult {
     label: string | null;
     similarity: number;
   }>;
+}
+
+function buildSearchKeywords(textParts: Array<string | undefined | null>): string[] {
+  const rawText = textParts.filter(Boolean).join(" ").toLowerCase();
+  const words = rawText.match(/[a-z0-9\-]{3,}/g) ?? [];
+  return [...new Set(words)].slice(0, 12);
+}
+
+async function searchByMetadataFallback(
+  imageBuffer: Buffer,
+  limit: number,
+  filters?: {
+    machineId?: number;
+    productModelId?: number;
+    label?: string;
+    defectType?: string;
+    minSimilarity?: number;
+    excludeId?: number;
+  },
+): Promise<{ results: SimilarImage[]; embedding: EmbeddingResult }> {
+  const db = await getDb();
+  if (!db) {
+    return {
+      results: [],
+      embedding: {
+        embedding: [],
+        dim: 0,
+        modelCode: "metadata-fallback",
+        processingTimeMs: 0,
+      },
+    };
+  }
+
+  let descriptionText = "";
+  try {
+    const description = await describeDefect(imageBuffer, { useCloudVision: false });
+    descriptionText = [
+      description.description,
+      description.location,
+      ...(description.possibleCauses ?? []),
+      ...(description.suggestedActions ?? []),
+    ].join(" ");
+  } catch {
+    descriptionText = "";
+  }
+
+  const keywords = buildSearchKeywords([descriptionText]);
+  const candidateLimit = Math.max(Math.min(limit * 10, 200), limit);
+
+  const conditions: ReturnType<typeof eq>[] = [] as any;
+  if (filters?.excludeId != null) conditions.push(sql`id != ${Number(filters.excludeId)}` as any);
+  if (filters?.machineId != null) conditions.push(eq(aiImageEmbeddings.machineId, Number(filters.machineId)) as any);
+  if (filters?.productModelId != null) conditions.push(eq(aiImageEmbeddings.productModelId, Number(filters.productModelId)) as any);
+  if (filters?.label) conditions.push(eq(aiImageEmbeddings.label, filters.label) as any);
+  if (filters?.defectType) conditions.push(eq(aiImageEmbeddings.defectType, filters.defectType) as any);
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const rows = await db
+    .select({
+      id: aiImageEmbeddings.id,
+      inspectionId: aiImageEmbeddings.inspectionId,
+      measurementResultId: aiImageEmbeddings.measurementResultId,
+      imageUrl: aiImageEmbeddings.imageUrl,
+      label: aiImageEmbeddings.label,
+      defectType: aiImageEmbeddings.defectType,
+      machineId: aiImageEmbeddings.machineId,
+      productModelId: aiImageEmbeddings.productModelId,
+      createdAt: aiImageEmbeddings.createdAt,
+    })
+    .from(aiImageEmbeddings)
+    .where(whereClause)
+    .orderBy(desc(aiImageEmbeddings.createdAt))
+    .limit(candidateLimit);
+
+  const scored = rows.map((row) => {
+    const haystack = `${row.label ?? ""} ${row.defectType ?? ""}`.toLowerCase();
+    const matchCount = keywords.reduce((count, keyword) => count + (haystack.includes(keyword) ? 1 : 0), 0);
+    const similarity = keywords.length > 0
+      ? Math.max(0.15, Math.min(0.75, matchCount / Math.max(keywords.length, 1)))
+      : 0.15;
+
+    return {
+      id: row.id,
+      inspectionId: row.inspectionId,
+      measurementResultId: row.measurementResultId,
+      imageUrl: row.imageUrl,
+      label: row.label,
+      defectType: row.defectType,
+      machineId: row.machineId,
+      productModelId: row.productModelId,
+      similarity,
+      createdAt: new Date(row.createdAt),
+    } satisfies SimilarImage;
+  });
+
+  scored.sort((left, right) => right.similarity - left.similarity || right.createdAt.getTime() - left.createdAt.getTime());
+
+  return {
+    results: scored.slice(0, limit),
+    embedding: {
+      embedding: [],
+      dim: 0,
+      modelCode: "metadata-fallback",
+      processingTimeMs: 0,
+    },
+  };
 }
 
 // ─── Session Cache (separate from inference engine) ──────────────────────────
@@ -179,17 +402,34 @@ export async function extractEmbedding(
 // ─── Ensure pgvector extension ───────────────────────────────────────────────
 
 let _pgvectorChecked = false;
+let _pgvectorAvailable = false;
 
 async function ensurePgvector() {
-  if (_pgvectorChecked) return;
+  if (_pgvectorChecked) {
+    if (!_pgvectorAvailable) {
+      throw new Error(
+        "Image similarity search requires PostgreSQL pgvector support. Install the 'vector' extension on the database server, then retry the similarity search action.",
+      );
+    }
+    return;
+  }
+
   const db = await getDb();
-  if (!db) return;
+  if (!db) {
+    throw new Error("Database not available");
+  }
+
   try {
     await db.execute(sql`CREATE EXTENSION IF NOT EXISTS vector`);
     _pgvectorChecked = true;
+    _pgvectorAvailable = true;
   } catch (e) {
     console.warn("[aiImageEmbedding] Could not create vector extension:", e);
-    _pgvectorChecked = true; // don't retry every call
+    _pgvectorChecked = true;
+    _pgvectorAvailable = false;
+    throw new Error(
+      "Image similarity search requires PostgreSQL pgvector support. Install the 'vector' extension on the database server, then retry the similarity search action.",
+    );
   }
 }
 
@@ -211,9 +451,8 @@ export async function storeEmbedding(params: {
 }): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await ensurePgvector();
 
-  const embeddingStr = `[${params.embedding.join(",")}]`;
+  const embeddingStr = formatVectorLiteral(params.embedding);
 
   const [row] = await db
     .insert(aiImageEmbeddings)
@@ -233,27 +472,233 @@ export async function storeEmbedding(params: {
     })
     .returning({ id: aiImageEmbeddings.id });
 
+  // Ghi đồng thời cột pgvector embedding_vec cho dòng 1024-dim (cùng không gian KB).
+  // Best-effort: nếu pgvector/cột chưa sẵn sàng → bỏ qua, cột TEXT vẫn là nguồn raw.
+  if (params.dim === DEFAULT_EMBEDDING_DIM) {
+    try {
+      await db.execute(
+        sql`UPDATE ai_image_embeddings SET embedding_vec = ${embeddingStr}::vector(${sql.raw(String(DEFAULT_EMBEDDING_DIM))}) WHERE id = ${row.id}`,
+      );
+    } catch (e) {
+      console.warn("[aiImageEmbedding] storeEmbedding: skip embedding_vec write (pgvector unavailable):", (e as Error)?.message);
+    }
+  }
+
   return row.id;
 }
 
 // ─── Find Similar Images ─────────────────────────────────────────────────────
 
+export interface VectorSearchFilters {
+  machineId?: number;
+  productModelId?: number;
+  label?: string;
+  defectType?: string;
+  minSimilarity?: number;
+  excludeId?: number;
+}
+
+export interface SimilarSearchOutcome {
+  results: SimilarImage[];
+  searchMode: SearchMode;
+}
+
+/** HNSW ef_search runtime tuning (recall/latency tradeoff). */
+const HNSW_EF_SEARCH = Math.max(10, Math.min(Number(process.env.IMG_EMB_HNSW_EF_SEARCH ?? 64), 1000));
+
+function buildVectorWhere(filters?: VectorSearchFilters, opts?: { requireVecCol?: boolean }) {
+  const whereParts: ReturnType<typeof sql>[] = [];
+  if (filters?.excludeId != null) whereParts.push(sql`id != ${Number(filters.excludeId)}`);
+  if (filters?.machineId != null) whereParts.push(sql`"machineId" = ${Number(filters.machineId)}`);
+  if (filters?.productModelId != null) whereParts.push(sql`"productModelId" = ${Number(filters.productModelId)}`);
+  if (filters?.label) whereParts.push(sql`"label" = ${filters.label}`);
+  if (filters?.defectType) whereParts.push(sql`"defectType" = ${filters.defectType}`);
+  if (opts?.requireVecCol) whereParts.push(sql`embedding_vec IS NOT NULL`);
+  return whereParts.length > 0 ? sql`WHERE ${sql.join(whereParts, sql` AND `)}` : sql``;
+}
+
+function mapRowToSimilar(r: any): SimilarImage {
+  return {
+    id: r.id,
+    inspectionId: r.inspectionId,
+    measurementResultId: r.measurementResultId,
+    imageUrl: r.imageUrl,
+    label: r.label,
+    defectType: r.defectType,
+    machineId: r.machineId,
+    productModelId: r.productModelId,
+    similarity: parseFloat(r.similarity),
+    createdAt: new Date(r.createdAt),
+  };
+}
+
 /**
- * Find similar images by embedding ID using cosine distance in pgvector.
+ * Brute-force cosine trong Node: tải tối đa BRUTEFORCE_SCAN_LIMIT dòng (cùng dim),
+ * parse TEXT embedding, tính dot/cosine, sort giảm dần. Fallback khi DB không
+ * cast được vector (pgvector thiếu). Chỉ hợp quy mô nhỏ.
  */
-export async function findSimilarById(
+async function bruteForceCosine(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  embedding: number[],
+  dim: number,
+  limit: number,
+  filters?: VectorSearchFilters,
+): Promise<SimilarImage[]> {
+  const conditions = [];
+  if (filters?.excludeId != null) conditions.push(sql`id != ${Number(filters.excludeId)}` as any);
+  if (filters?.machineId != null) conditions.push(eq(aiImageEmbeddings.machineId, Number(filters.machineId)));
+  if (filters?.productModelId != null) conditions.push(eq(aiImageEmbeddings.productModelId, Number(filters.productModelId)));
+  if (filters?.label) conditions.push(eq(aiImageEmbeddings.label, filters.label));
+  if (filters?.defectType) conditions.push(eq(aiImageEmbeddings.defectType, filters.defectType));
+  // Chỉ so cùng không gian chiều.
+  conditions.push(eq(aiImageEmbeddings.embeddingDim, dim));
+
+  const rows = await db
+    .select({
+      id: aiImageEmbeddings.id,
+      inspectionId: aiImageEmbeddings.inspectionId,
+      measurementResultId: aiImageEmbeddings.measurementResultId,
+      imageUrl: aiImageEmbeddings.imageUrl,
+      label: aiImageEmbeddings.label,
+      defectType: aiImageEmbeddings.defectType,
+      machineId: aiImageEmbeddings.machineId,
+      productModelId: aiImageEmbeddings.productModelId,
+      embedding: aiImageEmbeddings.embedding,
+      createdAt: aiImageEmbeddings.createdAt,
+    })
+    .from(aiImageEmbeddings)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(aiImageEmbeddings.createdAt))
+    .limit(BRUTEFORCE_SCAN_LIMIT);
+
+  const minSim = filters?.minSimilarity ?? 0;
+  const scored: SimilarImage[] = [];
+  for (const row of rows) {
+    const vec = parseVectorLiteral(row.embedding);
+    if (vec.length !== embedding.length) continue;
+    const sim = cosineSimilarity(embedding, vec);
+    if (sim < minSim) continue;
+    scored.push({
+      id: row.id,
+      inspectionId: row.inspectionId,
+      measurementResultId: row.measurementResultId,
+      imageUrl: row.imageUrl,
+      label: row.label,
+      defectType: row.defectType,
+      machineId: row.machineId,
+      productModelId: row.productModelId,
+      similarity: sim,
+      createdAt: new Date(row.createdAt),
+    });
+  }
+  scored.sort((a, b) => b.similarity - a.similarity || b.createdAt.getTime() - a.createdAt.getTime());
+  return scored.slice(0, limit);
+}
+
+/**
+ * Tìm ảnh tương tự theo vector + cờ chế độ (nhiều tầng fallback, offline-first):
+ *   HNSW (embedding_vec) → cast runtime (embedding TEXT) → brute-force Node.
+ * Trả về kèm searchMode để UI hiển thị.
+ */
+export async function findSimilarByVectorWithMode(
+  embedding: number[],
+  dim: number,
+  limit: number = 10,
+  filters?: VectorSearchFilters,
+): Promise<SimilarSearchOutcome> {
+  const db = await getDb();
+  if (!db) return { results: [], searchMode: "metadata" };
+
+  const embStr = formatVectorLiteral(embedding);
+  const minSim = filters?.minSimilarity ?? 0;
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 10, 100));
+  const safeDim = Math.max(1, Math.min(Number(dim) || DEFAULT_EMBEDDING_DIM, 4096));
+  const dimRaw = sql.raw(String(safeDim));
+
+  // ── Tầng 1: HNSW trên cột embedding_vec (chỉ áp dụng không gian 1024-dim) ──
+  if (safeDim === DEFAULT_EMBEDDING_DIM) {
+    try {
+      await db.execute(sql`SET LOCAL hnsw.ef_search = ${sql.raw(String(HNSW_EF_SEARCH))}`);
+    } catch {
+      // SET LOCAL chỉ có hiệu lực trong transaction; ngoài transaction sẽ NOTICE — bỏ qua.
+    }
+    try {
+      const whereClause = buildVectorWhere(filters, { requireVecCol: true });
+      const query = sql`
+        SELECT
+          id, "inspectionId", "measurementResultId", "imageUrl",
+          "label", "defectType", "machineId", "productModelId", "createdAt",
+          1 - (embedding_vec <=> ${embStr}::vector(${dimRaw})) as similarity
+        FROM ai_image_embeddings
+        ${whereClause}
+        ORDER BY embedding_vec <=> ${embStr}::vector(${dimRaw})
+        LIMIT ${safeLimit}
+      `;
+      const result = (await db.execute(query)) as any;
+      const results = (result.rows as any[])
+        .filter((r) => parseFloat(r.similarity) >= minSim)
+        .map(mapRowToSimilar);
+      return { results, searchMode: "hnsw" };
+    } catch (e) {
+      console.warn("[aiImageEmbedding] HNSW search unavailable, falling back to runtime cast:", (e as Error)?.message);
+    }
+  }
+
+  // ── Tầng 2: cast runtime trên cột TEXT (full scan, chính xác) ──
+  try {
+    const whereClause = buildVectorWhere({ ...filters }, { requireVecCol: false });
+    // Ràng buộc cùng dim để tránh trộn vector khác chiều khi cast.
+    const dimGuard = sql`"embeddingDim" = ${safeDim}`;
+    const fullWhere = whereClause === sql``
+      ? sql`WHERE ${dimGuard}`
+      : sql`${whereClause} AND ${dimGuard}`;
+    const query = sql`
+      SELECT
+        id, "inspectionId", "measurementResultId", "imageUrl",
+        "label", "defectType", "machineId", "productModelId", "createdAt",
+        1 - (embedding::vector(${dimRaw}) <=> ${embStr}::vector(${dimRaw})) as similarity
+      FROM ai_image_embeddings
+      ${fullWhere}
+      ORDER BY embedding::vector(${dimRaw}) <=> ${embStr}::vector(${dimRaw})
+      LIMIT ${safeLimit}
+    `;
+    const result = (await db.execute(query)) as any;
+    const results = (result.rows as any[])
+      .filter((r) => parseFloat(r.similarity) >= minSim)
+      .map(mapRowToSimilar);
+    return { results, searchMode: "exact" };
+  } catch (e) {
+    console.warn("[aiImageEmbedding] Runtime vector cast unavailable, falling back to Node brute-force:", (e as Error)?.message);
+  }
+
+  // ── Tầng 3: brute-force cosine trong Node ──
+  const results = await bruteForceCosine(db, embedding, safeDim, safeLimit, filters);
+  return { results, searchMode: "bruteforce" };
+}
+
+/**
+ * Back-compat: trả về SimilarImage[] (bỏ cờ mode). Giữ chữ ký cũ cho callers hiện có.
+ */
+export async function findSimilarByVector(
+  embedding: number[],
+  dim: number,
+  limit: number = 10,
+  filters?: VectorSearchFilters,
+): Promise<SimilarImage[]> {
+  const { results } = await findSimilarByVectorWithMode(embedding, dim, limit, filters);
+  return results;
+}
+
+/**
+ * Find similar images by embedding ID. Trả kèm searchMode.
+ */
+export async function findSimilarByIdWithMode(
   imageEmbeddingId: number,
   limit: number = 10,
-  filters?: {
-    machineId?: number;
-    productModelId?: number;
-    label?: string;
-    minSimilarity?: number;
-  },
-): Promise<SimilarImage[]> {
+  filters?: Omit<VectorSearchFilters, "excludeId">,
+): Promise<SimilarSearchOutcome> {
   const db = await getDb();
-  if (!db) return [];
-  await ensurePgvector();
+  if (!db) return { results: [], searchMode: "metadata" };
 
   const source = await db
     .select()
@@ -263,106 +708,57 @@ export async function findSimilarById(
 
   if (!source[0]) throw new Error(`Embedding ${imageEmbeddingId} not found`);
 
-  return findSimilarByVector(
-    JSON.parse(source[0].embedding) as number[],
+  return findSimilarByVectorWithMode(
+    parseVectorLiteral(source[0].embedding),
     source[0].embeddingDim,
     limit,
     { ...filters, excludeId: imageEmbeddingId },
   );
 }
 
-/**
- * Find similar images by raw embedding vector using cosine distance.
- * Uses pgvector's <=> operator for cosine distance.
- */
-export async function findSimilarByVector(
-  embedding: number[],
-  dim: number,
+/** Back-compat: trả về SimilarImage[]. */
+export async function findSimilarById(
+  imageEmbeddingId: number,
   limit: number = 10,
-  filters?: {
-    machineId?: number;
-    productModelId?: number;
-    label?: string;
-    minSimilarity?: number;
-    excludeId?: number;
-  },
+  filters?: Omit<VectorSearchFilters, "excludeId">,
 ): Promise<SimilarImage[]> {
-  const db = await getDb();
-  if (!db) return [];
-  await ensurePgvector();
-
-  const embStr = `[${embedding.join(",")}]`;
-  const minSim = filters?.minSimilarity ?? 0;
-  const safeLimit = Math.max(1, Math.min(Number(limit) || 10, 100));
-  const safeDim = Math.max(1, Math.min(Number(dim) || 512, 4096));
-
-  // Build parameterized WHERE using drizzle sql template
-  const whereParts: ReturnType<typeof sql>[] = [];
-
-  if (filters?.excludeId != null) {
-    whereParts.push(sql`id != ${Number(filters.excludeId)}`);
-  }
-  if (filters?.machineId != null) {
-    whereParts.push(sql`"machineId" = ${Number(filters.machineId)}`);
-  }
-  if (filters?.productModelId != null) {
-    whereParts.push(sql`"productModelId" = ${Number(filters.productModelId)}`);
-  }
-  if (filters?.label) {
-    whereParts.push(sql`"label" = ${filters.label}`);
-  }
-
-  const whereClause =
-    whereParts.length > 0
-      ? sql`WHERE ${sql.join(whereParts, sql` AND `)}`
-      : sql``;
-
-  // pgvector cosine distance: <=> returns distance, similarity = 1 - distance
-  const query = sql`
-    SELECT 
-      id, "inspectionId", "measurementResultId", "imageUrl",
-      "label", "defectType", "machineId", "productModelId", "createdAt",
-      1 - (embedding::vector(${sql.raw(String(safeDim))}) <=> ${embStr}::vector(${sql.raw(String(safeDim))})) as similarity
-    FROM ai_image_embeddings
-    ${whereClause}
-    ORDER BY embedding::vector(${sql.raw(String(safeDim))}) <=> ${embStr}::vector(${sql.raw(String(safeDim))})
-    LIMIT ${safeLimit}
-  `;
-
-  const result = await db.execute(query) as any;
-  return (result.rows as any[])
-    .filter((r) => parseFloat(r.similarity) >= minSim)
-    .map((r) => ({
-      id: r.id,
-      inspectionId: r.inspectionId,
-      measurementResultId: r.measurementResultId,
-      imageUrl: r.imageUrl,
-      label: r.label,
-      defectType: r.defectType,
-      machineId: r.machineId,
-      productModelId: r.productModelId,
-      similarity: parseFloat(r.similarity),
-      createdAt: new Date(r.createdAt),
-    }));
+  const { results } = await findSimilarByIdWithMode(imageEmbeddingId, limit, filters);
+  return results;
 }
 
 /**
- * Upload image, extract embedding, find similar images.
+ * Upload image → embedding → tìm ảnh tương tự (WS-3 pipeline text-of-image).
+ *
+ * Mặc định (modelId == null): mô tả ảnh bằng LLM (describeDefect) → embed text
+ * qua Ollama (mxbai-embed-large, 1024-dim) → vector search nhiều tầng.
+ * Nếu Ollama/describe lỗi → fallback metadata keyword (searchMode="metadata").
+ *
+ * Khi truyền modelId (legacy ONNX), vẫn hỗ trợ extractEmbedding để back-compat.
  */
 export async function searchByImage(
-  modelId: number,
+  modelId: number | undefined,
   imageBuffer: Buffer,
   limit: number = 10,
-  filters?: {
-    machineId?: number;
-    productModelId?: number;
-    label?: string;
-    minSimilarity?: number;
-  },
-): Promise<{ results: SimilarImage[]; embedding: EmbeddingResult }> {
-  const embResult = await extractEmbedding(modelId, imageBuffer);
-  const results = await findSimilarByVector(embResult.embedding, embResult.dim, limit, filters);
-  return { results, embedding: embResult };
+  filters?: VectorSearchFilters,
+): Promise<{ results: SimilarImage[]; embedding: EmbeddingResult; searchMode: SearchMode }> {
+  try {
+    const embResult =
+      modelId == null
+        ? await embedImageAsText(imageBuffer)
+        : await extractEmbedding(modelId, imageBuffer);
+
+    const { results, searchMode } = await findSimilarByVectorWithMode(
+      embResult.embedding,
+      embResult.dim,
+      limit,
+      filters,
+    );
+    return { results, embedding: embResult, searchMode };
+  } catch (error) {
+    console.warn("[aiImageEmbedding] Falling back to metadata search:", error);
+    const fallback = await searchByMetadataFallback(imageBuffer, limit, filters);
+    return { ...fallback, searchMode: "metadata" };
+  }
 }
 
 // ─── Batch Embedding ─────────────────────────────────────────────────────────
@@ -431,7 +827,6 @@ export async function clusterDefects(params: {
 }): Promise<ClusterResult[]> {
   const db = await getDb();
   if (!db) return [];
-  await ensurePgvector();
 
   // Fetch all embeddings matching filters
   const conditions = [];
@@ -535,8 +930,18 @@ export async function getEmbeddingStats(filters?: {
   machineId?: number;
   productModelId?: number;
 }) {
+  const empty = {
+    totalEmbeddings: 0,
+    distinctModels: 0,
+    distinctLabels: 0,
+    latestAt: null as Date | null,
+    indexedCount: 0,
+    pgvectorAvailable: false,
+    defaultDim: DEFAULT_EMBEDDING_DIM,
+  };
+
   const db = await getDb();
-  if (!db) return { totalEmbeddings: 0, byModel: [], byLabel: [], byMachine: [] };
+  if (!db) return empty;
 
   const conditions = [];
   if (filters?.machineId != null) {
@@ -558,5 +963,34 @@ export async function getEmbeddingStats(filters?: {
     .from(aiImageEmbeddings)
     .where(whereClause);
 
-  return result[0] ?? { totalEmbeddings: 0, distinctModels: 0, distinctLabels: 0, latestAt: null };
+  const base = result[0] ?? { totalEmbeddings: 0, distinctModels: 0, distinctLabels: 0, latestAt: null };
+
+  // indexedCount = số dòng đã có embedding_vec (đã index pgvector). pgvectorAvailable
+  // suy ra từ việc query cột thành công. Best-effort: nếu cột/pgvector chưa có → 0/false.
+  let indexedCount = 0;
+  let pgvectorAvailable = false;
+  try {
+    // Truy vấn cột mới qua raw SQL, bọc try/catch để không lỗi nếu cột/pgvector chưa có.
+    const vecConds: ReturnType<typeof sql>[] = [sql`embedding_vec IS NOT NULL`];
+    if (filters?.machineId != null) vecConds.push(sql`"machineId" = ${Number(filters.machineId)}`);
+    if (filters?.productModelId != null) vecConds.push(sql`"productModelId" = ${Number(filters.productModelId)}`);
+    const vecRes = (await db.execute(
+      sql`SELECT count(*)::int AS c FROM ai_image_embeddings WHERE ${sql.join(vecConds, sql` AND `)}`,
+    )) as any;
+    indexedCount = Number(vecRes.rows?.[0]?.c ?? 0);
+    pgvectorAvailable = true;
+  } catch {
+    indexedCount = 0;
+    pgvectorAvailable = false;
+  }
+
+  return {
+    totalEmbeddings: Number(base.totalEmbeddings ?? 0),
+    distinctModels: Number(base.distinctModels ?? 0),
+    distinctLabels: Number(base.distinctLabels ?? 0),
+    latestAt: base.latestAt ?? null,
+    indexedCount,
+    pgvectorAvailable,
+    defaultDim: DEFAULT_EMBEDDING_DIM,
+  };
 }

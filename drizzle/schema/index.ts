@@ -8,6 +8,7 @@ export * from "./product";
 export * from "./inspection";
 export * from "./layout";
 export * from "./production";
+export * from "./scheduling";
 export * from "./machine";
 export * from "./alerts";
 export * from "./mqtt";

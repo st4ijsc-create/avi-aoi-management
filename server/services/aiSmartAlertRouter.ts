@@ -106,11 +106,19 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
     await sendSmartNotification(target, event);
   }
 
+  // WS-4: allow callers (e.g. predictiveMaintenanceService) to pass through
+  // predictedTimeframe, confidenceScore, and factors. Backward-compatible —
+  // these are optional fields on event.data; absent => previous behaviour.
+  const eventFactors = Array.isArray(event.data.factors)
+    ? (event.data.factors as Array<{ name: string; contribution: number; description: string }>)
+    : [];
+  const eventDataPoints = typeof event.data.dataPoints === "number" ? event.data.dataPoints : 0;
+
   // Build AI analysis payload
   const aiAnalysisPayload: Record<string, unknown> = {
-    factors: [],
+    factors: eventFactors,
     recommendations: suggestedAction ? [suggestedAction] : [],
-    dataPoints: 0,
+    dataPoints: eventDataPoints,
     modelUsed: "smart-alert-router",
   };
 
@@ -138,7 +146,8 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
       productModelId: event.productModelId ?? null,
       currentValue: event.data.currentValue ? String(event.data.currentValue) : null,
       threshold: event.data.threshold ? String(event.data.threshold) : null,
-      confidenceScore: event.data.confidence ? String(event.data.confidence) : null,
+      confidenceScore: event.data.confidence != null ? String(event.data.confidence) : null,
+      predictedTimeframe: event.data.predictedTimeframe ? String(event.data.predictedTimeframe) : null,
       aiAnalysis: aiAnalysisPayload,
       status: "ACTIVE",
       notificationSent: true,

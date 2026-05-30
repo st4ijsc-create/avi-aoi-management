@@ -12,6 +12,8 @@ export const productionOrderRouter = router({
       lineId: z.number().optional(),
       status: z.string().optional(),
       companyCode: z.string().optional(),
+      search: z.string().max(200).optional(),
+      limit: z.number().int().min(1).max(1000).optional(),
     }).optional())
     .query(async ({ input }) => {
       return db.getProductionOrders(input);
@@ -361,27 +363,34 @@ export const productionOrderRouter = router({
         const orders = await db.getProductionOrders();
         const lines = await db.getProductionLines();
         
-        // Map to schedulable format
+        // Map to schedulable format.
+        // BUG FIX (WS-4): production_orders has no quantity/endDate/estimatedHours
+        // columns — the correct fields are targetQuantity / plannedEndDate /
+        // completedQuantity. The old mapping produced NaN durations + lost
+        // deadlines/lines, so SchedulableOrder fields were all wrong.
         const schedulableOrders = orders
           .filter((o: any) => o.status !== "completed" && o.status !== "cancelled")
           .map((o: any) => ({
             id: o.id,
-            productModelId: o.productModelId,
-            productName: o.productName || `Product ${o.productModelId}`,
-            quantity: o.quantity,
-            priority: o.priority || 3,
-            deadline: o.endDate ? new Date(o.endDate) : undefined,
-            assignedLineId: o.lineId || undefined,
-            estimatedDuration: o.estimatedHours || Math.ceil(o.quantity / 100),
-            dependencies: [],
+            orderCode: o.orderCode,
+            productName: `Product ${o.productModelId}`,
+            lineId: o.lineId,
+            lineName: lines.find((l: any) => l.id === o.lineId)?.name || `Line ${o.lineId}`,
+            priority: o.priority ?? 3,
+            targetQuantity: o.targetQuantity,
+            actualQuantity: o.completedQuantity ?? 0,
+            scheduledStartDate: o.plannedStartDate ? new Date(o.plannedStartDate) : null,
+            scheduledEndDate: o.plannedEndDate ? new Date(o.plannedEndDate) : null,
+            dueDate: o.plannedEndDate ? new Date(o.plannedEndDate) : null,
             status: o.status,
+            dependencies: Array.isArray(o.dependencies) ? o.dependencies : [],
           }));
 
         const availableLines = lines.map((l: any) => ({
           id: l.id,
           name: l.name,
-          capacity: 1,
-          capabilities: [],
+          maxConcurrent: l.maxConcurrentOrders ?? 1,
+          capacityPerHour: l.capacityPerHour ?? null,
         }));
 
         let result;
@@ -418,7 +427,215 @@ export const productionOrderRouter = router({
       await db.applyScheduleSuggestion(input);
       return { success: true };
     }),
+
+  // ============ WS-4: AUTO-SCHEDULE RUNS ============
+
+  // Generate a DRAFT schedule run (resource leveling + blackout + shifts) and
+  // persist it for audit. Does NOT touch production orders until applied.
+  generateScheduleRun: adminProcedure
+    .input(z.object({
+      factoryId: z.number().optional(),
+      lineId: z.number().optional(),
+      algorithm: z.enum(["fifo", "priority", "edf"]).default("priority"),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const {
+        scheduleFIFO, schedulePriority, scheduleEDF,
+        buildScheduleRunPayload, explainScheduleWithAI,
+      } = await import("../services/productionSchedulingService");
+
+      const orders = await db.getProductionOrders(
+        input.factoryId || input.lineId
+          ? { factoryId: input.factoryId, lineId: input.lineId }
+          : undefined,
+      );
+      const lines = await db.getProductionLines();
+      const shiftConfigs = await db.getShiftConfigs(input.factoryId);
+
+      const schedulableOrders = (orders as any[])
+        .filter((o) => o.status !== "completed" && o.status !== "cancelled")
+        .map((o) => ({
+          id: o.id,
+          orderCode: o.orderCode,
+          productName: `Product ${o.productModelId}`,
+          lineId: o.lineId,
+          lineName: (lines as any[]).find((l) => l.id === o.lineId)?.name || `Line ${o.lineId}`,
+          priority: o.priority ?? 3,
+          targetQuantity: o.targetQuantity,
+          actualQuantity: o.completedQuantity ?? 0,
+          scheduledStartDate: o.plannedStartDate ? new Date(o.plannedStartDate) : null,
+          scheduledEndDate: o.plannedEndDate ? new Date(o.plannedEndDate) : null,
+          dueDate: o.plannedEndDate ? new Date(o.plannedEndDate) : null,
+          status: o.status,
+          dependencies: Array.isArray(o.dependencies) ? o.dependencies : [],
+        }));
+
+      const schedulableLines = (lines as any[]).map((l) => ({
+        id: l.id,
+        name: l.name,
+        maxConcurrent: l.maxConcurrentOrders ?? 1,
+        capacityPerHour: l.capacityPerHour ?? null,
+      }));
+
+      // Blackout windows from predicted maintenance (recommendedMaintenanceDate).
+      const blackouts = await buildMaintenanceBlackouts(schedulableLines);
+
+      const shifts = (shiftConfigs as any[])
+        .filter((s) => s.isActive)
+        .map((s) => ({ startHour: s.startHour, startMinute: s.startMinute, endHour: s.endHour, endMinute: s.endMinute }));
+
+      const capacityByLine: Record<number, number | null> = {};
+      for (const l of schedulableLines) capacityByLine[l.id] = l.capacityPerHour;
+
+      const context = { capacityByLine, blackouts, shifts };
+      const fn = input.algorithm === "fifo" ? scheduleFIFO : input.algorithm === "edf" ? scheduleEDF : schedulePriority;
+      const result = fn(schedulableOrders, schedulableLines, context);
+      const aiExplanation = await explainScheduleWithAI(result).catch(() => null);
+      const payload = buildScheduleRunPayload(result, aiExplanation);
+
+      const { id } = await db.createScheduleRun(
+        {
+          factoryId: input.factoryId ?? null,
+          lineId: input.lineId ?? null,
+          algorithm: result.algorithm,
+          status: "DRAFT",
+          kpiSummary: payload.kpiSummary,
+          conflictCount: payload.conflictCount,
+          createdBy: ctx.user.id,
+        },
+        payload.items,
+      );
+
+      return { runId: id, ...result, kpiSummary: payload.kpiSummary, aiExplanation };
+    }),
+
+  applyScheduleRun: adminProcedure
+    .input(z.object({ runId: z.number() }))
+    .mutation(async ({ input }) => {
+      return db.applyScheduleRun(input.runId);
+    }),
+
+  dismissScheduleRun: adminProcedure
+    .input(z.object({ runId: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.dismissScheduleRun(input.runId);
+      return { success: true };
+    }),
+
+  listScheduleRuns: protectedProcedure
+    .input(z.object({
+      factoryId: z.number().optional(),
+      lineId: z.number().optional(),
+      limit: z.number().int().min(1).max(500).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return db.listScheduleRuns(input);
+    }),
+
+  getScheduleRun: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getScheduleRunById(input.id);
+    }),
+
+  // Read-only what-if: simulate a disruption on one line.
+  whatIf: protectedProcedure
+    .input(z.object({
+      lineId: z.number(),
+      factoryId: z.number().optional(),
+      algorithm: z.enum(["fifo", "priority", "edf"]).default("priority"),
+      defectRatePct: z.number().min(0).max(100).optional(),
+      extraDowntimeHours: z.number().min(0).max(720).optional(),
+      capacityReductionPct: z.number().min(0).max(100).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { simulateWhatIf } = await import("../services/productionSchedulingService");
+
+      const orders = await db.getProductionOrders(
+        input.factoryId ? { factoryId: input.factoryId } : undefined,
+      );
+      const lines = await db.getProductionLines();
+      const shiftConfigs = await db.getShiftConfigs(input.factoryId);
+
+      const schedulableOrders = (orders as any[])
+        .filter((o) => o.status !== "completed" && o.status !== "cancelled")
+        .map((o) => ({
+          id: o.id,
+          orderCode: o.orderCode,
+          productName: `Product ${o.productModelId}`,
+          lineId: o.lineId,
+          lineName: (lines as any[]).find((l) => l.id === o.lineId)?.name || `Line ${o.lineId}`,
+          priority: o.priority ?? 3,
+          targetQuantity: o.targetQuantity,
+          actualQuantity: o.completedQuantity ?? 0,
+          scheduledStartDate: o.plannedStartDate ? new Date(o.plannedStartDate) : null,
+          scheduledEndDate: o.plannedEndDate ? new Date(o.plannedEndDate) : null,
+          dueDate: o.plannedEndDate ? new Date(o.plannedEndDate) : null,
+          status: o.status,
+          dependencies: Array.isArray(o.dependencies) ? o.dependencies : [],
+        }));
+
+      const schedulableLines = (lines as any[]).map((l) => ({
+        id: l.id,
+        name: l.name,
+        maxConcurrent: l.maxConcurrentOrders ?? 1,
+        capacityPerHour: l.capacityPerHour ?? null,
+      }));
+
+      const shifts = (shiftConfigs as any[])
+        .filter((s) => s.isActive)
+        .map((s) => ({ startHour: s.startHour, startMinute: s.startMinute, endHour: s.endHour, endMinute: s.endMinute }));
+
+      const capacityByLine: Record<number, number | null> = {};
+      for (const l of schedulableLines) capacityByLine[l.id] = l.capacityPerHour;
+
+      const algorithm = input.algorithm === "fifo" ? "FIFO" : input.algorithm === "edf" ? "EDF" : "Priority";
+      return simulateWhatIf(
+        {
+          lineId: input.lineId,
+          defectRatePct: input.defectRatePct,
+          extraDowntimeHours: input.extraDowntimeHours,
+          capacityReductionPct: input.capacityReductionPct,
+        },
+        schedulableOrders,
+        schedulableLines,
+        algorithm as any,
+        { capacityByLine, shifts },
+      );
+    }),
 });
+
+/**
+ * Build maintenance blackout windows from the latest machine_health_history
+ * recommendedMaintenanceDate per machine, mapped to the machine's line.
+ * Each window defaults to an 8h maintenance slot. Best-effort; empty on error.
+ */
+async function buildMaintenanceBlackouts(
+  lines: Array<{ id: number }>,
+): Promise<Array<{ lineId: number | null; machineId: number | null; start: Date; end: Date; reason: string }>> {
+  try {
+    const machinesWithHierarchy = await db.getMachinesWithHierarchy();
+    const blackouts: Array<{ lineId: number | null; machineId: number | null; start: Date; end: Date; reason: string }> = [];
+    const now = Date.now();
+    for (const row of machinesWithHierarchy as any[]) {
+      const machineId = row.machine?.id;
+      const lineId = row.line?.id ?? null;
+      if (!machineId) continue;
+      // getMachineHealthHistory returns ascending by timestamp — take the last (latest).
+      const history = await db.getMachineHealthHistory(machineId, "month", 500);
+      const latest = (history as any[])[(history as any[]).length - 1];
+      const recDate = latest?.recommendedMaintenanceDate;
+      if (!recDate) continue;
+      const start = new Date(recDate);
+      if (start.getTime() < now) continue; // only future maintenance blocks the schedule
+      const end = new Date(start.getTime() + 8 * 3600 * 1000);
+      blackouts.push({ lineId, machineId, start, end, reason: "predicted-maintenance" });
+    }
+    return blackouts;
+  } catch {
+    return [];
+  }
+}
 
 // ============ LINE STAGE ROUTER ============
 export const lineStageRouter = router({

@@ -1408,4 +1408,49 @@ export function publishPointsConfigChanged(productModelCode: string, version: nu
   publishToExternalMqtt(topic, payload);
 }
 
+/**
+ * WS-2 — Publish a model-update *notify* signal to an edge device (best-effort).
+ *
+ * IMPORTANT: this is ONLY a small notification (deploymentId + version + hash).
+ * The model binary is NEVER sent over MQTT (Aedes buffers payloads in RAM and
+ * has no resume). The device pulls the package over the apiKey-verified HTTP
+ * proxy. Topic: avi/edge/{deviceId}/model-update (retained so a device that
+ * reconnects still sees the latest available deployment).
+ */
+export function publishModelUpdate(
+  deviceId: string,
+  deploymentId: number,
+  version: string | null | undefined,
+  hash: string | null | undefined,
+): void {
+  if (!MQTT_ENABLED || !aedes) return;
+
+  const topic = `avi/edge/${deviceId}/model-update`;
+  const payload = JSON.stringify({
+    type: 'MODEL_UPDATE_AVAILABLE',
+    deviceId,
+    deploymentId,
+    packageVersion: version ?? null,
+    packageHash: hash ?? null,
+    timestamp: new Date().toISOString(),
+  });
+
+  aedes.publish({
+    topic,
+    payload: Buffer.from(payload),
+    qos: 1 as 0 | 1 | 2,
+    retain: true,
+    cmd: 'publish',
+    dup: false,
+  }, (error) => {
+    if (error) {
+      console.error('[MQTT] Model update publish error:', error);
+    }
+  });
+  console.log(`[MQTT] Published model update to ${topic} (deployment ${deploymentId}, v${version ?? '?'})`);
+
+  // Also mirror to external broker (best-effort).
+  publishToExternalMqtt(topic, payload);
+}
+
 export { aedes, MQTT_ENABLED, EXTERNAL_MQTT_ENABLED };

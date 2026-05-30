@@ -184,7 +184,7 @@
     "paused": "Paused",
     "notifyMethod": "Notify method",
     "noHistory": "No history",
-    "noAlertsDesc": "No alerts desc",
+    "noAlertsDesc": "No alert rules configured yet",
     "noAlerts": "No alerts",
     "minutes": "Minutes",
     "loading": "Loading",
@@ -1257,6 +1257,9 @@
     "noCustomTemplates": "No custom templates",
     "noCustomDashboard": "No custom dashboard",
     "noAlerts": "No alerts",
+    "noTodayDataTitle": "No inspection data for today",
+    "noTodayDataDesc": "Today currently has no records. Switch to a wider range to review recent production trends.",
+    "viewLast7Days": "View last 7 days",
     "ngWarning": "Ng warning",
     "ngRateByWorkstationDescription": "Ng rate by workstation description",
     "ngRateByWorkstation": "Ng rate by workstation",
@@ -1626,13 +1629,147 @@
     },
     "cannotLoadTrendAnalysis": "Cannot load trend analysis",
     "cannotLoadPrediction": "Cannot load prediction",
-    "cannotLoadHeatmap": "Cannot load heatmap"
+    "cannotLoadHeatmap": "Cannot load heatmap",
+    "catalog": {
+      "INSUFFICIENT_SOLDER": {
+        "name": "Insufficient solder",
+        "description": "Solder fillet does not meet minimum wetting / fill requirements per IPC-A-610."
+      },
+      "EXCESS_SOLDER": {
+        "name": "Excess solder",
+        "description": "Solder volume exceeds maximum fillet / pad envelope, may obscure inspection or violate clearances."
+      },
+      "SOLDER_BRIDGE": {
+        "name": "Solder bridge / short",
+        "description": "Unwanted solder connection between two adjacent conductive features that should be electrically isolated."
+      },
+      "COLD_SOLDER": {
+        "name": "Cold / disturbed solder joint",
+        "description": "Joint with grainy / dull surface or fractured appearance from insufficient heat or movement during solidification."
+      },
+      "SOLDER_BALL": {
+        "name": "Solder ball",
+        "description": "Free / loose solder spheres on the assembly that may migrate and cause shorts."
+      },
+      "SOLDER_VOID": {
+        "name": "Solder void (BGA / QFN)",
+        "description": "Internal cavity within a solder joint exceeding the area-percent limit (typically >25% Class 2, >9% Class 3 thermal pads)."
+      },
+      "NON_WETTING": {
+        "name": "Non-wetting",
+        "description": "Solder did not wet to a metallic surface; original surface remains visible."
+      },
+      "DEWETTING": {
+        "name": "Dewetting",
+        "description": "Solder initially wet then receded, leaving irregular mounds and exposed base metal."
+      },
+      "EXPOSED_BASE_METAL": {
+        "name": "Exposed base metal",
+        "description": "Conductor base metal visible where coating / solder is required by design."
+      },
+      "FLUX_RESIDUE": {
+        "name": "Flux residue",
+        "description": "Visible flux residue beyond cleanliness limits; acceptable for no-clean within visual limits."
+      },
+      "TOMBSTONING": {
+        "name": "Tombstoning",
+        "description": "Chip component lifted vertically off one pad, often due to uneven reflow heating."
+      },
+      "BILLBOARDING": {
+        "name": "Billboarding",
+        "description": "Chip component standing on its side rather than seated flat."
+      },
+      "MISALIGNMENT": {
+        "name": "Component misalignment / offset",
+        "description": "Component offset from pad exceeds the side-overhang or end-overhang limit for the class."
+      },
+      "MISSING_COMPONENT": {
+        "name": "Missing component",
+        "description": "Component absent from designated location per BOM / design."
+      },
+      "WRONG_COMPONENT": {
+        "name": "Wrong component",
+        "description": "Component value / part number does not match BOM."
+      },
+      "REVERSED_POLARITY": {
+        "name": "Reversed polarity",
+        "description": "Polarised component (diode, electrolytic cap, IC) installed in opposite orientation."
+      },
+      "LIFTED_LEAD": {
+        "name": "Lifted lead",
+        "description": "Component lead not in contact with pad / solder fillet."
+      },
+      "BENT_LEAD": {
+        "name": "Bent / damaged lead",
+        "description": "Lead deformation beyond formed-lead tolerance, may impair coplanarity."
+      },
+      "INSUFFICIENT_HOLE_FILL": {
+        "name": "Insufficient hole fill (THT)",
+        "description": "Vertical solder fill in plated through-hole below 75% (Class 2) or 100% (Class 3)."
+      },
+      "PIN_PROTRUSION_INSUFFICIENT": {
+        "name": "Insufficient pin protrusion",
+        "description": "Lead does not protrude sufficiently beyond solder side of board."
+      },
+      "CONTAMINATION_PARTICULATE": {
+        "name": "Particulate contamination",
+        "description": "Loose particles, FOD or debris on assembly surface."
+      },
+      "MARKING_ILLEGIBLE": {
+        "name": "Illegible marking / label",
+        "description": "Required marking unreadable due to smear, low contrast or print defect."
+      },
+      "BARCODE_UNREADABLE": {
+        "name": "Barcode / 2D-DMC unreadable",
+        "description": "Machine-readable code fails decode at required quality grade (typically ISO/IEC 15415 grade C minimum)."
+      },
+      "PCB_SCRATCH": {
+        "name": "PCB surface scratch",
+        "description": "Surface scratch on PCB substrate or solder mask not exposing copper."
+      },
+      "SOLDERMASK_DAMAGE": {
+        "name": "Solder mask damage",
+        "description": "Lifted, missing or cracked solder mask exposing conductor."
+      },
+      "LAMINATE_DAMAGE": {
+        "name": "Laminate damage / measling",
+        "description": "Internal separation / white spots in PCB laminate (measling, crazing, blistering)."
+      },
+      "DAMAGED_INSULATION": {
+        "name": "Damaged wire insulation",
+        "description": "Cut, burn or abrasion in wire insulation exposing conductor."
+      },
+      "EDGE_BURR": {
+        "name": "Edge burr (machined housing)",
+        "description": "Sharp burr along machined edge exceeding max allowed height."
+      },
+      "CHIP_OUT": {
+        "name": "Chip-out / edge break",
+        "description": "Material chipped from edge or corner, breaking the design profile."
+      },
+      "DENT": {
+        "name": "Dent / deformation",
+        "description": "Localised inward deformation beyond cosmetic / functional limit."
+      },
+      "COSMETIC_SCRATCH": {
+        "name": "Cosmetic surface scratch",
+        "description": "Surface scratch on visible cosmetic area exceeding zone (A/B/C) length / width spec."
+      },
+      "COLOR_MISMATCH": {
+        "name": "Color / gloss mismatch",
+        "description": "Color difference (ΔE) or gloss (GU) outside the master swatch tolerance."
+      },
+      "CONTAMINATION_FINGERPRINT": {
+        "name": "Fingerprint / smudge",
+        "description": "Oils / fingerprint smudge on cosmetic A-surface."
+      }
+    }
   },
   "errors": {
     "widgetError": "Widget error",
     "unexpectedError": "Unexpected error",
     "tableRenderError": "Table render error",
-    "pageNotFoundDesc": "Page not found desc",
+    "pageNotFoundDesc": "The page you requested could not be found.",
     "pageNotFound": "Page not found",
     "occurred": "Occurred",
     "goHome": "Go home",
@@ -2351,6 +2488,14 @@
     "browserNotSupportExport": "Browser not support export"
   },
   "machines": {
+    "predictiveMaintenance": "Predictive Maintenance",
+    "predictiveMaintenanceDesc": "Statistical failure risk, RUL forecast and reliability",
+    "failureRisk": "Failure Risk",
+    "confidence": "Confidence",
+    "mtbf": "MTBF",
+    "mttr": "MTTR",
+    "rulForecast": "Predicted failure",
+    "recommendedMaintenance": "Recommended maintenance",
     "wsDisconnected": "Ws disconnected",
     "wsConnected": "Ws connected",
     "workstationName": "Workstation name",
@@ -3355,6 +3500,8 @@
     "monitoringGroupDesc": "Machine and equipment monitoring",
     "machineStatusPage": "Machine Status",
     "machineStatusDesc": "Real-time machine status monitoring",
+    "machineOnboarding": "New Machine Wizard",
+    "machineOnboardingDesc": "End-to-end machine setup: connect, grant API key, deploy AI model",
     "mqttDashboard": "MQTT Dashboard",
     "mqttDashboardDesc": "MQTT message monitoring dashboard",
     "mqttClients": "MQTT Clients",
@@ -3441,6 +3588,8 @@
     "analyticsSettingDesc": "Configure advanced analytics, reports, and predictions",
     "productionScheduling": "Production Scheduling",
     "productionSchedulingDesc": "Scheduling, optimization algorithms, WIP tracking",
+    "productionSignoff": "Session Sign-Off (21 CFR)",
+    "productionSignoffDesc": "HMAC-SHA256 electronic sign-off for production sessions",
     "productionDashboard": "Production Dashboard",
     "productionDashboardDesc": "Real-time station-level production overview",
     "dataGroup": "Data Management",
@@ -3523,6 +3672,8 @@
     "apiDocsPageDesc": "REST API reference documentation",
     "userGuide": "User Guide",
     "userGuideDesc": "Application user guide",
+    "aboutSystem": "About System",
+    "aboutSystemDesc": "System, company, and developer information",
     "licenseManagement": "License Management",
     "licenseManagementDesc": "Manage license activation and permissions",
     "settingsScheduledReports": "Scheduled Reports",
@@ -3567,6 +3718,52 @@
     "aiModelManagementDesc": "Register, manage and deploy AI models",
     "aiSettings": "AI Settings",
     "aiSettingsDesc": "API keys, model config, and AI system settings"
+  },
+  "aboutPage": {
+    "layoutTitle": "About System",
+    "hero": {
+      "title": "AVI/AOI Management System",
+      "description": "A production and quality management platform for automated inspection lines that helps enterprises monitor operations in real time, reduce defects, and optimize performance.",
+      "version": "Version 1.0.0",
+      "updated": "Updated: 13/05/2026"
+    },
+    "system": {
+      "title": "About The System",
+      "description": "Core capabilities of the AVI/AOI Management platform in production operations.",
+      "highlights": [
+        "Real-time AVI/AOI machine monitoring via MQTT and visual dashboards.",
+        "Standardized inspection data and defect traceability by product, stage, and machine.",
+        "Quality analytics with SPC, heatmaps, root cause analysis, early warnings, and automated reports.",
+        "Role-based access, audit logs, and multi-level operations from factory to corporate."
+      ]
+    },
+    "stack": {
+      "title": "Technology Stack",
+      "description": "Main architecture and technical components.",
+      "items": [
+        "Frontend: React + TypeScript + Tailwind UI",
+        "Backend: Node.js + tRPC",
+        "Data: PostgreSQL",
+        "Realtime: MQTT + WebSocket"
+      ]
+    },
+    "company": {
+      "title": "About The Company",
+      "name": "AVI/AOI Solutions Company",
+      "description": "The organization that implements and operates the solution.",
+      "paragraph1": "The system is designed for smart manufacturing, focusing on quality inspection automation, data standardization, and scalability across multiple factories.",
+      "paragraph2": "The company drives manufacturing digital transformation with three principles: data transparency, fast incident response, and continuous improvement based on practical analytics."
+    },
+    "developer": {
+      "title": "System Developers",
+      "description": "Development and maintenance team information.",
+      "teamLabel": "Development Team",
+      "teamValue": "AVI/AOI Management Platform Engineering Team",
+      "roleLabel": "Primary Responsibilities",
+      "roleValue": "System architecture design, business feature development, performance optimization, and continuous operation in production environments.",
+      "contactLabel": "Internal Contact",
+      "contactValue": "Please update the specific owner contact according to your organization."
+    }
   },
   "notifications": {
     "yieldWarning": "Yield warning",
@@ -3656,7 +3853,7 @@
     "notesPlaceholder": "Notes placeholder",
     "notes": "Notes",
     "noTargetsConfigured": "No targets configured",
-    "noOeeData": "No oee data",
+    "noOeeData": "No OEE data available yet",
     "noDowntimeEvents": "No downtime events",
     "noDowntimeData": "No downtime data",
     "noDataToExport": "No data to export",
@@ -3851,55 +4048,84 @@
     "addProcess": "Add process"
   },
   "production": {
-    "workshop": "Workshop",
-    "updateSuccess": "Update success",
-    "totalOutput": "Total output",
-    "totalOrders": "Total orders",
-    "title": "Title",
-    "targetQuantity": "Target quantity",
-    "statusPending": "Status pending",
-    "statusPaused": "Status paused",
-    "statusInProgress": "Status in progress",
-    "statusCompleted": "Status completed",
-    "statusCancelled": "Status cancelled",
-    "status": "Status",
-    "selectWorkshop": "Select workshop",
-    "selectProduct": "Select product",
-    "selectLine": "Select line",
-    "selectFactory": "Select factory",
-    "searchPlaceholder": "Search placeholder",
-    "progress": "Progress",
-    "product": "Product",
-    "priorityUrgent": "Priority urgent",
-    "priorityNormal": "Priority normal",
-    "priorityHigh": "Priority high",
-    "priority": "Priority",
-    "orderListDescription": "Order list description",
-    "orderList": "Order list",
-    "orderCode": "Order code",
-    "notesPlaceholder": "Notes placeholder",
-    "notes": "Notes",
-    "noOrders": "No orders",
-    "list": "List",
-    "line": "Line",
-    "ganttChart": "Gantt chart",
-    "fillRequiredFields": "Fill required fields",
-    "factory": "Factory",
-    "editTitle": "Edit title",
-    "editDescription": "Edit description",
-    "description": "Description",
-    "deleteSuccess": "Delete success",
-    "createSuccess": "Create success",
-    "createOrder": "Create order",
-    "createNewTitle": "Create new title",
-    "createNewDescription": "Create new description",
-    "createNew": "Create new",
-    "confirmDelete": "Confirm delete",
-    "companyCode": "Company code",
+    "title": "Production Orders",
+    "description": "Manage and track manufacturing orders across factories and lines",
+    "orderList": "Order List",
+    "orderListDescription": "All production orders",
+    "okNgNtf": "OK / NG / NTF",
+    "createOrder": "Create Order",
+    "createNew": "New Order",
+    "createNewTitle": "Create Production Order",
+    "createNewDescription": "Fill in the details to create a new production order",
+    "editTitle": "Edit Production Order",
+    "editDescription": "Update the production order details",
+    "confirmDelete": "Are you sure you want to delete this order?",
+    "confirmDeleteDetail": "Are you sure you want to delete order {{code}}? This action cannot be undone.",
+    "createSuccess": "Order created successfully",
+    "updateSuccess": "Order updated successfully",
+    "deleteSuccess": "Order deleted successfully",
+    "fillRequiredFields": "Please fill in all required fields",
+    "noOrders": "No production orders found",
+    "orderCode": "Order Code",
     "company": "Company",
-    "allStatuses": "All statuses"
+    "companyCode": "Company Code",
+    "factory": "Factory",
+    "workshop": "Workshop",
+    "line": "Line",
+    "product": "Product",
+    "targetQuantity": "Target Quantity",
+    "totalOutput": "Total Output",
+    "totalOrders": "Total Orders",
+    "progress": "Progress",
+    "priority": "Priority",
+    "priorityUrgent": "Urgent",
+    "priorityHigh": "High",
+    "priorityNormal": "Normal",
+    "status": "Status",
+    "statusPending": "Pending",
+    "statusInProgress": "In Progress",
+    "statusPaused": "Paused",
+    "statusCompleted": "Completed",
+    "statusCancelled": "Cancelled",
+    "allStatuses": "All statuses",
+    "selectFactory": "Select factory",
+    "selectWorkshop": "Select workshop",
+    "selectLine": "Select line",
+    "selectProduct": "Select product",
+    "searchPlaceholder": "Search by order code, product, customer…",
+    "notes": "Notes",
+    "notesPlaceholder": "Optional notes about this order",
+    "list": "List",
+    "ganttChart": "Gantt Chart",
+    "orderCodePlaceholder": "e.g. PO-2024-001",
+    "companyCodePlaceholder": "e.g. CORP-001",
+    "targetQuantityPlaceholder": "e.g. 1000",
+    "editOrder": "Edit order",
+    "deleteOrder": "Delete order"
   },
   "products": {
+    "documents": "Documents",
+    "attachDocument": "Attach document",
+    "noDocuments": "No documents attached",
+    "foundationSection": "P3 Foundation (Instruments / Sampling / Views)",
+    "instruments": "Instruments",
+    "samplingPlans": "Sampling Plans",
+    "productViews": "Product Views",
+    "msaStudies": "MSA Studies",
+    "addInstrument": "Add Instrument",
+    "addSamplingPlan": "Add Sampling Plan",
+    "addProductView": "Add Product View",
+    "startMsaWizard": "Start MSA Wizard",
+    "strategy": "Strategy",
+    "viewType": "View type",
+    "strategyFixedN": "Fixed sample size",
+    "strategyAql": "AQL",
+    "strategyRiskBased": "Risk based",
+    "viewTop": "Top",
+    "viewBottom": "Bottom",
+    "viewSide": "Side",
+    "viewIsometric": "Isometric",
+    "viewCustom": "Custom",
     "variantExample": "Variant example",
     "upperLimit": "Upper limit",
     "uploadJsonFile": "Upload json file",
@@ -5843,6 +6069,16 @@
     "selectLineRequired": "Please select a line"
   },
   "scheduling": {
+    "autoScheduleRun": "Auto-schedule (run)",
+    "whatIf": "What-if (-30% capacity)",
+    "generating": "Generating...",
+    "runGenerated": "Schedule run #{{id}} created: {{count}} orders, {{conflicts}} conflicts",
+    "runApplied": "Applied {{count}} orders",
+    "applyRun": "Apply run #{{id}}",
+    "whatIfResult": "What-if result",
+    "capacityReduced": "capacity reduced {{pct}}%",
+    "lateOrdersChange": "Late orders: {{base}} → {{sim}}",
+    "hoursLate": "{{h}}h late",
     "title": "Production Scheduling",
     "subtitle": "Schedule, optimize and track production progress",
     "algorithm": "Algorithm",
@@ -5854,6 +6090,7 @@
     "edfDesc": "Prioritize orders with the nearest deadline",
     "optimize": "Optimize",
     "optimizing": "Optimizing...",
+    "lastOptimized": "Last optimized: {{time}} · {{algorithm}}",
     "ganttChart": "Gantt Chart",
     "wipTracking": "WIP Tracking",
     "orderList": "Order List",
@@ -5879,6 +6116,8 @@
     "activeOrders": "Active Orders",
     "algorithmSelection": "Algorithm Selection",
     "apply": "Apply Schedule",
+    "applyConfirmTitle": "Apply this suggestion?",
+    "applyConfirmDescription": "This will overwrite the current schedule for the selected order. Please confirm before continuing.",
     "applySuccess": "Schedule applied successfully",
     "cancelled": "Cancelled",
     "endDate": "End Date",
@@ -5893,7 +6132,17 @@
     "startDate": "Start Date",
     "suggestedEnd": "Suggested End",
     "suggestedStart": "Suggested Start",
-    "utilization": "Utilization"
+    "utilization": "Utilization",
+    "conflictOverlap": "Schedule overlap",
+    "conflictDependency": "Order dependency",
+    "conflictCapacity": "Capacity exceeded",
+    "conflictDeadline": "Deadline missed",
+    "fifoLabel": "FIFO (First In First Out)",
+    "fifoDescLong": "Schedule by order creation time — earliest orders run first",
+    "priorityLabel": "Priority Scheduling",
+    "priorityDescLong": "Highest priority first; ties broken by earliest deadline",
+    "edfLabel": "EDF (Earliest Deadline First)",
+    "edfDescLong": "Orders with the nearest deadline are scheduled first"
   },
   "widgets": {
     "kpiCard": {
@@ -6036,10 +6285,88 @@
       "perDay": "Per Day"
     }
   },
+  "onboarding": {
+    "title": "New Machine Wizard",
+    "subtitle": "End-to-end new machine setup in under 10 minutes",
+    "next": "Next",
+    "back": "Back",
+    "finish": "Finish",
+    "steps": {
+      "info": "Info",
+      "test": "Connect",
+      "assign": "Station",
+      "deploy": "Deploy",
+      "verify": "Verify"
+    },
+    "stepDesc": {
+      "0": "Enter machine info and network address",
+      "1": "Test connectivity to the machine (HTTP/TCP/WebSocket)",
+      "2": "Assign the machine to a station and grant an API key",
+      "3": "Pick a product and AI model, then deploy",
+      "4": "Watch heartbeat and deployment status"
+    },
+    "fields": {
+      "code": "Machine code",
+      "name": "Machine name",
+      "machineType": "Machine type",
+      "serialNumber": "Serial number",
+      "ipAddress": "IP address",
+      "port": "Port",
+      "protocol": "Protocol"
+    },
+    "step2": {
+      "runTest": "Test connection",
+      "testing": "Testing...",
+      "ok": "Connection succeeded",
+      "failed": "Connection failed",
+      "reachable": "Reachable",
+      "unreachable": "Unreachable",
+      "hint": "You can continue even if the machine is not yet online (offline-first)."
+    },
+    "step3": {
+      "station": "Station",
+      "selectStation": "Select a station",
+      "createAndApprove": "Create machine & grant API key",
+      "creating": "Creating...",
+      "granted": "Machine created and API key granted",
+      "approved": "Approved",
+      "createError": "Failed to create machine",
+      "copied": "API key copied",
+      "copy": "Copy",
+      "apiKeyHint": "Store this API key on the AOI/AVI machine for authentication.",
+      "selectStationFirst": "Please select a station first"
+    },
+    "step4": {
+      "product": "Product",
+      "selectProduct": "Select a product",
+      "model": "AI model",
+      "selectModel": "Select an AI model",
+      "deploy": "Package & deploy",
+      "deploying": "Deploying...",
+      "deployed": "Deployed (READY)",
+      "deployPartial": "Deployment incomplete",
+      "deployError": "Deployment failed",
+      "noVersion": "Model has no current version",
+      "deploymentCreated": "Deployment #{{id}} created",
+      "notifyHint": "The machine receives an update signal via MQTT/Socket and pulls the package."
+    },
+    "step5": {
+      "deploymentStatus": "Deployment status",
+      "machine": "Machine",
+      "deploymentId": "Deployment ID",
+      "packageVersion": "Package version",
+      "lastHeartbeat": "Last heartbeat",
+      "activeOk": "Machine is ACTIVE — setup complete!",
+      "waitingHeartbeat": "Waiting for the machine to pull the package and send a heartbeat...",
+      "refresh": "Refresh",
+      "unknown": "Unknown"
+    }
+  },
   "machineRegistration": {
     "pageTitle": "Machine Registration Management",
     "pageSubtitle": "Approve, reject and manage remote AOI/AVI machine registrations",
     "refresh": "Refresh",
+    "openWizard": "New Machine Wizard",
     "tabs": {
       "pending": "Pending",
       "all": "All Machines",
@@ -6470,7 +6797,7 @@
       "stationAnalysis": "Station Analysis"
     },
     "invalidStationId": "Invalid station ID",
-    "backToDashboard": "\u2190 Back to dashboard",
+    "backToDashboard": "← Back to dashboard",
     "stationNotFound": "Station not found",
     "machines": "machines",
     "kpi": {
@@ -6548,6 +6875,9 @@
     "totalOutput": "Total Output",
     "avgRetests": "Avg Retests",
     "lowYieldStations": "Low Yield Stations",
+    "lowYieldFilterHint": "Click to filter low-yield stations",
+    "lowYieldFilterChip": "Low Yield Stations (FPY < 70%)",
+    "clearLowYieldFilter": "Clear filter",
     "tabStation": "Station View",
     "tabDefect": "Defect Analysis",
     "tabTrend": "Trend",
@@ -6560,6 +6890,22 @@
     "custom": "Custom",
     "allFactories": "All Factories",
     "allLines": "All Lines",
+    "copyLink": "Copy link",
+    "linkCopied": "Link copied to clipboard",
+    "linkCopyFailed": "Failed to copy link",
+    "autoRefreshLabel": "Auto-refresh",
+    "autoRefreshOnLabel": "Auto 30s",
+    "toggleAutoRefresh": "Toggle auto-refresh",
+    "autoRefreshOn": "Auto-refresh enabled (every 30s)",
+    "autoRefreshOff": "Auto-refresh disabled",
+    "compareFactories": "Compare",
+    "compareOn": "Factory comparison enabled",
+    "compareOff": "Factory comparison disabled",
+    "compareTitle": "Factory Comparison",
+    "compareHint": "Compare KPIs across factories",
+    "toggleCompare": "Toggle factory comparison",
+    "factoriesShort": "factories",
+    "drilldownFactory": "Click to filter by this factory",
     "colStation": "Station",
     "colFPY": "First Pass Yield",
     "colChange": "Point Change",
@@ -6582,6 +6928,14 @@
     "live": "Live",
     "todayLabel": "Today",
     "exportTitle": "Production Dashboard Report",
+    "exportOverview": "Overview",
+    "exportStationPerf": "Station Performance",
+    "exportTopDefects": "Top Defects",
+    "colCategory": "Category",
+    "colCode": "Code",
+    "colName": "Name",
+    "colCount": "Count",
+    "colRate": "Rate",
     "searchStation": "Search station name, code, line..."
   },
   "aiHub": {
@@ -6594,21 +6948,66 @@
     "genReport": "Generate Report",
     "title": "AI Hub",
     "features": {
-      "chat": { "title": "AI Chat Assistant", "desc": "Natural language queries for inspection data, defect trends, and quality insights" },
-      "qualityGate": { "title": "Quality Gate", "desc": "Automatic pass/fail decisions using ensemble AI models with configurable thresholds" },
-      "activeLearning": { "title": "Active Learning", "desc": "Human-in-the-loop labeling to improve model accuracy with uncertainty sampling" },
-      "imageSearch": { "title": "Image Search", "desc": "Vector similarity search across inspection images to find similar defect patterns" },
-      "timeSeries": { "title": "Time Series Analysis", "desc": "EWMA and Holt-Winters anomaly detection and forecasting for production metrics" },
-      "reports": { "title": "AI Reports", "desc": "Automated daily quality summaries, root cause analysis, and executive reports" },
-      "performance": { "title": "Model Performance", "desc": "Track AI model accuracy, inference stats, and version history across deployments" },
-      "batchInference": { "title": "Batch Inference", "desc": "Process large batches of images with parallel AI inference jobs" },
-      "abTesting": { "title": "A/B Testing", "desc": "Compare two model versions side-by-side with traffic splitting and statistical analysis" },
-      "monitoring": { "title": "Model Monitoring", "desc": "Detect model drift, track performance snapshots, and manage quality alerts" },
-      "dataProcessing": { "title": "Data Processing", "desc": "Process, augment, and prepare image data for AI model training" },
-      "modelManagement": { "title": "AI Models", "desc": "Register, manage and deploy AI models and versions" },
-      "inspectionAnalytics": { "title": "Inspection Analytics", "desc": "Defect trends, yield forecasting, SPC, Pareto analysis and risk assessment for inspection data" },
-      "ggufModels": { "title": "GGUF Models", "desc": "Manage and use local LLM models (.gguf) for analysis and chat" },
-      "settings": { "title": "AI Settings", "desc": "Manage API keys, model configurations, and system settings" }
+      "chat": {
+        "title": "AI Chat Assistant",
+        "desc": "Natural language queries for inspection data, defect trends, and quality insights"
+      },
+      "qualityGate": {
+        "title": "Quality Gate",
+        "desc": "Automatic pass/fail decisions using ensemble AI models with configurable thresholds"
+      },
+      "activeLearning": {
+        "title": "Active Learning",
+        "desc": "Human-in-the-loop labeling to improve model accuracy with uncertainty sampling"
+      },
+      "imageSearch": {
+        "title": "Image Search",
+        "desc": "Vector similarity search across inspection images to find similar defect patterns"
+      },
+      "timeSeries": {
+        "title": "Time Series Analysis",
+        "desc": "EWMA and Holt-Winters anomaly detection and forecasting for production metrics"
+      },
+      "reports": {
+        "title": "AI Reports",
+        "desc": "Automated daily quality summaries, root cause analysis, and executive reports"
+      },
+      "performance": {
+        "title": "Model Performance",
+        "desc": "Track AI model accuracy, inference stats, and version history across deployments"
+      },
+      "batchInference": {
+        "title": "Batch Inference",
+        "desc": "Process large batches of images with parallel AI inference jobs"
+      },
+      "abTesting": {
+        "title": "A/B Testing",
+        "desc": "Compare two model versions side-by-side with traffic splitting and statistical analysis"
+      },
+      "monitoring": {
+        "title": "Model Monitoring",
+        "desc": "Detect model drift, track performance snapshots, and manage quality alerts"
+      },
+      "dataProcessing": {
+        "title": "Data Processing",
+        "desc": "Process, augment, and prepare image data for AI model training"
+      },
+      "modelManagement": {
+        "title": "AI Models",
+        "desc": "Register, manage and deploy AI models and versions"
+      },
+      "inspectionAnalytics": {
+        "title": "Inspection Analytics",
+        "desc": "Defect trends, yield forecasting, SPC, Pareto analysis and risk assessment for inspection data"
+      },
+      "ggufModels": {
+        "title": "GGUF Models",
+        "desc": "Manage and use local LLM models (.gguf) for analysis and chat"
+      },
+      "settings": {
+        "title": "AI Settings",
+        "desc": "Manage API keys, model configurations, and system settings"
+      }
     },
     "processData": "Process Data",
     "manageSettings": "AI Settings"
@@ -6691,7 +7090,20 @@
     "checkRetrain": "Check if retraining is needed",
     "retrainRequired": "Retraining Required",
     "retrainNotRequired": "Retraining Not Required",
-    "retrainDesc": "New labeled samples are ready for model retraining"
+    "retrainDesc": "New labeled samples are ready for model retraining",
+    "scanHard": "Auto-scan hard images",
+    "scanDone": "Scan complete: added {{enqueued}} images (skipped {{skipped}} duplicates)",
+    "scanUncertainty": "Scan uncertainty → queue",
+    "scanCommittee": "Scan committee (≥2 models)",
+    "strategy": "Strategy",
+    "disagreement": "disagreement"
+  },
+  "mv": {
+    "metrics": "Metrics (Acc / F1)",
+    "gate": "Quality Gate",
+    "gatePass": "Pass",
+    "gateFail": "Fail",
+    "gateWarn": "This version did NOT pass the quality gate (accuracy regressed vs. baseline). Activate anyway?"
   },
   "is": {
     "title": "Image Search",
@@ -6714,7 +7126,24 @@
     "indexed": "Indexed",
     "totalImages": "Total Images",
     "cluster": "Cluster",
-    "clusters": "Clusters"
+    "clusters": "Clusters",
+    "defectType": "Defect type",
+    "labelFilter": "Label",
+    "machineId": "Machine ID",
+    "filters": "Search filters",
+    "optional": "Optional",
+    "minSimilarity": "Min similarity",
+    "selectImage": "Select image",
+    "selectFile": "Select an image to search",
+    "searchByImage": "Search by image",
+    "searching": "Searching…",
+    "uploadSearch": "Search by uploaded image",
+    "pgvectorOff": "pgvector not ready — using fallback",
+    "searchMode": "Mode",
+    "modeHnsw": "HNSW (fast)",
+    "modeExact": "Exact (full-scan)",
+    "modeBruteforce": "Brute-force (Node)",
+    "modeMetadata": "Metadata (fallback)"
   },
   "rp": {
     "title": "AI Reports",
@@ -6969,8 +7398,18 @@
     "description": "Process, augment, and prepare image data for AI model training",
     "tabs": {
       "pipeline": "Data Pipeline",
+      "dataset": "Dataset Split",
       "preprocessing": "Image Processing",
       "augmentation": "Augmentation"
+    },
+    "dataset": {
+      "title": "Build Dataset Split",
+      "description": "Materialize train/val/test dataset from labeled data",
+      "build": "Build Dataset",
+      "built": "Dataset built: {{count}} samples",
+      "totalSamples": "Total Samples",
+      "splitRatio": "Train/Val/Test Ratio",
+      "labelDistribution": "Label Distribution"
     },
     "pipeline": {
       "title": "Data Pipeline",
@@ -7017,6 +7456,41 @@
       "multiplier": "Augmentation Multiplier",
       "multiplierDesc": "Number of augmented copies per original image"
     }
+  },
+  "aiEval": {
+    "selectModel": "Select model...",
+    "noModels": "No models",
+    "selectDataset": "Select dataset...",
+    "noDatasets": "No datasets",
+    "datasetIdPlaceholder": "Dataset ID...",
+    "model": "Model",
+    "dataset": "Dataset",
+    "split": "Split",
+    "beforeAfterTab": "Eval (Before/After)",
+    "runCompare": "Run Before/After Evaluation",
+    "runCompareDesc": "Compare candidate model against baseline on the same test split",
+    "candidatePath": "Candidate classifier path",
+    "baselinePath": "Baseline path (optional)",
+    "compareRun": "Compare",
+    "compareDone": "Comparison complete",
+    "before": "Before",
+    "after": "After",
+    "metricsCompare": "Metrics Before vs After (%)",
+    "gatePass": "Quality gate: PASS",
+    "gateFail": "Quality gate: FAIL",
+    "candidateConfusion": "Confusion Matrix (candidate)",
+    "confusionHint": "Row = actual label, Column = predicted label",
+    "evaluated": "Evaluated",
+    "skipped": "Skipped",
+    "trainModel": "Train Model",
+    "trainingJobs": "Training Jobs",
+    "noJobs": "No training jobs yet",
+    "startTraining": "Start Training Pipeline",
+    "startTrainingDesc": "Train a new version for",
+    "pipelineStarted": "Training job started",
+    "classLabels": "Class Labels (≥2, comma-separated)",
+    "labelsCount": "labels",
+    "strategy": "Strategy"
   },
   "aiAnalytics": {
     "title": "AI Inspection Analytics",
@@ -7107,5 +7581,80 @@
     "gpuMode": "GPU Mode",
     "engineHealth": "Engine Health",
     "embedding": "Embedding"
+  },
+  "measurementPointP1": {
+    "shape": {
+      "title": "Shape",
+      "circle": "Circle",
+      "rectangle": "Rectangle",
+      "polygon": "Polygon",
+      "line": "Line",
+      "ring": "Ring",
+      "mask": "Mask",
+      "array": "Array"
+    },
+    "tool": {
+      "select": "Select",
+      "addCircle": "Add circle",
+      "addRectangle": "Add rectangle",
+      "addPolygon": "Add polygon",
+      "addLine": "Add line",
+      "addRing": "Add ring",
+      "addArray": "Add array",
+      "delete": "Delete",
+      "coordinateMode": "Coordinate mode",
+      "pixel": "Pixel",
+      "mm": "Millimetre"
+    },
+    "fiducial": {
+      "title": "Fiducial marks",
+      "tabLabel": "Fiducials",
+      "addButton": "Add fiducial",
+      "edit": "Edit fiducial",
+      "delete": "Delete fiducial",
+      "confirmDelete": "Delete this fiducial mark?",
+      "empty": "No fiducial marks defined.",
+      "code": "Code",
+      "name": "Name",
+      "type": "Type",
+      "position": "Position (X, Y)",
+      "searchWindow": "Search window (W × H)",
+      "templateImage": "Template image",
+      "uploadTemplate": "Upload template",
+      "orderIndex": "Order",
+      "types": {
+        "cross": "Cross",
+        "circle": "Circle",
+        "square": "Square",
+        "custom": "Custom"
+      }
+    }
+  },
+  "measurementPointP2": {
+    "measurementTypeCode": "Measurement type code",
+    "selectMeasurementTypeCode": "Select detailed measurement type",
+    "toleranceMode": "Tolerance mode",
+    "toleranceModes": {
+      "min_only": "Min only",
+      "max_only": "Max only",
+      "range": "Range",
+      "bilateral": "Bilateral (+/-)"
+    },
+    "tolPlus": "Tolerance +",
+    "tolMinus": "Tolerance -",
+    "datumRefs": "Datum references",
+    "materialCondition": "Material condition",
+    "fitClass": "Fit class",
+    "positionZ": "Position Z",
+    "heightMin": "Height min",
+    "heightMax": "Height max",
+    "heightUnit": "Height unit",
+    "areaMin": "Area min",
+    "areaMax": "Area max",
+    "areaUnit": "Area unit",
+    "volumeMin": "Volume min",
+    "volumeMax": "Volume max",
+    "volumeUnit": "Volume unit",
+    "voidPctMax": "Void % max"
   }
 }

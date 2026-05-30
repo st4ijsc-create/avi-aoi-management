@@ -190,6 +190,21 @@ export default function MachineHealthMonitoring() {
     { enabled: !!selectedMachine }
   );
 
+  const { data: healthHistoryRows } = trpc.mqttClient.getMachineHealthHistory.useQuery(
+    { machineId: selectedMachine!, range: timeRange, limit: 500 },
+    { enabled: !!selectedMachine, refetchInterval: 60000 }
+  );
+
+  // WS-4: predictive maintenance — failure risk + RUL and reliability (MTBF/MTTR)
+  const { data: pmRisk } = trpc.predictiveMaintenance.getMachineRisk.useQuery(
+    { machineId: selectedMachine! },
+    { enabled: !!selectedMachine }
+  );
+  const { data: pmReliability } = trpc.predictiveMaintenance.getReliabilityStats.useQuery(
+    { machineId: selectedMachine! },
+    { enabled: !!selectedMachine }
+  );
+
   // Calculate health for all machines
   const calculateHealthMutation = trpc.mqttClient.calculateMachineHealth.useMutation({
     onSuccess: () => {
@@ -198,22 +213,37 @@ export default function MachineHealthMonitoring() {
     },
   });
 
-  // TODO: Replace with real health history API from `machineHealthHistory` table
-  // (see drizzle/schema/machine.ts — the table exists but has no router endpoint yet)
+  // Health history time-series — uses real machine_health_history rows when present,
+  // falls back to a deterministic synthetic walk so the chart is never empty.
   const healthHistoryData = useMemo(() => {
+    // Real data path
+    if (healthHistoryRows && healthHistoryRows.length > 0) {
+      return healthHistoryRows.map((r: any) => {
+        const ts = new Date(r.timestamp);
+        return {
+          time: timeRange === "day"
+            ? ts.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+            : ts.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
+          healthScore: Number(r.healthScore ?? 0),
+          oee: Number(r.oeeScore ?? r.currentOEE ?? 0),
+          uptime: Number(r.uptimeScore ?? r.uptimePercentage ?? 0),
+          errorRate: Math.max(0, 100 - Number(r.errorRateScore ?? 0)),
+        };
+      });
+    }
+
+    // Synthetic fallback (no history yet)
     const points = timeRange === "day" ? 24 : timeRange === "week" ? 7 : 30;
     const data = [];
     const baseScore = machineHealth?.score || 75;
     const machineIdSeed = selectedMachine || 1;
 
-    // Deterministic pseudo-random generator seeded by machineId to avoid chart jitter
     const seededRandom = (index: number) => {
       const x = Math.sin(machineIdSeed * 9301 + index * 49297) * 233280;
       return x - Math.floor(x);
     };
 
-    // Simulate a gradual trend toward the current score
-    let currentScore = baseScore - 5 + seededRandom(0) * 10; // start near base
+    let currentScore = baseScore - 5 + seededRandom(0) * 10;
 
     for (let i = points - 1; i >= 0; i--) {
       const date = new Date();
@@ -223,7 +253,6 @@ export default function MachineHealthMonitoring() {
         date.setDate(date.getDate() - i);
       }
 
-      // Smooth walk: drift toward baseScore with small deterministic noise
       const noise = (seededRandom(i + 1) - 0.5) * 6;
       currentScore += (baseScore - currentScore) * 0.15 + noise;
       currentScore = Math.max(0, Math.min(100, currentScore));
@@ -240,7 +269,7 @@ export default function MachineHealthMonitoring() {
       });
     }
     return data;
-  }, [machineHealth, timeRange, selectedMachine]);
+  }, [healthHistoryRows, machineHealth, timeRange, selectedMachine]);
 
   // Radar chart data for factors
   const radarData = useMemo(() => {
@@ -532,6 +561,52 @@ export default function MachineHealthMonitoring() {
           <TabsContent value="details" className="space-y-4">
             {selectedMachine ? (
               <>
+                {/* WS-4: Predictive Maintenance — RUL + MTBF/MTTR */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>{t('machines.predictiveMaintenance')}</CardTitle>
+                    <CardDescription>{t('machines.predictiveMaintenanceDesc')}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="p-3 rounded-lg bg-muted/50 text-center">
+                        <p className="text-xs text-muted-foreground">{t('machines.failureRisk')}</p>
+                        <p className="text-2xl font-bold text-red-500">{pmRisk?.failureRisk ?? 0}%</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-muted/50 text-center">
+                        <p className="text-xs text-muted-foreground">{t('machines.confidence')}</p>
+                        <p className="text-2xl font-bold">{pmRisk?.confidenceScore ?? 0}%</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-muted/50 text-center">
+                        <p className="text-xs text-muted-foreground">{t('machines.mtbf')}</p>
+                        <p className="text-2xl font-bold">{pmReliability?.mtbfHours != null ? `${pmReliability.mtbfHours.toFixed(1)}h` : '—'}</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-muted/50 text-center">
+                        <p className="text-xs text-muted-foreground">{t('machines.mttr')}</p>
+                        <p className="text-2xl font-bold">{pmReliability?.mttrHours != null ? `${pmReliability.mttrHours.toFixed(1)}h` : '—'}</p>
+                      </div>
+                    </div>
+                    {pmRisk?.predictedTimeframe && (
+                      <p className="mt-3 text-sm">
+                        {t('machines.rulForecast')}: <strong>{pmRisk.predictedTimeframe}</strong>
+                        {pmRisk.recommendedMaintenanceDate && (
+                          <> — {t('machines.recommendedMaintenance')}: {new Date(pmRisk.recommendedMaintenanceDate).toLocaleString()}</>
+                        )}
+                      </p>
+                    )}
+                    {pmRisk?.factors && pmRisk.factors.length > 0 && (
+                      <div className="mt-3 space-y-1">
+                        {pmRisk.factors.map((f: any) => (
+                          <div key={f.name} className="flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground">{f.name}: {f.description}</span>
+                            <span className="font-medium">{f.contribution}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
                 {/* Health Score Display */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Card className="md:col-span-1">

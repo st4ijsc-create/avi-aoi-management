@@ -11,8 +11,26 @@ export const roleEnum = pgEnum("roleenum", [
   "viewer",          // Read-only access - dashboards and reports only
   "user"             // Basic user access (default)
 ]);
-export const machineTypeEnum = pgEnum("machinetypeenum", ["AVI", "AOI", "AUTOMATION"]);
-export const operationStatusEnum = pgEnum("operationstatusenum", ["running", "stopped", "error", "maintenance"]);
+export const machineTypeEnum = pgEnum("machinetypeenum", [
+  "AVI",        // Automated Visual Inspection
+  "AOI",        // Automated Optical Inspection
+  "SPI",        // Solder Paste Inspection
+  "AXI",        // Automated X-ray Inspection
+  "ICT",        // In-Circuit Test
+  "FCT",        // Functional Circuit Test
+  "CMM",        // Coordinate Measuring Machine
+  "AUTOMATION", // General automation station
+]);
+export const operationStatusEnum = pgEnum("operationstatusenum", [
+  "running",
+  "stopped",
+  "error",
+  "maintenance",
+  "warming_up",  // Post-startup stabilization period
+  "changeover",  // Product changeover / recipe change in progress
+  "starved",     // Waiting for upstream material (line balance)
+  "blocked",     // Blocked by downstream station (line balance)
+]);
 export const lifecycleStatusEnum = pgEnum("lifecyclestatusenum", ["development", "active", "eol", "archived"]);
 export const measurementTypeEnum = pgEnum("measurementtypeenum", ["DIMENSION", "VISUAL", "ELECTRICAL", "POSITION", "COLOR", "SURFACE", "OTHER"]);
 export const overallResultEnum = pgEnum("overallresultenum", ["OK", "NG", "NTF"]);
@@ -62,6 +80,8 @@ export const templateTypeEnum_1 = pgEnum("templatetypeenum_1", ["DAILY", "WEEKLY
 export const changeTypeEnum = pgEnum("changetypeenum", ["CREATE", "UPDATE", "DELETE", "ROLLBACK"]);
 export const alertTypeEnum_1 = pgEnum("alerttypeenum_1", ["DEFECT_SPIKE", "YIELD_DROP", "MACHINE_FAILURE", "QUALITY_DEGRADATION", "PATTERN_ANOMALY"]);
 export const statusEnum_5 = pgEnum("statusenum_5", ["ACTIVE", "ACKNOWLEDGED", "RESOLVED", "DISMISSED", "EXPIRED"]);
+// WS-4 — auto-schedule run lifecycle
+export const scheduleRunStatusEnum = pgEnum("schedulerunstatusenum", ["DRAFT", "APPLIED", "DISMISSED"]);
 export const analysisTypeEnum = pgEnum("analysistypeenum", ["DEFECT_ANALYSIS", "YIELD_ANALYSIS", "QUALITY_ANALYSIS", "MACHINE_ANALYSIS"]);
 export const statusEnum_6 = pgEnum("statusenum_6", ["COMPLETED", "IN_PROGRESS", "FAILED"]);
 export const exportFormatEnum = pgEnum("exportformatenum", ["CSV", "JSON", "EXCEL", "PDF"]);
@@ -122,3 +142,6 @@ export const chatRoleEnum = pgEnum("chatroleenum", ["system", "user", "assistant
 // AI API Key enums
 export const apiKeyProviderEnum = pgEnum("apikeyprovider", ["openai", "azure_openai", "huggingface", "custom"]);
 export const apiKeyStatusEnum = pgEnum("apikeystatus", ["active", "inactive", "expired", "error"]);
+
+// Production Session enums (ISA-95 shift session)
+export const sessionStatusEnum = pgEnum("sessionstatusenum", ["open", "paused", "closed", "transferred"]);

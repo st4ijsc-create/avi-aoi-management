@@ -27,6 +27,7 @@ import Profile from "./pages/Profile";
 import ChangePassword from "./pages/ChangePassword";
 import AuditLogs from "./pages/AuditLogs";
 import SessionManagement from "./pages/SessionManagement";
+import ProductionSessionSignOff from "./pages/ProductionSessionSignOff";
 import { ProductComparison } from "./pages/ProductComparison";
 import Setup from "./pages/Setup";
 import MqttDashboard from "./pages/MqttDashboard";
@@ -44,6 +45,7 @@ import ProcessManagement from "./pages/ProcessManagement";
 import WorkstationManagement from "./pages/WorkstationManagement";
 import CategoryAnalytics from "./pages/CategoryAnalytics";
 import UserGuide from "./pages/UserGuide";
+import AboutSystem from "./pages/AboutSystem";
 import DashboardTemplates from "./pages/DashboardTemplates";
 import BackupRestore from "./pages/BackupRestore";
 import TemplateMarketplace from "./pages/TemplateMarketplace";
@@ -77,7 +79,9 @@ const AISettingsPage = React.lazy(() => import("./pages/AISettingsPage"));
 const AIDataProcessingPage = React.lazy(() => import("./pages/AIDataProcessingPage"));
 const AIModelManagementPage = React.lazy(() => import("./pages/AIModelManagementPage"));
 const AIInspectionAnalyticsPage = React.lazy(() => import("./pages/AIInspectionAnalyticsPage"));
+const AdvancedVisionLabPage = React.lazy(() => import("./pages/AdvancedVisionLabPage"));
 const AIGgufModelsPage = React.lazy(() => import("./pages/AIGgufModelsPage"));
+const AILocalKnowledgeBasePage = React.lazy(() => import("./pages/AILocalKnowledgeBasePage"));
 import TestAnnotationPage from "./pages/TestAnnotationPage";
 import AOIPackages from "./pages/AOIPackages";
 import MqttBulletin from "./pages/MqttBulletin";
@@ -95,6 +99,7 @@ import ParetoAnalysis from "./pages/ParetoAnalysis";
 import QualityGateTemplates from "./pages/QualityGateTemplates";
 import ProductionScheduling from "./pages/ProductionScheduling";
 import MachineRegistration from "./pages/MachineRegistration";
+import MachineOnboardingWizard from "./pages/MachineOnboardingWizard";
 import CorporateManagement from "./pages/CorporateManagement";
 import LicenseManagement from "./pages/LicenseManagement";
 import MqttNgRateThreshold from "./pages/MqttNgRateThreshold";
@@ -121,6 +126,18 @@ function RedirectToAdminSetting() {
   return null;
 }
 
+function RedirectToCategoryAnalytics() {
+  const [, setLocation] = useLocation();
+  useEffect(() => { setLocation("/category-analytics", { replace: true }); }, []);
+  return null;
+}
+
+function RedirectToAIInspectionAnalytics() {
+  const [, setLocation] = useLocation();
+  useEffect(() => { setLocation("/ai-inspection-analytics", { replace: true }); }, []);
+  return null;
+}
+
 function Router() {
   return (
     <Switch>
@@ -135,6 +152,8 @@ function Router() {
       <Route path="/settings" component={Settings} />
       <Route path="/datasettings" component={DataSettings} />
       <Route path="/admin" component={RedirectToAdminSetting} />
+      <Route path="/analytics" component={RedirectToCategoryAnalytics} />
+      <Route path="/ai-analytics" component={RedirectToAIInspectionAnalytics} />
       <Route path="/dashboard-center" component={DashboardCenter} />
       <Route path="/api-docs" component={ApiDocs} />
       <Route path="/products" component={ProductModels} />
@@ -151,6 +170,7 @@ function Router() {
       <Route path="/change-password" component={ChangePassword} />
       <Route path="/audit-logs" component={AuditLogs} />
       <Route path="/sessions" component={SessionManagement} />
+      <Route path="/production-signoff" component={ProductionSessionSignOff} />
       <Route path="/product-comparison" component={ProductComparison} />
       <Route path="/mqtt-dashboard" component={MqttDashboard} />
       <Route path="/mqtt-alerts" component={MqttAlertRules} />
@@ -167,6 +187,7 @@ function Router() {
       <Route path="/workstation-management" component={WorkstationManagement} />
       <Route path="/category-analytics" component={CategoryAnalytics} />
       <Route path="/user-guide" component={UserGuide} />
+      <Route path="/about-system" component={AboutSystem} />
       <Route path="/dashboard-templates" component={DashboardTemplates} />
       <Route path="/backup-restore" component={BackupRestore} />
       <Route path="/template-marketplace" component={TemplateMarketplace} />
@@ -199,7 +220,9 @@ function Router() {
       <Route path="/ai-settings"><AIPageWrapper><AISettingsPage /></AIPageWrapper></Route>
       <Route path="/ai-data-processing"><AIPageWrapper><AIDataProcessingPage /></AIPageWrapper></Route>
       <Route path="/ai-inspection-analytics"><AIPageWrapper><AIInspectionAnalyticsPage /></AIPageWrapper></Route>
+      <Route path="/ai-advanced-vision-lab"><AIPageWrapper><AdvancedVisionLabPage /></AIPageWrapper></Route>
       <Route path="/ai-gguf-models"><AIPageWrapper><AIGgufModelsPage /></AIPageWrapper></Route>
+      <Route path="/ai-local-kb"><AIPageWrapper><AILocalKnowledgeBasePage /></AIPageWrapper></Route>
       <Route path="/test-annotation" component={TestAnnotationPage} />
       <Route path="/aoi-packages" component={AOIPackages} />
       <Route path="/mqtt-bulletin" component={MqttBulletin} />
@@ -217,6 +240,7 @@ function Router() {
       <Route path="/quality-gate-templates" component={QualityGateTemplates} />
       <Route path="/production-scheduling" component={ProductionScheduling} />
       <Route path="/machine-registration" component={MachineRegistration} />
+      <Route path="/machine-onboarding" component={MachineOnboardingWizard} />
       <Route path="/license" component={LicenseManagement} />
       <Route path="/mqtt-ng-rate" component={MqttNgRateThreshold} />
       <Route path="/monitoring-setting" component={MonitoringSettings} />

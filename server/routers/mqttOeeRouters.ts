@@ -446,6 +446,27 @@ export const mqttClientRouter = router({
     return getAllMachinesOEE();
   }),
 
+  // ============ SEMI E10 / ISO 22400 BREAKDOWN ============
+  semiE10Breakdown: protectedProcedure
+    .input(z.object({
+      machineId: z.number(),
+      from: z.coerce.date(),
+      to: z.coerce.date(),
+      totalCount: z.number().int().nonnegative(),
+      goodCount: z.number().int().nonnegative(),
+      idealCycleTimeSec: z.number().positive(),
+    }))
+    .query(async ({ input }) => {
+      const { computeOEE, getActiveOEETarget, evaluateOEEAlert } = await import('../services/oeeService');
+      const breakdown = await computeOEE(input);
+      const target = await getActiveOEETarget({ machineId: input.machineId, at: input.to });
+      const alert = evaluateOEEAlert(breakdown.oee, target ? {
+        alertThreshold: (target as any).alertThreshold,
+        criticalThreshold: (target as any).criticalThreshold,
+      } : null);
+      return { breakdown, target, alert };
+    }),
+
   // ============ DOWNTIME TRACKING ============
   startDowntime: protectedProcedure
     .input(z.object({
@@ -501,13 +522,66 @@ export const mqttClientRouter = router({
     }))
     .mutation(async ({ input }) => {
       const { calculateMachineHealth } = await import('../_core/socket');
-      return calculateMachineHealth(input.machineId, input.machineCode, {
+      const score = calculateMachineHealth(input.machineId, input.machineCode, {
         oee: input.oee,
         uptime: input.uptime,
         errorRate: input.errorRate,
         cycleTimeVariance: input.cycleTimeVariance,
         downtimeFrequency: input.downtimeFrequency,
       });
+
+      // Persist snapshot to machine_health_history (best-effort; ignore failures)
+      try {
+        const oeeScore = Math.round(input.oee ?? 0);
+        const uptimeScore = Math.round(input.uptime ?? 0);
+        const errorRateScore = Math.round(Math.max(0, 100 - (input.errorRate ?? 0) * 10));
+        const cycleTimeScore = Math.round(Math.max(0, 100 - (input.cycleTimeVariance ?? 0)));
+
+        // WS-4: prefer the statistical predictive-maintenance risk (time-aware).
+        // Falls back to the legacy heuristic (100 - healthScore) on sparse data
+        // or any failure, preserving prior behaviour.
+        let failureRisk = Math.max(0, Math.min(100, Math.round(100 - score)));
+        let recommendedMaintenanceDate: Date | null = null;
+        let urgency: string = failureRisk >= 70 ? 'critical' : failureRisk >= 50 ? 'high' : failureRisk >= 30 ? 'medium' : 'low';
+        let pmNotes: string | null = null;
+        try {
+          const { computeFailureRisk } = await import('../services/predictiveMaintenanceService');
+          const pm = await computeFailureRisk(input.machineId);
+          // Only adopt the predictive value when it has measurable confidence.
+          if (pm.confidenceScore >= 30 && pm.dataPoints >= 5) {
+            failureRisk = pm.failureRisk;
+            recommendedMaintenanceDate = pm.recommendedMaintenanceDate;
+            urgency = pm.maintenanceUrgency.toLowerCase();
+            pmNotes = pm.predictedTimeframe;
+          }
+        } catch (pmErr) {
+          console.error('[calculateMachineHealth] Predictive risk skipped:', (pmErr as Error)?.message);
+        }
+
+        await db.recordMachineHealthSnapshot({
+          machineId: input.machineId,
+          machineCode: input.machineCode,
+          timestamp: new Date(),
+          healthScore: Math.round(score),
+          oeeScore,
+          uptimeScore,
+          errorRateScore,
+          cycleTimeScore,
+          currentOEE: input.oee !== undefined ? Math.round(input.oee) : null,
+          uptimePercentage: input.uptime !== undefined ? Math.round(input.uptime) : null,
+          errorCount: null,
+          cycleTimeVariance: input.cycleTimeVariance !== undefined ? String(input.cycleTimeVariance) : null,
+          predictedFailureRisk: failureRisk,
+          recommendedMaintenanceDate,
+          maintenanceUrgency: urgency as any,
+          calculationMethod: 'WEIGHTED',
+          notes: pmNotes,
+        } as any);
+      } catch (err) {
+        console.error('[calculateMachineHealth] Failed to persist snapshot:', err);
+      }
+
+      return score;
     }),
 
   getMachineHealth: protectedProcedure
@@ -515,6 +589,16 @@ export const mqttClientRouter = router({
     .query(async ({ input }) => {
       const { getMachineHealthScore } = await import('../_core/socket');
       return getMachineHealthScore(input.machineId);
+    }),
+
+  getMachineHealthHistory: protectedProcedure
+    .input(z.object({
+      machineId: z.number(),
+      range: z.enum(['day', 'week', 'month']).default('week'),
+      limit: z.number().int().positive().max(2000).default(500),
+    }))
+    .query(async ({ input }) => {
+      return db.getMachineHealthHistory(input.machineId, input.range, input.limit);
     }),
 
   // ============ MQTT CLIENT MANUAL CREATE ============

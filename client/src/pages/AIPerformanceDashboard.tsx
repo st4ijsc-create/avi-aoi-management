@@ -34,6 +34,19 @@ import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import { BatchCommentsSection } from '@/components/BatchCommentsSection';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { toast } from 'sonner';
+import { Loader2 } from 'lucide-react';
+import { ModelSelect, DatasetSelect } from '@/components/ai/ModelSelect';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RTooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 
 export default function AIPerformanceDashboard() {
   const { t } = useTranslation();
@@ -244,6 +257,7 @@ export default function AIPerformanceDashboard() {
           <TabsList>
             <TabsTrigger value="overview">{t('dashboard.overview')}</TabsTrigger>
             <TabsTrigger value="confusion">{t('reports.confusionMatrix')}</TabsTrigger>
+            <TabsTrigger value="evaluation">{t('aiEval.beforeAfterTab', 'Eval (Before/After)')}</TabsTrigger>
             <TabsTrigger value="batches">{t('reports.trainingBatches')}</TabsTrigger>
             <TabsTrigger value="suggestions">{t('reports.suggestionsHistory')}</TabsTrigger>
           </TabsList>
@@ -457,6 +471,11 @@ export default function AIPerformanceDashboard() {
             </Card>
           </TabsContent>
 
+          {/* Eval Before/After Tab (WS-1) */}
+          <TabsContent value="evaluation">
+            <EvalBeforeAfterSection />
+          </TabsContent>
+
           {/* Training Batches Tab */}
           <TabsContent value="batches">
             <Card>
@@ -655,5 +674,232 @@ export default function AIPerformanceDashboard() {
         </Tabs>
       </div>
     </DashboardLayout>
+  );
+}
+
+// ─── Eval Before/After Section (WS-1) ────────────────────────────────────────
+
+interface EvalResultShape {
+  accuracy: number;
+  precision: number;
+  recall: number;
+  f1Score: number;
+  microF1?: number;
+  confusionMatrix?: number[][];
+  labels: string[];
+  evaluated: number;
+  skipped: number;
+}
+
+interface CompareReportShape {
+  baseline: EvalResultShape | null;
+  candidate: EvalResultShape;
+  gate: { pass: boolean; reason: string; accuracyDelta: number; epsilon: number };
+  split: string;
+  generatedAt: string;
+}
+
+function EvalBeforeAfterSection() {
+  const { t } = useTranslation();
+  const [modelId, setModelId] = useState('');
+  const [datasetId, setDatasetId] = useState('');
+  const [candidatePath, setCandidatePath] = useState('');
+  const [baselinePath, setBaselinePath] = useState('');
+  const [split, setSplit] = useState<'train' | 'val' | 'test'>('test');
+  const [report, setReport] = useState<CompareReportShape | null>(null);
+
+  const compare = trpc.aiEval.compareBeforeAfter.useMutation({
+    onSuccess: (data) => {
+      setReport(data as unknown as CompareReportShape);
+      toast.success(t('aiEval.compareDone', 'Đã so sánh xong'));
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const toPct = (n: number | undefined) => ((n ?? 0) * 100);
+
+  const chartData = report
+    ? [
+        {
+          metric: 'Accuracy',
+          [t('aiEval.before', 'Trước')]: Number(toPct(report.baseline?.accuracy).toFixed(2)),
+          [t('aiEval.after', 'Sau')]: Number(toPct(report.candidate.accuracy).toFixed(2)),
+        },
+        {
+          metric: 'Precision',
+          [t('aiEval.before', 'Trước')]: Number(toPct(report.baseline?.precision).toFixed(2)),
+          [t('aiEval.after', 'Sau')]: Number(toPct(report.candidate.precision).toFixed(2)),
+        },
+        {
+          metric: 'Recall',
+          [t('aiEval.before', 'Trước')]: Number(toPct(report.baseline?.recall).toFixed(2)),
+          [t('aiEval.after', 'Sau')]: Number(toPct(report.candidate.recall).toFixed(2)),
+        },
+        {
+          metric: 'F1',
+          [t('aiEval.before', 'Trước')]: Number(toPct(report.baseline?.f1Score).toFixed(2)),
+          [t('aiEval.after', 'Sau')]: Number(toPct(report.candidate.f1Score).toFixed(2)),
+        },
+      ]
+    : [];
+
+  const beforeKey = t('aiEval.before', 'Trước');
+  const afterKey = t('aiEval.after', 'Sau');
+  const cm = report?.candidate.confusionMatrix;
+  const cmLabels = report?.candidate.labels ?? [];
+
+  return (
+    <div className="space-y-4">
+      {/* Config */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t('aiEval.runCompare', 'Chạy đánh giá Before/After')}</CardTitle>
+          <CardDescription>
+            {t('aiEval.runCompareDesc', 'So sánh model ứng viên với baseline trên cùng split test')}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1">
+              <Label>{t('aiEval.model', 'Model')}</Label>
+              <ModelSelect value={modelId} onChange={setModelId} />
+            </div>
+            <div className="space-y-1">
+              <Label>{t('aiEval.dataset', 'Dataset')}</Label>
+              <DatasetSelect value={datasetId} onChange={setDatasetId} modelId={modelId ? Number(modelId) : undefined} />
+            </div>
+            <div className="space-y-1">
+              <Label>{t('aiEval.candidatePath', 'Đường dẫn classifier ứng viên')}</Label>
+              <Input value={candidatePath} onChange={(e) => setCandidatePath(e.target.value)} placeholder="uploads/models/..." />
+            </div>
+            <div className="space-y-1">
+              <Label>{t('aiEval.baselinePath', 'Đường dẫn baseline (tùy chọn)')}</Label>
+              <Input value={baselinePath} onChange={(e) => setBaselinePath(e.target.value)} placeholder="uploads/models/..." />
+            </div>
+            <div className="space-y-1">
+              <Label>{t('aiEval.split', 'Split')}</Label>
+              <Select value={split} onValueChange={(v: 'train' | 'val' | 'test') => setSplit(v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="train">train</SelectItem>
+                  <SelectItem value="val">val</SelectItem>
+                  <SelectItem value="test">test</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <Button
+            onClick={() =>
+              compare.mutate({
+                modelId: Number(modelId),
+                datasetId: Number(datasetId),
+                candidateClassifierPath: candidatePath.trim(),
+                baselineClassifierPath: baselinePath.trim() || undefined,
+                split,
+              })
+            }
+            disabled={!modelId || !datasetId || !candidatePath.trim() || compare.isPending}
+          >
+            {compare.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BarChart3 className="h-4 w-4 mr-2" />}
+            {t('aiEval.compareRun', 'So sánh')}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {report && (
+        <>
+          {/* Quality gate */}
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              {report.gate.pass ? (
+                <CheckCircle2 className="h-5 w-5 text-green-500" />
+              ) : (
+                <XCircle className="h-5 w-5 text-red-500" />
+              )}
+              <div className="flex-1">
+                <p className="font-medium">
+                  {report.gate.pass
+                    ? t('aiEval.gatePass', 'Quality gate: ĐẠT')
+                    : t('aiEval.gateFail', 'Quality gate: KHÔNG ĐẠT')}
+                </p>
+                <p className="text-sm text-muted-foreground">{report.gate.reason}</p>
+              </div>
+              <Badge variant={report.gate.accuracyDelta >= 0 ? 'default' : 'destructive'}>
+                Δacc {(report.gate.accuracyDelta * 100).toFixed(2)}%
+              </Badge>
+            </CardContent>
+          </Card>
+
+          {/* Before vs After chart */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{t('aiEval.metricsCompare', 'Chỉ số Before vs After (%)')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="metric" />
+                    <YAxis domain={[0, 100]} />
+                    <RTooltip />
+                    <Legend />
+                    <Bar dataKey={beforeKey} fill="#94a3b8" />
+                    <Bar dataKey={afterKey} fill="#3b82f6" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Candidate confusion matrix */}
+          {cm && cm.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">{t('aiEval.candidateConfusion', 'Confusion Matrix (ứng viên)')}</CardTitle>
+                <CardDescription>
+                  {t('aiEval.confusionHint', 'Hàng = nhãn thực tế, Cột = nhãn dự đoán')}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="overflow-x-auto">
+                <table className="border-collapse text-sm">
+                  <thead>
+                    <tr>
+                      <th className="p-2" />
+                      {cmLabels.map((l) => (
+                        <th key={l} className="p-2 font-medium text-muted-foreground">{l}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cm.map((row, i) => (
+                      <tr key={i}>
+                        <td className="p-2 font-medium text-muted-foreground">{cmLabels[i] ?? i}</td>
+                        {row.map((cell, j) => (
+                          <td
+                            key={j}
+                            className={cn(
+                              'p-3 text-center border rounded',
+                              i === j ? 'bg-green-500/15 font-semibold' : cell > 0 ? 'bg-red-500/10' : '',
+                            )}
+                          >
+                            {cell}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="text-xs text-muted-foreground mt-3">
+                  {t('aiEval.evaluated', 'Đã đánh giá')}: {report.candidate.evaluated} • {t('aiEval.skipped', 'Bỏ qua')}: {report.candidate.skipped}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+    </div>
   );
 }

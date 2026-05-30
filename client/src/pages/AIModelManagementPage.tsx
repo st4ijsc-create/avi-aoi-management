@@ -34,6 +34,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
+import { Progress } from "@/components/ui/progress";
+import { DatasetSelect } from "@/components/ai/ModelSelect";
 import { toast } from "sonner";
 import {
   Plus,
@@ -56,6 +58,8 @@ import {
   MoreHorizontal,
   Cpu,
   Box,
+  Rocket,
+  Play,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────
@@ -714,6 +718,172 @@ function CreateVersionDialog({
   );
 }
 
+// ─── Training Pipeline Dialog (WS-1) ─────────────────────
+function TrainingPipelineDialog({
+  open,
+  onOpenChange,
+  modelId,
+  modelCode,
+  modelLabels,
+  onSuccess,
+  t,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  modelId: number;
+  modelCode: string;
+  modelLabels: string[];
+  onSuccess: () => void;
+  t: (key: string, fallback?: string) => string;
+}) {
+  const [targetVersion, setTargetVersion] = useState("");
+  const [datasetId, setDatasetId] = useState("");
+  const [strategy, setStrategy] = useState<"transfer" | "fewshot">("transfer");
+  const [labelsCsv, setLabelsCsv] = useState(modelLabels.join(", "));
+
+  const startPipeline = trpc.aiEval.startPipeline.useMutation({
+    onSuccess: () => {
+      toast.success(t("aiEval.pipelineStarted", "Đã khởi tạo training job"));
+      setTargetVersion("");
+      setDatasetId("");
+      onOpenChange(false);
+      onSuccess();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const classLabels = labelsCsv.split(",").map((s) => s.trim()).filter(Boolean);
+  const canSubmit = !!targetVersion.trim() && !!datasetId && classLabels.length >= 2;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Rocket className="h-5 w-5" />
+            {t("aiEval.startTraining", "Khởi tạo Training Pipeline")}
+          </DialogTitle>
+          <DialogDescription>
+            {t("aiEval.startTrainingDesc", "Huấn luyện phiên bản mới cho")} <strong>{modelCode}</strong>
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>{t("aiModels.fields.version", "Target Version")} *</Label>
+            <Input
+              value={targetVersion}
+              onChange={(e) => setTargetVersion(e.target.value)}
+              placeholder="e.g. 1.1.0"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>{t("aiEval.dataset", "Dataset")} *</Label>
+            <DatasetSelect value={datasetId} onChange={setDatasetId} modelId={modelId} />
+          </div>
+
+          <div className="space-y-2">
+            <Label>{t("aiEval.classLabels", "Class Labels (≥2, phân tách bằng dấu phẩy)")} *</Label>
+            <Input
+              value={labelsCsv}
+              onChange={(e) => setLabelsCsv(e.target.value)}
+              placeholder="OK, NG"
+            />
+            <p className="text-xs text-muted-foreground">{classLabels.length} {t("aiEval.labelsCount", "nhãn")}</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>{t("aiEval.strategy", "Strategy")}</Label>
+            <Select value={strategy} onValueChange={(v) => setStrategy(v as "transfer" | "fewshot")}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="transfer">transfer</SelectItem>
+                <SelectItem value="fewshot">fewshot</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={startPipeline.isPending}>
+            {t("common.cancel", "Cancel")}
+          </Button>
+          <Button
+            onClick={() =>
+              startPipeline.mutate({
+                modelId,
+                targetVersion: targetVersion.trim(),
+                classLabels,
+                datasetId: Number(datasetId),
+                strategy,
+              })
+            }
+            disabled={!canSubmit || startPipeline.isPending}
+          >
+            {startPipeline.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Play className="h-4 w-4 mr-2" />
+            )}
+            {t("aiEval.startTraining", "Khởi tạo")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Training Jobs List (WS-1) ───────────────────────────
+function TrainingJobsList({ modelId, t }: { modelId: number; t: (key: string, fallback?: string) => string }) {
+  const { data, isLoading } = trpc.aiLocalTraining.listJobs.useQuery(
+    { modelId, limit: 20, offset: 0 },
+    { refetchInterval: 5000 },
+  );
+  const jobs = data?.items;
+
+  if (isLoading) return <Skeleton className="h-20 w-full" />;
+  if (!jobs || jobs.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">{t("aiEval.noJobs", "Chưa có training job")}</p>
+    );
+  }
+
+  const jobStatusColor = (s: string) => {
+    switch (s) {
+      case "COMPLETED": return "default";
+      case "RUNNING": case "TRAINING": case "QUEUED": return "secondary";
+      case "FAILED": case "CANCELLED": return "destructive";
+      default: return "outline";
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {jobs.map((job: any) => (
+        <div key={job.id} className="border rounded-lg p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-medium truncate">{job.name}</p>
+              <p className="text-xs text-muted-foreground font-mono">→ {job.targetVersion}</p>
+            </div>
+            <Badge variant={jobStatusColor(job.status) as any} className="text-xs">{job.status}</Badge>
+          </div>
+          <div className="flex items-center gap-2">
+            <Progress value={job.progress ?? 0} className="h-2 flex-1" />
+            <span className="text-xs text-muted-foreground w-10 text-right">{job.progress ?? 0}%</span>
+          </div>
+          {job.errorMessage && (
+            <p className="text-xs text-red-500">{job.errorMessage}</p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Model Detail Panel ──────────────────────────────────
 function ModelDetailPanel({
   modelId,
@@ -740,6 +910,7 @@ function ModelDetailPanel({
 
   const [showUpload, setShowUpload] = useState(false);
   const [showCreateVersion, setShowCreateVersion] = useState(false);
+  const [showTraining, setShowTraining] = useState(false);
 
   if (isLoading) {
     return (
@@ -842,6 +1013,19 @@ function ModelDetailPanel({
           <GitBranch className="h-4 w-4 mr-1" />
           {t("aiModels.newVersion", "New Version")}
         </Button>
+        <Button size="sm" onClick={() => setShowTraining(true)}>
+          <Rocket className="h-4 w-4 mr-1" />
+          {t("aiEval.trainModel", "Train Model")}
+        </Button>
+      </div>
+
+      {/* Training Jobs (WS-1) */}
+      <div>
+        <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+          <Rocket className="h-4 w-4" />
+          {t("aiEval.trainingJobs", "Training Jobs")}
+        </h4>
+        <TrainingJobsList modelId={modelId} t={t} />
       </div>
 
       {/* Versions Table */}
@@ -928,6 +1112,20 @@ function ModelDetailPanel({
           onOpenChange={setShowCreateVersion}
           modelId={modelId}
           modelCode={model.code}
+          onSuccess={() => {
+            refetchVersions();
+            onRefresh();
+          }}
+          t={t}
+        />
+      )}
+      {showTraining && (
+        <TrainingPipelineDialog
+          open={showTraining}
+          onOpenChange={setShowTraining}
+          modelId={modelId}
+          modelCode={model.code}
+          modelLabels={(model.labels as string[]) ?? []}
           onSuccess={() => {
             refetchVersions();
             onRefresh();

@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, or, isNull, SQL } from "drizzle-orm";
+import { eq, and, desc, asc, or, isNull, ilike, SQL } from "drizzle-orm";
 import { getDb } from "./connection";
 import {
   shiftConfigs, InsertShiftConfig,
@@ -9,6 +9,8 @@ import {
   lineProcessAssignments, InsertLineProcessAssignment,
   productionOrderTemplates, InsertProductionOrderTemplate,
   productionLines,
+  scheduleRuns, InsertScheduleRun,
+  scheduleRunItems, InsertScheduleRunItem,
 } from "../../drizzle/schema";
 
 // ============ SHIFT CONFIG FUNCTIONS ============
@@ -62,6 +64,8 @@ export async function getProductionOrders(filters?: {
   lineId?: number;
   status?: string;
   companyCode?: string;
+  search?: string;
+  limit?: number;
 }) {
   const db = await getDb();
   if (!db) return [];
@@ -72,10 +76,20 @@ export async function getProductionOrders(filters?: {
   if (filters?.lineId) conditions.push(eq(productionOrders.lineId, filters.lineId));
   if (filters?.status) conditions.push(eq(productionOrders.status, filters.status as any));
   if (filters?.companyCode) conditions.push(eq(productionOrders.companyCode, filters.companyCode));
+  if (filters?.search && filters.search.trim()) {
+    const term = `%${filters.search.trim()}%`;
+    const searchCond = or(
+      ilike(productionOrders.orderCode, term),
+      ilike(productionOrders.companyCode, term),
+    );
+    if (searchCond) conditions.push(searchCond);
+  }
   
+  const limit = Math.min(Math.max(filters?.limit ?? 500, 1), 1000);
   return db.select().from(productionOrders)
     .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(desc(productionOrders.createdAt));
+    .orderBy(desc(productionOrders.createdAt))
+    .limit(limit);
 }
 
 export async function getProductionOrderById(id: number) {
@@ -645,7 +659,7 @@ export async function optimizeSchedule(factoryId: number): Promise<ScheduleOptim
 export async function applyScheduleSuggestion(suggestion: ScheduleOptimizationResult) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
+
   await db.update(productionOrders)
     .set({
       lineId: suggestion.suggestedLineId,
@@ -654,4 +668,75 @@ export async function applyScheduleSuggestion(suggestion: ScheduleOptimizationRe
       status: 'pending',
     })
     .where(eq(productionOrders.id, suggestion.orderId));
+}
+
+// ============ WS-4 SCHEDULE RUNS (audit + apply) ============
+
+export async function createScheduleRun(
+  run: InsertScheduleRun,
+  items: Omit<InsertScheduleRunItem, "runId">[],
+): Promise<{ id: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [created] = await db.insert(scheduleRuns).values(run).returning({ id: scheduleRuns.id });
+  const runId = created.id;
+  if (items.length > 0) {
+    await db.insert(scheduleRunItems).values(items.map((it) => ({ ...it, runId })));
+  }
+  return { id: runId };
+}
+
+export async function listScheduleRuns(filters?: { factoryId?: number; lineId?: number; limit?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [];
+  if (filters?.factoryId) conditions.push(eq(scheduleRuns.factoryId, filters.factoryId));
+  if (filters?.lineId) conditions.push(eq(scheduleRuns.lineId, filters.lineId));
+  const limit = Math.min(Math.max(filters?.limit ?? 50, 1), 500);
+  return db.select().from(scheduleRuns)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(scheduleRuns.createdAt))
+    .limit(limit);
+}
+
+export async function getScheduleRunById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [run] = await db.select().from(scheduleRuns).where(eq(scheduleRuns.id, id)).limit(1);
+  if (!run) return null;
+  const items = await db.select().from(scheduleRunItems).where(eq(scheduleRunItems.runId, id));
+  return { ...run, items };
+}
+
+/**
+ * Apply a DRAFT schedule run: write each item's suggested slot back to its
+ * production order (reusing the same fields as applyScheduleSuggestion to keep
+ * the existing audit/update path), then mark the run APPLIED.
+ */
+export async function applyScheduleRun(id: number): Promise<{ applied: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const items = await db.select().from(scheduleRunItems).where(eq(scheduleRunItems.runId, id));
+  let applied = 0;
+  for (const item of items) {
+    await db.update(productionOrders)
+      .set({
+        lineId: item.lineId,
+        plannedStartDate: item.suggestedStart,
+        plannedEndDate: item.suggestedEnd,
+      })
+      .where(eq(productionOrders.id, item.productionOrderId));
+    await db.update(scheduleRunItems).set({ applied: true }).where(eq(scheduleRunItems.id, item.id));
+    applied++;
+  }
+  await db.update(scheduleRuns)
+    .set({ status: "APPLIED", appliedAt: new Date() })
+    .where(eq(scheduleRuns.id, id));
+  return { applied };
+}
+
+export async function dismissScheduleRun(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(scheduleRuns).set({ status: "DISMISSED" }).where(eq(scheduleRuns.id, id));
 }

@@ -17,8 +17,10 @@ import { initializeSocket } from "./socket";
 import { startOfflineMonitor } from "./offlineMonitor";
 import { initializeEmailTransporter } from "./email";
 import { initializeScheduledReports, shutdownScheduledReports } from "../services/reportScheduler";
+import { initializeScheduledBackups, shutdownScheduledBackups } from "../services/backupSchedulerService";
 import { initMqttBroker, shutdownMqttBroker, publishFactoryAlertUpdate } from "../services/mqttService";
 import { startAlertEvaluationJob, stopAlertEvaluationJob } from "../services/alertEvaluationService";
+import { startEscalationScheduler, stopEscalationScheduler } from "../services/alertEscalationService";
 import { initSummaryScheduler, stopSummaryScheduler } from "../services/mqttSummaryScheduler";
 import { initBulletinScheduler, stopBulletinScheduler } from "../services/mqttBulletinService";
 import { cacheWarmingService } from "../services/cacheWarmingService";
@@ -27,6 +29,7 @@ import { initializeRuntimeSecurity, shutdownRuntimeSecurity } from "../license/r
 import { registerExternalInspectionRoutes } from "../routes/externalInspectionApi";
 import { registerAiStreamingRoutes } from "../routes/aiStreamingApi";
 import { registerAiLocalKnowledgeRoutes } from "../routes/aiLocalKnowledgeApi";
+import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
 import logger from "../logger";
 import { createApiLimiter, createAuthLimiter } from "./rateLimitConfig";
 
@@ -149,9 +152,31 @@ async function startServer() {
   const authLimiter = createAuthLimiter();
   app.use('/api/auth/', authLimiter);
 
-  // Health check endpoint
-  app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  // Health check endpoint (rich diagnostics for Docker HEALTHCHECK / orchestrators)
+  app.get('/health', async (_req, res) => {
+    const startedAt = Date.now();
+    let dbStatus: 'connected' | 'disconnected' | 'error' = 'disconnected';
+    try {
+      const { getDb } = await import("../db/connection");
+      const dbInstance = await getDb();
+      if (dbInstance) dbStatus = 'connected';
+    } catch { dbStatus = 'error'; }
+
+    const mem = process.memoryUsage();
+    const memoryMB = Math.round(mem.heapUsed / 1024 / 1024);
+    const uptimeSec = Math.floor(process.uptime());
+    const version = process.env.npm_package_version || 'unknown';
+    const status = dbStatus === 'connected' ? 'ok' : 'degraded';
+
+    res.status(dbStatus === 'connected' ? 200 : 503).json({
+      status,
+      db: dbStatus,
+      memoryMB,
+      uptimeSec,
+      version,
+      checkMs: Date.now() - startedAt,
+      timestamp: new Date().toISOString(),
+    });
   });
 
   // ============================================================
@@ -1282,9 +1307,27 @@ async function startServer() {
         return res.status(401).json({ success: false, message: "Invalid username or password" });
       }
 
+      // Brute-force lockout check
+      const MAX_ATTEMPTS = 5;
+      const LOCKOUT_MINUTES = 15;
+      if (user.lockedUntil && user.lockedUntil > new Date()) {
+        const remaining = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
+        return res.status(429).json({ success: false, message: `Account locked. Try again in ${remaining} minutes.` });
+      }
+
       const isValid = await bcrypt.compare(password, user.passwordHash);
       if (!isValid) {
-        return res.status(401).json({ success: false, message: "Invalid username or password" });
+        const { updateUserLoginAttempts } = await import("../db");
+        const newAttempts = (user.loginAttempts ?? 0) + 1;
+        const lockedUntil = newAttempts >= MAX_ATTEMPTS ? new Date(Date.now() + LOCKOUT_MINUTES * 60_000) : null;
+        await updateUserLoginAttempts(user.id, newAttempts, lockedUntil);
+        return res.status(401).json({ success: false, message: lockedUntil ? `Account locked for ${LOCKOUT_MINUTES} minutes.` : "Invalid username or password" });
+      }
+
+      // Reset lockout on successful login
+      if ((user.loginAttempts ?? 0) > 0) {
+        const { updateUserLoginAttempts } = await import("../db");
+        await updateUserLoginAttempts(user.id, 0, null);
       }
 
       // Create JWT token (same format as session cookie, but returned as Bearer token)
@@ -4200,6 +4243,8 @@ async function startServer() {
   // Register AI SSE streaming routes (before tRPC mount)
   registerAiStreamingRoutes(app);
   registerAiLocalKnowledgeRoutes(app);
+  // WS-2 — edge model package download proxy (apiKey-verified, Range resume)
+  registerEdgeDownloadRoute(app);
 
   // License enforcement middleware (must be before tRPC mount)
   app.use("/api/trpc", licenseEnforcementMiddleware());
@@ -4230,6 +4275,28 @@ async function startServer() {
   initializeScheduledReports().catch((err) => {
     console.error("[ReportScheduler] Initialization failed, server continues without scheduled reports:", err?.message || err);
   });
+
+  // Initialize scheduled backups (ISO 22301 DR — non-blocking)
+  initializeScheduledBackups().catch((err) => {
+    console.error("[BackupScheduler] Initialization failed:", err?.message || err);
+  });
+
+  // S3.4 — AI batch RCA cron (daily 02:00 by default)
+  try {
+    const { initBatchRcaScheduler } = await import("../services/aiBatchRcaScheduler");
+    initBatchRcaScheduler();
+  } catch (err) {
+    console.error("[aiBatchRcaScheduler] init failed:", (err as any)?.message || err);
+  }
+
+  // WS-1 — AI self-learning scan (auto active-learning + retrain flagging).
+  // Disabled by default; opt in via AI_SELF_LEARNING_ENABLED=true.
+  try {
+    const { initSelfLearningScheduler } = await import("../services/aiSelfLearningScheduler");
+    initSelfLearningScheduler();
+  } catch (err) {
+    console.error("[aiSelfLearningScheduler] init failed:", (err as any)?.message || err);
+  }
   
   // Initialize MQTT broker (if enabled)
   if (process.env.MQTT_ENABLED === 'true') {
@@ -4240,6 +4307,26 @@ async function startServer() {
     console.log('[MQTT] MQTT broker, alert evaluation, and bulletin scheduler enabled');
   } else {
     console.log('[MQTT] MQTT broker disabled (set MQTT_ENABLED=true to enable)');
+  }
+
+  // Alert escalation engine — always-on, runs every 60s
+  startEscalationScheduler(60_000);
+
+  // WS-4 — Predictive maintenance cycle (statistical risk + RUL -> alerts).
+  // Disabled by default; opt in via PREDICTIVE_MAINTENANCE_ENABLED=true.
+  try {
+    const { startPredictiveMaintenanceJob } = await import("../services/predictiveMaintenanceService");
+    startPredictiveMaintenanceJob(30); // every 30 minutes
+  } catch (err) {
+    console.error("[PredictiveMaintenance] init failed:", (err as any)?.message || err);
+  }
+
+  // WS-2 — Edge stale-deployment checker (marks ACTIVE→OUTDATED past threshold)
+  try {
+    const { startEdgeStaleScheduler } = await import("../services/edgeStaleScheduler");
+    startEdgeStaleScheduler();
+  } catch (err) {
+    console.error("[EdgeStale] init failed:", (err as any)?.message || err);
   }
 
   // development mode uses Vite, production mode uses static files
@@ -4278,8 +4365,10 @@ async function startServer() {
     isShuttingDown = true;
     logger.info(`${signal} received, shutting down gracefully...`);
     shutdownScheduledReports();
+    shutdownScheduledBackups();
     shutdownRuntimeSecurity();
     cacheWarmingService.stop();
+    stopEscalationScheduler();
     if (process.env.MQTT_ENABLED === 'true') {
       shutdownMqttBroker();
       stopSummaryScheduler();

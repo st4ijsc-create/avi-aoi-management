@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
@@ -80,6 +81,7 @@ import {
   Info,
   Pencil,
   Undo2,
+  Rocket,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { vi, zhCN, enUS } from "date-fns/locale";
@@ -117,6 +119,7 @@ type AllMachine = {
 
 export function MachineRegistrationContent() {
   const { t, i18n } = useTranslation();
+  const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState("pending");
 
   const dateFnsLocale = i18n.language === 'vi' ? vi : i18n.language === 'zh' ? zhCN : enUS;
@@ -391,6 +394,12 @@ export function MachineRegistrationContent() {
             </p>
           </div>
           <div className="flex gap-2">
+            <Button
+              size="sm"
+              onClick={() => navigate("/machine-onboarding")}
+            >
+              <Rocket className="h-4 w-4 mr-1" /> {t('machineRegistration.openWizard')}
+            </Button>
             <Button
               variant="outline"
               size="sm"

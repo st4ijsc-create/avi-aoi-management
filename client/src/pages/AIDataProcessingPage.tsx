@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from '@/components/DashboardLayout';
 import { trpc } from '@/lib/trpc';
@@ -42,6 +42,8 @@ import {
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import { ModelSelect, DatasetSelect } from '@/components/ai/ModelSelect';
+import { Loader2, PieChart } from 'lucide-react';
 
 type PipelineStatus = 'idle' | 'running' | 'completed' | 'error';
 type AugmentationType = 'flip' | 'rotate' | 'brightness' | 'contrast' | 'noise' | 'crop' | 'resize' | 'blur';
@@ -79,10 +81,14 @@ export default function AIDataProcessingPage() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-3 max-w-lg">
+          <TabsList className="grid w-full grid-cols-4 max-w-2xl">
             <TabsTrigger value="pipeline" className="flex items-center gap-2">
               <Layers className="h-4 w-4" />
               {t('aiDataProcessing.tabs.pipeline', 'Data Pipeline')}
+            </TabsTrigger>
+            <TabsTrigger value="dataset" className="flex items-center gap-2">
+              <Database className="h-4 w-4" />
+              {t('aiDataProcessing.tabs.dataset', 'Dataset Split')}
             </TabsTrigger>
             <TabsTrigger value="preprocessing" className="flex items-center gap-2">
               <ImageIcon className="h-4 w-4" />
@@ -98,6 +104,10 @@ export default function AIDataProcessingPage() {
             <DataPipelineSection />
           </TabsContent>
 
+          <TabsContent value="dataset" className="space-y-4">
+            <DatasetSplitSection />
+          </TabsContent>
+
           <TabsContent value="preprocessing" className="space-y-4">
             <ImagePreprocessingSection />
           </TabsContent>
@@ -108,6 +118,142 @@ export default function AIDataProcessingPage() {
         </Tabs>
       </div>
     </DashboardLayout>
+  );
+}
+
+// ─── Dataset Split Section (WS-1) ────────────────────────────────────────────
+
+function DatasetSplitSection() {
+  const { t } = useTranslation();
+  const [datasetId, setDatasetId] = useState('');
+  const [result, setResult] = useState<{
+    datasetId: number;
+    totalSamples: number;
+    labelDistribution: Record<string, number>;
+    split: { train: number; val: number; test: number };
+    labels: string[];
+  } | null>(null);
+
+  const buildDataset = trpc.aiEval.buildDataset.useMutation({
+    onSuccess: (data) => {
+      setResult(data);
+      toast.success(
+        t('aiDataProcessing.dataset.built', 'Đã build dataset: {{count}} mẫu', {
+          count: data.totalSamples,
+        }),
+      );
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const splitTotal = result ? result.split.train + result.split.val + result.split.test : 0;
+  const pct = (n: number) => (splitTotal > 0 ? ((n / splitTotal) * 100).toFixed(1) : '0');
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold">{t('aiDataProcessing.dataset.title', 'Tạo Dataset Split')}</h2>
+        <p className="text-sm text-muted-foreground">
+          {t('aiDataProcessing.dataset.description', 'Materialize dataset train/val/test từ dữ liệu đã gán nhãn')}
+        </p>
+      </div>
+
+      <Card>
+        <CardContent className="p-4 flex flex-wrap items-end gap-3">
+          <div className="space-y-1 min-w-64">
+            <Label>{t('aiEval.dataset', 'Dataset')}</Label>
+            <DatasetSelect value={datasetId} onChange={setDatasetId} />
+          </div>
+          <Button
+            onClick={() => datasetId && buildDataset.mutate({ datasetId: Number(datasetId) })}
+            disabled={!datasetId || buildDataset.isPending}
+            className="flex items-center gap-2"
+          >
+            {buildDataset.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Play className="h-4 w-4" />
+            )}
+            {t('aiDataProcessing.dataset.build', 'Build Dataset')}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {result && (
+        <>
+          {/* Summary */}
+          <div className="grid gap-4 md:grid-cols-4">
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-2xl font-bold">{result.totalSamples.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground">{t('aiDataProcessing.dataset.totalSamples', 'Tổng số mẫu')}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-2xl font-bold text-blue-600">{result.split.train.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground">Train ({pct(result.split.train)}%)</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-2xl font-bold text-amber-600">{result.split.val.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground">Val ({pct(result.split.val)}%)</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-2xl font-bold text-green-600">{result.split.test.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground">Test ({pct(result.split.test)}%)</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Split ratio bar */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">{t('aiDataProcessing.dataset.splitRatio', 'Tỉ lệ Train/Val/Test')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex h-4 w-full overflow-hidden rounded-full">
+                <div className="bg-blue-500" style={{ width: `${pct(result.split.train)}%` }} title={`Train ${pct(result.split.train)}%`} />
+                <div className="bg-amber-500" style={{ width: `${pct(result.split.val)}%` }} title={`Val ${pct(result.split.val)}%`} />
+                <div className="bg-green-500" style={{ width: `${pct(result.split.test)}%` }} title={`Test ${pct(result.split.test)}%`} />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Label distribution */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <PieChart className="h-4 w-4" />
+                {t('aiDataProcessing.dataset.labelDistribution', 'Phân bố nhãn')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {Object.entries(result.labelDistribution).map(([label, count]) => {
+                  const p = result.totalSamples > 0 ? (count / result.totalSamples) * 100 : 0;
+                  return (
+                    <div key={label} className="flex items-center gap-2">
+                      <span className="w-28 text-sm truncate">{label}</span>
+                      <div className="flex-1 h-4 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-primary transition-all" style={{ width: `${p}%` }} />
+                      </div>
+                      <span className="w-20 text-sm text-right">{count} ({p.toFixed(0)}%)</span>
+                    </div>
+                  );
+                })}
+                {Object.keys(result.labelDistribution).length === 0 && (
+                  <p className="text-sm text-muted-foreground">{t('common.noData', 'Không có dữ liệu')}</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -290,7 +436,53 @@ function DataPipelineSection() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Run History */}
+      <PipelineRunHistory />
     </div>
+  );
+}
+
+function PipelineRunHistory() {
+  const { t } = useTranslation();
+  const { data: history = [], isLoading } = trpc.aiSettings.getPipelineHistory.useQuery();
+
+  if (isLoading) return <Skeleton className="h-24 w-full" />;
+  if (!history || history.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <ListChecks className="h-4 w-4" />
+          {t('aiDataProcessing.pipeline.runHistory', 'Run History')}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ScrollArea className="max-h-56">
+          <div className="space-y-2">
+            {history.map((run: any, i: number) => (
+              <div key={i} className="flex items-center justify-between text-sm border rounded px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <Badge variant={run.status === 'completed' ? 'default' : 'destructive'} className="text-xs">
+                    {run.status}
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    {run.startedAt ? format(new Date(run.startedAt), 'dd/MM/yyyy HH:mm') : '—'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <span className="text-green-600">{run.processedCount ?? 0} {t('aiDataProcessing.pipeline.ok', 'ok')}</span>
+                  {(run.failedCount ?? 0) > 0 && (
+                    <span className="text-red-500">{run.failedCount} {t('aiDataProcessing.pipeline.failed', 'failed')}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -304,6 +496,24 @@ function ImagePreprocessingSection() {
   const [grayscale, setGrayscale] = useState(false);
   const [removeBackground, setRemoveBackground] = useState(false);
   const [autoContrast, setAutoContrast] = useState(true);
+  const [resizeMode, setResizeMode] = useState('letterbox');
+
+  const { data: savedConfig } = trpc.aiSettings.getPreprocessingConfig.useQuery();
+  const saveConfig = trpc.aiSettings.savePreprocessingConfig.useMutation({
+    onSuccess: () => toast.success(t('aiDataProcessing.preprocessing.saved', 'Đã lưu cấu hình')),
+    onError: (err) => toast.error(err.message),
+  });
+
+  useEffect(() => {
+    if (!savedConfig) return;
+    setTargetWidth(savedConfig.targetWidth ?? '640');
+    setTargetHeight(savedConfig.targetHeight ?? '640');
+    setNormalize(savedConfig.normalize ?? true);
+    setGrayscale(savedConfig.grayscale ?? false);
+    setRemoveBackground(savedConfig.removeBackground ?? false);
+    setAutoContrast(savedConfig.autoContrast ?? true);
+    setResizeMode(savedConfig.resizeMode ?? 'letterbox');
+  }, [savedConfig]);
 
   return (
     <div className="space-y-4">
@@ -337,7 +547,7 @@ function ImagePreprocessingSection() {
                 <Input type="number" value={targetHeight} onChange={(e) => setTargetHeight(e.target.value)} min="32" max="4096" />
               </div>
             </div>
-            <Select defaultValue="letterbox">
+            <Select value={resizeMode} onValueChange={setResizeMode}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -392,6 +602,33 @@ function ImagePreprocessingSection() {
               </div>
               <Switch checked={removeBackground} onCheckedChange={setRemoveBackground} />
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Save Config */}
+        <Card className="md:col-span-2">
+          <CardContent className="p-4 flex justify-end">
+            <Button
+              onClick={() =>
+                saveConfig.mutate({
+                  targetWidth,
+                  targetHeight,
+                  normalize,
+                  grayscale,
+                  removeBackground,
+                  autoContrast,
+                  resizeMode,
+                })
+              }
+              disabled={saveConfig.isPending}
+            >
+              {saveConfig.isPending ? (
+                <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4 mr-1.5" />
+              )}
+              {t('aiDataProcessing.preprocessing.saveConfig', 'Lưu cấu hình')}
+            </Button>
           </CardContent>
         </Card>
       </div>

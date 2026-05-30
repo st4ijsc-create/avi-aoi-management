@@ -27,7 +27,7 @@ import { spcConfigRouter, workstationSpcRouter, correlationRouter, spcRuleViolat
 
 // ─── Extracted domain router imports ─────────────────────────────────────────
 import { factoryRouter, workshopRouter, lineRouter, stationRouter, machineRouter } from "./routers/hierarchyRouters";
-import { productModelRouter, measurementPointRouter, productMachineMappingRouter, productCategoryRouter, productDocumentRouter } from "./routers/productRouters";
+import { productModelRouter, measurementPointRouter, productMachineMappingRouter, productCategoryRouter, productDocumentRouter, fiducialMarkRouter, measurementTypeCatalogRouter, defectCatalogRouter, measurementInstrumentRouter, samplingPlanRouter, productViewRouter, msaWizardRouter, instrumentCalibrationRouter, instrumentMsaRecordRouter, mpLightingProfileRouter, measurementSamplesRouter, spcAlertsRouter, mpDefectStatsRouter, msaAdvancedRouter, cadImportRouter } from "./routers/productRouters";
 import { inspectionRouter, measurementResultRouter } from "./routers/inspectionRouters";
 import { layoutRouter } from "./routers/layoutRouters";
 import { dashboardRouter, seedDataRouter } from "./routers/dashboardStatsRouters";
@@ -37,6 +37,7 @@ import { shiftConfigRouter } from "./routers/shiftConfigRouter";
 import { userRouter, userAssignmentRouter, userSettingsRouter } from "./routers/userRouters";
 import { alertRouter, yieldThresholdRouter } from "./routers/alertRouters";
 import { productionOrderRouter, lineStageRouter, lineProductAssignmentRouter } from "./routers/productionRouters";
+import { productionSessionRouter } from "./routers/productionSessionRouter";
 import { machineStatusRouter, templateRouter, bulkImportRouter, manualMappingRouter } from "./routers/statusTemplateRouters";
 import { mqttClientRouter, oeeRouter, mqttAlertRouter } from "./routers/mqttOeeRouters";
 import { inlineAuditRouter, workstationRouter, scheduledReportRouter, smtpRouter, systemConfigRouter, corporateFactoryStatsRouter } from "./routers/systemRouters";
@@ -45,6 +46,7 @@ import { notificationRouter } from "./routers/notificationRouters";
 import { dashboardWidgetRouter } from "./routers/dashboardWidgetRouters";
 import { drillDownRouter, annotationRouter, annotationTemplateRouter, annotationHistoryRouter } from "./routers/annotationRouters";
 import { rootCauseRouter, predictiveAlertRouter } from "./routers/aiRouters";
+import { predictiveMaintenanceRouter } from "./routers/predictiveMaintenanceRouter";
 
 // ─── New Feature Router Imports ──────────────────────────────────────────────
 import { pdfReportRouter } from "./routers/pdfReportRouter";
@@ -58,6 +60,14 @@ import { licenseRouter } from "./routers/licenseRouter";
 import { ngRateThresholdRouter } from "./routers/ngRateThresholdRouter";
 import { productionDashboardRouter } from "./routers/productionDashboardRouter";
 import { stationAnalysisRouter } from "./routers/stationAnalysisRouter";
+import { stationTriangulationRouter } from "./routers/stationTriangulationRouter";
+import { genealogyRouter } from "./routers/genealogyRouter";
+import { thresholdSuggestionRouter } from "./routers/thresholdSuggestionRouter";
+import { thresholdApprovalRouter } from "./routers/thresholdApprovalRouter";
+import { monteCarloFlowRouter } from "./routers/monteCarloFlowRouter";
+import { inspectionVariantRouter } from "./routers/inspectionVariantRouter";
+import { mpVariantSubformRouter } from "./routers/mpVariantSubformRouter";
+import { ipcAcceptanceRouter } from "./routers/ipcAcceptanceRouter";
 import { hierarchyTreeRouter } from "./routers/hierarchyTreeRouter";
 import { mqttNgAlertSettingsRouter } from "./routers/mqttNgAlertSettingsRouter";
 import { mqttSoftwareVersionRouter } from "./routers/mqttSoftwareVersionRouter";
@@ -70,14 +80,18 @@ import { aiActiveLearningRouter } from "./routers/aiActiveLearningRouter";
 import { aiTimeSeriesRouter } from "./routers/aiTimeSeriesRouter";
 import { aiReportRouter } from "./routers/aiReportRouter";
 import { aiSmartAlertRoutingRouter } from "./routers/aiSmartAlertRoutingRouter";
-import { aiEdgeEnhancedRouter } from "./routers/aiEdgeEnhancedRouter";
-import { aiLocalTrainingRouter } from "./routers/aiLocalTrainingRouter";
+// DISABLED (local-AI migration): import { aiEdgeEnhancedRouter } from "./routers/aiEdgeEnhancedRouter";
+import { edgeDeploymentRouter } from "./routers/edgeDeploymentRouter"; // WS-2: edge deployment control plane (new, migration-safe)
+import { aiLocalTrainingRouter } from "./routers/aiLocalTrainingRouter"; // WS-1: re-enabled (schema-mismatch fixed)
+import { aiEvalRouter } from "./routers/aiEvalRouter"; // WS-1: eval + auto active-learning
 import { aiChatRouter } from "./routers/aiChatRouter";
 import { aiAnalysisHubRouter } from "./routers/aiAnalysisHubRouter";
 import { aiSettingsRouter } from "./routers/aiSettingsRouter";
 import { aiGgufRouter } from "./routers/aiGgufRouter";
 import { aiInspectionAnalyticsRouter } from "./routers/aiInspectionAnalyticsRouter";
+import { aiAdvancedVisionRouter } from "./routers/aiAdvancedVisionRouter";
 import { aiSpecialistAgentRouter } from "./routers/aiSpecialistAgentRouter";
+import { aiLocalKbRouter } from "./routers/aiLocalKbRouter";
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -202,6 +216,26 @@ export const appRouter = router({
   productMachineMapping: productMachineMappingRouter,
   productCategory: productCategoryRouter,
   productDocument: productDocumentRouter,
+  fiducialMark: fiducialMarkRouter,
+  measurementTypeCatalog: measurementTypeCatalogRouter,
+  defectCatalog: defectCatalogRouter,
+  measurementInstrument: measurementInstrumentRouter,
+  samplingPlan: samplingPlanRouter,
+  productView: productViewRouter,
+  msaWizard: msaWizardRouter,
+  // P4.A G19 + G17
+  instrumentCalibration: instrumentCalibrationRouter,
+  instrumentMsaRecord: instrumentMsaRecordRouter,
+  mpLightingProfile: mpLightingProfileRouter,
+  // P4.B G14
+  measurementSamples: measurementSamplesRouter,
+  spcAlerts: spcAlertsRouter,
+  // P4.B G10
+  mpDefectStats: mpDefectStatsRouter,
+  // P4.B G12 advanced MSA
+  msaAdvanced: msaAdvancedRouter,
+  // P4.B G9 CAD import
+  cadImport: cadImportRouter,
 
   // Inspection
   inspection: inspectionRouter,
@@ -224,6 +258,7 @@ export const appRouter = router({
   lineStage: lineStageRouter,
   lineProductAssignment: lineProductAssignmentRouter,
   shiftConfig: shiftConfigRouter,
+  productionSession: productionSessionRouter,
 
   // User Management
   user: userRouter,
@@ -269,6 +304,7 @@ export const appRouter = router({
   // AI & Predictive
   rootCause: rootCauseRouter,
   predictiveAlert: predictiveAlertRouter,
+  predictiveMaintenance: predictiveMaintenanceRouter,
 
   // Process & SPC
   process: processRouter,
@@ -326,6 +362,14 @@ export const appRouter = router({
 
   // Station Analysis
   stationAnalysis: stationAnalysisRouter,
+  stationTriangulation: stationTriangulationRouter,
+  genealogy: genealogyRouter,
+  thresholdSuggestion: thresholdSuggestionRouter,
+  thresholdApproval: thresholdApprovalRouter,
+  monteCarloFlow: monteCarloFlowRouter,
+  inspectionVariant: inspectionVariantRouter,
+  mpVariantSubform: mpVariantSubformRouter,
+  ipcAcceptance: ipcAcceptanceRouter,
 
   // Hierarchy Tree & MQTT Subscription Setup
   hierarchyTree: hierarchyTreeRouter,
@@ -361,10 +405,14 @@ export const appRouter = router({
   aiReport: aiReportRouter,
   // AI Smart Alert Routing
   aiSmartAlertRouting: aiSmartAlertRoutingRouter,
-  // AI Edge Enhanced (Phase 4.1)
-  aiEdgeEnhanced: aiEdgeEnhancedRouter,
-  // AI Local Training (Phase 4.2)
+  // DISABLED (local-AI migration): AI Edge Enhanced (Phase 4.1)
+  // aiEdgeEnhanced: aiEdgeEnhancedRouter,
+  // WS-2: Edge Deployment control plane (admin) — migration-safe new router
+  edgeDeployment: edgeDeploymentRouter,
+  // AI Local Training (Phase 4.2) — WS-1: re-enabled after schema-mismatch fix
   aiLocalTraining: aiLocalTrainingRouter,
+  // AI Eval Harness + auto active-learning + Tier-1 pipeline (WS-1)
+  aiEval: aiEvalRouter,
   // AI Chat Assistant (Phase 4.3)
   aiChat: aiChatRouter,
   // AI Analysis Hub — unified user-selectable analysis
@@ -377,6 +425,10 @@ export const appRouter = router({
   aiSpecialistAgent: aiSpecialistAgentRouter,
   // AI Inspection Analytics — Trend, Pareto, forecast, SPC, risk
   aiInspectionAnalytics: aiInspectionAnalyticsRouter,
+  // AI Advanced Vision — OK/NG compare, quality check, heatmap, OCR, ROI, augment, VQA, batch triage
+  aiAdvancedVision: aiAdvancedVisionRouter,
+  // AI Local Knowledge Base — Phase 2 codebase Q&A
+  aiLocalKb: aiLocalKbRouter,
 });
 
 export type AppRouter = typeof appRouter;
