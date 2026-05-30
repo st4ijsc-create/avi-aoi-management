@@ -20,6 +20,7 @@
 import type express from "express";
 import fs from "fs";
 import path from "path";
+import { Readable } from "stream";
 
 export function registerEdgeDownloadRoute(app: express.Express) {
   app.get("/api/edge/download/:deploymentId", async (req, res) => {
@@ -137,8 +138,10 @@ export function registerEdgeDownloadRoute(app: express.Express) {
       const cl = upstream.headers.get("content-length");
       if (cl) res.setHeader("Content-Length", cl);
 
-      const arrayBuf = await upstream.arrayBuffer();
-      return res.end(Buffer.from(arrayBuf));
+      // Stream the upstream body straight through instead of buffering the
+      // whole (potentially multi-hundred-MB) package into memory.
+      if (!upstream.body) return res.end();
+      return Readable.fromWeb(upstream.body as any).pipe(res);
     } catch (error: any) {
       console.error("[EdgeDownload] error:", error?.message || error);
       if (!res.headersSent) {

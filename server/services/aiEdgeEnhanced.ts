@@ -373,7 +373,8 @@ export async function quantizeModel(request: QuantizationRequest): Promise<Quant
   if (!version) throw new Error(`Model version ${modelVersion} not found for model ${modelId}`);
 
   // Read original model
-  const { url } = await storageGet(version.storageKey);
+  if (!version.fileKey) throw new Error(`Model version ${modelVersion} has no stored file`);
+  const { url } = await storageGet(version.fileKey);
   let modelBuffer: Buffer;
   if (url.startsWith("/uploads/")) {
     const uploadsRoot = process.env.LOCAL_STORAGE_DIR
@@ -552,8 +553,9 @@ function estimateAccuracyDelta(quantization: QuantizationLevel, calibrationSampl
 export async function getQuantizationOptions(modelId: number, modelVersion: string) {
   const version = await db.getModelVersionForDeployment(modelId, modelVersion);
   if (!version) throw new Error(`Model version ${modelVersion} not found`);
+  if (!version.fileKey) throw new Error(`Model version ${modelVersion} has no stored file`);
 
-  const { url } = await storageGet(version.storageKey);
+  const { url } = await storageGet(version.fileKey);
   let fileSize: number;
   if (url.startsWith("/uploads/")) {
     const uploadsRoot = process.env.LOCAL_STORAGE_DIR
@@ -666,6 +668,7 @@ export async function initiateOTAUpdate(request: OTAUpdateRequest): Promise<OTAU
       deviceName: prevDeployment?.deviceName ?? device.deviceId,
       deviceType: prevDeployment?.deviceType ?? "GENERIC",
       machineId: prevDeployment?.machineId ?? undefined,
+      // OTA metadata stored alongside the typed deployConfig fields.
       deployConfig: {
         ...(prevDeployment?.deployConfig as Record<string, unknown> ?? {}),
         otaUpdateId: updateId,
@@ -674,7 +677,7 @@ export async function initiateOTAUpdate(request: OTAUpdateRequest): Promise<OTAU
         rollbackThreshold: request.rollbackOnAccuracyDrop ?? 0.05,
         priority: request.priority ?? "normal",
         deltaUpdate: request.deltaUpdate ?? false,
-      },
+      } as Record<string, unknown> as any,
     });
 
     // Mark old deployment as being updated
@@ -1088,7 +1091,7 @@ export async function syncWithConflictResolution(
       deviceId: deployment.deviceId,
       inputReference: result.inputReference,
       predictions: result.predictions as any,
-      confidence: result.confidence,
+      confidence: result.confidence != null ? String(result.confidence) : null,
       topLabel: result.topLabel,
       processingTimeMs: result.processingTimeMs,
       inferredAt: result.inferredAt,

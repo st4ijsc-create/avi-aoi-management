@@ -550,6 +550,25 @@ export async function runPredictiveMaintenanceCycle(): Promise<{
 // ─── Background job (pattern: alertEvaluationService) ────────────────────────
 
 let pmInterval: NodeJS.Timeout | null = null;
+let pmRunning = false;
+
+/**
+ * Run one cycle but skip if a previous cycle is still in flight. Guards against
+ * overlapping runs when a cycle takes longer than the tick interval (a slow
+ * cycle must never stack on top of itself).
+ */
+async function runPredictiveMaintenanceCycleGuarded(): Promise<void> {
+  if (pmRunning) {
+    console.log("[PredictiveMaintenance] Previous cycle still running, skipping this tick");
+    return;
+  }
+  pmRunning = true;
+  try {
+    await runPredictiveMaintenanceCycle();
+  } finally {
+    pmRunning = false;
+  }
+}
 
 export function startPredictiveMaintenanceJob(intervalMinutes = 30): void {
   if (pmInterval) {
@@ -563,12 +582,12 @@ export function startPredictiveMaintenanceJob(intervalMinutes = 30): void {
 
   console.log(`[PredictiveMaintenance] Starting job (interval: ${intervalMinutes} minute(s))`);
 
-  runPredictiveMaintenanceCycle().catch((err) => {
+  runPredictiveMaintenanceCycleGuarded().catch((err) => {
     console.error("[PredictiveMaintenance] Initial cycle failed:", err);
   });
 
   pmInterval = setInterval(() => {
-    runPredictiveMaintenanceCycle().catch((err) => {
+    runPredictiveMaintenanceCycleGuarded().catch((err) => {
       console.error("[PredictiveMaintenance] Cycle failed:", err);
     });
   }, intervalMinutes * 60 * 1000);
