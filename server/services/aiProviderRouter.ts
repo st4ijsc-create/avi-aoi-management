@@ -1,0 +1,406 @@
+/**
+ * AI Provider Router — LOCAL-ONLY (GGUF / llama.cpp).
+ *
+ * The OpenAI cloud branch was removed to keep the system fully on-prem.
+ * Public API surface kept identical so existing callers
+ * (aiAdvancedVision, aiVisionLanguage, aiSettingsRouter, …) keep working.
+ *
+ * Configuration (env):
+ *  - GGUF_DEFAULT_MODEL   = filename in uploads/gguf-models
+ *  - GGUF_VISION_MODEL    = LLaVA gguf filename
+ *  - GGUF_VISION_MMPROJ   = mmproj-*.gguf filename
+ */
+
+import {
+  generateText as ggufGenerateText,
+  generateJSON as ggufGenerateJSON,
+  describeImage as ggufDescribeImage,
+} from "./aiGgufEngine";
+
+// ─── Types ─────────────────────────────────────────────────────
+
+export type Provider = "openai" | "gguf"; // "openai" kept for type-compat, never returned at runtime
+export type Capability = "text" | "json" | "vision";
+
+export interface NarrativeRequest {
+  systemPrompt?: string;
+  prompt: string;
+  maxTokens?: number;
+  temperature?: number;
+  language?: "en" | "vi";
+  cacheKey?: string;
+  cacheTtlMs?: number;
+}
+
+export interface NarrativeResult {
+  text: string;
+  provider: Provider;
+  model: string;
+  totalTimeMs: number;
+  tokensGenerated?: number;
+  tokensPrompt?: number;
+  tokensPerSecond?: number;
+  fallbackUsed: boolean;
+}
+
+export interface InsightJsonRequest<T> extends NarrativeRequest {
+  jsonSchema: object;
+}
+
+export interface InsightJsonResult<T> {
+  data: T;
+  raw: string;
+  provider: Provider;
+  model: string;
+  totalTimeMs: number;
+  fallbackUsed: boolean;
+}
+
+export interface DescribeImageRequest {
+  image: Buffer;
+  prompt: string;
+  systemPrompt?: string;
+  maxTokens?: number;
+  temperature?: number;
+  language?: "en" | "vi";
+  /** Ignored — cloud vision removed. Kept for backward compatibility. */
+  useCloudVision?: boolean;
+}
+
+export interface DescribeImageResult {
+  text: string;
+  provider: Provider;
+  model: string;
+  totalTimeMs: number;
+  fallbackUsed: boolean;
+}
+
+// ─── Telemetry (kept for monitoring dashboard) ────────────────
+
+export interface AiProviderEvent {
+  ts: number;
+  capability: Capability;
+  provider: Provider;
+  model: string;
+  success: boolean;
+  fallbackUsed: boolean;
+  totalTimeMs: number;
+  tokensGenerated?: number;
+  tokensPerSecond?: number;
+  error?: string;
+}
+
+const recentEvents: AiProviderEvent[] = [];
+const MAX_EVENTS = 500;
+
+function emit(ev: AiProviderEvent) {
+  recentEvents.push(ev);
+  if (recentEvents.length > MAX_EVENTS) recentEvents.splice(0, recentEvents.length - MAX_EVENTS);
+}
+
+export function getRecentEvents(limit = 100): AiProviderEvent[] {
+  return recentEvents.slice(-limit).reverse();
+}
+
+// ─── Circuit breaker shim (no-op in local-only mode) ──────────
+
+export function getBreakerSnapshot(): Record<
+  string,
+  { open: boolean; consecutiveFailures: number; openUntil: number; lastError?: string }
+> {
+  return {};
+}
+
+export function resetBreaker(_key?: string) {
+  // no-op
+}
+
+// ─── Provider configuration shim ──────────────────────────────
+
+export function setProviderConfig(_opts: { primary?: Provider; fallbackEnabled?: boolean }) {
+  // Local-only: nothing to switch. Returned for API symmetry.
+  return getProviderConfig();
+}
+
+export function getProviderConfig() {
+  return {
+    primary: "gguf" as Provider,
+    fallbackEnabled: false,
+    cloudTextModel: null,
+    cloudVisionModel: null,
+    ggufTextModel: process.env.GGUF_DEFAULT_MODEL || null,
+    ggufVisionModel: process.env.GGUF_VISION_MODEL || null,
+    ggufVisionMmproj: process.env.GGUF_VISION_MMPROJ || null,
+  };
+}
+
+// ─── Public API — text / json / vision ────────────────────────
+
+async function runText(req: NarrativeRequest): Promise<NarrativeResult> {
+  const start = Date.now();
+  try {
+    const r = await ggufGenerateText({
+      systemPrompt: req.systemPrompt,
+      prompt: req.prompt,
+      maxTokens: req.maxTokens ?? 1024,
+      temperature: req.temperature ?? 0.7,
+      language: req.language,
+    });
+    const result: NarrativeResult = {
+      text: r.text,
+      provider: "gguf",
+      model: r.modelId,
+      totalTimeMs: r.totalTimeMs,
+      tokensGenerated: r.tokensGenerated,
+      tokensPrompt: r.tokensPrompt,
+      tokensPerSecond: r.tokensPerSecond,
+      fallbackUsed: false,
+    };
+    emit({
+      ts: Date.now(),
+      capability: "text",
+      provider: "gguf",
+      model: r.modelId,
+      success: true,
+      fallbackUsed: false,
+      totalTimeMs: r.totalTimeMs,
+      tokensGenerated: r.tokensGenerated,
+      tokensPerSecond: r.tokensPerSecond,
+    });
+    return result;
+  } catch (err: any) {
+    emit({
+      ts: Date.now(),
+      capability: "text",
+      provider: "gguf",
+      model: "?",
+      success: false,
+      fallbackUsed: false,
+      totalTimeMs: Date.now() - start,
+      error: String(err?.message || err),
+    });
+    throw err;
+  }
+}
+
+const NARRATIVE_CACHE_PREFIX = "ai:narrative:";
+const INSIGHT_CACHE_PREFIX = "ai:insight:";
+const DEFAULT_AI_CACHE_TTL_MS = 5 * 60 * 1000;
+
+export async function generateNarrative(req: NarrativeRequest): Promise<NarrativeResult> {
+  if (req.cacheKey) {
+    const { cacheService } = await import("./cacheService");
+    const key = NARRATIVE_CACHE_PREFIX + req.cacheKey;
+    const cached = cacheService.get<NarrativeResult>(key);
+    if (cached) return { ...cached, totalTimeMs: 0 };
+    const result = await runText(req);
+    cacheService.set(key, result, req.cacheTtlMs ?? DEFAULT_AI_CACHE_TTL_MS);
+    return result;
+  }
+  return runText(req);
+}
+
+export async function generateInsightJson<T = unknown>(
+  req: InsightJsonRequest<T>,
+): Promise<InsightJsonResult<T>> {
+  const exec = async (): Promise<InsightJsonResult<T>> => {
+    const start = Date.now();
+    try {
+      const r = await ggufGenerateJSON<T>(req.jsonSchema, {
+        systemPrompt: req.systemPrompt,
+        prompt: req.prompt,
+        maxTokens: req.maxTokens ?? 1024,
+        temperature: req.temperature ?? 0.2,
+        language: req.language,
+      });
+      const result: InsightJsonResult<T> = {
+        data: r.data,
+        raw: r.raw,
+        provider: "gguf",
+        model: r.modelId,
+        totalTimeMs: r.totalTimeMs,
+        fallbackUsed: false,
+      };
+      emit({
+        ts: Date.now(),
+        capability: "json",
+        provider: "gguf",
+        model: r.modelId,
+        success: true,
+        fallbackUsed: false,
+        totalTimeMs: r.totalTimeMs,
+      });
+      return result;
+    } catch (err: any) {
+      emit({
+        ts: Date.now(),
+        capability: "json",
+        provider: "gguf",
+        model: "?",
+        success: false,
+        fallbackUsed: false,
+        totalTimeMs: Date.now() - start,
+        error: String(err?.message || err),
+      });
+      throw err;
+    }
+  };
+
+  if (req.cacheKey) {
+    const { cacheService } = await import("./cacheService");
+    const key = INSIGHT_CACHE_PREFIX + req.cacheKey;
+    const cached = cacheService.get<InsightJsonResult<T>>(key);
+    if (cached) return { ...cached, totalTimeMs: 0 };
+    const result = await exec();
+    cacheService.set(key, result, req.cacheTtlMs ?? DEFAULT_AI_CACHE_TTL_MS);
+    return result;
+  }
+  return exec();
+}
+
+export async function describeImage(req: DescribeImageRequest): Promise<DescribeImageResult> {
+  const start = Date.now();
+
+  // WS-G2: vision is gated behind the local llama-server mtmd sidecar. When it is not
+  // configured/available we degrade HONESTLY — return fallbackUsed:true with a clear
+  // reason so the UI/caller can tell the user vision is off, instead of fabricating text.
+  const { isVisionSidecarAvailable } = await import("./llamaVisionSidecar");
+  if (!isVisionSidecarAvailable()) {
+    const reason =
+      "Vision unavailable: local llama-server mtmd sidecar is not configured " +
+      "(set LLAMA_SERVER_BIN, GGUF_VISION_MODEL, GGUF_VISION_MMPROJ).";
+    emit({
+      ts: Date.now(),
+      capability: "vision",
+      provider: "gguf",
+      model: "none",
+      success: false,
+      fallbackUsed: true,
+      totalTimeMs: Date.now() - start,
+      error: "VISION_NOT_AVAILABLE",
+    });
+    return {
+      text: reason,
+      provider: "gguf",
+      model: "none",
+      totalTimeMs: Date.now() - start,
+      fallbackUsed: true,
+    };
+  }
+
+  try {
+    const r = await ggufDescribeImage({
+      image: req.image,
+      prompt: req.prompt,
+      systemPrompt: req.systemPrompt,
+      maxTokens: req.maxTokens ?? 512,
+      temperature: req.temperature ?? 0.2,
+      language: req.language,
+    });
+    const result: DescribeImageResult = {
+      text: r.text,
+      provider: "gguf",
+      model: r.modelId,
+      totalTimeMs: r.totalTimeMs,
+      fallbackUsed: false,
+    };
+    emit({
+      ts: Date.now(),
+      capability: "vision",
+      provider: "gguf",
+      model: r.modelId,
+      success: true,
+      fallbackUsed: false,
+      totalTimeMs: r.totalTimeMs,
+    });
+    return result;
+  } catch (err: any) {
+    emit({
+      ts: Date.now(),
+      capability: "vision",
+      provider: "gguf",
+      model: "?",
+      success: false,
+      fallbackUsed: false,
+      totalTimeMs: Date.now() - start,
+      error: String(err?.message || err),
+    });
+    throw err;
+  }
+}
+
+// ─── Streaming Narrative ──────────────────────────────────────
+
+export interface NarrativeStreamChunk {
+  type: "token" | "done" | "error";
+  token?: string;
+  fullText?: string;
+  provider?: Provider;
+  model?: string;
+  fallbackUsed?: boolean;
+  totalTimeMs?: number;
+  tokensGenerated?: number;
+  tokensPerSecond?: number;
+  error?: string;
+}
+
+export async function* generateNarrativeStream(
+  req: NarrativeRequest,
+  signal?: AbortSignal,
+): AsyncGenerator<NarrativeStreamChunk> {
+  const start = Date.now();
+  const { generateTextStream: ggufStream } = await import("./aiGgufEngine");
+  try {
+    for await (const c of ggufStream(
+      {
+        systemPrompt: req.systemPrompt,
+        prompt: req.prompt,
+        maxTokens: req.maxTokens ?? 1024,
+        temperature: req.temperature ?? 0.7,
+        language: req.language,
+      },
+      undefined,
+      signal,
+    )) {
+      if (c.type === "token") {
+        yield { type: "token", token: c.token, provider: "gguf", model: c.modelId };
+      } else if (c.type === "done") {
+        yield {
+          type: "done",
+          fullText: c.fullText,
+          provider: "gguf",
+          model: c.modelId,
+          fallbackUsed: false,
+          totalTimeMs: c.totalTimeMs,
+          tokensGenerated: c.tokensGenerated,
+          tokensPerSecond: c.tokensPerSecond,
+        };
+        emit({
+          ts: Date.now(),
+          capability: "text",
+          provider: "gguf",
+          model: c.modelId,
+          success: true,
+          fallbackUsed: false,
+          totalTimeMs: c.totalTimeMs,
+          tokensGenerated: c.tokensGenerated,
+          tokensPerSecond: c.tokensPerSecond,
+        });
+      } else if (c.type === "error") {
+        yield { type: "error", error: c.error, provider: "gguf" };
+      }
+    }
+  } catch (err: any) {
+    emit({
+      ts: Date.now(),
+      capability: "text",
+      provider: "gguf",
+      model: "?",
+      success: false,
+      fallbackUsed: false,
+      totalTimeMs: Date.now() - start,
+      error: String(err?.message || err),
+    });
+    yield { type: "error", error: String(err?.message || err) };
+  }
+}

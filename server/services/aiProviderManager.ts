@@ -3,7 +3,9 @@
  * Determines which AI backend is available and provides a consistent interface
  * for querying AI provider status across all system services.
  *
- * Priority: OpenAI > GGUF > Offline (rule-based)
+ * WS-G3: cloud (OpenAI) inference removed. Priority: GGUF > Offline (rule-based).
+ * The `openai` status field is retained (always available:false) for UI
+ * backward-compatibility (AIGgufModelsPage / AIHub reference it).
  */
 
 export type AIProvider = "openai" | "gguf" | "offline";
@@ -22,14 +24,9 @@ export async function getAIProviderStatus(): Promise<AIProviderStatus> {
     gguf: { available: false, modelName: null, gpuEnabled: false },
   };
 
-  // Check OpenAI
-  if (process.env.OPENAI_API_KEY) {
-    status.openai.available = true;
-    status.openai.model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
-    status.activeProvider = "openai";
-  }
+  // Cloud (OpenAI) inference removed in WS-G3 — openai stays available:false.
 
-  // Check GGUF
+  // Check GGUF (local, primary)
   try {
     const { isGgufAvailable, getLoadedGgufModels } = await import("./aiGgufEngine");
     if (await isGgufAvailable()) {
@@ -37,9 +34,7 @@ export async function getAIProviderStatus(): Promise<AIProviderStatus> {
       status.gguf.available = true;
       status.gguf.modelName = loaded[0]?.modelName ?? null;
       status.gguf.gpuEnabled = process.env.GGUF_GPU !== "false";
-      if (!status.openai.available) {
-        status.activeProvider = "gguf";
-      }
+      status.activeProvider = "gguf";
     }
   } catch {
     // GGUF module not available
@@ -48,10 +43,8 @@ export async function getAIProviderStatus(): Promise<AIProviderStatus> {
   return status;
 }
 
-/** Get the highest-priority available provider */
+/** Get the highest-priority available provider (WS-G3: GGUF > offline). */
 export async function getActiveProvider(): Promise<AIProvider> {
-  if (process.env.OPENAI_API_KEY) return "openai";
-
   try {
     const { isGgufAvailable } = await import("./aiGgufEngine");
     if (await isGgufAvailable()) return "gguf";

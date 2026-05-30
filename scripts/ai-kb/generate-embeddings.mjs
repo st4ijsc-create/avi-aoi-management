@@ -9,7 +9,11 @@ const OUT_FILE = path.join(KNOWLEDGE_DIR, "embeddings.jsonl");
 const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434").replace(/\/$/, "");
 const OLLAMA_EMBED_MODEL = process.env.OLLAMA_EMBED_MODEL ?? "mxbai-embed-large";
 const LIMIT = Number(process.env.KB_EMBED_LIMIT ?? 0);
-const MAX_TEXT_CHARS = Number(process.env.KB_EMBED_MAX_TEXT_CHARS ?? 5000);
+const MAX_TEXT_CHARS = Number(process.env.KB_EMBED_MAX_TEXT_CHARS ?? 3000);
+
+// WS-G4 — default to in-process GGUF embeddings (no Ollama daemon). Set
+// USE_LEGACY_OLLAMA=true to use the legacy Ollama HTTP path (rollback).
+const USE_LEGACY_OLLAMA = (process.env.USE_LEGACY_OLLAMA ?? "false").toLowerCase() === "true";
 
 function parseJsonl(file) {
   if (!fs.existsSync(file)) return [];
@@ -65,7 +69,22 @@ async function embedWithApiEmbeddings(prompt) {
   return vec;
 }
 
+// Lazily-loaded GGUF helper (only imported when not using legacy Ollama, so the
+// Ollama path keeps zero native deps).
+let _embedTextGguf = null;
+async function getGgufEmbedder() {
+  if (_embedTextGguf) return _embedTextGguf;
+  const mod = await import("./_gguf-embed.mjs");
+  _embedTextGguf = mod.embedTextGguf;
+  return _embedTextGguf;
+}
+
 async function embed(text) {
+  if (!USE_LEGACY_OLLAMA) {
+    // _gguf-embed already L2-normalizes; l2norm() below is idempotent on a unit vector.
+    const embedTextGguf = await getGgufEmbedder();
+    return embedTextGguf(text);
+  }
   try {
     return await embedWithApiEmbed(text);
   } catch {
@@ -92,7 +111,9 @@ async function embedWithRetry(text) {
       const tooLong =
         msg.includes("exceeds the context length") ||
         msg.includes("input length") ||
-        msg.includes("context length");
+        msg.includes("context length") ||
+        msg.includes("too large") ||
+        msg.includes("failed: 500");
 
       if (!tooLong || candidate.length < 1000 || attempt === 4) {
         throw err;
@@ -126,10 +147,18 @@ async function run() {
   const output = fs.createWriteStream(OUT_FILE, { flags: "w", encoding: "utf8" });
   const startedAt = Date.now();
 
+  let skipped = 0;
   for (let i = 0; i < slice.length; i += 1) {
     const c = slice[i];
     const text = `${c.title}\n${c.text}`;
-    const vector = l2norm(await embedWithRetry(text));
+    let vector;
+    try {
+      vector = l2norm(await embedWithRetry(text));
+    } catch (err) {
+      skipped += 1;
+      console.warn(`[kb] SKIP chunk ${c.id} (${c.sourcePath}) after retries: ${err?.message ?? err}`);
+      continue;
+    }
 
     output.write(
       JSON.stringify({
@@ -145,16 +174,31 @@ async function run() {
     );
 
     if ((i + 1) % 20 === 0 || i === slice.length - 1) {
-      console.log(`[kb] Embedded ${i + 1}/${slice.length}`);
+      console.log(`[kb] Embedded ${i + 1}/${slice.length} (skipped ${skipped})`);
     }
   }
 
   output.end();
 
+  // WS-G4 — record the embedding engine/model actually used, so cosine-compat can be audited.
+  let modelName = OLLAMA_EMBED_MODEL;
+  let engine = "ollama";
+  if (!USE_LEGACY_OLLAMA) {
+    engine = "gguf";
+    try {
+      const mod = await import("./_gguf-embed.mjs");
+      modelName = mod.ggufEmbedModelName();
+      await mod.disposeGgufEmbed();
+    } catch {
+      modelName = process.env.GGUF_EMBED_MODEL ?? "mxbai-embed-large-v1-f16";
+    }
+  }
+
   const meta = {
     generatedAt: new Date().toISOString(),
-    model: OLLAMA_EMBED_MODEL,
-    baseUrl: OLLAMA_BASE_URL,
+    engine,
+    model: modelName,
+    baseUrl: USE_LEGACY_OLLAMA ? OLLAMA_BASE_URL : undefined,
     totalEmbedded: slice.length,
     elapsedMs: Date.now() - startedAt,
     outputFile: "knowledge/embeddings.jsonl",

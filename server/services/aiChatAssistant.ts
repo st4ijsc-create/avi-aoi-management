@@ -1,12 +1,14 @@
 /**
  * AI Chat Assistant Service — Phase 4.3 (Manufacturing Copilot)
  *
- * Natural language chatbot that uses OpenAI function calling to query
- * inspection data, defect trends, machine status, run RCA, image search,
- * and generate reports on demand.
+ * Natural language chatbot that queries inspection data, defect trends,
+ * machine status, runs RCA, image search, and generates reports on demand.
+ *
+ * WS-G3: cloud LLM removed. Order = local GGUF (primary) → keyword offline
+ * fallback. The GGUF path performs JSON-based tool selection (intent) then
+ * narrates the tool results locally.
  */
 
-import OpenAI from "openai";
 import { getDb } from "../db/connection";
 import { sql, eq, and, gte, lte, desc, count, avg, SQL } from "drizzle-orm";
 import {
@@ -41,19 +43,19 @@ export interface ChatResponse {
   tokensUsed: number;
 }
 
-// ─── OpenAI Setup ──────────────────────────────────────────────
-
-// Lazy getter — returns null if OPENAI_API_KEY is not configured
-function getOpenAIClient(): OpenAI | null {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) return null;
-  return new OpenAI({ apiKey: key });
-}
-const CHAT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
-
 // ─── Tool Definitions ──────────────────────────────────────────
 
-const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
+/** Internal tool descriptor (provider-agnostic, OpenAI-compatible shape). */
+interface ChatTool {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+const TOOLS: ChatTool[] = [
   {
     type: "function",
     function: {
@@ -157,12 +159,7 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
  * and feed results back to get a final natural language response.
  */
 export async function processChat(request: ChatRequest): Promise<ChatResponse> {
-  // 1. Try OpenAI API first
-  if (process.env.OPENAI_API_KEY) {
-    return processOpenAIChat(request);
-  }
-
-  // 2. Try local GGUF model as smart fallback
+  // 1. Local GGUF model (primary). Offline-first: no cloud LLM.
   try {
     const { isGgufAvailable } = await import("./aiGgufEngine");
     if (await isGgufAvailable()) {
@@ -172,7 +169,7 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
     // GGUF not available, continue to offline
   }
 
-  // 3. Keyword-based offline fallback
+  // 2. Keyword-based offline fallback
   return processOfflineChat(request);
 }
 
@@ -336,106 +333,6 @@ async function processGgufChat(request: ChatRequest): Promise<ChatResponse> {
     // Fall through to offline mode
     return processOfflineChat(request);
   }
-}
-
-/**
- * Process chat using OpenAI API with function calling.
- */
-async function processOpenAIChat(request: ChatRequest): Promise<ChatResponse> {
-  const openai = getOpenAIClient()!;
-  const systemPrompt = buildSystemPrompt(request.language ?? "vi");
-  const db = await getDb();
-  const machineCache = new Map<string, number>(); // Cache machine code → ID lookups
-
-  // Build messages for OpenAI
-  const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt },
-  ];
-
-  // Add conversation history (limit to last 20 messages for context window)
-  const recentHistory = request.messages.slice(-20);
-  for (const msg of recentHistory) {
-    if (msg.role === "user" || msg.role === "assistant") {
-      openaiMessages.push({ role: msg.role, content: msg.content });
-    }
-  }
-
-  // Add the new user message
-  openaiMessages.push({ role: "user", content: request.userMessage });
-
-  // Filter tools if restricted
-  const availableTools = request.allowedTools
-    ? TOOLS.filter(t => t.type === "function" && request.allowedTools!.includes(t.function.name))
-    : TOOLS;
-
-  const toolsUsed: string[] = [];
-  let totalTokens = 0;
-
-  // First LLM call — may request tool calls
-  let response = await openai.chat.completions.create({
-    model: CHAT_MODEL,
-    messages: openaiMessages,
-    tools: availableTools.length > 0 ? availableTools : undefined,
-    tool_choice: availableTools.length > 0 ? "auto" : undefined,
-    temperature: 0.3,
-    max_tokens: 2000,
-  });
-
-  totalTokens += response.usage?.total_tokens ?? 0;
-  let choice = response.choices[0]!;
-
-  // Handle tool calls in a loop (max 3 rounds to prevent infinite loops)
-  let round = 0;
-  while (choice.finish_reason === "tool_calls" && choice.message.tool_calls && round < 3) {
-    round++;
-    openaiMessages.push(choice.message);
-
-    // OPTIMIZATION: Execute ALL tool calls in parallel using Promise.allSettled() for 30-50% speedup
-    const toolPromises = choice.message.tool_calls
-      .filter(tc => tc.type === "function")
-      .map(async toolCall => {
-        const fnName = toolCall.function.name;
-        toolsUsed.push(fnName);
-        let result: unknown;
-        try {
-          const args = JSON.parse(toolCall.function.arguments);
-          result = await executeToolCall(fnName, args, db, machineCache);
-        } catch (err) {
-          result = { error: err instanceof Error ? err.message : String(err) };
-        }
-        return { toolCallId: toolCall.id, result };
-      });
-
-    // Wait for all tools to complete in parallel
-    const settled = await Promise.allSettled(toolPromises);
-    for (const outcome of settled) {
-      if (outcome.status === "fulfilled") {
-        const { toolCallId, result } = outcome.value;
-        openaiMessages.push({
-          role: "tool",
-          tool_call_id: toolCallId,
-          content: JSON.stringify(result),
-        });
-      }
-    }
-
-    // Follow-up LLM call with tool results
-    response = await openai.chat.completions.create({
-      model: CHAT_MODEL,
-      messages: openaiMessages,
-      tools: availableTools.length > 0 ? availableTools : undefined,
-      tool_choice: availableTools.length > 0 ? "auto" : undefined,
-      temperature: 0.3,
-      max_tokens: 2000,
-    });
-
-    totalTokens += response.usage?.total_tokens ?? 0;
-    choice = response.choices[0]!;
-  }
-
-  const reply = choice.message.content ?? "Xin lỗi, tôi không thể trả lời câu hỏi này.";
-
-  return { reply, toolsUsed, tokensUsed: totalTokens };
 }
 
 // ─── System Prompt ─────────────────────────────────────────────
@@ -903,7 +800,7 @@ async function toolGetTopDefects(
 // ─── Offline Chat Fallback ────────────────────────────────────
 
 /**
- * Rule-based offline processor for when no OpenAI API key is configured.
+ * Rule-based offline processor for when no local GGUF model is available.
  * Detects intent from message keywords, calls the appropriate tool functions
  * directly, and formats results as readable text.
  */
@@ -997,8 +894,8 @@ async function processOfflineChat(request: ChatRequest): Promise<ChatResponse> {
   }
 
   const footer = isVi
-    ? `\n\n_Chế độ offline — cấu hình OPENAI_API_KEY để nhận phân tích ngôn ngữ tự nhiên._`
-    : `\n\n_Offline mode — set OPENAI_API_KEY for natural language analysis._`;
+    ? `\n\n_Chế độ offline (quy tắc) — nạp mô hình GGUF cục bộ để nhận phân tích ngôn ngữ tự nhiên._`
+    : `\n\n_Offline mode (rule-based) — load a local GGUF model for natural language analysis._`;
 
   const welcome = isVi
     ? `Xin chào! Tôi đang chạy ở chế độ offline.\nBạn có thể hỏi về: thống kê kiểm tra, xu hướng lỗi, trạng thái máy (M-001), mô hình AI.\nVí dụ: "Thống kê 30 ngày qua" hay "Top lỗi tháng này"`

@@ -1,4 +1,9 @@
-import OpenAI from "openai";
+import { createHash } from "crypto";
+import { generateInsightJson } from "./aiProviderRouter";
+
+function hashKey(...parts: string[]): string {
+  return createHash("sha1").update(parts.join("\u0000")).digest("hex").slice(0, 16);
+}
 
 export interface TopFactor {
   factor: string;
@@ -26,33 +31,15 @@ export interface RCAInsight {
   preventiveMeasures: string[];
 }
 
-let _client: OpenAI | null = null;
-
-function getClient(): OpenAI | null {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
-  if (!_client) {
-    _client = new OpenAI({ apiKey });
-  }
-  return _client;
-}
-
 /**
  * Generate LLM-powered root cause analysis insights.
- * Falls back to rule-based insights when OPENAI_API_KEY is not configured.
+ * WS-G3: routes through aiProviderRouter (local GGUF only — cloud removed).
+ * Falls back to rule-based insights when the local model is unavailable.
  */
 export async function generateRCAInsights(
   topFactors: TopFactor[],
   stats: DefectStats,
 ): Promise<RCAInsight> {
-  const client = getClient();
-  if (!client) {
-    // Try GGUF before rule-based fallback
-    const ggufResult = await tryGgufRCA(topFactors, stats, prompt);
-    if (ggufResult) return ggufResult;
-    return buildFallbackInsights(topFactors, stats);
-  }
-
   const factorsSummary = topFactors
     .slice(0, 5)
     .map((f, i) => `${i + 1}. ${f.factor} — ${f.contribution.toFixed(1)}% contribution: ${f.description}`)
@@ -87,57 +74,48 @@ Rules:
 - preventiveMeasures: 3-4 systematic controls`;
 
   try {
-    const response = await client.chat.completions.create({
-      model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
+    const systemPrompt = "You are an AOI quality engineering expert. Respond ONLY with valid JSON.";
+    const result = await generateInsightJson<RCAInsight>({
+      systemPrompt,
+      prompt,
+      maxTokens: 1024,
       temperature: 0.2,
-      max_tokens: 1024,
-      response_format: { type: "json_object" },
+      jsonSchema: RCA_INSIGHT_SCHEMA,
+      cacheKey: "rca:" + hashKey(systemPrompt, prompt),
     });
 
-    const content = response.choices[0]?.message?.content ?? "";
-    const parsed = JSON.parse(content) as RCAInsight;
-
-    // Validate required fields exist
-    if (!parsed.summary || !Array.isArray(parsed.rootCauses)) {
+    const parsed = result.data;
+    if (!parsed?.summary || !Array.isArray(parsed.rootCauses)) {
       return buildFallbackInsights(topFactors, stats);
     }
-
     return parsed;
   } catch (err) {
-    console.error("[aiInsightsService] LLM call failed, using fallback:", err);
+    console.error("[aiInsightsService] Provider router failed, using rule-based fallback:", err);
     return buildFallbackInsights(topFactors, stats);
   }
 }
 
-/**
- * Try GGUF-powered RCA insights when OpenAI is unavailable.
- */
-async function tryGgufRCA(
-  topFactors: TopFactor[],
-  stats: DefectStats,
-  prompt: string,
-): Promise<RCAInsight | null> {
-  try {
-    const { isGgufAvailable, generateText } = await import("./aiGgufEngine");
-    if (!(await isGgufAvailable())) return null;
-
-    const result = await generateText({
-      systemPrompt: "You are an AOI quality engineering expert. Respond ONLY with valid JSON.",
-      prompt,
-      maxTokens: 1024,
-      temperature: 0.2,
-      jsonMode: true,
-    });
-
-    const parsed = JSON.parse(result.text) as RCAInsight;
-    if (!parsed.summary || !Array.isArray(parsed.rootCauses)) return null;
-    return parsed;
-  } catch (err) {
-    console.error("[aiInsightsService] GGUF RCA failed:", err);
-    return null;
-  }
-}
+const RCA_INSIGHT_SCHEMA = {
+  type: "object",
+  properties: {
+    summary: { type: "string" },
+    rootCauses: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          cause: { type: "string" },
+          probability: { type: "number" },
+          evidence: { type: "string" },
+        },
+        required: ["cause", "probability", "evidence"],
+      },
+    },
+    recommendations: { type: "array", items: { type: "string" } },
+    preventiveMeasures: { type: "array", items: { type: "string" } },
+  },
+  required: ["summary", "rootCauses", "recommendations", "preventiveMeasures"],
+} as const;
 
 function buildFallbackInsights(topFactors: TopFactor[], stats: DefectStats): RCAInsight {
   const top = topFactors[0];

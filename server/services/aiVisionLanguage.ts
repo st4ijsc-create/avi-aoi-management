@@ -1,13 +1,16 @@
 /**
  * AI Vision-Language Model Service
  *
- * Uses GPT-4o Vision API to provide natural language analysis of
- * inspection images — defect description, image comparison, and QA report generation.
+ * Provides natural-language analysis of inspection images — defect description,
+ * image comparison, and QA report generation.
  *
- * Requires OPENAI_API_KEY env var. Falls back to basic label-based descriptions
- * when the API key is not configured.
+ * WS-G2: vision runs 100% offline through the LOCAL llama-server mtmd sidecar
+ * (Qwen2-VL GGUF + mmproj on 127.0.0.1), routed via aiProviderRouter.describeImage /
+ * llamaVisionSidecar.describeImageViaSidecar. When the sidecar is not configured the
+ * service degrades honestly to GGUF text-only (metadata) or static fallbacks — it
+ * never fabricates a vision result.
  */
-import OpenAI from "openai";
+import { describeImage as routerDescribeImage } from "./aiProviderRouter";
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -43,26 +46,6 @@ export interface QAReport {
   recommendations: string[];
 }
 
-// ─── Client ──────────────────────────────────────────────────────
-
-let _client: OpenAI | null = null;
-
-function getClient(): OpenAI | null {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
-  if (!_client) {
-    _client = new OpenAI({ apiKey });
-  }
-  return _client;
-}
-
-function getVisionModel(): string {
-  return process.env.OPENAI_VISION_MODEL ?? "gpt-4o";
-}
-
-function imageToDataUrl(imageBuffer: Buffer, mimeType = "image/jpeg"): string {
-  return `data:${mimeType};base64,${imageBuffer.toString("base64")}`;
-}
 
 // ─── Describe Defect ─────────────────────────────────────────────
 
@@ -76,15 +59,10 @@ export async function describeDefect(
     machineCode?: string;
     inspectionPoint?: string;
     existingLabels?: string[];
+    /** Force cloud (true) or local LLaVA (false). Default follows AI_PRIMARY_PROVIDER. */
+    useCloudVision?: boolean;
   },
 ): Promise<DefectDescription> {
-  const client = getClient();
-  if (!client) {
-    // Try GGUF text-based fallback before static fallback
-    const ggufResult = await ggufFallbackDescription(context);
-    return ggufResult ?? buildStaticFallbackDescription(context?.existingLabels);
-  }
-
   const contextLines: string[] = [];
   if (context?.productModel) contextLines.push(`Product model: ${context.productModel}`);
   if (context?.machineCode) contextLines.push(`Machine: ${context.machineCode}`);
@@ -95,7 +73,7 @@ export async function describeDefect(
 Analyze this inspection image and describe any defects found.
 
 ${contextLines.length > 0 ? `Context:\n${contextLines.join("\n")}\n` : ""}
-Respond with ONLY valid JSON matching this exact schema:
+Respond with ONLY valid JSON matching this exact schema (no markdown fences, no commentary):
 {
   "description": "<detailed natural language description of the defect(s) seen>",
   "severity": "<low|medium|high|critical>",
@@ -106,32 +84,30 @@ Respond with ONLY valid JSON matching this exact schema:
 
 If no defect is found, set description to "No defect detected", severity to "low", and empty arrays for causes/actions.`;
 
+  // Route through provider router (cloud primary + LLaVA fallback w/ circuit breaker).
+  // If neither provider is configured, fall back to text-only GGUF or static description.
   try {
-    const response = await client.chat.completions.create({
-      model: getVisionModel(),
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            {
-              type: "image_url",
-              image_url: { url: imageToDataUrl(imageBuffer), detail: "high" },
-            },
-          ],
-        },
-      ],
+    const result = await routerDescribeImage({
+      image: imageBuffer,
+      prompt,
+      maxTokens: 800,
       temperature: 0.2,
-      max_tokens: 800,
-      response_format: { type: "json_object" },
+      useCloudVision: context?.useCloudVision,
     });
 
-    const content = response.choices[0]?.message?.content ?? "";
-    const parsed = JSON.parse(content) as DefectDescription;
-    if (!parsed.description) return buildFallbackDescription(context?.existingLabels);
+    // Extract JSON (LLaVA may add extra prose; OpenAI honors the JSON-only instruction)
+    const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("No JSON object in vision response");
+    const parsed = JSON.parse(jsonMatch[0]) as DefectDescription;
+    if (!parsed.description) throw new Error("Vision response missing 'description'");
+
+    // Annotate provenance for downstream UI / audit
+    if (result.provider === "gguf") {
+      parsed.description += " (Local LLaVA vision)";
+    }
     return parsed;
   } catch (err) {
-    console.error("[aiVisionLanguage] describeDefect failed:", err);
+    console.warn("[aiVisionLanguage] router describeImage failed, falling back to text-only GGUF:", err);
     const ggufResult = await ggufFallbackDescription(context);
     return ggufResult ?? buildStaticFallbackDescription(context?.existingLabels);
   }
@@ -151,19 +127,22 @@ export async function compareImages(
     comparisonType?: "golden_vs_current" | "before_after" | "side_by_side";
   },
 ): Promise<ImageComparison> {
-  const client = getClient();
-  if (!client) {
-    // Image comparison requires vision — GGUF can't help here
+  // WS-G2: route to the LOCAL llama-server mtmd sidecar (offline) instead of GPT-4o cloud.
+  // Qwen2-VL / mtmd llama-server accepts multiple image_url parts in one message, so we
+  // send both images together and ask for a single comparison JSON. If the sidecar is not
+  // configured we degrade honestly to a static fallback (no fabricated comparison).
+  const { isVisionSidecarAvailable, describeImageViaSidecar } = await import("./llamaVisionSidecar");
+  if (!isVisionSidecarAvailable()) {
     return buildStaticFallbackComparison();
   }
 
   const compType = context?.comparisonType ?? "side_by_side";
   const compLabel =
     compType === "golden_vs_current"
-      ? "Image A is the GOLDEN SAMPLE (reference standard). Image B is the CURRENT inspection."
+      ? "The FIRST image is the GOLDEN SAMPLE (reference standard). The SECOND image is the CURRENT inspection."
       : compType === "before_after"
-        ? "Image A is BEFORE. Image B is AFTER."
-        : "Compare Image A and Image B.";
+        ? "The FIRST image is BEFORE. The SECOND image is AFTER."
+        : "Compare the FIRST and SECOND images.";
 
   const prompt = `You are an expert AOI (Automated Optical Inspection) quality engineer.
 ${compLabel}
@@ -184,32 +163,16 @@ Respond with ONLY valid JSON matching this exact schema:
 If the images look identical, return empty differences array, similarity 1.0, and isAcceptable true.`;
 
   try {
-    const response = await client.chat.completions.create({
-      model: getVisionModel(),
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            {
-              type: "image_url",
-              image_url: { url: imageToDataUrl(imageA), detail: "high" },
-            },
-            {
-              type: "image_url",
-              image_url: { url: imageToDataUrl(imageB), detail: "high" },
-            },
-          ],
-        },
-      ],
+    const result = await describeImageViaSidecar({
+      images: [imageA, imageB],
+      prompt,
+      maxTokens: 1024,
       temperature: 0.2,
-      max_tokens: 1024,
-      response_format: { type: "json_object" },
     });
-
-    const content = response.choices[0]?.message?.content ?? "";
-    const parsed = JSON.parse(content) as ImageComparison;
-    if (!parsed.summary) return buildFallbackComparison();
+    const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return buildStaticFallbackComparison();
+    const parsed = JSON.parse(jsonMatch[0]) as ImageComparison;
+    if (!parsed.summary) return buildStaticFallbackComparison();
     return parsed;
   } catch (err) {
     console.error("[aiVisionLanguage] compareImages failed:", err);
@@ -236,9 +199,11 @@ export async function generateQAReport(
     date?: string;
   },
 ): Promise<QAReport> {
-  const client = getClient();
-  if (!client) {
-    // Try GGUF text-based fallback before static fallback
+  // WS-G2: route to the LOCAL llama-server mtmd sidecar (offline) instead of GPT-4o cloud.
+  // When the sidecar is unavailable, fall back to the GGUF text-only report (metadata
+  // based, clearly labelled) and finally a static report — never a fabricated VLM result.
+  const { isVisionSidecarAvailable, describeImageViaSidecar } = await import("./llamaVisionSidecar");
+  if (!isVisionSidecarAvailable()) {
     const ggufResult = await ggufFallbackReport(images, context);
     return ggufResult ?? buildStaticFallbackReport(images.length);
   }
@@ -287,29 +252,23 @@ Respond with ONLY valid JSON matching this exact schema:
 
 Include one entry in inspections for each image. Be specific and technical.`;
 
-  const content: OpenAI.Chat.ChatCompletionContentPart[] = [
-    { type: "text", text: prompt },
-  ];
-  for (const img of imageSlice) {
-    content.push({
-      type: "image_url",
-      image_url: { url: imageToDataUrl(img.buffer), detail: "auto" },
-    });
-  }
-
   try {
-    const response = await client.chat.completions.create({
-      model: getVisionModel(),
-      messages: [{ role: "user", content }],
+    const result = await describeImageViaSidecar({
+      images: imageSlice.map((img) => img.buffer),
+      prompt,
+      maxTokens: 2048,
       temperature: 0.2,
-      max_tokens: 2048,
-      response_format: { type: "json_object" },
     });
 
-    const respContent = response.choices[0]?.message?.content ?? "";
-    const parsed = JSON.parse(respContent) as QAReport;
+    const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      const ggufResult = await ggufFallbackReport(images, context);
+      return ggufResult ?? buildStaticFallbackReport(images.length);
+    }
+    const parsed = JSON.parse(jsonMatch[0]) as QAReport;
     if (!parsed.title || !Array.isArray(parsed.inspections)) {
-      return buildFallbackReport(images.length);
+      const ggufResult = await ggufFallbackReport(images, context);
+      return ggufResult ?? buildStaticFallbackReport(images.length);
     }
     return parsed;
   } catch (err) {

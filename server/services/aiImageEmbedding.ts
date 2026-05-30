@@ -47,6 +47,15 @@ export const TEXT_OF_IMAGE_MODEL_CODE = "ollama-text-of-image:mxbai-embed-large"
 
 const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434").replace(/\/$/, "");
 const OLLAMA_EMBED_MODEL = process.env.OLLAMA_EMBED_MODEL ?? "mxbai-embed-large";
+
+// WS-G4 — rollback switch. USE_LEGACY_OLLAMA=true → embed text qua Ollama HTTP (cũ).
+// Mặc định (false) → embed qua GGUF in-process (aiGgufEngine), không cần daemon.
+const USE_LEGACY_OLLAMA = (process.env.USE_LEGACY_OLLAMA ?? "false").toLowerCase() === "true";
+// Model id GGUF cho embedding (mxbai). aiGgufEngine resolve model theo basename không ".gguf".
+const GGUF_EMBED_MODEL_ID = path.basename(
+  process.env.GGUF_EMBED_MODEL || "mxbai-embed-large-v1-f16.gguf",
+  ".gguf",
+);
 /** Giới hạn số dòng quét cho brute-force cosine trong Node (bảo vệ RAM/CPU). */
 const BRUTEFORCE_SCAN_LIMIT = Number(process.env.IMG_EMB_BRUTEFORCE_LIMIT ?? 5000);
 
@@ -118,8 +127,34 @@ export async function embedTextOllama(text: string): Promise<number[]> {
 }
 
 /**
- * Mô tả ảnh bằng LLM (describeDefect) → ghép thành text → embed qua Ollama.
+ * WS-G4 — Embed text vào không gian mxbai 1024-dim, đã L2-normalize.
+ * Mặc định dùng GGUF in-process (aiGgufEngine, không cần Ollama daemon); chỉ định
+ * GGUF_EMBED_MODEL_ID để không rơi vào model text (Qwen) sai chiều. Khi
+ * USE_LEGACY_OLLAMA=true → dùng đường Ollama HTTP cũ (rollback). Ném lỗi nếu cả
+ * engine không khả dụng → caller (searchByImage) fallback metadata.
+ */
+async function embedTextLocal(text: string): Promise<number[]> {
+  if (USE_LEGACY_OLLAMA) {
+    return embedTextOllama(text);
+  }
+  const { generateEmbedding, isGgufAvailable } = await import("./aiGgufEngine");
+  if (await isGgufAvailable()) {
+    const { embedding } = await generateEmbedding(text, GGUF_EMBED_MODEL_ID);
+    if (!Array.isArray(embedding) || embedding.length === 0) {
+      throw new Error("GGUF generateEmbedding returned empty vector");
+    }
+    // L2-normalize giống pipeline KB → cùng không gian với dữ liệu cũ.
+    return l2normalize(embedding);
+  }
+  // GGUF không khả dụng → thử Ollama như fallback offline-first.
+  return embedTextOllama(text);
+}
+
+/**
+ * Mô tả ảnh bằng LLM (describeDefect) → ghép thành text → embed (GGUF mặc định).
  * Đây là nguồn embedding ảnh đã chốt cho WS-3 (text-of-image, offline-first).
+ * GIỮ NGUYÊN modelCode (TEXT_OF_IMAGE_MODEL_CODE) để tương thích dữ liệu cũ trong
+ * ai_image_embeddings — cả Ollama mxbai và GGUF mxbai cùng không gian 1024-dim.
  */
 export async function embedImageAsText(
   imageBuffer: Buffer,
@@ -137,7 +172,7 @@ export async function embedImageAsText(
     .join(" ")
     .trim();
 
-  const embedding = await embedTextOllama(text || "inspection image");
+  const embedding = await embedTextLocal(text || "inspection image");
   return {
     embedding,
     dim: embedding.length,

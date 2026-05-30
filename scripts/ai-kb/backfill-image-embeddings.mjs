@@ -71,7 +71,14 @@ const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434"
 const OLLAMA_EMBED_MODEL = process.env.OLLAMA_EMBED_MODEL ?? "mxbai-embed-large";
 const OLLAMA_VISION_MODEL = process.env.OLLAMA_VISION_MODEL ?? "llava";
 const EMBEDDING_DIM = 1024;
+// GIỮ NGUYÊN modelCode để tương thích dữ liệu cũ trong ai_image_embeddings (cùng không gian mxbai
+// 1024-dim dù embed bằng Ollama hay GGUF). KHÔNG đổi giá trị này.
 const MODEL_CODE = "ollama-text-of-image:mxbai-embed-large";
+
+// WS-G4 — embed MẶC ĐỊNH bằng GGUF mxbai in-process (không cần Ollama daemon).
+// USE_LEGACY_OLLAMA=true → embed qua Ollama HTTP (rollback). Vision describe vẫn dùng
+// Ollama-vision (llava) trừ khi sau này gắn LLaVA GGUF — embed PHẢI là mxbai để cùng không gian.
+const USE_LEGACY_OLLAMA = (process.env.USE_LEGACY_OLLAMA ?? "false").toLowerCase() === "true";
 const LIMIT = Number(process.env.IMG_BACKFILL_LIMIT ?? 0);
 const LOCAL_STORAGE_DIR = process.env.LOCAL_STORAGE_DIR
   ? path.resolve(process.env.LOCAL_STORAGE_DIR)
@@ -118,7 +125,7 @@ async function describeImageOllama(imageBase64) {
   return text;
 }
 
-async function embedText(text) {
+async function embedTextOllama(text) {
   const res = await fetch(`${OLLAMA_BASE_URL}/api/embed`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -129,6 +136,18 @@ async function embedText(text) {
   const vec = json.embeddings?.[0];
   if (!Array.isArray(vec) || !vec.length) throw new Error("Ollama /api/embed returned no embeddings");
   return l2norm(vec);
+}
+
+// Lazily-loaded GGUF embedder (mxbai). Only imported when not using legacy Ollama.
+let _embedTextGguf = null;
+async function embedText(text) {
+  if (USE_LEGACY_OLLAMA) return embedTextOllama(text);
+  if (!_embedTextGguf) {
+    const mod = await import("./_gguf-embed.mjs");
+    _embedTextGguf = mod.embedTextGguf;
+  }
+  // _gguf-embed already L2-normalizes.
+  return _embedTextGguf(text);
 }
 
 // ─── postgres driver ─────────────────────────────────────────────────────────
@@ -150,7 +169,9 @@ const sql = postgres(DATABASE_URL, {
 console.log("══════════════════════════════════════════════════════════════");
 console.log("  WS-3 Backfill Image Embeddings (text-of-image, Ollama)");
 console.log("══════════════════════════════════════════════════════════════");
-console.log(`  Vision model: ${OLLAMA_VISION_MODEL}   Embed model: ${OLLAMA_EMBED_MODEL} (${EMBEDDING_DIM}d)`);
+console.log(
+  `  Vision model: ${OLLAMA_VISION_MODEL}   Embed: ${USE_LEGACY_OLLAMA ? `Ollama ${OLLAMA_EMBED_MODEL}` : `GGUF ${process.env.GGUF_EMBED_MODEL ?? "mxbai-embed-large-v1-f16"}`} (${EMBEDDING_DIM}d)`,
+);
 console.log(`  Storage root: ${LOCAL_STORAGE_DIR}`);
 console.log(`  Mode: ${DRY_RUN ? "DRY-RUN" : "APPLY"}${LIMIT > 0 ? `  Limit: ${LIMIT}` : ""}`);
 
@@ -250,9 +271,25 @@ try {
   console.log("══════════════════════════════════════════════════════════════");
 } catch (e) {
   console.error("\nERROR:", e.message);
+  if (!USE_LEGACY_OLLAMA && _embedTextGguf) {
+    try {
+      const mod = await import("./_gguf-embed.mjs");
+      await mod.disposeGgufEmbed();
+    } catch {
+      /* best-effort */
+    }
+  }
   await sql.end();
   process.exit(1);
 }
 
+if (!USE_LEGACY_OLLAMA && _embedTextGguf) {
+  try {
+    const mod = await import("./_gguf-embed.mjs");
+    await mod.disposeGgufEmbed();
+  } catch {
+    /* best-effort */
+  }
+}
 await sql.end();
 process.exit(0);

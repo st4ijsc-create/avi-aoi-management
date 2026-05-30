@@ -21,6 +21,14 @@ vi.mock("onnxruntime-node", () => ({ InferenceSession: { create: vi.fn() }, Tens
 vi.mock("sharp", () => ({ default: vi.fn() }));
 vi.mock("../db/ai", () => ({ getAiModelById: vi.fn() }));
 
+// WS-G4 — GGUF engine mocked so embedImageAsText runs without a model/daemon.
+const ggufGenerateEmbedding = vi.fn();
+const ggufIsAvailable = vi.fn();
+vi.mock("./aiGgufEngine", () => ({
+  generateEmbedding: (...a: unknown[]) => ggufGenerateEmbedding(...a),
+  isGgufAvailable: (...a: unknown[]) => ggufIsAvailable(...a),
+}));
+
 import { getDb } from "../db/connection";
 import { describeDefect } from "./aiVisionLanguage";
 import {
@@ -30,6 +38,8 @@ import {
   parseVectorLiteral,
   getEmbeddingStats,
   searchByImage,
+  embedImageAsText,
+  TEXT_OF_IMAGE_MODEL_CODE,
   DEFAULT_EMBEDDING_DIM,
 } from "./aiImageEmbedding";
 
@@ -106,6 +116,39 @@ describe("getEmbeddingStats", () => {
     expect(stats.indexedCount).toBe(0);
     expect(stats.pgvectorAvailable).toBe(false);
     expect(stats.defaultDim).toBe(DEFAULT_EMBEDDING_DIM);
+  });
+});
+
+describe("embedImageAsText — GGUF default (WS-G4)", () => {
+  it("embeds via GGUF (1024-dim, L2-normalized) and KEEPS the legacy modelCode", async () => {
+    delete process.env.USE_LEGACY_OLLAMA; // default → GGUF
+    ggufIsAvailable.mockResolvedValue(true);
+    // Raw (un-normalized) 1024-dim vector → embedImageAsText must L2-normalize it.
+    const raw = new Array(DEFAULT_EMBEDDING_DIM).fill(0);
+    raw[0] = 3;
+    raw[1] = 4; // norm = 5 → normalized first two = 0.6, 0.8
+    ggufGenerateEmbedding.mockResolvedValue({ embedding: raw, dimensions: DEFAULT_EMBEDDING_DIM, modelId: "mxbai" });
+    mockedDescribe.mockResolvedValue({
+      description: "scratch on pad",
+      location: "top-left",
+      possibleCauses: ["handling"],
+      suggestedActions: ["inspect"],
+    } as any);
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const out = await embedImageAsText(Buffer.from("img"));
+
+    expect(out.dim).toBe(DEFAULT_EMBEDDING_DIM);
+    expect(out.modelCode).toBe(TEXT_OF_IMAGE_MODEL_CODE); // unchanged → old data compatible
+    // L2-normalized
+    const norm = Math.sqrt(out.embedding.reduce((a, v) => a + v * v, 0));
+    expect(norm).toBeCloseTo(1, 6);
+    expect(out.embedding[0]).toBeCloseTo(0.6, 6);
+    expect(out.embedding[1]).toBeCloseTo(0.8, 6);
+    expect(out.embedding.some((v) => Number.isNaN(v))).toBe(false);
+    // GGUF path → no Ollama HTTP call.
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 });
 
