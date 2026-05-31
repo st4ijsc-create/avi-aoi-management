@@ -6,8 +6,35 @@ import { getAiModelById } from "../db/ai";
 import { createInferenceResult } from "../db/ai";
 import type { AiModel } from "../../drizzle/schema";
 
-// Cache loaded sessions to avoid re-loading the same model
-const sessionCache = new Map<string, ort.InferenceSession>();
+// LRU session cache — evicts least-recently-used entry when cap is exceeded
+const SESSION_CACHE_MAX = 5;
+class LruSessionCache {
+  private map = new Map<string, ort.InferenceSession>();
+
+  get(key: string): ort.InferenceSession | undefined {
+    if (!this.map.has(key)) return undefined;
+    // Move to end (most-recently used)
+    const session = this.map.get(key)!;
+    this.map.delete(key);
+    this.map.set(key, session);
+    return session;
+  }
+
+  set(key: string, session: ort.InferenceSession): void {
+    if (this.map.has(key)) this.map.delete(key);
+    this.map.set(key, session);
+    if (this.map.size > SESSION_CACHE_MAX) {
+      // Evict the oldest (first) entry
+      this.map.delete(this.map.keys().next().value!);
+    }
+  }
+
+  delete(key: string): void { this.map.delete(key); }
+  keys(): IterableIterator<string> { return this.map.keys(); }
+  [Symbol.iterator](): IterableIterator<[string, ort.InferenceSession]> { return this.map[Symbol.iterator](); }
+  get size(): number { return this.map.size; }
+}
+const sessionCache = new LruSessionCache();
 
 /**
  * Detect available ONNX execution providers based on environment and hardware.
@@ -182,8 +209,13 @@ export async function runInference(
       // Each row: [cx, cy, w, h, obj_conf, class_conf_0, ..., class_conf_n]
       predictions = parseDetectionOutput(outputData, output.dims as number[], labels, confidenceThreshold);
     } else {
-      // Classification: apply softmax and return top-K
-      const probabilities = softmax(outputData);
+      // Classification: apply temperature scaling then softmax
+      // T > 1 softens overconfident logits; T < 1 sharpens (T=1 is identity)
+      const temperature: number = postprocess?.temperatureScale ?? 1.0;
+      const scaledLogits = temperature !== 1.0
+        ? (outputData.map(v => v / temperature) as Float32Array)
+        : outputData;
+      const probabilities = softmax(scaledLogits);
       const allPredictions = Array.from(probabilities).map((conf, idx) => ({
         label: labels[idx] ?? `class_${idx}`,
         confidence: Number(conf.toFixed(6)),
@@ -239,6 +271,128 @@ export async function runInference(
 
     throw err;
   }
+}
+
+// ─── B5 — Inference with feature map (for XAI CAM / Score-CAM) ────────────────
+
+export interface FeatureMapTensor {
+  /** Tên output trong ONNX graph. */
+  name: string;
+  /** Dữ liệu phẳng (channel-first NCHW giả định: [1,C,H,W] hoặc [C,H,W]). */
+  data: Float32Array;
+  /** dims gốc từ ONNX. */
+  dims: number[];
+}
+
+export interface InferenceWithFeatureMap {
+  modelCode: string;
+  /** Logits/probabilities thô của output phân loại (chưa softmax nếu là logits). */
+  logits: Float32Array;
+  logitsDims: number[];
+  labels: string[];
+  /** Feature map cuối cùng nếu model expose (regex feature|conv|map); null nếu không. */
+  featureMap: FeatureMapTensor | null;
+  inputName: string;
+  inputShape: number[];
+}
+
+/** Regex phát hiện output là feature map (conv/feature/map). */
+const FEATURE_MAP_RX = /feature|conv|map|stage|backbone/i;
+
+/**
+ * B5 — Chạy inference lấy CẢ feature map (nếu có) + logits. KHÔNG đổi runInference cũ;
+ * KHÔNG ghi createInferenceResult (đây là đường XAI, không phải inference sản xuất).
+ *
+ * Phát hiện feature map qua session.outputNames: ưu tiên output 4-D ([N,C,H,W]) có tên
+ * khớp FEATURE_MAP_RX; logits chọn output còn lại (ưu tiên 2-D hoặc output cuối).
+ * Trả featureMap=null nếu không tìm được → caller (aiExplainability) degrade sang occlusion.
+ */
+export async function runInferenceWithFeatureMap(
+  modelId: number,
+  imageBuffer: Buffer,
+): Promise<InferenceWithFeatureMap> {
+  const model = await getAiModelById(modelId);
+  if (!model) throw new Error(`Model ${modelId} not found`);
+  if (model.status !== "ACTIVE") throw new Error(`Model ${model.code} is not active (status: ${model.status})`);
+
+  const session = await getSession(model);
+
+  const preprocessConfig = (model.preprocessConfig as AiModel["preprocessConfig"]) ?? {
+    resize: { width: 224, height: 224 },
+    colorSpace: "RGB" as const,
+    channelFirst: true,
+  };
+  const tensorData = await preprocessImage(imageBuffer, preprocessConfig);
+
+  const inputShape = (model.inputShape as number[]) ??
+    [1, 3, preprocessConfig.resize?.height ?? 224, preprocessConfig.resize?.width ?? 224];
+  const inputTensor = new ort.Tensor("float32", tensorData, inputShape);
+
+  const inputName = session.inputNames[0];
+  if (!inputName) throw new Error("Model has no input names");
+
+  const results = await session.run({ [inputName]: inputTensor });
+
+  // ── Tách feature map vs logits ─────────────────────────────────────────────
+  let featureMap: FeatureMapTensor | null = null;
+  let logitsName: string | null = null;
+
+  // Ưu tiên: output 4-D tên khớp regex → feature map.
+  for (const name of session.outputNames) {
+    const out = results[name];
+    if (!out) continue;
+    const dims = out.dims as number[];
+    if (dims.length === 4 && FEATURE_MAP_RX.test(name)) {
+      featureMap = { name, data: out.data as Float32Array, dims };
+      break;
+    }
+  }
+  // Nếu chưa có, chấp nhận BẤT KỲ output 4-D nào làm feature map (nhiều backbone không
+  // đặt tên gợi ý) — nhưng chỉ khi có >1 output (output còn lại là logits).
+  if (!featureMap && session.outputNames.length > 1) {
+    for (const name of session.outputNames) {
+      const out = results[name];
+      if (out && (out.dims as number[]).length === 4) {
+        featureMap = { name, data: out.data as Float32Array, dims: out.dims as number[] };
+        break;
+      }
+    }
+  }
+
+  // logits = output 2-D đầu tiên (hoặc 1-D), khác feature map; fallback output cuối.
+  for (const name of session.outputNames) {
+    if (featureMap && name === featureMap.name) continue;
+    const out = results[name];
+    if (!out) continue;
+    const dims = out.dims as number[];
+    if (dims.length <= 2) { logitsName = name; break; }
+  }
+  if (!logitsName) {
+    logitsName = session.outputNames.find((n) => !featureMap || n !== featureMap.name)
+      ?? session.outputNames[session.outputNames.length - 1];
+  }
+
+  const logitsOut = logitsName ? results[logitsName] : undefined;
+  if (!logitsOut) throw new Error("No logits output from model");
+
+  return {
+    modelCode: model.code,
+    logits: logitsOut.data as Float32Array,
+    logitsDims: logitsOut.dims as number[],
+    labels: (model.labels as string[]) ?? [],
+    featureMap,
+    inputName,
+    inputShape,
+  };
+}
+
+/** B5 — softmax export cho aiExplainability (tái dùng logic nội bộ). */
+export function softmaxArray(data: Float32Array | number[]): number[] {
+  const arr = Array.from(data);
+  const maxVal = Math.max(...arr);
+  const exp = arr.map((v) => Math.exp(v - maxVal));
+  const sum = exp.reduce((a, b) => a + b, 0) || 1;
+  return exp.map((v) => v / sum);
 }
 
 /**
@@ -355,4 +509,8 @@ function softmax(data: Float32Array): Float32Array {
  */
 export function getLoadedModels(): string[] {
   return Array.from(sessionCache.keys());
+}
+
+export function getSessionCacheSize(): number {
+  return sessionCache.size;
 }

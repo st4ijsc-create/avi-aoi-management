@@ -20,6 +20,14 @@ Khép kín vòng tự học AOI chạy hoàn toàn LOCAL: inference → tự ph�
 Dùng backbone ONNX/feature-extractor có sẵn (đóng băng) → train lớp classifier softmax/prototype bằng SGD thuần JS (tái dùng `aiLocalTraining.ts`). Output: file JSON classifier (`uploads/models/trained/*.json`) → đăng ký `model_versions`. Chạy mọi máy CPU, offline tuyệt đối.
 > Bỏ hẳn nhánh `TRAINING_SERVICE_URL`. Tầng 2 (sidecar Python qua `LOCAL_TRAINER_CMD`) chỉ bật khi env set; mặc định tắt.
 
+#### 3.0 Tầng 2 — Python sidecar (B8 scaffolding, opt-in, mặc định TẮT)
+Hợp đồng file-based: server `buildDataset` → ghi `uploads/training/jobs/<jobId>/job.json` → `spawn LOCAL_TRAINER_CMD <jobDir>` (KHÔNG shell) → poll `progress.json` (atomic) → đọc `result.json` + `output/model.onnx`. Stage 3-6 (eval/gate/activate) tái dùng nguyên — gate trên test split KHÓA là nguồn sự thật, metrics sidecar chỉ tham khảo. Scaffolding: `server/services/localSidecarTrainer.ts` (`isSidecarEnabled`/`runSidecarTraining`), `tools/trainer/{train.py,requirements.txt,README.md}`. Cần con người: tự cài Python/PyTorch (offline, pretrained cục bộ) + hoàn thiện `build_dataset/train_loop/export_onnx`.
+
+| Env | Ý nghĩa | Mặc định |
+| --- | --- | --- |
+| `LOCAL_TRAINER_CMD` | Lệnh chạy sidecar, vd `python tools/trainer/train.py`; server nối `<jobDir>` làm arg cuối. **Trống → Tầng 2 TẮT.** | (trống) |
+| `LOCAL_TRAINER_TIMEOUT_MS` | Timeout cứng cho 1 lần train (ms); hết giờ → kill + job FAILED. | `7200000` (2h) |
+
 ### 3.1 Nguồn label THẬT (ánh xạ đúng schema)
 1. `ai_label_queue` trạng thái `LABELED`/`AUTO_LABELED`: `imageUrl` + `humanLabel`/`predictedLabel` + `modelId` (nguồn chính).
 2. `ai_feedback` ⋈ `ai_suggestions` (qua `suggestionId`) → `inspectionId`, `modelName`, `correctedValue`. Ảnh lấy từ `measurement_results.imageUrl` (KHÔNG dùng `productInspections.imagePath` — không tồn tại).

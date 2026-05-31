@@ -1,0 +1,26 @@
+# Local Sidecar Trainer (WS-1 Tier 2 / B8) — OPTIONAL, NOT a project dependency.
+#
+# These are installed BY THE OPERATOR only when enabling the Python deep-training
+# sidecar (LOCAL_TRAINER_CMD). They are NOT pulled in by `pnpm install`, are NOT
+# used by CI, and are NOT required for the default offline Tier-1 pipeline.
+#
+# Install (CPU example):
+#   python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
+#   pip install -r tools/trainer/requirements.txt
+#
+# For CUDA/TensorRT GPU builds, install the matching torch wheel from the
+# official index instead (https://pytorch.org/get-started/locally/), e.g.:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#
+# Offline-first: pre-cache pretrained backbones (set TORCH_HOME) so no network
+# access is needed at train time.
+
+# Core deep-learning stack (classification fine-tuning + ONNX export).
+torch==2.3.1
+torchvision==0.18.1
+onnx==1.16.1
+Pillow==10.3.0
+numpy==1.26.4
+
+# Optional — only if task == "detection" (YOLO). Comment out if unused.
+ultralytics==8.2.50

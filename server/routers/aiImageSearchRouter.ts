@@ -119,7 +119,7 @@ export const aiImageSearchRouter = router({
     }))
     .mutation(async ({ input }) => {
       const imageBuffer = await loadImage(input.imageKey);
-      const { results, embedding, searchMode } = await searchByImage(input.modelId, imageBuffer, input.limit, {
+      const { results, embedding, searchMode, embeddingSource } = await searchByImage(input.modelId, imageBuffer, input.limit, {
         machineId: input.machineId,
         productModelId: input.productModelId,
         label: input.label,
@@ -129,6 +129,7 @@ export const aiImageSearchRouter = router({
       return {
         results,
         searchMode,
+        embeddingSource,
         embeddingDim: embedding.dim,
         modelCode: embedding.modelCode,
         processingTimeMs: embedding.processingTimeMs,

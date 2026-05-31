@@ -18,6 +18,23 @@ export interface SimilarImageItem {
 }
 
 export type SearchMode = "hnsw" | "exact" | "bruteforce" | "metadata";
+export type EmbeddingSource = "onnx" | "text-of-image" | "metadata";
+
+export function EmbeddingSourceBadge({ source }: { source?: EmbeddingSource | null }) {
+  const { t } = useTranslation();
+  if (!source) return null;
+  const labels: Record<EmbeddingSource, string> = {
+    "onnx": t("is.srcOnnx", "ONNX (vector thật)"),
+    "text-of-image": t("is.srcText", "Mô tả ảnh (text-of-image)"),
+    "metadata": t("is.srcMetadata", "Metadata (fallback)"),
+  };
+  const variant = source === "onnx" ? "default" : source === "text-of-image" ? "secondary" : "destructive";
+  return (
+    <Badge variant={variant} className="text-xs">
+      {t("is.srcLabel", "Nguồn nhúng")}: {labels[source]}
+    </Badge>
+  );
+}
 
 export function resolveUploadImageSrc(imageUrl?: string | null): string {
   if (!imageUrl) return "";
@@ -57,10 +74,11 @@ interface Props {
   results: SimilarImageItem[] | null | undefined;
   loading?: boolean;
   searchMode?: SearchMode | null;
+  embeddingSource?: EmbeddingSource | null;
   emptyText?: string;
 }
 
-export default function SimilarImageGrid({ results, loading, searchMode, emptyText }: Props) {
+export default function SimilarImageGrid({ results, loading, searchMode, embeddingSource, emptyText }: Props) {
   const { t } = useTranslation();
 
   if (loading) {
@@ -90,7 +108,10 @@ export default function SimilarImageGrid({ results, loading, searchMode, emptyTe
         <h3 className="text-sm font-medium">
           {t("is.results", "Kết quả")}: {results.length} {t("is.imagesFound", "ảnh tìm thấy")}
         </h3>
-        <SearchModeBadge mode={searchMode} />
+        <div className="flex items-center gap-2 flex-wrap">
+          <EmbeddingSourceBadge source={embeddingSource} />
+          <SearchModeBadge mode={searchMode} />
+        </div>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {results.map((result, idx) => (

@@ -17,6 +17,35 @@ import {
   getDefectHeatmap,
   generateComprehensiveReport,
 } from "../services/aiInspectionAnalytics";
+import { getCachedOrFetch } from "../services/cacheService";
+
+// 5-minute TTL for analytics responses (ms)
+const ANALYTICS_TTL_MS = 5 * 60 * 1000;
+
+// Build cache key from period input + endpoint name + extras
+function analyticsCacheKey(
+  endpoint: string,
+  input: { startDate: Date; endDate: Date; machineId?: number; factoryCode?: string; lineCode?: string; productModel?: string },
+  extras?: Record<string, unknown>,
+): string {
+  const base = [
+    endpoint,
+    input.startDate.toISOString(),
+    input.endDate.toISOString(),
+    input.machineId ?? "all",
+    input.factoryCode ?? "all",
+    input.lineCode ?? "all",
+    input.productModel ?? "all",
+  ].join(":");
+  if (extras) {
+    const extra = Object.entries(extras)
+      .filter(([, v]) => v !== undefined && v !== null)
+      .map(([k, v]) => `${k}=${String(v)}`)
+      .join(",");
+    return extra ? `analytics:${base}:${extra}` : `analytics:${base}`;
+  }
+  return `analytics:${base}`;
+}
 
 const DEFAULT_ROLLOUT_PERCENT = 100;
 
@@ -101,21 +130,21 @@ export const aiInspectionAnalyticsRouter = router({
       if (days > 90) {
         console.warn(`[aiAnalyticsRouter] MAX_RANGE_EXCEEDED: User ${ctx.user?.id} requested ${days.toFixed(1)} days (max 90)`);
       }
-      return getDefectTrend(input);
+      return getCachedOrFetch(analyticsCacheKey("defectTrend", input), () => getDefectTrend(input), ANALYTICS_TTL_MS);
     }),
 
   // ─── Pareto Analysis ────────────────────────────────
   defectPareto: analyticsRolloutProcedure
     .input(periodInput)
     .query(async ({ input }) => {
-      return getDefectPareto(input);
+      return getCachedOrFetch(analyticsCacheKey("defectPareto", input), () => getDefectPareto(input), ANALYTICS_TTL_MS);
     }),
 
   // ─── Machine Performance Comparison ─────────────────
   machinePerformance: analyticsRolloutProcedure
     .input(periodInput)
     .query(async ({ input }) => {
-      return getMachinePerformance(input);
+      return getCachedOrFetch(analyticsCacheKey("machinePerformance", input), () => getMachinePerformance(input), ANALYTICS_TTL_MS);
     }),
 
   // ─── Yield Forecast ─────────────────────────────────
@@ -125,51 +154,91 @@ export const aiInspectionAnalyticsRouter = router({
     }))
     .query(async ({ input }) => {
       const { horizonDays, ...params } = input;
-      return forecastYield(params, horizonDays);
+      return getCachedOrFetch(
+        analyticsCacheKey("yieldForecast", params, { horizonDays }),
+        () => forecastYield(params, horizonDays),
+        ANALYTICS_TTL_MS,
+      );
     }),
 
   // ─── Correlation Analysis ───────────────────────────
   correlations: analyticsRolloutProcedure
     .input(periodInput)
     .query(async ({ input }) => {
-      return getCorrelationAnalysis(input);
+      // getCorrelationAnalysis already has internal cache; outer cache is no-op-cheap
+      return getCachedOrFetch(analyticsCacheKey("correlations", input), () => getCorrelationAnalysis(input), ANALYTICS_TTL_MS);
     }),
 
   // ─── Risk Assessment ────────────────────────────────
   riskAssessment: analyticsRolloutProcedure
     .input(periodInput)
     .query(async ({ input }) => {
-      return assessRisks(input);
+      return getCachedOrFetch(analyticsCacheKey("riskAssessment", input), () => assessRisks(input), ANALYTICS_TTL_MS);
     }),
 
   // ─── Control Chart (SPC) ────────────────────────────
   controlChart: analyticsRolloutProcedure
     .input(periodInput.extend({
       metric: z.enum(["yield", "defectRate", "cycleTime"]).optional(),
+      // Optional: when provided, real USL/LSL/nominal are looked up from the
+      // measurement-point definition so Cpk reflects actual spec capability.
+      // Omitted → no spec → cpk=null + cpkNote (we never fabricate spec limits).
+      measurementPointDefId: z.number().optional(),
     }))
     .query(async ({ input }) => {
-      const { metric, ...params } = input;
-      return getControlChart(params, metric);
+      const { metric, measurementPointDefId, ...params } = input;
+
+      // Resolve real specification limits from the measurement-point definition.
+      // (Same source as spcAdvancedRouter.capability — keeps Cpk consistent across modules.)
+      let specLimits: { usl?: number; lsl?: number } | undefined;
+      if (measurementPointDefId != null) {
+        const { getDb } = await import("../db/connection");
+        const database = await getDb();
+        if (database) {
+          const { measurementPointDefs } = await import("../../drizzle/schema");
+          const { eq } = await import("drizzle-orm");
+          const [pointDef] = await database
+            .select()
+            .from(measurementPointDefs)
+            .where(eq(measurementPointDefs.id, measurementPointDefId));
+          if (pointDef) {
+            const usl = pointDef.upperLimit != null ? Number(pointDef.upperLimit) : undefined;
+            const lsl = pointDef.lowerLimit != null ? Number(pointDef.lowerLimit) : undefined;
+            if ((usl != null && Number.isFinite(usl)) || (lsl != null && Number.isFinite(lsl))) {
+              specLimits = {
+                usl: usl != null && Number.isFinite(usl) ? usl : undefined,
+                lsl: lsl != null && Number.isFinite(lsl) ? lsl : undefined,
+              };
+            }
+          }
+        }
+      }
+
+      return getCachedOrFetch(
+        analyticsCacheKey("controlChart", params, { metric, mp: measurementPointDefId }),
+        () => getControlChart(params, metric, specLimits),
+        ANALYTICS_TTL_MS,
+      );
     }),
 
   // ─── Shift Analysis ─────────────────────────────────
   shiftAnalysis: analyticsRolloutProcedure
     .input(periodInput)
     .query(async ({ input }) => {
-      return getShiftAnalysis(input);
+      return getCachedOrFetch(analyticsCacheKey("shiftAnalysis", input), () => getShiftAnalysis(input), ANALYTICS_TTL_MS);
     }),
 
   // ─── Defect Heatmap ─────────────────────────────────
   defectHeatmap: analyticsRolloutProcedure
     .input(periodInput)
     .query(async ({ input }) => {
-      return getDefectHeatmap(input);
+      return getCachedOrFetch(analyticsCacheKey("defectHeatmap", input), () => getDefectHeatmap(input), ANALYTICS_TTL_MS);
     }),
 
   // ─── Comprehensive Report ───────────────────────────
   comprehensiveReport: analyticsRolloutProcedure
     .input(periodInput)
     .query(async ({ input }) => {
-      return generateComprehensiveReport(input);
+      return getCachedOrFetch(analyticsCacheKey("comprehensiveReport", input), () => generateComprehensiveReport(input), ANALYTICS_TTL_MS);
     }),
 });

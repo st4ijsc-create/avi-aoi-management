@@ -128,6 +128,11 @@ export const aiEvalRouter = router({
       classLabels: z.array(z.string().min(1)).min(2).max(100),
       datasetId: z.number().optional(),
       strategy: z.enum(["transfer", "fewshot"]).default("transfer"),
+      // Tier-2 opt-in (default Tier-1 local-embedding). Sidecar only runs when
+      // LOCAL_TRAINER_CMD is also set server-side.
+      trainingMode: z.enum(["local-embedding", "local-sidecar"]).optional(),
+      task: z.enum(["classification", "detection"]).optional(),
+      framework: z.string().min(1).optional(),
       gateEpsilon: z.number().min(0).max(1).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -142,6 +147,9 @@ export const aiEvalRouter = router({
         classLabels: input.classLabels,
         datasetId: input.datasetId,
         strategy: input.strategy,
+        trainingMode: input.trainingMode,
+        task: input.task,
+        framework: input.framework,
         gateEpsilon: input.gateEpsilon ?? 0,
         createdBy: (ctx as any).user?.id,
       });

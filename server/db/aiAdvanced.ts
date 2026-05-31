@@ -11,6 +11,7 @@ import {
   trainingDatasets, InsertTrainingDataset,
   edgeDeployments, InsertEdgeDeployment,
   edgeInferenceSync, InsertEdgeInferenceSync,
+  aiCalibrationReports, InsertAiCalibrationReport,
   aiFeedback,
   aiSuggestions,
   aiLabelQueue,
@@ -112,10 +113,13 @@ export async function getABTestExperiment(id: number) {
   return result ?? null;
 }
 
-export async function updateABTestExperiment(id: number, data: Partial<InsertAbTestExperiment> & Record<string, unknown>) {
+// B6: dropped the `& Record<string, unknown>` escape hatch + `as any` cast so the
+// compiler now catches column-name typos (e.g. modelAInferenceCount vs the real
+// modelAInferences) at the call site instead of silently no-op'ing the update.
+export async function updateABTestExperiment(id: number, data: Partial<InsertAbTestExperiment>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [result] = await db.update(abTestExperiments).set({ ...data, updatedAt: new Date() } as any).where(eq(abTestExperiments.id, id)).returning();
+  const [result] = await db.update(abTestExperiments).set({ ...data, updatedAt: new Date() }).where(eq(abTestExperiments.id, id)).returning();
   return result;
 }
 
@@ -571,4 +575,51 @@ export async function getEdgeInferenceResults(options?: {
   if (options?.synced !== undefined) conditions.push(eq(edgeInferenceSync.synced, options.synced));
   const where = conditions.length > 0 ? and(...conditions) : undefined;
   return db.select().from(edgeInferenceSync).where(where).orderBy(desc(edgeInferenceSync.inferredAt)).limit(options?.limit ?? 50).offset(options?.offset ?? 0);
+}
+
+// ============ B2 — AI CALIBRATION REPORTS ============
+
+export async function createCalibrationReport(data: InsertAiCalibrationReport) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(aiCalibrationReports).values(data).returning();
+  return result!;
+}
+
+export async function getCalibrationReport(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db.select().from(aiCalibrationReports).where(eq(aiCalibrationReports.id, id)).limit(1);
+  return result ?? null;
+}
+
+export async function listCalibrationReports(options?: {
+  modelId?: number;
+  limit?: number;
+  offset?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: SQL[] = [];
+  if (options?.modelId != null) conditions.push(eq(aiCalibrationReports.modelId, options.modelId));
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  return db
+    .select()
+    .from(aiCalibrationReports)
+    .where(where)
+    .orderBy(desc(aiCalibrationReports.createdAt))
+    .limit(options?.limit ?? 50)
+    .offset(options?.offset ?? 0);
+}
+
+export async function getLatestCalibrationReport(modelId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db
+    .select()
+    .from(aiCalibrationReports)
+    .where(eq(aiCalibrationReports.modelId, modelId))
+    .orderBy(desc(aiCalibrationReports.createdAt))
+    .limit(1);
+  return result ?? null;
 }

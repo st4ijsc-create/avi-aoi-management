@@ -586,6 +586,11 @@ export const aiModels = pgTable("ai_models", {
     confidenceThreshold?: number;
     nmsThreshold?: number;
     topK?: number;
+    // ── B2 (additive, optional) — confidence calibration ──
+    // Temperature scaling factor applied to logits before softmax.
+    // T > 1 softens overconfident logits; T < 1 sharpens. Absent/1 ⇒ identity
+    // (no behaviour change). aiInferenceEngine already reads this (was via `as any`).
+    temperatureScale?: number;
   }>(),
   status: modelStatusEnum("status").default("UPLOADING").notNull(),
   metadata: json("metadata"),
@@ -1061,6 +1066,9 @@ export const aiQualityGateConfigs = pgTable("ai_quality_gate_configs", {
   ngLabels: json("ngLabels").$type<string[]>().default([]).notNull(),
   okLabels: json("okLabels").$type<string[]>().default([]).notNull(),
   ensembleConfigId: integer("ensembleConfigId"),
+  // B6 — A/B canary live: when set + experiment RUNNING, processQualityGate runs the
+  // canary path (variant inference + abTestResults logging). NULL ⇒ legacy behaviour.
+  activeExperimentId: integer("activeExperimentId"),
   alertOnAutoNg: boolean("alertOnAutoNg").default(true).notNull(),
   metadata: json("metadata"),
   createdBy: integer("createdBy"),
@@ -1131,6 +1139,55 @@ export const aiQualityGateResults = pgTable("ai_quality_gate_results", {
 
 export type AiQualityGateResult = typeof aiQualityGateResults.$inferSelect;
 export type InsertAiQualityGateResult = typeof aiQualityGateResults.$inferInsert;
+
+// ============= B2 — AI Calibration Reports (ECE / reliability diagram) =============
+
+/**
+ * AI Calibration Reports — stores Expected Calibration Error (ECE), Maximum
+ * Calibration Error (MCE), Brier score, an optionally-fitted temperature, and the
+ * per-bin reliability diagram for a model over a labelled period. Labels come from
+ * human review (aiQualityGateResults.reviewDecision). Read-only / append; no inference
+ * behaviour is changed by writing here.
+ */
+export const aiCalibrationReports = pgTable("ai_calibration_reports", {
+  id: serial("id").primaryKey(),
+  modelId: integer("modelId").notNull(),
+  modelVersion: varchar("modelVersion", { length: 50 }),
+  // Optional scope filters
+  machineId: integer("machineId"),
+  productModelId: integer("productModelId"),
+  // Labelled period analysed
+  periodStart: timestamp("periodStart").notNull(),
+  periodEnd: timestamp("periodEnd").notNull(),
+  // Sample size used (reviewed results in period/scope)
+  sampleCount: integer("sampleCount").default(0).notNull(),
+  // Calibration metrics (precision 6 to capture small ECE values)
+  ece: decimal("ece", { precision: 7, scale: 6 }),
+  mce: decimal("mce", { precision: 7, scale: 6 }),
+  brierScore: decimal("brierScore", { precision: 7, scale: 6 }),
+  // Optional fitted temperature (1-D NLL min) + ECE recomputed after scaling
+  temperature: decimal("temperature", { precision: 8, scale: 4 }),
+  eceAfterTemp: decimal("eceAfterTemp", { precision: 7, scale: 6 }),
+  numBins: integer("numBins").default(10).notNull(),
+  // Reliability diagram bins
+  reliabilityBins: json("reliabilityBins").$type<Array<{
+    binLower: number;
+    binUpper: number;
+    avgConfidence: number;
+    accuracy: number;
+    count: number;
+  }>>().notNull(),
+  metadata: json("metadata"),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_calibration_model").on(table.modelId),
+  index("idx_ai_calibration_period").on(table.periodStart, table.periodEnd),
+  index("idx_ai_calibration_created").on(table.createdAt),
+]);
+
+export type AiCalibrationReport = typeof aiCalibrationReports.$inferSelect;
+export type InsertAiCalibrationReport = typeof aiCalibrationReports.$inferInsert;
 
 // ============= AI Image Embeddings (pgvector) =============
 
@@ -1332,3 +1389,71 @@ export const aiSpecialistSessionSteps = pgTable("ai_specialist_session_steps", {
 
 export type AiSpecialistSessionStep = typeof aiSpecialistSessionSteps.$inferSelect;
 export type InsertAiSpecialistSessionStep = typeof aiSpecialistSessionSteps.$inferInsert;
+
+// ============= B3 — Unsupervised Anomaly Detection (PatchCore-style) =============
+//
+// Memory bank chứa embedding ảnh OK (coreset subsample) theo scope
+// (productModelId, machineId, modelCode). Scoring = kNN distance tới bank;
+// anomaly khi distance vượt threshold = percentile (p99) phân bố khoảng cách OK.
+//
+// Cột embedding_vec vector(1024) + HNSW giữ THỦ CÔNG trong migration
+// drizzle/0109_ai_anomaly.sql (bọc EXCEPTION) — degrade brute-force JS khi thiếu
+// pgvector. Cột embedding TEXT là nguồn raw/back-compat (luôn có).
+
+export const aiAnomalyMemoryBank = pgTable("ai_anomaly_memory_bank", {
+  id: serial("id").primaryKey(),
+  productModelId: integer("productModelId"),
+  machineId: integer("machineId"),
+  modelCode: varchar("modelCode", { length: 120 }).notNull(),
+  // Raw embedding "[v1,v2,...]" — luôn có (back-compat, brute-force JS).
+  embedding: text("embedding").notNull(),
+  // pgvector(1024) — chỉ điền cho dòng 1024-dim. Nullable. HNSW trong migration.
+  embeddingVec: pgvector(1024)("embedding_vec"),
+  embeddingDim: integer("embeddingDim").notNull(),
+  // "onnx" | "text-of-image" | "heuristic" — nguồn embedding (degrade trung thực).
+  source: varchar("source", { length: 32 }).notNull(),
+  imageUrl: text("imageUrl"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_anomaly_bank_scope").on(table.productModelId, table.machineId, table.modelCode),
+  index("idx_anomaly_bank_product").on(table.productModelId),
+  index("idx_anomaly_bank_machine").on(table.machineId),
+  index("idx_anomaly_bank_created").on(table.createdAt),
+]);
+
+export type AiAnomalyMemoryBankRow = typeof aiAnomalyMemoryBank.$inferSelect;
+export type InsertAiAnomalyMemoryBankRow = typeof aiAnomalyMemoryBank.$inferInsert;
+
+export const aiAnomalyProfiles = pgTable("ai_anomaly_profiles", {
+  id: serial("id").primaryKey(),
+  productModelId: integer("productModelId"),
+  machineId: integer("machineId"),
+  modelCode: varchar("modelCode", { length: 120 }).notNull(),
+  // Ngưỡng anomaly = quantile(distances, p99) tính khi build bank.
+  threshold: decimal("threshold", { precision: 12, scale: 8 }).notNull(),
+  // k cho kNN scoring.
+  k: integer("k").default(5).notNull(),
+  // Thống kê phân bố khoảng cách nội bộ (min/mean/p50/p90/p99/max...).
+  distStats: json("distStats").$type<{
+    count: number;
+    min: number;
+    mean: number;
+    p50: number;
+    p90: number;
+    p95: number;
+    p99: number;
+    max: number;
+  }>(),
+  bankSize: integer("bankSize").default(0).notNull(),
+  // Nguồn embedding chủ đạo dùng khi build (cờ degrade trung thực).
+  source: varchar("source", { length: 32 }).notNull(),
+  degraded: boolean("degraded").default(false).notNull(),
+  builtAt: timestamp("builtAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_anomaly_profile_scope").on(table.productModelId, table.machineId, table.modelCode),
+  index("idx_anomaly_profile_product").on(table.productModelId),
+  index("idx_anomaly_profile_machine").on(table.machineId),
+]);
+
+export type AiAnomalyProfile = typeof aiAnomalyProfiles.$inferSelect;
+export type InsertAiAnomalyProfile = typeof aiAnomalyProfiles.$inferInsert;

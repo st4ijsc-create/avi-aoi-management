@@ -37,6 +37,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { ModelSelect, DatasetSelect } from '@/components/ai/ModelSelect';
+import { ReliabilityDiagram } from '@/components/ReliabilityDiagram';
 import {
   BarChart,
   Bar,
@@ -258,6 +259,8 @@ export default function AIPerformanceDashboard() {
             <TabsTrigger value="overview">{t('dashboard.overview')}</TabsTrigger>
             <TabsTrigger value="confusion">{t('reports.confusionMatrix')}</TabsTrigger>
             <TabsTrigger value="evaluation">{t('aiEval.beforeAfterTab', 'Eval (Before/After)')}</TabsTrigger>
+            <TabsTrigger value="canary">{t('canary.tab', 'A/B Canary')}</TabsTrigger>
+            <TabsTrigger value="calibration">{t('calibration.tab', 'Calibration')}</TabsTrigger>
             <TabsTrigger value="batches">{t('reports.trainingBatches')}</TabsTrigger>
             <TabsTrigger value="suggestions">{t('reports.suggestionsHistory')}</TabsTrigger>
           </TabsList>
@@ -474,6 +477,16 @@ export default function AIPerformanceDashboard() {
           {/* Eval Before/After Tab (WS-1) */}
           <TabsContent value="evaluation">
             <EvalBeforeAfterSection />
+          </TabsContent>
+
+          {/* A/B Canary Tab (B6) */}
+          <TabsContent value="canary">
+            <CanaryComparisonSection />
+          </TabsContent>
+
+          {/* Confidence Calibration Tab (B2) */}
+          <TabsContent value="calibration">
+            <CalibrationSection />
           </TabsContent>
 
           {/* Training Batches Tab */}
@@ -898,6 +911,299 @@ function EvalBeforeAfterSection() {
               </CardContent>
             </Card>
           )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── B6 — A/B Canary comparison + promote/rollback ─────────────────
+function CanaryComparisonSection() {
+  const { t } = useTranslation();
+  const [experimentId, setExperimentId] = useState('');
+  const [configId, setConfigId] = useState('');
+
+  const expId = Number(experimentId) || 0;
+  const cfgId = Number(configId) || 0;
+
+  const statsQuery = trpc.aiQualityGate.canaryStats.useQuery(
+    { experimentId: expId },
+    { enabled: expId > 0 },
+  );
+  const stats = statsQuery.data;
+
+  const refresh = () => statsQuery.refetch();
+
+  const start = trpc.aiQualityGate.canaryStart.useMutation({
+    onSuccess: () => { toast.success(t('canary.started', 'Đã khởi động canary')); refresh(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const pause = trpc.aiQualityGate.canaryPause.useMutation({
+    onSuccess: () => { toast.success(t('canary.paused', 'Đã tạm dừng canary')); refresh(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const guardrail = trpc.aiQualityGate.canaryGuardrail.useMutation({
+    onSuccess: (d: any) => {
+      toast.success(
+        d?.shouldRollback
+          ? t('canary.guardrailTripped', 'Guardrail kích hoạt — đã tạm dừng')
+          : t('canary.guardrailOk', 'Guardrail OK'),
+      );
+      refresh();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const promote = trpc.aiQualityGate.canaryPromote.useMutation({
+    onSuccess: () => { toast.success(t('canary.promoted', 'Đã promote model B')); refresh(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const rollback = trpc.aiQualityGate.canaryRollback.useMutation({
+    onSuccess: () => { toast.success(t('canary.rolledBack', 'Đã rollback về model A')); refresh(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const pct = (n: number | undefined) => `${((n ?? 0) * 100).toFixed(1)}%`;
+  const expStatus = (stats?.experiment as any)?.status as string | undefined;
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t('canary.title', 'A/B Canary (live)')}</CardTitle>
+          <CardDescription>
+            {t('canary.desc', 'So sánh model A (production) với model B (canary) trên luồng kiểm tra trực tiếp; promote hoặc rollback theo guardrail.')}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>{t('canary.experimentId', 'Experiment ID')}</Label>
+              <Input value={experimentId} onChange={(e) => setExperimentId(e.target.value)} placeholder="e.g. 1" />
+            </div>
+            <div className="space-y-1">
+              <Label>{t('canary.configId', 'Quality Gate Config ID')}</Label>
+              <Input value={configId} onChange={(e) => setConfigId(e.target.value)} placeholder="e.g. 7" />
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => refresh()} disabled={expId <= 0}>
+              <RefreshCw className="h-4 w-4 mr-1" /> {t('common.refresh', 'Làm mới')}
+            </Button>
+            <Button size="sm" onClick={() => start.mutate({ experimentId: expId })} disabled={expId <= 0 || start.isPending}>
+              {t('canary.start', 'Bắt đầu')}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => pause.mutate({ experimentId: expId })} disabled={expId <= 0 || pause.isPending}>
+              {t('canary.pause', 'Tạm dừng')}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => guardrail.mutate({ experimentId: expId })} disabled={expId <= 0 || guardrail.isPending}>
+              {t('canary.checkGuardrail', 'Kiểm tra guardrail')}
+            </Button>
+            <Button size="sm" onClick={() => promote.mutate({ experimentId: expId, configId: cfgId })} disabled={expId <= 0 || cfgId <= 0 || promote.isPending}>
+              <Award className="h-4 w-4 mr-1" /> {t('canary.promote', 'Promote B')}
+            </Button>
+            <Button size="sm" variant="destructive" onClick={() => rollback.mutate({ experimentId: expId, configId: cfgId })} disabled={expId <= 0 || cfgId <= 0 || rollback.isPending}>
+              {t('canary.rollback', 'Rollback A')}
+            </Button>
+          </div>
+          {expStatus && (
+            <div>
+              <Badge variant={expStatus === 'RUNNING' ? 'default' : 'secondary'}>{expStatus}</Badge>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {stats && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t('canary.comparison', 'So sánh variant')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left p-2">{t('canary.metric', 'Chỉ số')}</th>
+                  <th className="text-right p-2">{t('canary.modelA', 'Model A (prod)')}</th>
+                  <th className="text-right p-2">{t('canary.modelB', 'Model B (canary)')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b">
+                  <td className="p-2">{t('canary.inferences', 'Số suy luận')}</td>
+                  <td className="text-right p-2">{stats.modelA.inferenceCount}</td>
+                  <td className="text-right p-2">{stats.modelB.inferenceCount}</td>
+                </tr>
+                <tr className="border-b">
+                  <td className="p-2">{t('canary.accuracy', 'Độ chính xác')}</td>
+                  <td className="text-right p-2">{pct(stats.modelA.accuracy)}</td>
+                  <td className="text-right p-2">{pct(stats.modelB.accuracy)}</td>
+                </tr>
+                <tr className="border-b">
+                  <td className="p-2">{t('canary.avgConfidence', 'Confidence TB')}</td>
+                  <td className="text-right p-2">{pct(stats.modelA.avgConfidence)}</td>
+                  <td className="text-right p-2">{pct(stats.modelB.avgConfidence)}</td>
+                </tr>
+                <tr className="border-b">
+                  <td className="p-2">{t('canary.avgLatency', 'Độ trễ TB (ms)')}</td>
+                  <td className="text-right p-2">{stats.modelA.avgLatencyMs}</td>
+                  <td className="text-right p-2">{stats.modelB.avgLatencyMs}</td>
+                </tr>
+                <tr>
+                  <td className="p-2">{t('canary.feedback', 'Phản hồi')}</td>
+                  <td className="text-right p-2">{stats.modelA.feedbackCount}</td>
+                  <td className="text-right p-2">{stats.modelB.feedbackCount}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p className="text-xs text-muted-foreground mt-3">
+              {t('canary.significance', 'p-value (chi-squared)')}: {stats.statisticalSignificance ?? t('canary.inconclusive', 'Chưa đủ dữ liệu')}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── B2 — Confidence Calibration (ECE + reliability diagram) ─────────
+function CalibrationSection() {
+  const { t } = useTranslation();
+  const [modelId, setModelId] = useState('');
+  const [periodStart, setPeriodStart] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const [periodEnd, setPeriodEnd] = useState(() => new Date().toISOString().slice(0, 10));
+
+  const mid = Number(modelId) || 0;
+
+  const latestQuery = trpc.aiCalibration.getLatestCalibration.useQuery(
+    { modelId: mid },
+    { enabled: mid > 0 },
+  );
+  const report = latestQuery.data;
+
+  const compute = trpc.aiCalibration.computeCalibration.useMutation({
+    onSuccess: (d: any) => {
+      if (!d?.report) {
+        toast.warning(t('calibration.noSamples', 'Không có mẫu đã review trong khoảng/scope này'));
+      } else {
+        toast.success(t('calibration.computed', 'Đã tính toán calibration'));
+      }
+      latestQuery.refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const pct = (n: number | string | null | undefined) =>
+    n == null ? '—' : `${(Number(n) * 100).toFixed(2)}%`;
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('calibration.title', 'Hiệu chỉnh độ tin cậy (ECE)')}</CardTitle>
+          <CardDescription>
+            {t(
+              'calibration.desc',
+              'Ground truth lấy từ kết quả Quality Gate đã được người review. Temperature fit là xấp xỉ trên confidence top-1 (engine không lưu logits đầy đủ).',
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+            <div className="space-y-1">
+              <Label>{t('calibration.model', 'Mô hình')}</Label>
+              <ModelSelect value={modelId} onChange={setModelId} />
+            </div>
+            <div className="space-y-1">
+              <Label>{t('calibration.periodStart', 'Từ ngày')}</Label>
+              <Input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label>{t('calibration.periodEnd', 'Đến ngày')}</Label>
+              <Input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+            </div>
+            <div className="flex items-end">
+              <Button
+                disabled={mid <= 0 || compute.isPending}
+                onClick={() =>
+                  compute.mutate({
+                    modelId: mid,
+                    periodStart: new Date(periodStart),
+                    periodEnd: new Date(periodEnd + 'T23:59:59'),
+                    numBins: 10,
+                    fitTemperature: true,
+                  })
+                }
+              >
+                {compute.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {t('calibration.compute', 'Tính toán')}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {report && (
+        <>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>{t('calibration.ece', 'ECE')}</CardDescription>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold">{pct(report.ece)}</CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>{t('calibration.mce', 'MCE')}</CardDescription>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold">{pct(report.mce)}</CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>{t('calibration.brier', 'Brier Score')}</CardDescription>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold">
+                {report.brierScore == null ? '—' : Number(report.brierScore).toFixed(4)}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>{t('calibration.sampleCount', 'Số mẫu')}</CardDescription>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold">{report.sampleCount}</CardContent>
+            </Card>
+          </div>
+
+          {report.temperature != null && (
+            <Card>
+              <CardContent className="flex flex-wrap items-center gap-4 pt-4 text-sm">
+                <span>
+                  {t('calibration.temperature', 'Nhiệt độ (T)')}:{' '}
+                  <Badge variant="secondary">{Number(report.temperature).toFixed(3)}</Badge>
+                </span>
+                <span>
+                  {t('calibration.eceAfterTemp', 'ECE sau hiệu chỉnh T')}: {pct(report.eceAfterTemp)}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {t('calibration.tempApprox', 'Xấp xỉ — fit trên confidence top-1, không phải logits đầy đủ')}
+                </span>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                {t('calibration.reliabilityDiagram', 'Reliability Diagram')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ReliabilityDiagram bins={(report.reliabilityBins as any) ?? []} />
+            </CardContent>
+          </Card>
         </>
       )}
     </div>

@@ -1,6 +1,48 @@
+import { createHash } from "crypto";
 import * as db from "../db/aiAdvanced";
 import { runInference } from "./aiInferenceEngine";
 import { getAiModelById } from "../db/ai";
+import type { AbTestExperiment } from "../../drizzle/schema/ai";
+
+/**
+ * Deterministic canary routing.
+ *
+ * Replaces the previous `Math.random()` split so that the SAME inspectionId always
+ * maps to the SAME variant. This is required for offline-first / idempotent sync:
+ * re-processing the same inspection (e.g. after an edge device reconnects) must not
+ * flip the variant and double-skew the experiment.
+ *
+ * Maps inspectionId → a stable bucket in [0,100) via a sha256 hash and compares it
+ * against the experiment's trafficSplitPercent (= % of traffic routed to variant B,
+ * matching the original `roll < trafficSplitPercent ? "B" : "A"` semantics).
+ */
+export function selectCanaryVariant(
+  experiment: Pick<AbTestExperiment, "trafficSplitPercent">,
+  inspectionId: number,
+): "A" | "B" {
+  const split = experiment.trafficSplitPercent ?? 50;
+  const bucket = hashToBucket(inspectionId);
+  return bucket < split ? "B" : "A";
+}
+
+/** Stable hash of a numeric id → integer in [0, 100). */
+function hashToBucket(id: number): number {
+  const digest = createHash("sha256").update(String(id)).digest();
+  // Use the first 4 bytes as an unsigned 32-bit int for a uniform spread.
+  const n = digest.readUInt32BE(0);
+  return n % 100;
+}
+
+/**
+ * Derive a stable numeric routing key from an arbitrary string (e.g. inputReference)
+ * when no inspectionId is available. Returns a fresh pseudo-random key when the
+ * string is empty (non-deterministic, but only hit by ad-hoc batch calls without a
+ * stable identifier — the live canary path always supplies inspectionId).
+ */
+function hashKeyFromString(s: string | undefined): number {
+  if (!s) return Math.floor(Math.random() * 1_000_000_000);
+  return createHash("sha256").update(s).digest().readUInt32BE(0);
+}
 
 interface CreateExperimentOptions {
   name: string;
@@ -75,12 +117,15 @@ export async function runABInference(
     throw new Error(`Experiment is not running (status: ${exp.status})`);
   }
 
-  // Route traffic based on split percentage
-  const roll = Math.random() * 100;
-  const variant: "A" | "B" = roll < exp.trafficSplitPercent ? "B" : "A";
+  // Deterministic routing keyed on inspectionId (idempotent for offline sync).
+  // Falls back to inputReference / a fresh random id only when no stable key exists.
+  const routingKey =
+    (metadata?.inspectionId as number | undefined) ??
+    hashKeyFromString(metadata?.inputReference as string | undefined);
+  const variant = selectCanaryVariant(exp, routingKey);
 
   const modelId = variant === "A" ? exp.modelAId : exp.modelBId;
-  const modelVersion = variant === "A" ? exp.modelAVersion : exp.modelBVersion;
+  const modelVersion = (variant === "A" ? exp.modelAVersion : exp.modelBVersion) ?? "";
 
   const startTime = Date.now();
   const result = await runInference(modelId, inputBuffer);
@@ -105,12 +150,18 @@ export async function runABInference(
     processingTimeMs,
   });
 
-  // Update experiment counters
-  const updates: Record<string, unknown> = {};
+  // Update experiment counters.
+  // B6 FIX: write the REAL column names (modelAInferences / modelBInferences) — the
+  // previous code wrote modelAInferenceCount / modelBInferenceCount which do not
+  // exist on the table, so (with the old `as any` cast) the counters never moved.
+  // Also keep totalInferences in sync so total == A + B.
+  const updates: Partial<import("../../drizzle/schema/ai").InsertAbTestExperiment> = {
+    totalInferences: (exp.totalInferences ?? 0) + 1,
+  };
   if (variant === "A") {
-    updates.modelAInferenceCount = (exp.modelAInferenceCount ?? 0) + 1;
+    updates.modelAInferences = (exp.modelAInferences ?? 0) + 1;
   } else {
-    updates.modelBInferenceCount = (exp.modelBInferenceCount ?? 0) + 1;
+    updates.modelBInferences = (exp.modelBInferences ?? 0) + 1;
   }
   await db.updateABTestExperiment(experimentId, updates);
 
@@ -228,12 +279,113 @@ export async function concludeExperiment(experimentId: number) {
     status: "COMPLETED",
     endDate: new Date(),
     winner,
-    statisticalSignificance: significance,
-    modelAAccuracy: stats.modelA.accuracy,
-    modelBAccuracy: stats.modelB.accuracy,
-    modelAAvgLatencyMs: stats.modelA.avgLatencyMs,
-    modelBAvgLatencyMs: stats.modelB.avgLatencyMs,
+    // decimal columns are stored as strings by drizzle-orm/postgres.
+    statisticalSignificance: significance === null ? null : String(significance),
+    modelAAccuracy: String(stats.modelA.accuracy),
+    modelBAccuracy: String(stats.modelB.accuracy),
+    // B6 FIX: real column names are modelAAvgLatency / modelBAvgLatency (not …Ms).
+    modelAAvgLatency: String(stats.modelA.avgLatencyMs),
+    modelBAvgLatency: String(stats.modelB.avgLatencyMs),
   });
 
   return { winner, significance, stats };
+}
+
+/**
+ * Pause a running experiment (RUNNING → PAUSED). Used by manual control and by the
+ * automatic guardrail. Idempotent: pausing a non-running experiment is a no-op.
+ */
+export async function pauseExperiment(experimentId: number) {
+  const exp = await db.getABTestExperiment(experimentId);
+  if (!exp) throw new Error(`Experiment ${experimentId} not found`);
+  if (exp.status !== "RUNNING") return exp;
+  return db.updateABTestExperiment(experimentId, { status: "PAUSED" });
+}
+
+export interface CanaryGuardrailOptions {
+  /** Min accuracy gap (A − B) that triggers a rollback. Default 0.05 (5pp). */
+  accuracyDelta?: number;
+  /** Max acceptable B/A average-latency ratio. Default 1.5 (B is 50% slower). */
+  maxLatencyRatio?: number;
+  /** Min feedback samples on EACH variant before accuracy is trusted. Default 30. */
+  minFeedback?: number;
+}
+
+export interface CanaryGuardrailResult {
+  shouldRollback: boolean;
+  reasons: string[];
+  paused: boolean;
+  stats: Awaited<ReturnType<typeof getExperimentStats>>;
+}
+
+/**
+ * Evaluate canary health and auto-PAUSE (rollback to model A) when variant B is
+ * materially worse:
+ *   - accuracy_B < accuracy_A − δ  (only once both variants have enough feedback), or
+ *   - avg latency_B > latency_A × maxLatencyRatio.
+ *
+ * Returns the decision + reasons. When a rollback is warranted and the experiment is
+ * still RUNNING, it is paused. Safe to call repeatedly (idempotent once PAUSED).
+ */
+export async function evaluateCanaryGuardrail(
+  experimentId: number,
+  options: CanaryGuardrailOptions = {},
+): Promise<CanaryGuardrailResult> {
+  const accuracyDelta = options.accuracyDelta ?? 0.05;
+  const maxLatencyRatio = options.maxLatencyRatio ?? 1.5;
+  const minFeedback = options.minFeedback ?? 30;
+
+  const stats = await getExperimentStats(experimentId);
+  const reasons: string[] = [];
+
+  const fbA = stats.modelA.feedbackCount;
+  const fbB = stats.modelB.feedbackCount;
+  if (
+    fbA >= minFeedback &&
+    fbB >= minFeedback &&
+    stats.modelB.accuracy < stats.modelA.accuracy - accuracyDelta
+  ) {
+    reasons.push(
+      `accuracy_B (${stats.modelB.accuracy.toFixed(4)}) < accuracy_A (${stats.modelA.accuracy.toFixed(4)}) - δ (${accuracyDelta})`,
+    );
+  }
+
+  const latA = stats.modelA.avgLatencyMs;
+  const latB = stats.modelB.avgLatencyMs;
+  if (latA > 0 && latB > latA * maxLatencyRatio) {
+    reasons.push(
+      `latency_B (${latB}ms) > latency_A (${latA}ms) × ${maxLatencyRatio}`,
+    );
+  }
+
+  const shouldRollback = reasons.length > 0;
+  let paused = false;
+  if (shouldRollback && stats.experiment.status === "RUNNING") {
+    await pauseExperiment(experimentId);
+    paused = true;
+  }
+
+  return { shouldRollback, reasons, paused, stats };
+}
+
+/**
+ * Promote variant B as the winner: point the supplied quality-gate config at model B,
+ * detach the experiment from the live path, and close the experiment as COMPLETED
+ * (winner=B). Additive + reversible at the config level.
+ */
+export async function promoteWinner(experimentId: number, configId?: number) {
+  const exp = await db.getABTestExperiment(experimentId);
+  if (!exp) throw new Error(`Experiment ${experimentId} not found`);
+
+  if (configId != null) {
+    // Lazy import to avoid a module cycle (aiQualityGate ↔ aiABTesting).
+    const qg = await import("./aiQualityGate");
+    await qg.promoteConfigToModel(configId, exp.modelBId, experimentId);
+  }
+
+  return db.updateABTestExperiment(experimentId, {
+    status: "COMPLETED",
+    endDate: exp.endDate ?? new Date(),
+    winner: "B",
+  });
 }

@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import SimilarImageGrid, { type SearchMode } from "@/components/ai/SimilarImageGrid";
+import SimilarImageGrid, { type SearchMode, type EmbeddingSource } from "@/components/ai/SimilarImageGrid";
 
 export default function AIImageSearchPage() {
   const { t } = useTranslation();
@@ -32,6 +32,7 @@ export default function AIImageSearchPage() {
   const [uploadFileName, setUploadFileName] = useState<string | null>(null);
   const [uploadResults, setUploadResults] = useState<any[] | null>(null);
   const [uploadSearchMode, setUploadSearchMode] = useState<SearchMode | null>(null);
+  const [uploadEmbeddingSource, setUploadEmbeddingSource] = useState<EmbeddingSource | null>(null);
   const [isUploadSearching, setIsUploadSearching] = useState(false);
 
   // Filter state
@@ -98,6 +99,7 @@ export default function AIImageSearchPage() {
       });
       setUploadResults(result.results as any[]);
       setUploadSearchMode((result.searchMode ?? null) as SearchMode | null);
+      setUploadEmbeddingSource(((result as any).embeddingSource ?? null) as EmbeddingSource | null);
     } catch (err: any) {
       toast.error(err?.message ?? t("common.error", "Lỗi"));
     } finally {
@@ -253,6 +255,7 @@ export default function AIImageSearchPage() {
                     results={uploadResults}
                     loading={isUploadSearching}
                     searchMode={uploadSearchMode}
+                    embeddingSource={uploadEmbeddingSource}
                   />
                 </div>
               </CardContent>

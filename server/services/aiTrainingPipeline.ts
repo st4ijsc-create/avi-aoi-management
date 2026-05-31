@@ -24,6 +24,8 @@ import { eq, and } from "drizzle-orm";
 import type { InsertTrainingJob } from "../../drizzle/schema";
 import { buildDataset } from "./aiDatasetBuilder";
 import { runTransferLearning, runFewShotLearning } from "./aiLocalTraining";
+import type { LocalTrainingResult } from "./aiLocalTraining";
+import { isSidecarEnabled, runSidecarTraining } from "./localSidecarTrainer";
 import { evaluateModelVersion, compareBeforeAfter } from "./aiEvalHarness";
 import { evictSessionCache } from "./aiInferenceEngine";
 
@@ -42,6 +44,10 @@ interface CreateTrainingJobOptions {
   trainingMode?: TrainingMode;
   /** Tier-1 strategy. "transfer" (softmax) default, "fewshot" (prototype). */
   strategy?: "transfer" | "fewshot";
+  /** Tier-2 sidecar task (only used when trainingMode === "local-sidecar"). */
+  task?: "classification" | "detection";
+  /** Tier-2 sidecar framework (only used when trainingMode === "local-sidecar"). */
+  framework?: string;
   /** Quality-gate epsilon (default 0 — no regression tolerated). */
   gateEpsilon?: number;
   createdBy?: number;
@@ -81,6 +87,8 @@ export async function createTrainingJob(options: CreateTrainingJobOptions) {
     classLabels: options.classLabels,
     datasetId: options.datasetId,
     strategy: options.strategy ?? "transfer",
+    task: options.task,
+    framework: options.framework,
     gateEpsilon: options.gateEpsilon ?? 0,
     createdBy: options.createdBy,
   }).catch((err) => {
@@ -94,6 +102,8 @@ interface PipelineOptions {
   classLabels?: string[];
   datasetId?: number;
   strategy: "transfer" | "fewshot";
+  task?: "classification" | "detection";
+  framework?: string;
   gateEpsilon: number;
   createdBy?: number;
 }
@@ -130,25 +140,44 @@ export async function runTrainingPipeline(jobId: number, options: PipelineOption
       throw new Error(`Insufficient training data: ${built.split.train} train samples for ${classLabels.length} classes`);
     }
 
-    // ── Stage 2: Training (Tier 1 — local embedding classifier) ──
+    // ── Stage 2: Training ──
+    // Tier 2 (Python sidecar) only when the job opted into "local-sidecar" AND
+    // LOCAL_TRAINER_CMD is set; otherwise the Tier-1 local-embedding classifier.
     await db.updateTrainingJob(jobId, { status: "TRAINING", progress: 30 });
 
-    const trainingResult = options.strategy === "fewshot"
-      ? await runFewShotLearning({
-          modelId: job.modelId,
-          strategy: "fewshot",
-          targetVersion: job.targetVersion,
-          classLabels,
-          createdBy: options.createdBy,
-        })
-      : await runTransferLearning({
-          modelId: job.modelId,
-          strategy: "transfer",
-          targetVersion: job.targetVersion,
-          classLabels,
-          config: job.trainingConfig as any,
-          createdBy: options.createdBy,
-        });
+    const trainingMode = (job as any).trainingMode as TrainingMode | undefined;
+    let trainingResult: LocalTrainingResult;
+
+    if (trainingMode === "local-sidecar" && isSidecarEnabled()) {
+      trainingResult = await dispatchTier2({
+        jobId,
+        modelId: job.modelId,
+        targetVersion: job.targetVersion,
+        datasetId,
+        classLabels,
+        task: options.task,
+        framework: options.framework,
+        config: job.trainingConfig as any,
+        createdBy: options.createdBy,
+      });
+    } else {
+      trainingResult = options.strategy === "fewshot"
+        ? await runFewShotLearning({
+            modelId: job.modelId,
+            strategy: "fewshot",
+            targetVersion: job.targetVersion,
+            classLabels,
+            createdBy: options.createdBy,
+          })
+        : await runTransferLearning({
+            modelId: job.modelId,
+            strategy: "transfer",
+            targetVersion: job.targetVersion,
+            classLabels,
+            config: job.trainingConfig as any,
+            createdBy: options.createdBy,
+          });
+    }
 
     if (!trainingResult.success || !trainingResult.outputModelPath) {
       throw new Error(trainingResult.error ?? "Tier-1 training failed to produce a model");
@@ -236,19 +265,33 @@ export async function runTrainingPipeline(jobId: number, options: PipelineOption
 }
 
 /**
- * Tier 2 dispatcher — STUB. The Python sidecar trainer is intentionally NOT
- * implemented in WS-1. It only activates when LOCAL_TRAINER_CMD is set, which is
- * off by default to honor the offline-first / Tier-1-only decision.
+ * Tier 2 dispatcher — Python sidecar trainer (B8 scaffolding, opt-in).
  *
- * TODO(WS-1 Tier 2): spawn `process.env.LOCAL_TRAINER_CMD` with the dataset
- * manifest dir + class labels, await a JSON result, register the produced model.
- * Until then this throws so callers fall back to Tier 1.
+ * Only callable when LOCAL_TRAINER_CMD is set; otherwise it throws so callers
+ * (and tests) get an explicit signal that Tier 2 is off and Tier 1 is the path.
+ * Delegates to localSidecarTrainer.runSidecarTraining, which spawns the sidecar
+ * (no shell), polls progress.json, and returns a Tier-1-shaped result. Stages
+ * 3-6 (eval/gate/activate) re-evaluate the produced ONNX and are the source of
+ * truth — sidecar-reported metrics are advisory only.
  */
-export function dispatchTier2(): never {
-  throw new Error(
-    "Tier-2 local sidecar trainer is not implemented (offline Tier-1 only). " +
-    "Set LOCAL_TRAINER_CMD and implement dispatchTier2 to enable.",
-  );
+export async function dispatchTier2(req: {
+  jobId: number;
+  modelId: number;
+  targetVersion: string;
+  datasetId: number;
+  classLabels: string[];
+  task?: "classification" | "detection";
+  framework?: string;
+  config?: Record<string, unknown>;
+  createdBy?: number;
+}): Promise<LocalTrainingResult> {
+  if (!isSidecarEnabled()) {
+    throw new Error(
+      "Tier-2 local sidecar trainer is disabled (offline Tier-1 only). " +
+      "Set LOCAL_TRAINER_CMD to enable.",
+    );
+  }
+  return runSidecarTraining(req);
 }
 
 // ─── Activation helpers ─────────────────────────────────────────

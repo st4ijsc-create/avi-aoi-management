@@ -92,6 +92,8 @@ import { aiInspectionAnalyticsRouter } from "./routers/aiInspectionAnalyticsRout
 import { aiAdvancedVisionRouter } from "./routers/aiAdvancedVisionRouter";
 import { aiSpecialistAgentRouter } from "./routers/aiSpecialistAgentRouter";
 import { aiLocalKbRouter } from "./routers/aiLocalKbRouter";
+import { aiCalibrationRouter } from "./routers/aiCalibrationRouter"; // B2: confidence calibration (ECE + reliability)
+import { aiAnomalyRouter } from "./routers/aiAnomalyRouter"; // B3: unsupervised anomaly detection (PatchCore-style)
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -429,6 +431,10 @@ export const appRouter = router({
   aiAdvancedVision: aiAdvancedVisionRouter,
   // AI Local Knowledge Base — Phase 2 codebase Q&A
   aiLocalKb: aiLocalKbRouter,
+  // AI Confidence Calibration — ECE / reliability diagram (B2)
+  aiCalibration: aiCalibrationRouter,
+  // AI Anomaly Detection — unsupervised PatchCore-style memory bank + kNN (B3)
+  aiAnomaly: aiAnomalyRouter,
 });
 
 export type AppRouter = typeof appRouter;

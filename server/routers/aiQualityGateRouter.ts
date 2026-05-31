@@ -14,6 +14,7 @@ import {
   aiQualityGateConfigs,
   aiQualityGateResults,
   aiEnsembleConfigs,
+  abTestResults,
   productInspections,
 } from "../../drizzle/schema";
 import {
@@ -22,6 +23,14 @@ import {
   getQualityGateStats,
   invalidateConfigCache,
 } from "../services/aiQualityGate";
+import {
+  startExperiment,
+  pauseExperiment,
+  getExperimentStats,
+  evaluateCanaryGuardrail,
+  promoteWinner,
+  submitABFeedback,
+} from "../services/aiABTesting";
 import fs from "fs";
 import path from "path";
 
@@ -79,6 +88,7 @@ export const aiQualityGateRouter = router({
         ngLabels: z.array(z.string()).default([]),
         okLabels: z.array(z.string()).default([]),
         ensembleConfigId: z.number().optional(),
+        activeExperimentId: z.number().nullable().optional(),
         alertOnAutoNg: z.boolean().default(true),
         metadata: z.record(z.string(), z.unknown()).optional(),
       }),
@@ -113,6 +123,7 @@ export const aiQualityGateRouter = router({
         ngLabels: z.array(z.string()).optional(),
         okLabels: z.array(z.string()).optional(),
         ensembleConfigId: z.number().nullable().optional(),
+        activeExperimentId: z.number().nullable().optional(),
         alertOnAutoNg: z.boolean().optional(),
         metadata: z.record(z.string(), z.unknown()).optional(),
       }),
@@ -254,7 +265,103 @@ export const aiQualityGateRouter = router({
         .set({ aiDecision: newDecision as any })
         .where(eq(productInspections.id, result.inspectionId));
 
+      // B6: feed the human verdict back to the canary experiment. If a canary
+      // ab_test_result exists for this same inspection, map reviewDecision → isCorrect
+      // (variant's topLabel agrees with the human OK/NG verdict ⇒ correct).
+      try {
+        const [canary] = await db
+          .select()
+          .from(abTestResults)
+          .where(eq(abTestResults.inputReference, String(result.inspectionId)))
+          .orderBy(desc(abTestResults.createdAt))
+          .limit(1);
+        if (canary) {
+          const reviewedNg = input.reviewDecision === "NG";
+          // Heuristic: a non-empty topLabel that is NOT an explicit OK label is treated
+          // as the variant predicting NG. isCorrect = (prediction matches human verdict).
+          const variantPredictedNg = !!canary.topLabel && canary.topLabel.toUpperCase() !== "OK";
+          const isCorrect = variantPredictedNg === reviewedNg;
+          await submitABFeedback(canary.id, isCorrect ? "CORRECT" : "INCORRECT", isCorrect);
+        }
+      } catch (err) {
+        console.warn(`[QualityGate] AB feedback link failed: ${(err as Error).message}`);
+      }
+
       return result;
+    }),
+
+  // ─── B6 — A/B Canary Control ─────────────────────────────────
+
+  // Variant comparison stats for the canary linked to a config (or any experiment).
+  canaryStats: protectedProcedure
+    .input(z.object({ experimentId: z.number() }))
+    .query(async ({ input }) => {
+      return getExperimentStats(input.experimentId);
+    }),
+
+  // Start (or resume) the canary experiment.
+  canaryStart: adminProcedure
+    .input(z.object({ experimentId: z.number() }))
+    .mutation(async ({ input }) => {
+      return startExperiment(input.experimentId);
+    }),
+
+  // Manually pause the canary (RUNNING → PAUSED).
+  canaryPause: adminProcedure
+    .input(z.object({ experimentId: z.number() }))
+    .mutation(async ({ input }) => {
+      return pauseExperiment(input.experimentId);
+    }),
+
+  // Evaluate guardrail; auto-pauses when variant B is materially worse.
+  canaryGuardrail: adminProcedure
+    .input(
+      z.object({
+        experimentId: z.number(),
+        accuracyDelta: z.number().min(0).max(1).optional(),
+        maxLatencyRatio: z.number().min(1).optional(),
+        minFeedback: z.number().min(1).optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const { experimentId, ...opts } = input;
+      return evaluateCanaryGuardrail(experimentId, opts);
+    }),
+
+  // Promote variant B: repoint config.modelId = B and close the experiment.
+  canaryPromote: adminProcedure
+    .input(z.object({ experimentId: z.number(), configId: z.number() }))
+    .mutation(async ({ input }) => {
+      return promoteWinner(input.experimentId, input.configId);
+    }),
+
+  // Rollback: pause the canary and detach it from the config (config keeps model A).
+  canaryRollback: adminProcedure
+    .input(z.object({ experimentId: z.number(), configId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+      await pauseExperiment(input.experimentId);
+      await db
+        .update(aiQualityGateConfigs)
+        .set({ activeExperimentId: null, updatedAt: new Date() })
+        .where(eq(aiQualityGateConfigs.id, input.configId));
+      invalidateConfigCache();
+      return { success: true };
+    }),
+
+  // List recent canary variant results for an experiment (UI comparison table feed).
+  canaryResults: protectedProcedure
+    .input(z.object({ experimentId: z.number(), limit: z.number().min(1).max(200).default(50) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db
+        .select()
+        .from(abTestResults)
+        .where(eq(abTestResults.experimentId, input.experimentId))
+        .orderBy(desc(abTestResults.createdAt))
+        .limit(input.limit);
     }),
 
   // ─── Statistics ──────────────────────────────────────────

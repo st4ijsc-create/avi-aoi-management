@@ -774,6 +774,11 @@ export default function AIInspectionAnalyticsPage() {
                           </strong>
                         </span>
                       )}
+                      {batch.control.data.summary.cpk == null && batch.control.data.summary.cpkNote && (
+                        <span className="text-muted-foreground italic">
+                          Cpk: {t(batch.control.data.summary.cpkNote, "N/A")}
+                        </span>
+                      )}
                       <Badge
                         variant={batch.control.data.summary.outOfControlCount > 0 ? "destructive" : "default"}
                         className="text-xs"

@@ -12,12 +12,17 @@ import {
   aiQualityGateConfigs,
   aiQualityGateResults,
   aiEnsembleConfigs,
+  abTestExperiments,
+  abTestResults,
   productInspections,
+  inferenceResults,
+  predictiveAlerts,
   type AiQualityGateConfig,
   type AiEnsembleConfig,
 } from "../../drizzle/schema";
 import { runInference } from "./aiInferenceEngine";
 import { getAiModelById } from "../db/ai";
+import { selectCanaryVariant } from "./aiABTesting";
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -310,16 +315,19 @@ export async function processQualityGate(
   // Determine decision
   const isNgLabel = ngLabels.length > 0 && ngLabels.includes(topLabel);
   const isOkLabel = okLabels.length > 0 && okLabels.includes(topLabel);
+  const hasLabelConfig = ngLabels.length > 0 || okLabels.length > 0;
 
   let decision: QualityGateDecision["decision"];
   let reviewReason: string | undefined;
 
-  if (isNgLabel && confidence >= autoNg) {
+  if (!hasLabelConfig) {
+    // Labels not configured — cannot make automated decisions safely.
+    // Always require human review to prevent defects slipping through.
+    decision = "NEEDS_REVIEW";
+    reviewReason = "Quality gate has no label configuration (ngLabels and okLabels are empty). Configure labels before enabling auto-decisions.";
+  } else if (isNgLabel && confidence >= autoNg) {
     decision = "AUTO_NG";
   } else if (isOkLabel && confidence >= autoOk) {
-    decision = "AUTO_OK";
-  } else if (!isNgLabel && !isOkLabel && confidence >= autoOk) {
-    // No label config — rely purely on confidence
     decision = "AUTO_OK";
   } else if (confidence < reviewTh) {
     decision = "NEEDS_REVIEW";
@@ -346,6 +354,22 @@ export async function processQualityGate(
     processingTimeMs,
   });
 
+  // ── B6 — A/B canary (live) ──────────────────────────────────────
+  // Only runs when the config opts in via activeExperimentId AND the experiment is
+  // RUNNING. The production decision above is the source of truth for the gate; the
+  // canary inference is recorded into ab_test_results in parallel for comparison and
+  // is intentionally best-effort (never blocks/poisons the gate decision).
+  if (config.activeExperimentId != null) {
+    await runCanaryInference(config.activeExperimentId, inspectionId, imageBuffer).catch(
+      (err) => {
+        console.warn(
+          `[QualityGate] canary inference failed for inspection ${inspectionId} ` +
+            `(experiment ${config.activeExperimentId}): ${(err as Error).message}`,
+        );
+      },
+    );
+  }
+
   // Update inspection with AI fields
   await db
     .update(productInspections)
@@ -362,6 +386,17 @@ export async function processQualityGate(
       },
     })
     .where(eq(productInspections.id, inspectionId));
+
+  // ── B3 — Unsupervised anomaly detection (best-effort hook) ──────────────────
+  // Opt-in qua ANOMALY_DETECTION_ENABLED (default OFF) → backward-compatible: khi
+  // tắt, pipeline y hệt cũ. Fire-and-forget (never blocks/poisons gate decision).
+  if ((process.env.ANOMALY_DETECTION_ENABLED ?? "false").toLowerCase() === "true") {
+    runAnomalyHook(inspectionId, imageBuffer, config).catch((err) => {
+      console.warn(
+        `[QualityGate] anomaly hook failed for inspection ${inspectionId}: ${(err as Error)?.message}`,
+      );
+    });
+  }
 
   return {
     decision,
@@ -437,4 +472,189 @@ export async function getQualityGateStats(options: {
     avgConfidence: row.avgConfidence ?? 0,
     avgProcessingTimeMs: row.avgProcessingTimeMs ?? 0,
   };
+}
+
+// ─── B6 Canary Live Helpers ──────────────────────────────────────
+
+/**
+ * Run the A/B canary variant for a live inspection and record it into
+ * ab_test_results alongside the production quality-gate result.
+ *
+ * Variant selection is deterministic on inspectionId (idempotent for offline sync —
+ * the same inspection always hits the same variant). Counters on the experiment row
+ * are kept in sync (totalInferences == modelAInferences + modelBInferences).
+ *
+ * Best-effort: if the experiment is missing/not RUNNING this is a no-op.
+ */
+export async function runCanaryInference(
+  experimentId: number,
+  inspectionId: number,
+  imageBuffer: Buffer,
+): Promise<{ variant: "A" | "B"; modelId: number; confidence: number; processingTimeMs: number } | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [exp] = await db
+    .select()
+    .from(abTestExperiments)
+    .where(eq(abTestExperiments.id, experimentId))
+    .limit(1);
+  if (!exp || exp.status !== "RUNNING") return null;
+
+  const variant = selectCanaryVariant(exp, inspectionId);
+  const modelId = variant === "A" ? exp.modelAId : exp.modelBId;
+  const modelVersion = variant === "A" ? exp.modelAVersion : exp.modelBVersion;
+
+  const startTime = Date.now();
+  const result = await runInference(modelId, imageBuffer, { inspectionId });
+  const processingTimeMs = Date.now() - startTime;
+
+  const confidence = result.confidence ?? 0;
+  const topLabel = result.topLabel ?? "unknown";
+
+  await db.insert(abTestResults).values({
+    experimentId,
+    variant,
+    modelId,
+    modelVersion,
+    inputReference: String(inspectionId),
+    predictions: result.predictions.map((p) => ({ label: p.label, confidence: p.confidence })),
+    confidence: confidence.toFixed(4),
+    topLabel,
+    processingTimeMs,
+  });
+
+  // Keep experiment counters in sync (real column names — B6 fix mirrors aiABTesting).
+  const updates: Record<string, number> = {
+    totalInferences: (exp.totalInferences ?? 0) + 1,
+  };
+  if (variant === "A") updates.modelAInferences = (exp.modelAInferences ?? 0) + 1;
+  else updates.modelBInferences = (exp.modelBInferences ?? 0) + 1;
+  await db
+    .update(abTestExperiments)
+    .set({ ...updates, updatedAt: new Date() })
+    .where(eq(abTestExperiments.id, experimentId));
+
+  return { variant, modelId, confidence, processingTimeMs };
+}
+
+/**
+ * Promote a model as the winner of a canary: repoint the quality-gate config at the
+ * new model and detach the active experiment so the live path returns to the plain
+ * single-model flow. Called by aiABTesting.promoteWinner.
+ */
+export async function promoteConfigToModel(
+  configId: number,
+  modelId: number,
+  expectedExperimentId?: number,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const updates: Record<string, unknown> = {
+    modelId,
+    activeExperimentId: null,
+    updatedAt: new Date(),
+  };
+  // Guard: only repoint configs that were actually wired to this experiment.
+  const where =
+    expectedExperimentId != null
+      ? and(
+          eq(aiQualityGateConfigs.id, configId),
+          eq(aiQualityGateConfigs.activeExperimentId, expectedExperimentId),
+        )
+      : eq(aiQualityGateConfigs.id, configId);
+  await db.update(aiQualityGateConfigs).set(updates).where(where);
+  invalidateConfigCache();
+}
+
+// ─── B3 Anomaly Hook ─────────────────────────────────────────────────────────
+
+/**
+ * Best-effort unsupervised anomaly check, run only when ANOMALY_DETECTION_ENABLED.
+ *
+ * Scope của bank = (productModelId, machineId) của inspection + ONNX modelId của
+ * config. Khi isAnomaly && !degraded (kết quả từ embedding ONNX thật, không phải
+ * fallback) → ghi cờ anomaly vào inferenceResults.metadata mới nhất của inspection
+ * và (tùy chọn ANOMALY_CREATE_ALERTS) tạo predictiveAlert PATTERN_ANOMALY.
+ *
+ * KHÔNG bao giờ throw ra ngoài (caller đã .catch); KHÔNG đụng quyết định gate.
+ */
+async function runAnomalyHook(
+  inspectionId: number,
+  imageBuffer: Buffer,
+  config: AiQualityGateConfig,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  // Lookup scope (machine/product) của inspection.
+  const [insp] = await db
+    .select({
+      machineId: productInspections.machineId,
+      productModelId: productInspections.productModelId,
+    })
+    .from(productInspections)
+    .where(eq(productInspections.id, inspectionId))
+    .limit(1);
+
+  const { scoreImage } = await import("./aiAnomalyDetection");
+  const result = await scoreImage({
+    buffer: imageBuffer,
+    productModelId: insp?.productModelId ?? config.productModelId ?? null,
+    machineId: insp?.machineId ?? config.machineId ?? null,
+    modelId: config.modelId ?? null,
+  });
+
+  // Chỉ hành động khi phát hiện anomaly THẬT (không phải fallback degrade).
+  if (!result.isAnomaly || result.degraded) return;
+
+  const anomalyMeta = {
+    anomaly: {
+      score: result.score,
+      threshold: result.threshold,
+      isAnomaly: result.isAnomaly,
+      source: result.source,
+      degraded: result.degraded,
+      bankSize: result.bankSize,
+      k: result.k,
+      detectedAt: new Date().toISOString(),
+    },
+  };
+
+  // Ghi vào inferenceResults.metadata mới nhất của inspection (merge, best-effort).
+  const [latest] = await db
+    .select({ id: inferenceResults.id, metadata: inferenceResults.metadata })
+    .from(inferenceResults)
+    .where(eq(inferenceResults.inspectionId, inspectionId))
+    .orderBy(desc(inferenceResults.createdAt))
+    .limit(1);
+
+  if (latest) {
+    const merged = { ...((latest.metadata as Record<string, unknown>) ?? {}), ...anomalyMeta };
+    await db.update(inferenceResults).set({ metadata: merged }).where(eq(inferenceResults.id, latest.id));
+  }
+
+  // Tùy chọn: tạo predictiveAlert PATTERN_ANOMALY.
+  if ((process.env.ANOMALY_CREATE_ALERTS ?? "false").toLowerCase() === "true") {
+    await db.insert(predictiveAlerts).values({
+      alertType: "PATTERN_ANOMALY",
+      severity: "MEDIUM",
+      title: "Unsupervised anomaly detected",
+      description:
+        `Image for inspection ${inspectionId} exceeded the anomaly threshold ` +
+        `(score ${result.score.toFixed(4)} > ${(result.threshold ?? 0).toFixed(4)}, ` +
+        `source=${result.source}, bank=${result.bankSize}).`,
+      predictedValue: result.score.toFixed(4),
+      threshold: (result.threshold ?? 0).toFixed(4),
+      machineId: insp?.machineId ?? config.machineId ?? null,
+      productModelId: insp?.productModelId ?? config.productModelId ?? null,
+      aiAnalysis: {
+        factors: [],
+        recommendations: ["Review the inspection image; the AI anomaly model flagged it as out-of-distribution vs the OK memory bank."],
+        dataPoints: result.bankSize,
+        modelUsed: `anomaly:${result.source}`,
+      },
+    });
+  }
 }

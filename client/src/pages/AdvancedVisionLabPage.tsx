@@ -22,10 +22,12 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Eye, ScanText, Crop, Wand2, MessageSquareQuote, Layers, Image as ImageIcon, Activity, FlameKindling, Search } from "lucide-react";
+import { Loader2, Eye, ScanText, Crop, Wand2, MessageSquareQuote, Layers, Image as ImageIcon, Activity, FlameKindling, Search, ShieldAlert, Lightbulb } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
-import SimilarImageGrid, { type SearchMode } from "@/components/ai/SimilarImageGrid";
+import SimilarImageGrid, { type SearchMode, type EmbeddingSource } from "@/components/ai/SimilarImageGrid";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
@@ -181,6 +183,7 @@ function TabQuality() {
 // ─── Tab C. generateDefectHeatmap ─────────────────────────────────────
 
 function TabHeatmap() {
+  const { t } = useTranslation();
   const [ok, setOk] = useState<PickerProps["value"]>(null);
   const [cand, setCand] = useState<PickerProps["value"]>(null);
   const m = trpc.aiAdvancedVision.generateDefectHeatmap.useMutation();
@@ -201,11 +204,15 @@ function TabHeatmap() {
       {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
       {m.data && (
         <div className="space-y-3">
-          <div className="text-sm">
+          <div className="text-sm flex flex-wrap items-center gap-2">
             <Badge variant="outline">{m.data.width} × {m.data.height}</Badge>
-            <span className="ml-2 text-muted-foreground">
+            <span className="text-muted-foreground">
               diffRatio {(m.data.diffRatio * 100).toFixed(2)}% · {m.data.totalDiffPixels.toLocaleString()} pixels lỗi · {m.data.hotspots.length} hotspot
             </span>
+            {/* B4.2 — cờ căn golden-sample (chỉ hiện khi ALIGN_BEFORE_DIFF bật & confidence đủ). */}
+            {m.data.aligned
+              ? <Badge variant="default">{t("align.aligned", "Đã căn")} · {t("align.angle", "Góc xoay")} {m.data.alignment?.angle ?? 0}° · dx {m.data.alignment?.dx ?? 0}, dy {m.data.alignment?.dy ?? 0} · {t("align.confidence", "Độ tin cậy căn")} {((m.data.alignment?.confidence ?? 0) * 100).toFixed(0)}%</Badge>
+              : <Badge variant="outline">{t("align.notAligned", "Không căn (confidence thấp / cờ off)")}</Badge>}
           </div>
           <img src={previewUrl(m.data.heatmapPngBase64, "image/png")} alt="heatmap" className="max-h-[480px] border rounded" />
           <details className="text-xs"><summary className="cursor-pointer">Hotspots JSON</summary><ResultJson data={m.data.hotspots} /></details>
@@ -433,6 +440,7 @@ function TabSimilar() {
   const [defectType, setDefectType] = useState("");
   const [results, setResults] = useState<any[] | null>(null);
   const [searchMode, setSearchMode] = useState<SearchMode | null>(null);
+  const [embeddingSource, setEmbeddingSource] = useState<EmbeddingSource | null>(null);
   const [busy, setBusy] = useState(false);
 
   const upload = trpc.aiImageSearch.uploadForSearch.useMutation();
@@ -455,6 +463,7 @@ function TabSimilar() {
       });
       setResults(res.results as any[]);
       setSearchMode((res.searchMode ?? null) as SearchMode | null);
+      setEmbeddingSource(((res as any).embeddingSource ?? null) as EmbeddingSource | null);
     } catch (e: any) {
       toast.error(e?.message ?? "Tìm kiếm thất bại");
     } finally {
@@ -494,7 +503,139 @@ function TabSimilar() {
         {busy && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
         Tìm lỗi tương tự
       </Button>
-      <SimilarImageGrid results={results} loading={busy} searchMode={searchMode} />
+      <SimilarImageGrid results={results} loading={busy} searchMode={searchMode} embeddingSource={embeddingSource} />
+    </div>
+  );
+}
+
+// ─── Tab K. Explain (XAI, B5) ─────────────────────────────────────────
+
+function TabExplain() {
+  const { t } = useTranslation();
+  const [img, setImg] = useState<PickerProps["value"]>(null);
+  const [ref, setRef] = useState<PickerProps["value"]>(null);
+  const [modelId, setModelId] = useState("");
+  const [targetClass, setTargetClass] = useState("");
+  const m = trpc.aiAdvancedVision.explainHeatmap.useMutation();
+
+  const run = () => {
+    if (!img) return toast.error(t("xai.pickImage", "Ảnh cần giải thích"));
+    m.mutate({
+      image: img.base64,
+      referenceImage: ref?.base64,
+      modelId: modelId ? Number(modelId) : undefined,
+      targetClass: targetClass !== "" ? Number(targetClass) : undefined,
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">{t("xai.desc", "Sinh heatmap giải thích dự đoán của model.")}</p>
+      <div className="grid md:grid-cols-2 gap-4">
+        <ImagePicker label={t("xai.pickImage", "Ảnh cần giải thích")} value={img} onChange={setImg} />
+        <ImagePicker label={t("align.aligned", "Ảnh tham chiếu (cho pixel-diff)")} value={ref} onChange={setRef} />
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <div>
+          <Label>{t("xai.modelId", "Model ID (tùy chọn)")}</Label>
+          <Input type="number" value={modelId} onChange={(e) => setModelId(e.target.value)} />
+        </div>
+        <div>
+          <Label>{t("xai.targetClass", "Lớp mục tiêu (tùy chọn)")}</Label>
+          <Input type="number" value={targetClass} onChange={(e) => setTargetClass(e.target.value)} />
+        </div>
+      </div>
+      <Button onClick={run} disabled={m.isPending || !img}>
+        {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+        {t("xai.run", "Sinh heatmap giải thích")}
+      </Button>
+      {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
+      {m.data && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <Badge variant="secondary">{t("xai.method", "Phương pháp")}: {m.data.method}</Badge>
+            {m.data.degraded && <Badge variant="destructive">{t("xai.degraded", "Degrade (pixel-diff)")}</Badge>}
+            {m.data.approximate && <Badge variant="outline">{t("xai.approximate", "Xấp xỉ")}</Badge>}
+            {m.data.topLabel && (
+              <span className="text-muted-foreground">
+                {t("xai.topLabel", "Nhãn dự đoán")}: <b>{m.data.topLabel}</b>
+                {m.data.topConfidence != null && <> · {(m.data.topConfidence * 100).toFixed(1)}%</>}
+              </span>
+            )}
+          </div>
+          <img src={previewUrl(m.data.heatmapPngBase64, "image/png")} alt="xai-heatmap" className="max-h-[480px] border rounded" />
+          <details className="text-xs"><summary className="cursor-pointer">notes</summary><ResultJson data={m.data.notes} /></details>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Tab J. Anomaly (B3) ──────────────────────────────────────────────
+
+function TabAnomaly() {
+  const { t } = useTranslation();
+  const [img, setImg] = useState<PickerProps["value"]>(null);
+  const [productModelId, setProductModelId] = useState("");
+  const [machineId, setMachineId] = useState("");
+  const [modelId, setModelId] = useState("");
+  const m = trpc.aiAnomaly.score.useMutation();
+
+  const run = () => {
+    if (!img) return toast.error(t("anomaly.pickImage"));
+    m.mutate({
+      image: img.base64,
+      productModelId: productModelId ? Number(productModelId) : null,
+      machineId: machineId ? Number(machineId) : null,
+      modelId: modelId ? Number(modelId) : null,
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">{t("anomaly.desc")}</p>
+      <div className="grid md:grid-cols-3 gap-3">
+        <div className="space-y-1">
+          <Label>{t("anomaly.productModelId")}</Label>
+          <Input type="number" value={productModelId} onChange={(e) => setProductModelId(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <Label>{t("anomaly.machineId")}</Label>
+          <Input type="number" value={machineId} onChange={(e) => setMachineId(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <Label>{t("anomaly.modelId")}</Label>
+          <Input type="number" value={modelId} onChange={(e) => setModelId(e.target.value)} />
+        </div>
+      </div>
+      <ImagePicker label={t("anomaly.pickImage")} value={img} onChange={setImg} />
+      <Button onClick={run} disabled={m.isPending || !img}>
+        {m.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+        {t("anomaly.run")}
+      </Button>
+      {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
+      {m.data && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2 items-center">
+            <Badge variant={m.data.isAnomaly ? "destructive" : "default"}>
+              {m.data.isAnomaly ? t("anomaly.anomaly") : t("anomaly.normal")}
+            </Badge>
+            <Badge variant="secondary">{t("anomaly.source")}: {m.data.source}</Badge>
+            {m.data.degraded && <Badge variant="outline">{t("anomaly.degraded")}</Badge>}
+            <span className="text-sm text-muted-foreground">
+              {t("anomaly.score")} = {m.data.score.toFixed(4)}
+              {m.data.threshold != null && <> / {t("anomaly.threshold")} = {m.data.threshold.toFixed(4)}</>}
+            </span>
+            <span className="text-sm text-muted-foreground">{t("anomaly.bankSize")}: {m.data.bankSize}</span>
+          </div>
+          {m.data.reason && (
+            <p className="text-sm text-muted-foreground">
+              {t("anomaly.reason")}: {m.data.reason === "no_profile" ? t("anomaly.noProfile") : m.data.reason}
+            </p>
+          )}
+          <ResultJson data={m.data} />
+        </div>
+      )}
     </div>
   );
 }
@@ -536,6 +677,8 @@ export default function AdvancedVisionLabPage() {
                 <TabsTrigger value="vqa"><MessageSquareQuote className="h-4 w-4 mr-1" /> G. Visual QA</TabsTrigger>
                 <TabsTrigger value="batch"><Layers className="h-4 w-4 mr-1" /> H. Batch</TabsTrigger>
                 <TabsTrigger value="similar"><Search className="h-4 w-4 mr-1" /> I. Tìm lỗi tương tự</TabsTrigger>
+                <TabsTrigger value="anomaly"><ShieldAlert className="h-4 w-4 mr-1" /> J. Anomaly</TabsTrigger>
+                <TabsTrigger value="explain"><Lightbulb className="h-4 w-4 mr-1" /> K. XAI</TabsTrigger>
               </TabsList>
               <div className="mt-4">
                 <TabsContent value="compare"><TabCompare /></TabsContent>
@@ -547,6 +690,8 @@ export default function AdvancedVisionLabPage() {
                 <TabsContent value="vqa"><TabVqa /></TabsContent>
                 <TabsContent value="batch"><TabBatch /></TabsContent>
                 <TabsContent value="similar"><TabSimilar /></TabsContent>
+                <TabsContent value="anomaly"><TabAnomaly /></TabsContent>
+                <TabsContent value="explain"><TabExplain /></TabsContent>
               </div>
             </Tabs>
           </CardContent>

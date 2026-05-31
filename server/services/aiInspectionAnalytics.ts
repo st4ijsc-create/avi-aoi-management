@@ -19,8 +19,11 @@ import {
   measurementPointDefs,
   dailyStatistics,
   machines,
+  spcRuleViolations,
 } from "../../drizzle/schema";
 import { cacheService } from "./cacheService";
+import { emitSpcViolationAlert } from "../_core/socket";
+import { calculateCapabilityIndices } from "../utils/spc";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -121,6 +124,13 @@ export interface RiskAssessment {
   affectedItems: string[];
 }
 
+export interface SpcViolation {
+  ruleId: string;         // "western_electric_1" | "nelson_3" etc.
+  ruleName: string;       // human-readable
+  severity: "critical" | "warning" | "info";
+  pointIndices: number[]; // which data points triggered this rule
+}
+
 export interface ControlChartData {
   metric: string;
   points: Array<{
@@ -130,16 +140,236 @@ export interface ControlChartData {
     lcl: number; // Lower Control Limit
     cl: number;  // Center Line
     outOfControl: boolean;
-    violationRule?: string;
+    violationRule?: string;        // primary rule name (backward compat)
+    violatedRules?: string[];      // all rule names violated at this point
   }>;
   summary: {
     mean: number;
     stdDev: number;
     ucl: number;
     lcl: number;
-    cpk: number;
+    cpk: number | null; // null when spec limits (USL/LSL) not provided
+    cpu?: number | null; // one-sided upper capability (additive; present when USL known)
+    cpl?: number | null; // one-sided lower capability (additive; present when LSL known)
+    cpkNote?: string;   // i18n message KEY explaining why cpk is null (client translates)
     outOfControlCount: number;
+    spcViolations: SpcViolation[]; // all detected SPC rule violations
   };
+}
+
+// ─── SPC Rule Engine — all 12 Western Electric + Nelson rules ────────────────
+
+/**
+ * Detects SPC rule violations across 12 standard rules.
+ *
+ * Rules implemented:
+ *  WE1/N1 : 1 point beyond ±3σ                       (critical)
+ *  WE2/N5 : 2 of 3 consecutive beyond ±2σ same side  (warning)
+ *  WE3/N6 : 4 of 5 consecutive beyond ±1σ same side  (warning)
+ *  WE4    : 8 consecutive on same side of CL          (warning)
+ *  N2     : 9 consecutive on same side of CL          (warning)
+ *  N3     : 6 consecutive monotone (trend)            (warning)
+ *  N4     : 14 consecutive alternating up/down        (info)
+ *  N7     : 15 consecutive within ±1σ (stratification)(warning)
+ *  N8     : 8 consecutive beyond ±1σ either side (mixture)(warning)
+ */
+export function detectSpcViolations(
+  values: number[],
+  mean: number,
+  stdDev: number,
+): SpcViolation[] {
+  const n = values.length;
+  if (n < 2 || stdDev <= 0) return [];
+
+  const violations: SpcViolation[] = [];
+  const s1 = stdDev, s2 = 2 * stdDev, s3 = 3 * stdDev;
+
+  // Utility: sign relative to mean (+1 above, -1 below)
+  const side = (v: number) => (v >= mean ? 1 : -1);
+
+  // ── WE1 / N1: any point beyond ±3σ (critical) ──────────────────────────────
+  const we1pts: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (Math.abs(values[i] - mean) > s3) we1pts.push(i);
+  }
+  if (we1pts.length > 0) {
+    violations.push({
+      ruleId: "western_electric_1",
+      ruleName: "WE1/N1: Point beyond ±3σ",
+      severity: "critical",
+      pointIndices: we1pts,
+    });
+  }
+
+  // ── WE2 / N5: 2 of 3 consecutive beyond ±2σ on the same side ───────────────
+  const we2pts: number[] = [];
+  for (let i = 2; i < n; i++) {
+    const window = [i - 2, i - 1, i];
+    const aboveCount = window.filter(j => values[j] > mean + s2).length;
+    const belowCount = window.filter(j => values[j] < mean - s2).length;
+    if (aboveCount >= 2 || belowCount >= 2) we2pts.push(i);
+  }
+  if (we2pts.length > 0) {
+    violations.push({
+      ruleId: "western_electric_2",
+      ruleName: "WE2/N5: 2 of 3 beyond ±2σ same side",
+      severity: "warning",
+      pointIndices: [...new Set(we2pts)],
+    });
+  }
+
+  // ── WE3 / N6: 4 of 5 consecutive beyond ±1σ on the same side ───────────────
+  const we3pts: number[] = [];
+  for (let i = 4; i < n; i++) {
+    const window = [i - 4, i - 3, i - 2, i - 1, i];
+    const aboveCount = window.filter(j => values[j] > mean + s1).length;
+    const belowCount = window.filter(j => values[j] < mean - s1).length;
+    if (aboveCount >= 4 || belowCount >= 4) we3pts.push(i);
+  }
+  if (we3pts.length > 0) {
+    violations.push({
+      ruleId: "western_electric_3",
+      ruleName: "WE3/N6: 4 of 5 beyond ±1σ same side",
+      severity: "warning",
+      pointIndices: [...new Set(we3pts)],
+    });
+  }
+
+  // ── WE4: 8 consecutive points on the same side of CL ───────────────────────
+  const we4pts: number[] = [];
+  let runLen4 = 1, runSide4 = side(values[0]);
+  for (let i = 1; i < n; i++) {
+    if (side(values[i]) === runSide4) {
+      runLen4++;
+      if (runLen4 >= 8) we4pts.push(i);
+    } else {
+      runLen4 = 1;
+      runSide4 = side(values[i]);
+    }
+  }
+  if (we4pts.length > 0) {
+    violations.push({
+      ruleId: "western_electric_4",
+      ruleName: "WE4: 8 consecutive on same side of CL",
+      severity: "warning",
+      pointIndices: we4pts,
+    });
+  }
+
+  // ── N2: 9 consecutive points on the same side of CL ────────────────────────
+  const n2pts: number[] = [];
+  let runLen2 = 1, runSide2 = side(values[0]);
+  for (let i = 1; i < n; i++) {
+    if (side(values[i]) === runSide2) {
+      runLen2++;
+      if (runLen2 >= 9) n2pts.push(i);
+    } else {
+      runLen2 = 1;
+      runSide2 = side(values[i]);
+    }
+  }
+  if (n2pts.length > 0) {
+    violations.push({
+      ruleId: "nelson_2",
+      ruleName: "N2: 9 consecutive on same side of CL",
+      severity: "warning",
+      pointIndices: n2pts,
+    });
+  }
+
+  // ── N3: 6 consecutive points monotone (all increasing or all decreasing) ────
+  const n3pts: number[] = [];
+  let trendUp = 0, trendDn = 0;
+  for (let i = 1; i < n; i++) {
+    if (values[i] > values[i - 1]) { trendUp++; trendDn = 0; }
+    else if (values[i] < values[i - 1]) { trendDn++; trendUp = 0; }
+    else { trendUp = 0; trendDn = 0; }
+    if (trendUp >= 5 || trendDn >= 5) n3pts.push(i); // 6 points = 5 consecutive differences
+  }
+  if (n3pts.length > 0) {
+    violations.push({
+      ruleId: "nelson_3",
+      ruleName: "N3: 6 consecutive points trending monotone",
+      severity: "warning",
+      pointIndices: n3pts,
+    });
+  }
+
+  // ── N4: 14 consecutive points alternating up/down ───────────────────────────
+  const n4pts: number[] = [];
+  let altLen = 1;
+  for (let i = 1; i < n; i++) {
+    const diff = values[i] - values[i - 1];
+    const prevDiff = i >= 2 ? values[i - 1] - values[i - 2] : 0;
+    if (i >= 2 && Math.sign(diff) !== 0 && Math.sign(prevDiff) !== 0 && Math.sign(diff) !== Math.sign(prevDiff)) {
+      altLen++;
+      if (altLen >= 14) n4pts.push(i);
+    } else {
+      altLen = 2;
+    }
+  }
+  if (n4pts.length > 0) {
+    violations.push({
+      ruleId: "nelson_4",
+      ruleName: "N4: 14 consecutive alternating up/down",
+      severity: "info",
+      pointIndices: n4pts,
+    });
+  }
+
+  // ── N7: 15 consecutive points within ±1σ (stratification) ──────────────────
+  const n7pts: number[] = [];
+  let within1s = 0;
+  for (let i = 0; i < n; i++) {
+    if (Math.abs(values[i] - mean) < s1) {
+      within1s++;
+      if (within1s >= 15) n7pts.push(i);
+    } else {
+      within1s = 0;
+    }
+  }
+  if (n7pts.length > 0) {
+    violations.push({
+      ruleId: "nelson_7",
+      ruleName: "N7: 15 consecutive within ±1σ (stratification)",
+      severity: "warning",
+      pointIndices: n7pts,
+    });
+  }
+
+  // ── N8: 8 consecutive points beyond ±1σ on EITHER side (mixture pattern) ───
+  const n8pts: number[] = [];
+  let beyond1s = 0;
+  for (let i = 0; i < n; i++) {
+    if (Math.abs(values[i] - mean) > s1) {
+      beyond1s++;
+      if (beyond1s >= 8) n8pts.push(i);
+    } else {
+      beyond1s = 0;
+    }
+  }
+  if (n8pts.length > 0) {
+    violations.push({
+      ruleId: "nelson_8",
+      ruleName: "N8: 8 consecutive beyond ±1σ either side (mixture)",
+      severity: "warning",
+      pointIndices: n8pts,
+    });
+  }
+
+  return violations;
+}
+
+/** Build a per-point lookup: index → list of violated rule names */
+function buildViolationMap(violations: SpcViolation[], n: number): Map<number, string[]> {
+  const map = new Map<number, string[]>();
+  for (const v of violations) {
+    for (const idx of v.pointIndices) {
+      if (!map.has(idx)) map.set(idx, []);
+      map.get(idx)!.push(v.ruleName);
+    }
+  }
+  return map;
 }
 
 export interface ShiftAnalysis {
@@ -371,9 +601,10 @@ export async function forecastYield(
 }
 
 /**
- * Holt-Winters seasonal forecasting for stable, long-term data (14+ days)
+ * Holt-Winters seasonal forecasting for stable, long-term data (14+ days).
+ * Exported for unit testing of confidence/season behavior (B1.2).
  */
-function forecastWithHoltWinters(
+export function forecastWithHoltWinters(
   data: number[],
   baseDate: Date,
   horizonDays: number,
@@ -383,7 +614,11 @@ function forecastWithHoltWinters(
   const alpha = 0.3; // Level smoothing
   const beta = 0.1;  // Trend smoothing
   const gamma = 0.3; // Seasonal smoothing
-  const seasonLength = Math.min(7, Math.floor(data.length / 2)); // Weekly pattern
+  // Seasonal component (weekly = 7) is only meaningful with at least two full cycles.
+  // Below 2*seasonLength observations we collapse to a non-seasonal model (seasonLength=1),
+  // which keeps the additive seasonal term at 0 and avoids fabricating a season we cannot fit.
+  const desiredSeason = 7; // Weekly pattern
+  const seasonLength = data.length >= 2 * desiredSeason ? desiredSeason : 1;
 
   // Initialize
   const level: number[] = [data[0]];
@@ -407,11 +642,15 @@ function forecastWithHoltWinters(
 
     const newLevel = alpha * (data[t] - prevSeasonal) + (1 - alpha) * (prevLevel + prevTrend);
     const newTrend = beta * (newLevel - prevLevel) + (1 - beta) * prevTrend;
-    const newSeasonal = gamma * (data[t] - newLevel) + (1 - gamma) * prevSeasonal;
 
     level.push(newLevel);
     trendArr.push(newTrend);
-    seasonal[sIdx] = newSeasonal;
+    // Only update seasonal factors when a real season is being modelled.
+    // With seasonLength=1 (insufficient data for a weekly cycle) the seasonal term
+    // stays 0 so the model degrades cleanly to double-exponential smoothing.
+    if (seasonLength > 1) {
+      seasonal[sIdx] = gamma * (data[t] - newLevel) + (1 - gamma) * prevSeasonal;
+    }
   }
 
   // Calculate in-sample error for confidence intervals
@@ -430,6 +669,14 @@ function forecastWithHoltWinters(
   const lastTrend = trendArr[trendArr.length - 1];
   const forecasts: YieldForecast[] = [];
 
+  // Confidence model: the caller-supplied `confidence` is the CEILING (best case at h=1
+  // when the fit is tight). It decays per horizon by the real normalized forecast error.
+  // normalizedError(h) scales the growing prediction-interval half-width (1.96*σ*√h)
+  // against the level magnitude, so a noisier fit erodes confidence faster — instead of
+  // the previous hard-coded 1 - h*0.03 which ignored both `confidence` and the data.
+  const levelScale = Math.max(Math.abs(lastLevel), 1); // guard tiny/zero levels
+  const ceiling = Math.max(0.3, Math.min(1, confidence));
+
   for (let h = 1; h <= horizonDays; h++) {
     const forecastDate = new Date(baseDate);
     forecastDate.setDate(forecastDate.getDate() + h);
@@ -438,12 +685,15 @@ function forecastWithHoltWinters(
     const predicted = lastLevel + h * lastTrend + seasonal[sIdx];
     const interval = 1.96 * stdError * Math.sqrt(h);
 
+    const normalizedError = Math.min(1, (stdError * Math.sqrt(h)) / levelScale);
+    const horizonConfidence = Math.max(0.3, Math.min(ceiling, ceiling * (1 - normalizedError)));
+
     forecasts.push({
       date: forecastDate.toISOString().split("T")[0],
       predicted: Math.max(0, Math.min(100, Number(predicted.toFixed(2)))),
       lowerBound: Math.max(0, Number((predicted - interval).toFixed(2))),
       upperBound: Math.min(100, Number((predicted + interval).toFixed(2))),
-      confidence: Math.max(0.5, Number((1 - (h * 0.03)).toFixed(2))),
+      confidence: Number(horizonConfidence.toFixed(2)),
     });
   }
 
@@ -638,13 +888,14 @@ export async function getCorrelationAnalysis(params: AnalyticsPeriod): Promise<C
   }
 
   // Cross-machine correlation (OPTIMIZATION: limit to top 10 machines by inspection volume)
-  const machineGroups = new Map<string, { defectRates: number[]; dates: string[]; total: number }>();
+  // Use Map<date, defectRate> per machine for O(1) lookup during alignment
+  const machineGroups = new Map<string, { rateByDate: Map<string, number>; total: number }>();
   for (const r of rows) {
     const code = r.machineCode ?? `M-${r.machineId}`;
-    if (!machineGroups.has(code)) machineGroups.set(code, { defectRates: [], dates: [], total: 0 });
+    if (!machineGroups.has(code)) machineGroups.set(code, { rateByDate: new Map(), total: 0 });
     const group = machineGroups.get(code)!;
-    group.defectRates.push(Number(r.total) > 0 ? Number(r.fail) / Number(r.total) : 0);
-    group.dates.push(String(r.date));
+    const rate = Number(r.total) > 0 ? Number(r.fail) / Number(r.total) : 0;
+    group.rateByDate.set(String(r.date), rate);
     group.total += Number(r.total);
   }
 
@@ -655,16 +906,30 @@ export async function getCorrelationAnalysis(params: AnalyticsPeriod): Promise<C
     .map(([code]) => code);
 
   // Only compute pairwise correlations for top 10 machines (reduces O(n²) complexity)
+  // Date alignment uses Map.has/get for O(1) lookup → overall O(min(|A|,|B|)) per pair
   for (let i = 0; i < topMachines.length; i++) {
     for (let j = i + 1; j < topMachines.length; j++) {
       const a = machineGroups.get(topMachines[i])!;
       const b = machineGroups.get(topMachines[j])!;
 
-      // Align by date
-      const commonDates = a.dates.filter(d => b.dates.includes(d));
-      if (commonDates.length >= 5) {
-        const aVals = commonDates.map(d => a.defectRates[a.dates.indexOf(d)]);
-        const bVals = commonDates.map(d => b.defectRates[b.dates.indexOf(d)]);
+      // Iterate the smaller map for efficiency
+      const [smaller, larger] = a.rateByDate.size <= b.rateByDate.size ? [a, b] : [b, a];
+      const aVals: number[] = [];
+      const bVals: number[] = [];
+      for (const [date, rate] of smaller.rateByDate) {
+        const otherRate = larger.rateByDate.get(date);
+        if (otherRate !== undefined) {
+          // preserve original ordering: first array corresponds to topMachines[i]
+          if (smaller === a) {
+            aVals.push(rate);
+            bVals.push(otherRate);
+          } else {
+            aVals.push(otherRate);
+            bVals.push(rate);
+          }
+        }
+      }
+      if (aVals.length >= 5) {
         const corr = pearsonCorrelation(aVals, bVals);
 
         if (Math.abs(corr) > 0.3) {
@@ -674,7 +939,7 @@ export async function getCorrelationAnalysis(params: AnalyticsPeriod): Promise<C
             correlation: Number(corr.toFixed(3)),
             strength: classifyCorrelation(Math.abs(corr)),
             direction: corr >= 0 ? "positive" : "negative",
-            sampleSize: commonDates.length,
+            sampleSize: aVals.length,
           });
         }
       }
@@ -700,8 +965,14 @@ export async function assessRisks(params: AnalyticsPeriod): Promise<RiskAssessme
 
   const risks: RiskAssessment[] = [];
 
+  // OPTIMIZATION: parallel fetch of independent analytics queries
+  const [machinePerf, trend, pareto] = await Promise.all([
+    getMachinePerformance(params),
+    getDefectTrend(params),
+    getDefectPareto(params),
+  ]);
+
   // 1. Machine degradation risk
-  const machinePerf = await getMachinePerformance(params);
   const decliningMachines = machinePerf.filter(m => m.trend === "declining" && m.yieldRate < 95);
   if (decliningMachines.length > 0) {
     risks.push({
@@ -714,8 +985,7 @@ export async function assessRisks(params: AnalyticsPeriod): Promise<RiskAssessme
     });
   }
 
-  // 2. Yield drop risk
-  const trend = await getDefectTrend(params);
+  // 2. Yield drop risk (data already fetched above)
   if (trend.length >= 7) {
     const recent = trend.slice(-7);
     const earlier = trend.slice(-14, -7);
@@ -736,8 +1006,7 @@ export async function assessRisks(params: AnalyticsPeriod): Promise<RiskAssessme
     }
   }
 
-  // 3. Concentrated defect risk
-  const pareto = await getDefectPareto(params);
+  // 3. Concentrated defect risk (data already fetched above)
   if (pareto.length > 0 && pareto[0].percentage > 40) {
     risks.push({
       category: "Concentrated Defect",
@@ -770,17 +1039,21 @@ export async function assessRisks(params: AnalyticsPeriod): Promise<RiskAssessme
 
 /**
  * Generate control chart data (X-bar chart)
+ * @param specLimits - Customer/process specification limits. Required for meaningful Cpk on
+ *   defectRate/cycleTime. For yield, defaults to [0, 100] if omitted.
+ *   Without explicit spec limits, Cpk is set to null to prevent misleading capability claims.
  */
 export async function getControlChart(
   params: AnalyticsPeriod,
   metric: "yield" | "defectRate" | "cycleTime" = "yield",
+  specLimits?: { usl?: number; lsl?: number },
 ): Promise<ControlChartData> {
   const trend = await getDefectTrend(params);
   if (trend.length === 0) {
     return {
       metric,
       points: [],
-      summary: { mean: 0, stdDev: 0, ucl: 0, lcl: 0, cpk: 0, outOfControlCount: 0 },
+      summary: { mean: 0, stdDev: 0, ucl: 0, lcl: 0, cpk: null, cpu: null, cpl: null, cpkNote: "aiAnalytics.cpkNote", outOfControlCount: 0, spcViolations: [] },
     };
   }
 
@@ -798,19 +1071,15 @@ export async function getControlChart(
   const ucl = meanVal + 3 * stdDevVal;
   const lcl = Math.max(0, meanVal - 3 * stdDevVal);
 
+  // Full 12-rule SPC violation detection
+  const spcViolations = detectSpcViolations(values, meanVal, stdDevVal);
+  const violationMap = buildViolationMap(spcViolations, values.length);
+
   const points = trend.map((t, i) => {
     const value = values[i];
     const outOfControl = value > ucl || value < lcl;
-
-    // Western Electric rules
-    let violationRule: string | undefined;
-    if (outOfControl) violationRule = "Beyond 3σ";
-    else if (i >= 1 && (
-      (values[i] > meanVal + 2 * stdDevVal && values[i - 1] > meanVal + 2 * stdDevVal) ||
-      (values[i] < meanVal - 2 * stdDevVal && values[i - 1] < meanVal - 2 * stdDevVal)
-    )) {
-      violationRule = "2 of 3 beyond 2σ";
-    }
+    const violatedRules = violationMap.get(i);
+    const violationRule = violatedRules?.[0]; // primary rule (backward compat)
 
     return {
       date: t.date,
@@ -818,18 +1087,33 @@ export async function getControlChart(
       ucl: Number(ucl.toFixed(2)),
       lcl: Number(lcl.toFixed(2)),
       cl: Number(meanVal.toFixed(2)),
-      outOfControl,
+      outOfControl: outOfControl || (violatedRules !== undefined && violatedRules.length > 0),
       violationRule,
+      violatedRules,
     };
   });
 
-  // Cpk calculation (assuming spec limits at ±3σ from target 100% for yield)
-  const target = metric === "yield" ? 100 : 0;
-  const usl = metric === "yield" ? 100 : meanVal + 3 * stdDevVal;
-  const lsl = metric === "yield" ? Math.max(0, meanVal - 6 * stdDevVal) : 0;
-  const cpk = stdDevVal > 0
-    ? Math.min((usl - meanVal) / (3 * stdDevVal), (meanVal - lsl) / (3 * stdDevVal))
-    : 0;
+  // Cpk via the shared SPC utility (server/utils/spc.ts:calculateCapabilityIndices).
+  // That helper handles one-sided specs (Cpu/Cpl), non-normal Box-Cox (transforming
+  // BOTH values and spec limits together to keep the scale consistent), and returns
+  // cpk=null when no usable spec is present. Spec limits MUST be real customer/process
+  // limits — we never fabricate (e.g. yield USL=100), which would only measure centering.
+  // No subgroups are available here (one aggregate value per day), so the overall sample
+  // stdDev is the sigma estimate fed to the capability calculation.
+  const resolvedUsl: number | null = specLimits?.usl ?? null;
+  const resolvedLsl: number | null = specLimits?.lsl ?? null;
+  // At least one real spec limit is required for any capability index.
+  const hasCpkData = resolvedUsl !== null || resolvedLsl !== null;
+
+  let cpk: number | null = null;
+  let cpu: number | null = null;
+  let cpl: number | null = null;
+  if (hasCpkData) {
+    const indices = calculateCapabilityIndices(values, resolvedUsl, resolvedLsl, stdDevVal);
+    cpk = indices.cpk;
+    cpu = indices.cpu;
+    cpl = indices.cpl;
+  }
 
   return {
     metric,
@@ -839,8 +1123,14 @@ export async function getControlChart(
       stdDev: Number(stdDevVal.toFixed(2)),
       ucl: Number(ucl.toFixed(2)),
       lcl: Number(lcl.toFixed(2)),
-      cpk: Number(cpk.toFixed(3)),
+      cpk: cpk !== null && Number.isFinite(cpk) ? Number(cpk.toFixed(3)) : null,
+      cpu: cpu !== null && Number.isFinite(cpu) ? Number(cpu.toFixed(3)) : null,
+      cpl: cpl !== null && Number.isFinite(cpl) ? Number(cpl.toFixed(3)) : null,
+      // i18n message KEY (client translates). Emitted whenever Cpk could not be computed
+      // from real spec limits, so the UI never shows a fabricated capability number.
+      cpkNote: cpk === null ? "aiAnalytics.cpkNote" : undefined,
       outOfControlCount: points.filter(p => p.outOfControl).length,
+      spcViolations,
     },
   };
 }
@@ -1159,4 +1449,66 @@ export async function generateComprehensiveReportWithNarration(params: Analytics
     outOfControl: report.controlChart.summary.outOfControlCount,
   });
   return { ...report, narration };
+}
+
+/**
+ * Persist SPC violations to DB and fire real-time socket alerts.
+ *
+ * Call this after getControlChart() whenever you want to store + broadcast
+ * detected violations. Idempotent: duplicate violations on the same day are
+ * skipped by checking detectedAt date.
+ */
+export async function triggerSpcAlerts(opts: {
+  violations: SpcViolation[];
+  metric: string;
+  machineId?: number;
+  workstationId?: number;
+  productModelId?: number;
+  measurementPointDefId?: number;
+  controlLimits: { ucl: number; lcl: number; cl: number };
+}): Promise<void> {
+  const { violations, metric, machineId, workstationId, productModelId, measurementPointDefId, controlLimits } = opts;
+  if (violations.length === 0) return;
+
+  const db = await getDb();
+
+  for (const v of violations) {
+    const severity = v.severity === "critical" ? "critical"
+      : v.severity === "info" ? "info"
+      : "warning";
+
+    if (db) {
+      try {
+        await db.insert(spcRuleViolations).values({
+          measurementPointDefId: measurementPointDefId ?? null,
+          workstationId: workstationId ?? null,
+          machineId: machineId ?? null,
+          productModelId: productModelId ?? null,
+          ruleType: v.ruleId as any,
+          ruleName: v.ruleName,
+          ruleDescription: `Metric: ${metric}. Points: ${v.pointIndices.join(", ")}`,
+          severity,
+          violatingValues: v.pointIndices,
+          subgroupIndices: v.pointIndices,
+          controlLimits,
+          isActive: true,
+        });
+      } catch (err) {
+        console.error(`[SPC] Failed to persist violation ${v.ruleId}:`, err);
+      }
+    }
+
+    // Real-time broadcast regardless of DB success
+    emitSpcViolationAlert({
+      ruleId: v.ruleId,
+      ruleName: v.ruleName,
+      severity,
+      metric,
+      machineId,
+      pointIndices: v.pointIndices,
+      violationCount: v.pointIndices.length,
+      detectedAt: new Date(),
+      message: `SPC ${severity.toUpperCase()}: ${v.ruleName} detected on metric '${metric}' (${v.pointIndices.length} points affected)`,
+    });
+  }
 }

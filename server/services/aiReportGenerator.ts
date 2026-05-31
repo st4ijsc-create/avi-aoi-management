@@ -10,7 +10,12 @@
  * Uses GPT-4o-mini for narrative analysis with structured JSON fallbacks.
  */
 
-import OpenAI from "openai";
+import { createHash } from "crypto";
+import { generateNarrative as routerNarrative } from "./aiProviderRouter";
+
+function narrativeCacheKey(systemPrompt: string, data: string): string {
+  return "narrative:" + createHash("sha1").update(systemPrompt + "\u0000" + data).digest("hex").slice(0, 16);
+}
 import { getDb } from "../db/connection";
 import { sql, gte, lte, eq, and, desc, SQL } from "drizzle-orm";
 import {
@@ -96,16 +101,7 @@ export interface ExecutiveSummary {
   narrativeMetadata?: NarrativeMetadata;
 }
 
-// ─── OpenAI Client ─────────────────────────────────────────────────────────
-
-let _client: OpenAI | null = null;
-
-function getOpenAI(): OpenAI | null {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) return null;
-  if (!_client) _client = new OpenAI({ apiKey: key });
-  return _client;
-}
+// ─── Offline Narrative Fallback ───────────────────────────────────────────
 
 function generateOfflineNarrative(systemPrompt: string, data: string): string {
   const isVi = systemPrompt.includes("tiếng Việt") || systemPrompt.includes("Việt");
@@ -178,93 +174,43 @@ function generateOfflineNarrative(systemPrompt: string, data: string): string {
         (trends.length > 0 ? `Key trend: ${trends[0]}. ` : "") +
         (concerns.length > 0 ? `Concern: ${concerns[0]}.` : "No critical issues identified in this period.");
     }
-  } catch {
-    // ignore parse errors
+  } catch (err) {
+    console.warn("[aiReportGenerator] offline narrative parse failed:", err);
   }
   return isVi
     ? "Báo cáo được tạo tự động từ dữ liệu cục bộ (chế độ offline)."
     : "Report generated automatically from local data (offline mode).";
 }
 
+// ─── Narrative (delegates to aiProviderRouter) ─────────────────────────────
+
 async function generateNarrative(systemPrompt: string, data: string): Promise<{ text: string; metadata: NarrativeMetadata }> {
   const timestamp = new Date();
-
-  // 1. Try OpenAI first (with timeout to avoid blocking)
-  const openaiStartTime = Date.now();
-  const client = getOpenAI();
-  if (client) {
-    try {
-      const openaiPromise = client.chat.completions.create({
-        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: data },
-        ],
-        temperature: 0.3,
-        max_tokens: 1500,
-      });
-
-      // Add 2-second timeout for OpenAI
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("OpenAI timeout")), 2000)
-      );
-
-      const resp = await Promise.race([openaiPromise, timeoutPromise]);
-      const text = (resp as any).choices[0]?.message?.content;
-      if (text) {
-        const elapsedMs = Date.now() - openaiStartTime;
-        console.log(`[aiReportGenerator] OpenAI narrative generated in ${elapsedMs}ms`);
-        return {
-          text,
-          metadata: {
-            generatedBy: "openai",
-            confidence: 0.95,
-            timestamp,
-            model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-          },
-        };
-      }
-    } catch (err) {
-      const elapsedMs = Date.now() - openaiStartTime;
-      if (elapsedMs > 1900) {
-        console.warn(`[aiReportGenerator] OpenAI timed out after ${elapsedMs}ms, falling back to GGUF`);
-      } else {
-        console.error(`[aiReportGenerator] OpenAI narrative generation failed:`, err);
-      }
-    }
-  }
-
-  // 2. Try local GGUF model as fallback
   try {
-    const ggufStartTime = Date.now();
-    const { generateText, isGgufAvailable } = await import("./aiGgufEngine");
-    if (await isGgufAvailable()) {
-      const result = await generateText({
-        systemPrompt,
-        prompt: data,
-        maxTokens: 1500,
-        temperature: 0.3,
-      });
-      if (result.text) {
-        const elapsedMs = Date.now() - ggufStartTime;
-        console.log(`[aiReportGenerator] GGUF narrative generated in ${elapsedMs}ms`);
-        return {
-          text: result.text,
-          metadata: {
-            generatedBy: "gguf",
-            confidence: 0.75,
-            timestamp,
-            model: "local-llm",
-          },
-        };
-      }
+    const result = await routerNarrative({
+      systemPrompt,
+      prompt: data,
+      maxTokens: 1500,
+      temperature: 0.3,
+      cacheKey: narrativeCacheKey(systemPrompt, data),
+    });
+    if (result.text) {
+      console.log(`[aiReportGenerator] ${result.provider}${result.fallbackUsed ? " (fallback)" : ""} narrative in ${result.totalTimeMs}ms`);
+      return {
+        text: result.text,
+        metadata: {
+          generatedBy: result.provider,
+          confidence: result.provider === "openai" ? 0.95 : 0.75,
+          timestamp,
+          model: result.model,
+        },
+      };
     }
   } catch (err) {
-    console.error(`[aiReportGenerator] GGUF fallback failed:`, err);
+    console.error(`[aiReportGenerator] Provider router failed, using offline template:`, err);
   }
 
-  // 3. Static offline template (no external dependencies)
-  console.log("[aiReportGenerator] Falling back to offline template narrative");
+  // Last resort: offline static template
   return {
     text: generateOfflineNarrative(systemPrompt, data),
     metadata: {

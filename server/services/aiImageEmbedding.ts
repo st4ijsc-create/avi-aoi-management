@@ -5,9 +5,19 @@ import fs from "fs";
 import { getDb } from "../db/connection";
 import { aiImageEmbeddings } from "../../drizzle/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
-import { getAiModelById } from "../db/ai";
+import { getAiModelById, getActiveModelForProduct, getAiModels } from "../db/ai";
 import type { AiModel } from "../../drizzle/schema";
 import { describeDefect } from "./aiVisionLanguage";
+
+// B4.1 — nguồn embedding ảnh trả về UI (trung thực):
+//  - "onnx":          model ONNX embedding ACTIVE (vector thật, khác chiều 1024).
+//  - "text-of-image": describeDefect → embed text mxbai 1024-d (mặc định khi không ONNX).
+//  - "metadata":      fallback keyword (khi vision/DB lỗi).
+export type EmbeddingSource = "onnx" | "text-of-image" | "metadata";
+
+// B4.1 — override chọn nguồn embedding ảnh mặc định: "onnx" | "text".
+// Default (unset/"text") → giữ nguyên hành vi text-of-image (backward-compatible).
+const IMAGE_EMBEDDING_DEFAULT = (process.env.IMAGE_EMBEDDING_DEFAULT ?? "text").toLowerCase();
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -531,6 +541,9 @@ export interface VectorSearchFilters {
   defectType?: string;
   minSimilarity?: number;
   excludeId?: number;
+  // B4.1 — ràng buộc không gian vector: chỉ so với rows cùng modelCode (tránh trộn
+  // ONNX-dim vs text-of-image dù trùng dim). Khi không set → không lọc theo modelCode.
+  modelCode?: string;
 }
 
 export interface SimilarSearchOutcome {
@@ -548,6 +561,7 @@ function buildVectorWhere(filters?: VectorSearchFilters, opts?: { requireVecCol?
   if (filters?.productModelId != null) whereParts.push(sql`"productModelId" = ${Number(filters.productModelId)}`);
   if (filters?.label) whereParts.push(sql`"label" = ${filters.label}`);
   if (filters?.defectType) whereParts.push(sql`"defectType" = ${filters.defectType}`);
+  if (filters?.modelCode) whereParts.push(sql`"modelCode" = ${filters.modelCode}`);
   if (opts?.requireVecCol) whereParts.push(sql`embedding_vec IS NOT NULL`);
   return whereParts.length > 0 ? sql`WHERE ${sql.join(whereParts, sql` AND `)}` : sql``;
 }
@@ -585,6 +599,7 @@ async function bruteForceCosine(
   if (filters?.productModelId != null) conditions.push(eq(aiImageEmbeddings.productModelId, Number(filters.productModelId)));
   if (filters?.label) conditions.push(eq(aiImageEmbeddings.label, filters.label));
   if (filters?.defectType) conditions.push(eq(aiImageEmbeddings.defectType, filters.defectType));
+  if (filters?.modelCode) conditions.push(eq(aiImageEmbeddings.modelCode, filters.modelCode));
   // Chỉ so cùng không gian chiều.
   conditions.push(eq(aiImageEmbeddings.embeddingDim, dim));
 
@@ -770,29 +785,87 @@ export async function findSimilarById(
  *
  * Khi truyền modelId (legacy ONNX), vẫn hỗ trợ extractEmbedding để back-compat.
  */
+/**
+ * B4.1 — Resolve model ONNX embedding mặc định cho image search.
+ *
+ * Quy tắc:
+ *  - IMAGE_EMBEDDING_DEFAULT="text" (mặc định) → KHÔNG dùng ONNX (giữ text-of-image).
+ *  - IMAGE_EMBEDDING_DEFAULT="onnx" → tìm model ONNX modelType "embedding" ACTIVE:
+ *      • nếu có productModelId → ưu tiên getActiveModelForProduct(productModelId,"embedding").
+ *      • không có/không khớp → model embedding ACTIVE đầu tiên (getAiModels).
+ *  - Không có model phù hợp → null (caller degrade về text-of-image).
+ *
+ * Trả model (hoặc null). Hàm thuần đọc DB, an toàn khi DB null (getAiModels → []).
+ */
+export async function resolveDefaultImageEmbeddingModel(
+  productModelId?: number,
+): Promise<AiModel | null> {
+  if (IMAGE_EMBEDDING_DEFAULT !== "onnx") return null;
+
+  if (productModelId != null) {
+    const m = await getActiveModelForProduct(productModelId, "embedding");
+    if (m && m.status === "ACTIVE" && m.format === "ONNX") return m;
+  }
+
+  const candidates = await getAiModels({
+    modelType: "embedding",
+    format: "ONNX",
+    status: "ACTIVE",
+    limit: 1,
+  });
+  return candidates[0] ?? null;
+}
+
 export async function searchByImage(
   modelId: number | undefined,
   imageBuffer: Buffer,
   limit: number = 10,
   filters?: VectorSearchFilters,
-): Promise<{ results: SimilarImage[]; embedding: EmbeddingResult; searchMode: SearchMode }> {
+): Promise<{
+  results: SimilarImage[];
+  embedding: EmbeddingResult;
+  searchMode: SearchMode;
+  embeddingSource: EmbeddingSource;
+}> {
   try {
-    const embResult =
-      modelId == null
-        ? await embedImageAsText(imageBuffer)
-        : await extractEmbedding(modelId, imageBuffer);
+    let embResult: EmbeddingResult;
+    let embeddingSource: EmbeddingSource;
 
+    if (modelId != null) {
+      // Legacy/explicit ONNX model → vector thật.
+      embResult = await extractEmbedding(modelId, imageBuffer);
+      embeddingSource = "onnx";
+    } else {
+      // B4.1 — thử resolve model ONNX embedding mặc định; không có → text-of-image.
+      const onnxModel = await resolveDefaultImageEmbeddingModel(filters?.productModelId);
+      if (onnxModel) {
+        embResult = await extractEmbedding(onnxModel.id, imageBuffer);
+        embeddingSource = "onnx";
+      } else {
+        embResult = await embedImageAsText(imageBuffer);
+        embeddingSource = "text-of-image";
+      }
+    }
+
+    // RÀNG BUỘC KHÔNG GIAN VECTOR (B4.1): với nguồn ONNX, lọc thêm theo modelCode để
+    // không trộn vector ONNX-dim với text-of-image (kể cả khi tình cờ trùng dim).
+    // findSimilarByVectorWithMode cũng đã guard theo dim (HNSW chỉ cho 1024-dim; ONNX-dim
+    // ≠ 1024 rơi exact-cast/brute-force cùng dim → degrade hiệu năng trung thực).
+    const vectorFilters: VectorSearchFilters =
+      embeddingSource === "onnx"
+        ? { ...filters, modelCode: embResult.modelCode }
+        : (filters ?? {});
     const { results, searchMode } = await findSimilarByVectorWithMode(
       embResult.embedding,
       embResult.dim,
       limit,
-      filters,
+      vectorFilters,
     );
-    return { results, embedding: embResult, searchMode };
+    return { results, embedding: embResult, searchMode, embeddingSource };
   } catch (error) {
     console.warn("[aiImageEmbedding] Falling back to metadata search:", error);
     const fallback = await searchByMetadataFallback(imageBuffer, limit, filters);
-    return { ...fallback, searchMode: "metadata" };
+    return { ...fallback, searchMode: "metadata", embeddingSource: "metadata" };
   }
 }
 
