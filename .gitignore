@@ -123,3 +123,7 @@ uploads/factory-alert-releases/
 *.apk
 # Edge model packages produced by WS-2 deployment
 uploads/edge-packages/
+
+# Python
+__pycache__/
+*.pyc

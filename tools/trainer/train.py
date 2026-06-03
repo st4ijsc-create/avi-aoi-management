@@ -69,6 +69,21 @@ import os
 import sys
 import time
 
+# ── Offline-first: never reach out to the network at train time ──
+# torchvision weight downloads, HF hub, etc. are all disabled. We train from
+# scratch (pretrained=False) unless local cached weights are present.
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+os.environ.setdefault("TORCHVISION_OFFLINE", "1")
+
+# Windows consoles default to cp1252; torch/onnx exporters print unicode that
+# crashes encoding. Force UTF-8 on stdio so library logging never aborts a run.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # ImageNet normalization — MUST match the Node preprocessing
 # (aiLocalTraining.extractEmbeddings): resize to imgSize (default 224), RGB,
 # NCHW, (x/255 - mean) / std.
@@ -124,16 +139,85 @@ def load_manifest(manifest_path, image_root, class_labels):
 
 def build_dataset(samples, img_size):
     """
-    Build a torch Dataset/DataLoader from (path, label) pairs.
+    Build a torch Dataset from (abs_path, class_index) pairs.
 
-    SCAFFOLDING: implement with torchvision.transforms (Resize(img_size),
-    ToTensor, Normalize(IMAGENET_MEAN, IMAGENET_STD)) + a Dataset that loads
-    each image via PIL. Skip / zero-fill missing files for robustness.
+    Transform pipeline MUST match the Node inference preprocessing
+    (aiInferenceEngine.preprocessImage / aiLocalTraining.extractEmbeddings):
+      Resize(img_size, img_size) → RGB → ToTensor (x/255) → Normalize(ImageNet).
+    Missing / unreadable files are skipped (logged once) so a stray bad path
+    never aborts a run.
     """
-    raise NotImplementedError(
-        "build_dataset: install torch/torchvision and implement image loading "
-        "(see requirements.txt). This is intentional scaffolding."
-    )
+    import torch
+    from torch.utils.data import Dataset
+    import torchvision.transforms as T
+    from PIL import Image
+
+    transform = T.Compose([
+        T.Resize((img_size, img_size)),
+        T.ToTensor(),  # HWC[0,255] → CHW[0,1] float32
+        T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+    ])
+
+    # Pre-filter to existing files (skip + log missing).
+    usable = []
+    for img_path, label_idx in samples:
+        if os.path.exists(img_path):
+            usable.append((img_path, label_idx))
+        else:
+            sys.stderr.write("skip missing image: {}\n".format(img_path))
+
+    class ImageDataset(Dataset):
+        def __init__(self, items):
+            self.items = items
+
+        def __len__(self):
+            return len(self.items)
+
+        def __getitem__(self, idx):
+            img_path, label_idx = self.items[idx]
+            try:
+                with Image.open(img_path) as im:
+                    img = transform(im.convert("RGB"))
+            except Exception as exc:  # corrupt image → black tensor, keep label
+                sys.stderr.write("skip unreadable image {}: {}\n".format(img_path, exc))
+                img = torch.zeros(3, img_size, img_size, dtype=torch.float32)
+            return img, label_idx
+
+    return ImageDataset(usable)
+
+
+def _build_model(num_classes):
+    """
+    Build a small transfer-learning backbone sized for ~6GB VRAM.
+
+    Offline-first: torchvision pretrained weights are downloaded over the
+    network, which we forbid at train time. We therefore use weights=None
+    (train from scratch). If an operator pre-caches weights under TORCH_HOME
+    (e.g. mobilenet_v3_small / resnet18), set _USE_PRETRAINED=1 and we attempt
+    to load them; any failure falls back to scratch and is logged.
+
+    NOTE: with only weights=None the model trains from random init, so tiny
+    smoke-test datasets will show near-chance accuracy — that is expected and
+    fine for verifying the pipeline. Real production training needs either a
+    real labeled dataset or pre-cached pretrained weights for transfer learning.
+    """
+    import torchvision.models as models
+
+    use_pretrained = os.environ.get("_USE_PRETRAINED", "") == "1"
+    weights = None
+    if use_pretrained:
+        try:
+            weights = models.MobileNet_V3_Small_Weights.DEFAULT
+        except Exception as exc:  # offline / no cache → scratch
+            sys.stderr.write("pretrained weights unavailable, training from scratch: {}\n".format(exc))
+            weights = None
+
+    model = models.mobilenet_v3_small(weights=weights)
+    # Replace the classifier head with one matching num_classes.
+    import torch.nn as nn
+    in_features = model.classifier[-1].in_features
+    model.classifier[-1] = nn.Linear(in_features, num_classes)
+    return model
 
 
 def train_loop(job, train_data, val_data):
@@ -150,18 +234,97 @@ def train_loop(job, train_data, val_data):
               progress=epoch/totalEpochs, metrics=history })
       - Return the trained torch model.
     """
+    import torch
+    import torch.nn as nn
+    from torch.utils.data import DataLoader
+
     config = job.get("config", {})
-    total_epochs = int(config.get("epochs", 50))
-    # Demonstrate the progress contract so integrators see the exact shape.
-    _atomic_write_json(job["progressPath"], {
-        "phase": "training", "epoch": 0, "totalEpochs": total_epochs,
-        "loss": 0.0, "accuracy": 0.0, "valLoss": 0.0, "valAccuracy": 0.0,
-        "progress": 0.0,
-        "metrics": {"loss": [], "accuracy": [], "valLoss": [], "valAccuracy": []},
-    })
-    raise NotImplementedError(
-        "train_loop: implement the PyTorch fine-tuning loop. Scaffolding only."
-    )
+    total_epochs = max(1, int(config.get("epochs", 50)))
+    batch_size = max(1, int(config.get("batchSize", 32)))
+    lr = float(config.get("learningRate", 0.001))
+    num_classes = len(job["classLabels"])
+
+    device_req = str(config.get("device", "")).lower()
+    use_cuda = torch.cuda.is_available() and device_req != "cpu"
+    device = torch.device("cuda" if use_cuda else "cpu")
+    sys.stderr.write("training on device: {}\n".format(device))
+
+    model = _build_model(num_classes)
+    model.to(device)
+
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=0)
+    val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False, num_workers=0) \
+        if val_data is not None and len(val_data) > 0 else None
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    history = {"loss": [], "accuracy": [], "valLoss": [], "valAccuracy": []}
+    early_stopping = bool(config.get("earlyStopping", False))
+    patience = int(config.get("patience", 5))
+    best_val_acc = -1.0
+    best_state = None
+    no_improve = 0
+
+    def _run_epoch(loader, train_mode):
+        model.train(train_mode)
+        running_loss, correct, total = 0.0, 0, 0
+        if loader is None:
+            return 0.0, 0.0
+        for imgs, labels in loader:
+            imgs = imgs.to(device)
+            labels = labels.to(device)
+            with torch.set_grad_enabled(train_mode):
+                logits = model(imgs)
+                loss = criterion(logits, labels)
+                if train_mode:
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+            running_loss += loss.item() * imgs.size(0)
+            preds = logits.argmax(dim=1)
+            correct += (preds == labels).sum().item()
+            total += imgs.size(0)
+        avg_loss = running_loss / total if total else 0.0
+        acc = correct / total if total else 0.0
+        return avg_loss, acc
+
+    for epoch in range(1, total_epochs + 1):
+        train_loss, train_acc = _run_epoch(train_loader, True)
+        val_loss, val_acc = _run_epoch(val_loader, False)
+
+        history["loss"].append(round(train_loss, 4))
+        history["accuracy"].append(round(train_acc, 4))
+        history["valLoss"].append(round(val_loss, 4))
+        history["valAccuracy"].append(round(val_acc, 4))
+
+        _atomic_write_json(job["progressPath"], {
+            "phase": "training", "epoch": epoch, "totalEpochs": total_epochs,
+            "loss": round(train_loss, 4), "accuracy": round(train_acc, 4),
+            "valLoss": round(val_loss, 4), "valAccuracy": round(val_acc, 4),
+            "progress": epoch / total_epochs,
+            "metrics": history,
+        })
+        sys.stderr.write(
+            "epoch {}/{}: loss={:.4f} acc={:.4f} valLoss={:.4f} valAcc={:.4f}\n".format(
+                epoch, total_epochs, train_loss, train_acc, val_loss, val_acc))
+
+        if val_loader is not None and val_acc > best_val_acc:
+            best_val_acc = val_acc
+            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            no_improve = 0
+        else:
+            no_improve += 1
+        if early_stopping and val_loader is not None and no_improve >= patience:
+            sys.stderr.write("early stopping at epoch {}\n".format(epoch))
+            break
+
+    # Restore best weights (by val accuracy) if we tracked them.
+    if best_state is not None:
+        model.load_state_dict(best_state)
+
+    model.eval()
+    return model
 
 
 def export_onnx(model, job):
@@ -175,8 +338,97 @@ def export_onnx(model, job):
         dynamic_axes={"input": {0: "batch"}}).
       - detection (ultralytics): YOLO(...).export(format="onnx",
         opset=ONNX_OPSET, imgsz=imgSize) then move the file to modelPath.
+
+    Classification export I/O is fixed to match the Node engine:
+      input  "input"  NCHW [N, 3, imgSize, imgSize], dynamic batch axis
+      output "logits"                                (engine applies softmax)
     """
-    raise NotImplementedError("export_onnx: implement ONNX export. Scaffolding only.")
+    import torch
+
+    config = job.get("config", {})
+    img_size = int(config.get("imgSize", DEFAULT_IMG_SIZE))
+    model_path = job["output"]["modelPath"]
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+
+    # Export on CPU for a deterministic, EP-agnostic ONNX graph.
+    model = model.to("cpu").eval()
+    dummy = torch.randn(1, 3, img_size, img_size, dtype=torch.float32)
+
+    export_kwargs = dict(
+        opset_version=ONNX_OPSET,
+        input_names=["input"],
+        output_names=["logits"],
+        dynamic_axes={"input": {0: "batch"}, "logits": {0: "batch"}},
+        do_constant_folding=True,
+    )
+    # torch>=2.5 defaults to the dynamo exporter, which (a) ignores opset 13 and
+    # keeps a higher opset, and (b) prints unicode the Windows cp1252 console
+    # can't encode. Use the legacy TorchScript exporter (dynamo=False) so we get
+    # a true opset-13 graph matching the onnxruntime-node 1.24.x contract. Fall
+    # back to the default exporter only if the legacy path is unavailable.
+    try:
+        torch.onnx.export(model, dummy, model_path, dynamo=False, **export_kwargs)
+    except TypeError:
+        # Older torch without the `dynamo` kwarg — default export honors opset.
+        torch.onnx.export(model, dummy, model_path, **export_kwargs)
+
+    if not os.path.exists(model_path) or os.path.getsize(model_path) == 0:
+        raise RuntimeError("ONNX export produced no file at {}".format(model_path))
+    sys.stderr.write("exported ONNX: {} ({} bytes)\n".format(model_path, os.path.getsize(model_path)))
+
+
+def evaluate_metrics(model, eval_data, num_classes):
+    """
+    Run the trained model over eval_data and compute macro-averaged
+    accuracy / precision / recall / f1 + confusion matrix[actual][pred].
+    Shape MUST match LocalTrainingResult.finalMetrics (Stage 3-6 reuse).
+    """
+    import torch
+    from torch.utils.data import DataLoader
+
+    cm = [[0 for _ in range(num_classes)] for _ in range(num_classes)]
+    if eval_data is None or len(eval_data) == 0:
+        return {"accuracy": 0.0, "precision": 0.0, "recall": 0.0,
+                "f1Score": 0.0, "confusionMatrix": cm}
+
+    device = next(model.parameters()).device
+    model.eval()
+    loader = DataLoader(eval_data, batch_size=8, shuffle=False, num_workers=0)
+    correct, total = 0, 0
+    with torch.no_grad():
+        for imgs, labels in loader:
+            imgs = imgs.to(device)
+            preds = model(imgs).argmax(dim=1).cpu().tolist()
+            labels = labels.tolist()
+            for actual, pred in zip(labels, preds):
+                cm[actual][pred] += 1
+                total += 1
+                if actual == pred:
+                    correct += 1
+
+    accuracy = correct / total if total else 0.0
+
+    # Macro precision/recall/f1 over classes.
+    precisions, recalls, f1s = [], [], []
+    for c in range(num_classes):
+        tp = cm[c][c]
+        fp = sum(cm[r][c] for r in range(num_classes)) - tp
+        fn = sum(cm[c][p] for p in range(num_classes)) - tp
+        p = tp / (tp + fp) if (tp + fp) else 0.0
+        r = tp / (tp + fn) if (tp + fn) else 0.0
+        f1 = 2 * p * r / (p + r) if (p + r) else 0.0
+        precisions.append(p)
+        recalls.append(r)
+        f1s.append(f1)
+
+    n = num_classes if num_classes else 1
+    return {
+        "accuracy": round(accuracy, 4),
+        "precision": round(sum(precisions) / n, 4),
+        "recall": round(sum(recalls) / n, 4),
+        "f1Score": round(sum(f1s) / n, 4),
+        "confusionMatrix": cm,
+    }
 
 
 def write_result(job, metrics, duration_ms):
@@ -215,12 +467,16 @@ def main(job_dir):
             "loss": 0.0, "accuracy": 0.0, "valLoss": 0.0, "valAccuracy": 0.0,
             "progress": 1.0,
         })
+        # Evaluate BEFORE the export moves the model to CPU is fine either way;
+        # evaluate_metrics handles device. Use the TEST split when present, else
+        # fall back to the VAL split (advisory only — the server re-runs the gate).
+        test_samples = load_manifest(job["manifests"].get("test", ""), job["imageRoot"], class_labels)
+        eval_samples = test_samples if test_samples else val_samples
+        eval_data = build_dataset(eval_samples, img_size)
+        metrics = evaluate_metrics(model, eval_data, len(class_labels))
+
         export_onnx(model, job)
 
-        # Evaluate on TEST split here and fill these metrics (advisory; the
-        # server re-runs the gate authoritatively).
-        metrics = {"accuracy": 0.0, "precision": 0.0, "recall": 0.0,
-                   "f1Score": 0.0, "confusionMatrix": []}
         write_result(job, metrics, (time.time() - start) * 1000)
 
         _atomic_write_json(job["progressPath"], {
