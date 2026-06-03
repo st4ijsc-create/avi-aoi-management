@@ -109,12 +109,24 @@ def load_job(job_dir):
 
 
 def resolve_image_path(image_url, image_root):
-    """Resolve a manifest imageUrl against imageRoot (handles /uploads/ prefix)."""
+    """Resolve a manifest imageUrl against imageRoot (handles /uploads/ prefix).
+
+    Defense-in-depth: resolved path MUST stay inside image_root; a malicious
+    ``../../`` imageUrl that escapes the root returns "" → skipped by the loader.
+    """
     url = image_url.lstrip("/")
     if url.startswith("uploads/"):
         url = url[len("uploads/"):]
     # imageRoot already points at <cwd>/uploads, so join the remainder.
-    return os.path.normpath(os.path.join(image_root, url))
+    resolved = os.path.normpath(os.path.join(image_root, url))
+    root_norm = os.path.normpath(image_root)
+    try:
+        if os.path.commonpath([root_norm, resolved]) != root_norm:
+            print(f"[trainer] skip out-of-root imageUrl: {image_url}", flush=True)
+            return ""
+    except ValueError:
+        return ""  # different drive (Windows) → outside root
+    return resolved
 
 
 def load_manifest(manifest_path, image_root, class_labels):

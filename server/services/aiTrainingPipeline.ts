@@ -45,7 +45,7 @@ interface CreateTrainingJobOptions {
   /** Tier-1 strategy. "transfer" (softmax) default, "fewshot" (prototype). */
   strategy?: "transfer" | "fewshot";
   /** Tier-2 sidecar task (only used when trainingMode === "local-sidecar"). */
-  task?: "classification" | "detection";
+  task?: "classification" | "detection" | "segmentation";
   /** Tier-2 sidecar framework (only used when trainingMode === "local-sidecar"). */
   framework?: string;
   /** Quality-gate epsilon (default 0 — no regression tolerated). */
@@ -102,7 +102,7 @@ interface PipelineOptions {
   classLabels?: string[];
   datasetId?: number;
   strategy: "transfer" | "fewshot";
-  task?: "classification" | "detection";
+  task?: "classification" | "detection" | "segmentation";
   framework?: string;
   gateEpsilon: number;
   createdBy?: number;
@@ -280,7 +280,7 @@ export async function dispatchTier2(req: {
   targetVersion: string;
   datasetId: number;
   classLabels: string[];
-  task?: "classification" | "detection";
+  task?: "classification" | "detection" | "segmentation";
   framework?: string;
   config?: Record<string, unknown>;
   createdBy?: number;

@@ -131,7 +131,7 @@ export const aiEvalRouter = router({
       // Tier-2 opt-in (default Tier-1 local-embedding). Sidecar only runs when
       // LOCAL_TRAINER_CMD is also set server-side.
       trainingMode: z.enum(["local-embedding", "local-sidecar"]).optional(),
-      task: z.enum(["classification", "detection"]).optional(),
+      task: z.enum(["classification", "detection", "segmentation"]).optional(),
       framework: z.string().min(1).optional(),
       gateEpsilon: z.number().min(0).max(1).optional(),
     }))

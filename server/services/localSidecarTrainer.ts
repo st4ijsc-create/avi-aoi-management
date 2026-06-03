@@ -74,8 +74,8 @@ export interface SidecarTrainingRequest {
   targetVersion: string;
   datasetId: number;
   classLabels: string[];
-  /** "classification" (default) or "detection" — drives the sidecar pipeline. */
-  task?: "classification" | "detection";
+  /** "classification" (default), "detection", or "segmentation" — drives the sidecar pipeline. */
+  task?: "classification" | "detection" | "segmentation";
   /** Backend the sidecar should use, e.g. "pytorch" | "ultralytics". */
   framework?: string;
   /** Hyperparameters forwarded verbatim to the sidecar config block. */
