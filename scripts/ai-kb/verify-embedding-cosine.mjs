@@ -37,17 +37,20 @@ function trimTextForEmbedding(text, maxChars) {
 }
 function l2norm(v) { const n = Math.sqrt(v.reduce((a, x) => a + x * x, 0)) || 1; return v.map((x) => x / n); }
 
-// mxbai context ~512 token. Ollama tự cắt; GGUF embedding context lại NÉM lỗi khi tràn.
-// Vector Ollama cũ thực chất chỉ mã hóa ~512 token ĐẦU → cắt đầu là so sánh công bằng.
-// Bắt đầu ~1200 ký tự, gặp lỗi context thì giảm dần (head-truncate).
+// Budget khớp generate-embeddings.mjs ở chế độ GGUF (min(MAX_TEXT_CHARS,1200)) để input
+// embed lại GIỐNG HỆT lúc sinh corpus → so sánh công bằng (không lệch do cắt khác kiểu).
+const GGUF_CTX_BUDGET = Math.min(MAX_TEXT_CHARS, 1200);
+
+// mxbai context ~512 token; GGUF NÉM lỗi khi tràn → retry co nhỏ (KHÔNG head-cut riêng,
+// vì input đã được trimTextForEmbedding head75%+tail giống generate).
 async function embedSafe(text) {
-  let t = text.length > 1200 ? text.slice(0, 1200) : text;
-  for (let i = 0; i < 5; i++) {
+  let t = text;
+  for (let i = 0; i < 6; i++) {
     try { return await embedTextGguf(t); }
     catch (e) {
       const msg = String(e?.message || "");
       if (/context size|longer than|context length/i.test(msg) && t.length > 200) {
-        t = t.slice(0, Math.floor(t.length * 0.6));
+        t = trimTextForEmbedding(t, Math.floor(t.length * 0.7));
         continue;
       }
       throw e;
@@ -94,7 +97,7 @@ async function main() {
   let dimMismatch = 0, done = 0;
   for (const e of picked) {
     const { title, text } = chunks.get(e.id);
-    const input = trimTextForEmbedding(`${title}\n${text}`, MAX_TEXT_CHARS);
+    const input = trimTextForEmbedding(`${title}\n${text}`, GGUF_CTX_BUDGET);
     let oldVec;
     try { oldVec = l2norm(parseVec(e.embedding)); } catch { continue; }
     const newVec = await embedSafe(input); // đã L2-normalize, cắt vừa context

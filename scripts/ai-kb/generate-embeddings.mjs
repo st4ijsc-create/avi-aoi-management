@@ -101,21 +101,27 @@ function trimTextForEmbedding(text, maxChars) {
 }
 
 async function embedWithRetry(text) {
-  let candidate = trimTextForEmbedding(text, MAX_TEXT_CHARS);
+  // GGUF embedding context (mxbai ~512 token) NÉM lỗi khi tràn (Ollama thì tự cắt).
+  // Khởi đầu nhỏ hơn ở chế độ GGUF + cho co sâu hơn để chunk dài vẫn embed được,
+  // thay vì abort cả run.
+  const startMax = USE_LEGACY_OLLAMA ? MAX_TEXT_CHARS : Math.min(MAX_TEXT_CHARS, 1200);
+  let candidate = trimTextForEmbedding(text, startMax);
 
-  for (let attempt = 1; attempt <= 4; attempt += 1) {
+  for (let attempt = 1; attempt <= 6; attempt += 1) {
     try {
       return await embed(candidate);
     } catch (err) {
-      const msg = String(err?.message ?? "");
+      const msg = String(err?.message ?? "").toLowerCase();
       const tooLong =
         msg.includes("exceeds the context length") ||
         msg.includes("input length") ||
         msg.includes("context length") ||
+        msg.includes("context size") ||
+        msg.includes("longer than the context") ||
         msg.includes("too large") ||
         msg.includes("failed: 500");
 
-      if (!tooLong || candidate.length < 1000 || attempt === 4) {
+      if (!tooLong || candidate.length < 250 || attempt === 6) {
         throw err;
       }
 
