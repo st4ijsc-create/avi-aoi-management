@@ -14,7 +14,7 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import {
   insertDefectSegmentation,
   listDefectSegmentations,
@@ -22,6 +22,7 @@ import {
   deleteDefectSegmentation,
 } from "../db/aiSegmentation";
 import { measureMask, polygonToMask } from "../services/aiMetrology";
+import { buildSegmentationDataset } from "../services/aiDatasetBuilder";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
@@ -149,6 +150,19 @@ export const aiSegmentationRouter = router({
         });
       }
       return m;
+    }),
+
+  // ── buildDataset (materialize SEGMENTATION manifest from QC masks) ───────────
+  // Sinh manifest YOLOv8-seg từ defect_segmentations source="human": 1 dòng/ảnh,
+  // points normalized 0..1, classLabels thứ tự ổn định. Admin-only (giống
+  // aiEval.buildDataset). Trả classLabels để feed thẳng vào startPipeline.
+  buildDataset: adminProcedure
+    .input(z.object({
+      datasetId: z.number().int().positive(),
+      seed: z.number().int().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      return buildSegmentationDataset(input.datasetId, { seed: input.seed });
     }),
 
   // ── runSegmentation (degrade MODEL_NOT_AVAILABLE) ────────────────────────────

@@ -23,6 +23,7 @@ import {
   measurementResults,
   trainingDatasets,
 } from "../../drizzle/schema";
+import { listDefectSegmentations } from "../db/aiSegmentation";
 import { normalizeLabel, displayLabel, seededShuffle, hashString } from "./aiMetrics";
 
 export interface DatasetSample {
@@ -248,6 +249,260 @@ export async function buildDataset(
       storageKey,
       manifestPaths,
       labels,
+    };
+  } catch (err) {
+    await db.update(trainingDatasets).set({ status: "FAILED", updatedAt: new Date() }).where(eq(trainingDatasets.id, datasetId));
+    throw err;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// B8 — SEGMENTATION dataset builder
+//
+// Materializes a YOLOv8-seg training dataset from QC-drawn masks in
+// `defect_segmentations` (source="human"). One manifest line per IMAGE, with all
+// polygons of that image grouped under masks[]. Points are NORMALIZED 0..1
+// (x/width, y/height) so the manifest is resolution-independent and maps 1:1 to
+// the format `tools/trainer/train.py` (load_seg_manifest) expects:
+//   {imageUrl, masks:[{label, points:[[x,y],...]}], source}
+//
+// Additive: does NOT touch the classification path above. Degrades truthfully —
+// masks without valid width/height or with <3 points are skipped + logged, never
+// fabricated.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** One segmentation polygon (one defect instance), points normalized 0..1. */
+export interface SegMask {
+  label: string;
+  /** Normalized polygon: [[x,y],...] with each coord in [0,1]. */
+  points: Array<[number, number]>;
+}
+
+/** One manifest record = one image with all its QC polygons. */
+export interface SegSample {
+  imageUrl: string;
+  masks: SegMask[];
+  /** Provenance tag written into the manifest (matches train.py examples). */
+  source: "qc_segmentation";
+}
+
+export interface SegDatasetSplit {
+  train: SegSample[];
+  val: SegSample[];
+  test: SegSample[];
+}
+
+export interface BuildSegmentationResult {
+  datasetId: number;
+  /** Number of IMAGES (manifest lines), not polygons. */
+  totalSamples: number;
+  /** Per-class polygon counts across all images. */
+  labelDistribution: Record<string, number>;
+  /** Unique class labels in STABLE (sorted) order — class index = position. */
+  classLabels: string[];
+  split: { train: number; val: number; test: number };
+  storageKey: string;
+  manifestPaths: { train: string; val: string; test: string };
+  /** Masks skipped for missing width/height or <3 points (degrade audit). */
+  skipped: { noDimensions: number; tooFewPoints: number; emptyImages: number };
+}
+
+const SEG_SOURCE_TAG = "qc_segmentation" as const;
+
+/**
+ * Collect QC (human) segmentation masks grouped by image, with points
+ * normalized 0..1. Pure aside from the DB read (which is mocked in tests).
+ * Exported for reuse/testing.
+ *
+ * `rows` may be passed directly (tests / callers that already have the rows);
+ * otherwise it reads source="human" masks for the dataset's filter.
+ */
+export function buildSegSamplesFromRows(
+  rows: Array<{
+    imageUrl: string | null;
+    classLabel: string;
+    maskData: { width?: number; height?: number; points?: Array<{ x: number; y: number }> } | null;
+  }>,
+): { samples: SegSample[]; labelDistribution: Record<string, number>; classLabels: string[]; skipped: BuildSegmentationResult["skipped"] } {
+  const skipped = { noDimensions: 0, tooFewPoints: 0, emptyImages: 0 };
+  const labelDistribution: Record<string, number> = {};
+
+  // imageUrl → accumulated masks. Stable iteration: insertion order, then sorted
+  // by imageUrl before splitting for full reproducibility.
+  const byImage = new Map<string, SegMask[]>();
+
+  for (const row of rows) {
+    if (!row.imageUrl) continue;
+    const md = row.maskData;
+    const label = displayLabel(row.classLabel);
+    if (!label) continue;
+
+    const w = md?.width;
+    const h = md?.height;
+    if (!md || typeof w !== "number" || typeof h !== "number" || !(w > 0) || !(h > 0)) {
+      skipped.noDimensions++;
+      console.warn(`[buildSegmentationDataset] skip mask: missing/invalid maskData width/height for image ${row.imageUrl} (label=${label})`);
+      continue;
+    }
+    const pts = md.points ?? [];
+    if (pts.length < 3) {
+      skipped.tooFewPoints++;
+      console.warn(`[buildSegmentationDataset] skip polygon with <3 points for image ${row.imageUrl} (label=${label})`);
+      continue;
+    }
+
+    // Normalize + clamp to [0,1].
+    const norm: Array<[number, number]> = pts.map((p) => {
+      const x = Math.min(1, Math.max(0, p.x / w));
+      const y = Math.min(1, Math.max(0, p.y / h));
+      return [x, y];
+    });
+
+    if (!byImage.has(row.imageUrl)) byImage.set(row.imageUrl, []);
+    byImage.get(row.imageUrl)!.push({ label, points: norm });
+    labelDistribution[label] = (labelDistribution[label] ?? 0) + 1;
+  }
+
+  const samples: SegSample[] = [];
+  for (const [imageUrl, masks] of byImage) {
+    if (masks.length === 0) {
+      skipped.emptyImages++;
+      console.warn(`[buildSegmentationDataset] skip image with no usable masks: ${imageUrl}`);
+      continue;
+    }
+    samples.push({ imageUrl, masks, source: SEG_SOURCE_TAG });
+  }
+
+  const classLabels = Object.keys(labelDistribution).sort();
+  return { samples, labelDistribution, classLabels, skipped };
+}
+
+/**
+ * Split segmentation samples BY IMAGE (each image is atomic — all its polygons
+ * stay together). Deterministic for a given seed. Stratified by the image's
+ * dominant class (most-frequent label, ties broken by sorted label) so the class
+ * mix is preserved across train/val/test as much as multi-label images allow.
+ */
+export function splitSegmentationByImage(
+  samples: SegSample[],
+  splitConfig: { train: number; validation: number; test: number },
+  seed: number = DEFAULT_SPLIT_SEED,
+): SegDatasetSplit {
+  // Stratify key = dominant (most frequent, then sorted) label of the image.
+  const keyOf = (s: SegSample): string => {
+    const counts = new Map<string, number>();
+    for (const m of s.masks) counts.set(m.label, (counts.get(m.label) ?? 0) + 1);
+    let best = "";
+    let bestN = -1;
+    for (const k of Array.from(counts.keys()).sort()) {
+      const n = counts.get(k)!;
+      if (n > bestN) { bestN = n; best = k; }
+    }
+    return normalizeLabel(best);
+  };
+
+  const byClass = new Map<string, SegSample[]>();
+  for (const s of samples) {
+    const key = keyOf(s);
+    if (!byClass.has(key)) byClass.set(key, []);
+    byClass.get(key)!.push(s);
+  }
+
+  const train: SegSample[] = [];
+  const val: SegSample[] = [];
+  const test: SegSample[] = [];
+
+  const total = Math.max(splitConfig.train + splitConfig.validation + splitConfig.test, 1e-9);
+  const trainR = splitConfig.train / total;
+  const valR = splitConfig.validation / total;
+
+  for (const key of Array.from(byClass.keys()).sort()) {
+    const items = byClass.get(key)!;
+    const sorted = items.slice().sort((a, b) => (a.imageUrl < b.imageUrl ? -1 : a.imageUrl > b.imageUrl ? 1 : 0));
+    const shuffled = seededShuffle(sorted, (seed ^ hashString(key)) >>> 0);
+    const n = shuffled.length;
+    const nTrain = Math.floor(n * trainR);
+    const nVal = Math.floor(n * valR);
+    train.push(...shuffled.slice(0, nTrain));
+    val.push(...shuffled.slice(nTrain, nTrain + nVal));
+    test.push(...shuffled.slice(nTrain + nVal));
+  }
+
+  return { train, val, test };
+}
+
+function writeSegJsonl(filePath: string, samples: SegSample[]): void {
+  const lines = samples.map((s) =>
+    JSON.stringify({ imageUrl: s.imageUrl, masks: s.masks.map((m) => ({ label: m.label, points: m.points })), source: s.source }),
+  );
+  fs.writeFileSync(filePath, lines.join("\n") + (lines.length ? "\n" : ""), "utf-8");
+}
+
+/**
+ * Build (materialize) a SEGMENTATION dataset from QC-drawn masks. Mirrors
+ * buildDataset's lifecycle (PROCESSING → COMPLETED/FAILED, manifest write,
+ * trainingDatasets update) but writes the seg manifest format. Idempotent for a
+ * given seed + data.
+ *
+ * sourceType is set to "segmentation" on the dataset row so downstream
+ * (pipeline / job task selection) can distinguish it. classLabels are returned
+ * (stable sorted order) — feed them as `classLabels` to the training pipeline so
+ * the class index ordering matches the manifest.
+ */
+export async function buildSegmentationDataset(
+  datasetId: number,
+  opts?: { seed?: number },
+): Promise<BuildSegmentationResult> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const dataset = await dbAdvanced.getTrainingDataset(datasetId);
+  if (!dataset) throw new Error(`Training dataset ${datasetId} not found`);
+
+  await db.update(trainingDatasets).set({ status: "PROCESSING", updatedAt: new Date() }).where(eq(trainingDatasets.id, datasetId));
+
+  try {
+    const seed = opts?.seed ?? DEFAULT_SPLIT_SEED;
+    const splitConfig = dataset.splitConfig ?? { train: 0.8, validation: 0.15, test: 0.05 };
+
+    // QC human masks only (model-generated masks are not ground truth).
+    const rows = await listDefectSegmentations({ source: "human", limit: 100000 });
+    const { samples, labelDistribution, classLabels, skipped } = buildSegSamplesFromRows(rows);
+
+    const split = splitSegmentationByImage(samples, splitConfig, seed);
+
+    const dir = datasetDir(datasetId);
+    fs.mkdirSync(dir, { recursive: true });
+    const manifestPaths = {
+      train: path.join(dir, "train.jsonl"),
+      val: path.join(dir, "val.jsonl"),
+      test: path.join(dir, "test.jsonl"),
+    };
+    writeSegJsonl(manifestPaths.train, split.train);
+    writeSegJsonl(manifestPaths.val, split.val);
+    writeSegJsonl(manifestPaths.test, split.test);
+
+    const storageKey = `datasets/${datasetId}`;
+    const totalSamples = samples.length; // images
+
+    await db.update(trainingDatasets).set({
+      storageKey,
+      totalSamples,
+      labelDistribution,
+      sourceType: "segmentation",
+      status: "COMPLETED",
+      updatedAt: new Date(),
+    }).where(eq(trainingDatasets.id, datasetId));
+
+    return {
+      datasetId,
+      totalSamples,
+      labelDistribution,
+      classLabels,
+      split: { train: split.train.length, val: split.val.length, test: split.test.length },
+      storageKey,
+      manifestPaths,
+      skipped,
     };
   } catch (err) {
     await db.update(trainingDatasets).set({ status: "FAILED", updatedAt: new Date() }).where(eq(trainingDatasets.id, datasetId));
