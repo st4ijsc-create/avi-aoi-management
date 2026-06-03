@@ -2,7 +2,7 @@
  * B7 — aiSegmentation decode tests. Tensor mask giả (không cần ONNX runtime).
  */
 import { describe, it, expect } from "vitest";
-import { decodeSegmentation, measureDecodedMasks } from "./aiSegmentation";
+import { decodeSegmentation, measureDecodedMasks, decodeYoloSeg } from "./aiSegmentation";
 
 describe("decodeSegmentation — semantic argmax [1,C,H,W]", () => {
   it("2 lớp 4×4: lớp 1 chiếm góc trên-trái 2×2 → mask đúng vùng + bbox", () => {
@@ -68,6 +68,54 @@ describe("decodeSegmentation — binary sigmoid [1,1,H,W]", () => {
 describe("decodeSegmentation — dims không hợp lệ", () => {
   it("ném lỗi rõ ràng với dims 2-D", () => {
     expect(() => decodeSegmentation(new Float32Array(4), [2, 2])).toThrow(/Unsupported/);
+  });
+});
+
+describe("decodeYoloSeg — proto+coeff (YOLOv8-seg)", () => {
+  it("1 anchor, nc=1, 1 proto kênh thắng → 1 mask vùng box", () => {
+    // det [1, A, N], A = 4 + nc(1) + np(32) = 37, N = 2 anchors.
+    const nc = 1, np = 32, A = 4 + nc + np, N = 2;
+    const imgSize = 16, mh = 4, mw = 4, protoHW = mh * mw;
+    const det = new Float32Array(A * N);
+    const get = (a: number, n: number) => a * N + n;
+    // anchor 0: box phủ toàn ảnh (cx=8,cy=8,w=16,h=16), score lớp cao, coeff[0]=1.
+    det[get(0, 0)] = 8; det[get(1, 0)] = 8; det[get(2, 0)] = 16; det[get(3, 0)] = 16;
+    det[get(4, 0)] = 0.9;            // class score
+    det[get(4 + nc + 0, 0)] = 4;     // coeff kênh 0 lớn → kích hoạt proto kênh 0
+    // anchor 1: score thấp → bị loại.
+    det[get(4, 1)] = 0.01;
+
+    // proto [1, 32, mh, mw]: kênh 0 dương ở nửa trên (8 pixel), âm phần còn lại.
+    const proto = new Float32Array(np * protoHW);
+    for (let p = 0; p < protoHW; p++) {
+      proto[0 * protoHW + p] = p < protoHW / 2 ? 5 : -5;
+    }
+    const { masks, outputType, maskWidth, maskHeight } = decodeYoloSeg(
+      det, [1, A, N], proto, [1, np, mh, mw], imgSize,
+      { labels: ["scratch"], scoreThreshold: 0.25 },
+    );
+    expect(outputType).toBe("yolo-seg");
+    expect(maskWidth).toBe(mw);
+    expect(maskHeight).toBe(mh);
+    expect(masks.length).toBe(1);
+    expect(masks[0].label).toBe("scratch");
+    expect(masks[0].classIndex).toBe(0);
+    // sigmoid(4*5)=~1 ở nửa trên → ~8 pixel.
+    expect(masks[0].pixelCount).toBe(protoHW / 2);
+  });
+
+  it("không anchor nào vượt score → 0 mask", () => {
+    const nc = 1, np = 32, A = 4 + nc + np, N = 1, mh = 4, mw = 4;
+    const det = new Float32Array(A * N); // tất cả 0
+    const proto = new Float32Array(np * mh * mw);
+    const { masks } = decodeYoloSeg(det, [1, A, N], proto, [1, np, mh, mw], 16);
+    expect(masks.length).toBe(0);
+  });
+
+  it("ném lỗi với proto dims sai", () => {
+    expect(() =>
+      decodeYoloSeg(new Float32Array(37), [1, 37, 1], new Float32Array(4), [1, 32, 4], 16),
+    ).toThrow(/Unsupported/);
   });
 });
 

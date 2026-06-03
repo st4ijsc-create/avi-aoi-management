@@ -413,7 +413,7 @@ export interface SegmentationMask {
 export interface SegmentationResult {
   modelCode: string;
   modelVersion: string | null;
-  outputType: "semantic-argmax" | "binary-sigmoid";
+  outputType: "semantic-argmax" | "binary-sigmoid" | "yolo-seg";
   /** Kích thước lưới mask (theo output model). */
   maskWidth: number;
   maskHeight: number;
@@ -460,7 +460,7 @@ export async function runSegmentation(
   }
 
   // import động để tránh nạp aiSegmentation vào nhánh classification/detection nóng.
-  const { decodeSegmentation } = await import("./aiSegmentation");
+  const { decodeSegmentation, decodeYoloSeg } = await import("./aiSegmentation");
 
   const session = await getSession(model);
   const preprocessConfig = (model.preprocessConfig as AiModel["preprocessConfig"]) ?? {
@@ -481,6 +481,50 @@ export async function runSegmentation(
   if (!outputName) throw new Error("Model has no output names");
   const output = results[outputName];
   if (!output) throw new Error("No output from segmentation model");
+
+  // ── YOLOv8-seg: 2 output (det [1,4+nc+32,N] + proto [1,32,mh,mw]). ──
+  // Nhận diện: có >=2 output VÀ output0 là 3-D, output1 là 4-D với 32 kênh.
+  // Cho phép postprocessConfig.format === "yolo-seg" ép buộc rõ ràng.
+  const segFormat = (postprocess as { format?: string } | null)?.format;
+  const out0Dims = output.dims as number[];
+  const secondName = session.outputNames[1];
+  const second = secondName ? results[secondName] : undefined;
+  const isYoloSeg =
+    segFormat === "yolo-seg" ||
+    (second !== undefined && out0Dims.length === 3 &&
+      (second.dims as number[]).length === 4 && (second.dims as number[])[1] === 32);
+
+  if (isYoloSeg && second) {
+    const imgSize = preprocessConfig.resize?.width ?? inputShape[3] ?? 224;
+    const yolo = decodeYoloSeg(
+      output.data as Float32Array,
+      out0Dims,
+      second.data as Float32Array,
+      second.dims as number[],
+      imgSize,
+      {
+        labels: (model.labels as string[]) ?? [],
+        scoreThreshold: postprocess?.confidenceThreshold ?? 0.25,
+      },
+    );
+    return {
+      modelCode: model.code,
+      modelVersion: model.currentVersion,
+      outputType: yolo.outputType,
+      maskWidth: yolo.maskWidth,
+      maskHeight: yolo.maskHeight,
+      masks: yolo.masks.map((m) => ({
+        label: m.label,
+        classIndex: m.classIndex,
+        confidence: m.confidence,
+        polygon: m.polygon,
+        bbox: m.bbox,
+        pixelCount: m.pixelCount,
+      })),
+      processingTimeMs: Date.now() - startTime,
+      status: "COMPLETED",
+    };
+  }
 
   const dims = output.dims as number[];
   const { masks, outputType: decodedType } = decodeSegmentation(

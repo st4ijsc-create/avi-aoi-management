@@ -68,7 +68,7 @@ stream progress, and export a valid ONNX.
   "jobId": 42,
   "modelId": 7,
   "targetVersion": "1.3.0",
-  "task": "classification",          // or "detection"
+  "task": "classification",          // "classification" | "segmentation" | "detection"
   "framework": "pytorch",            // or "ultralytics"
   "classLabels": ["OK", "NG"],
   "manifests": {                     // absolute paths to JSONL
@@ -125,6 +125,76 @@ half-written file — the Node poller simply ignores any malformed/partial read.
 Exit code `0` **and** `output/model.onnx` present ⇒ success. Anything else (non-zero
 exit, missing model, timeout) ⇒ the job is marked `FAILED` and **no** model
 version is created.
+
+## Segmentation mode (`task: "segmentation"`, Ultralytics YOLOv8-seg)
+
+When `job.task == "segmentation"` the sidecar trains an **Ultralytics YOLOv8-seg**
+instance model instead of the classification backbone. Classification is
+unchanged (default task).
+
+### Segmentation manifest line (JSONL)
+
+```jsonc
+{
+  "imageUrl": "/uploads/x/y.jpg",
+  "masks": [
+    { "label": "scratch", "points": [[0.10, 0.12], [0.40, 0.12], [0.40, 0.55]] },
+    { "label": "dent",    "points": [[0.60, 0.60], [0.80, 0.62], [0.78, 0.90]] }
+  ],
+  "source": "qc_segmentation"
+}
+```
+
+- **`points` are NORMALIZED `0..1`** (`x = px / imageWidth`, `y = px / imageHeight`).
+  Chosen so the manifest is resolution-independent and maps 1:1 to YOLO labels.
+  `aiDatasetBuilder` produces this from `defect_segmentations` by dividing
+  `maskData.points` by `maskData.width` / `maskData.height`.
+- Each mask = one polygon (one instance) of one class. `label` must be in
+  `job.classLabels`; polygons with `<3` points or unknown labels are skipped + logged.
+- Images with no usable mask are skipped + logged.
+
+### What the sidecar generates (under `<jobDir>/yolo_seg/`)
+
+```
+images/{train,val,test}/*.jpg
+labels/{train,val,test}/*.txt    # each line: "class_idx x1 y1 x2 y2 ... xn yn" (normalized)
+data.yaml                        # { path, train, val, test, names: {0: lbl, ...} }
+```
+
+YOLO training runs land under `<jobDir>/yolo_runs/seg/`. If no `val` split is
+present it reuses `train` for `val` (so ultralytics validation can run).
+
+### Offline-first model selection
+
+- If `tools/trainer/yolov8n-seg.pt` exists locally → used as pretrained weights
+  (best transfer learning).
+- Otherwise → **from scratch** from the architecture YAML `yolov8n-seg.yaml`
+  (ships inside the `ultralytics` package — no network needed). `yolov8n-seg`
+  is the smallest variant, chosen for ~6GB VRAM. Keep `imgSize ≤ 320`,
+  `batchSize ≤ 2` on 6GB; drop to `imgSize 256` / CPU on OOM.
+
+### YOLOv8-seg ONNX output format (decoded by `aiSegmentation.decodeYoloSeg`)
+
+```
+output0  [1, 4 + nc + 32, N]      N anchors
+           rows 0..3        = box (cx, cy, w, h) in PIXELS of imgsz
+           rows 4..4+nc-1   = per-class scores (sigmoid-activated)
+           rows 4+nc..+32   = 32 mask coefficients per anchor
+output1  [1, 32, mh, mw]          32 mask prototypes
+```
+
+Per-instance mask = `sigmoid( coeff[32] · proto[32, mh*mw] )` reshaped `[mh,mw]`,
+cropped to the box, thresholded at 0.5. The Node engine (`runSegmentation`)
+detects the two-output YOLO-seg shape automatically (or via
+`postprocessConfig.format == "yolo-seg"`) and routes to `decodeYoloSeg`; the
+single-output semantic `[1,C,H,W]` / binary `[1,1,H,W]` paths are untouched.
+
+### `result.json` metrics (segmentation)
+
+`finalMetrics.accuracy` ≈ mask **mAP50** (also `precision/recall/f1Score` mirrored
+to mAP50 as an advisory placeholder), plus extra fields `maskMAP50` and
+`maskMAP5095`. As always these are **advisory** — the server re-evaluates the
+exported ONNX through its own gate.
 
 ## Preprocessing must match Node
 
