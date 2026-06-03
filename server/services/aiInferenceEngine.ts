@@ -38,19 +38,32 @@ const sessionCache = new LruSessionCache();
 
 /**
  * Detect available ONNX execution providers based on environment and hardware.
- * Priority: TensorRT > CUDA > CPU
+ *
+ * Order of resolution:
+ *   1. AI_INFER_EP (explicit override, comma list) wins — e.g. "dml" | "cuda" | "tensorrt" | "cpu".
+ *   2. Else legacy flags: ENABLE_TENSORRT, ENABLE_CUDA.
+ *   3. ENABLE_GPU=true → DirectML ("dml") — GPU on Windows via DirectX 12, KHÔNG cần CUDA Toolkit
+ *      (onnxruntime-node bundles the DML EP on Windows x64; CUDA EP is NOT bundled).
+ *   4. CPU is always the final fallback.
  */
 function getExecutionProviders(): string[] {
   const providers: string[] = [];
+  const known = ["tensorrt", "cuda", "dml", "cpu"];
+  const explicit = (process.env.AI_INFER_EP || "").toLowerCase().trim();
 
-  if (process.env.ENABLE_TENSORRT === "true") {
-    providers.push("tensorrt");
+  if (explicit) {
+    for (const p of explicit.split(/[,\s]+/).filter(Boolean)) {
+      if (known.includes(p) && !providers.includes(p)) providers.push(p);
+    }
+  } else {
+    if (process.env.ENABLE_TENSORRT === "true") providers.push("tensorrt");
+    if (process.env.ENABLE_CUDA === "true") providers.push("cuda");
+    // DirectML: bật GPU trên Windows + Node mà không cần CUDA/cuDNN.
+    if (process.env.ENABLE_GPU === "true") providers.push("dml");
   }
-  if (process.env.ENABLE_CUDA === "true") {
-    providers.push("cuda");
-  }
-  // CPU is always the fallback
-  providers.push("cpu");
+
+  // CPU is always the final fallback.
+  if (!providers.includes("cpu")) providers.push("cpu");
   return providers;
 }
 

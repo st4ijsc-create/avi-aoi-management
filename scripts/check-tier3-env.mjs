@@ -29,7 +29,7 @@ const warn = (m) => console.log(`  ${C.yellow}!${C.reset} ${m}`);
 const info = (m) => console.log(`  ${C.dim}·${C.reset} ${m}`);
 const head = (m) => console.log(`\n${C.bold}${C.cyan}${m}${C.reset}`);
 
-const results = { gpu: false, torchCuda: false, ortCuda: false, ortCpu: false };
+const results = { gpu: false, torchCuda: false, ortCuda: false, ortCpu: false, ortDml: false };
 
 function run(cmd, args, opts = {}) {
   try {
@@ -175,20 +175,29 @@ if (ort) {
     } catch (e) {
       bad(`CPU EP lỗi: ${String(e?.message || e).slice(0, 160)}`);
     }
-    // Test CUDA EP
+    // Test DirectML EP (Windows GPU — không cần CUDA Toolkit, chạy được trên NVIDIA/AMD/Intel)
+    try {
+      const t0 = Date.now();
+      const s = await ort.InferenceSession.create(onnxPath, { executionProviders: ["dml"] });
+      results.ortDml = true;
+      ok(`DirectML EP: nạp session OK (${Date.now() - t0}ms) → onnxruntime-node sẽ chạy GPU qua DirectX 12.`);
+      info("DirectML KHÔNG cần CUDA Toolkit/cuDNN; chạy được trên RTX 4050. Đây là cách bật GPU khuyến nghị trên Windows + Node.js.");
+      await s.release?.();
+    } catch (e) {
+      const msg = String(e?.message || e);
+      bad(`DirectML EP KHÔNG nạp được: ${msg.slice(0, 200)}`);
+    }
+    // Test CUDA EP (chỉ có trong build native tự đóng — npm package KHÔNG kèm)
     try {
       const t0 = Date.now();
       const s = await ort.InferenceSession.create(onnxPath, { executionProviders: ["cuda"] });
       results.ortCuda = true;
-      ok(`CUDA EP: nạp session OK (${Date.now() - t0}ms) → onnxruntime-node có CUDA EP + CUDA runtime nhận.`);
-      warn("Lưu ý: nạp OK là điều kiện CẦN. Xác nhận GPU THỰC SỰ được dùng bằng cách xem nvidia-smi lúc chạy inference (server log: 'Execution providers: cuda → cpu').");
+      ok(`CUDA EP: nạp session OK (${Date.now() - t0}ms).`);
       await s.release?.();
     } catch (e) {
       const msg = String(e?.message || e);
-      bad(`CUDA EP KHÔNG nạp được: ${msg.slice(0, 200)}`);
-      if (/cuda|provider|backend|library|dll|\.so/i.test(msg)) {
-        info("Nguyên nhân thường gặp: bản onnxruntime-node không kèm CUDA EP, hoặc thiếu CUDA/cuDNN runtime khớp version ORT 1.24. → inference sẽ chạy CPU.");
-      }
+      info(`CUDA EP không có: ${msg.slice(0, 140)}`);
+      info("npm 'onnxruntime-node' chính thức KHÔNG bundle CUDA EP trên Windows. Dùng DirectML EP ở trên để bật GPU, hoặc build native từ nguồn nếu cần CUDA.");
     }
   }
   try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
@@ -201,20 +210,23 @@ const row = (label, good, note) =>
 row("GPU NVIDIA nhận diện (B9)", results.gpu);
 row("PyTorch thấy GPU (B8 training)", results.torchCuda, results.torchCuda ? "" : "cài torch bản CUDA");
 row("onnxruntime-node CPU (baseline)", results.ortCpu);
-row("onnxruntime-node CUDA EP (B9)", results.ortCuda, results.ortCuda ? "" : "sẽ chạy CPU nếu thiếu");
+row("onnxruntime-node DirectML EP (GPU Windows)", results.ortDml, results.ortDml ? "khuyến nghị trên Windows" : "cần npm onnxruntime-node >= 1.16");
+row("onnxruntime-node CUDA EP (tùy chọn)", results.ortCuda, results.ortCuda ? "" : "npm chính thức không kèm CUDA; bỏ qua nếu đã có DirectML");
 
 head("Gợi ý env (.env) khi đã ĐẠT");
-if (results.ortCuda) {
-  console.log(`  ${C.green}ENABLE_CUDA=true${C.reset}            # bật GPU cho ONNX inference`);
-  console.log(`  ${C.dim}# ENABLE_TENSORRT=true${C.reset}        # chỉ nếu đã cài TensorRT runtime`);
-  console.log(`  ${C.dim}# AI_INFER_MAX_BATCH=4${C.reset}         # 6-8GB VRAM nên để 2-4; 4090 (24GB) thì 8-16`);
+if (results.ortDml || results.ortCuda) {
+  const ep = results.ortCuda ? "cuda" : "dml";
+  console.log(`  ${C.green}AI_INFER_EP=${ep}${C.reset}                # ưu tiên EP GPU; fallback CPU tự động`);
+  console.log(`  ${C.green}ENABLE_GPU=true${C.reset}                 # bật GPU cho ONNX inference`);
+  if (results.ortCuda) console.log(`  ${C.dim}# ENABLE_TENSORRT=true${C.reset}         # chỉ nếu đã cài TensorRT runtime`);
+  console.log(`  ${C.dim}# AI_INFER_MAX_BATCH=4${C.reset}          # 6-8GB VRAM nên để 2-4; 4090 (24GB) thì 8-16`);
 } else {
-  console.log(`  ${C.dim}# Chưa bật ENABLE_CUDA cho tới khi CUDA EP test ĐẠT (kẻo âm thầm rớt CPU).${C.reset}`);
+  console.log(`  ${C.dim}# Chưa bật GPU cho tới khi có ít nhất 1 EP GPU (DirectML hoặc CUDA) test ĐẠT.${C.reset}`);
 }
 if (results.torchCuda) {
   console.log(`  ${C.green}LOCAL_TRAINER_CMD=python tools/trainer/train.py${C.reset}   # bật B8 training sidecar`);
 }
 console.log(`\n${C.dim}Lưu ý VRAM nhỏ (6-8GB): chạy luân phiên vision/train, model segmentation nhỏ (YOLOv8-seg n/s), ảnh 512px, batch 2-4. Lên RTX 4090 (24GB) sẽ thoải mái.${C.reset}`);
 
-const allCore = results.gpu && results.torchCuda && results.ortCpu;
+const allCore = results.gpu && results.ortCpu && (results.ortDml || results.ortCuda);
 process.exit(allCore ? 0 : 1);
