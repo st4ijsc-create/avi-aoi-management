@@ -53,6 +53,12 @@ import OEEDashboard from "./pages/OEEDashboard";
 import MQTTReplay from "./pages/MQTTReplay";
 import OEETargetSettings from "./pages/OEETargetSettings";
 import MachineHealthMonitoring from "./pages/MachineHealthMonitoring";
+import MESControlTower from "./pages/MESControlTower";
+import WipLineBalance from "./pages/WipLineBalance";
+import TraceabilityLineage from "./pages/TraceabilityLineage";
+import DigitalTwinDashboard from "./pages/DigitalTwinDashboard";
+import RealtimeReportView from "./pages/RealtimeReportView";
+import CarbonDashboard from "./pages/CarbonDashboard";
 import DrillDownDashboard from "./pages/DrillDownDashboard";
 import AnnotationStatistics from "./pages/AnnotationStatistics";
 import AnnotationComparisonPage from "./pages/AnnotationComparisonPage";
@@ -83,6 +89,7 @@ const AdvancedVisionLabPage = React.lazy(() => import("./pages/AdvancedVisionLab
 const AIGgufModelsPage = React.lazy(() => import("./pages/AIGgufModelsPage"));
 const AILocalKnowledgeBasePage = React.lazy(() => import("./pages/AILocalKnowledgeBasePage"));
 import TestAnnotationPage from "./pages/TestAnnotationPage";
+const MaskAnnotationPage = React.lazy(() => import("./pages/MaskAnnotationPage"));
 import AOIPackages from "./pages/AOIPackages";
 import MqttBulletin from "./pages/MqttBulletin";
 import SPCAdvanced from "./pages/SPCAdvanced";
@@ -195,6 +202,12 @@ function Router() {
       <Route path="/mqtt-replay" component={MQTTReplay} />
       <Route path="/oee-target-settings" component={OEETargetSettings} />
       <Route path="/machine-health" component={MachineHealthMonitoring} />
+      <Route path="/mes-control-tower" component={MESControlTower} />
+      <Route path="/wip-dashboard" component={WipLineBalance} />
+      <Route path="/traceability" component={TraceabilityLineage} />
+      <Route path="/digital-twin" component={DigitalTwinDashboard} />
+      <Route path="/realtime-report" component={RealtimeReportView} />
+      <Route path="/carbon-dashboard" component={CarbonDashboard} />
       <Route path="/drill-down" component={DrillDownDashboard} />
       <Route path="/annotation-statistics" component={AnnotationStatistics} />
       <Route path="/annotation-comparison" component={AnnotationComparisonPage} />
@@ -224,6 +237,7 @@ function Router() {
       <Route path="/ai-gguf-models"><AIPageWrapper><AIGgufModelsPage /></AIPageWrapper></Route>
       <Route path="/ai-local-kb"><AIPageWrapper><AILocalKnowledgeBasePage /></AIPageWrapper></Route>
       <Route path="/test-annotation" component={TestAnnotationPage} />
+      <Route path="/mask-annotation"><AIPageWrapper><MaskAnnotationPage /></AIPageWrapper></Route>
       <Route path="/aoi-packages" component={AOIPackages} />
       <Route path="/mqtt-bulletin" component={MqttBulletin} />
       <Route path="/spc-advanced" component={SPCAdvanced} />

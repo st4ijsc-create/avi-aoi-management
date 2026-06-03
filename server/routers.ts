@@ -47,6 +47,12 @@ import { dashboardWidgetRouter } from "./routers/dashboardWidgetRouters";
 import { drillDownRouter, annotationRouter, annotationTemplateRouter, annotationHistoryRouter } from "./routers/annotationRouters";
 import { rootCauseRouter, predictiveAlertRouter } from "./routers/aiRouters";
 import { predictiveMaintenanceRouter } from "./routers/predictiveMaintenanceRouter";
+import { mesControlTowerRouter } from "./routers/mesControlTowerRouter";
+import { digitalTwinRouter } from "./routers/digitalTwinRouter";
+import { realtimeReportRouter } from "./routers/realtimeReportRouter";
+import { machineContractRouter } from "./routers/machineContractRouter";
+import { wipRouter } from "./routers/wipRouter";
+import { traceabilityRouter } from "./routers/traceabilityRouter";
 
 // ─── New Feature Router Imports ──────────────────────────────────────────────
 import { pdfReportRouter } from "./routers/pdfReportRouter";
@@ -94,6 +100,7 @@ import { aiSpecialistAgentRouter } from "./routers/aiSpecialistAgentRouter";
 import { aiLocalKbRouter } from "./routers/aiLocalKbRouter";
 import { aiCalibrationRouter } from "./routers/aiCalibrationRouter"; // B2: confidence calibration (ECE + reliability)
 import { aiAnomalyRouter } from "./routers/aiAnomalyRouter"; // B3: unsupervised anomaly detection (PatchCore-style)
+import { aiSegmentationRouter } from "./routers/aiSegmentationRouter"; // B7: segmentation mask + sub-pixel metrology
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -307,6 +314,12 @@ export const appRouter = router({
   rootCause: rootCauseRouter,
   predictiveAlert: predictiveAlertRouter,
   predictiveMaintenance: predictiveMaintenanceRouter,
+  mesControlTower: mesControlTowerRouter,
+  digitalTwin: digitalTwinRouter,
+  realtimeReport: realtimeReportRouter,
+  machineContract: machineContractRouter,
+  wip: wipRouter,
+  traceability: traceabilityRouter,
 
   // Process & SPC
   process: processRouter,
@@ -435,6 +448,8 @@ export const appRouter = router({
   aiCalibration: aiCalibrationRouter,
   // AI Anomaly Detection — unsupervised PatchCore-style memory bank + kNN (B3)
   aiAnomaly: aiAnomalyRouter,
+  // AI Segmentation — defect mask (QC vẽ/model) + sub-pixel metrology (B7)
+  aiSegmentation: aiSegmentationRouter,
 });
 
 export type AppRouter = typeof appRouter;

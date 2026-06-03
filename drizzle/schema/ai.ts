@@ -1457,3 +1457,59 @@ export const aiAnomalyProfiles = pgTable("ai_anomaly_profiles", {
 
 export type AiAnomalyProfile = typeof aiAnomalyProfiles.$inferSelect;
 export type InsertAiAnomalyProfile = typeof aiAnomalyProfiles.$inferInsert;
+
+// ============= B7 — Defect Segmentation + Sub-pixel Metrology =============
+
+/**
+ * Defect Segmentations — mask vùng defect (do QC vẽ tay HOẶC model segmentation
+ * sinh ra) + số đo metrology (area/perimeter/Feret/equivDia).
+ *
+ * Additive, mọi cột scope nullable. maskData lưu polygon points (gọn) hoặc RLE.
+ * Đơn vị: lưu sẵn cả pixel (...Px) và vật lý (...) — nếu thiếu calibration thì
+ * cột vật lý = pixel và umPerPx NULL, areaUnit/lengthUnit = "px" (degrade trung thực).
+ */
+export const defectSegmentations = pgTable("defect_segmentations", {
+  id: serial("id").primaryKey(),
+  // Liên kết (nullable — mask QC có thể chưa gắn measurement).
+  measurementResultId: integer("measurementResultId"),
+  inspectionId: integer("inspectionId"),
+  imageUrl: text("imageUrl"),
+  // Model sinh mask (NULL nếu nguồn "human").
+  modelId: integer("modelId"),
+  modelVersion: varchar("modelVersion", { length: 50 }),
+  // "human" (QC vẽ) | "model" (segmentation engine).
+  source: varchar("source", { length: 16 }).notNull(),
+  // "polygon" | "rle".
+  maskFormat: varchar("maskFormat", { length: 16 }).default("polygon").notNull(),
+  // Polygon: { width, height, points:[{x,y}...] } | RLE: { width, height, counts:[] }.
+  maskData: json("maskData").$type<{
+    width: number;
+    height: number;
+    points?: Array<{ x: number; y: number }>;
+    counts?: number[];
+  }>().notNull(),
+  classLabel: varchar("classLabel", { length: 120 }).notNull(),
+  defectCatalogId: integer("defectCatalogId"),
+  confidence: decimal("confidence", { precision: 6, scale: 4 }),
+  // ── Metrology pixel-space (luôn có) ──
+  areaPx: decimal("areaPx", { precision: 16, scale: 4 }),
+  perimeterPx: decimal("perimeterPx", { precision: 16, scale: 4 }),
+  feretMaxPx: decimal("feretMaxPx", { precision: 16, scale: 4 }),
+  feretMinPx: decimal("feretMinPx", { precision: 16, scale: 4 }),
+  equivDiaPx: decimal("equivDiaPx", { precision: 16, scale: 4 }),
+  // ── Metrology vật lý (NULL khi thiếu calibration) ──
+  umPerPx: decimal("umPerPx", { precision: 16, scale: 8 }),
+  areaUnit: varchar("areaUnit", { length: 8 }),   // "px" | "um"
+  lengthUnit: varchar("lengthUnit", { length: 8 }), // "px" | "um"
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_defect_seg_measurement").on(table.measurementResultId),
+  index("idx_defect_seg_inspection").on(table.inspectionId),
+  index("idx_defect_seg_model").on(table.modelId),
+  index("idx_defect_seg_source").on(table.source),
+  index("idx_defect_seg_created").on(table.createdAt),
+]);
+
+export type DefectSegmentation = typeof defectSegmentations.$inferSelect;
+export type InsertDefectSegmentation = typeof defectSegmentations.$inferInsert;

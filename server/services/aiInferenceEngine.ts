@@ -399,6 +399,121 @@ export async function runInferenceWithFeatureMap(
   };
 }
 
+// ─── B7 — Segmentation inference ──────────────────────────────────────────────
+
+export interface SegmentationMask {
+  label: string;
+  classIndex: number;
+  confidence: number;
+  polygon: Array<{ x: number; y: number }>;
+  bbox: { x: number; y: number; w: number; h: number };
+  pixelCount: number;
+}
+
+export interface SegmentationResult {
+  modelCode: string;
+  modelVersion: string | null;
+  outputType: "semantic-argmax" | "binary-sigmoid";
+  /** Kích thước lưới mask (theo output model). */
+  maskWidth: number;
+  maskHeight: number;
+  masks: SegmentationMask[];
+  processingTimeMs: number;
+  status: "COMPLETED";
+}
+
+/** Lỗi degrade trung thực khi model không phải segmentation / không tồn tại. */
+export class SegmentationUnavailableError extends Error {
+  code: "MODEL_NOT_AVAILABLE";
+  constructor(message: string) {
+    super(message);
+    this.name = "SegmentationUnavailableError";
+    this.code = "MODEL_NOT_AVAILABLE";
+  }
+}
+
+/**
+ * B7 — Chạy model segmentation, decode mask theo lớp. KHÔNG đổi runInference cũ.
+ *
+ * Degrade trung thực: nếu model không tồn tại / không ACTIVE / postprocess.type !=
+ * "segmentation" → ném SegmentationUnavailableError (code MODEL_NOT_AVAILABLE) để
+ * router trả lỗi rõ ràng thay vì crash. Decode tách trong aiSegmentation (pure).
+ *
+ * Trả mask trong KHÔNG GIAN LƯỚI OUTPUT của model (H×W); caller scale về ảnh gốc.
+ */
+export async function runSegmentation(
+  modelId: number,
+  imageBuffer: Buffer,
+): Promise<SegmentationResult> {
+  const startTime = Date.now();
+  const model = await getAiModelById(modelId);
+  if (!model) throw new SegmentationUnavailableError(`Model ${modelId} not found`);
+  if (model.status !== "ACTIVE") {
+    throw new SegmentationUnavailableError(`Model ${model.code} is not active (status: ${model.status})`);
+  }
+  const postprocess = model.postprocessConfig as AiModel["postprocessConfig"];
+  const outputType: string = (postprocess as { type?: string } | null)?.type ?? "classification";
+  if (outputType !== "segmentation") {
+    throw new SegmentationUnavailableError(
+      `Model ${model.code} is not a segmentation model (postprocessConfig.type=${outputType})`,
+    );
+  }
+
+  // import động để tránh nạp aiSegmentation vào nhánh classification/detection nóng.
+  const { decodeSegmentation } = await import("./aiSegmentation");
+
+  const session = await getSession(model);
+  const preprocessConfig = (model.preprocessConfig as AiModel["preprocessConfig"]) ?? {
+    resize: { width: 224, height: 224 },
+    colorSpace: "RGB" as const,
+    channelFirst: true,
+  };
+  const tensorData = await preprocessImage(imageBuffer, preprocessConfig);
+  const inputShape = (model.inputShape as number[]) ??
+    [1, 3, preprocessConfig.resize?.height ?? 224, preprocessConfig.resize?.width ?? 224];
+  const inputTensor = new ort.Tensor("float32", tensorData, inputShape);
+
+  const inputName = session.inputNames[0];
+  if (!inputName) throw new Error("Model has no input names");
+  const results = await session.run({ [inputName]: inputTensor });
+
+  const outputName = session.outputNames[0];
+  if (!outputName) throw new Error("Model has no output names");
+  const output = results[outputName];
+  if (!output) throw new Error("No output from segmentation model");
+
+  const dims = output.dims as number[];
+  const { masks, outputType: decodedType } = decodeSegmentation(
+    output.data as Float32Array,
+    dims,
+    {
+      labels: (model.labels as string[]) ?? [],
+      threshold: postprocess?.confidenceThreshold ?? 0.5,
+    },
+  );
+
+  const H = dims.length === 4 ? dims[2] : dims[1];
+  const W = dims.length === 4 ? dims[3] : dims[2];
+
+  return {
+    modelCode: model.code,
+    modelVersion: model.currentVersion,
+    outputType: decodedType,
+    maskWidth: W,
+    maskHeight: H,
+    masks: masks.map((m) => ({
+      label: m.label,
+      classIndex: m.classIndex,
+      confidence: m.confidence,
+      polygon: m.polygon,
+      bbox: m.bbox,
+      pixelCount: m.pixelCount,
+    })),
+    processingTimeMs: Date.now() - startTime,
+    status: "COMPLETED",
+  };
+}
+
 /** B5 — softmax export cho aiExplainability (tái dùng logic nội bộ). */
 export function softmaxArray(data: Float32Array | number[]): number[] {
   const arr = Array.from(data);
