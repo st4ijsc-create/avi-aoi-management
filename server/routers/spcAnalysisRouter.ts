@@ -540,6 +540,92 @@ export const spcAnalysisRouter = router({
       };
     }),
 
+  /**
+   * Lightweight control-chart-only endpoint. Returns ONLY the parts that depend
+   * on chartType / subgroupSize:
+   *   { insufficient, sampleCount, chart, violations, oocPercent }
+   * Used by /spc-analysis so that switching the chart type re-fetches ONLY the
+   * control chart (query B) without touching capability / Pareto / spec-KPI
+   * panels (query A = fullAnalysis). Reuses generateControlChart for parity.
+   */
+  controlChart: protectedProcedure
+    .input(z.object({
+      measurementPointDefId: z.number(),
+      productModelId: z.number().optional(),
+      machineId: z.number().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      subgroupSize: z.number().min(2).max(25).default(5),
+      chartType: z.enum(['xbar_r', 'xbar_s', 'individual_mr']).default('xbar_r'),
+      enabledRules: z.array(z.number().min(1).max(8)).default([1, 2, 3, 4, 5, 6, 7, 8]),
+    }))
+    .query(async ({ input }) => {
+      const { values: rawValues } = await db.getFullAnalysisData({
+        measurementPointDefId: input.measurementPointDefId,
+        startDate: input.startDate ? new Date(input.startDate) : undefined,
+        endDate: input.endDate ? new Date(input.endDate) : undefined,
+        machineId: input.machineId,
+        productModelId: input.productModelId,
+        limit: 50000,
+      });
+
+      const empty = {
+        insufficient: true as const,
+        sampleCount: rawValues.length,
+        chart: null,
+        violations: { summary: { total: 0, critical: 0, warning: 0, info: 0 }, items: [] },
+        oocPercent: 0,
+      };
+
+      const minSamples = input.chartType === 'individual_mr' ? 2 : input.subgroupSize * 2;
+      if (rawValues.length < minSamples) return empty;
+
+      const chart = generateControlChart(
+        rawValues.map(r => ({ value: r.value, inspectionTime: r.inspectionTime })),
+        input.chartType as ChartType,
+        input.subgroupSize,
+        input.enabledRules,
+      );
+      if (!chart) return empty;
+
+      const violationItems: {
+        rule: number; ruleName: string; pointIndex: number;
+        value: number; severity: 'info' | 'warning' | 'critical';
+      }[] = [];
+      for (const p of chart.primary.points) {
+        for (const rule of p.violatedRules) {
+          const severity: 'info' | 'warning' | 'critical' =
+            rule === 1 ? 'critical' : (rule === 4 || rule === 7) ? 'info' : 'warning';
+          violationItems.push({
+            rule, ruleName: SPC_RULE_NAMES[rule] || `Rule ${rule}`,
+            pointIndex: p.index, value: p.value, severity,
+          });
+        }
+      }
+      const violations = {
+        summary: {
+          total: violationItems.length,
+          critical: violationItems.filter(v => v.severity === 'critical').length,
+          warning: violationItems.filter(v => v.severity === 'warning').length,
+          info: violationItems.filter(v => v.severity === 'info').length,
+        },
+        items: violationItems,
+      };
+
+      const oocCount = chart.primary.points.filter(p => p.outOfControl).length;
+      const oocPercent = chart.primary.points.length > 0
+        ? Math.round((oocCount / chart.primary.points.length) * 10000) / 100
+        : 0;
+
+      return {
+        insufficient: false as const,
+        sampleCount: rawValues.length,
+        chart,
+        violations,
+        oocPercent,
+      };
+    }),
+
   // Get NG details by measurement point for a specific workstation
   ngByMeasurementPointForWorkstation: protectedProcedure
     .input(z.object({

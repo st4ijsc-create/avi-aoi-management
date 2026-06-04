@@ -67,7 +67,41 @@ export default function SPCAnalysis() {
   const machineId = selectedMachine !== "all" ? Number(selectedMachine) : undefined;
   const productModelId = selectedProduct !== "all" ? Number(selectedProduct) : undefined;
 
+  // USL/LSL/Target overrides (user-entered). null = use DB spec (or none).
+  const [uslInput, setUslInput] = useState<string>("");
+  const [lslInput, setLslInput] = useState<string>("");
+  const [targetInput, setTargetInput] = useState<string>("");
+  // Applied override values fed into query A (only change on "Apply").
+  const [uslApplied, setUslApplied] = useState<number | null>(null);
+  const [lslApplied, setLslApplied] = useState<number | null>(null);
+  const [specPrefilledFor, setSpecPrefilledFor] = useState<string>("");
+
+  // ─── Query A: spec-driven panels (capability / Pareto / spec-KPI). ─────────
+  // Key = {filters + USL/LSL}. NOT keyed on chartType/subgroupSize → switching
+  // the chart type does NOT refetch this query. Uses fixed defaults so the
+  // within-subgroup sigma (and thus Cpk) stays stable across chart-type changes.
   const { data, isLoading, refetch, isFetching } = trpc.spcAnalysis.fullAnalysis.useQuery(
+    {
+      measurementPointDefId: mpId!,
+      productModelId,
+      machineId,
+      startDate: dateRange.startDate,
+      endDate: dateRange.endDate,
+      subgroupSize: 5,
+      chartType: 'xbar_r',
+      uslOverride: uslApplied,
+      lslOverride: lslApplied,
+    },
+    { enabled: !!mpId },
+  );
+
+  // ─── Query B: control chart only. Key = {filters + chartType + subgroupSize}.
+  // Switching chartType re-fetches ONLY this query; placeholderData keeps the
+  // previous chart visible (no flicker) while the new one loads.
+  const {
+    data: ctrl,
+    isFetching: isCtrlFetching,
+  } = trpc.spcAnalysis.controlChart.useQuery(
     {
       measurementPointDefId: mpId!,
       productModelId,
@@ -77,7 +111,7 @@ export default function SPCAnalysis() {
       subgroupSize,
       chartType,
     },
-    { enabled: !!mpId },
+    { enabled: !!mpId, placeholderData: (prev) => prev },
   );
 
   // Optional AI root-cause (preserved as collapsible, also available on AI Inspection Analytics)
@@ -104,25 +138,44 @@ export default function SPCAnalysis() {
   const ackMutation = trpc.spcRuleViolation.acknowledge.useMutation({ onSuccess: () => refetchSaved() });
   const resolveMutation = trpc.spcRuleViolation.resolve.useMutation({ onSuccess: () => refetchSaved() });
 
-  // ─── Primary control chart data for Recharts ──────────────────────────────
+  // Prefill USL/LSL/Target inputs from DB spec when point changes (user can override).
+  const pointDef = data?.pointDef as { upperLimit?: any; lowerLimit?: any; nominalValue?: any } | null | undefined;
+  if (pointDef !== undefined && selectedMP && specPrefilledFor !== selectedMP) {
+    const dbUsl = pointDef?.upperLimit != null ? String(Number(pointDef.upperLimit)) : "";
+    const dbLsl = pointDef?.lowerLimit != null ? String(Number(pointDef.lowerLimit)) : "";
+    const dbTarget = pointDef?.nominalValue != null ? String(Number(pointDef.nominalValue)) : "";
+    setUslInput(dbUsl);
+    setLslInput(dbLsl);
+    setTargetInput(dbTarget);
+    setUslApplied(dbUsl !== "" ? Number(dbUsl) : null);
+    setLslApplied(dbLsl !== "" ? Number(dbLsl) : null);
+    setSpecPrefilledFor(selectedMP);
+  }
+
+  const applySpec = () => {
+    setUslApplied(uslInput.trim() !== "" ? Number(uslInput) : null);
+    setLslApplied(lslInput.trim() !== "" ? Number(lslInput) : null);
+  };
+
+  // ─── Primary control chart data for Recharts (from query B = ctrl) ─────────
   const primaryChartData = useMemo(() => {
-    if (!data?.chart) return [];
-    return data.chart.primary.points.map((p) => ({
+    if (!ctrl?.chart) return [];
+    return ctrl.chart.primary.points.map((p) => ({
       index: p.index + 1,
       value: p.value,
       ooc: p.outOfControl ? p.value : null,
       rules: p.violatedRules,
     }));
-  }, [data]);
+  }, [ctrl]);
 
   const secondaryChartData = useMemo(() => {
-    if (!data?.chart) return [];
-    return data.chart.secondary.points.map((p) => ({
+    if (!ctrl?.chart) return [];
+    return ctrl.chart.secondary.points.map((p) => ({
       index: p.index + 1,
       value: p.value,
       ooc: p.outOfControl ? p.value : null,
     }));
-  }, [data]);
+  }, [ctrl]);
 
   const histogramData = useMemo(() => {
     if (!data?.capability?.histogram) return [];
@@ -149,18 +202,19 @@ export default function SPCAnalysis() {
     downloadFile(`spc-analysis-${selectedMP}-${Date.now()}.json`, JSON.stringify(data, null, 2), 'application/json');
   };
   const handleExportCSV = () => {
-    if (!data?.chart) return;
+    if (!ctrl?.chart) return;
     const rows: string[] = ['index,primary_value,out_of_control,violated_rules'];
-    for (const p of data.chart.primary.points) {
+    for (const p of ctrl.chart.primary.points) {
       rows.push(`${p.index + 1},${p.value},${p.outOfControl},"${p.violatedRules.join(';')}"`);
     }
     downloadFile(`spc-chart-${selectedMP}-${Date.now()}.csv`, rows.join('\n'), 'text/csv');
   };
 
-  const chart = data?.chart;
+  const chart = ctrl?.chart;
   const cap = data?.capability;
-  const kpi = data?.kpi;
   const spec = data?.specLimits;
+  // KPI: spec-driven values from query A; %OOC from query B (chart-dependent).
+  const kpi = data?.kpi ? { ...data.kpi, oocPercent: ctrl?.oocPercent ?? data.kpi.oocPercent } : null;
 
   // Zone boundaries (A/B/C) from CL ± k*plotSigma
   const zones = useMemo(() => {
@@ -186,10 +240,10 @@ export default function SPCAnalysis() {
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => refetch()} disabled={!mpId}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-4 w-4 mr-2 ${(isFetching || isCtrlFetching) ? 'animate-spin' : ''}`} />
               {t('common.refresh')}
             </Button>
-            <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!data?.chart}>
+            <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!ctrl?.chart}>
               <Download className="h-4 w-4 mr-2" />CSV
             </Button>
             <Button variant="outline" size="sm" onClick={handleExportJSON} disabled={!data}>
@@ -201,8 +255,8 @@ export default function SPCAnalysis() {
         {/* Sticky Filters */}
         <Card className="sticky top-0 z-10">
           <CardContent className="pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-3">
-              <div className="space-y-1 lg:col-span-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-3 items-end">
+              <div className="space-y-1 xl:col-span-2">
                 <Label>{t('spc.measurementPoint')}</Label>
                 <Select value={selectedMP} onValueChange={setSelectedMP}>
                   <SelectTrigger><SelectValue placeholder={t('spc.select')} /></SelectTrigger>
@@ -234,17 +288,6 @@ export default function SPCAnalysis() {
                     {machines?.map((m: { id: number; name: string }) => (
                       <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
                     ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>{t('spc.chartType')}</Label>
-                <Select value={chartType} onValueChange={(v) => setChartType(v as ChartType)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="xbar_r">{t('spc.chartXbarR')}</SelectItem>
-                    <SelectItem value="xbar_s">{t('spc.chartXbarS')}</SelectItem>
-                    <SelectItem value="individual_mr">{t('spc.chartImr')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -302,13 +345,30 @@ export default function SPCAnalysis() {
               {/* Control Chart */}
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Activity className="h-4 w-4" />
-                    {chartType === 'xbar_r' ? t('spc.chartXbarR') : chartType === 'xbar_s' ? t('spc.chartXbarS') : t('spc.chartImr')}
-                  </CardTitle>
-                  <CardDescription>
-                    CL {chart?.primary.limits.CL} · UCL {chart?.primary.limits.UCL} · LCL {chart?.primary.limits.LCL}
-                  </CardDescription>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Activity className="h-4 w-4" />
+                        {chartType === 'xbar_r' ? t('spc.chartXbarR') : chartType === 'xbar_s' ? t('spc.chartXbarS') : t('spc.chartImr')}
+                      </CardTitle>
+                      <CardDescription>
+                        CL {chart?.primary.limits.CL} · UCL {chart?.primary.limits.UCL} · LCL {chart?.primary.limits.LCL}
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isCtrlFetching && <RefreshCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                      <Select value={chartType} onValueChange={(v) => setChartType(v as ChartType)}>
+                        <SelectTrigger className="h-8 w-40" aria-label={t('spc.chartType')}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="xbar_r">{t('spc.chartXbarR')}</SelectItem>
+                          <SelectItem value="xbar_s">{t('spc.chartXbarS')}</SelectItem>
+                          <SelectItem value="individual_mr">{t('spc.chartImr')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={240}>
@@ -371,6 +431,32 @@ export default function SPCAnalysis() {
                     <CapBox label="Pp" value={cap?.pp} />
                     <CapBox label="Ppk" value={cap?.ppk} />
                   </div>
+
+                  {/* USL / LSL / Target inputs — drive capability (query A). */}
+                  <div className="flex flex-wrap items-end gap-2 mb-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">USL</Label>
+                      <Input type="number" step="any" className="h-8 w-24" value={uslInput}
+                        placeholder="—" onChange={(e) => setUslInput(e.target.value)} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">LSL</Label>
+                      <Input type="number" step="any" className="h-8 w-24" value={lslInput}
+                        placeholder="—" onChange={(e) => setLslInput(e.target.value)} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t('spc.target')}</Label>
+                      <Input type="number" step="any" className="h-8 w-24" value={targetInput}
+                        placeholder="—" onChange={(e) => setTargetInput(e.target.value)} />
+                    </div>
+                    <Button size="sm" className="h-8" onClick={applySpec} disabled={isFetching}>
+                      {t('spc.applySpec')}
+                    </Button>
+                  </div>
+                  {cap?.cpk == null && spec?.usl == null && spec?.lsl == null && (
+                    <p className="text-xs text-amber-600 mb-2">{t('spc.enterSpecToComputeCpk')}</p>
+                  )}
+
                   <ResponsiveContainer width="100%" height={240}>
                     <ComposedChart data={histogramData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
@@ -394,14 +480,14 @@ export default function SPCAnalysis() {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base flex items-center gap-2">
                     <AlertTriangle className="h-4 w-4" />{t('spc.ruleViolations')}
-                    <Badge variant="secondary">{data?.violations.summary.total ?? 0}</Badge>
+                    <Badge variant="secondary">{ctrl?.violations.summary.total ?? 0}</Badge>
                   </CardTitle>
                   <CardDescription>
-                    {t('spc.critical')}: {data?.violations.summary.critical} · {t('spc.warning')}: {data?.violations.summary.warning} · {t('spc.info')}: {data?.violations.summary.info}
+                    {t('spc.critical')}: {ctrl?.violations.summary.critical ?? 0} · {t('spc.warning')}: {ctrl?.violations.summary.warning ?? 0} · {t('spc.info')}: {ctrl?.violations.summary.info ?? 0}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {data?.violations.items.length ? (
+                  {ctrl?.violations.items.length ? (
                     <div className="overflow-auto max-h-72">
                       <table className="w-full text-sm">
                         <thead><tr className="border-b text-left">
@@ -411,7 +497,7 @@ export default function SPCAnalysis() {
                           <th className="py-1 px-2">{t('spc.severity')}</th>
                         </tr></thead>
                         <tbody>
-                          {data.violations.items.map((v, i) => (
+                          {ctrl.violations.items.map((v, i) => (
                             <tr key={i} className="border-b hover:bg-muted/50">
                               <td className="py-1 px-2">{v.ruleName}</td>
                               <td className="py-1 px-2">#{v.pointIndex + 1}</td>
