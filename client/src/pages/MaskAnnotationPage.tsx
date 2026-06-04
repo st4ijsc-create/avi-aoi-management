@@ -181,6 +181,16 @@ export default function MaskAnnotationPage() {
       }));
       setMasks((m) => [...m, ...newMasks]);
       toast.success(t("maskAnno.modelMasks", { count: newMasks.length }));
+      // X5: cảnh báo trung thực khi nhánh YOLO-seg (chưa validate model thật).
+      if ((res as any).experimental) {
+        toast.warning(
+          (res as any).experimentalNote ??
+            t(
+              "maskAnno.experimentalSeg",
+              "Kết quả YOLO-seg là THỬ NGHIỆM — chưa validate model thật, số đo metrology chỉ tham khảo.",
+            ),
+        );
+      }
     } catch (err: any) {
       // degrade trung thực: MODEL_NOT_AVAILABLE
       const msg = err?.message ?? String(err);
@@ -212,7 +222,7 @@ export default function MaskAnnotationPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex flex-wrap gap-2 items-end">
-                <div className="flex-1 min-w-[200px]">
+                <div className="flex-1 min-w-50">
                   <Label className="text-xs">{t("maskAnno.imageUrl")}</Label>
                   <Input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://… / /uploads/…" />
                 </div>
@@ -277,7 +287,7 @@ export default function MaskAnnotationPage() {
                 </div>
               </div>
 
-              <div className="space-y-2 max-h-[420px] overflow-auto border-t pt-2">
+              <div className="space-y-2 max-h-105 overflow-auto border-t pt-2">
                 {masks.length === 0 && <p className="text-xs text-muted-foreground">{t("maskAnno.noMasks")}</p>}
                 {masks.map((m) => {
                   const mm = measured[m.id];

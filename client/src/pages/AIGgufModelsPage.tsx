@@ -38,7 +38,6 @@ import {
   Zap,
   Bot,
   User,
-  Globe,
   Server,
   Wifi,
   WifiOff,
@@ -53,11 +52,11 @@ export default function AIGgufModelsPage() {
   const providerStatus = trpc.aiGguf.providerStatus.useQuery(undefined, { refetchInterval: 15000 });
 
   const loadModel = trpc.aiGguf.loadModel.useMutation({
-    onSuccess: () => { toast.success(t("gguf.loadSuccess", "ÄÃ£ load model thÃ nh cÃ´ng")); status.refetch(); models.refetch(); },
+    onSuccess: () => { toast.success(t("gguf.loadSuccess", "Đã load model thành công")); status.refetch(); models.refetch(); },
     onError: (e) => toast.error(e.message),
   });
   const unloadModel = trpc.aiGguf.unloadModel.useMutation({
-    onSuccess: () => { toast.success(t("gguf.unloadSuccess", "ÄÃ£ unload model")); status.refetch(); },
+    onSuccess: () => { toast.success(t("gguf.unloadSuccess", "Đã unload model")); status.refetch(); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -74,14 +73,14 @@ export default function AIGgufModelsPage() {
               {t("gguf.title", "GGUF Model Manager")}
             </h1>
             <p className="text-sm text-muted-foreground">
-              {t("gguf.subtitle", "Quáº£n lÃ½ vÃ  sá»­ dá»¥ng local LLM models (.gguf)")}
+              {t("gguf.subtitle", "Quản lý và sử dụng local LLM models (.gguf)")}
             </p>
           </div>
           <div className="ml-auto flex items-center gap-2">
             {status.data?.available ? (
-              <Badge variant="default" className="gap-1"><CheckCircle2 className="h-3 w-3" /> {t("gguf.available", "Sáºµn sÃ ng")}</Badge>
+              <Badge variant="default" className="gap-1"><CheckCircle2 className="h-3 w-3" /> {t("gguf.available", "Sẵn sàng")}</Badge>
             ) : (
-              <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" /> {t("gguf.unavailable", "ChÆ°a cÃ i Ä‘áº·t")}</Badge>
+              <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" /> {t("gguf.unavailable", "Chưa cài đặt")}</Badge>
             )}
             <Button variant="outline" size="sm" onClick={() => { status.refetch(); models.refetch(); }}>
               <RefreshCw className="h-4 w-4" />
@@ -96,9 +95,8 @@ export default function AIGgufModelsPage() {
             {providerStatus.data && (
               <Card className="flex-1 min-w-50">
                 <CardContent className="py-3 flex items-center gap-3">
-                  {providerStatus.data.activeProvider === "openai" ? (
-                    <Globe className="h-4 w-4 text-green-500" />
-                  ) : providerStatus.data.activeProvider === "gguf" ? (
+                  {/* X2 cleanup: OpenAI branch removed — system is 100% local. */}
+                  {providerStatus.data.activeProvider === "gguf" ? (
                     <Server className="h-4 w-4 text-violet-500" />
                   ) : (
                     <WifiOff className="h-4 w-4 text-gray-400" />
@@ -106,14 +104,11 @@ export default function AIGgufModelsPage() {
                   <div>
                     <p className="text-xs text-muted-foreground">{t("gguf.activeProvider", "AI Provider")}</p>
                     <p className="text-sm font-bold">
-                      {providerStatus.data.activeProvider === "openai" && (
-                        <span className="text-green-600">OpenAI ({providerStatus.data.openai.model})</span>
-                      )}
                       {providerStatus.data.activeProvider === "gguf" && (
                         <span className="text-violet-600">Local GGUF {providerStatus.data.gguf.modelName ? `(${providerStatus.data.gguf.modelName})` : ""}</span>
                       )}
                       {providerStatus.data.activeProvider === "offline" && (
-                        <span className="text-gray-500">{t("gguf.offlineMode", "Offline (quy táº¯c)")}</span>
+                        <span className="text-gray-500">{t("gguf.offlineMode", "Offline (quy tắc)")}</span>
                       )}
                     </p>
                   </div>
@@ -124,7 +119,7 @@ export default function AIGgufModelsPage() {
               <CardContent className="py-3 flex items-center gap-3">
                 <Zap className="h-4 w-4 text-yellow-500" />
                 <div>
-                  <p className="text-xs text-muted-foreground">{t("gguf.loadedModels", "Models Ä‘ang cháº¡y")}</p>
+                  <p className="text-xs text-muted-foreground">{t("gguf.loadedModels", "Models đang chạy")}</p>
                   <p className="text-lg font-bold">{status.data.loadedModels?.length ?? 0}</p>
                 </div>
               </CardContent>
@@ -133,7 +128,7 @@ export default function AIGgufModelsPage() {
               <CardContent className="py-3 flex items-center gap-3">
                 <HardDrive className="h-4 w-4 text-blue-500" />
                 <div>
-                  <p className="text-xs text-muted-foreground">{t("gguf.availableModels", "Models cÃ³ sáºµn")}</p>
+                  <p className="text-xs text-muted-foreground">{t("gguf.availableModels", "Models có sẵn")}</p>
                   <p className="text-lg font-bold">{models.data?.length ?? 0}</p>
                 </div>
               </CardContent>
@@ -145,9 +140,9 @@ export default function AIGgufModelsPage() {
           <Card>
             <CardContent className="py-12 text-center">
               <Cpu className="h-12 w-12 mx-auto mb-3 text-muted-foreground" />
-              <h3 className="font-semibold mb-2">{t("gguf.notInstalled", "node-llama-cpp chÆ°a Ä‘Æ°á»£c cÃ i Ä‘áº·t")}</h3>
+              <h3 className="font-semibold mb-2">{t("gguf.notInstalled", "node-llama-cpp chưa được cài đặt")}</h3>
               <p className="text-sm text-muted-foreground mb-4">
-                {t("gguf.installHint", "CÃ i Ä‘áº·t package Ä‘á»ƒ sá»­ dá»¥ng GGUF models: npm install node-llama-cpp")}
+                {t("gguf.installHint", "Cài đặt package để sử dụng GGUF models: npm install node-llama-cpp")}
               </p>
               <code className="bg-muted p-2 rounded text-sm">npm install node-llama-cpp</code>
             </CardContent>
@@ -160,7 +155,7 @@ export default function AIGgufModelsPage() {
               <TabsTrigger value="chat">{t("gguf.tabs.chat", "Chat")}</TabsTrigger>
             </TabsList>
 
-            {/* â•â•â• MODELS TAB â•â•â• */}
+            {/* ═══ MODELS TAB ═══ */}
             <TabsContent value="models" className="space-y-4">
               {models.isLoading ? (
                 <div className="grid gap-3">{[1, 2, 3].map(i => <Skeleton key={i} className="h-20" />)}</div>
@@ -213,19 +208,19 @@ export default function AIGgufModelsPage() {
                 <Card>
                   <CardContent className="py-12 text-center text-muted-foreground">
                     <HardDrive className="h-12 w-12 mx-auto mb-3" />
-                    <p className="font-medium">{t("gguf.noModels", "KhÃ´ng tÃ¬m tháº¥y .gguf models")}</p>
-                    <p className="text-xs mt-1">{t("gguf.modelDir", "Äáº·t file .gguf vÃ o thÆ° má»¥c uploads/gguf-models/")}</p>
+                    <p className="font-medium">{t("gguf.noModels", "Không tìm thấy .gguf models")}</p>
+                    <p className="text-xs mt-1">{t("gguf.modelDir", "Đặt file .gguf vào thư mục uploads/gguf-models/")}</p>
                   </CardContent>
                 </Card>
               )}
             </TabsContent>
 
-            {/* â•â•â• TEXT GENERATION TAB â•â•â• */}
+            {/* ═══ TEXT GENERATION TAB ═══ */}
             <TabsContent value="generate">
               <TextGenerationPlayground />
             </TabsContent>
 
-            {/* â•â•â• CHAT TAB â•â•â• */}
+            {/* ═══ CHAT TAB ═══ */}
             <TabsContent value="chat">
               <ChatInterface />
             </TabsContent>
@@ -236,7 +231,7 @@ export default function AIGgufModelsPage() {
   );
 }
 
-// â”€â”€â”€ Text Generation Playground â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Text Generation Playground ───────────────────────
 function TextGenerationPlayground() {
   const { t } = useTranslation();
   const [prompt, setPrompt] = useState("");
@@ -263,7 +258,7 @@ function TextGenerationPlayground() {
           <div>
             <label className="text-xs font-medium text-muted-foreground">{t("gguf.systemPrompt", "System Prompt")}</label>
             <Textarea
-              placeholder={t("gguf.systemPromptHint", "HÆ°á»›ng dáº«n cho model (tÃ¹y chá»n)...")}
+              placeholder={t("gguf.systemPromptHint", "Hướng dẫn cho model (tùy chọn)...")}
               value={systemPrompt}
               onChange={e => setSystemPrompt(e.target.value)}
               rows={2}
@@ -272,7 +267,7 @@ function TextGenerationPlayground() {
           <div>
             <label className="text-xs font-medium text-muted-foreground">{t("gguf.prompt", "Prompt")}</label>
             <Textarea
-              placeholder={t("gguf.promptHint", "Nháº­p prompt...")}
+              placeholder={t("gguf.promptHint", "Nhập prompt...")}
               value={prompt}
               onChange={e => setPrompt(e.target.value)}
               rows={5}
@@ -294,7 +289,7 @@ function TextGenerationPlayground() {
             disabled={!prompt.trim() || generate.isPending}
           >
             {generate.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
-            {t("gguf.generateBtn", "Táº¡o vÄƒn báº£n")}
+            {t("gguf.generateBtn", "Tạo văn bản")}
           </Button>
         </CardContent>
       </Card>
@@ -303,7 +298,7 @@ function TextGenerationPlayground() {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
             <FileText className="h-4 w-4 text-blue-500" />
-            {t("gguf.output", "Káº¿t quáº£")}
+            {t("gguf.output", "Kết quả")}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -317,7 +312,7 @@ function TextGenerationPlayground() {
             </ScrollArea>
           ) : (
             <div className="h-75 flex items-center justify-center text-muted-foreground text-sm">
-              {t("gguf.noOutput", "Káº¿t quáº£ sáº½ hiá»ƒn thá»‹ á»Ÿ Ä‘Ã¢y")}
+              {t("gguf.noOutput", "Kết quả sẽ hiển thị ở đây")}
             </div>
           )}
         </CardContent>
@@ -326,7 +321,7 @@ function TextGenerationPlayground() {
   );
 }
 
-// â”€â”€â”€ Chat Interface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Chat Interface ───────────────────────────────────
 type ChatMsg = { role: "user" | "assistant" | "system"; content: string };
 
 function ChatInterface() {
@@ -363,7 +358,7 @@ function ChatInterface() {
           {t("gguf.chatTitle", "Local LLM Chat")}
         </CardTitle>
         <CardDescription className="text-xs">
-          {t("gguf.chatDesc", "TrÃ² chuyá»‡n vá»›i GGUF model trÃªn mÃ¡y cá»¥c bá»™")}
+          {t("gguf.chatDesc", "Trò chuyện với GGUF model trên máy cục bộ")}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col p-0 overflow-hidden">
@@ -373,7 +368,7 @@ function ChatInterface() {
             <div className="h-full flex items-center justify-center text-muted-foreground text-sm py-20">
               <div className="text-center">
                 <Bot className="h-10 w-10 mx-auto mb-3 text-muted-foreground/50" />
-                <p>{t("gguf.chatEmpty", "Báº¯t Ä‘áº§u cuá»™c há»™i thoáº¡i...")}</p>
+                <p>{t("gguf.chatEmpty", "Bắt đầu cuộc hội thoại...")}</p>
               </div>
             </div>
           ) : (
@@ -416,7 +411,7 @@ function ChatInterface() {
         {/* Input */}
         <div className="border-t p-3 flex gap-2">
           <Input
-            placeholder={t("gguf.chatInput", "Nháº­p tin nháº¯n...")}
+            placeholder={t("gguf.chatInput", "Nhập tin nhắn...")}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}

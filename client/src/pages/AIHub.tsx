@@ -15,17 +15,17 @@ import {
   FileText,
   Activity,
   Layers,
-  GitCompareArrows,
   MonitorCheck,
   Sparkles,
   Database,
   Settings,
   Cpu,
   CheckCircle2,
-  XCircle,
   AlertCircle,
   Zap,
   Wifi,
+  Book,
+  FlaskConical,
 } from "lucide-react";
 
 const aiFeatures = [
@@ -39,11 +39,13 @@ const aiFeatures = [
   { key: "qualityGate", icon: ShieldCheck, href: "/ai-quality-gate", color: "text-green-500", bg: "bg-green-500/10", category: "inspection" },
   { key: "activeLearning", icon: GraduationCap, href: "/ai-active-learning", color: "text-purple-500", bg: "bg-purple-500/10", category: "inspection" },
   { key: "imageSearch", icon: Search, href: "/ai-image-search", color: "text-orange-500", bg: "bg-orange-500/10", category: "inspection" },
+  { key: "advancedVisionLab", icon: FlaskConical, href: "/ai-advanced-vision-lab", color: "text-fuchsia-500", bg: "bg-fuchsia-500/10", category: "inspection" },
+  { key: "localKb", icon: Book, href: "/ai-local-kb", color: "text-indigo-500", bg: "bg-indigo-500/10", category: "inspection" },
   // Models
   { key: "ggufModels", icon: Brain, href: "/ai-gguf-models", color: "text-amber-500", bg: "bg-amber-500/10", category: "models" },
   { key: "modelManagement", icon: Cpu, href: "/ai-models", color: "text-violet-500", bg: "bg-violet-500/10", category: "models" },
   { key: "batchInference", icon: Layers, href: "/ai-batch-jobs", color: "text-indigo-500", bg: "bg-indigo-500/10", category: "models" },
-  { key: "abTesting", icon: GitCompareArrows, href: "/ai-ab-testing", color: "text-pink-500", bg: "bg-pink-500/10", category: "models" },
+  // X3: "abTesting" tile removed — live A/B canary is a tab in the Performance dashboard (/ai-performance).
   // System
   { key: "monitoring", icon: MonitorCheck, href: "/ai-monitoring", color: "text-emerald-500", bg: "bg-emerald-500/10", category: "system" },
   { key: "dataProcessing", icon: Database, href: "/ai-data-processing", color: "text-teal-500", bg: "bg-teal-500/10", category: "system" },
@@ -63,9 +65,10 @@ export default function AIHub() {
   const providerStatus = trpc.aiGguf.providerStatus.useQuery(undefined, { refetchInterval: 30_000 });
 
   const ps = providerStatus.data;
-  const providerLabel = ps?.activeProvider === "openai" ? "OpenAI" : ps?.activeProvider === "gguf" ? "GGUF Local" : "Offline";
-  const providerColor = ps?.activeProvider === "openai" ? "text-green-500" : ps?.activeProvider === "gguf" ? "text-amber-500" : "text-slate-400";
-  const providerBg = ps?.activeProvider === "openai" ? "bg-green-500/10" : ps?.activeProvider === "gguf" ? "bg-amber-500/10" : "bg-slate-500/10";
+  // X2 cleanup: system is 100% local — provider is GGUF or Offline.
+  const providerLabel = ps?.activeProvider === "gguf" ? "GGUF Local" : "Offline";
+  const providerColor = ps?.activeProvider === "gguf" ? "text-amber-500" : "text-slate-400";
+  const providerBg = ps?.activeProvider === "gguf" ? "bg-amber-500/10" : "bg-slate-500/10";
 
   return (
     <DashboardLayout>
@@ -101,14 +104,7 @@ export default function AIHub() {
                 <Wifi className="h-3 w-3 mr-1" />
                 {providerLabel}
               </Badge>
-              <div className="flex items-center gap-1.5">
-                {ps?.openai.available
-                  ? <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  : <XCircle className="h-4 w-4 text-slate-300" />}
-                <span className={ps?.openai.available ? "text-green-600" : "text-muted-foreground"}>
-                  OpenAI {ps?.openai.available && ps.openai.model ? `(${ps.openai.model})` : ""}
-                </span>
-              </div>
+              {/* X2 cleanup: OpenAI status row removed — system is 100% local (GGUF > offline). */}
               <div className="flex items-center gap-1.5">
                 {ps?.gguf.available
                   ? <CheckCircle2 className="h-4 w-4 text-amber-500" />

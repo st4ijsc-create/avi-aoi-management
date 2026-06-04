@@ -3,7 +3,7 @@
  * 
  * 8 advanced image-processing features built on top of:
  *  - sharp (pixel manipulation, resize, edge detection, augmentation)
- *  - aiProviderRouter.describeImage (LLaVA-1.6-Mistral-7B locally / GPT-4o cloud)
+ *  - aiProviderRouter.describeImage (local LLaVA-1.6-Mistral-7B / GGUF vision sidecar)
  * 
  * Features:
  *  A. compareOkVsNg      — pairwise OK vs NG semantic comparison

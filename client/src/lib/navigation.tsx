@@ -55,7 +55,6 @@
   Camera,
   Newspaper,
   Presentation,
-  GitCompareArrows,
   ClipboardCheck,
   ScrollText,
   CalendarClock,
@@ -526,14 +525,8 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "analytics_ai_performance",
         permissionCategory: "analytics",
       },
-      {
-        href: "/ai-ab-testing",
-        label: "nav.aiABTesting",
-        icon: <GitCompareArrows className="h-4 w-4" />,
-        description: "nav.aiABTestingDesc",
-        requiredPermission: "analytics_ai_performance",
-        permissionCategory: "analytics",
-      },
+      // X3: standalone "A/B Testing" nav removed — the live A/B canary now lives
+      // as a tab in the AI Performance Dashboard (/ai-performance).
       {
         href: "/ai-monitoring",
         label: "nav.aiMonitoring",

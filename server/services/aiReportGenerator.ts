@@ -7,7 +7,8 @@
  *  3. Model Performance Report — accuracy trends, drift alerts, retrain recommendations
  *  4. Weekly/Monthly Executive Summary — KPI tracking, trends, forecasts
  * 
- * Uses GPT-4o-mini for narrative analysis with structured JSON fallbacks.
+ * Narrative analysis runs 100% locally (GGUF / llama.cpp) via aiProviderRouter,
+ * with structured JSON + rule-based offline fallbacks. No cloud LLM is used.
  */
 
 import { createHash } from "crypto";
@@ -42,7 +43,7 @@ export interface NarrativeMetadata {
   generatedBy: "openai" | "gguf" | "offline";
   confidence: number; // 0.1-1.0
   timestamp: Date;
-  model?: string; // e.g., "gpt-4o-mini" or "llama-2"
+  model?: string; // e.g., local GGUF model id (llama.cpp)
 }
 
 export interface QualitySummary {

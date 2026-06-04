@@ -420,6 +420,15 @@ export interface SegmentationResult {
   masks: SegmentationMask[];
   processingTimeMs: number;
   status: "COMPLETED";
+  /**
+   * X5: true khi kết quả đến từ nhánh YOLOv8-seg. Nhánh này (decodeYoloSeg +
+   * metrology) mới chỉ smoke-test bằng tensor giả, CHƯA validate trên .onnx
+   * thật (xem RUNBOOK §6). Số đo metrology có thể sai — caller/UI nên hiển thị
+   * cảnh báo và KHÔNG dùng cho quyết định đo lường chính thức.
+   */
+  experimental?: boolean;
+  /** Ghi chú trung thực kèm theo khi experimental=true. */
+  experimentalNote?: string;
 }
 
 /** Lỗi degrade trung thực khi model không phải segmentation / không tồn tại. */
@@ -523,6 +532,11 @@ export async function runSegmentation(
       })),
       processingTimeMs: Date.now() - startTime,
       status: "COMPLETED",
+      // X5: nhánh YOLO-seg chưa validate model .onnx thật → đánh dấu experimental.
+      experimental: true,
+      experimentalNote:
+        "YOLOv8-seg decode + metrology chưa được validate trên model .onnx thật " +
+        "(mới smoke-test tensor giả, RUNBOOK §6). Số đo có thể sai — chỉ tham khảo.",
     };
   }
 

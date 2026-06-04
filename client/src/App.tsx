@@ -71,7 +71,6 @@ import HistoryExportScheduling from "./pages/HistoryExportScheduling";
 import CorporateDashboard from "./pages/CorporateDashboard";
 const AIPerformanceDashboard = React.lazy(() => import("./pages/AIPerformanceDashboard"));
 const BatchInferencePage = React.lazy(() => import("./pages/BatchInferencePage"));
-const ABTestingPage = React.lazy(() => import("./pages/ABTestingPage"));
 const ModelMonitoringPage = React.lazy(() => import("./pages/ModelMonitoringPage"));
 const ModelVersionsPage = React.lazy(() => import("./pages/ModelVersionsPage"));
 const AIHub = React.lazy(() => import("./pages/AIHub"));
@@ -225,7 +224,9 @@ function Router() {
       <Route path="/ai-time-series"><AIPageWrapper><AITimeSeriesPage /></AIPageWrapper></Route>
       <Route path="/ai-performance"><AIPageWrapper><AIPerformanceDashboard /></AIPageWrapper></Route>
       <Route path="/ai-batch-jobs"><AIPageWrapper><BatchInferencePage /></AIPageWrapper></Route>
-      <Route path="/ai-ab-testing"><AIPageWrapper><ABTestingPage /></AIPageWrapper></Route>
+      {/* X3: /ai-ab-testing was a deprecated stub. The live A/B feature is the
+          B6 canary tab in the AI Performance Dashboard — redirect there. */}
+      <Route path="/ai-ab-testing"><Redirect to="/ai-performance" /></Route>
       <Route path="/ai-monitoring"><AIPageWrapper><ModelMonitoringPage /></AIPageWrapper></Route>
       <Route path="/ai-models"><AIPageWrapper><AIModelManagementPage /></AIPageWrapper></Route>
       <Route path="/model-versions"><AIPageWrapper><ModelVersionsPage /></AIPageWrapper></Route>

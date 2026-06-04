@@ -84,8 +84,8 @@ Respond with ONLY valid JSON matching this exact schema (no markdown fences, no 
 
 If no defect is found, set description to "No defect detected", severity to "low", and empty arrays for causes/actions.`;
 
-  // Route through provider router (cloud primary + LLaVA fallback w/ circuit breaker).
-  // If neither provider is configured, fall back to text-only GGUF or static description.
+  // Route through provider router (local LLaVA / GGUF vision sidecar only).
+  // If vision is not configured, degrade to text-only GGUF or a static description.
   try {
     const result = await routerDescribeImage({
       image: imageBuffer,
@@ -95,7 +95,7 @@ If no defect is found, set description to "No defect detected", severity to "low
       useCloudVision: context?.useCloudVision,
     });
 
-    // Extract JSON (LLaVA may add extra prose; OpenAI honors the JSON-only instruction)
+    // Extract JSON (the local LLaVA model may add extra prose around the object)
     const jsonMatch = result.text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("No JSON object in vision response");
     const parsed = JSON.parse(jsonMatch[0]) as DefectDescription;
@@ -127,7 +127,7 @@ export async function compareImages(
     comparisonType?: "golden_vs_current" | "before_after" | "side_by_side";
   },
 ): Promise<ImageComparison> {
-  // WS-G2: route to the LOCAL llama-server mtmd sidecar (offline) instead of GPT-4o cloud.
+  // WS-G2: route to the LOCAL llama-server mtmd sidecar (100% offline vision).
   // Qwen2-VL / mtmd llama-server accepts multiple image_url parts in one message, so we
   // send both images together and ask for a single comparison JSON. If the sidecar is not
   // configured we degrade honestly to a static fallback (no fabricated comparison).
@@ -199,7 +199,7 @@ export async function generateQAReport(
     date?: string;
   },
 ): Promise<QAReport> {
-  // WS-G2: route to the LOCAL llama-server mtmd sidecar (offline) instead of GPT-4o cloud.
+  // WS-G2: route to the LOCAL llama-server mtmd sidecar (100% offline vision).
   // When the sidecar is unavailable, fall back to the GGUF text-only report (metadata
   // based, clearly labelled) and finally a static report — never a fabricated VLM result.
   const { isVisionSidecarAvailable, describeImageViaSidecar } = await import("./llamaVisionSidecar");

@@ -86,7 +86,6 @@ import { aiActiveLearningRouter } from "./routers/aiActiveLearningRouter";
 import { aiTimeSeriesRouter } from "./routers/aiTimeSeriesRouter";
 import { aiReportRouter } from "./routers/aiReportRouter";
 import { aiSmartAlertRoutingRouter } from "./routers/aiSmartAlertRoutingRouter";
-// DISABLED (local-AI migration): import { aiEdgeEnhancedRouter } from "./routers/aiEdgeEnhancedRouter";
 import { edgeDeploymentRouter } from "./routers/edgeDeploymentRouter"; // WS-2: edge deployment control plane (new, migration-safe)
 import { aiLocalTrainingRouter } from "./routers/aiLocalTrainingRouter"; // WS-1: re-enabled (schema-mismatch fixed)
 import { aiEvalRouter } from "./routers/aiEvalRouter"; // WS-1: eval + auto active-learning
@@ -420,8 +419,6 @@ export const appRouter = router({
   aiReport: aiReportRouter,
   // AI Smart Alert Routing
   aiSmartAlertRouting: aiSmartAlertRoutingRouter,
-  // DISABLED (local-AI migration): AI Edge Enhanced (Phase 4.1)
-  // aiEdgeEnhanced: aiEdgeEnhancedRouter,
   // WS-2: Edge Deployment control plane (admin) — migration-safe new router
   edgeDeployment: edgeDeploymentRouter,
   // AI Local Training (Phase 4.2) — WS-1: re-enabled after schema-mismatch fix
