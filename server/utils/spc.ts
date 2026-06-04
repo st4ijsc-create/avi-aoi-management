@@ -18,6 +18,44 @@ export function stdDev(values: number[], m: number, sample = true): number {
   return Math.sqrt(values.reduce((s, v) => s + (v - m) ** 2, 0) / divisor);
 }
 
+function skewness(values: number[]): number {
+  const n = values.length;
+  if (n < 3) return 0;
+  const m = mean(values);
+  const s = stdDev(values, m, false);
+  if (s <= 0) return 0;
+  const m3 = values.reduce((acc, v) => acc + ((v - m) / s) ** 3, 0) / n;
+  return m3;
+}
+
+function boxCoxTransform(x: number, lambda: number): number {
+  if (Math.abs(lambda) < 1e-9) return Math.log(x);
+  return (Math.pow(x, lambda) - 1) / lambda;
+}
+
+function findBestBoxCoxLambda(values: number[]): { lambda: number; transformed: number[]; shift: number } {
+  const minVal = Math.min(...values);
+  const shift = minVal <= 0 ? 1 - minVal : 0;
+  const shifted = values.map(v => v + shift);
+
+  let bestLambda = 1;
+  let bestScore = Number.POSITIVE_INFINITY;
+  let bestTransformed = [...values];
+
+  for (let lambda = -2; lambda <= 2.0001; lambda += 0.1) {
+    const rounded = Math.round(lambda * 10) / 10;
+    const transformed = shifted.map(v => boxCoxTransform(v, rounded));
+    const score = Math.abs(skewness(transformed));
+    if (Number.isFinite(score) && score < bestScore) {
+      bestScore = score;
+      bestLambda = rounded;
+      bestTransformed = transformed;
+    }
+  }
+
+  return { lambda: bestLambda, transformed: bestTransformed, shift };
+}
+
 // ─── Control Chart Constants (d2, D3, D4, A2 for subgroup sizes 2-25) ───────
 export const d2Table: Record<number, number> = {
   2: 1.128, 3: 1.693, 4: 2.059, 5: 2.326, 6: 2.534, 7: 2.704, 8: 2.847,
@@ -43,6 +81,38 @@ export const A2Table: Record<number, number> = {
   16: 0.212, 17: 0.203, 18: 0.194, 19: 0.187, 20: 0.180, 21: 0.173, 22: 0.167,
   23: 0.162, 24: 0.157, 25: 0.153,
 };
+
+// ─── X-bar/S chart constants (A3, c4, B3, B4) for subgroup sizes 2-25 ────────
+export const A3Table: Record<number, number> = {
+  2: 2.659, 3: 1.954, 4: 1.628, 5: 1.427, 6: 1.287, 7: 1.182, 8: 1.099,
+  9: 1.032, 10: 0.975, 11: 0.927, 12: 0.886, 13: 0.850, 14: 0.817, 15: 0.789,
+  16: 0.763, 17: 0.739, 18: 0.718, 19: 0.698, 20: 0.680, 21: 0.663, 22: 0.647,
+  23: 0.633, 24: 0.619, 25: 0.606,
+};
+// c4 (unbiasing constant for within-subgroup sigma estimate = S̄/c4)
+export const c4Table: Record<number, number> = {
+  2: 0.7979, 3: 0.8862, 4: 0.9213, 5: 0.9400, 6: 0.9515, 7: 0.9594, 8: 0.9650,
+  9: 0.9693, 10: 0.9727, 11: 0.9754, 12: 0.9776, 13: 0.9794, 14: 0.9810, 15: 0.9823,
+  16: 0.9835, 17: 0.9845, 18: 0.9854, 19: 0.9862, 20: 0.9869, 21: 0.9876, 22: 0.9882,
+  23: 0.9887, 24: 0.9892, 25: 0.9896,
+};
+export const B3Table: Record<number, number> = {
+  2: 0, 3: 0, 4: 0, 5: 0, 6: 0.030, 7: 0.118, 8: 0.185, 9: 0.239, 10: 0.284,
+  11: 0.321, 12: 0.354, 13: 0.382, 14: 0.406, 15: 0.428, 16: 0.448, 17: 0.466,
+  18: 0.482, 19: 0.497, 20: 0.510, 21: 0.523, 22: 0.534, 23: 0.545, 24: 0.555,
+  25: 0.565,
+};
+export const B4Table: Record<number, number> = {
+  2: 3.267, 3: 2.568, 4: 2.266, 5: 2.089, 6: 1.970, 7: 1.882, 8: 1.815,
+  9: 1.761, 10: 1.716, 11: 1.679, 12: 1.646, 13: 1.618, 14: 1.594, 15: 1.572,
+  16: 1.552, 17: 1.534, 18: 1.518, 19: 1.503, 20: 1.490, 21: 1.477, 22: 1.466,
+  23: 1.455, 24: 1.445, 25: 1.435,
+};
+
+// I-MR (Individuals/Moving Range) constants: moving range span = 2 → d2 = 1.128, D4 = 3.267
+export const MR_D2 = 1.128;
+export const MR_D4 = 3.267;
+export const MR_D3 = 0;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Subgroup & Control Limit Computation
@@ -349,6 +419,44 @@ export function calculateCapabilityIndices(
   const m = mean(values);
   const s = stdDev(values, m);
 
+  // Auto-switch to Box-Cox when distribution is likely non-normal.
+  // Keep legacy behavior for small samples to avoid overfitting transforms.
+  const shouldBoxCox = values.length >= 10 && Math.abs(skewness(values)) > 0.5;
+  let workingValues = values;
+  let workingUsl = usl;
+  let workingLsl = lsl;
+  let workingEstimatedSigma = estimatedSigma;
+  let workingMean = m;
+  let workingStdDev = s;
+
+  if (shouldBoxCox) {
+    const { lambda, transformed, shift } = findBestBoxCoxLambda(values);
+    workingValues = transformed;
+    workingMean = mean(workingValues);
+    workingStdDev = stdDev(workingValues, workingMean);
+
+    if (estimatedSigma > 0) {
+      const sigmaHi = mean(values) + estimatedSigma;
+      const sigmaLo = mean(values) - estimatedSigma;
+      const hiShifted = sigmaHi + shift;
+      const loShifted = sigmaLo + shift;
+      if (hiShifted > 0 && loShifted > 0) {
+        const hiT = boxCoxTransform(hiShifted, lambda);
+        const loT = boxCoxTransform(loShifted, lambda);
+        workingEstimatedSigma = Math.abs(hiT - loT) / 2;
+      }
+    }
+
+    if (usl !== null) {
+      const u = usl + shift;
+      if (u > 0) workingUsl = boxCoxTransform(u, lambda);
+    }
+    if (lsl !== null) {
+      const l = lsl + shift;
+      if (l > 0) workingLsl = boxCoxTransform(l, lambda);
+    }
+  }
+
   let cp: number | null = null;
   let cpk: number | null = null;
   let pp: number | null = null;
@@ -356,22 +464,22 @@ export function calculateCapabilityIndices(
   let cpu: number | null = null;
   let cpl: number | null = null;
 
-  if (usl !== null && lsl !== null && estimatedSigma > 0) {
-    cp = (usl - lsl) / (6 * estimatedSigma);
-    cpu = (usl - m) / (3 * estimatedSigma);
-    cpl = (m - lsl) / (3 * estimatedSigma);
+  if (workingUsl !== null && workingLsl !== null && workingEstimatedSigma > 0) {
+    cp = (workingUsl - workingLsl) / (6 * workingEstimatedSigma);
+    cpu = (workingUsl - workingMean) / (3 * workingEstimatedSigma);
+    cpl = (workingMean - workingLsl) / (3 * workingEstimatedSigma);
     cpk = Math.min(cpu, cpl);
-  } else if (usl !== null && estimatedSigma > 0) {
-    cpu = (usl - m) / (3 * estimatedSigma);
+  } else if (workingUsl !== null && workingEstimatedSigma > 0) {
+    cpu = (workingUsl - workingMean) / (3 * workingEstimatedSigma);
     cpk = cpu;
-  } else if (lsl !== null && estimatedSigma > 0) {
-    cpl = (m - lsl) / (3 * estimatedSigma);
+  } else if (workingLsl !== null && workingEstimatedSigma > 0) {
+    cpl = (workingMean - workingLsl) / (3 * workingEstimatedSigma);
     cpk = cpl;
   }
 
-  if (usl !== null && lsl !== null && s > 0) {
-    pp = (usl - lsl) / (6 * s);
-    ppk = Math.min((usl - m) / (3 * s), (m - lsl) / (3 * s));
+  if (workingUsl !== null && workingLsl !== null && workingStdDev > 0) {
+    pp = (workingUsl - workingLsl) / (6 * workingStdDev);
+    ppk = Math.min((workingUsl - workingMean) / (3 * workingStdDev), (workingMean - workingLsl) / (3 * workingStdDev));
   }
 
   return { cp, cpk, pp, ppk, cpu, cpl, mean: m, overallStdDev: s };
@@ -431,3 +539,237 @@ export const SPC_RULE_NAMES: Record<number, string> = {
   7: '15 within 1σ (stratification)',
   8: '8 beyond 1σ both sides (mixture)',
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DPMO & Sigma Level (Six Sigma metrics)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Inverse standard normal CDF (probit) via Acklam's rational approximation.
+ * Returns z such that P(Z <= z) = p.
+ */
+export function normInv(p: number): number {
+  if (p <= 0) return -Infinity;
+  if (p >= 1) return Infinity;
+  const a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
+  const b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01];
+  const c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
+  const d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00];
+  const pLow = 0.02425, pHigh = 1 - pLow;
+  let q: number, r: number;
+  if (p < pLow) {
+    q = Math.sqrt(-2 * Math.log(p));
+    return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
+      ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+  }
+  if (p <= pHigh) {
+    q = p - 0.5; r = q * q;
+    return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q /
+      (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+  }
+  q = Math.sqrt(-2 * Math.log(1 - p));
+  return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
+    ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+}
+
+/**
+ * Six Sigma metrics from a defect proportion.
+ * DPMO = defectRate * 1e6.
+ * Sigma level (with 1.5σ shift convention) = Z(1 - defectRate) + 1.5.
+ */
+export function computeSixSigmaMetrics(defectCount: number, total: number) {
+  if (total <= 0) return { dpmo: 0, sigmaLevel: 0, yieldPercent: 100, defectRate: 0 };
+  const defectRate = Math.max(0, Math.min(1, defectCount / total));
+  const dpmo = defectRate * 1_000_000;
+  const yieldPercent = (1 - defectRate) * 100;
+  let sigmaLevel: number;
+  if (defectRate <= 0) sigmaLevel = 6; // cap perfect quality at 6σ
+  else if (defectRate >= 1) sigmaLevel = 0;
+  else sigmaLevel = normInv(1 - defectRate) + 1.5;
+  return {
+    dpmo: Math.round(dpmo),
+    sigmaLevel: Math.round(sigmaLevel * 100) / 100,
+    yieldPercent: Math.round(yieldPercent * 100) / 100,
+    defectRate,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Chart generation: X-bar/R, X-bar/S, I-MR
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type ChartType = 'xbar_r' | 'xbar_s' | 'individual_mr';
+
+export interface ChartLimitSet {
+  UCL: number;
+  CL: number;
+  LCL: number;
+}
+
+export interface ChartPoint {
+  index: number;
+  value: number;
+  timestamp: Date | null;
+  outOfControl: boolean;
+  violatedRules: number[];
+  ruleDescriptions: string[];
+}
+
+export interface GeneratedChart {
+  type: ChartType;
+  /** Primary chart: X-bar (xbar_r/xbar_s) or Individuals (individual_mr) */
+  primary: {
+    label: 'xbar' | 'individual';
+    limits: ChartLimitSet;
+    points: ChartPoint[];
+  };
+  /** Secondary chart: R, S, or MR */
+  secondary: {
+    label: 'range' | 'stddev' | 'movingRange';
+    limits: ChartLimitSet;
+    points: ChartPoint[];
+  };
+  /** Within-subgroup sigma estimate for the process mean (used for capability) */
+  estimatedSigma: number;
+  /** Sigma of the plotted primary statistic (used for zone overlays/rule detection) */
+  plotSigma: number;
+  centerLine: number;
+  totalSamples: number;
+  totalPoints: number;
+}
+
+function round4(v: number): number { return Math.round(v * 10000) / 10000; }
+
+function buildPoints(
+  values: number[],
+  cl: number,
+  sigma: number,
+  timestamps: (Date | null)[],
+  enabledRules: number[],
+): { points: ChartPoint[]; oocCount: number } {
+  const ruleMap = sigma > 0 ? detectAllSpcRules(values, cl, sigma, enabledRules) : new Map<number, number[]>();
+  let oocCount = 0;
+  const points = values.map((v, i) => {
+    const rules = [...new Set(ruleMap.get(i) || [])];
+    if (rules.length > 0) oocCount++;
+    return {
+      index: i,
+      value: round4(v),
+      timestamp: timestamps[i] ?? null,
+      outOfControl: rules.length > 0,
+      violatedRules: rules,
+      ruleDescriptions: rules.map(r => SPC_RULE_NAMES[r] || `Rule ${r}`),
+    };
+  });
+  return { points, oocCount };
+}
+
+/**
+ * Generate a control chart of the requested type from raw ordered numeric data.
+ * - xbar_r:        X-bar/R, sigmâ = R̄/d2
+ * - xbar_s:        X-bar/S, sigmâ = S̄/c4
+ * - individual_mr: I-MR,    sigmâ = MR̄/1.128
+ */
+export function generateControlChart(
+  data: { value: number; inspectionTime: Date | null }[],
+  chartType: ChartType,
+  subgroupSize: number,
+  enabledRules: number[] = [1, 2, 3, 4, 5, 6, 7, 8],
+): GeneratedChart | null {
+  if (chartType === 'individual_mr') {
+    if (data.length < 2) return null;
+    const values = data.map(d => d.value);
+    const ts = data.map(d => d.inspectionTime);
+    const movingRanges = values.slice(1).map((v, i) => Math.abs(v - values[i]));
+    const xBar = mean(values);
+    const mrBar = mean(movingRanges);
+    const estimatedSigma = mrBar / MR_D2;
+
+    const iLimits: ChartLimitSet = {
+      UCL: xBar + 3 * estimatedSigma,
+      CL: xBar,
+      LCL: xBar - 3 * estimatedSigma,
+    };
+    const mrLimits: ChartLimitSet = {
+      UCL: MR_D4 * mrBar,
+      CL: mrBar,
+      LCL: MR_D3 * mrBar,
+    };
+
+    const primary = buildPoints(values, iLimits.CL, estimatedSigma, ts, enabledRules);
+    // MR has 1 fewer point; align timestamps to the second sample onward
+    const mrSigma = mrBar > 0 ? (mrLimits.UCL - mrLimits.CL) / 3 : 0;
+    const secondary = buildPoints(movingRanges, mrLimits.CL, mrSigma, ts.slice(1), enabledRules);
+
+    return {
+      type: chartType,
+      primary: { label: 'individual', limits: roundLimits(iLimits), points: primary.points },
+      secondary: { label: 'movingRange', limits: roundLimits(mrLimits), points: secondary.points },
+      estimatedSigma: round4(estimatedSigma),
+      plotSigma: round4(estimatedSigma),
+      centerLine: round4(iLimits.CL),
+      totalSamples: values.length,
+      totalPoints: values.length,
+    };
+  }
+
+  // Subgroup-based charts (xbar_r / xbar_s)
+  const subgroups = createSubgroups(
+    data.map(d => ({ value: d.value, inspectionTime: d.inspectionTime ?? new Date(0) })),
+    subgroupSize,
+  );
+  if (subgroups.length < 2) return null;
+
+  const xbarValues = subgroups.map(g => g.mean);
+  const ts = subgroups.map(g => g.timestamp);
+  const xBarBar = mean(xbarValues);
+
+  let estimatedSigma: number;
+  let primaryLimits: ChartLimitSet;
+  let secondaryValues: number[];
+  let secondaryLimits: ChartLimitSet;
+  let secondaryLabel: 'range' | 'stddev';
+
+  if (chartType === 'xbar_s') {
+    const sValues = subgroups.map(g => stdDev(g.values, mean(g.values), true));
+    const sBar = mean(sValues);
+    const c4 = c4Table[subgroupSize] ?? 0.94;
+    const A3 = A3Table[subgroupSize] ?? 1.427;
+    const B3 = B3Table[subgroupSize] ?? 0;
+    const B4 = B4Table[subgroupSize] ?? 2.089;
+    estimatedSigma = sBar / c4;
+    primaryLimits = { UCL: xBarBar + A3 * sBar, CL: xBarBar, LCL: xBarBar - A3 * sBar };
+    secondaryLimits = { UCL: B4 * sBar, CL: sBar, LCL: B3 * sBar };
+    secondaryValues = sValues;
+    secondaryLabel = 'stddev';
+  } else {
+    // xbar_r
+    const limits = computeControlLimits(subgroups, subgroupSize);
+    estimatedSigma = limits.estimatedSigma;
+    primaryLimits = limits.xBar;
+    secondaryLimits = limits.range;
+    secondaryValues = subgroups.map(g => g.range);
+    secondaryLabel = 'range';
+  }
+
+  // Sigma of the X-bar statistic = estimatedSigma / sqrt(n)
+  const plotSigma = estimatedSigma / Math.sqrt(subgroupSize);
+  const primary = buildPoints(xbarValues, primaryLimits.CL, plotSigma, ts, enabledRules);
+  const secSigma = secondaryLimits.CL > 0 ? (secondaryLimits.UCL - secondaryLimits.CL) / 3 : 0;
+  const secondary = buildPoints(secondaryValues, secondaryLimits.CL, secSigma, ts, enabledRules);
+
+  return {
+    type: chartType,
+    primary: { label: 'xbar', limits: roundLimits(primaryLimits), points: primary.points },
+    secondary: { label: secondaryLabel, limits: roundLimits(secondaryLimits), points: secondary.points },
+    estimatedSigma: round4(estimatedSigma),
+    plotSigma: round4(plotSigma),
+    centerLine: round4(primaryLimits.CL),
+    totalSamples: data.length,
+    totalPoints: subgroups.length,
+  };
+}
+
+function roundLimits(l: ChartLimitSet): ChartLimitSet {
+  return { UCL: round4(l.UCL), CL: round4(l.CL), LCL: round4(l.LCL) };
+}

@@ -5713,6 +5713,18 @@
     "adminCreatedError": "管理员创建错误"
   },
   "spc": {
+    "spcAnalysisTitle": "SPC 分析",
+    "spcAnalysisFullDesc": "统一的统计过程控制：在一个界面中查看控制图、过程能力、规则违反和帕累托图",
+    "chartType": "图表类型",
+    "chartXbarR": "X̄-R 控制图",
+    "chartXbarS": "X̄-S 控制图",
+    "chartImr": "I-MR 控制图",
+    "sChart": "S 图",
+    "mrChart": "移动极差图",
+    "selectMeasurementPointPrompt": "请选择测量点以开始分析",
+    "oocPercent": "失控百分比",
+    "sigmaLevel": "西格玛水平",
+    "histogramNormalOverlay": "带正态分布曲线的直方图",
     "yieldTrendWithMADesc": "良率趋势含移动平均描述",
     "yieldTrendWithMA": "良率趋势含移动平均",
     "yieldPredictions": "良率预测",

@@ -5720,6 +5720,18 @@
     "adminCreatedError": "Admin created error"
   },
   "spc": {
+    "spcAnalysisTitle": "SPC Analysis",
+    "spcAnalysisFullDesc": "Unified statistical process control: control charts, capability, rule violations and Pareto in one screen",
+    "chartType": "Chart type",
+    "chartXbarR": "X̄-R chart",
+    "chartXbarS": "X̄-S chart",
+    "chartImr": "I-MR chart",
+    "sChart": "S chart",
+    "mrChart": "Moving range chart",
+    "selectMeasurementPointPrompt": "Select a measurement point to start the analysis",
+    "oocPercent": "% OOC",
+    "sigmaLevel": "Sigma level",
+    "histogramNormalOverlay": "Histogram with normal distribution overlay",
     "yieldTrendWithMADesc": "Yield trend with m a desc",
     "yieldTrendWithMA": "Yield trend with m a",
     "yieldPredictions": "Yield predictions",

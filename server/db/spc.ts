@@ -119,6 +119,66 @@ export async function getMeasurementValuesForSPC(filters: {
   return query;
 }
 
+/**
+ * Fetch ordered measurement values + spec limits for one measurement point,
+ * supporting productModelId filtering (used by spc.fullAnalysis). Also returns
+ * the per-result OK/NG flag so DPMO/yield can be computed.
+ */
+export async function getFullAnalysisData(filters: {
+  measurementPointDefId: number;
+  startDate?: Date;
+  endDate?: Date;
+  machineId?: number;
+  productModelId?: number;
+  limit?: number;
+}) {
+  const db = await getDb();
+  if (!db) return { values: [] as { value: number; inspectionTime: Date | null; result: string | null }[], pointDef: null as any };
+
+  const pointDefRows = await db.select({
+    id: measurementPointDefs.id,
+    code: measurementPointDefs.code,
+    name: measurementPointDefs.name,
+    upperLimit: measurementPointDefs.upperLimit,
+    lowerLimit: measurementPointDefs.lowerLimit,
+    nominalValue: measurementPointDefs.nominalValue,
+    unit: measurementPointDefs.unit,
+  })
+    .from(measurementPointDefs)
+    .where(eq(measurementPointDefs.id, filters.measurementPointDefId))
+    .limit(1);
+  const pointDef = pointDefRows[0] || null;
+
+  const conditions: SQL[] = [
+    eq(measurementResults.pointDefId, filters.measurementPointDefId),
+    isNotNull(measurementResults.measuredValue),
+  ];
+  if (filters.startDate) conditions.push(gte(productInspections.inspectionTime, filters.startDate));
+  if (filters.endDate) conditions.push(lte(productInspections.inspectionTime, filters.endDate));
+  if (filters.machineId) conditions.push(eq(productInspections.machineId, filters.machineId));
+  if (filters.productModelId) conditions.push(eq(productInspections.productModelId, filters.productModelId));
+
+  const query = db.select({
+    value: measurementResults.measuredValue,
+    inspectionTime: productInspections.inspectionTime,
+    result: measurementResults.result,
+  })
+    .from(measurementResults)
+    .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
+    .where(and(...conditions))
+    .orderBy(asc(productInspections.inspectionTime));
+
+  const rows = filters.limit ? await query.limit(filters.limit) : await query;
+  return {
+    values: rows.map(r => ({
+      value: Number(r.value),
+      inspectionTime: r.inspectionTime ?? null,
+      result: r.result ?? null,
+    })),
+    pointDef,
+  };
+}
+
 export async function getWorkstationMeasurementComparison(filters: {
   productModelId: number;
   startDate?: Date;

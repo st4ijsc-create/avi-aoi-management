@@ -7,6 +7,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { TRPCError } from "@trpc/server";
+import { calculateCapabilityIndices as sharedCalculateCapabilityIndices } from "../utils/spc";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Statistical Utility Functions
@@ -248,25 +249,61 @@ function checkNelsonRules(values: number[], cl: number, sigma: number): RuleViol
 // Capability Index Calculations
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function calculateCapabilityIndices(values: number[], usl: number, lsl: number, nominal?: number) {
+/**
+ * Capability indices using the CORRECT sigma convention:
+ *   - Cp/Cpk use WITHIN-subgroup sigma estimate (σ̂ = R̄/d2), passed in as `estimatedSigma`.
+ *   - Pp/Ppk use OVERALL sample stdDev.
+ * Delegates to the shared `utils/spc.ts` implementation (Box-Cox aware) and
+ * preserves the legacy return shape { cp, cpk, cpu, cpl, pp, ppk, mean, stdDev, sampleSize }.
+ *
+ * NOTE (re-baseline risk): previously Cp/Cpk were computed from the OVERALL stdDev
+ * (effectively Pp/Ppk). New Cpk values will differ from historical cpkHistory rows.
+ */
+function calculateCapabilityIndices(
+  values: number[],
+  usl: number,
+  lsl: number,
+  estimatedSigma: number,
+  _nominal?: number,
+) {
   const n = values.length;
-  if (n < 2 || usl <= lsl) return null;
+  if (n < 2 || usl <= lsl || !(estimatedSigma > 0)) return null;
 
-  const m = mean(values);
-  const s = stdDev(values, m, true);
-  if (s === 0) return null;
+  const result = sharedCalculateCapabilityIndices(values, usl, lsl, estimatedSigma);
+  if (result.cp == null && result.cpk == null && result.pp == null) return null;
 
-  const cp = (usl - lsl) / (6 * s);
-  const cpu = (usl - m) / (3 * s);
-  const cpl = (m - lsl) / (3 * s);
-  const cpk = Math.min(cpu, cpl);
+  return {
+    cp: result.cp,
+    cpk: result.cpk,
+    cpu: result.cpu,
+    cpl: result.cpl,
+    pp: result.pp,
+    ppk: result.ppk,
+    mean: result.mean,
+    stdDev: result.overallStdDev,
+    sampleSize: n,
+  };
+}
 
-  // Pp/Ppk use population std dev
-  const sp = stdDev(values, m, false);
-  const pp = sp > 0 ? (usl - lsl) / (6 * sp) : null;
-  const ppk = sp > 0 ? Math.min((usl - m) / (3 * sp), (m - lsl) / (3 * sp)) : null;
-
-  return { cp, cpk, cpu, cpl, pp, ppk, mean: m, stdDev: s, sampleSize: n };
+/**
+ * Estimate within-subgroup sigma (R̄/d2) from a flat ordered value array by
+ * forming subgroups. Falls back to overall stdDev when too few subgroups exist
+ * (e.g. ungrouped/individuals data) so capability is still computable.
+ */
+function estimateWithinSubgroupSigma(values: number[], subgroupSize = 5): number {
+  if (values.length < subgroupSize * 2) {
+    // Fall back to moving-range based estimate (I-MR) for ungrouped data
+    if (values.length >= 2) {
+      const mrs = values.slice(1).map((v, i) => Math.abs(v - values[i]));
+      const mrBar = mrs.reduce((a, b) => a + b, 0) / mrs.length;
+      if (mrBar > 0) return mrBar / 1.128;
+    }
+    const m = mean(values);
+    return stdDev(values, m, true);
+  }
+  const subgroups = createSubgroups(values.map(v => ({ value: v, inspectionTime: new Date(0) })), subgroupSize);
+  const limits = computeControlLimits(subgroups, subgroupSize);
+  return limits.estimatedSigma > 0 ? limits.estimatedSigma : stdDev(values, mean(values), true);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -455,7 +492,9 @@ export const workstationSpcRouter = router({
       const nominal = pointDef.nominalValue ? Number(pointDef.nominalValue) : undefined;
       const values = rawData.map(d => Number(d.value));
 
-      const indices = calculateCapabilityIndices(values, usl, lsl, nominal);
+      // Cpk uses within-subgroup sigma (R̄/d2); Pp/Ppk use overall stdDev.
+      const estimatedSigma = estimateWithinSubgroupSigma(values, 5);
+      const indices = calculateCapabilityIndices(values, usl, lsl, estimatedSigma, nominal);
 
       return {
         insufficient: false,
@@ -766,7 +805,8 @@ export const cpkTrendRouter = router({
       const usl = Number(pointDef.upperLimit);
       const lsl = Number(pointDef.lowerLimit);
       const nominal = pointDef.nominalValue ? Number(pointDef.nominalValue) : undefined;
-      const indices = calculateCapabilityIndices(values, usl, lsl, nominal);
+      const estimatedSigma = estimateWithinSubgroupSigma(values, 5);
+      const indices = calculateCapabilityIndices(values, usl, lsl, estimatedSigma, nominal);
 
       if (!indices) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Unable to calculate capability indices (zero variance or invalid limits)' });

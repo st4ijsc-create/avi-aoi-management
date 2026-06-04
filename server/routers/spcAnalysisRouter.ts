@@ -1,6 +1,14 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import * as db from "../db";
+import {
+  generateControlChart,
+  calculateCapabilityIndices,
+  computeHistogramBins,
+  computeSixSigmaMetrics,
+  SPC_RULE_NAMES,
+  type ChartType,
+} from "../utils/spc";
 
 // Statistical utility functions
 function calculateMean(values: number[]): number {
@@ -370,6 +378,166 @@ export const spcAnalysisRouter = router({
         // Linked measurement points info
         linkedFromMeasurementPoints: true,
       }));
+    }),
+
+  /**
+   * Unified SPC analysis for ONE measurement point — powers the consolidated
+   * /spc-analysis screen with a single query. Returns:
+   *   { kpi, chart, capability, violations, pareto, specLimits, pointDef }
+   *
+   * chartType: 'xbar_r' (X̄-R) | 'xbar_s' (X̄-S) | 'individual_mr' (I-MR).
+   * Cpk uses WITHIN-subgroup sigma (R̄/d2, S̄/c4 or MR̄/1.128); Pp/Ppk use overall stdDev.
+   * DPMO = defectRate × 1e6; sigmaLevel = Z(1 − defectRate) + 1.5σ shift.
+   */
+  fullAnalysis: protectedProcedure
+    .input(z.object({
+      measurementPointDefId: z.number(),
+      productModelId: z.number().optional(),
+      machineId: z.number().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      subgroupSize: z.number().min(2).max(25).default(5),
+      chartType: z.enum(['xbar_r', 'xbar_s', 'individual_mr']).default('xbar_r'),
+      enabledRules: z.array(z.number().min(1).max(8)).default([1, 2, 3, 4, 5, 6, 7, 8]),
+      uslOverride: z.number().nullable().optional(),
+      lslOverride: z.number().nullable().optional(),
+    }))
+    .query(async ({ input }) => {
+      const { values: rawValues, pointDef } = await db.getFullAnalysisData({
+        measurementPointDefId: input.measurementPointDefId,
+        startDate: input.startDate ? new Date(input.startDate) : undefined,
+        endDate: input.endDate ? new Date(input.endDate) : undefined,
+        machineId: input.machineId,
+        productModelId: input.productModelId,
+        limit: 50000,
+      });
+
+      const usl = input.uslOverride !== undefined && input.uslOverride !== null
+        ? input.uslOverride
+        : (pointDef?.upperLimit != null ? Number(pointDef.upperLimit) : null);
+      const lsl = input.lslOverride !== undefined && input.lslOverride !== null
+        ? input.lslOverride
+        : (pointDef?.lowerLimit != null ? Number(pointDef.lowerLimit) : null);
+      const nominal = pointDef?.nominalValue != null ? Number(pointDef.nominalValue) : null;
+      const specLimits = { usl, lsl, nominal };
+
+      // Pareto (top NG measurement points) — same scope as filters
+      const paretoRaw = await db.getTopNGMeasurementPointsEnhanced({
+        startDate: input.startDate ? new Date(input.startDate) : undefined,
+        endDate: input.endDate ? new Date(input.endDate) : undefined,
+        machineId: input.machineId,
+        productModelId: input.productModelId,
+        limit: 10,
+      });
+      const paretoTotal = paretoRaw.reduce((s, it) => s + it.ngCount, 0);
+      let paretoCum = 0;
+      const pareto = paretoRaw.map((it) => {
+        paretoCum += it.ngCount;
+        return {
+          pointCode: it.pointCode,
+          pointName: it.pointName,
+          ngCount: it.ngCount,
+          percent: paretoTotal > 0 ? Math.round((it.ngCount / paretoTotal) * 10000) / 100 : 0,
+          cumulativePercent: paretoTotal > 0 ? Math.round((paretoCum / paretoTotal) * 10000) / 100 : 0,
+        };
+      });
+
+      const minSamples = input.chartType === 'individual_mr' ? 2 : input.subgroupSize * 2;
+      if (rawValues.length < minSamples) {
+        return {
+          insufficient: true,
+          sampleCount: rawValues.length,
+          kpi: null, chart: null, capability: null,
+          violations: { summary: { total: 0, critical: 0, warning: 0, info: 0 }, items: [] },
+          pareto, specLimits, pointDef,
+        };
+      }
+
+      const chart = generateControlChart(
+        rawValues.map(r => ({ value: r.value, inspectionTime: r.inspectionTime })),
+        input.chartType as ChartType,
+        input.subgroupSize,
+        input.enabledRules,
+      );
+
+      if (!chart) {
+        return {
+          insufficient: true,
+          sampleCount: rawValues.length,
+          kpi: null, chart: null, capability: null,
+          violations: { summary: { total: 0, critical: 0, warning: 0, info: 0 }, items: [] },
+          pareto, specLimits, pointDef,
+        };
+      }
+
+      // Capability (Cpk within-subgroup, Pp/Ppk overall)
+      const allValues = rawValues.map(r => r.value);
+      const cap = calculateCapabilityIndices(allValues, usl, lsl, chart.estimatedSigma);
+      const histogram = computeHistogramBins(allValues, 20);
+      const r2 = (v: number | null) => (v != null ? Math.round(v * 100) / 100 : null);
+      const capability = {
+        cp: r2(cap.cp), cpk: r2(cap.cpk), pp: r2(cap.pp), ppk: r2(cap.ppk),
+        cpu: r2(cap.cpu), cpl: r2(cap.cpl),
+        mean: Math.round(cap.mean * 10000) / 10000,
+        stdDev: Math.round(cap.overallStdDev * 10000) / 10000,
+        estimatedSigma: chart.estimatedSigma,
+        histogram,
+        specLimits,
+      };
+
+      // Violations table from primary-chart points
+      const violationItems: {
+        rule: number; ruleName: string; pointIndex: number;
+        value: number; severity: 'info' | 'warning' | 'critical';
+      }[] = [];
+      for (const p of chart.primary.points) {
+        for (const rule of p.violatedRules) {
+          const severity: 'info' | 'warning' | 'critical' =
+            rule === 1 ? 'critical' : (rule === 4 || rule === 7) ? 'info' : 'warning';
+          violationItems.push({
+            rule, ruleName: SPC_RULE_NAMES[rule] || `Rule ${rule}`,
+            pointIndex: p.index, value: p.value, severity,
+          });
+        }
+      }
+      const violations = {
+        summary: {
+          total: violationItems.length,
+          critical: violationItems.filter(v => v.severity === 'critical').length,
+          warning: violationItems.filter(v => v.severity === 'warning').length,
+          info: violationItems.filter(v => v.severity === 'info').length,
+        },
+        items: violationItems,
+      };
+
+      // KPI: DPMO / sigma level / yield from out-of-spec rate (fallback to NG flag)
+      let defectCount: number;
+      if (usl != null || lsl != null) {
+        defectCount = allValues.filter(v => (usl != null && v > usl) || (lsl != null && v < lsl)).length;
+      } else {
+        defectCount = rawValues.filter(r => r.result === 'NG').length;
+      }
+      const six = computeSixSigmaMetrics(defectCount, allValues.length);
+      const oocCount = chart.primary.points.filter(p => p.outOfControl).length;
+      const oocPercent = chart.primary.points.length > 0
+        ? Math.round((oocCount / chart.primary.points.length) * 10000) / 100
+        : 0;
+
+      const kpi = {
+        cpk: capability.cpk,
+        ppk: capability.ppk,
+        oocPercent,
+        sigmaLevel: six.sigmaLevel,
+        dpmo: six.dpmo,
+        yield: six.yieldPercent,
+        sampleCount: allValues.length,
+      };
+
+      return {
+        insufficient: false,
+        sampleCount: allValues.length,
+        kpi, chart, capability, violations, pareto, specLimits, pointDef,
+      };
     }),
 
   // Get NG details by measurement point for a specific workstation

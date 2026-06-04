@@ -5743,6 +5743,18 @@
     "creating": "Đang tạo"
   },
   "spc": {
+    "spcAnalysisTitle": "Phân tích SPC",
+    "spcAnalysisFullDesc": "Kiểm soát quá trình thống kê hợp nhất: biểu đồ kiểm soát, năng lực, vi phạm quy tắc và Pareto trong một màn hình",
+    "chartType": "Loại biểu đồ",
+    "chartXbarR": "Biểu đồ X̄-R",
+    "chartXbarS": "Biểu đồ X̄-S",
+    "chartImr": "Biểu đồ I-MR",
+    "sChart": "Biểu đồ S",
+    "mrChart": "Biểu đồ khoảng trượt",
+    "selectMeasurementPointPrompt": "Chọn một điểm đo để bắt đầu phân tích",
+    "oocPercent": "% Ngoài kiểm soát",
+    "sigmaLevel": "Mức sigma",
+    "histogramNormalOverlay": "Histogram chồng đường phân phối chuẩn",
     "selectMeasurementPointCapability": "Chọn Phép đo point Năng lực",
     "selectMeasurementPointCharts": "Chọn Phép đo point Biểu đồ",
     "anomalyDetectionResultsDesc": "Bất thường Phát hiện Kết quả desc",

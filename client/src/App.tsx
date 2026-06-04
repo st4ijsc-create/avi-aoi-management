@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch, useLocation } from "wouter";
+import { Route, Switch, useLocation, Redirect } from "wouter";
 import React, { Suspense, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -92,7 +92,6 @@ import TestAnnotationPage from "./pages/TestAnnotationPage";
 const MaskAnnotationPage = React.lazy(() => import("./pages/MaskAnnotationPage"));
 import AOIPackages from "./pages/AOIPackages";
 import MqttBulletin from "./pages/MqttBulletin";
-import SPCAdvanced from "./pages/SPCAdvanced";
 import CorrelationAnalysis from "./pages/CorrelationAnalysis";
 import QualityGates from "./pages/QualityGates";
 import RoleBuilder from "./pages/RoleBuilder";
@@ -240,7 +239,8 @@ function Router() {
       <Route path="/mask-annotation"><AIPageWrapper><MaskAnnotationPage /></AIPageWrapper></Route>
       <Route path="/aoi-packages" component={AOIPackages} />
       <Route path="/mqtt-bulletin" component={MqttBulletin} />
-      <Route path="/spc-advanced" component={SPCAdvanced} />
+      {/* /spc-advanced consolidated into /spc-analysis (redirect for backward-compat) */}
+      <Route path="/spc-advanced"><Redirect to="/spc-analysis" /></Route>
       <Route path="/correlation-analysis" component={CorrelationAnalysis} />
       <Route path="/quality-gates" component={QualityGates} />
       <Route path="/role-builder" component={RoleBuilder} />
