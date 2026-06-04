@@ -390,12 +390,46 @@ async function preprocessForEmbedding(
 // ─── Extract Embedding ───────────────────────────────────────────────────────
 
 /**
+ * B4 — Pool một vector embedding 1-D từ output ONNX thô + dims thật của tensor.
+ *
+ * Hỗ trợ generic theo LAYOUT (không đoán — đọc `dims` thật từ tensor):
+ *  - 3-D `[batch, T, D]` (vd DINOv2 `[1,257,384]` / dinov2-base `[1,257,768]`):
+ *      transformer last_hidden_state → lấy CLS token = token 0 = D giá trị ĐẦU TIÊN
+ *      (slice(0, D)). pooling="cls".
+ *  - 2-D `[1, D]` hoặc 1-D `[D]` (embedding đã phẳng — ResNet/CLIP/pooled cũ):
+ *      dùng nguyên toàn bộ data. pooling="flat" (backward-compatible).
+ *  - Khác / dims rỗng: fallback dùng nguyên data phẳng (an toàn, không ném lỗi).
+ *
+ * Trả vector CHƯA L2-normalize (caller chịu trách nhiệm normalize) + dim + pooling.
+ * Pure → unit-test được không cần ONNX session.
+ */
+export function poolEmbeddingFromOutput(
+  data: ArrayLike<number>,
+  dims: number[] | undefined | null,
+): { vector: number[]; dim: number; pooling: "cls" | "flat" } {
+  const flat = Array.from(data as ArrayLike<number>);
+
+  // 3-D transformer output [batch, tokens, dim] → CLS = token 0 = slice(0, D).
+  if (Array.isArray(dims) && dims.length === 3) {
+    const D = dims[2];
+    if (D > 0 && flat.length >= D) {
+      return { vector: flat.slice(0, D), dim: D, pooling: "cls" };
+    }
+  }
+
+  // 2-D [1, D] / 1-D [D] / phẳng → dùng nguyên.
+  return { vector: flat, dim: flat.length, pooling: "flat" };
+}
+
+/**
  * Extract embedding vector from an image using an ONNX model.
- * The model should output a 1D feature vector (e.g. ResNet50 → 2048-dim,
- * EfficientNet → 1280-dim, CLIP → 512-dim).
- * 
- * If the model has an "embedding" output, it uses that.
- * Otherwise it takes the last output and flattens it.
+ *
+ * Hỗ trợ 2 họ model:
+ *  - Transformer embedding (DINOv2): output 3-D `last_hidden_state [1, T, D]` →
+ *    pool CLS token (token 0) → vector D-dim (vd 384 cho dinov2-small, 768 cho base).
+ *  - Embedding phẳng cũ (ResNet/CLIP/pooled): output 2-D `[1,D]` / 1-D `[D]` →
+ *    dùng nguyên (backward-compatible).
+ * Layout được suy từ `output.dims` THẬT (không đoán). Vector trả về đã L2-normalize.
  */
 export async function extractEmbedding(
   modelId: number,
@@ -430,11 +464,14 @@ export async function extractEmbedding(
   const embOutput = results[embOutputName!];
   if (!embOutput) throw new Error("No embedding output found");
 
-  const rawArray = Array.from(embOutput.data as Float32Array);
+  // Pool theo dims THẬT của tensor: 3-D [1,T,D] → CLS token (slice 0..D); phẳng → nguyên.
+  const { vector } = poolEmbeddingFromOutput(
+    embOutput.data as Float32Array,
+    embOutput.dims as number[],
+  );
 
-  // L2 normalize
-  const norm = Math.sqrt(rawArray.reduce((sum, v) => sum + v * v, 0)) || 1;
-  const embedding = rawArray.map((v) => v / norm);
+  // L2 normalize → unit vector (cosine = dot).
+  const embedding = l2normalize(vector);
 
   return {
     embedding,
