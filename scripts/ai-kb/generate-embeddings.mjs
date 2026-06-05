@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 
 const ROOT = process.cwd();
 const KNOWLEDGE_DIR = path.join(ROOT, "knowledge");
@@ -138,6 +139,13 @@ function l2norm(vec) {
   return vec.map((v) => v / norm);
 }
 
+// Same canonical hash as build-knowledge-chunks.makeChunk (sha256 of `title\ntext`).
+// Used as a fallback when a chunk predates the hash field, so embeddings.jsonl
+// always carries a hash for incremental reuse.
+function chunkHash(title, text) {
+  return crypto.createHash("sha256").update(`${title}\n${text}`, "utf8").digest("hex");
+}
+
 async function run() {
   if (!fs.existsSync(CHUNKS_FILE)) {
     throw new Error("Missing knowledge/chunks.jsonl. Run kb:chunk first.");
@@ -169,6 +177,7 @@ async function run() {
     output.write(
       JSON.stringify({
         id: c.id,
+        hash: c.hash ?? chunkHash(c.title, c.text),
         sourceType: c.sourceType,
         sourcePath: c.sourcePath,
         title: c.title,

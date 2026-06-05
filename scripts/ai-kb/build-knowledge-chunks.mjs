@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 
 const ROOT = process.cwd();
 const KNOWLEDGE_DIR = path.join(ROOT, "knowledge");
@@ -84,14 +85,30 @@ function keywordsFromText(text) {
     .map(([w]) => w);
 }
 
-function makeChunk(id, sourceType, sourcePath, title, text) {
+// Stable, content-addressed chunk id: depends only on (sourceType, sourcePath,
+// partIndex) — NOT on traversal order. Adding/removing a file no longer shifts
+// the ids of other chunks, which is the precondition for hash-based incremental
+// re-embedding (C1a).
+function makeChunkId(sourceType, sourcePath, partIndex) {
+  return `${sourceType}:${sourcePath}#${partIndex}`;
+}
+
+// Hash of the EXACT string that generate-embeddings/embed-incremental feed to
+// the embedder (`title\ntext`). Same content -> same hash -> embedding reused;
+// any change to title or text -> hash changes -> re-embed.
+function hashChunk(title, text) {
+  return crypto.createHash("sha256").update(`${title}\n${text}`, "utf8").digest("hex");
+}
+
+function makeChunk(sourceType, sourcePath, partIndex, title, text) {
   return {
-    id,
+    id: makeChunkId(sourceType, sourcePath, partIndex),
     sourceType,
     sourcePath,
     title,
     text,
     keywords: keywordsFromText(text),
+    hash: hashChunk(title, text),
   };
 }
 
@@ -105,7 +122,6 @@ function run() {
   const docsCatalog = readJson("docs-catalog.json");
 
   const chunks = [];
-  let id = 1;
 
   for (const router of routers) {
     const text = [
@@ -116,7 +132,7 @@ function run() {
       `publicProcedure usages: ${router.publicUses ?? 0}`,
     ].join("\n");
 
-    chunks.push(makeChunk(`router-${id++}`, "router", router.file, "Router Summary", text));
+    chunks.push(makeChunk("router", router.file, 0, "Router Summary", text));
   }
 
   for (const service of services) {
@@ -127,7 +143,7 @@ function run() {
       `Local imports: ${(service.localImports ?? []).join(", ") || "N/A"}`,
     ].join("\n");
 
-    chunks.push(makeChunk(`service-${id++}`, "service", service.file, "Service Summary", text));
+    chunks.push(makeChunk("service", service.file, 0, "Service Summary", text));
   }
 
   for (const t of types) {
@@ -138,7 +154,7 @@ function run() {
       `Zod schemas: ${(t.zodSchemas ?? []).join(", ") || "N/A"}`,
     ].join("\n");
 
-    chunks.push(makeChunk(`type-${id++}`, "type", t.file, "Type Summary", text));
+    chunks.push(makeChunk("type", t.file, 0, "Type Summary", text));
   }
 
   const patternText = [
@@ -150,7 +166,7 @@ function run() {
     `zod.object count: ${patterns.zodObjectCount ?? 0}`,
   ].join("\n");
 
-  chunks.push(makeChunk(`pattern-${id++}`, "pattern", "knowledge/patterns.json", "Code Patterns", patternText));
+  chunks.push(makeChunk("pattern", "knowledge/patterns.json", 0, "Code Patterns", patternText));
 
   const markdownFiles = collectMarkdownFiles(path.join(ROOT, "docs"))
     .concat(collectMarkdownFiles(path.join(ROOT, "apidocs")));
@@ -164,10 +180,48 @@ function run() {
     const title = (fullText.match(/^#\s+(.+)$/m) || [null, path.basename(absoluteFile)])?.[1] ?? path.basename(absoluteFile);
 
     const pieces = chunkText(fullText, MAX_CHARS);
-    let part = 1;
-    for (const text of pieces) {
-      chunks.push(makeChunk(`doc-${id++}`, "doc", relFile, `${title} (part ${part++})`, text));
+    pieces.forEach((text, partIndex) => {
+      chunks.push(makeChunk("doc", relFile, partIndex, `${title} (part ${partIndex + 1})`, text));
+    });
+  }
+
+  // Domain-specific AOI knowledge files (always included, no catalog filter).
+  // These describe defect types, thresholds, workflow, troubleshooting, reports.
+  const domainFiles = collectMarkdownFiles(path.join(ROOT, "knowledge", "domain"));
+  for (const absoluteFile of domainFiles) {
+    const relFile = path.relative(ROOT, absoluteFile).split(path.sep).join("/");
+    const fullText = fs.readFileSync(absoluteFile, "utf8");
+    const title = (fullText.match(/^#\s+(.+)$/m) || [null, path.basename(absoluteFile)])?.[1] ?? path.basename(absoluteFile);
+
+    const pieces = chunkText(fullText, MAX_CHARS);
+    pieces.forEach((text, partIndex) => {
+      chunks.push(makeChunk("domain", relFile, partIndex, `${title} (part ${partIndex + 1})`, text));
+    });
+  }
+
+  // Feature documentation (knowledge/features/**/*.md). Authored Vietnamese
+  // 10-section guides per UI feature. Always included, no catalog filter.
+  const featureFiles = collectMarkdownFiles(path.join(ROOT, "knowledge", "features"));
+  for (const absoluteFile of featureFiles) {
+    const relFile = path.relative(ROOT, absoluteFile).split(path.sep).join("/");
+    if (path.basename(absoluteFile).startsWith("_")) continue; // skip _TEMPLATE.md
+    const fullText = fs.readFileSync(absoluteFile, "utf8");
+    const title = (fullText.match(/^#\s+(.+)$/m) || [null, path.basename(absoluteFile)])?.[1] ?? path.basename(absoluteFile);
+
+    const pieces = chunkText(fullText, MAX_CHARS);
+    pieces.forEach((text, partIndex) => {
+      chunks.push(makeChunk("feature", relFile, partIndex, `${title} (part ${partIndex + 1})`, text));
+    });
+  }
+
+  // Guard: stable ids must be unique. A collision would make the retrieval
+  // id->chunk map and incremental reuse-by-id ambiguous.
+  const seenIds = new Set();
+  for (const c of chunks) {
+    if (seenIds.has(c.id)) {
+      throw new Error(`[kb] Duplicate chunk id detected: ${c.id}. IDs must be unique.`);
     }
+    seenIds.add(c.id);
   }
 
   const lines = chunks.map((c) => JSON.stringify(c)).join("\n") + "\n";

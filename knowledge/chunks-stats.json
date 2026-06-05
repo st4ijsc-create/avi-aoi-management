@@ -1,12 +1,14 @@
 {
-  "generatedAt": "2026-05-05T07:35:40.341Z",
+  "generatedAt": "2026-06-05T07:21:20.057Z",
   "maxChunkChars": 1800,
-  "totalChunks": 883,
+  "totalChunks": 1196,
   "byType": {
     "router": 79,
     "service": 46,
     "type": 114,
     "pattern": 1,
-    "doc": 643
+    "doc": 643,
+    "domain": 131,
+    "feature": 182
   }
 }
