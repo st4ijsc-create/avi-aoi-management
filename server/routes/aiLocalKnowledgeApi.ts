@@ -275,6 +275,13 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
               pendingAction: evt.pendingAction,
             });
             break;
+          case "client_action":
+            send({
+              type: "client_action",
+              toolName: evt.toolName,
+              clientAction: evt.clientAction,
+            });
+            break;
           case "token":
             send({ type: "token", token: evt.token });
             break;

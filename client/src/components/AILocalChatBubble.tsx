@@ -216,9 +216,9 @@ export function AILocalChatBubble() {
   const userRole = mapAppRoleToAiRole(user?.role);
 
   // C3a — current route + UI language + page-published selection.
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const { t, i18n } = useTranslation();
-  const { selection } = useAiCopilotContext();
+  const { selection, publishPrefill } = useAiCopilotContext();
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -393,6 +393,12 @@ export function AILocalChatBubble() {
                 toolResult?: ToolResultPayload;
                 toolName?: string;
                 pendingAction?: PendingAction;
+                clientAction?: {
+                  action: "navigate" | "prefill_form";
+                  route: string;
+                  values?: Record<string, unknown>;
+                  message: string;
+                };
                 error?: string;
                 structured?: NonNullable<ChatMessage["result"]>["structured"];
                 followUpSuggestions?: string[];
@@ -423,6 +429,15 @@ export function AILocalChatBubble() {
                     m.id === assistantMsgId ? { ...m, pendingAction: pa, actionState: "pending" } : m,
                   ),
                 );
+              } else if (payload.type === "client_action" && payload.clientAction) {
+                // GĐ3a Mục 5 — navigate / prefill_form. No DB mutation; FE only.
+                const ca = payload.clientAction;
+                if (ca.route) {
+                  if (ca.action === "prefill_form" && ca.values) {
+                    publishPrefill(ca.route, ca.values);
+                  }
+                  setLocation(ca.route);
+                }
               } else if (payload.type === "token" && payload.token) {
                 accumulatedContent += payload.token;
                 const snapshot = accumulatedContent;

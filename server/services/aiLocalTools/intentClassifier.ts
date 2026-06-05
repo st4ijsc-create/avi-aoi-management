@@ -114,9 +114,10 @@ function findToolByTriggers(question: string): Tool | null {
   const norm = normalizeText(question);
   let best: { tool: Tool; score: number } | null = null;
   for (const tool of listTools()) {
-    // Write tools are only matched via their dedicated shortcuts (which enforce
-    // required args / clarification) — never via generic trigger scoring.
-    if (tool.kind === "write") continue;
+    // Write/client tools are only matched via dedicated shortcuts or the LLM
+    // router (which enforce required args / route whitelist) — never via generic
+    // trigger scoring.
+    if (tool.kind === "write" || tool.kind === "client") continue;
     let score = 0;
     for (const trigger of tool.triggers) {
       if (norm.includes(trigger.toLowerCase())) {
@@ -324,11 +325,12 @@ export function classifyToolIntent(question: string, context?: ToolContext): Too
 
 const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434").replace(/\/$/, "");
 const OLLAMA_QA_MODEL = process.env.OLLAMA_QA_MODEL ?? "qwen2.5-instruct";
-const LLM_FALLBACK_ENABLED = process.env.AI_TOOL_LLM_FALLBACK === "1";
+// Read at call-time (not module-load) so tests/runtime config toggles take effect.
+const llmFallbackEnabled = () => process.env.AI_TOOL_LLM_FALLBACK === "1";
 
 // WS-G4 — rollback switch. Default (false) → classify intent via bundled GGUF engine
 // (grammar-constrained JSON, no Ollama daemon). USE_LEGACY_OLLAMA=true → legacy HTTP path.
-const USE_LEGACY_OLLAMA = (process.env.USE_LEGACY_OLLAMA ?? "false").toLowerCase() === "true";
+const useLegacyOllama = () => (process.env.USE_LEGACY_OLLAMA ?? "false").toLowerCase() === "true";
 
 // Fixed JSON schema for grammar-constrained decoding (GBNF). Guarantees parseable JSON
 // with at least { tool: string }; args is an optional free-form object validated by zod below.
@@ -343,21 +345,34 @@ const TOOL_INTENT_SCHEMA = {
 
 function buildClassifierPrompt(question: string): string {
   const toolDescriptions = listTools()
-    .map((t) => `  - ${t.name}: ${t.description}`)
+    .map((t) => {
+      const tag = t.kind === "write" ? " [WRITE]" : t.kind === "client" ? " [CLIENT]" : "";
+      return `  - ${t.name}${tag}: ${t.description}`;
+    })
     .join("\n");
   return [
     "Bạn là bộ phân loại ý định cho hệ thống AVI/AOI. Chọn DUY NHẤT một tool phù hợp",
     "với câu hỏi của người dùng (hoặc \"none\" nếu không tool nào phù hợp).",
+    "Tool [WRITE] là hành động thay đổi dữ liệu (sẽ cần người dùng xác nhận sau).",
+    "Tool [CLIENT] chỉ điều hướng / điền form (không thay đổi dữ liệu).",
     "",
     "Danh sách tool:",
     toolDescriptions,
     "",
-    "Quy tắc trích args:",
-    "  - get_lot_status: phải có { \"orderCode\": \"<mã lệnh>\" }. Nếu câu hỏi không nêu mã → trả \"none\".",
+    "Quy tắc trích args (chỉ trích khi câu hỏi nêu RÕ; thiếu tham số bắt buộc → \"none\"):",
+    "  - get_lot_status: { \"orderCode\": \"<mã lệnh>\" } (bắt buộc).",
     "  - get_machine_status: { \"onlyOffline\": true|false }",
     "  - get_defect_trend: { \"days\": 2..30 } (mặc định 7)",
     "  - get_top_defects: { \"days\": 1..30, \"limit\": 5 }",
     "  - get_today_stats: {}",
+    "  - acknowledge_alert: { \"id\": <int> }",
+    "  - acknowledge_predictive_alert: { \"predictiveAlertId\": <int>, \"notes\"?: string }",
+    "  - resolve_predictive_alert: { \"predictiveAlertId\": <int>, \"resolutionNotes\": string } (notes bắt buộc).",
+    "  - create_measurement_point: { \"productModelId\": <int>, \"code\": string, \"name\": string, \"measurementTypeCode\": string, \"usl\"?, \"lsl\"?, \"nominalValue\"? }",
+    "  - update_measurement_point: { \"id\": <int>, \"name\"?, \"unit\"?, \"upperLimit\"?, \"lowerLimit\"?, \"nominalValue\"? }",
+    "  - set_yield_threshold: { \"scope\": \"FPY|FY|NTF|UPH\" hoặc \"thresholdId\": <int>, \"field\": \"warning|critical|target\", \"value\": <number> }",
+    "  - navigate: { \"route\": \"/<đường-dẫn>\" }",
+    "  - prefill_form: { \"route\": \"/<đường-dẫn>\", \"values\": { ... } }",
     "",
     `Câu hỏi: ${question}`,
     "",
@@ -392,7 +407,7 @@ function tryParseClassifierJson(raw: string): { tool: string; args: Record<strin
  * No-op (returns null decision) when AI_TOOL_LLM_FALLBACK !== "1".
  */
 export async function classifyToolIntentLLM(question: string): Promise<ToolDecision> {
-  if (!LLM_FALLBACK_ENABLED) {
+  if (!llmFallbackEnabled()) {
     return { tool: null, args: {}, reason: "LLM_FALLBACK_DISABLED" };
   }
   if (!question || question.trim().length < 2) {
@@ -401,7 +416,7 @@ export async function classifyToolIntentLLM(question: string): Promise<ToolDecis
 
   let parsed: { tool: string; args: Record<string, unknown> } | null = null;
 
-  if (!USE_LEGACY_OLLAMA) {
+  if (!useLegacyOllama()) {
     // Default: bundled GGUF engine with grammar-constrained JSON (always parseable).
     try {
       const { generateJSON, isGgufAvailable } = await import("../aiGgufEngine");

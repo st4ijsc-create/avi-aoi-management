@@ -4,7 +4,40 @@ import {
   aiModels, InsertAiModel,
   modelVersions, InsertModelVersion,
   inferenceResults, InsertInferenceResult,
+  predictiveAlerts,
 } from "../../drizzle/schema";
+
+// ============ PREDICTIVE ALERT FUNCTIONS (GĐ3a — reused by AI Copilot) ============
+// Read-only getter used by the copilot write-tool preview (dry-run). The router
+// (aiRouters.predictiveAlertRouter) mutates via raw SQL; these helpers expose
+// the same table through drizzle so the HITL preview/execute stay parameterized.
+export async function getPredictiveAlertById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(predictiveAlerts).where(eq(predictiveAlerts.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function acknowledgePredictiveAlert(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(predictiveAlerts).set({
+    status: "ACKNOWLEDGED",
+    acknowledgedBy: userId,
+    acknowledgedAt: new Date(),
+  }).where(eq(predictiveAlerts.id, id));
+}
+
+export async function resolvePredictiveAlert(id: number, userId: number, resolutionNotes: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(predictiveAlerts).set({
+    status: "RESOLVED",
+    resolvedBy: userId,
+    resolvedAt: new Date(),
+    resolutionNotes,
+  }).where(eq(predictiveAlerts.id, id));
+}
 
 // ============ AI MODEL FUNCTIONS ============
 

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { tryExecuteTool, type ToolResult, type ToolExecContext, type PendingActionDTO } from "./aiLocalTools";
+import { tryExecuteTool, type ToolResult, type ToolExecContext, type PendingActionDTO, type ClientActionDirective } from "./aiLocalTools";
 
 export type KbIntent =
   | "how_to"
@@ -1500,6 +1500,7 @@ export type StreamEvent =
     }
   | { type: "tool"; toolName: string | null; toolResult: ToolResult }
   | { type: "pending_action"; toolName: string | null; pendingAction: PendingActionDTO }
+  | { type: "client_action"; toolName: string | null; clientAction: ClientActionDirective }
   | { type: "token"; token: string }
   | {
       type: "done";
@@ -1527,8 +1528,9 @@ export async function* streamAnswer(
   const toolResult = toolExec.result;
   const clarifyMessage = toolExec.decision.clarifyMessage ?? null;
 
-  // GĐ2 — write-tool matched: emit meta + (pending_action | refusal token) + done.
-  if (toolExec.pendingAction || toolExec.denied) {
+  // GĐ2/GĐ3a — write-tool, client-tool, or refusal matched: emit meta +
+  // (pending_action | client_action | refusal token) + done.
+  if (toolExec.pendingAction || toolExec.clientAction || toolExec.denied) {
     const retrieve = await retrieveKnowledge(question, topK, context);
     yield {
       type: "meta",
@@ -1537,9 +1539,16 @@ export async function* streamAnswer(
       confidence: retrieve.confidence,
       citations: retrieve.citations,
     };
-    const message = toolExec.denied ? toolExec.denied.message : toolExec.pendingAction!.summary;
+    const message = toolExec.denied
+      ? toolExec.denied.message
+      : toolExec.clientAction
+        ? toolExec.clientAction.message
+        : toolExec.pendingAction!.summary;
     if (toolExec.pendingAction) {
       yield { type: "pending_action", toolName: toolExec.decision.tool ?? null, pendingAction: toolExec.pendingAction };
+    }
+    if (toolExec.clientAction) {
+      yield { type: "client_action", toolName: toolExec.decision.tool ?? null, clientAction: toolExec.clientAction };
     }
     yield { type: "token", token: message };
     yield {

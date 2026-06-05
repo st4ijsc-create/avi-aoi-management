@@ -20,6 +20,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -34,10 +35,26 @@ export interface CopilotSelection {
   selectedLot?: string;
 }
 
+/**
+ * GĐ3a Mục 5 — prefill channel. The chat bubble publishes a {route, values}
+ * directive (from a `client_action` of kind prefill_form); pages that opt-in
+ * subscribe via useCopilotPrefill() and apply matching values to their form.
+ */
+export interface CopilotPrefill {
+  route: string;
+  values: Record<string, unknown>;
+  /** Monotonic id so a repeated prefill for the same route still fires. */
+  nonce: number;
+}
+
 interface AiCopilotContextValue {
   selection: CopilotSelection;
   setSelection: (next: CopilotSelection) => void;
   clearSelection: () => void;
+  /** Latest prefill directive (null until one is published). */
+  prefill: CopilotPrefill | null;
+  /** Publish a prefill directive (called by the chat bubble). */
+  publishPrefill: (route: string, values: Record<string, unknown>) => void;
 }
 
 const AiCopilotContext = createContext<AiCopilotContextValue | null>(null);
@@ -67,9 +84,16 @@ export function AiCopilotProvider({ children }: { children: ReactNode }) {
 
   const clearSelection = useCallback(() => setSelectionState({}), []);
 
+  const [prefill, setPrefill] = useState<CopilotPrefill | null>(null);
+  const nonceRef = useRef(0);
+  const publishPrefill = useCallback((route: string, values: Record<string, unknown>) => {
+    nonceRef.current += 1;
+    setPrefill({ route, values, nonce: nonceRef.current });
+  }, []);
+
   const value = useMemo(
-    () => ({ selection, setSelection, clearSelection }),
-    [selection, setSelection, clearSelection],
+    () => ({ selection, setSelection, clearSelection, prefill, publishPrefill }),
+    [selection, setSelection, clearSelection, prefill, publishPrefill],
   );
 
   return <AiCopilotContext.Provider value={value}>{children}</AiCopilotContext.Provider>;
@@ -86,7 +110,32 @@ export function useAiCopilotContext(): AiCopilotContextValue {
     selection: {},
     setSelection: () => {},
     clearSelection: () => {},
+    prefill: null,
+    publishPrefill: () => {},
   };
+}
+
+/**
+ * GĐ3a Mục 5 — page hook: subscribe to copilot prefill directives for a given
+ * route. The callback fires whenever a new prefill targeting `route` arrives.
+ *
+ * Example:
+ *   useCopilotPrefill("/products", (values) => form.reset(values));
+ */
+export function useCopilotPrefill(
+  route: string,
+  onPrefill: (values: Record<string, unknown>) => void,
+): void {
+  const { prefill } = useAiCopilotContext();
+  const cbRef = useRef(onPrefill);
+  cbRef.current = onPrefill;
+  const lastNonce = useRef(0);
+  useEffect(() => {
+    if (prefill && prefill.route === route && prefill.nonce !== lastNonce.current) {
+      lastNonce.current = prefill.nonce;
+      cbRef.current(prefill.values);
+    }
+  }, [prefill, route]);
 }
 
 /**

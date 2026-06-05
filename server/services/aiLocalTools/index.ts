@@ -6,12 +6,12 @@
 import "./handlers";
 import "./writeHandlers";
 import { classifyToolIntent, classifyToolIntentLLM, type ToolContext } from "./intentClassifier";
-import { getTool, isWriteTool, listTools, type Tool, type ToolExecContext } from "./toolRegistry";
+import { getTool, isWriteTool, isClientTool, listTools, type ClientActionDirective, type Tool, type ToolExecContext } from "./toolRegistry";
 import type { ToolResult } from "./toolRegistry";
 import { proposeAction, type PendingActionDTO } from "../aiCopilotActions";
 
-export type { ToolResult, ToolResultType, ActionPreview, ToolExecContext, ToolPermission, ToolLang } from "./toolRegistry";
-export { isWriteTool, assertExecutable } from "./toolRegistry";
+export type { ToolResult, ToolResultType, ActionPreview, ToolExecContext, ToolPermission, ToolLang, ClientActionDirective } from "./toolRegistry";
+export { isWriteTool, isClientTool, assertExecutable } from "./toolRegistry";
 export type { ToolDecision, ToolContext } from "./intentClassifier";
 export type { PendingActionDTO } from "../aiCopilotActions";
 export { classifyToolIntent, classifyToolIntentLLM, listTools };
@@ -34,6 +34,8 @@ export async function tryExecuteTool(
   result: ToolResult | null;
   /** Set when a write-tool was matched → confirm card to render (no execute). */
   pendingAction?: PendingActionDTO | null;
+  /** Set when a client-tool (navigate/prefill) was matched → FE directive. */
+  clientAction?: ClientActionDirective | null;
   /** Localized refusal when a write-tool was matched but RBAC denied it. */
   denied?: { message: string; reason?: string };
   error?: string;
@@ -55,6 +57,28 @@ export async function tryExecuteTool(
   const tool: Tool | undefined = getTool(decision.tool);
   if (!tool) {
     return { decision, result: null, error: "TOOL_NOT_REGISTERED" };
+  }
+
+  // ── Client tool (navigate/prefill): no DB, no HITL. Emit a directive. ──
+  if (isClientTool(tool)) {
+    if (!execCtx) {
+      return { decision, result: null, error: "CLIENT_TOOL_REQUIRES_CONTEXT" };
+    }
+    if (typeof tool.buildClientAction !== "function") {
+      return { decision, result: null, error: "CLIENT_TOOL_MISSING_BUILDER" };
+    }
+    const directive = tool.buildClientAction(decision.args, execCtx);
+    if (!directive) {
+      // Route not whitelisted (or otherwise rejected) → refuse politely.
+      const msg =
+        execCtx.lang === "en"
+          ? "I can't open that page (not in the allowed list)."
+          : execCtx.lang === "zh"
+            ? "无法打开该页面（不在允许列表中）。"
+            : "Tôi không thể mở trang đó (không nằm trong danh sách cho phép).";
+      return { decision, result: null, denied: { message: msg, reason: "ROUTE_NOT_ALLOWED" } };
+    }
+    return { decision, result: null, clientAction: directive };
   }
 
   // ── Write tool: never execute here. Go through the HITL propose flow. ──

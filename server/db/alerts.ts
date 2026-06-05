@@ -75,6 +75,15 @@ export async function createAlertHistory(data: InsertAlertHistory) {
   return { id: result.id };
 }
 
+// Read-only getter for a single alert-history row. Used by the AI Copilot
+// acknowledge_alert write-tool preview (dry-run, no mutation).
+export async function getAlertHistoryById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(alertHistory).where(eq(alertHistory.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
 export async function acknowledgeAlert(id: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

@@ -138,3 +138,10 @@ export const setSpecLimitsTool: Tool<SetSpecLimitsParams, { ok: boolean }> = {
 };
 
 registerTool(setSpecLimitsTool);
+
+// ── GĐ3a: additional write-tools + client-action tools (side-effect imports) ──
+// Each module self-registers via registerTool().
+import "./writeHandlers/alerts";          // acknowledge_alert, ack/resolve predictive
+import "./writeHandlers/measurementPoint"; // create_/update_measurement_point
+import "./writeHandlers/yield";            // set_yield_threshold
+import "./writeHandlers/client";           // navigate, prefill_form (client_action)

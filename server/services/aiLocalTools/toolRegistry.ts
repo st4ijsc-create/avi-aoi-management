@@ -62,6 +62,23 @@ export interface ToolExecContext {
 export type ToolExecuteResult = ToolResult;
 
 /**
+ * GĐ3a Mục 5 — Client-side directive (navigate / prefill_form). Produced by a
+ * 'client' tool's buildClientAction(); forwarded to the FE via the
+ * `client_action` StreamEvent. NEVER touches the DB and does NOT go through the
+ * HITL write flow (only the viewer's permission applies, implicitly).
+ */
+export interface ClientActionDirective {
+  /** 'navigate' → setLocation(route); 'prefill_form' → publish values for route. */
+  action: "navigate" | "prefill_form";
+  /** Whitelisted route (validated server-side against ALLOWED_CLIENT_ROUTES). */
+  route: string;
+  /** Field values to prefill (prefill_form only). */
+  values?: Record<string, unknown>;
+  /** Localized human-readable confirmation message. */
+  message: string;
+}
+
+/**
  * Dry-run preview of a write action. Computed BEFORE any DB mutation so the
  * user can confirm. `changes` reuses the audit AuditChangeField (before/after).
  */
@@ -89,8 +106,12 @@ export interface Tool<TParams = unknown, TData = unknown> {
   triggers: string[];
 
   // ── GĐ2 OPTIONAL fields (read tools omit them → default kind 'read') ──
-  /** 'read' (default) runs immediately; 'write' goes through HITL confirm. */
-  kind?: "read" | "write";
+  /**
+   * 'read' (default) runs immediately; 'write' goes through HITL confirm;
+   * 'client' (GĐ3a Mục 5) emits a client_action directive (navigate/prefill) —
+   * no DB mutation, no HITL.
+   */
+  kind?: "read" | "write" | "client";
   /** RBAC gate checked before propose AND before execute (write tools). */
   requiredPermission?: ToolPermission;
   /** Human-readable confirm summary (vi/en/zh). */
@@ -99,6 +120,16 @@ export interface Tool<TParams = unknown, TData = unknown> {
   preview?: (params: TParams, ctx: ToolExecContext) => Promise<ActionPreview>;
   /** Apply the mutation. Only called after confirm. Uses ctx.user.id for audit. */
   execute?: (params: TParams, ctx: ToolExecContext) => Promise<ToolExecuteResult>;
+  /**
+   * GĐ3a Mục 5 — 'client' tools: build the FE directive (navigate/prefill).
+   * Validates route whitelist; returns null when the route is not allowed.
+   */
+  buildClientAction?: (params: TParams, ctx: ToolExecContext) => ClientActionDirective | null;
+}
+
+/** True when the tool is a client-side directive tool (navigate/prefill). */
+export function isClientTool(tool: Tool<any, any> | undefined | null): boolean {
+  return !!tool && tool.kind === "client";
 }
 
 /** True when the tool is a write-action requiring HITL confirm. */
