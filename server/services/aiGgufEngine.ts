@@ -17,6 +17,7 @@
 
 import path from "path";
 import fs from "fs";
+import { withGgufSlot, withGgufSlotGenerator, getGgufQueueStats } from "./ggufConcurrency";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -478,42 +479,47 @@ export async function generateText(options: GgufGenerateOptions, modelId?: strin
   }
 
   const { LlamaChatSession } = await import("node-llama-cpp");
-  // Create a fresh session for each generation to avoid context contamination
-  const sequence = loaded.context.getSequence();
-  const session = new LlamaChatSession({ contextSequence: sequence });
 
-  try {
-    const response = await session.prompt(fullPrompt, {
-      maxTokens: options.maxTokens ?? 1024,
-      temperature: options.temperature ?? 0.7,
-      topP: options.topP ?? 0.9,
-      topK: options.topK ?? 40,
-      repeatPenalty: {
-        penalty: options.repeatPenalty ?? 1.1,
-      },
-      stopGenerationTrigger: options.stopSequences
-        ? options.stopSequences.map(s => [{ type: "text" as const, text: s }])
-        : undefined,
-    });
+  // Mục 4: serialize GGUF inference through the global concurrency semaphore to
+  // protect VRAM. The slot is held across getSequence()→prompt→dispose.
+  return withGgufSlot(async () => {
+    // Create a fresh session for each generation to avoid context contamination
+    const sequence = loaded.context.getSequence();
+    const session = new LlamaChatSession({ contextSequence: sequence });
 
-    const totalTimeMs = Date.now() - startTime;
-    // Accurate token counting using model tokenizer
-    const tokensPrompt = loaded.model.tokenize(fullPrompt).length;
-    const tokensGenerated = loaded.model.tokenize(response).length;
-    const tokensPerSecond = totalTimeMs > 0 ? (tokensGenerated / totalTimeMs) * 1000 : 0;
+    try {
+      const response = await session.prompt(fullPrompt, {
+        maxTokens: options.maxTokens ?? 1024,
+        temperature: options.temperature ?? 0.7,
+        topP: options.topP ?? 0.9,
+        topK: options.topK ?? 40,
+        repeatPenalty: {
+          penalty: options.repeatPenalty ?? 1.1,
+        },
+        stopGenerationTrigger: options.stopSequences
+          ? options.stopSequences.map(s => [{ type: "text" as const, text: s }])
+          : undefined,
+      } as any);
 
-    return {
-      text: response,
-      tokensGenerated,
-      tokensPrompt,
-      totalTimeMs,
-      tokensPerSecond: Number(tokensPerSecond.toFixed(1)),
-      modelId: resolvedId,
-    };
-  } finally {
-    sequence.dispose();
-    releaseModel(loaded);
-  }
+      const totalTimeMs = Date.now() - startTime;
+      // Accurate token counting using model tokenizer
+      const tokensPrompt = loaded.model.tokenize(fullPrompt).length;
+      const tokensGenerated = loaded.model.tokenize(response).length;
+      const tokensPerSecond = totalTimeMs > 0 ? (tokensGenerated / totalTimeMs) * 1000 : 0;
+
+      return {
+        text: response,
+        tokensGenerated,
+        tokensPrompt,
+        totalTimeMs,
+        tokensPerSecond: Number(tokensPerSecond.toFixed(1)),
+        modelId: resolvedId,
+      };
+    } finally {
+      sequence.dispose();
+      releaseModel(loaded);
+    }
+  });
 }
 
 /**
@@ -541,34 +547,38 @@ export async function chatCompletion(options: GgufChatOptions, modelId?: string)
   }
 
   const { LlamaChatSession } = await import("node-llama-cpp");
-  const sequence = loaded.context.getSequence();
-  const session = new LlamaChatSession({ contextSequence: sequence });
 
-  try {
-    const response = await session.prompt(prompt, {
-      maxTokens: options.maxTokens ?? 1024,
-      temperature: options.temperature ?? 0.7,
-      topP: options.topP ?? 0.9,
-      topK: options.topK ?? 40,
-      repeatPenalty: { penalty: options.repeatPenalty ?? 1.1 },
-    });
+  // Mục 4: hold a GGUF concurrency slot across the whole inference block.
+  return withGgufSlot(async () => {
+    const sequence = loaded.context.getSequence();
+    const session = new LlamaChatSession({ contextSequence: sequence });
 
-    const totalTimeMs = Date.now() - startTime;
-    const tokensPrompt = loaded.model.tokenize(prompt).length;
-    const tokensGenerated = loaded.model.tokenize(response).length;
+    try {
+      const response = await session.prompt(prompt, {
+        maxTokens: options.maxTokens ?? 1024,
+        temperature: options.temperature ?? 0.7,
+        topP: options.topP ?? 0.9,
+        topK: options.topK ?? 40,
+        repeatPenalty: { penalty: options.repeatPenalty ?? 1.1 },
+      });
 
-    return {
-      text: response,
-      tokensGenerated,
-      tokensPrompt,
-      totalTimeMs,
-      tokensPerSecond: Number(((tokensGenerated / totalTimeMs) * 1000).toFixed(1)),
-      modelId: resolvedId,
-    };
-  } finally {
-    sequence.dispose();
-    releaseModel(loaded);
-  }
+      const totalTimeMs = Date.now() - startTime;
+      const tokensPrompt = loaded.model.tokenize(prompt).length;
+      const tokensGenerated = loaded.model.tokenize(response).length;
+
+      return {
+        text: response,
+        tokensGenerated,
+        tokensPrompt,
+        totalTimeMs,
+        tokensPerSecond: Number(((tokensGenerated / totalTimeMs) * 1000).toFixed(1)),
+        modelId: resolvedId,
+      };
+    } finally {
+      sequence.dispose();
+      releaseModel(loaded);
+    }
+  });
 }
 
 // ─── JSON-constrained generation (GBNF / JSON Schema) ─────────
@@ -607,8 +617,6 @@ export async function generateJSON<T = unknown>(
   }
 
   const { LlamaChatSession } = llamaMod;
-  const sequence = loaded.context.getSequence();
-  const session = new LlamaChatSession({ contextSequence: sequence });
 
   let fullPrompt = options.prompt;
   if (options.systemPrompt) {
@@ -616,41 +624,47 @@ export async function generateJSON<T = unknown>(
   }
   // No "respond with JSON" suffix needed — grammar enforces it.
 
-  try {
-    const response: string = await session.prompt(fullPrompt, {
-      grammar,
-      maxTokens: options.maxTokens ?? 1024,
-      temperature: options.temperature ?? 0.2,
-      topP: options.topP ?? 0.9,
-      topK: options.topK ?? 40,
-      repeatPenalty: { penalty: options.repeatPenalty ?? 1.1 },
-    });
+  // Mục 4: hold a GGUF concurrency slot across the whole inference block.
+  return withGgufSlot(async () => {
+    const sequence = loaded.context.getSequence();
+    const session = new LlamaChatSession({ contextSequence: sequence });
 
-    const totalTimeMs = Date.now() - startTime;
-    const tokensPrompt = loaded.model.tokenize(fullPrompt).length;
-    const tokensGenerated = loaded.model.tokenize(response).length;
-
-    let data: T;
     try {
-      // Prefer grammar.parse if available (handles trailing whitespace, etc.)
-      data = typeof grammar.parse === "function" ? grammar.parse(response) : JSON.parse(response);
-    } catch (err: any) {
-      throw new Error(`Grammar produced invalid JSON: ${err?.message || err}; raw=${response.slice(0, 200)}`);
-    }
+      const response: string = await session.prompt(fullPrompt, {
+        grammar,
+        maxTokens: options.maxTokens ?? 1024,
+        temperature: options.temperature ?? 0.2,
+        topP: options.topP ?? 0.9,
+        topK: options.topK ?? 40,
+        repeatPenalty: { penalty: options.repeatPenalty ?? 1.1 },
+      });
 
-    return {
-      data,
-      raw: response,
-      tokensGenerated,
-      tokensPrompt,
-      totalTimeMs,
-      tokensPerSecond: totalTimeMs > 0 ? Number(((tokensGenerated / totalTimeMs) * 1000).toFixed(1)) : 0,
-      modelId: resolvedId,
-    };
-  } finally {
-    sequence.dispose();
-    releaseModel(loaded);
-  }
+      const totalTimeMs = Date.now() - startTime;
+      const tokensPrompt = loaded.model.tokenize(fullPrompt).length;
+      const tokensGenerated = loaded.model.tokenize(response).length;
+
+      let data: T;
+      try {
+        // Prefer grammar.parse if available (handles trailing whitespace, etc.)
+        data = typeof grammar.parse === "function" ? grammar.parse(response) : JSON.parse(response);
+      } catch (err: any) {
+        throw new Error(`Grammar produced invalid JSON: ${err?.message || err}; raw=${response.slice(0, 200)}`);
+      }
+
+      return {
+        data,
+        raw: response,
+        tokensGenerated,
+        tokensPrompt,
+        totalTimeMs,
+        tokensPerSecond: totalTimeMs > 0 ? Number(((tokensGenerated / totalTimeMs) * 1000).toFixed(1)) : 0,
+        modelId: resolvedId,
+      };
+    } finally {
+      sequence.dispose();
+      releaseModel(loaded);
+    }
+  });
 }
 
 // ─── Vision (LLaVA) ────────────────────────────────────────────
@@ -758,74 +772,81 @@ export async function* generateTextStream(
   }
 
   const { LlamaChatSession } = await import("node-llama-cpp");
-  const sequence = loaded.context.getSequence();
-  const session = new LlamaChatSession({ contextSequence: sequence });
 
-  try {
-    let fullText = "";
-    const tokenQueue: string[] = [];
-    let resolveWait: (() => void) | null = null;
-    let isDone = false;
+  // Mục 4: hold ONE GGUF concurrency slot for the entire lifetime of this
+  // generator. withGgufSlotGenerator acquires before the first yield and
+  // releases in finally — covering normal completion, early consumer return()
+  // (client abort) and throws, so the slot is never leaked.
+  yield* withGgufSlotGenerator<GgufStreamChunk>(async function* () {
+    const sequence = loaded.context.getSequence();
+    const session = new LlamaChatSession({ contextSequence: sequence });
 
-    const promptPromise = session.prompt(fullPrompt, {
-      signal,
-      maxTokens: options.maxTokens ?? 1024,
-      temperature: options.temperature ?? 0.7,
-      topP: options.topP ?? 0.9,
-      topK: options.topK ?? 40,
-      repeatPenalty: { penalty: options.repeatPenalty ?? 1.1 },
-      stopGenerationTrigger: options.stopSequences
-        ? options.stopSequences.map(s => [{ type: "text" as const, text: s }])
-        : undefined,
-      onTextChunk(chunk: string) {
-        fullText += chunk;
-        tokenQueue.push(chunk);
-        if (resolveWait) {
-          resolveWait();
-          resolveWait = null;
+    try {
+      let fullText = "";
+      const tokenQueue: string[] = [];
+      let resolveWait: (() => void) | null = null;
+      let isDone = false;
+
+      const promptPromise = session.prompt(fullPrompt, {
+        signal,
+        maxTokens: options.maxTokens ?? 1024,
+        temperature: options.temperature ?? 0.7,
+        topP: options.topP ?? 0.9,
+        topK: options.topK ?? 40,
+        repeatPenalty: { penalty: options.repeatPenalty ?? 1.1 },
+        stopGenerationTrigger: options.stopSequences
+          ? options.stopSequences.map(s => [{ type: "text" as const, text: s }])
+          : undefined,
+        onTextChunk(chunk: string) {
+          fullText += chunk;
+          tokenQueue.push(chunk);
+          if (resolveWait) {
+            resolveWait();
+            resolveWait = null;
+          }
+        },
+      } as any);
+
+      // Drain tokens as they arrive
+      while (!isDone) {
+        if (tokenQueue.length > 0) {
+          const token = tokenQueue.shift()!;
+          yield { type: "token", token };
+        } else {
+          // Wait for next token or completion
+          await Promise.race([
+            promptPromise.then(() => { isDone = true; }),
+            new Promise<void>(resolve => { resolveWait = resolve; }),
+          ]);
         }
-      },
-    });
-
-    // Drain tokens as they arrive
-    while (!isDone) {
-      if (tokenQueue.length > 0) {
-        const token = tokenQueue.shift()!;
-        yield { type: "token", token };
-      } else {
-        // Wait for next token or completion
-        const result = await Promise.race([
-          promptPromise.then(() => { isDone = true; }),
-          new Promise<void>(resolve => { resolveWait = resolve; }),
-        ]);
       }
+
+      // Drain remaining tokens
+      while (tokenQueue.length > 0) {
+        yield { type: "token", token: tokenQueue.shift()! };
+      }
+
+      const response = await promptPromise;
+      const totalTimeMs = Date.now() - startTime;
+      const tokensPrompt = loaded.model.tokenize(fullPrompt).length;
+      const tokensGenerated = loaded.model.tokenize(response).length;
+
+      yield {
+        type: "done",
+        fullText: response,
+        tokensGenerated,
+        tokensPrompt,
+        totalTimeMs,
+        tokensPerSecond: totalTimeMs > 0 ? Number(((tokensGenerated / totalTimeMs) * 1000).toFixed(1)) : 0,
+        modelId: resolvedId,
+      };
+    } catch (err: any) {
+      yield { type: "error", error: err.message || "Streaming generation failed" };
+    } finally {
+      sequence.dispose();
+      releaseModel(loaded);
     }
-
-    // Drain remaining tokens
-    while (tokenQueue.length > 0) {
-      yield { type: "token", token: tokenQueue.shift()! };
-    }
-
-    const response = await promptPromise;
-    const totalTimeMs = Date.now() - startTime;
-    const tokensPrompt = loaded.model.tokenize(fullPrompt).length;
-    const tokensGenerated = loaded.model.tokenize(response).length;
-
-    yield {
-      type: "done",
-      fullText: response,
-      tokensGenerated,
-      tokensPrompt,
-      totalTimeMs,
-      tokensPerSecond: totalTimeMs > 0 ? Number(((tokensGenerated / totalTimeMs) * 1000).toFixed(1)) : 0,
-      modelId: resolvedId,
-    };
-  } catch (err: any) {
-    yield { type: "error", error: err.message || "Streaming generation failed" };
-  } finally {
-    sequence.dispose();
-    releaseModel(loaded);
-  }
+  });
 }
 
 /**
@@ -856,68 +877,73 @@ export async function* chatCompletionStream(
   }
 
   const { LlamaChatSession } = await import("node-llama-cpp");
-  const sequence = loaded.context.getSequence();
-  const session = new LlamaChatSession({ contextSequence: sequence });
 
-  try {
-    let fullText = "";
-    const tokenQueue: string[] = [];
-    let resolveWait: (() => void) | null = null;
-    let isDone = false;
+  // Mục 4: hold ONE GGUF concurrency slot for the whole generator lifetime;
+  // released in finally even on early consumer return() / abort / throw.
+  yield* withGgufSlotGenerator<GgufStreamChunk>(async function* () {
+    const sequence = loaded.context.getSequence();
+    const session = new LlamaChatSession({ contextSequence: sequence });
 
-    const promptPromise = session.prompt(prompt, {
-      signal,
-      maxTokens: options.maxTokens ?? 1024,
-      temperature: options.temperature ?? 0.7,
-      topP: options.topP ?? 0.9,
-      topK: options.topK ?? 40,
-      repeatPenalty: { penalty: options.repeatPenalty ?? 1.1 },
-      onTextChunk(chunk: string) {
-        fullText += chunk;
-        tokenQueue.push(chunk);
-        if (resolveWait) {
-          resolveWait();
-          resolveWait = null;
+    try {
+      let fullText = "";
+      const tokenQueue: string[] = [];
+      let resolveWait: (() => void) | null = null;
+      let isDone = false;
+
+      const promptPromise = session.prompt(prompt, {
+        signal,
+        maxTokens: options.maxTokens ?? 1024,
+        temperature: options.temperature ?? 0.7,
+        topP: options.topP ?? 0.9,
+        topK: options.topK ?? 40,
+        repeatPenalty: { penalty: options.repeatPenalty ?? 1.1 },
+        onTextChunk(chunk: string) {
+          fullText += chunk;
+          tokenQueue.push(chunk);
+          if (resolveWait) {
+            resolveWait();
+            resolveWait = null;
+          }
+        },
+      });
+
+      while (!isDone) {
+        if (tokenQueue.length > 0) {
+          const token = tokenQueue.shift()!;
+          yield { type: "token", token };
+        } else {
+          await Promise.race([
+            promptPromise.then(() => { isDone = true; }),
+            new Promise<void>(resolve => { resolveWait = resolve; }),
+          ]);
         }
-      },
-    });
-
-    while (!isDone) {
-      if (tokenQueue.length > 0) {
-        const token = tokenQueue.shift()!;
-        yield { type: "token", token };
-      } else {
-        await Promise.race([
-          promptPromise.then(() => { isDone = true; }),
-          new Promise<void>(resolve => { resolveWait = resolve; }),
-        ]);
       }
+
+      while (tokenQueue.length > 0) {
+        yield { type: "token", token: tokenQueue.shift()! };
+      }
+
+      const response = await promptPromise;
+      const totalTimeMs = Date.now() - startTime;
+      const tokensPrompt = loaded.model.tokenize(prompt).length;
+      const tokensGenerated = loaded.model.tokenize(response).length;
+
+      yield {
+        type: "done",
+        fullText: response,
+        tokensGenerated,
+        tokensPrompt,
+        totalTimeMs,
+        tokensPerSecond: totalTimeMs > 0 ? Number(((tokensGenerated / totalTimeMs) * 1000).toFixed(1)) : 0,
+        modelId: resolvedId,
+      };
+    } catch (err: any) {
+      yield { type: "error", error: err.message || "Streaming chat completion failed" };
+    } finally {
+      sequence.dispose();
+      releaseModel(loaded);
     }
-
-    while (tokenQueue.length > 0) {
-      yield { type: "token", token: tokenQueue.shift()! };
-    }
-
-    const response = await promptPromise;
-    const totalTimeMs = Date.now() - startTime;
-    const tokensPrompt = loaded.model.tokenize(prompt).length;
-    const tokensGenerated = loaded.model.tokenize(response).length;
-
-    yield {
-      type: "done",
-      fullText: response,
-      tokensGenerated,
-      tokensPrompt,
-      totalTimeMs,
-      tokensPerSecond: totalTimeMs > 0 ? Number(((tokensGenerated / totalTimeMs) * 1000).toFixed(1)) : 0,
-      modelId: resolvedId,
-    };
-  } catch (err: any) {
-    yield { type: "error", error: err.message || "Streaming chat completion failed" };
-  } finally {
-    sequence.dispose();
-    releaseModel(loaded);
-  }
+  });
 }
 
 /**
@@ -1139,6 +1165,7 @@ export async function getEngineHealth(): Promise<{
   vramCapMb: number;
   gpuMode: string;
   modelsDir: string;
+  queue: { running: number; queued: number; max: number };
 }> {
   const engineReady = !!llamaInstance;
   ensureModelsDir();
@@ -1168,6 +1195,7 @@ export async function getEngineHealth(): Promise<{
     vramCapMb: GGUF_MAX_VRAM_MB,
     gpuMode: process.env.GGUF_GPU === "false" ? "cpu" : "auto (CUDA/Vulkan)",
     modelsDir: GGUF_MODELS_DIR,
+    queue: getGgufQueueStats(),
   };
 }
 
@@ -1186,19 +1214,23 @@ export async function generateEmbedding(
   const effectiveId = modelId ?? (GGUF_EMBED_MODEL || undefined);
   const { modelId: resolvedId, loaded } = await getOrLoadModel(effectiveId);
 
-  try {
-    const embeddingContext = await getEmbeddingContext(loaded);
-    const embedding = await embeddingContext.getEmbeddingFor(text);
-    const vector = Array.from(embedding.vector as readonly number[]);
-    assertEmbeddingDim(vector.length, resolvedId);
-    return {
-      embedding: vector,
-      dimensions: vector.length,
-      modelId: resolvedId,
-    };
-  } finally {
-    releaseModel(loaded);
-  }
+  // Mục 4: embeddings are light but still share the single GGUF slot to keep the
+  // 6GB VRAM budget simple and safe.
+  return withGgufSlot(async () => {
+    try {
+      const embeddingContext = await getEmbeddingContext(loaded);
+      const embedding = await embeddingContext.getEmbeddingFor(text);
+      const vector = Array.from(embedding.vector as readonly number[]);
+      assertEmbeddingDim(vector.length, resolvedId);
+      return {
+        embedding: vector,
+        dimensions: vector.length,
+        modelId: resolvedId,
+      };
+    } finally {
+      releaseModel(loaded);
+    }
+  });
 }
 
 /**
@@ -1211,21 +1243,24 @@ export async function generateEmbeddings(
   const effectiveId = modelId ?? (GGUF_EMBED_MODEL || undefined);
   const { modelId: resolvedId, loaded } = await getOrLoadModel(effectiveId);
 
-  try {
-    const embeddingContext = await getEmbeddingContext(loaded);
-    const embeddings: number[][] = [];
-    let dims = 0;
-    for (const text of texts) {
-      const result = await embeddingContext.getEmbeddingFor(text);
-      const vec = Array.from(result.vector as readonly number[]);
-      assertEmbeddingDim(vec.length, resolvedId);
-      embeddings.push(vec);
-      if (!dims) dims = vec.length;
+  // Mục 4: batch embeddings hold the single GGUF slot for the whole loop.
+  return withGgufSlot(async () => {
+    try {
+      const embeddingContext = await getEmbeddingContext(loaded);
+      const embeddings: number[][] = [];
+      let dims = 0;
+      for (const text of texts) {
+        const result = await embeddingContext.getEmbeddingFor(text);
+        const vec = Array.from(result.vector as readonly number[]);
+        assertEmbeddingDim(vec.length, resolvedId);
+        embeddings.push(vec);
+        if (!dims) dims = vec.length;
+      }
+      return { embeddings, dimensions: dims, modelId: resolvedId };
+    } finally {
+      releaseModel(loaded);
     }
-    return { embeddings, dimensions: dims, modelId: resolvedId };
-  } finally {
-    releaseModel(loaded);
-  }
+  });
 }
 
 /**

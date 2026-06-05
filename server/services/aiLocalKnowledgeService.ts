@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { tryExecuteTool, type ToolResult } from "./aiLocalTools";
+import { tryExecuteTool, type ToolResult, type ToolExecContext, type PendingActionDTO } from "./aiLocalTools";
 
 export type KbIntent =
   | "how_to"
@@ -81,6 +81,8 @@ export interface KbAnswerResult extends KbRetrieveResult {
   toolResult?: ToolResult | null;
   toolName?: string | null;
   structured?: KbStructuredResponse;
+  /** GĐ2 — set when a write-tool was matched: confirm card to render (no execute). */
+  pendingAction?: PendingActionDTO | null;
 }
 
 /**
@@ -1338,6 +1340,7 @@ export async function answerQuestion(
   history: ConversationMessage[] = [],
   userRole: UserRole = "engineer",
   context?: KbQueryContext,
+  execCtx?: ToolExecContext,
 ): Promise<KbAnswerResult> {
   const userLevel = rolToUserLevel(userRole);
   const key = getCacheKey(question, topK, userRole);
@@ -1345,9 +1348,29 @@ export async function answerQuestion(
 
   // Step 1 — Try a real-time tool first. Tool answers must NOT be cached
   // because they reflect live database state.
-  const toolExec = await tryExecuteTool(question, context);
+  const toolExec = await tryExecuteTool(question, context, execCtx);
   const toolResult = toolExec.result;
   const clarifyMessage = toolExec.decision.clarifyMessage ?? null;
+
+  // GĐ2 — write-tool matched: short-circuit with the confirm card (propose) or
+  // a localized RBAC refusal. No LLM, no cache.
+  if (toolExec.pendingAction || toolExec.denied) {
+    const retrieve = await retrieveKnowledge(question, topK, context);
+    const message = toolExec.denied
+      ? toolExec.denied.message
+      : toolExec.pendingAction!.summary;
+    return {
+      ...retrieve,
+      answer: message,
+      provider: "tool",
+      cached: false,
+      followUpSuggestions: [],
+      toolResult: null,
+      toolName: toolExec.decision.tool ?? null,
+      pendingAction: toolExec.pendingAction ?? null,
+      structured: extractStructuredResponse(message),
+    };
+  }
 
   // Short-circuit: if intent classifier asked for clarification, return it
   // immediately without invoking the LLM. This avoids hallucinated answers
@@ -1476,6 +1499,7 @@ export type StreamEvent =
       citations: KbCitation[];
     }
   | { type: "tool"; toolName: string | null; toolResult: ToolResult }
+  | { type: "pending_action"; toolName: string | null; pendingAction: PendingActionDTO }
   | { type: "token"; token: string }
   | {
       type: "done";
@@ -1492,15 +1516,42 @@ export async function* streamAnswer(
   history: ConversationMessage[] = [],
   userRole: UserRole = "engineer",
   context?: KbQueryContext,
+  execCtx?: ToolExecContext,
 ): AsyncGenerator<StreamEvent> {
   const userLevel = rolToUserLevel(userRole);
   const key = getCacheKey(question, topK, userRole);
   const now = Date.now();
 
   // Real-time tool first (live DB state — must NOT be cached).
-  const toolExec = await tryExecuteTool(question, context);
+  const toolExec = await tryExecuteTool(question, context, execCtx);
   const toolResult = toolExec.result;
   const clarifyMessage = toolExec.decision.clarifyMessage ?? null;
+
+  // GĐ2 — write-tool matched: emit meta + (pending_action | refusal token) + done.
+  if (toolExec.pendingAction || toolExec.denied) {
+    const retrieve = await retrieveKnowledge(question, topK, context);
+    yield {
+      type: "meta",
+      intent: retrieve.intent,
+      language: retrieve.language,
+      confidence: retrieve.confidence,
+      citations: retrieve.citations,
+    };
+    const message = toolExec.denied ? toolExec.denied.message : toolExec.pendingAction!.summary;
+    if (toolExec.pendingAction) {
+      yield { type: "pending_action", toolName: toolExec.decision.tool ?? null, pendingAction: toolExec.pendingAction };
+    }
+    yield { type: "token", token: message };
+    yield {
+      type: "done",
+      provider: "tool",
+      cached: false,
+      followUpSuggestions: [],
+      answer: message,
+      structured: extractStructuredResponse(message),
+    };
+    return;
+  }
 
   // Short-circuit clarification (mirrors answerQuestion).
   if (!toolResult && clarifyMessage) {

@@ -14,6 +14,7 @@ import {
   type KbQueryContext,
   type KbLanguage,
 } from "../services/aiLocalKnowledgeService";
+import type { ToolExecContext, ToolLang } from "../services/aiLocalTools";
 
 // Stage 13.D — feedback log path. JSONL append-only for easy diffing &
 // future re-ingestion into KB curation.
@@ -72,6 +73,27 @@ function parseContext(raw: unknown): KbQueryContext | undefined {
   if (str(r.selectedLot)) ctx.selectedLot = str(r.selectedLot);
 
   return Object.keys(ctx).length > 0 ? ctx : undefined;
+}
+
+// GĐ2 — build the write-action exec context from the REAL authenticated user.
+// `lang` mirrors how the SSE error branch picks a language. The user's true
+// id/role drive RBAC (never the body.userRole, which only shapes tone).
+function buildExecCtx(
+  user: { id: number; role: string; name?: string | null },
+  req: any,
+  question: string,
+  context?: KbQueryContext,
+): ToolExecContext {
+  const lang: ToolLang = /[一-鿿]/.test(question)
+    ? "zh"
+    : /[À-ỹ]/.test(question)
+      ? "vi"
+      : context?.uiLanguage ?? "vi";
+  return {
+    user: { id: user.id, role: String(user.role), name: user.name ?? null },
+    lang,
+    req: { ip: req?.ip, headers: req?.headers, socket: req?.socket },
+  };
 }
 
 function chunkAnswerForStream(answer: string): string[] {
@@ -163,7 +185,8 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
       const history = parseHistory(req.body?.history);
       const userRole = parseUserRole(req.body?.userRole);
       const context = parseContext(req.body?.context);
-      const data = await answerQuestion(question, topK, history, userRole, context);
+      const execCtx = buildExecCtx(user as any, req, question, context);
+      const data = await answerQuestion(question, topK, history, userRole, context, execCtx);
       res.json({ success: true, data });
     } catch (error: any) {
       res.status(500).json({
@@ -193,6 +216,7 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
     const history = parseHistory(req.body?.history);
     const userRole = parseUserRole(req.body?.userRole);
     const context = parseContext(req.body?.context);
+    const execCtx = buildExecCtx(user as any, req, question, context);
 
     res.status(200);
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
@@ -225,7 +249,7 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
       let cached = false;
       let structured: Record<string, unknown> | undefined;
 
-      for await (const evt of streamAnswer(question, topK, history, userRole, context)) {
+      for await (const evt of streamAnswer(question, topK, history, userRole, context, execCtx)) {
         if (closed) return;
         switch (evt.type) {
           case "meta":
@@ -242,6 +266,13 @@ export function registerAiLocalKnowledgeRoutes(app: express.Express) {
               type: "tool",
               toolName: evt.toolName,
               toolResult: evt.toolResult,
+            });
+            break;
+          case "pending_action":
+            send({
+              type: "pending_action",
+              toolName: evt.toolName,
+              pendingAction: evt.pendingAction,
             });
             break;
           case "token":

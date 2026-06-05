@@ -19,7 +19,7 @@ const pgvector = (dimensions: number) =>
       return `vector(${dimensions})`;
     },
   });
-import { changeTypeEnum, alertTypeEnum_1, maintenanceUrgencyEnum, statusEnum_5, analysisTypeEnum, statusEnum_6, statusEnum_8, periodTypeEnum_1, suggestionTypeEnum, statusEnum_9, feedbackTypeEnum, errorCategoryEnum, accuracyTrendEnum, exportFormatEnum_1, statusEnum_10, modelFormatEnum, modelStatusEnum, inferenceStatusEnum, batchJobStatusEnum, batchItemStatusEnum, abTestStatusEnum, abTestVariantEnum, abTestWinnerEnum, driftAlertTypeEnum, driftSeverityEnum, edgeDeployStatusEnum, trainingJobStatusEnum, aiDecisionEnum, ensembleStrategyEnum, labelQueueStatusEnum, samplingStrategyEnum, chatRoleEnum, apiKeyProviderEnum, apiKeyStatusEnum } from "./enums";
+import { changeTypeEnum, alertTypeEnum_1, maintenanceUrgencyEnum, statusEnum_5, analysisTypeEnum, statusEnum_6, statusEnum_8, periodTypeEnum_1, suggestionTypeEnum, statusEnum_9, feedbackTypeEnum, errorCategoryEnum, accuracyTrendEnum, exportFormatEnum_1, statusEnum_10, modelFormatEnum, modelStatusEnum, inferenceStatusEnum, batchJobStatusEnum, batchItemStatusEnum, abTestStatusEnum, abTestVariantEnum, abTestWinnerEnum, driftAlertTypeEnum, driftSeverityEnum, edgeDeployStatusEnum, trainingJobStatusEnum, aiDecisionEnum, ensembleStrategyEnum, labelQueueStatusEnum, samplingStrategyEnum, chatRoleEnum, apiKeyProviderEnum, apiKeyStatusEnum, aiPendingActionStatusEnum } from "./enums";
 
 // ============= Image Annotations =============
 export const imageAnnotations = pgTable("image_annotations", {
@@ -1513,3 +1513,38 @@ export const defectSegmentations = pgTable("defect_segmentations", {
 
 export type DefectSegmentation = typeof defectSegmentations.$inferSelect;
 export type InsertDefectSegmentation = typeof defectSegmentations.$inferInsert;
+
+// ============= GĐ2 — AI Copilot Pending Actions (HITL write-action store) =============
+//
+// Server-side store for write-actions proposed by the AI Copilot. A write tool
+// NEVER mutates the DB at propose time — it records a `proposed` row here with a
+// dry-run preview, then waits for an explicit user confirm (copilot.confirmAction)
+// that re-checks RBAC and runs execute() with args read from THIS row (never the
+// client). TTL (expiresAt) + token (uuid bound to userId) + idempotencyKey unique
+// guard against replay / double-execute. Migration: drizzle/0114_ai_pending_actions.sql.
+export const aiPendingActions = pgTable("ai_pending_actions", {
+  // uuid primary key doubles as the confirm token (bound to userId).
+  id: varchar("id", { length: 64 }).primaryKey(),
+  tool: varchar("tool", { length: 100 }).notNull(),
+  // Server-chosen args (the ONLY source of truth at execute time).
+  argsJson: json("argsJson").$type<Record<string, unknown>>().notNull(),
+  userId: integer("userId").notNull(),
+  userRole: varchar("userRole", { length: 50 }).notNull(),
+  requiredPermissionJson: json("requiredPermissionJson").$type<{ module: string; action: string }>(),
+  summary: text("summary").notNull(),
+  previewJson: json("previewJson").$type<Record<string, unknown>>(),
+  status: aiPendingActionStatusEnum("status").default("proposed").notNull(),
+  // Idempotency: at most one execution per logical action.
+  idempotencyKey: varchar("idempotencyKey", { length: 128 }).notNull().unique(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  executedAt: timestamp("executedAt"),
+  resultJson: json("resultJson").$type<Record<string, unknown>>(),
+}, (table) => [
+  index("idx_ai_pending_actions_user").on(table.userId),
+  index("idx_ai_pending_actions_status").on(table.status),
+  index("idx_ai_pending_actions_expires").on(table.expiresAt),
+]);
+
+export type AiPendingAction = typeof aiPendingActions.$inferSelect;
+export type InsertAiPendingAction = typeof aiPendingActions.$inferInsert;

@@ -1,4 +1,17 @@
 {
+  "copilot": {
+    "confirmTitle": "Xác nhận thao tác ghi",
+    "field": "Trường",
+    "before": "Trước",
+    "after": "Sau",
+    "confirm": "Xác nhận",
+    "cancel": "Hủy",
+    "executed": "Đã thực thi.",
+    "cancelled": "Đã hủy.",
+    "denied": "Bạn không có quyền thực hiện thao tác này.",
+    "expired": "Đề xuất đã hết hạn.",
+    "failed": "Không thể thực thi."
+  },
   "canary": {
     "tab": "A/B Canary",
     "title": "A/B Canary (trực tiếp)",

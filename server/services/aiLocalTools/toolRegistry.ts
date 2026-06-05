@@ -1,0 +1,142 @@
+/**
+ * AI Local Tools — Tool Registry
+ *
+ * Read-only DB query tools that can be called by the local AI assistant
+ * to answer questions that need real-time data (today stats, lot status,
+ * machine status, defect trends).
+ *
+ * Design principles:
+ * - Tools are READ-ONLY. No INSERT/UPDATE/DELETE allowed.
+ * - All tools use Drizzle ORM (parameterized queries) to avoid SQL injection.
+ * - Tools return structured ToolResult that the frontend can render as cards.
+ */
+
+import { z } from "zod";
+import type { AuditChangeField } from "../auditTrailService";
+
+export type ToolResultType =
+  | "today_stats"
+  | "lot_status"
+  | "machine_status"
+  | "defect_trend"
+  | "top_defects"
+  | "factory_stats"
+  | "ng_compare"
+  | "oee"
+  | "model_metrics"
+  | "action_result";
+
+export interface ToolResult<T = unknown> {
+  type: ToolResultType;
+  title: string;
+  data: T;
+  /** Compact text representation (for LLM context injection). */
+  textSummary: string;
+  /** Optional human-readable note for empty / error cases. */
+  note?: string;
+}
+
+// ─── GĐ2: write-action descriptor support ──────────────────────────────────
+
+/** Language union shared with the KB service (vi/en/zh). */
+export type ToolLang = "vi" | "en" | "zh";
+
+/** RBAC requirement for a write tool. Maps to checkPermission(module, action). */
+export interface ToolPermission {
+  module: string;
+  action: "canView" | "canCreate" | "canEdit" | "canDelete" | "canExport";
+}
+
+/**
+ * Execution context threaded from the API layer down to a write tool's
+ * preview()/execute(). `user` is the REAL authenticated session user (never
+ * trusted from the client body). `req` carries request metadata for audit.
+ */
+export interface ToolExecContext {
+  user: { id: number; role: string; name?: string | null };
+  lang: ToolLang;
+  req?: { ip?: string; headers?: Record<string, any>; socket?: { remoteAddress?: string } };
+}
+
+/** Result of a tool's execute() — reuses ToolResult shape for rendering. */
+export type ToolExecuteResult = ToolResult;
+
+/**
+ * Dry-run preview of a write action. Computed BEFORE any DB mutation so the
+ * user can confirm. `changes` reuses the audit AuditChangeField (before/after).
+ */
+export interface ActionPreview {
+  entityType: string;
+  entityId?: number;
+  entityName?: string;
+  changes: AuditChangeField[];
+  warnings: string[];
+  humanSummary: string;
+}
+
+export interface Tool<TParams = unknown, TData = unknown> {
+  name: string;
+  description: string;
+  /** Zod schema for params (used to validate args from intent classifier). */
+  parameters: z.ZodType<TParams>;
+  /**
+   * Read tool handler — executes a read-only query and returns a ToolResult.
+   * OPTIONAL for write tools (they use preview/execute instead). GĐ1 read
+   * tools always provide this and are unchanged.
+   */
+  handler?: (params: TParams) => Promise<ToolResult<TData>>;
+  /** Vietnamese trigger keywords for fast heuristic intent matching. */
+  triggers: string[];
+
+  // ── GĐ2 OPTIONAL fields (read tools omit them → default kind 'read') ──
+  /** 'read' (default) runs immediately; 'write' goes through HITL confirm. */
+  kind?: "read" | "write";
+  /** RBAC gate checked before propose AND before execute (write tools). */
+  requiredPermission?: ToolPermission;
+  /** Human-readable confirm summary (vi/en/zh). */
+  summarize?: (params: TParams, lang: ToolLang) => string;
+  /** Dry-run: read current state, compute before/after changes. NO DB write. */
+  preview?: (params: TParams, ctx: ToolExecContext) => Promise<ActionPreview>;
+  /** Apply the mutation. Only called after confirm. Uses ctx.user.id for audit. */
+  execute?: (params: TParams, ctx: ToolExecContext) => Promise<ToolExecuteResult>;
+}
+
+/** True when the tool is a write-action requiring HITL confirm. */
+export function isWriteTool(tool: Tool<any, any> | undefined | null): boolean {
+  return !!tool && tool.kind === "write";
+}
+
+/**
+ * Assert a write tool is fully wired (preview + execute + permission). Throws
+ * a descriptive error otherwise so a half-defined write tool fails loudly
+ * rather than silently mutating without a preview/RBAC gate.
+ */
+export function assertExecutable(tool: Tool<any, any>): void {
+  if (!isWriteTool(tool)) return;
+  const missing: string[] = [];
+  if (typeof tool.preview !== "function") missing.push("preview");
+  if (typeof tool.execute !== "function") missing.push("execute");
+  if (!tool.requiredPermission) missing.push("requiredPermission");
+  if (typeof tool.summarize !== "function") missing.push("summarize");
+  if (missing.length) {
+    throw new Error(`Write tool "${tool.name}" is missing: ${missing.join(", ")}`);
+  }
+}
+
+const _registry = new Map<string, Tool<any, any>>();
+
+export function registerTool<TParams, TData>(tool: Tool<TParams, TData>): void {
+  _registry.set(tool.name, tool as Tool<any, any>);
+}
+
+export function getTool(name: string): Tool<any, any> | undefined {
+  return _registry.get(name);
+}
+
+export function listTools(): Tool<any, any>[] {
+  return Array.from(_registry.values());
+}
+
+export function clearRegistry(): void {
+  _registry.clear();
+}

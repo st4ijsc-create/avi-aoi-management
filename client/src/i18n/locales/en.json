@@ -1,4 +1,17 @@
 {
+  "copilot": {
+    "confirmTitle": "Confirm write action",
+    "field": "Field",
+    "before": "Before",
+    "after": "After",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "executed": "Executed.",
+    "cancelled": "Cancelled.",
+    "denied": "You do not have permission to perform this action.",
+    "expired": "The proposal has expired.",
+    "failed": "Could not execute."
+  },
   "canary": {
     "tab": "A/B Canary",
     "title": "A/B Canary (live)",

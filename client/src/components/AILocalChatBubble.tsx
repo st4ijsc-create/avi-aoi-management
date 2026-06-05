@@ -105,6 +105,33 @@ interface ChatMessage {
   toolName?: string | null;
   streaming?: boolean;
   feedbackGiven?: "up" | "down";
+  // GĐ2 — write-action confirm card (propose → confirm/cancel).
+  pendingAction?: PendingAction | null;
+  actionState?: "pending" | "executed" | "cancelled" | "denied" | "expired";
+  actionMessage?: string | null;
+}
+
+// GĐ2 — pending write-action proposed by the AI Copilot (HITL confirm).
+interface PendingActionChange {
+  field: string;
+  oldValue: unknown;
+  newValue: unknown;
+  displayName?: string;
+}
+interface PendingAction {
+  actionId: string;
+  token: string;
+  tool: string;
+  summary: string;
+  preview: {
+    entityType: string;
+    entityId?: number;
+    entityName?: string;
+    changes: PendingActionChange[];
+    warnings: string[];
+    humanSummary: string;
+  };
+  expiresAt: string;
 }
 
 // ─── Web Speech API types ─────────────────────────────────────────────────────
@@ -190,7 +217,7 @@ export function AILocalChatBubble() {
 
   // C3a — current route + UI language + page-published selection.
   const [location] = useLocation();
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { selection } = useAiCopilotContext();
 
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -201,6 +228,9 @@ export function AILocalChatBubble() {
   const { data: health, isLoading: healthLoading } = trpc.aiLocalKb.health.useQuery();
   const reloadMutation = trpc.aiLocalKb.reload.useMutation();
   const feedbackMutation = trpc.aiLocalKb.feedback.useMutation();
+  // GĐ2 — HITL write-action confirm/cancel.
+  const confirmActionMutation = trpc.aiCopilot.confirmAction.useMutation();
+  const cancelActionMutation = trpc.aiCopilot.cancelAction.useMutation();
 
   const isReady = health?.ready || false;
   const quickQuestions = QUICK_QUESTIONS;
@@ -327,6 +357,7 @@ export function AILocalChatBubble() {
       let metaResult: ChatMessage["result"] | undefined;
       let toolResultPayload: ToolResultPayload | null = null;
       let toolNameValue: string | null = null;
+      let pendingActionPayload: PendingAction | null = null;
       let accumulatedContent = "";
 
       try {
@@ -361,6 +392,7 @@ export function AILocalChatBubble() {
                 citations?: NonNullable<ChatMessage["result"]>["citations"];
                 toolResult?: ToolResultPayload;
                 toolName?: string;
+                pendingAction?: PendingAction;
                 error?: string;
                 structured?: NonNullable<ChatMessage["result"]>["structured"];
                 followUpSuggestions?: string[];
@@ -382,6 +414,14 @@ export function AILocalChatBubble() {
                 const tn = toolNameValue;
                 setMessages((prev) =>
                   prev.map((m) => (m.id === assistantMsgId ? { ...m, toolResult: tr, toolName: tn } : m)),
+                );
+              } else if (payload.type === "pending_action" && payload.pendingAction) {
+                pendingActionPayload = payload.pendingAction;
+                const pa = pendingActionPayload;
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMsgId ? { ...m, pendingAction: pa, actionState: "pending" } : m,
+                  ),
                 );
               } else if (payload.type === "token" && payload.token) {
                 accumulatedContent += payload.token;
@@ -435,6 +475,9 @@ export function AILocalChatBubble() {
                 toolResultPayload = json.data.toolResult as ToolResultPayload;
                 toolNameValue = json.data.toolName ?? null;
               }
+              if (json.data.pendingAction) {
+                pendingActionPayload = json.data.pendingAction as PendingAction;
+              }
             } else {
               accumulatedContent =
                 "Xin lỗi, có lỗi xảy ra khi xử lý câu hỏi. Vui lòng thử lại.";
@@ -465,6 +508,8 @@ export function AILocalChatBubble() {
                 result: metaResult,
                 toolResult: toolResultPayload,
                 toolName: toolNameValue,
+                pendingAction: pendingActionPayload,
+                actionState: pendingActionPayload ? "pending" : m.actionState,
               }
             : m,
         ),
@@ -494,6 +539,51 @@ export function AILocalChatBubble() {
       }
     },
     [messages, feedbackMutation],
+  );
+
+  // ─── GĐ2 — Confirm / cancel write-action ──────────────────────────────────────
+  const handleConfirmAction = useCallback(
+    async (msg: ChatMessage) => {
+      const pa = msg.pendingAction;
+      if (!pa || msg.actionState !== "pending") return;
+      try {
+        const res = await confirmActionMutation.mutateAsync({
+          actionId: pa.actionId,
+          token: pa.token,
+          lang: (i18n.language as "vi" | "en" | "zh") ?? "vi",
+        });
+        const state =
+          res.status === "executed" ? "executed"
+          : res.status === "denied" ? "denied"
+          : res.status === "expired" ? "expired"
+          : "pending";
+        setMessages((prev) =>
+          prev.map((m) => (m.id === msg.id ? { ...m, actionState: state as any, actionMessage: res.message ?? null } : m)),
+        );
+        if (res.ok) toast.success(res.message ?? t("copilot.executed", "Đã thực thi."));
+        else toast.error(res.message ?? t("copilot.failed", "Không thể thực thi."));
+      } catch {
+        toast.error(t("copilot.failed", "Không thể thực thi."));
+      }
+    },
+    [confirmActionMutation, i18n.language, t],
+  );
+
+  const handleCancelAction = useCallback(
+    async (msg: ChatMessage) => {
+      const pa = msg.pendingAction;
+      if (!pa || msg.actionState !== "pending") return;
+      try {
+        const res = await cancelActionMutation.mutateAsync({ actionId: pa.actionId });
+        setMessages((prev) =>
+          prev.map((m) => (m.id === msg.id ? { ...m, actionState: "cancelled", actionMessage: res.message ?? null } : m)),
+        );
+        toast.success(t("copilot.cancelled", "Đã hủy."));
+      } catch {
+        toast.error(t("copilot.failed", "Không thể hủy."));
+      }
+    },
+    [cancelActionMutation, t],
   );
 
   // ─── Clear history ────────────────────────────────────────────────────────────
@@ -647,6 +737,75 @@ export function AILocalChatBubble() {
                           ) : (
                             <>
                               {msg.toolResult && <AIToolResultCard toolResult={msg.toolResult} />}
+                              {msg.pendingAction && (
+                                <div className="rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-2.5 space-y-2 text-[11px]">
+                                  <div className="flex items-center gap-1.5 font-semibold text-amber-800 dark:text-amber-300">
+                                    <AlertCircle className="size-3.5" />
+                                    {t("copilot.confirmTitle", "Xác nhận thao tác ghi")}
+                                  </div>
+                                  <p className="text-foreground/90">{msg.pendingAction.summary}</p>
+                                  {msg.pendingAction.preview.changes.length > 0 && (
+                                    <table className="w-full text-[10.5px] border-collapse">
+                                      <thead>
+                                        <tr className="text-muted-foreground">
+                                          <th className="text-left font-medium py-0.5">{t("copilot.field", "Trường")}</th>
+                                          <th className="text-left font-medium py-0.5">{t("copilot.before", "Trước")}</th>
+                                          <th className="text-left font-medium py-0.5">{t("copilot.after", "Sau")}</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {msg.pendingAction.preview.changes.map((c, i) => (
+                                          <tr key={i} className="border-t border-amber-200/60 dark:border-amber-900/40">
+                                            <td className="py-0.5 pr-1.5 font-medium">{c.displayName ?? c.field}</td>
+                                            <td className="py-0.5 pr-1.5 text-muted-foreground">{c.oldValue === null || c.oldValue === undefined ? "—" : String(c.oldValue)}</td>
+                                            <td className="py-0.5 text-foreground">{c.newValue === null || c.newValue === undefined ? "—" : String(c.newValue)}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  )}
+                                  {msg.pendingAction.preview.warnings.length > 0 && (
+                                    <ul className="list-disc list-inside text-red-600 dark:text-red-400 space-y-0.5">
+                                      {msg.pendingAction.preview.warnings.map((w, i) => (
+                                        <li key={i}>{w}</li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                  {msg.actionState === "pending" ? (
+                                    <div className="flex items-center gap-2 pt-0.5">
+                                      <Button
+                                        size="sm"
+                                        className="h-6 px-2.5 text-[11px]"
+                                        disabled={confirmActionMutation.isPending}
+                                        onClick={() => handleConfirmAction(msg)}
+                                      >
+                                        {t("copilot.confirm", "Xác nhận")}
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-6 px-2.5 text-[11px]"
+                                        disabled={cancelActionMutation.isPending}
+                                        onClick={() => handleCancelAction(msg)}
+                                      >
+                                        {t("copilot.cancel", "Hủy")}
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <div
+                                      className={cn(
+                                        "text-[11px] font-medium",
+                                        msg.actionState === "executed" ? "text-green-600 dark:text-green-400" : "text-muted-foreground",
+                                      )}
+                                    >
+                                      {msg.actionState === "executed" && (t("copilot.executed", "Đã thực thi."))}
+                                      {msg.actionState === "cancelled" && (t("copilot.cancelled", "Đã hủy."))}
+                                      {msg.actionState === "denied" && (msg.actionMessage ?? t("copilot.denied", "Không có quyền."))}
+                                      {msg.actionState === "expired" && (t("copilot.expired", "Đã hết hạn."))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                               <div className="prose prose-xs dark:prose-invert max-w-none text-xs leading-relaxed">
                                 <Markdown>{msg.content}</Markdown>
                                 {msg.streaming && <span className="inline-block size-1.5 rounded-full bg-muted-foreground animate-pulse ml-0.5" />}

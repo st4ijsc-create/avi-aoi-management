@@ -99,6 +99,13 @@ export const AUDIT_ACTIONS = {
   IMPORT: "import",
   EXPORT: "export",
   BULK_IMPORT: "bulk_import",
+
+  // AI Copilot write-action lifecycle (GĐ2 HITL)
+  AI_ACTION_PROPOSED: "ai_action_proposed",
+  AI_ACTION_CONFIRMED: "ai_action_confirmed",
+  AI_ACTION_EXECUTED: "ai_action_executed",
+  AI_ACTION_DENIED: "ai_action_denied",
+  AI_ACTION_CANCELLED: "ai_action_cancelled",
 } as const;
 
 export const ENTITY_TYPES = {
@@ -124,6 +131,7 @@ export const ENTITY_TYPES = {
   ANNOTATION: "annotation",
   SPC_CONFIG: "spc_config",
   QUALITY_GATE: "quality_gate",
+  AI_ACTION: "ai_action",
 } as const;
 
 // ─── Utility Functions ──────────────────────────────────────────────────────

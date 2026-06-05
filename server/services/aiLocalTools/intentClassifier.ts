@@ -54,6 +54,12 @@ function buildClarifyMessage(reason: string, question: string): string | null {
       "Bạn cũng có thể vào *Menu › Sản xuất › Lệnh sản xuất* để chọn trực tiếp từ danh sách.",
     ].join("\n");
   }
+  if (reason === "MISSING_SPEC_ARGS") {
+    return [
+      "Để đặt giới hạn spec, vui lòng cho biết **điểm đo** (ví dụ `điểm đo #12`) và ít nhất một giá trị **USL / LSL / Target** (ví dụ `USL=10.5 LSL=9.5`).",
+      "Ví dụ đầy đủ: *đặt spec điểm đo #12: USL=10.5, LSL=9.5, target=10*.",
+    ].join("\n");
+  }
   // No heuristic matched but user is clearly asking about live data.
   if (reason === "NO_TRIGGER_MATCH") {
     if (LOT_INTENT_HINT.test(question)) {
@@ -91,6 +97,15 @@ const MODEL_RANKING_INTENT = /\b(mẫu\s*sản\s*phẩm|sản\s*phẩm\s*nào|mo
 // Optional machine-code extraction for OEE (e.g. "AOI-01", "M-12").
 const MACHINE_CODE_REGEX = /\b([A-Z]{2,5}-?\d{1,4})\b/;
 
+// GĐ2 write-tool: "đặt/cập nhật spec/USL/LSL điểm đo".
+const SET_SPEC_INTENT = /\b(đặt|cập\s*nhật|set|update|chỉnh)\b[\s\S]{0,40}\b(spec|usl|lsl|target|giới\s*hạn)\b|\b(usl|lsl)\b[\s\S]{0,20}=/i;
+// Measurement-point id: "điểm đo #12", "điểm đo 12", "point 12", "mpd 12".
+const MP_ID_REGEX = /(?:điểm\s*đo|measurement\s*point|point|mpd|mp)\s*#?\s*(\d{1,9})/i;
+// Numeric spec values: "USL=10.5", "LSL = -3", "target 7".
+const USL_REGEX = /\busl\b\s*[:=]?\s*(-?\d+(?:\.\d+)?)/i;
+const LSL_REGEX = /\blsl\b\s*[:=]?\s*(-?\d+(?:\.\d+)?)/i;
+const TARGET_REGEX = /\b(?:target|nominal|mục\s*tiêu|danh\s*định)\b\s*[:=]?\s*(-?\d+(?:\.\d+)?)/i;
+
 function normalizeText(s: string): string {
   return s.toLowerCase().trim();
 }
@@ -99,6 +114,9 @@ function findToolByTriggers(question: string): Tool | null {
   const norm = normalizeText(question);
   let best: { tool: Tool; score: number } | null = null;
   for (const tool of listTools()) {
+    // Write tools are only matched via their dedicated shortcuts (which enforce
+    // required args / clarification) — never via generic trigger scoring.
+    if (tool.kind === "write") continue;
     let score = 0;
     for (const trigger of tool.triggers) {
       if (norm.includes(trigger.toLowerCase())) {
@@ -164,6 +182,19 @@ function extractArgsForTool(
       const days = m ? Math.max(1, Math.min(30, parseInt(m[1]!, 10))) : 7;
       return { days, limit: 5 };
     }
+    case "set_spec_limits": {
+      const idMatch = question.match(MP_ID_REGEX);
+      const usl = question.match(USL_REGEX);
+      const lsl = question.match(LSL_REGEX);
+      const target = question.match(TARGET_REGEX);
+      const args: Record<string, unknown> = {
+        usl: usl ? Number(usl[1]) : null,
+        lsl: lsl ? Number(lsl[1]) : null,
+        target: target ? Number(target[1]) : null,
+      };
+      if (idMatch) args.measurementPointDefId = Number(idMatch[1]);
+      return args;
+    }
     case "get_today_stats":
     default:
       return {};
@@ -221,6 +252,36 @@ export function classifyToolIntent(question: string, context?: ToolContext): Too
       if (parsed.success) {
         return { tool: "get_model_metrics", args: parsed.data as Record<string, unknown>, reason: "MODEL_RANKING_SHORTCUT" };
       }
+    }
+  }
+
+  // GĐ2 write-tool shortcut — recognize "đặt/cập nhật spec/USL/LSL điểm đo".
+  // Requires a measurement-point id AND at least one of USL/LSL/Target; else
+  // ask for clarification (don't propose an under-specified write action).
+  if (SET_SPEC_INTENT.test(question)) {
+    const tool = getTool("set_spec_limits");
+    if (tool) {
+      const args = extractArgsForTool("set_spec_limits", question, context);
+      const hasId = typeof args.measurementPointDefId === "number";
+      const hasAnyValue = args.usl !== null || args.lsl !== null || args.target !== null;
+      if (!hasId || !hasAnyValue) {
+        return {
+          tool: null,
+          args: {},
+          reason: "MISSING_SPEC_ARGS",
+          clarifyMessage: buildClarifyMessage("MISSING_SPEC_ARGS", question),
+        };
+      }
+      const parsed = tool.parameters.safeParse(args);
+      if (parsed.success) {
+        return { tool: "set_spec_limits", args: parsed.data as Record<string, unknown>, reason: "SET_SPEC_SHORTCUT" };
+      }
+      return {
+        tool: null,
+        args: {},
+        reason: "MISSING_SPEC_ARGS",
+        clarifyMessage: buildClarifyMessage("MISSING_SPEC_ARGS", question),
+      };
     }
   }
 

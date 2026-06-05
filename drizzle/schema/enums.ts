@@ -143,5 +143,39 @@ export const chatRoleEnum = pgEnum("chatroleenum", ["system", "user", "assistant
 export const apiKeyProviderEnum = pgEnum("apikeyprovider", ["openai", "azure_openai", "huggingface", "custom"]);
 export const apiKeyStatusEnum = pgEnum("apikeystatus", ["active", "inactive", "expired", "error"]);
 
+// AI Copilot pending-action lifecycle (GĐ2 HITL write-action)
+export const aiPendingActionStatusEnum = pgEnum("aipendingactionstatus", [
+  "proposed",
+  "confirmed",
+  "executed",
+  "denied",
+  "expired",
+  "cancelled",
+]);
+
 // Production Session enums (ISA-95 shift session)
 export const sessionStatusEnum = pgEnum("sessionstatusenum", ["open", "paused", "closed", "transferred"]);
+
+// === Giai đoạn 2 — MES / WIP / Traceability / PdM (G5/G6/G7) ===
+// WIP lifecycle state of a unit/lot moving through the line
+export const wipStatusEnum = pgEnum("wipstatusenum", ["queued", "in_process", "waiting", "completed", "hold", "scrapped", "reworked"]);
+// Material/lot disposition decisions (G6)
+export const lotDispositionEnum = pgEnum("lotdispositionenum", ["release", "rework", "scrap", "return", "hold", "quarantine"]);
+// Supplier lot quality status (G6)
+export const supplierLotStatusEnum = pgEnum("supplierlotstatusenum", ["received", "inspecting", "approved", "rejected", "consumed", "returned"]);
+// Maintenance schedule type / trigger basis (G7)
+export const maintenanceScheduleTypeEnum = pgEnum("maintenancescheduletypeenum", ["TIME_BASED", "USAGE_BASED", "CONDITION_BASED", "PREDICTIVE"]);
+// Maintenance work-order lifecycle (G7) — drives MTTR/MTBF
+export const workOrderStatusEnum = pgEnum("workorderstatusenum", ["OPEN", "SCHEDULED", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"]);
+// Maintenance work-order classification (G7)
+export const workOrderTypeEnum = pgEnum("workordertypeenum", ["PREVENTIVE", "PREDICTIVE", "CORRECTIVE", "BREAKDOWN", "INSPECTION"]);
+// Source that triggered the work order (G7 closed-loop)
+export const workOrderTriggerEnum = pgEnum("workordertriggerenum", ["MANUAL", "SCHEDULE", "PREDICTED_FAILURE", "HEALTH_SCORE", "SENSOR_ALERT"]);
+
+// === Giai đoạn 3 — Energy / ML Ops / HA-DR (G9/G10/G12/G14) ===
+// Energy meter source kind (G14 — ISO 50001)
+export const energySourceEnum = pgEnum("energysourceenum", ["electricity", "compressed_air", "water", "gas", "steam", "other"]);
+// Compliance export view profile (G9)
+export const complianceViewEnum = pgEnum("complianceviewenum", ["CFR21_PART11", "IATF16949", "ISO9001", "ISO17025", "ISO50001"]);
+// Disaster-recovery verify-restore check outcome (G12)
+export const drCheckStatusEnum = pgEnum("drcheckstatusenum", ["passed", "failed", "skipped", "running"]);
