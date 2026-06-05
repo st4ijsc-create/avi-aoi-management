@@ -19,6 +19,15 @@
 
 import { listTools, getTool, type Tool } from "./toolRegistry";
 
+// C3a — optional page selection used to pre-fill tool args when the question
+// omits a concrete identifier (e.g. "máy này sao rồi?" on the machine page).
+// Structurally a subset of the service's KbQueryContext.
+export interface ToolContext {
+  selectedMachineCode?: string;
+  selectedProductCode?: string;
+  selectedLot?: string;
+}
+
 export interface ToolDecision {
   tool: string | null;
   args: Record<string, unknown>;
@@ -104,14 +113,19 @@ function findToolByTriggers(question: string): Tool | null {
   return best?.tool ?? null;
 }
 
-function extractArgsForTool(toolName: string, question: string): Record<string, unknown> {
+function extractArgsForTool(
+  toolName: string,
+  question: string,
+  context?: ToolContext,
+): Record<string, unknown> {
   switch (toolName) {
     case "get_lot_status": {
       const m =
         question.match(ORDER_CODE_REGEX) ??
         question.match(ORDER_CODE_PREFIX_VI) ??
         question.match(BARE_LOT_CODE_REGEX);
-      const orderCode = m?.[1];
+      // Priority: code from question > context selection.
+      const orderCode = m?.[1] ?? context?.selectedLot;
       return orderCode ? { orderCode } : {};
     }
     case "get_machine_status": {
@@ -140,7 +154,9 @@ function extractArgsForTool(toolName: string, question: string): Record<string, 
     case "get_oee": {
       const m = question.match(DAYS_REGEX);
       const days = m ? Math.max(1, Math.min(30, parseInt(m[1]!, 10))) : 7;
-      const code = question.match(MACHINE_CODE_REGEX)?.[1];
+      // Priority: machine code from question > context selection. Lets
+      // "OEE máy này?" on a machine page resolve without typing the code.
+      const code = question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedMachineCode;
       return code ? { machineCode: code, days } : { days };
     }
     case "get_model_metrics": {
@@ -160,7 +176,7 @@ function extractArgsForTool(toolName: string, question: string): Record<string, 
  * Returns `{ tool: null }` when no tool is appropriate — the caller should
  * proceed with the standard KB retrieval flow.
  */
-export function classifyToolIntent(question: string): ToolDecision {
+export function classifyToolIntent(question: string, context?: ToolContext): ToolDecision {
   if (!question || question.trim().length < 2) {
     return { tool: null, args: {}, reason: "EMPTY" };
   }
@@ -168,7 +184,7 @@ export function classifyToolIntent(question: string): ToolDecision {
   // High-priority short-circuits BEFORE generic trigger matching, because
   // some keywords ("hôm nay", "NG") would otherwise grab today_stats.
   if (MONTH_COMPARE_INTENT.test(question) || WEEK_COMPARE_INTENT.test(question)) {
-    const args = extractArgsForTool("get_ng_compare", question);
+    const args = extractArgsForTool("get_ng_compare", question, context);
     const tool = getTool("get_ng_compare");
     if (tool) {
       const parsed = tool.parameters.safeParse(args);
@@ -178,7 +194,7 @@ export function classifyToolIntent(question: string): ToolDecision {
     }
   }
   if (OEE_INTENT.test(question)) {
-    const args = extractArgsForTool("get_oee", question);
+    const args = extractArgsForTool("get_oee", question, context);
     const tool = getTool("get_oee");
     if (tool) {
       const parsed = tool.parameters.safeParse(args);
@@ -188,7 +204,7 @@ export function classifyToolIntent(question: string): ToolDecision {
     }
   }
   if (FACTORY_AGG_INTENT.test(question)) {
-    const args = extractArgsForTool("get_factory_stats", question);
+    const args = extractArgsForTool("get_factory_stats", question, context);
     const tool = getTool("get_factory_stats");
     if (tool) {
       const parsed = tool.parameters.safeParse(args);
@@ -198,7 +214,7 @@ export function classifyToolIntent(question: string): ToolDecision {
     }
   }
   if (MODEL_RANKING_INTENT.test(question)) {
-    const args = extractArgsForTool("get_model_metrics", question);
+    const args = extractArgsForTool("get_model_metrics", question, context);
     const tool = getTool("get_model_metrics");
     if (tool) {
       const parsed = tool.parameters.safeParse(args);
@@ -218,7 +234,7 @@ export function classifyToolIntent(question: string): ToolDecision {
     };
   }
 
-  const args = extractArgsForTool(matched.name, question);
+  const args = extractArgsForTool(matched.name, question, context);
 
   // Required-arg validation: lot_status needs orderCode. If missing, fall back to no-tool.
   if (matched.name === "get_lot_status" && !args.orderCode) {

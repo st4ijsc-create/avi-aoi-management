@@ -1,6 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useTranslation } from 'react-i18next';
 import { trpc } from "@/lib/trpc";
+import { useSetCopilotContext } from "@/contexts/AiCopilotContext";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -185,6 +186,21 @@ export default function MachineHealthMonitoring() {
   // Queries
   const { data: machines } = trpc.machine.list.useQuery();
   const { data: allOEE, refetch: refetchOEE } = trpc.mqttClient.getAllOEE.useQuery();
+
+  // C3a — publish the currently-selected machine to the AI copilot so questions
+  // like "OEE máy này?" resolve to this machine's code without typing it.
+  const setCopilotContext = useSetCopilotContext();
+  const selectedMachineCode = useMemo(
+    () => machines?.find((m) => m.id === selectedMachine)?.code,
+    [machines, selectedMachine],
+  );
+  useEffect(() => {
+    setCopilotContext(
+      selectedMachine != null
+        ? { selectedMachineId: selectedMachine, selectedMachineCode }
+        : {},
+    );
+  }, [selectedMachine, selectedMachineCode, setCopilotContext]);
   const { data: machineHealth, refetch: refetchHealth } = trpc.mqttClient.getMachineHealth.useQuery(
     { machineId: selectedMachine! },
     { enabled: !!selectedMachine }

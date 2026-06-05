@@ -39,14 +39,31 @@ export interface KbCitation {
   score: number;
 }
 
+// zh — language union extended to include Chinese (backward-compatible: extra branch).
+export type KbLanguage = "vi" | "en" | "zh";
+
 export interface KbRetrieveResult {
   question: string;
   intent: KbIntent;
-  language: "vi" | "en";
+  language: KbLanguage;
   entities: string[];
   confidence: number;
   citations: KbCitation[];
   contexts: string[];
+}
+
+// C3a — optional, page-supplied context. All fields optional; absence keeps the
+// legacy behavior (backward-compatible). Codes are preferred so they can be fed
+// directly to read-tools (machineCode/orderCode). `uiLanguage` lets the UI hint
+// the reply language when the question text is ambiguous.
+export interface KbQueryContext {
+  route?: string;
+  uiLanguage?: KbLanguage;
+  selectedMachineCode?: string;
+  selectedMachineId?: number;
+  selectedProductCode?: string;
+  selectedProductModelId?: number;
+  selectedLot?: string;
 }
 
 export interface KbStructuredResponse {
@@ -156,13 +173,15 @@ function rolToUserLevel(role: UserRole): UserLevel {
   return "basic";
 }
 
-function buildFollowUpSuggestions(intent: KbIntent, language: "vi" | "en"): string[] {
+function buildFollowUpSuggestions(intent: KbIntent, language: KbLanguage): string[] {
   const vi: Record<KbIntent, string[]> = {
     how_to: ["Có cách nào nhanh hơn không?", "Bước nào thường gặp lỗi?", "Ai có quyền thực hiện bước này?"],
     troubleshoot: ["Lỗi này xảy ra thường xuyên không?", "Làm sao ngăn lỗi tái phát?", "Cần liên hệ ai khi lỗi nghiêm trọng?"],
     architecture: ["Module nào liên quan đến chức năng này?", "Dữ liệu được lưu ở đâu?", "API nào được dùng?"],
     technical: ["Schema của bảng này là gì?", "Endpoint nào trả dữ liệu này?", "Có test case nào không?"],
     general: ["Tôi có thể tìm thêm thông tin ở đâu?", "Ai là người quản lý phần này?", "Có tài liệu hướng dẫn không?"],
+    list: ["Còn mục nào khác không?", "Sắp xếp theo tiêu chí nào?", "Xem chi tiết từng mục ở đâu?"],
+    definition: ["Khái niệm này dùng ở đâu?", "Có ví dụ minh họa không?", "Thuật ngữ liên quan là gì?"],
   };
   const en: Record<KbIntent, string[]> = {
     how_to: ["Is there a faster way?", "Which step is most error-prone?", "Who has permission to do this?"],
@@ -170,7 +189,19 @@ function buildFollowUpSuggestions(intent: KbIntent, language: "vi" | "en"): stri
     architecture: ["Which modules are related?", "Where is the data stored?", "Which APIs are involved?"],
     technical: ["What is the table schema?", "Which endpoint returns this data?", "Are there test cases?"],
     general: ["Where can I find more info?", "Who manages this feature?", "Is there documentation?"],
+    list: ["Are there other items?", "How is it sorted?", "Where to see each item's detail?"],
+    definition: ["Where is this concept used?", "Is there an example?", "What are related terms?"],
   };
+  const zh: Record<KbIntent, string[]> = {
+    how_to: ["有更快的方法吗？", "哪一步最容易出错？", "谁有权限执行此操作？"],
+    troubleshoot: ["这个错误经常发生吗？", "如何防止再次发生？", "严重问题该联系谁？"],
+    architecture: ["相关的模块有哪些？", "数据存储在哪里？", "涉及哪些 API？"],
+    technical: ["这张表的结构是什么？", "哪个接口返回此数据？", "有测试用例吗？"],
+    general: ["在哪里可以找到更多信息？", "谁负责这个功能？", "有使用文档吗？"],
+    list: ["还有其他项目吗？", "按什么排序？", "在哪里查看每项详情？"],
+    definition: ["这个概念用在哪里？", "有示例吗？", "相关术语有哪些？"],
+  };
+  if (language === "zh") return zh[intent] ?? zh.general;
   return language === "vi" ? (vi[intent] ?? vi.general) : (en[intent] ?? en.general);
 }
 
@@ -347,7 +378,12 @@ function clamp01(n: number): number {
   return n;
 }
 
-function detectLanguage(question: string): "vi" | "en" {
+// zh \u2014 detect Chinese first (CJK Unified Ideographs). The Han range does not
+// overlap the Vietnamese Latin range below, so ordering is safe. Exported so it
+// can be unit-tested directly.
+export function detectLanguage(question: string): KbLanguage {
+  if (/[\u4e00-\u9fff]/.test(question)) return "zh";
+
   const viPattern = /[\u0102\u0103\u00c2\u00ca\u00d4\u01a0\u01af\u0110\u00e0-\u1ef9]/;
   if (viPattern.test(question)) return "vi";
 
@@ -408,8 +444,10 @@ const EN_DEMOTE_PATH_RE = /(CSHARP_CLIENT|SERVER_PERFORMANCE_ASSESSMENT|_EN\.)/i
 // queries (e.g. any question containing the word "audit" pulls in the i18n
 // audit report regardless of intent).
 const NOISE_DOC_RE = /(I18N_AUDIT_REPORT|SYSTEM_AUDIT_REPORT|AUDIT_REPORT|MODULE_AUDIT|_DELIVERABLE|_UPGRADE_REPORT|FRONTEND_AUDIT)/i;
-function sourceLanguageWeight(sourcePath: string, qLang: "vi" | "en"): number {
+function sourceLanguageWeight(sourcePath: string, qLang: KbLanguage): number {
   if (NOISE_DOC_RE.test(sourcePath)) return 0.55;
+  // zh has no dedicated corpus; treat it like the EN branch (neutral) — the KB
+  // is vi/en, and the LLM translates concepts into zh at answer time.
   if (qLang === "vi") {
     if (VN_BOOST_PATH_RE.test(sourcePath)) return 1.08;
     if (EN_DEMOTE_PATH_RE.test(sourcePath)) return 0.92;
@@ -578,6 +616,9 @@ function buildExtractiveAnswer(question: string, retrieve: KbRetrieveResult): st
   const language = retrieve.language;
 
   if (retrieve.citations.length === 0) {
+    if (language === "zh") {
+      return `我在知识库中没有找到与此问题相关的信息。\n\n**建议：**\n- 尝试换一种方式描述问题\n- 询问具体的功能、界面或错误\n- 联系技术人员或查看使用文档`;
+    }
     return language === "vi"
       ? `Tôi chưa tìm thấy thông tin phù hợp cho câu hỏi này trong cơ sở dữ liệu kiến thức.\n\n**Gợi ý:**\n- Thử diễn đạt câu hỏi theo cách khác\n- Hỏi về tên tính năng, màn hình, hoặc lỗi cụ thể\n- Liên hệ kỹ thuật viên hoặc xem tài liệu hướng dẫn`
       : `I couldn't find relevant information for this question in the knowledge base.\n\n**Suggestions:**\n- Try rephrasing the question\n- Ask about a specific feature, screen, or error\n- Contact support or check the documentation`;
@@ -594,9 +635,15 @@ function buildExtractiveAnswer(question: string, retrieve: KbRetrieveResult): st
     // row for it (and isn't left wondering whether the question was understood).
     const id = extractLotOrMachineId(question);
     if (id) {
+      if (language === "zh") {
+        return `在当前文档中未找到编号 **${id}** 的数据。\n\n**建议：**\n- 核对编号（格式是否正确、是否有多余空格）\n- 如果是实时数据，请说明日期/时间范围\n- 或联系技术工程师寻求帮助`;
+      }
       return language === "vi"
         ? `Không tìm thấy dữ liệu cho mã **${id}** trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Kiểm tra lại mã (định dạng đúng chưa, có khoảng trắng dư không)\n- Nếu đây là dữ liệu thời gian thực, hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ`
         : `No data found for **${id}** in the current documents.\n\n**Try:**\n- Verify the ID format and remove extra whitespace\n- For real-time data, specify the date/time range\n- Or contact a technical engineer for help`;
+    }
+    if (language === "zh") {
+      return `在当前文档中我没有关于此问题的准确信息。\n\n**建议：**\n- 提问更具体一些（功能名称、界面、错误代码、机台/批次编号）\n- 如果询问实时数据（产量、机台、缺陷），请说明日期/时间范围\n- 或联系技术工程师寻求帮助`;
     }
     return language === "vi"
       ? `Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại.\n\n**Gợi ý:**\n- Thử hỏi cụ thể hơn (tên tính năng, màn hình, mã lỗi, mã máy/lô)\n- Nếu hỏi về dữ liệu thời gian thực (sản lượng, máy, lỗi), hãy nêu rõ ngày/khoảng thời gian\n- Hoặc liên hệ kỹ thuật viên để được hỗ trợ`
@@ -604,9 +651,11 @@ function buildExtractiveAnswer(question: string, retrieve: KbRetrieveResult): st
   }
 
   const intro =
-    language === "vi"
-      ? `Tôi tìm thấy **${retrieve.citations.length} nguồn** liên quan trong codebase:`
-      : `I found **${retrieve.citations.length} relevant sources** in the codebase:`;
+    language === "zh"
+      ? `我在代码库中找到了 **${retrieve.citations.length} 个相关来源**：`
+      : language === "vi"
+        ? `Tôi tìm thấy **${retrieve.citations.length} nguồn** liên quan trong codebase:`
+        : `I found **${retrieve.citations.length} relevant sources** in the codebase:`;
 
   const bullets = retrieve.citations
     .map((c, i) => {
@@ -617,14 +666,19 @@ function buildExtractiveAnswer(question: string, retrieve: KbRetrieveResult): st
     .join("\n\n");
 
   const outro =
-    language === "vi"
-      ? "\n\n💡 *Nếu cần, hãy hỏi thêm về một bước cụ thể hoặc lỗi cụ thể.*"
-      : "\n\n💡 *If needed, ask about a specific step or error.*";
+    language === "zh"
+      ? "\n\n💡 *如有需要，可继续询问某个具体步骤或具体错误。*"
+      : language === "vi"
+        ? "\n\n💡 *Nếu cần, hãy hỏi thêm về một bước cụ thể hoặc lỗi cụ thể.*"
+        : "\n\n💡 *If needed, ask about a specific step or error.*";
 
   return `${intro}\n\n${bullets}${outro}`;
 }
 
-function buildGracefulFallback(language: "vi" | "en"): string {
+function buildGracefulFallback(language: KbLanguage): string {
+  if (language === "zh") {
+    return `抱歉，我目前没有足够的信息来准确回答这个问题。\n\n**您可以尝试：**\n- 🔍 更具体地描述功能或错误\n- 📋 查看系统中的**使用指南**\n- 💬 联系**技术工程师**或**管理员**`;
+  }
   return language === "vi"
     ? `Xin lỗi, tôi chưa có đủ thông tin để trả lời câu hỏi này một cách chính xác.\n\n**Bạn có thể thử:**\n- 🔍 Hỏi cụ thể hơn về tính năng hoặc lỗi\n- 📋 Xem mục **Hướng dẫn sử dụng** trong hệ thống\n- 💬 Liên hệ **kỹ sư kỹ thuật** hoặc **quản trị viên**\n- 📞 Hotline hỗ trợ: nội bộ phòng kỹ thuật`
     : `Sorry, I don't have enough information to answer this accurately.\n\n**You can try:**\n- 🔍 Be more specific about the feature or error\n- 📋 Check the **User Guide** in the system\n- 💬 Contact a **technical engineer** or **administrator**`;
@@ -632,7 +686,7 @@ function buildGracefulFallback(language: "vi" | "en"): string {
 
 function getSystemPromptForRole(
   userLevel: UserLevel,
-  language: "vi" | "en",
+  language: KbLanguage,
   intent: KbIntent = "general",
 ): string {
   // Lever 8.C — compact prompt. Earlier verbose VI prompt was ~700 tokens
@@ -655,8 +709,27 @@ function getSystemPromptForRole(
   const VI_LIST_FORMAT = "Cấu trúc: (1) Tổng số mục được liệt kê (con số chính xác), (2) Danh sách đầy đủ dưới dạng bullet hoặc bảng (không cắt ngắn), (3) Trích nguyên văn code/giá trị từ ngữ cảnh khi có, (4) Nguồn gốc (file/đường dẫn). KHÔNG bịa số lượng. KHÔNG dùng template 'Các bước → Truy cập URL'.";
   const EN_LIST_FORMAT = "Structure: (1) Total count (exact number), (2) Full list as bullets or table (do NOT truncate), (3) Verbatim code/values from context, (4) Source (file path). Do NOT invent counts. Do NOT use the 'Steps → Open URL' template.";
 
+  // zh — Chinese prompt variants. Same rubric as vi/en (structure, code-fence,
+  // anti-hallucination, no public-cloud mentions), translated to Simplified
+  // Chinese so the model replies in Chinese when the UI/question is Chinese.
+  const ZH_GUARD = "仅使用所提供的资料；不得编造 API/接口/变量/数据表。不得提及 Alibaba/AWS/GCP/Azure。资料不足时请明确说明尚无数据。";
+  const ZH_FORMAT = "结构：(1) 1–2 句概述，(2) 编号步骤，说明*做什么 + 在界面中的位置 + 预期结果*，(3) 注意事项/常见错误，(4) 2 个相关主题。200–450 字。当上下文包含 API/变量/命令时，必须用反引号或代码块 ```bash/```sql/```ts 原样引用。";
+  const ZH_DEF_FORMAT = "结构：(1) 1–3 句简短定义，(2) 关键组成/特征的项目列表，(3) 来自上下文的具体示例（如有代码/数值/公式），(4) 1–2 个相关主题。若上下文未说明，请勿编造界面路径/菜单。定义类问题请勿使用“步骤→打开网址→点击标签”的模板。";
+  const ZH_LIST_FORMAT = "结构：(1) 列出项目的总数（准确数字），(2) 完整列表（项目符号或表格，不得截断），(3) 原样引用上下文中的代码/数值，(4) 来源（文件路径）。不得编造数量。请勿使用“步骤→打开网址”的模板。";
+
   const isDef = intent === "definition";
   const isList = intent === "list";
+
+  if (language === "zh") {
+    const fmt = isDef ? ZH_DEF_FORMAT : isList ? ZH_LIST_FORMAT : ZH_FORMAT;
+    if (userLevel === "basic") {
+      return `面向一线操作工的 AVI/AOI 本地部署系统助手。用简体中文、通俗易懂、完整地回答。${fmt} ${ZH_GUARD}`;
+    }
+    if (userLevel === "manager") {
+      return `面向管理者的 AVI/AOI 本地部署系统分析助手。用简体中文回答，聚焦 KPI/趋势/运营影响，并给出优先级行动建议。${fmt} ${ZH_GUARD}`;
+    }
+    return `面向工程师的 AVI/AOI 本地部署系统技术助手。用简体中文回答，给出具体的 API/数据结构/配置/命令；解释设计与错误处理。${fmt} ${ZH_GUARD}`;
+  }
 
   if (language === "vi") {
     const fmt = isDef ? VI_DEF_FORMAT : isList ? VI_LIST_FORMAT : VI_FORMAT;
@@ -1124,15 +1197,52 @@ export function reloadKbArtifacts(): ReturnType<typeof getKbHealth> {
   return getKbHealth();
 }
 
+// C3a — resolve reply language. Strong signal from the question text wins; for
+// ambiguous questions (no script/keyword signal → defaults to "en") we fall
+// back to the UI language hint so a Chinese UI gets Chinese replies even when
+// the user types code/identifiers only.
+function resolveLanguage(question: string, context?: KbQueryContext): KbLanguage {
+  const detected = detectLanguage(question);
+  const ui = context?.uiLanguage;
+  // detectLanguage returns "en" both for genuine English and for ambiguous
+  // input (codes/numbers). Only override when it fell through to "en" AND the
+  // question carries no Latin letters (i.e. no real English words).
+  if (detected === "en" && ui && ui !== "en" && !/[a-z]{3,}/i.test(question)) {
+    return ui;
+  }
+  return detected;
+}
+
+// C3a — map a FE route to coarse KB feature/source keywords. Only a few
+// high-traffic routes are mapped; unmapped routes return [] (no boost).
+const ROUTE_FEATURE_HINTS: Record<string, string[]> = {
+  "/machine-health": ["machine", "health", "oee", "maintenance"],
+  "/machine-status": ["machine", "status", "heartbeat"],
+  "/oee-dashboard": ["oee"],
+  "/products": ["product", "model", "measurement"],
+  "/spc-analysis": ["spc", "control", "cpk"],
+  "/production-orders": ["production", "order", "lot"],
+  "/reports": ["report"],
+  "/alerts": ["alert"],
+};
+function routeToFeatureHints(route: string): string[] {
+  const path = route.split("?")[0]?.replace(/\/+$/, "") || "/";
+  return ROUTE_FEATURE_HINTS[path] ?? [];
+}
+
 export async function retrieveKnowledge(
   question: string,
   topK = 5,
+  context?: KbQueryContext,
 ): Promise<KbRetrieveResult> {
   const data = ensureDataLoaded();
   const tokens = tokenize(question);
   const intent = classifyIntent(question);
-  const language = detectLanguage(question);
+  const language = resolveLanguage(question, context);
   const entities = extractEntities(question);
+
+  // C3a — features hinted by the current route (light boost only).
+  const routeFeatures = context?.route ? routeToFeatureHints(context.route) : [];
 
   const qVec = await embedQuestion(question);
 
@@ -1160,7 +1270,14 @@ export async function retrieveKnowledge(
       emb.sourceType === "domain" ? 1.08 :
       emb.sourceType === "doc" ? 0.90 :
       1.0;
-    const score = baseScore * langWeight * typeWeight;
+    // C3a — small boost for chunks whose source path matches a feature hinted
+    // by the current route, so on-page questions surface page-relevant KB.
+    // Kept gentle (×1.12) so it nudges ties without overriding real relevance.
+    const routeWeight =
+      routeFeatures.length > 0 && routeFeatures.some((f) => emb.sourcePath.toLowerCase().includes(f))
+        ? 1.12
+        : 1.0;
+    const score = baseScore * langWeight * typeWeight * routeWeight;
 
     return { emb, chunk, semantic, keyword, score };
   });
@@ -1220,6 +1337,7 @@ export async function answerQuestion(
   topK = 5,
   history: ConversationMessage[] = [],
   userRole: UserRole = "engineer",
+  context?: KbQueryContext,
 ): Promise<KbAnswerResult> {
   const userLevel = rolToUserLevel(userRole);
   const key = getCacheKey(question, topK, userRole);
@@ -1227,7 +1345,7 @@ export async function answerQuestion(
 
   // Step 1 — Try a real-time tool first. Tool answers must NOT be cached
   // because they reflect live database state.
-  const toolExec = await tryExecuteTool(question);
+  const toolExec = await tryExecuteTool(question, context);
   const toolResult = toolExec.result;
   const clarifyMessage = toolExec.decision.clarifyMessage ?? null;
 
@@ -1235,7 +1353,7 @@ export async function answerQuestion(
   // immediately without invoking the LLM. This avoids hallucinated answers
   // for questions like "lô của tôi sao rồi?" that lack a concrete identifier.
   if (!toolResult && clarifyMessage) {
-    const retrieve = await retrieveKnowledge(question, topK);
+    const retrieve = await retrieveKnowledge(question, topK, context);
     const followUpSuggestions = buildFollowUpSuggestions(retrieve.intent, retrieve.language);
     return {
       ...retrieve,
@@ -1257,7 +1375,7 @@ export async function answerQuestion(
     }
   }
 
-  const retrieve = await retrieveKnowledge(question, topK);
+  const retrieve = await retrieveKnowledge(question, topK, context);
 
   let provider: "ollama" | "extractive" | "tool" = "extractive";
   let answer = buildExtractiveAnswer(question, retrieve);
@@ -1353,7 +1471,7 @@ export type StreamEvent =
   | {
       type: "meta";
       intent: KbIntent;
-      language: "vi" | "en";
+      language: KbLanguage;
       confidence: number;
       citations: KbCitation[];
     }
@@ -1373,19 +1491,20 @@ export async function* streamAnswer(
   topK = 5,
   history: ConversationMessage[] = [],
   userRole: UserRole = "engineer",
+  context?: KbQueryContext,
 ): AsyncGenerator<StreamEvent> {
   const userLevel = rolToUserLevel(userRole);
   const key = getCacheKey(question, topK, userRole);
   const now = Date.now();
 
   // Real-time tool first (live DB state — must NOT be cached).
-  const toolExec = await tryExecuteTool(question);
+  const toolExec = await tryExecuteTool(question, context);
   const toolResult = toolExec.result;
   const clarifyMessage = toolExec.decision.clarifyMessage ?? null;
 
   // Short-circuit clarification (mirrors answerQuestion).
   if (!toolResult && clarifyMessage) {
-    const retrieve = await retrieveKnowledge(question, topK);
+    const retrieve = await retrieveKnowledge(question, topK, context);
     yield {
       type: "meta",
       intent: retrieve.intent,
@@ -1430,7 +1549,7 @@ export async function* streamAnswer(
     }
   }
 
-  const retrieve = await retrieveKnowledge(question, topK);
+  const retrieve = await retrieveKnowledge(question, topK, context);
 
   yield {
     type: "meta",

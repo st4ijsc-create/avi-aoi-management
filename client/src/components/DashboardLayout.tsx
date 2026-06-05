@@ -41,6 +41,7 @@ import { useLicenseModules } from "@/hooks/useLicenseModules";
 import { LicenseEnforcementBanner } from "./LicenseEnforcementBanner";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
+import { useSpcAlertToast } from "@/hooks/useSpcAlertToast";
 
 type DashboardLayoutProps = {
   children: ReactNode;
@@ -149,6 +150,9 @@ function DashboardLayoutContent({
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
 
+  // Sprint 2c — global SPC violation toasts (works on every authenticated page)
+  useSpcAlertToast();
+
   // State for collapsible groups
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     const saved = localStorage.getItem(SIDEBAR_GROUPS_KEY);
@@ -256,7 +260,7 @@ function DashboardLayoutContent({
   const { isNavGroupAllowed, isRouteAllowed: isLicenseRouteAllowed } = useLicenseModules();
 
   // Filter groups based on user role + granular permissions + license modules
-  const visibleGroups = getFilteredNavGroups(user?.role, hasPermission, hasAnyCategoryPermission)
+  const visibleGroups = getFilteredNavGroups(user?.role, hasPermission as any, hasAnyCategoryPermission as any)
     .filter(group => isNavGroupAllowed(group.id))
     .map(group => ({
       ...group,
@@ -397,7 +401,7 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset className="bg-background">
-        <div className="flex border-b border-border h-14 items-center justify-between bg-card/95 px-2 sm:px-3 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
+        <div className="flex border-b border-border h-14 items-center justify-between bg-card/95 px-2 sm:px-3 backdrop-blur supports-backdrop-filter:backdrop-blur sticky top-0 z-40">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             {isMobile && <SidebarTrigger className="h-9 w-9 rounded-lg shrink-0" />}
             <span className="font-medium text-foreground text-sm sm:text-base truncate">
@@ -413,6 +417,8 @@ function DashboardLayoutContent({
         <LicenseEnforcementBanner />
         <main className="flex-1 p-3 sm:p-4 md:p-6 overflow-auto">{children}</main>
       </SidebarInset>
+      {/* C3a — AILocalChatBubble moved to App root (mounted once globally).
+          Removed from here to avoid a duplicate bubble on pages using this layout. */}
     </>
   );
 }

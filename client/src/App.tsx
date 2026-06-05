@@ -6,6 +6,8 @@ import React, { Suspense, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { AiCopilotProvider } from "./contexts/AiCopilotContext";
+import { AILocalChatBubble } from "./components/AILocalChatBubble";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
@@ -274,8 +276,14 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="dark" switchable>
         <TooltipProvider>
-          <Toaster />
-          <Router />
+          <AiCopilotProvider>
+            <Toaster />
+            <Router />
+            {/* C3a — global copilot bubble: mounted ONCE here (inside the tRPC
+                provider from main.tsx) so it appears on every route, including
+                lazy AI pages. The bubble hides itself when not logged in. */}
+            <AILocalChatBubble />
+          </AiCopilotProvider>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
