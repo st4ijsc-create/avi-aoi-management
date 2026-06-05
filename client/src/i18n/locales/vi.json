@@ -5751,6 +5751,8 @@
     "chartImr": "Biểu đồ I-MR",
     "target": "Mục tiêu",
     "applySpec": "Áp dụng",
+    "saveSpec": "Lưu spec vào điểm đo",
+    "specSaved": "Đã lưu USL/LSL vào điểm đo",
     "enterSpecToComputeCpk": "Nhập USL/LSL để tính Cpk/Ppk",
     "sChart": "Biểu đồ S",
     "mrChart": "Biểu đồ khoảng trượt",

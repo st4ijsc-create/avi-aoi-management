@@ -5728,6 +5728,8 @@
     "chartImr": "I-MR chart",
     "target": "Target",
     "applySpec": "Apply",
+    "saveSpec": "Save spec to point",
+    "specSaved": "Spec limits saved to measurement point",
     "enterSpecToComputeCpk": "Enter USL/LSL to compute Cpk/Ppk",
     "sChart": "S chart",
     "mrChart": "Moving range chart",

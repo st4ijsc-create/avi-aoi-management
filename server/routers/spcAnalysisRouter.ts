@@ -654,4 +654,27 @@ export const spcAnalysisRouter = router({
         ngRate: item.totalCount > 0 ? (item.ngCount / item.totalCount) * 100 : 0,
       }));
     }),
+
+  // Lưu spec (USL/LSL/Target) vào điểm đo → lần sau tự prefill cho mọi người.
+  // Ghi vào measurement_point_defs (có versioning/audit qua updateMeasurementPointDef).
+  saveSpecLimits: protectedProcedure
+    .input(z.object({
+      measurementPointDefId: z.number().int().positive(),
+      usl: z.number().nullable(),
+      lsl: z.number().nullable(),
+      target: z.number().nullable(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const toStr = (n: number | null) => (n === null || Number.isNaN(n) ? null : String(n));
+      await db.updateMeasurementPointDef(
+        input.measurementPointDefId,
+        {
+          upperLimit: toStr(input.usl),
+          lowerLimit: toStr(input.lsl),
+          nominalValue: toStr(input.target),
+        },
+        { changedBy: (ctx as any).user?.id ?? null, changeReason: "SPC: cập nhật spec USL/LSL/Target" },
+      );
+      return { ok: true };
+    }),
 });

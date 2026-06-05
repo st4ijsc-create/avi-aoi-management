@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -155,6 +156,23 @@ export default function SPCAnalysis() {
   const applySpec = () => {
     setUslApplied(uslInput.trim() !== "" ? Number(uslInput) : null);
     setLslApplied(lslInput.trim() !== "" ? Number(lslInput) : null);
+  };
+
+  // Lưu spec vào điểm đo (DB) → lần sau tự prefill cho mọi người.
+  const saveSpecMutation = trpc.spcAnalysis.saveSpecLimits.useMutation({
+    onSuccess: () => { toast.success(t('spc.specSaved')); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const saveSpec = () => {
+    if (!mpId) return;
+    applySpec();
+    const num = (s: string) => (s.trim() !== "" ? Number(s) : null);
+    saveSpecMutation.mutate({
+      measurementPointDefId: mpId,
+      usl: num(uslInput),
+      lsl: num(lslInput),
+      target: num(targetInput),
+    });
   };
 
   // ─── Primary control chart data for Recharts (from query B = ctrl) ─────────
@@ -451,6 +469,10 @@ export default function SPCAnalysis() {
                     </div>
                     <Button size="sm" className="h-8" onClick={applySpec} disabled={isFetching}>
                       {t('spc.applySpec')}
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-8" onClick={saveSpec}
+                      disabled={!mpId || saveSpecMutation.isPending}>
+                      {t('spc.saveSpec')}
                     </Button>
                   </div>
                   {cap?.cpk == null && spec?.usl == null && spec?.lsl == null && (
