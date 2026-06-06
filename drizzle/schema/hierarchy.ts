@@ -1,6 +1,20 @@
 // Schema domain: Hierarchy tables (Corporate > Factory > Workshop > Line > Station > Machine)
-import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { machineTypeEnum, statusEnum_1, operationStatusEnum, processTypeEnum } from "./enums";
+
+/**
+ * Sprint F2 — generic capability flags for a machine, so the UI / services can
+ * adapt behaviour per device kind without hard-coding machineType checks.
+ * Open-ended ([k:string]:unknown) for forward-compat.
+ */
+export type MachineCapabilities = {
+  canMeasureTorque?: boolean;
+  canMeasureDispenseVolume?: boolean;
+  hasRecipe?: boolean;
+  emitsProcessResult?: boolean;
+  cycleTimeTracked?: boolean;
+  [k: string]: unknown;
+};
 
 /**
  * Corporate - Tập đoàn (cấp cao nhất)
@@ -148,6 +162,8 @@ export const machines = pgTable("machines", {
   isActive: boolean("isActive").default(true).notNull(),
   lastHeartbeat: timestamp("lastHeartbeat"),
   operationStatus: operationStatusEnum("operationStatus").default("stopped").notNull(),
+  // Sprint F2 — generic device capability flags (nullable; defaults inferred per machineType)
+  capabilities: jsonb("capabilities").$type<MachineCapabilities>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [

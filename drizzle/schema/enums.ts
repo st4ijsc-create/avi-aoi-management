@@ -20,7 +20,19 @@ export const machineTypeEnum = pgEnum("machinetypeenum", [
   "FCT",        // Functional Circuit Test
   "CMM",        // Coordinate Measuring Machine
   "AUTOMATION", // General automation station
+  // --- Sprint F2: generic device model for any machine type ---
+  "FEEDER",     // Component feeder
+  "ASSEMBLY",   // Assembly station
+  "SCREWDRIVE", // Automatic screwdriving station
+  "DISPENSING", // Glue / paste dispensing
+  "ICT_FUNC",   // Combined ICT + functional test cell
+  "ROBOT_TEST", // Robotic test cell
+  "PACKAGING",  // Packaging station
+  "PALLETIZER", // Palletizer
+  "ROBOT",      // Generic industrial robot
 ]);
+// Sprint F2 — outcome of a generic process/station step (telemetry RESULT, not a control command)
+export const processResultEnum = pgEnum("processresultenum", ["pass", "fail", "warn", "skip"]);
 export const operationStatusEnum = pgEnum("operationstatusenum", [
   "running",
   "stopped",

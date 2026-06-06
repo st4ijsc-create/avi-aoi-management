@@ -68,6 +68,7 @@ import { productionDashboardRouter } from "./routers/productionDashboardRouter";
 import { stationAnalysisRouter } from "./routers/stationAnalysisRouter";
 import { stationTriangulationRouter } from "./routers/stationTriangulationRouter";
 import { genealogyRouter } from "./routers/genealogyRouter";
+import { processResultRouter } from "./routers/processResultRouter";
 import { thresholdSuggestionRouter } from "./routers/thresholdSuggestionRouter";
 import { thresholdApprovalRouter } from "./routers/thresholdApprovalRouter";
 import { monteCarloFlowRouter } from "./routers/monteCarloFlowRouter";
@@ -379,6 +380,7 @@ export const appRouter = router({
   stationAnalysis: stationAnalysisRouter,
   stationTriangulation: stationTriangulationRouter,
   genealogy: genealogyRouter,
+  processResult: processResultRouter,
   thresholdSuggestion: thresholdSuggestionRouter,
   thresholdApproval: thresholdApprovalRouter,
   monteCarloFlow: monteCarloFlowRouter,

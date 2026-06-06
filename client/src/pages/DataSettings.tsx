@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { MACHINE_TYPES, type MachineType } from "@/constants/machineTypes";
+import { machineTypeLabel } from "@/lib/machineTypeLabel";
 
 import {
   Building2,
@@ -146,8 +148,8 @@ export default function DataSettings() {
 
   // Machine form
   const [machineForm, setMachineForm] = useState({ 
-    factoryId: "", workshopId: "", lineId: "", stationId: "", code: "", name: "", machineType: "AVI" as "AVI" | "AOI" | "AUTOMATION", 
-    model: "", manufacturer: "", description: "" 
+    factoryId: "", workshopId: "", lineId: "", stationId: "", code: "", name: "", machineType: "AVI" as MachineType,
+    model: "", manufacturer: "", description: ""
   });
   const [machineDialogOpen, setMachineDialogOpen] = useState(false);
   const [editingMachine, setEditingMachine] = useState<Machine | null>(null);
@@ -1756,12 +1758,12 @@ export default function DataSettings() {
                         </div>
                         <div className="space-y-2">
                           <label className="text-sm font-medium">{t("settings.machineType")} *</label>
-                          <Select value={machineForm.machineType} onValueChange={(v: "AVI" | "AOI" | "AUTOMATION") => setMachineForm({ ...machineForm, machineType: v })}>
+                          <Select value={machineForm.machineType} onValueChange={(v: MachineType) => setMachineForm({ ...machineForm, machineType: v })}>
                             <SelectTrigger><SelectValue /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="AVI">{t("settings.machineTypeAVI")}</SelectItem>
-                              <SelectItem value="AOI">{t("settings.machineTypeAOI")}</SelectItem>
-                              <SelectItem value="AUTOMATION">{t("settings.machineTypeAutomation")}</SelectItem>
+                              {MACHINE_TYPES.map((mt) => (
+                                <SelectItem key={mt} value={mt}>{machineTypeLabel(t, mt)}</SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </div>

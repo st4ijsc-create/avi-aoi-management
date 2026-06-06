@@ -1,10 +1,11 @@
 // WS-2 — shared types for the Machine Onboarding Wizard
+import type { MachineType } from "@/constants/machineTypes";
 
 export interface WizardState {
   // Step 1 — machine info & connectivity
   code: string;
   name: string;
-  machineType: "AVI" | "AOI" | "AUTOMATION";
+  machineType: MachineType;
   serialNumber: string;
   ipAddress: string;
   port: number;

@@ -1,0 +1,110 @@
+/**
+ * Sprint F2 — Process Result Service.
+ *
+ * Records a generic process/station-step RESULT from ANY machine type and links
+ * it into the tamper-evident genealogy ledger as a "station" event (re-using the
+ * existing event type — the hash-chain schema is NOT widened).
+ *
+ * This is telemetry of an OUTCOME, not a control command: there is no write path
+ * to actuate a machine here (that is deferred to F4).
+ *
+ * Failure isolation: if the genealogy append fails, the process result is still
+ * persisted (we only log the chain error) so result capture never blocks on the
+ * ledger.
+ */
+import * as db from "../db";
+import {
+  GENESIS_HASH,
+  hashEntry,
+  type GenealogyInput,
+} from "../utils/genealogyChain";
+import type { InsertProcessResult } from "../../drizzle/schema";
+import type { MachineType } from "../constants/machineTypes";
+
+export interface RecordProcessResultInput {
+  serialNumber: string;
+  machineId: number;
+  stepType: string;
+  result: "pass" | "fail" | "warn" | "skip";
+  machineType?: MachineType;
+  stationId?: number;
+  lineCode?: string;
+  productionOrderCode?: string;
+  lotCode?: string;
+  metrics?: Record<string, number | string | boolean>;
+  recipeRef?: string;
+  measuredAt?: Date;
+}
+
+export interface RecordProcessResultOutput {
+  processResultId: number;
+  genealogy: { id: number; prevHash: string; currHash: string } | null;
+}
+
+export async function recordProcessResult(
+  input: RecordProcessResultInput,
+  userId: number | null,
+): Promise<RecordProcessResultOutput> {
+  const measuredAt = input.measuredAt ?? new Date();
+
+  const row: InsertProcessResult = {
+    serialNumber: input.serialNumber,
+    machineId: input.machineId,
+    machineType: input.machineType ?? null,
+    stepType: input.stepType,
+    stationId: input.stationId ?? null,
+    lineCode: input.lineCode ?? null,
+    productionOrderCode: input.productionOrderCode ?? null,
+    lotCode: input.lotCode ?? null,
+    result: input.result,
+    metrics: input.metrics ?? null,
+    recipeRef: input.recipeRef ?? null,
+    measuredAt,
+    recordedBy: userId,
+  };
+
+  const processResultId = await db.insertProcessResult(row);
+
+  // Append a genealogy "station" event. Isolated so chain errors never lose the result.
+  let genealogy: RecordProcessResultOutput["genealogy"] = null;
+  try {
+    const recordedAt = new Date();
+    const prevHash = (await db.getLastGenealogyHash()) ?? GENESIS_HASH;
+    const eventInput: GenealogyInput = {
+      serialNumber: input.serialNumber,
+      eventType: "station",
+      stationCode: input.stationId != null ? String(input.stationId) : null,
+      lotCode: input.lotCode ?? null,
+      payload: {
+        kind: "processResult",
+        processResultId,
+        stepType: input.stepType,
+        result: input.result,
+        metrics: input.metrics ?? {},
+      },
+      recordedAt,
+    };
+    const currHash = hashEntry(prevHash, eventInput);
+    const inserted = await db.insertGenealogyChainRow({
+      prevHash,
+      currHash,
+      serialNumber: input.serialNumber,
+      parentSerial: null,
+      eventType: "station",
+      stationCode: eventInput.stationCode ?? null,
+      lotCode: input.lotCode ?? null,
+      productModelId: null,
+      payload: eventInput.payload as Record<string, any>,
+      recordedBy: userId,
+      recordedAt,
+    });
+    genealogy = { id: inserted.id, prevHash, currHash };
+  } catch (err) {
+    console.error(
+      `[processResultService] genealogy append failed for processResult ${processResultId}:`,
+      err,
+    );
+  }
+
+  return { processResultId, genealogy };
+}

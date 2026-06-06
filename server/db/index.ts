@@ -20,3 +20,4 @@ export * from "./license";
 export * from "./ai";
 export * from "./aiAdvanced";
 export * from "./aiSpecialist";
+export * from "./processResult";

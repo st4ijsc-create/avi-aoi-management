@@ -4,6 +4,7 @@ import { adminProcedure } from "./_shared";
 import { requirePermission } from "../_core/accessControl";
 import * as db from "../db";
 import * as cachedStats from "../functions/cachedStatistics";
+import { MACHINE_TYPES } from "../constants/machineTypes";
 
 export const importRouter = router({  
   importFactories: adminProcedure
@@ -104,7 +105,7 @@ export const importRouter = router({
         stationCode: z.string(),
         code: z.string(),
         name: z.string(),
-        machineType: z.enum(['AVI', 'AOI', 'AUTOMATION']),
+        machineType: z.enum(MACHINE_TYPES),
         model: z.string().optional(),
         manufacturer: z.string().optional(),
         isActive: z.boolean().optional(),

@@ -5,6 +5,7 @@ import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
 import * as db from "../db";
 import { storagePut } from "../storage";
+import { MACHINE_TYPES } from "../constants/machineTypes";
 
 // ============ FACTORY ROUTER ============
 export const factoryRouter = router({
@@ -302,7 +303,7 @@ export const machineRouter = router({
     .input(z.object({
       serialNumber: z.string().min(1).max(100),
       name: z.string().min(1).max(255),
-      machineType: z.enum(["AOI", "AVI", "AUTOMATION"]),
+      machineType: z.enum(MACHINE_TYPES),
       model: z.string().optional(),
       manufacturer: z.string().optional(),
       firmwareVersion: z.string().optional(),
@@ -451,7 +452,7 @@ export const machineRouter = router({
       stationId: z.number(),
       code: z.string().min(1).max(50),
       name: z.string().min(1).max(255),
-      machineType: z.enum(["AVI", "AOI", "AUTOMATION"]),
+      machineType: z.enum(MACHINE_TYPES),
       model: z.string().optional(),
       manufacturer: z.string().optional(),
       description: z.string().optional(),

@@ -11,6 +11,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { getDb } from "../db";
+import { MACHINE_TYPES } from "../constants/machineTypes";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { initializeSocket } from "./socket";
@@ -1249,7 +1250,7 @@ async function startServer() {
       }
 
       // Validate machineType
-      const validTypes = ["AVI", "AOI", "AUTOMATION"];
+      const validTypes = [...MACHINE_TYPES];
       const type = machineType || "AVI";
       if (!validTypes.includes(type)) {
         return res.status(400).json({ success: false, message: `machineType must be one of: ${validTypes.join(", ")}` });

@@ -33,7 +33,7 @@ interface PendingRegistration {
   machineInfo: {
     code: string;
     name: string;
-    type: "AVI" | "AOI";
+    type: string; // F2: generic machine type (was "AVI" | "AOI")
     serialNumber?: string;
     manufacturer?: string;
     model?: string;

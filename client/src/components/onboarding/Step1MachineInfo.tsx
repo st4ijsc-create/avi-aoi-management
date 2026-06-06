@@ -7,6 +7,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import type { StepProps } from "./types";
+import { MACHINE_TYPES, type MachineType } from "@/constants/machineTypes";
+import { machineTypeLabel } from "@/lib/machineTypeLabel";
 
 export default function Step1MachineInfo({ state, update, onNext }: StepProps) {
   const { t } = useTranslation();
@@ -34,12 +36,12 @@ export default function Step1MachineInfo({ state, update, onNext }: StepProps) {
         <div className="space-y-2">
           <Label>{t("onboarding.fields.machineType")}</Label>
           <Select value={state.machineType}
-            onValueChange={(v) => update({ machineType: v as any })}>
+            onValueChange={(v) => update({ machineType: v as MachineType })}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="AOI">AOI</SelectItem>
-              <SelectItem value="AVI">AVI</SelectItem>
-              <SelectItem value="AUTOMATION">AUTOMATION</SelectItem>
+              {MACHINE_TYPES.map((mt) => (
+                <SelectItem key={mt} value={mt}>{machineTypeLabel(t, mt)}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
