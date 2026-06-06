@@ -70,6 +70,7 @@ import { stationTriangulationRouter } from "./routers/stationTriangulationRouter
 import { genealogyRouter } from "./routers/genealogyRouter";
 import { processResultRouter } from "./routers/processResultRouter";
 import { bomRouter } from "./routers/bomRouter"; // G2.4: BOM + Feeder + component genealogy (no machine write)
+import { energyRouter } from "./routers/energyRouter"; // G2.6a: advanced energy analytics (read + telemetry, no machine write)
 import { thresholdSuggestionRouter } from "./routers/thresholdSuggestionRouter";
 import { thresholdApprovalRouter } from "./routers/thresholdApprovalRouter";
 import { monteCarloFlowRouter } from "./routers/monteCarloFlowRouter";
@@ -398,6 +399,7 @@ export const appRouter = router({
   genealogy: genealogyRouter,
   processResult: processResultRouter,
   bom: bomRouter,
+  energy: energyRouter,
   thresholdSuggestion: thresholdSuggestionRouter,
   thresholdApproval: thresholdApprovalRouter,
   monteCarloFlow: monteCarloFlowRouter,

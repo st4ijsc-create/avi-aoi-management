@@ -51,7 +51,8 @@ export const permissionCategoryEnum = pgEnum("permissioncategoryenum", [
   "machine_control", // Sprint F4a — OT machine control (HITL write-action: start/stop/recipe/param/ack)
   "andon",      // Sprint F5a — Andon signal/notification (ALERT-ONLY)
   "interlock",  // Sprint F5a — Interlock rule management (ALERT-ONLY; engine has no command path)
-  "mes_bom"     // Sprint G2.4 — BOM/Feeder/component genealogy (master data + telemetry; NO machine write)
+  "mes_bom",    // Sprint G2.4 — BOM/Feeder/component genealogy (master data + telemetry; NO machine write)
+  "energy"      // Sprint G2.6a — advanced energy analytics (read + energy telemetry; NO machine write)
 ]);
 
 export const permissions = pgTable("permissions", {

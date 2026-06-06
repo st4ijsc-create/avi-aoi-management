@@ -106,6 +106,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'interlock', moduleName: 'interlock', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     // MES BOM + Feeder + Component genealogy (Sprint G2.4 — master data + material telemetry, NO machine write)
     { category: 'mes_bom', moduleName: 'mes_bom', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+    // Energy advanced (Sprint G2.6a — per-recipe/peak/PF/forecast read + energy telemetry, NO machine write)
+    { category: 'energy', moduleName: 'energy', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
     // Annotations
     { category: 'annotations', moduleName: 'annotation_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'annotations', moduleName: 'annotation_create', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
@@ -161,6 +163,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'interlock', moduleName: 'interlock', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     // MES BOM (G2.4) — supervisor (manager) manages BOM/feeder fully (no delete on definitions)
     { category: 'mes_bom', moduleName: 'mes_bom', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
+    // Energy advanced (G2.6a) — supervisor views analytics, records readings + edits EnPI snapshots (no delete)
+    { category: 'energy', moduleName: 'energy', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
     // Annotations
     { category: 'annotations', moduleName: 'annotation_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'annotations', moduleName: 'annotation_create', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
@@ -197,6 +201,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'andon', moduleName: 'andon', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     // MES BOM (G2.4) — quality reviews BOM/feeder + records installs (no delete on definitions)
     { category: 'mes_bom', moduleName: 'mes_bom', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
+    // Energy advanced (G2.6a) — quality views energy analytics (read-only)
+    { category: 'energy', moduleName: 'energy', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
   ],
   operator: [
     // Operator can view assigned machines and submit inspection data
@@ -208,6 +214,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'production', moduleName: 'production_orders', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     // Andon (F5a) — operators raise/ack/resolve Andons from the line
     { category: 'andon', moduleName: 'andon', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // Energy advanced (G2.6a) — operators view + manually record energy readings (telemetry, no machine write)
+    { category: 'energy', moduleName: 'energy', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
   ],
   maintenance: [
     // Maintenance can view machine status and logs
@@ -285,7 +293,8 @@ const permissionCategoryEnum = z.enum([
   'machine_control',
   'andon',
   'interlock',
-  'mes_bom'
+  'mes_bom',
+  'energy'
 ]);
 
 export const permissionsRouter = router({
@@ -770,6 +779,9 @@ export const permissionsRouter = router({
 
         // ======================== MES BOM (Sprint G2.4 — BOM + Feeder + component genealogy) ========================
         { category: 'mes_bom', moduleName: 'mes_bom', displayName: 'BOM & Feeder (MES)', displayNameEn: 'BOM & Feeder (MES)', displayNameZh: 'BOM 与上料 (MES)', description: 'Quản lý BOM + dòng linh kiện, gán/nạp feeder (canCreate/canEdit), lưu trữ/xóa (canDelete), ghi nhận lắp linh kiện + truy vết 2 chiều (canView). Chỉ dữ liệu + telemetry vật tư — KHÔNG ghi lệnh máy.' },
+
+        // ======================== ENERGY (Sprint G2.6a — energy nâng cao) ========================
+        { category: 'energy', moduleName: 'energy', displayName: 'Năng lượng nâng cao', displayNameEn: 'Advanced Energy', displayNameZh: '高级能源', description: 'Phân tích năng lượng theo recipe, đỉnh phụ tải (peak demand), hệ số công suất (PF), dự báo + tư vấn demand-response (canView/canExport); ghi số đo năng lượng (canCreate — telemetry); chốt EnPI snapshot (canEdit). Demand-response CHỈ trả text + i18n key — KHÔNG ghi lệnh máy.' },
 
         // ======================== ANNOTATIONS ========================
         { category: 'annotations', moduleName: 'annotation_view', displayName: 'Xem Annotation', description: 'Xem annotation trên hình ảnh kiểm tra' },

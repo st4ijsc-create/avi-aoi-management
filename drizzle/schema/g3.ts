@@ -19,6 +19,11 @@ export const energyReadings = pgTable("energy_readings", {
   value: decimal("value", { precision: 14, scale: 4 }).notNull(), // giá trị tức thời
   unit: varchar("unit", { length: 16 }).default("kWh").notNull(),
   powerKw: decimal("powerKw", { precision: 12, scale: 4 }),        // công suất tức thời (kW)
+  // ── Sprint G2.6a (additive, nullable) — power quality + per-recipe attribution ──
+  reactivePowerKvar: decimal("reactivePowerKvar", { precision: 12, scale: 4 }), // công suất phản kháng (kVAr)
+  apparentPowerKva: decimal("apparentPowerKva", { precision: 12, scale: 4 }),   // công suất biểu kiến (kVA)
+  powerFactor: decimal("powerFactor", { precision: 5, scale: 4 }),              // hệ số công suất [0..1]
+  recipeRef: varchar("recipeRef", { length: 128 }),                             // recipe active khi đo (attribution trực tiếp)
   timestamp: timestamp("timestamp").defaultNow().notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
@@ -45,10 +50,16 @@ export const enpiMetrics = pgTable("enpi_metrics", {
   energyPerUnit: decimal("energyPerUnit", { precision: 16, scale: 6 }),    // kWh/đơn vị
   baselineEnergyPerUnit: decimal("baselineEnergyPerUnit", { precision: 16, scale: 6 }),
   carbonKg: decimal("carbonKg", { precision: 16, scale: 4 }),              // phát thải CO2 quy đổi
+  // ── Sprint G2.6a (additive, nullable) — peak demand + power factor + recipe attribution ──
+  peakDemandKw: decimal("peakDemandKw", { precision: 12, scale: 4 }),      // đỉnh công suất trong kỳ (kW)
+  avgPowerFactor: decimal("avgPowerFactor", { precision: 5, scale: 4 }),   // PF trung bình trong kỳ
+  recipeId: integer("recipeId"),                                           // FK -> machine_recipes (nullable)
+  recipeCode: varchar("recipeCode", { length: 64 }),                       // mã recipe (denormalized snapshot)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_enpi_machine").on(table.machineId),
   index("idx_enpi_period").on(table.periodStart),
+  index("idx_enpi_recipe").on(table.recipeId),
 ]);
 
 export type EnpiMetric = typeof enpiMetrics.$inferSelect;
