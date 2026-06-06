@@ -95,6 +95,12 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'machine_monitoring', moduleName: 'machine_alerts', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+    // Machine Control (Sprint F4a — OT HITL write-action)
+    // CONVENTION (Phương án A — execute→canCreate; KHÔNG đụng lõi RBAC):
+    //   canCreate = execute lệnh rủi ro cao (start/stop/reset/select_recipe/download_job)
+    //   canEdit   = đặt tham số (set_machine_param) / ack cảnh báo (acknowledge_machine_alarm)
+    //   canView   = xem preview / liệt kê command log & recipe
+    { category: 'machine_control', moduleName: 'machine_control', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
     // Annotations
     { category: 'annotations', moduleName: 'annotation_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'annotations', moduleName: 'annotation_create', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
@@ -143,6 +149,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     // Machine Monitoring
     { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
+    // Machine Control (Sprint F4a) — supervisor can execute (canCreate) + set param/ack (canEdit), but not delete recipes
+    { category: 'machine_control', moduleName: 'machine_control', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     // Annotations
     { category: 'annotations', moduleName: 'annotation_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'annotations', moduleName: 'annotation_create', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
@@ -200,6 +208,9 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'machine_monitoring', moduleName: 'machine_alerts', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
     { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
     { category: 'analytics', moduleName: 'analytics_machine_health', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+    // Machine Control (Sprint F4a) — maintenance can set param/ack (canEdit) and view,
+    // but NOT execute high-risk commands (canCreate:false → start/stop/recipe gated to supervisor/admin)
+    { category: 'machine_control', moduleName: 'machine_control', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
   ],
   viewer: [
     // Viewer has read-only access to dashboards and reports
@@ -254,7 +265,8 @@ const permissionCategoryEnum = z.enum([
   'admin',
   'production',
   'machine_monitoring',
-  'annotations'
+  'annotations',
+  'machine_control'
 ]);
 
 export const permissionsRouter = router({
@@ -729,6 +741,9 @@ export const permissionsRouter = router({
         { category: 'machine_monitoring', moduleName: 'machine_status', displayName: 'Trạng thái Máy', description: 'Giám sát trạng thái máy real-time, uptime' },
         { category: 'machine_monitoring', moduleName: 'machine_alerts', displayName: 'Cảnh báo Máy', description: 'Cấu hình và xem cảnh báo trạng thái máy' },
         { category: 'machine_monitoring', moduleName: 'machine_downtime', displayName: 'Quản lý Downtime', description: 'Ghi nhận và phân tích thời gian ngừng máy' },
+
+        // ======================== MACHINE CONTROL (Sprint F4a — OT HITL) ========================
+        { category: 'machine_control', moduleName: 'machine_control', displayName: 'Điều khiển Máy (OT)', description: 'Gửi lệnh điều khiển máy qua HITL: start/stop/recipe (canCreate), đặt tham số/ack (canEdit), xem preview/log (canView). MỌI lệnh phải qua xác nhận của người dùng + audit.' },
 
         // ======================== ANNOTATIONS ========================
         { category: 'annotations', moduleName: 'annotation_view', displayName: 'Xem Annotation', description: 'Xem annotation trên hình ảnh kiểm tra' },

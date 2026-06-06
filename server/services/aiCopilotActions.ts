@@ -255,8 +255,10 @@ export async function confirmAction(
     return { ok: false, status: "denied", message: denyMessage(lang, row.summary) };
   }
 
-  // Execute with args FROM THE DB ROW (never the client).
-  const execCtx: ToolExecContext = { user, lang, req };
+  // Execute with args FROM THE DB ROW (never the client). Thread the confirmed
+  // action id so write-tools (e.g. machine control) can pass it to the
+  // commandDispatcher for defense-in-depth re-verification.
+  const execCtx: ToolExecContext = { user, lang, req, actionId };
   const previewBefore = (row.previewJson as unknown as ActionPreview | null) ?? null;
   const result = await tool.execute!(row.argsJson as Record<string, unknown>, execCtx);
 

@@ -51,6 +51,7 @@ import {
   UserCog,
   Factory,
   Monitor,
+  Cpu,
   PenTool,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -85,6 +86,7 @@ const CATEGORY_META: Record<string, { label: string; icon: typeof Shield; color:
   admin: { label: "permissions.categoryAdmin", icon: UserCog, color: "text-red-500" },
   production: { label: "permissions.categoryProduction", icon: Factory, color: "text-orange-500" },
   machine_monitoring: { label: "permissions.categoryMachineMonitoring", icon: Monitor, color: "text-teal-500" },
+  machine_control: { label: "permissions.categoryMachineControl", icon: Cpu, color: "text-rose-600" },
   annotations: { label: "Annotation", icon: PenTool, color: "text-pink-500" },
 };
 

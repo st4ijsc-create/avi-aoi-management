@@ -4058,7 +4058,8 @@
     "disabled": "已禁用",
     "collapse": "折叠",
     "assignPermissions": "分配权限",
-    "active": "活跃"
+    "active": "活跃",
+    "categoryMachineControl": "机器控制"
   },
   "process": {
     "updateSuccess": "更新成功",
@@ -5272,7 +5273,8 @@
     "apply": "应用",
     "allRoles": "全部角色",
     "admin": "管理员",
-    "activePermissions": "活跃权限"
+    "activePermissions": "活跃权限",
+    "categoryMachineControl": "机器控制"
   },
   "scheduledReports": {
     "weeklyReport": "周报",

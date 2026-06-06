@@ -199,3 +199,13 @@ export const otProtocolEnum = pgEnum("otprotocolenum", ["opcua", "modbus", "s7",
 export const otDataTypeEnum = pgEnum("otdatatypeenum", ["bool", "int", "float", "string", "json"]);
 // Runtime connection state of an OT adapter
 export const otAdapterStatusEnum = pgEnum("otadapterstatusenum", ["disabled", "connecting", "connected", "error"]);
+
+// === Sprint F4a — Machine control: recipe versioning + deployment + command dispatch ===
+// Lifecycle of a machine recipe version (draft → active → archived)
+export const recipeStatusEnum = pgEnum("recipestatusenum", ["draft", "active", "archived"]);
+// Lifecycle of a recipe deployment to a machine
+export const deploymentStatusEnum = pgEnum("deploymentstatusenum", ["pending", "deployed", "failed", "rolled_back"]);
+// Outcome of a dispatched machine command. In F4a only "simulated" is produced
+// (DRY-RUN); the wire states (sent/acked/...) are reserved for F4b when
+// OT_CONTROL_ENABLED opens the path to driver.writeTags.
+export const commandStatusEnum = pgEnum("commandstatusenum", ["simulated", "sent", "acked", "failed", "timeout", "rejected"]);

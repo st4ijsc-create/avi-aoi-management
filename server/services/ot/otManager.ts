@@ -7,7 +7,7 @@
  *
  * SONG SONG với opcuaGateway.ts cũ (không thay thế, không hồi quy AOI/MQTT).
  */
-import type { OtSubscriptionHandle } from "./otDriver";
+import type { OtSubscriptionHandle, OtDriver } from "./otDriver";
 import type { RuntimeAdapter } from "./deviceAdapter";
 
 let running = false;
@@ -91,4 +91,29 @@ export async function stopOt(): Promise<void> {
 
 export function isOtRunning(): boolean {
   return running;
+}
+
+// ─── Sprint F4a — read-only accessors over the private `active` set ───────────
+// Used by commandDispatcher to resolve a connected driver for an adapter. These
+// expose NO mutation of the start/stop lifecycle; `active` stays private.
+
+/** The runtime adapter currently active for `adapterId`, or undefined. */
+export function getActiveAdapter(adapterId: number): RuntimeAdapter | undefined {
+  return active.find((e) => e.adapter.adapterId === adapterId)?.adapter;
+}
+
+/**
+ * The connected driver for `adapterId`. Returns undefined when the adapter is not
+ * active or its driver is not currently connected (caller treats as ADAPTER_OFFLINE).
+ */
+export function getActiveDriver(adapterId: number): OtDriver | undefined {
+  const entry = active.find((e) => e.adapter.adapterId === adapterId);
+  if (!entry) return undefined;
+  const driver = entry.adapter.driver;
+  return driver.isConnected() ? driver : undefined;
+}
+
+/** Snapshot of the currently-active runtime adapters (shallow copy). */
+export function listActiveAdapters(): RuntimeAdapter[] {
+  return active.map((e) => e.adapter);
 }

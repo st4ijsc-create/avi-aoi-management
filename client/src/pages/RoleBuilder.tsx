@@ -53,6 +53,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   admin: 'roles.categoryAdmin',
   production: 'roles.categoryProduction',
   machine_monitoring: 'roles.categoryMachineMonitoring',
+  machine_control: 'roles.categoryMachineControl',
   annotations: 'roles.categoryAnnotations',
 };
 

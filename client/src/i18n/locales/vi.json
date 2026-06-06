@@ -4088,7 +4088,8 @@
     "active": "Đang hoạt động",
     "users": "Người dùng",
     "user": "Người dùng",
-    "role": "Vai trò"
+    "role": "Vai trò",
+    "categoryMachineControl": "Điều khiển Máy"
   },
   "process": {
     "descriptionPlaceholder": "Mô tả Chỗ nhập...",
@@ -5302,7 +5303,8 @@
     "title": "Tiêu đề",
     "apply": "Áp dụng",
     "admin": "Quản trị viên",
-    "user": "Người dùng"
+    "user": "Người dùng",
+    "categoryMachineControl": "Điều khiển Máy"
   },
   "scheduledReports": {
     "descriptionPlaceholder": "Mô tả Chỗ nhập...",

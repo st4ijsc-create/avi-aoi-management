@@ -5,8 +5,8 @@
 //   - deviceAdapters: one configured connection to a PLC/SCADA/device (protocol + endpoint)
 //   - deviceTags:     individual addressable points read from an adapter
 //   - otTelemetry:    time-series samples ingested from tags
-import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, index, unique } from "drizzle-orm/pg-core"; // `unique` used by deviceTags composite key
-import { otProtocolEnum, otDataTypeEnum, otAdapterStatusEnum } from "./enums";
+import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, jsonb, index, unique } from "drizzle-orm/pg-core"; // `unique` used by deviceTags composite key
+import { otProtocolEnum, otDataTypeEnum, otAdapterStatusEnum, machineTypeEnum, recipeStatusEnum, deploymentStatusEnum, commandStatusEnum } from "./enums";
 
 /**
  * Device Adapters — một kết nối OT đã cấu hình (protocol + endpoint) tới PLC/SCADA/thiết bị.
@@ -85,3 +85,99 @@ export const otTelemetry = pgTable("ot_telemetry", {
 
 export type OtTelemetry = typeof otTelemetry.$inferSelect;
 export type InsertOtTelemetry = typeof otTelemetry.$inferInsert;
+
+// ─── Sprint F4a — Machine control (recipe versioning + deploy + command log) ───
+//
+// SAFETY: these tables back the HITL-gated control framework. In F4a the
+// commandDispatcher runs in DRY-RUN (OT_CONTROL_ENABLED=false) → commandLog rows
+// are written with status='simulated' and NO driver.writeTags is ever called.
+
+/**
+ * Machine Recipes — versioned recipe/parameter sets for a machine (or a machine
+ * type). A logical recipe is keyed by `code`; each save bumps `version`. Exactly
+ * one version per code is `active` (the deployed one); others are draft/archived.
+ */
+export const machineRecipes = pgTable("machine_recipes", {
+  id: serial("id").primaryKey(),
+  machineId: integer("machineId"),
+  machineType: machineTypeEnum("machineType"),
+  code: varchar("code", { length: 64 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  version: integer("version").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  checksum: varchar("checksum", { length: 128 }),
+  status: recipeStatusEnum("status").default("draft").notNull(),
+  notes: text("notes"),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  unique("uq_machine_recipes_code_version").on(table.code, table.version),
+  index("idx_machine_recipes_machine").on(table.machineId),
+  index("idx_machine_recipes_type").on(table.machineType),
+  index("idx_machine_recipes_status").on(table.status),
+]);
+
+export type MachineRecipe = typeof machineRecipes.$inferSelect;
+export type InsertMachineRecipe = typeof machineRecipes.$inferInsert;
+
+/**
+ * Recipe Deployments — an audit-grade record of deploying a recipe version to a
+ * machine. `previousRecipeId` enables one-step rollback. `commandLogId` links to
+ * the dispatched command (when the deploy pushed a select_recipe command).
+ */
+export const recipeDeployments = pgTable("recipe_deployments", {
+  id: serial("id").primaryKey(),
+  recipeId: integer("recipeId").notNull(),
+  machineId: integer("machineId").notNull(),
+  adapterId: integer("adapterId"),
+  deployedBy: integer("deployedBy").notNull(),
+  deployedAt: timestamp("deployedAt").defaultNow().notNull(),
+  previousRecipeId: integer("previousRecipeId"),
+  status: deploymentStatusEnum("status").default("pending").notNull(),
+  commandLogId: integer("commandLogId"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_recipe_deployments_recipe").on(table.recipeId),
+  index("idx_recipe_deployments_machine").on(table.machineId),
+  index("idx_recipe_deployments_deployed").on(table.deployedAt),
+]);
+
+export type RecipeDeployment = typeof recipeDeployments.$inferSelect;
+export type InsertRecipeDeployment = typeof recipeDeployments.$inferInsert;
+
+/**
+ * Command Log — append-only record of every command the dispatcher handled,
+ * across ALL branches (rejected / failed / simulated / [F4b: sent/acked]).
+ * `actionId` ties back to the ai_pending_actions row that was confirmed (HITL).
+ * `idempotencyKey` is unique → at most one effective dispatch per key.
+ */
+export const commandLog = pgTable("command_log", {
+  id: serial("id").primaryKey(),
+  actionId: varchar("actionId", { length: 64 }),
+  adapterId: integer("adapterId").notNull(),
+  machineId: integer("machineId"),
+  tagKey: varchar("tagKey", { length: 128 }),
+  address: varchar("address", { length: 255 }),
+  commandType: varchar("commandType", { length: 64 }),
+  requestedValue: jsonb("requestedValue"),
+  requestedBy: integer("requestedBy").notNull(),
+  confirmedBy: integer("confirmedBy").notNull(),
+  status: commandStatusEnum("status").default("simulated").notNull(),
+  ackValue: jsonb("ackValue"),
+  errorText: text("errorText"),
+  idempotencyKey: varchar("idempotencyKey", { length: 128 }).unique(),
+  sentAt: timestamp("sentAt"),
+  ackedAt: timestamp("ackedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_command_log_action").on(table.actionId),
+  index("idx_command_log_adapter").on(table.adapterId),
+  index("idx_command_log_machine").on(table.machineId),
+  index("idx_command_log_status").on(table.status),
+  index("idx_command_log_created").on(table.createdAt),
+]);
+
+export type CommandLog = typeof commandLog.$inferSelect;
+export type InsertCommandLog = typeof commandLog.$inferInsert;

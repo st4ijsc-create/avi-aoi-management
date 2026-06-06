@@ -56,6 +56,13 @@ export interface ToolExecContext {
   user: { id: number; role: string; name?: string | null };
   lang: ToolLang;
   req?: { ip?: string; headers?: Record<string, any>; socket?: { remoteAddress?: string } };
+  /**
+   * Sprint F4a — id of the confirmed ai_pending_actions row, threaded ONLY at
+   * execute() time (confirmAction). Lets a write-tool pass it to the
+   * commandDispatcher for defense-in-depth (re-verify the HITL action is
+   * confirmed + owned). Additive/optional — read tools and propose() ignore it.
+   */
+  actionId?: string;
 }
 
 /** Result of a tool's execute() — reuses ToolResult shape for rendering. */

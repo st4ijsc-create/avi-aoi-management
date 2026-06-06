@@ -4065,7 +4065,8 @@
     "disabled": "Disabled",
     "collapse": "Collapse",
     "assignPermissions": "Assign permissions",
-    "active": "Active"
+    "active": "Active",
+    "categoryMachineControl": "Machine Control"
   },
   "process": {
     "updateSuccess": "Update success",
@@ -5279,7 +5280,8 @@
     "apply": "Apply",
     "allRoles": "All roles",
     "admin": "Admin",
-    "activePermissions": "Active permissions"
+    "activePermissions": "Active permissions",
+    "categoryMachineControl": "Machine Control"
   },
   "scheduledReports": {
     "weeklyReport": "Weekly report",

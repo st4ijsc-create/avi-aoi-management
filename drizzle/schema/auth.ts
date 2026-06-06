@@ -47,7 +47,8 @@ export const permissionCategoryEnum = pgEnum("permissioncategoryenum", [
   "admin",
   "production",
   "machine_monitoring",
-  "annotations"
+  "annotations",
+  "machine_control" // Sprint F4a — OT machine control (HITL write-action: start/stop/recipe/param/ack)
 ]);
 
 export const permissions = pgTable("permissions", {

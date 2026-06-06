@@ -145,3 +145,4 @@ import "./writeHandlers/alerts";          // acknowledge_alert, ack/resolve pred
 import "./writeHandlers/measurementPoint"; // create_/update_measurement_point
 import "./writeHandlers/yield";            // set_yield_threshold
 import "./writeHandlers/client";           // navigate, prefill_form (client_action)
+import "./writeHandlers/machineControl";   // F4a: machine_start/stop/pause/reset/select_recipe/download_job/set_machine_param/acknowledge_machine_alarm (OT HITL, DRY-RUN)
