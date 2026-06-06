@@ -1,0 +1,65 @@
+# Playbook — Tạo điểm đo mới + đặt giới hạn spec
+# Nguồn SOP: knowledge/domain/howto-measurement-point-shapes.md
+# Mỗi bước `tool` là một WRITE-ACTION chạy qua HITL confirm riêng (proposeAction).
+# navigate/prefill KHÔNG ghi DB. requiredPermission gate trước khi chạy.
+id: create-measurement-point
+category: settings
+title:
+  vi: "Tạo điểm đo mới và đặt giới hạn spec"
+  en: "Create a measurement point and set spec limits"
+  zh: "创建测量点并设置规格限"
+requiredPermission:
+  module: settings_measurement_points
+  action: canCreate
+steps:
+  - type: guidance
+    text:
+      vi: "Chuẩn bị thông tin điểm đo: mẫu sản phẩm, mã điểm đo, loại đo, USL/LSL/Target."
+      en: "Prepare the measurement point info: product model, code, type, USL/LSL/Target."
+      zh: "准备测量点信息：产品型号、编号、类型、USL/LSL/Target。"
+  - type: navigate
+    route: /datasettings
+    text:
+      vi: "Mở trang Cài đặt dữ liệu để quản lý điểm đo."
+      en: "Open Data Settings to manage measurement points."
+      zh: "打开数据设置以管理测量点。"
+  - type: prefill
+    route: /datasettings
+    valuesTemplate:
+      code: "{{code}}"
+      name: "{{name}}"
+      measurementTypeCode: "{{measurementTypeCode}}"
+    text:
+      vi: "Điền sẵn mã/tên/loại điểm đo trên form (người dùng vẫn tự lưu)."
+      en: "Prefill the measurement point form (user still saves)."
+      zh: "预填测量点表单（用户仍需保存）。"
+  - type: tool
+    tool: create_measurement_point
+    argsTemplate:
+      productModelId: "{{productModelId}}"
+      code: "{{code}}"
+      name: "{{name}}"
+      measurementTypeCode: "{{measurementTypeCode}}"
+      nominalValue: "{{target}}"
+      usl: "{{usl}}"
+      lsl: "{{lsl}}"
+    text:
+      vi: "Tạo điểm đo — cần xác nhận (HITL)."
+      en: "Create the measurement point — needs confirmation (HITL)."
+      zh: "创建测量点 — 需要确认（HITL）。"
+  - type: confirm
+    text:
+      vi: "Kiểm tra điểm đo vừa tạo trước khi đặt spec."
+      en: "Verify the created point before setting spec."
+      zh: "在设置规格限前核对已创建的测量点。"
+  - type: tool
+    tool: set_spec_limits
+    argsTemplate:
+      measurementPointDefId: "{{measurementPointDefId}}"
+      usl: "{{usl}}"
+      lsl: "{{lsl}}"
+      target: "{{target}}"
+    text:
+      vi: "Đặt giới hạn spec (USL/LSL/Target) — xác nhận riêng (HITL)."
+      en: "Set spec limits (USL/LSL/Target) — separate confirmation (HITL)."
+      zh: "设置规格限（USL/LSL/Target）— 单独确认（HITL）。"

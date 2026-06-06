@@ -1,0 +1,44 @@
+# Playbook — Đổi recipe khi bắt đầu chạy line
+# tool select_recipe là WRITE-ACTION (OT, HITL, DRY-RUN ở F4a) — machine_control/canCreate.
+# Không có route recipe-UI riêng trong ALLOWED_CLIENT_ROUTES → dùng /machine-status
+# cho navigate và guidance cho phần UI recipe.
+id: change-recipe-line-start
+category: production
+title:
+  vi: "Đổi recipe khi bắt đầu chạy line"
+  en: "Change recipe at line start"
+  zh: "产线启动时切换配方"
+requiredPermission:
+  module: machine_control
+  action: canCreate
+steps:
+  - type: guidance
+    text:
+      vi: "Xác nhận mã sản phẩm sắp chạy và recipe tương ứng đã được duyệt."
+      en: "Confirm the upcoming product code and that its recipe is approved."
+      zh: "确认即将运行的产品编号及其配方已审批。"
+  - type: navigate
+    route: /machine-status
+    text:
+      vi: "Mở trang Trạng thái máy để chọn máy của line."
+      en: "Open Machine Status to select the line's machine."
+      zh: "打开机器状态以选择产线的机器。"
+  - type: guidance
+    text:
+      vi: "Trong giao diện recipe của máy, đối chiếu recipe đang active với recipe cần nạp."
+      en: "In the machine's recipe UI, compare the active recipe with the one to load."
+      zh: "在机器配方界面，对比当前激活配方与需加载的配方。"
+  - type: tool
+    tool: select_recipe
+    argsTemplate:
+      machineId: "{{machineId}}"
+      recipeCode: "{{recipeCode}}"
+    text:
+      vi: "Nạp recipe cho máy — cần xác nhận (HITL, DRY-RUN)."
+      en: "Load the recipe onto the machine — needs confirmation (HITL, DRY-RUN)."
+      zh: "为机器加载配方 — 需要确认（HITL，干运行）。"
+  - type: confirm
+    text:
+      vi: "Kiểm tra recipe đã đúng trước khi cho line chạy sản lượng."
+      en: "Verify the recipe is correct before running production."
+      zh: "在投入量产前核对配方是否正确。"

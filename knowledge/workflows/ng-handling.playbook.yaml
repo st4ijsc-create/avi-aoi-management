@@ -1,0 +1,55 @@
+# Playbook — Xử lý sản phẩm NG (Not Good) tại line AOI
+# Nguồn SOP: knowledge/domain/howto-ng-handling-sop.md
+# tool acknowledge_alert là WRITE-ACTION qua HITL confirm. branch tất định:
+# false-call vs lỗi thật.
+id: ng-handling
+category: quality
+title:
+  vi: "Xử lý sản phẩm NG tại line AOI"
+  en: "Handle NG products at the AOI line"
+  zh: "处理 AOI 产线的 NG 产品"
+requiredPermission:
+  module: mqtt_alerts
+  action: canEdit
+steps:
+  - type: guidance
+    text:
+      vi: "Lấy sản phẩm NG khỏi băng tải, đặt vào khay đỏ 'Chờ phân loại', quét lại mã."
+      en: "Remove the NG product, place it in the red 'pending' tray, re-scan its code."
+      zh: "取下 NG 产品，放入红色待分类托盘，重新扫描其编号。"
+  - type: navigate
+    route: /mqtt-alerts
+    text:
+      vi: "Mở trang Cảnh báo MQTT để xem cảnh báo NG hiện hành."
+      en: "Open the MQTT Alerts page to review the active NG alert."
+      zh: "打开 MQTT 告警页面查看当前 NG 告警。"
+  - type: tool
+    tool: acknowledge_alert
+    argsTemplate:
+      id: "{{alertId}}"
+      note: "{{note}}"
+    text:
+      vi: "Xác nhận (acknowledge) cảnh báo NG — cần xác nhận (HITL)."
+      en: "Acknowledge the NG alert — needs confirmation (HITL)."
+      zh: "确认 NG 告警 — 需要确认（HITL）。"
+  - type: branch
+    branch:
+      - key: false_call
+        text:
+          vi: "Lỗi giả (false call): đánh dấu false call, ghi lý do, sản phẩm trở lại OK."
+          en: "False call: mark as false call, note the reason, product returns to OK."
+          zh: "误判：标记为误判，记录原因，产品恢复 OK。"
+      - key: real_defect
+        text:
+          vi: "Lỗi thật: chọn mã lỗi từ Defect Catalog rồi quyết định Rework hay Scrap."
+          en: "Real defect: pick a code from the Defect Catalog, then choose Rework or Scrap."
+          zh: "真实缺陷：从缺陷目录选择代码，然后决定返工或报废。"
+    text:
+      vi: "Phân loại lỗi giả / lỗi thật."
+      en: "Classify false call vs real defect."
+      zh: "区分误判与真实缺陷。"
+  - type: guidance
+    text:
+      vi: "Khi NG-rate vượt ngưỡng, mở tab Pareto NG để xem top lỗi và phân công RCA."
+      en: "When NG-rate exceeds the threshold, open the NG Pareto tab and assign RCA."
+      zh: "当 NG 率超阈值时，打开 NG 帕累托页并分配根因分析。"

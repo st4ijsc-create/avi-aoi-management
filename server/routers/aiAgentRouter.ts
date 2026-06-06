@@ -19,6 +19,7 @@ import {
   canUseAgentic,
   type AgentUser,
 } from "../services/aiAgentOrchestrator";
+import { startPlaybook, listPlaybooks } from "../services/aiPlaybookEngine";
 import type { ToolLang } from "../services/aiLocalTools";
 
 const langSchema = z.enum(["vi", "en", "zh"]).default("vi");
@@ -72,6 +73,36 @@ export const aiAgentRouter = router({
     .mutation(async ({ input, ctx }) => {
       const user = toAgentUser(ctx.user as any);
       return cancelSession(input.sessionId, { user, req: reqMeta(ctx) });
+    }),
+
+  /** List static playbooks (SOPs) the user is permitted to run. Gated: agentic. */
+  listPlaybooks: protectedProcedure.query(async ({ ctx }) => {
+    const user = toAgentUser(ctx.user as any);
+    if (!canUseAgentic(user)) return { ok: false, enabled: false, playbooks: [] as Awaited<ReturnType<typeof listPlaybooks>> };
+    const playbooks = await listPlaybooks(user);
+    return { ok: true, enabled: true, playbooks };
+  }),
+
+  /**
+   * Start a static playbook. Gated by the agentic role AND the playbook's
+   * requiredPermission (re-checked in the engine). Parks at awaiting_approval;
+   * drive it with approvePlan / confirmStep like any agent session.
+   */
+  startPlaybook: protectedProcedure
+    .input(
+      z.object({
+        playbookId: z.string().min(1).max(120),
+        lang: langSchema.optional(),
+        context: z.record(z.string(), z.unknown()).optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const user = toAgentUser(ctx.user as any);
+      const lang: ToolLang = input.lang ?? "vi";
+      if (!canUseAgentic(user)) {
+        return { ok: false, enabled: false, message: "Agentic mode chưa được bật cho vai trò này." };
+      }
+      return startPlaybook(input.playbookId, { user, lang, context: input.context, req: reqMeta(ctx) });
     }),
 
   /** Fetch session state (owner only). */

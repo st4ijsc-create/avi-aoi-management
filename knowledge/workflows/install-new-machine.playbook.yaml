@@ -1,0 +1,46 @@
+# Playbook — Lắp đặt và khai báo máy mới (device adapter + tag)
+# KHÔNG dùng tool ghi máy (chưa có write-tool an toàn cho việc tạo máy) →
+# chỉ guidance + navigate + prefill. Người dùng tự lưu trong UI.
+# Không có route device-adapter/tag riêng trong ALLOWED_CLIENT_ROUTES →
+# navigate dùng /admin-setting và guidance cho các tab cấu hình.
+id: install-new-machine
+category: setup
+title:
+  vi: "Lắp đặt và khai báo máy mới"
+  en: "Install and register a new machine"
+  zh: "安装并注册新机器"
+requiredPermission:
+  module: settings_machines
+  action: canCreate
+steps:
+  - type: guidance
+    text:
+      vi: "Chuẩn bị thông tin máy: mã máy, nhà sản xuất, giao thức (MQTT/OPC-UA), endpoint."
+      en: "Prepare machine info: code, vendor, protocol (MQTT/OPC-UA), endpoint."
+      zh: "准备机器信息：编号、厂商、协议（MQTT/OPC-UA）、端点。"
+  - type: navigate
+    route: /admin-setting
+    text:
+      vi: "Mở trang Cài đặt quản trị để vào cấu hình device adapter."
+      en: "Open Admin Settings to reach the device adapter configuration."
+      zh: "打开管理设置以进入设备适配器配置。"
+  - type: prefill
+    route: /admin-setting
+    valuesTemplate:
+      machineCode: "{{machineCode}}"
+      protocol: "{{protocol}}"
+      endpoint: "{{endpoint}}"
+    text:
+      vi: "Điền sẵn mã máy / giao thức / endpoint cho device adapter (người dùng tự lưu)."
+      en: "Prefill machine code / protocol / endpoint for the device adapter (user saves)."
+      zh: "为设备适配器预填机器编号/协议/端点（用户保存）。"
+  - type: guidance
+    text:
+      vi: "Trong tab Tag, khai báo các tag đọc/ghi (trạng thái, cmd_start, recipe_select...) và map kiểu dữ liệu."
+      en: "In the Tag tab, declare read/write tags (status, cmd_start, recipe_select...) and map data types."
+      zh: "在标签页声明读写标签（状态、cmd_start、recipe_select…）并映射数据类型。"
+  - type: confirm
+    text:
+      vi: "Kiểm tra kết nối adapter (test connection) trước khi đưa máy vào giám sát."
+      en: "Test the adapter connection before putting the machine into monitoring."
+      zh: "在将机器纳入监控前测试适配器连接。"
