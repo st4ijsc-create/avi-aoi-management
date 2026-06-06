@@ -11,7 +11,8 @@
 
 import Aedes from 'aedes';
 import { createServer } from 'aedes-server-factory';
-import { initUnsPublisher, publishNormalized, shutdownUnsPublisher } from './unsPublisher';
+import { initUnsPublisher, publishNormalized, publishAoiBridge, publishNdeathGraceful, shutdownUnsPublisher } from './unsPublisher';
+import { mapAoiTopicToSparkplug } from './uns/aoiBridge';
 import { drizzle } from 'drizzle-orm/mysql2';
 import { eq, and, sql, lt } from 'drizzle-orm';
 import * as schema from '../../drizzle/schema';
@@ -100,6 +101,61 @@ interface SummaryPayload {
     percentage: number;
   }>;
   timestamp: string;
+}
+
+/**
+ * F3b — Bridge một message AOI (topic + payload thô) sang Sparkplug-B telemetry.
+ *
+ * Hàm THUẦN-WIRING (tách khỏi handler aedes để test trực tiếp). GIỮ NGUYÊN luồng cũ:
+ * caller vẫn gọi publishNormalized riêng. Đây CHỈ thêm nhánh Sparkplug, default OFF.
+ *
+ * - Chỉ chạy khi UNS_SPARKPLUG_ENABLED==="true" && UNS_SPARKPLUG_AOI_BRIDGE==="true".
+ * - JSON.parse an toàn (payload non-JSON → bỏ qua, KHÔNG sập).
+ * - Read-direction: chỉ publish telemetry; KHÔNG xử lý/sinh lệnh điều khiển.
+ * - Bọc try/catch — KHÔNG chặn luồng cũ, KHÔNG đổi topic gốc.
+ */
+export function handleAoiPublish(topic: string, payload: Buffer | string | unknown): void {
+  if (
+    process.env.UNS_SPARKPLUG_ENABLED !== 'true' ||
+    process.env.UNS_SPARKPLUG_AOI_BRIDGE !== 'true'
+  ) {
+    return;
+  }
+  try {
+    let parsedPayload: unknown;
+    try {
+      const raw = Buffer.isBuffer(payload)
+        ? payload.toString()
+        : typeof payload === 'string'
+          ? payload
+          : String(payload);
+      parsedPayload = JSON.parse(raw);
+    } catch {
+      return; // payload non-JSON → không bridge (không sập).
+    }
+    const mapping = mapAoiTopicToSparkplug(topic, parsedPayload);
+    if (!mapping) return;
+    publishAoiBridge(mapping.deviceId, mapping.metricDefs, mapping.metrics);
+  } catch (error) {
+    console.error('[MQTT] AOI→Sparkplug bridge failed:', (error as Error)?.message || error);
+  }
+}
+
+/**
+ * F3b — Thân (đã tách) của handler aedes.on('publish') cho phần mirror/bridge UNS.
+ *
+ * GIỮ NGUYÊN HÀNH VI: gọi publishNormalized(topic, payload) VÔ ĐIỀU KIỆN (mirror JSON
+ * cũ — backward-compat Android/AOI), RỒI gọi handleAoiPublish(topic, payload) (nhánh
+ * Sparkplug, no-op khi cờ tắt). Tách ra hàm thuần để regression-guard test được rằng
+ * publishNormalized không phụ thuộc cờ Sparkplug và luôn chạy trước nhánh bridge.
+ */
+export function processAedesPublish(topic: string, payload: Buffer | string | unknown): void {
+  // G1 — Mirror message sang UNS broker (ISA-95/Sparkplug). No-op khi flag tắt.
+  publishNormalized(topic, payload);
+
+  // F3b — Bridge topic AOI cũ → Sparkplug-B telemetry. No-op khi cờ tắt; KHÔNG
+  // đổi topic gốc, KHÔNG chặn luồng cũ (try/catch nội bộ).
+  handleAoiPublish(topic, payload);
 }
 
 // MQTT Broker instance (local)
@@ -448,8 +504,9 @@ function setupEventHandlers() {
     // Ignore system messages (starting with $) and messages without a client
     if (!client || packet.topic.startsWith('$')) return;
 
-    // G1 — Mirror message sang UNS broker (ISA-95/Sparkplug). No-op khi flag tắt.
-    publishNormalized(packet.topic, packet.payload);
+    // G1/F3b — Mirror UNS (publishNormalized, vô điều kiện) RỒI bridge AOI→Sparkplug
+    // (handleAoiPublish, no-op khi cờ tắt). Tách thành processAedesPublish để test.
+    processAedesPublish(packet.topic, packet.payload);
 
     try {
       // Handle DEVICE_INFO messages: avi/client/{deviceId}/info
@@ -1291,8 +1348,13 @@ export function isMqttRunning(): boolean {
  */
 export function shutdownMqttBroker(): Promise<void> {
   stopStaleClientChecker();
-  // G1 — close UNS publisher connection (no-op if not initialized)
-  void shutdownUnsPublisher();
+  // F3b — graceful NDEATH (+DDEATH cho device đã birthed) TRƯỚC khi đóng publisher.
+  // Best-effort, timeout ngắn nội bộ, không throw. No-op khi Sparkplug tắt/chưa connect.
+  // (NBIRTH-on-connect đã do F3a tự phát.) Fire-and-forget rồi đóng publisher ngay sau.
+  void Promise.resolve(publishNdeathGraceful())
+    .catch(() => {})
+    // G1 — close UNS publisher connection (no-op if not initialized)
+    .finally(() => { void shutdownUnsPublisher(); });
   return new Promise((resolve) => {
     if (mqttServer) {
       mqttServer.close(() => {

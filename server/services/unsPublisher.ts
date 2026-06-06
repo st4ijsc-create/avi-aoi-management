@@ -20,7 +20,7 @@
 
 import mqtt, { type MqttClient } from "mqtt";
 import { normalize, isUnsBridgeEnabled } from "./unsBridge";
-import { SparkplugNode, type MetricSample } from "./uns/sparkplugNode";
+import { SparkplugNode, type MetricSample, type MetricDef } from "./uns/sparkplugNode";
 
 const UNS_BROKER_URL = process.env.UNS_BROKER_URL || "mqtt://localhost:1884";
 const UNS_BROKER_USERNAME = process.env.UNS_BROKER_USERNAME || "";
@@ -31,6 +31,11 @@ let connected = false;
 
 // --- Sparkplug-B state (F3a) ---
 let sparkplugNode: SparkplugNode | null = null;
+
+// F3b — set metric name đã được DBIRTH cho từng device (để trigger re-DBIRTH khi gặp
+// metric mới chưa từng birth — theo spec Sparkplug). In-memory, đời broker.
+// TODO(F3b-optional): persist bdSeq + birthed metric set nếu cần survive restart.
+const birthedMetricsByDevice = new Map<string, Set<string>>();
 
 /** Cờ Sparkplug đọc tại publish-time (không cache module-load → test stubEnv được). */
 function isSparkplugEnabled(): boolean {
@@ -98,6 +103,9 @@ export function initUnsPublisher(): void {
     // Sparkplug-B: phát NBIRTH cho edge node ngay khi kết nối.
     if (isSparkplugEnabled() && sparkplugNode && client) {
       try {
+        // NBIRTH reset alias/birth state ở core F3a → xoá luôn birthed-metric tracker
+        // (F3b) để mọi device re-DBIRTH ở đời broker mới.
+        birthedMetricsByDevice.clear();
         const nbirth = sparkplugNode.buildNbirth(sparkplugGroupId(), sparkplugEdgeNodeId(), []);
         client.publish(nbirth.topic, nbirth.buffer, { qos: 0, retain: false });
         console.log(`[UNS] Sparkplug NBIRTH published: ${nbirth.topic}`);
@@ -170,16 +178,95 @@ export function publishSparkplugDData(deviceId: string, metrics: MetricSample[])
 }
 
 /**
- * F3b (chuẩn bị) — stub đóng node có chủ đích (graceful NDEATH). F3a chưa dùng.
+ * F3b — Bridge AOI → Sparkplug telemetry cho MỘT device (NG alert / summary).
+ *
+ * Lazy DBIRTH: nếu device chưa birthed HOẶC mapping mang metric name chưa từng birth
+ * cho device đó → publish DBIRTH (union metric defs đã từng + defs mới) rồi mới DDATA.
+ * No-op khi cờ Sparkplug tắt / chưa connect / lỗi setup. Bọc try/catch — KHÔNG ném ra
+ * hot path aedes.on('publish').
+ *
+ * Read-direction only: chỉ phát DBIRTH/DDATA, KHÔNG sinh NCMD/DCMD.
  */
-export function publishNdeathGraceful(): void {
+export function publishAoiBridge(
+  deviceId: string,
+  metricDefs: MetricDef[],
+  metrics: MetricSample[],
+): void {
   if (!isSparkplugEnabled() || !sparkplugNode || !client || !connected) return;
   try {
-    const ndeath = sparkplugNode.buildNdeath(sparkplugGroupId(), sparkplugEdgeNodeId());
-    client.publish(ndeath.topic, ndeath.buffer, { qos: 0, retain: false });
+    const groupId = sparkplugGroupId();
+    const edgeNodeId = sparkplugEdgeNodeId();
+
+    let birthed = birthedMetricsByDevice.get(deviceId);
+    const isNew = !sparkplugNode.state.isDeviceBirthed(deviceId) || !birthed;
+    // Có metric name mới chưa từng birth cho device này?
+    const hasNewMetric =
+      !isNew && metricDefs.some((d) => !birthed!.has(d.name));
+
+    if (isNew || hasNewMetric) {
+      // Union defs đã từng birth + defs mới (re-DBIRTH với đủ metric của device).
+      const byName = new Map<string, MetricDef>();
+      for (const d of metricDefs) byName.set(d.name, d);
+      const dbirth = sparkplugNode.buildDbirth(groupId, edgeNodeId, deviceId, [...byName.values()]);
+      client.publish(dbirth.topic, dbirth.buffer, { qos: 0, retain: false });
+
+      if (!birthed) {
+        birthed = new Set<string>();
+        birthedMetricsByDevice.set(deviceId, birthed);
+      }
+      for (const d of metricDefs) birthed.add(d.name);
+    }
+
+    const ddata = sparkplugNode.buildDdata(groupId, edgeNodeId, deviceId, metrics);
+    client.publish(ddata.topic, ddata.buffer, { qos: 0, retain: false });
   } catch (error) {
-    console.error("[UNS] Sparkplug NDEATH publish failed:", (error as Error)?.message || error);
+    console.error("[UNS] Sparkplug AOI bridge publish failed:", (error as Error)?.message || error);
   }
+}
+
+/**
+ * F3b — Đóng node có chủ đích (graceful NDEATH): phát DDEATH cho mọi device đã birthed
+ * rồi NDEATH chủ động. Best-effort với timeout NGẮN (mặc định 1.5s) — KHÔNG throw, dùng
+ * khi shutdown. No-op khi cờ tắt / chưa connect.
+ *
+ * (NBIRTH-on-connect đã do F3a tự phát ở client.on('connect'); đây chỉ lo chiều đóng.)
+ */
+export async function publishNdeathGraceful(timeoutMs = 1500): Promise<void> {
+  if (!isSparkplugEnabled() || !sparkplugNode || !client || !connected) return;
+  const node = sparkplugNode;
+  const c = client;
+  const groupId = sparkplugGroupId();
+  const edgeNodeId = sparkplugEdgeNodeId();
+
+  const work = (async () => {
+    try {
+      // DDEATH cho từng device còn birthed (snapshot tránh mutate khi lặp).
+      for (const deviceId of [...birthedMetricsByDevice.keys()]) {
+        if (!node.state.isDeviceBirthed(deviceId)) continue;
+        try {
+          const ddeath = node.buildDdeath(groupId, edgeNodeId, deviceId);
+          c.publish(ddeath.topic, ddeath.buffer, { qos: 0, retain: false });
+        } catch (err) {
+          console.error("[UNS] Sparkplug DDEATH publish failed:", (err as Error)?.message || err);
+        }
+      }
+      birthedMetricsByDevice.clear();
+
+      // NDEATH chủ động (bdSeq hiện tại) — khớp will F3a.
+      const ndeath = node.buildNdeath(groupId, edgeNodeId);
+      await new Promise<void>((resolve) => {
+        c.publish(ndeath.topic, ndeath.buffer, { qos: 0, retain: false }, () => resolve());
+      });
+    } catch (error) {
+      console.error("[UNS] Sparkplug NDEATH publish failed:", (error as Error)?.message || error);
+    }
+  })();
+
+  // Best-effort: dù publish chậm cũng không chặn shutdown quá timeout.
+  await Promise.race([
+    work,
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+  ]);
 }
 
 /**
@@ -193,6 +280,7 @@ export async function shutdownUnsPublisher(): Promise<void> {
   client = null;
   connected = false;
   sparkplugNode = null;
+  birthedMetricsByDevice.clear();
 }
 
 export function isUnsPublisherConnected(): boolean {

@@ -4525,6 +4525,9 @@ async function startServer() {
     cacheWarmingService.stop();
     stopEscalationScheduler();
     if (process.env.MQTT_ENABLED === 'true') {
+      // F3b — shutdownMqttBroker() đã lo graceful NDEATH (+DDEATH) best-effort TRƯỚC
+      // khi đóng UNS publisher (xem mqttService.shutdownMqttBroker). NBIRTH-on-connect
+      // do F3a tự phát lúc kết nối broker UNS — không cần gọi ở đây.
       shutdownMqttBroker();
       stopSummaryScheduler();
     }
