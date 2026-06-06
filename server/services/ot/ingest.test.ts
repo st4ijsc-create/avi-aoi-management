@@ -63,14 +63,65 @@ describe("ingestSample", () => {
     vi.unstubAllEnvs();
   });
 
+  const baseAdapter = {
+    adapterId: 1, code: "A1", machineId: null, protocol: "stub" as const,
+    connection: { endpoint: "stub://x" }, pollIntervalMs: 1000,
+    tags: [{ tagKey: "t", address: "addr", dataType: "float" as const }],
+    driver: {} as never,
+  };
+
   it("no-op safe when DB unavailable and UNS off", async () => {
     vi.doMock("../../db/connection", () => ({ getDb: async () => null }));
     const { ingestSample } = await import("./ingest");
-    const adapter = {
-      adapterId: 1, code: "A1", machineId: null, protocol: "stub" as const,
-      connection: { endpoint: "stub://x" }, pollIntervalMs: 1000, tags: [],
-      driver: {} as never,
-    };
-    await expect(ingestSample(adapter, sample(1))).resolves.toBeUndefined();
+    await expect(ingestSample(baseAdapter, sample(1))).resolves.toBeUndefined();
+  });
+
+  it("UNS_SPARKPLUG_ENABLED=true → gọi publishSparkplugDData (không publishNormalized)", async () => {
+    vi.stubEnv("OT_INGEST_TO_UNS", "true");
+    vi.stubEnv("UNS_SPARKPLUG_ENABLED", "true");
+    vi.doMock("../../db/connection", () => ({ getDb: async () => null }));
+    vi.doMock("../unsBridge", () => ({ isUnsBridgeEnabled: () => true }));
+    const publishSparkplugDData = vi.fn();
+    const publishNormalized = vi.fn();
+    vi.doMock("../unsPublisher", () => ({ publishSparkplugDData, publishNormalized }));
+
+    const { ingestSample } = await import("./ingest");
+    await ingestSample(baseAdapter, sample(23.4));
+
+    expect(publishSparkplugDData).toHaveBeenCalledTimes(1);
+    expect(publishNormalized).not.toHaveBeenCalled();
+    const [deviceId, metrics] = publishSparkplugDData.mock.calls[0];
+    expect(deviceId).toBe("A1");
+    expect(metrics[0]).toMatchObject({ name: "t", type: "Double", value: 23.4 });
+  });
+
+  it("Sparkplug off → đường JSON cũ publishNormalized", async () => {
+    vi.stubEnv("OT_INGEST_TO_UNS", "true");
+    vi.stubEnv("UNS_SPARKPLUG_ENABLED", "false");
+    vi.doMock("../../db/connection", () => ({ getDb: async () => null }));
+    vi.doMock("../unsBridge", () => ({ isUnsBridgeEnabled: () => true }));
+    const publishSparkplugDData = vi.fn();
+    const publishNormalized = vi.fn();
+    vi.doMock("../unsPublisher", () => ({ publishSparkplugDData, publishNormalized }));
+
+    const { ingestSample } = await import("./ingest");
+    await ingestSample(baseAdapter, sample(1));
+
+    expect(publishNormalized).toHaveBeenCalledTimes(1);
+    expect(publishSparkplugDData).not.toHaveBeenCalled();
+  });
+
+  it("không throw khi publisher chưa connect (publishSparkplugDData ném)", async () => {
+    vi.stubEnv("OT_INGEST_TO_UNS", "true");
+    vi.stubEnv("UNS_SPARKPLUG_ENABLED", "true");
+    vi.doMock("../../db/connection", () => ({ getDb: async () => null }));
+    vi.doMock("../unsBridge", () => ({ isUnsBridgeEnabled: () => true }));
+    vi.doMock("../unsPublisher", () => ({
+      publishSparkplugDData: vi.fn(() => { throw new Error("not connected"); }),
+      publishNormalized: vi.fn(),
+    }));
+
+    const { ingestSample } = await import("./ingest");
+    await expect(ingestSample(baseAdapter, sample(1))).resolves.toBeUndefined();
   });
 });

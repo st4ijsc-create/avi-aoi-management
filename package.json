@@ -135,6 +135,7 @@
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
     "sonner": "^2.0.7",
+    "sparkplug-payload": "^1.0.3",
     "speakeasy": "^2.0.0",
     "st-ethernet-ip": "^2.7.5",
     "streamdown": "^1.6.11",

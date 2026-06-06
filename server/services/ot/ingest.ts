@@ -66,15 +66,40 @@ export async function ingestSample(adapter: RuntimeAdapter, sample: OtSample): P
     try {
       const { isUnsBridgeEnabled } = await import("../unsBridge");
       if (isUnsBridgeEnabled()) {
-        const { publishNormalized } = await import("../unsPublisher");
-        publishNormalized(unsTopicFor(adapter, sample), {
-          adapterId: adapter.adapterId,
-          machineId: adapter.machineId,
-          tagKey: sample.tagKey,
-          value: sample.value,
-          quality: sample.quality,
-          timestamp: sample.timestamp.toISOString(),
-        });
+        if (process.env.UNS_SPARKPLUG_ENABLED === "true") {
+          // F3a — chiều Sparkplug-B: phát DDATA (lazy DBIRTH trong publisher).
+          // F4 HITL: chỉ PUBLISH telemetry — KHÔNG nhận/execute NCMD/DCMD.
+          const { publishSparkplugDData } = await import("../unsPublisher");
+          const { otTypeToSparkplug } = await import("../uns/sparkplugEncoder");
+          // Suy kiểu Sparkplug: ưu tiên dataType của tag; nếu không có thì từ typeof value.
+          const tagDef = adapter.tags.find((t) => t.tagKey === sample.tagKey);
+          const type = tagDef
+            ? otTypeToSparkplug(tagDef.dataType)
+            : typeof sample.value === "number"
+              ? "Double"
+              : typeof sample.value === "boolean"
+                ? "Boolean"
+                : "String";
+          publishSparkplugDData(adapter.code, [
+            {
+              name: sample.tagKey,
+              type,
+              value: sample.value,
+              timestamp: sample.timestamp.getTime(),
+            },
+          ]);
+        } else {
+          // Đường JSON cũ (backward-compat) — giữ nguyên.
+          const { publishNormalized } = await import("../unsPublisher");
+          publishNormalized(unsTopicFor(adapter, sample), {
+            adapterId: adapter.adapterId,
+            machineId: adapter.machineId,
+            tagKey: sample.tagKey,
+            value: sample.value,
+            quality: sample.quality,
+            timestamp: sample.timestamp.toISOString(),
+          });
+        }
       }
     } catch (err) {
       console.error("[OT] UNS publish failed:", (err as Error)?.message || err);
