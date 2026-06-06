@@ -5,6 +5,9 @@
 
 import "./handlers";
 import "./writeHandlers";
+// Sprint F6 — line-monitoring read + insight tools (side-effect registration).
+import "./handlersF6";
+import "./insightHandlersF6";
 import { classifyToolIntent, classifyToolIntentLLM, type ToolContext } from "./intentClassifier";
 import { getTool, isWriteTool, isClientTool, listTools, type ClientActionDirective, type Tool, type ToolExecContext } from "./toolRegistry";
 import type { ToolResult } from "./toolRegistry";

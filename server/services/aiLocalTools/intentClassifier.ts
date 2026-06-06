@@ -60,6 +60,18 @@ function buildClarifyMessage(reason: string, question: string): string | null {
       "Ví dụ đầy đủ: *đặt spec điểm đo #12: USL=10.5, LSL=9.5, target=10*.",
     ].join("\n");
   }
+  if (reason === "MISSING_PROCESS_ARGS") {
+    return [
+      "Để xem xu hướng chỉ số công đoạn, vui lòng cho biết **chỉ số đo** (ví dụ `torque`, `lượng keo`, `cycle time`) và **máy** hoặc **loại công đoạn**.",
+      "Ví dụ: *xu hướng torque máy SCR-01 trong 7 ngày*.",
+    ].join("\n");
+  }
+  if (reason === "MISSING_CORRELATION_ARGS") {
+    return [
+      "Để phân tích tương quan, vui lòng cho biết **công đoạn thượng nguồn + chỉ số đo** (ví dụ `torque`) và (tùy chọn) **công đoạn hạ nguồn** có lỗi.",
+      "Ví dụ: *tương quan torque với NG ở công đoạn function*.",
+    ].join("\n");
+  }
   // No heuristic matched but user is clearly asking about live data.
   if (reason === "NO_TRIGGER_MATCH") {
     if (LOT_INTENT_HINT.test(question)) {
@@ -96,6 +108,39 @@ const FACTORY_AGG_INTENT = /\b(theo\s*nhà\s*máy|từng\s*nhà\s*máy|các\s*nh
 const MODEL_RANKING_INTENT = /\b(mẫu\s*sản\s*phẩm|sản\s*phẩm\s*nào|model\s*nào|theo\s*sản\s*phẩm|theo\s*model|ng\s*theo\s*model)\b/i;
 // Optional machine-code extraction for OEE (e.g. "AOI-01", "M-12").
 const MACHINE_CODE_REGEX = /\b([A-Z]{2,5}-?\d{1,4})\b/;
+
+// ─── Sprint F6 — line-monitoring intents ─────────────────────────────────────
+// A process-metric trend ("torque máy SCR-01 7 ngày", "lượng keo", "cycle time").
+const PROCESS_TREND_INTENT =
+  /\b(torque|lực\s*siết|mô-?men|dispense|lượng\s*keo|cycle\s*time|thời\s*gian\s*chu\s*kỳ)\b/i;
+// Line balance / bottleneck.
+const LINE_BALANCE_INTENT = /\b(cân\s*bằng\s*(chuyền|line)|nút\s*thắt|bottleneck|nghẽn)\b/i;
+// Forecast hint → route line balance to the bottleneck INSIGHT tool instead.
+const BOTTLENECK_FORECAST_HINT = /\b(dự\s*báo|sẽ\s*nghẽn|sắp\s*nghẽn|forecast)\b/i;
+const PALLETIZER_INTENT = /\b(palletizer|xếp\s*pallet|máy\s*xếp\s*pallet|robot\s*pallet)\b/i;
+const PACKAGING_INTENT = /\b(đóng\s*gói|packaging|throughput|sản\s*lượng\s*đóng\s*gói)\b/i;
+const TELEMETRY_INTENT = /\b(telemetry|giá\s*trị\s*tag|đọc\s*tag|cảm\s*biến\s*máy|ot\s*telemetry)\b/i;
+const CORRELATION_INTENT =
+  /\b(tương\s*quan|correlation|ảnh\s*hưởng[\s\S]{0,15}(ng|lỗi)|liên\s*quan[\s\S]{0,15}lỗi)\b/i;
+// Line code extraction, e.g. "line A", "chuyền L-01", "line L1".
+const LINE_CODE_REGEX = /\b(?:line|chuyền)\s*([A-Za-z0-9][A-Za-z0-9_-]{0,15})\b/i;
+// Bare serial, e.g. "serial SN12345", "SN-001".
+const SERIAL_REGEX = /\b(?:serial|sn|s\/n)\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9_-]{2,40})\b/i;
+// Map keyword → { metricKey, stepType } for the process-metric trend tool.
+function mapProcessMetric(question: string): { metricKey: string; stepType?: string } {
+  const q = question.toLowerCase();
+  if (/torque|lực\s*siết|mô-?men/.test(q)) return { metricKey: "torque", stepType: "torque" };
+  if (/keo|dispense/.test(q)) return { metricKey: "volume", stepType: "dispense" };
+  if (/cycle\s*time|thời\s*gian\s*chu\s*kỳ/.test(q)) return { metricKey: "cycleTimeMs" };
+  return { metricKey: "value" };
+}
+// Map keyword → upstream stepType + metricKey for the correlation tool.
+function mapCorrelationArgs(question: string): { upstreamStepType: string; metricKey: string } | null {
+  const q = question.toLowerCase();
+  if (/torque|lực\s*siết|mô-?men/.test(q)) return { upstreamStepType: "torque", metricKey: "torque" };
+  if (/keo|dispense/.test(q)) return { upstreamStepType: "dispense", metricKey: "volume" };
+  return null;
+}
 
 // GĐ2 write-tool: "đặt/cập nhật spec/USL/LSL điểm đo".
 const SET_SPEC_INTENT = /\b(đặt|cập\s*nhật|set|update|chỉnh)\b[\s\S]{0,40}\b(spec|usl|lsl|target|giới\s*hạn)\b|\b(usl|lsl)\b[\s\S]{0,20}=/i;
@@ -196,6 +241,68 @@ function extractArgsForTool(
       if (idMatch) args.measurementPointDefId = Number(idMatch[1]);
       return args;
     }
+    case "get_machine_process_result": {
+      const days = question.match(DAYS_REGEX) ? Math.max(1, Math.min(30, parseInt(question.match(DAYS_REGEX)![1]!, 10))) : 1;
+      const code = question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedMachineCode;
+      const serial = question.match(SERIAL_REGEX)?.[1];
+      const args: Record<string, unknown> = { days, limit: 20 };
+      if (code) args.machineCode = code;
+      if (serial) args.serialNumber = serial;
+      return args;
+    }
+    case "get_process_metric_trend": {
+      const days = question.match(DAYS_REGEX) ? Math.max(1, Math.min(30, parseInt(question.match(DAYS_REGEX)![1]!, 10))) : 7;
+      const code = question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedMachineCode;
+      const { metricKey, stepType } = mapProcessMetric(question);
+      const args: Record<string, unknown> = { metricKey, days, source: "process", bucket: "hour" };
+      if (code) args.machineCode = code;
+      if (stepType) args.stepType = stepType;
+      return args;
+    }
+    case "get_line_balance": {
+      const days = question.match(DAYS_REGEX) ? Math.max(1, Math.min(14, parseInt(question.match(DAYS_REGEX)![1]!, 10))) : 1;
+      const lineCode = question.match(LINE_CODE_REGEX)?.[1];
+      const args: Record<string, unknown> = { days };
+      if (lineCode) args.lineCode = lineCode;
+      return args;
+    }
+    case "analyze_line_bottleneck": {
+      const days = question.match(DAYS_REGEX) ? Math.max(2, Math.min(30, parseInt(question.match(DAYS_REGEX)![1]!, 10))) : 7;
+      const lineCode = question.match(LINE_CODE_REGEX)?.[1];
+      const args: Record<string, unknown> = { days };
+      if (lineCode) args.lineCode = lineCode;
+      return args;
+    }
+    case "get_packaging_throughput": {
+      const days = question.match(DAYS_REGEX) ? Math.max(1, Math.min(14, parseInt(question.match(DAYS_REGEX)![1]!, 10))) : 1;
+      const code = question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedMachineCode;
+      const lineCode = question.match(LINE_CODE_REGEX)?.[1];
+      const args: Record<string, unknown> = { days };
+      if (code) args.machineCode = code;
+      if (lineCode) args.lineCode = lineCode;
+      return args;
+    }
+    case "get_palletizer_status": {
+      const code = question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedMachineCode;
+      return code ? { machineCode: code } : {};
+    }
+    case "get_ot_telemetry_latest": {
+      const code = question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedMachineCode;
+      const limit = 10;
+      return code ? { machineCode: code, limit } : { limit };
+    }
+    case "correlate_process_quality": {
+      const days = question.match(DAYS_REGEX) ? Math.max(1, Math.min(30, parseInt(question.match(DAYS_REGEX)![1]!, 10))) : 7;
+      const code = question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedMachineCode;
+      const mapped = mapCorrelationArgs(question);
+      const args: Record<string, unknown> = { days };
+      if (mapped) {
+        args.upstreamStepType = mapped.upstreamStepType;
+        args.metricKey = mapped.metricKey;
+      }
+      if (code) args.machineCode = code;
+      return args;
+    }
     case "get_today_stats":
     default:
       return {};
@@ -283,6 +390,86 @@ export function classifyToolIntent(question: string, context?: ToolContext): Too
         reason: "MISSING_SPEC_ARGS",
         clarifyMessage: buildClarifyMessage("MISSING_SPEC_ARGS", question),
       };
+    }
+  }
+
+  // ─── Sprint F6 short-circuits (BEFORE generic trigger scoring) ─────────────
+  // Order matters: correlation wins over a bare metric trend when "tương quan"
+  // is present (both mention torque/keo).
+  if (CORRELATION_INTENT.test(question)) {
+    const tool = getTool("correlate_process_quality");
+    if (tool) {
+      const args = extractArgsForTool("correlate_process_quality", question, context);
+      if (!args.upstreamStepType || !args.metricKey) {
+        return {
+          tool: null,
+          args: {},
+          reason: "MISSING_CORRELATION_ARGS",
+          clarifyMessage: buildClarifyMessage("MISSING_CORRELATION_ARGS", question),
+        };
+      }
+      const parsed = tool.parameters.safeParse(args);
+      if (parsed.success) {
+        return { tool: "correlate_process_quality", args: parsed.data as Record<string, unknown>, reason: "CORRELATION_SHORTCUT" };
+      }
+      return {
+        tool: null,
+        args: {},
+        reason: "MISSING_CORRELATION_ARGS",
+        clarifyMessage: buildClarifyMessage("MISSING_CORRELATION_ARGS", question),
+      };
+    }
+  }
+  if (PALLETIZER_INTENT.test(question)) {
+    const tool = getTool("get_palletizer_status");
+    if (tool) {
+      const args = extractArgsForTool("get_palletizer_status", question, context);
+      const parsed = tool.parameters.safeParse(args);
+      if (parsed.success) {
+        return { tool: "get_palletizer_status", args: parsed.data as Record<string, unknown>, reason: "PALLETIZER_SHORTCUT" };
+      }
+    }
+  }
+  if (PACKAGING_INTENT.test(question)) {
+    const tool = getTool("get_packaging_throughput");
+    if (tool) {
+      const args = extractArgsForTool("get_packaging_throughput", question, context);
+      const parsed = tool.parameters.safeParse(args);
+      if (parsed.success) {
+        return { tool: "get_packaging_throughput", args: parsed.data as Record<string, unknown>, reason: "PACKAGING_SHORTCUT" };
+      }
+    }
+  }
+  if (LINE_BALANCE_INTENT.test(question)) {
+    // Forecast wording → route to the bottleneck INSIGHT tool.
+    const toolName = BOTTLENECK_FORECAST_HINT.test(question) ? "analyze_line_bottleneck" : "get_line_balance";
+    const tool = getTool(toolName);
+    if (tool) {
+      const args = extractArgsForTool(toolName, question, context);
+      const parsed = tool.parameters.safeParse(args);
+      if (parsed.success) {
+        return { tool: toolName, args: parsed.data as Record<string, unknown>, reason: "LINE_BALANCE_SHORTCUT" };
+      }
+    }
+  }
+  if (TELEMETRY_INTENT.test(question)) {
+    const tool = getTool("get_ot_telemetry_latest");
+    if (tool) {
+      const args = extractArgsForTool("get_ot_telemetry_latest", question, context);
+      const parsed = tool.parameters.safeParse(args);
+      if (parsed.success) {
+        return { tool: "get_ot_telemetry_latest", args: parsed.data as Record<string, unknown>, reason: "TELEMETRY_SHORTCUT" };
+      }
+    }
+  }
+  if (PROCESS_TREND_INTENT.test(question)) {
+    const tool = getTool("get_process_metric_trend");
+    if (tool) {
+      const args = extractArgsForTool("get_process_metric_trend", question, context);
+      const parsed = tool.parameters.safeParse(args);
+      if (parsed.success) {
+        return { tool: "get_process_metric_trend", args: parsed.data as Record<string, unknown>, reason: "PROCESS_TREND_SHORTCUT" };
+      }
     }
   }
 

@@ -82,6 +82,17 @@ export type ToolResultPayload =
       note?: string;
     };
 
+// Tool result types that have a dedicated card body below. Any other type
+// (e.g. Sprint F6 line_balance / process_metric_trend / line_insight /
+// correlation_insight, or other server-only types) falls back to textSummary.
+const KNOWN_CARD_TYPES = new Set<string>([
+  "today_stats",
+  "lot_status",
+  "machine_status",
+  "defect_trend",
+  "top_defects",
+]);
+
 interface Props {
   toolResult: ToolResultPayload;
 }
@@ -121,6 +132,15 @@ export function AIToolResultCard({ toolResult }: Props) {
       {toolResult.type === "top_defects" && toolResult.note !== "DB_UNAVAILABLE" && (
         <TopDefectsBody data={toolResult.data} />
       )}
+
+      {/* Generic fallback: render textSummary for any type without a dedicated
+          card body (e.g. Sprint F6 line_balance / process_metric_trend /
+          line_insight / correlation_insight). */}
+      {!KNOWN_CARD_TYPES.has(toolResult.type) &&
+        toolResult.note !== "DB_UNAVAILABLE" &&
+        toolResult.note !== "NOT_FOUND" && (
+          <div className="whitespace-pre-line text-foreground/90">{toolResult.textSummary}</div>
+        )}
     </div>
   );
 }

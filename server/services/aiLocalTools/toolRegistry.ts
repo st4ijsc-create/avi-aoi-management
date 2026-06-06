@@ -24,7 +24,16 @@ export type ToolResultType =
   | "ng_compare"
   | "oee"
   | "model_metrics"
-  | "action_result";
+  | "action_result"
+  // ── Sprint F6 — line-monitoring read + insight tools (additive) ──
+  | "process_result"
+  | "process_metric_trend"
+  | "line_balance"
+  | "throughput"
+  | "palletizer_status"
+  | "ot_telemetry"
+  | "line_insight"
+  | "correlation_insight";
 
 export interface ToolResult<T = unknown> {
   type: ToolResultType;
