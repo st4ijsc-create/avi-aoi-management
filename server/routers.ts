@@ -102,6 +102,8 @@ import { aiCopilotRouter } from "./routers/aiCopilotRouter"; // GĐ2: HITL write
 import { aiCalibrationRouter } from "./routers/aiCalibrationRouter"; // B2: confidence calibration (ECE + reliability)
 import { aiAnomalyRouter } from "./routers/aiAnomalyRouter"; // B3: unsupervised anomaly detection (PatchCore-style)
 import { aiSegmentationRouter } from "./routers/aiSegmentationRouter"; // B7: segmentation mask + sub-pixel metrology
+import { andonRouter } from "./routers/andonRouter"; // F5a: Andon (ALERT-ONLY)
+import { interlockRouter } from "./routers/interlockRouter"; // F5a: Interlock rules (ALERT-ONLY, no command path)
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -321,6 +323,10 @@ export const appRouter = router({
   machineContract: machineContractRouter,
   wip: wipRouter,
   traceability: traceabilityRouter,
+
+  // F5a — Andon + Interlock (ALERT-ONLY; engine has no command path)
+  andon: andonRouter,
+  interlock: interlockRouter,
 
   // Process & SPC
   process: processRouter,

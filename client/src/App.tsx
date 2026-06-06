@@ -91,6 +91,7 @@ const AIGgufModelsPage = React.lazy(() => import("./pages/AIGgufModelsPage"));
 const AILocalKnowledgeBasePage = React.lazy(() => import("./pages/AILocalKnowledgeBasePage"));
 import TestAnnotationPage from "./pages/TestAnnotationPage";
 const MaskAnnotationPage = React.lazy(() => import("./pages/MaskAnnotationPage"));
+const AndonBoard = React.lazy(() => import("./pages/AndonBoard")); // F5a: Andon board (ALERT-ONLY)
 import AOIPackages from "./pages/AOIPackages";
 import MqttBulletin from "./pages/MqttBulletin";
 import CorrelationAnalysis from "./pages/CorrelationAnalysis";
@@ -152,6 +153,7 @@ function Router() {
       <Route path="/setup" component={Setup} />
       <Route path="/login" component={Login} />
       <Route path="/dashboard" component={Dashboard} />
+      <Route path="/andon" component={AndonBoard} />
       <Route path="/history" component={History} />
       <Route path="/inspection/:id" component={InspectionDetail} />
       <Route path="/layout" component={Layout} />

@@ -4466,6 +4466,16 @@ async function startServer() {
     console.error("[OT] init failed:", (err as any)?.message || err);
   }
 
+  // F5a — Interlock engine (ALERT-ONLY). No-op unless INTERLOCK_ENGINE_ENABLED=true.
+  // SAFETY: this engine raises Andon + records interlock_events ONLY; it has NO
+  // path to commandDispatcher / driver.writeTags (auto block/stop → 'skipped').
+  try {
+    const { startInterlock } = await import("../services/interlock");
+    startInterlock();
+  } catch (err) {
+    console.error("[Interlock] init failed:", (err as any)?.message || err);
+  }
+
   // G2/G7 — PdM closed-loop: tự sinh maintenance work-order từ predictedFailureRisk.
   // Disabled by default; opt in via PDM_WORKORDER_ENABLED=true.
   try {
@@ -4538,6 +4548,10 @@ async function startServer() {
     // F1.1 — dừng OT framework (no-op nếu chưa chạy)
     import("../services/ot")
       .then((m) => m.stopOt())
+      .catch(() => {});
+    // F5a — dừng interlock engine (no-op nếu chưa chạy)
+    import("../services/interlock")
+      .then((m) => m.stopInterlock())
       .catch(() => {});
     // G2/G7 — dừng PdM work-order scheduler (no-op nếu chưa chạy)
     import("../services/pdmWorkOrderService")

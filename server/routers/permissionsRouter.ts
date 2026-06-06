@@ -101,6 +101,9 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     //   canEdit   = đặt tham số (set_machine_param) / ack cảnh báo (acknowledge_machine_alarm)
     //   canView   = xem preview / liệt kê command log & recipe
     { category: 'machine_control', moduleName: 'machine_control', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+    // Andon + Interlock (Sprint F5a — ALERT-ONLY; interlock engine has no command path)
+    { category: 'andon', moduleName: 'andon', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+    { category: 'interlock', moduleName: 'interlock', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     // Annotations
     { category: 'annotations', moduleName: 'annotation_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'annotations', moduleName: 'annotation_create', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
@@ -151,6 +154,9 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
     // Machine Control (Sprint F4a) — supervisor can execute (canCreate) + set param/ack (canEdit), but not delete recipes
     { category: 'machine_control', moduleName: 'machine_control', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // Andon + Interlock (F5a) — supervisor manages Andon + interlock rules (no delete on andon)
+    { category: 'andon', moduleName: 'andon', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    { category: 'interlock', moduleName: 'interlock', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
     // Annotations
     { category: 'annotations', moduleName: 'annotation_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'annotations', moduleName: 'annotation_create', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
@@ -183,6 +189,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'annotations', moduleName: 'annotation_create', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'annotations', moduleName: 'annotation_templates', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'annotations', moduleName: 'annotation_ai', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
+    // Andon (F5a) — quality inspector can raise/ack/resolve quality Andons (no interlock rule mgmt)
+    { category: 'andon', moduleName: 'andon', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
   ],
   operator: [
     // Operator can view assigned machines and submit inspection data
@@ -192,6 +200,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
     { category: 'production', moduleName: 'production_orders', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // Andon (F5a) — operators raise/ack/resolve Andons from the line
+    { category: 'andon', moduleName: 'andon', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
   ],
   maintenance: [
     // Maintenance can view machine status and logs
@@ -266,7 +276,9 @@ const permissionCategoryEnum = z.enum([
   'production',
   'machine_monitoring',
   'annotations',
-  'machine_control'
+  'machine_control',
+  'andon',
+  'interlock'
 ]);
 
 export const permissionsRouter = router({
@@ -744,6 +756,10 @@ export const permissionsRouter = router({
 
         // ======================== MACHINE CONTROL (Sprint F4a — OT HITL) ========================
         { category: 'machine_control', moduleName: 'machine_control', displayName: 'Điều khiển Máy (OT)', description: 'Gửi lệnh điều khiển máy qua HITL: start/stop/recipe (canCreate), đặt tham số/ack (canEdit), xem preview/log (canView). MỌI lệnh phải qua xác nhận của người dùng + audit.' },
+
+        // ======================== ANDON + INTERLOCK (Sprint F5a — ALERT-ONLY) ========================
+        { category: 'andon', moduleName: 'andon', displayName: 'Andon (Cảnh báo)', displayNameEn: 'Andon', displayNameZh: 'Andon 安灯', description: 'Tín hiệu Andon: raise (canCreate), ack/resolve (canEdit), xem danh sách/metrics (canView). Andon CHỈ là tín hiệu — KHÔNG ghi lệnh máy.' },
+        { category: 'interlock', moduleName: 'interlock', displayName: 'Interlock (Khóa liên động)', displayNameEn: 'Interlock', displayNameZh: '联锁规则', description: 'Quy tắc interlock: tạo (canCreate), sửa/bật-tắt (canEdit), xóa (canDelete), xem (canView). Duyệt rule là admin-only. F5a ALERT-ONLY — engine KHÔNG ghi lệnh máy.' },
 
         // ======================== ANNOTATIONS ========================
         { category: 'annotations', moduleName: 'annotation_view', displayName: 'Xem Annotation', description: 'Xem annotation trên hình ảnh kiểm tra' },

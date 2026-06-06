@@ -209,3 +209,34 @@ export const deploymentStatusEnum = pgEnum("deploymentstatusenum", ["pending", "
 // (DRY-RUN); the wire states (sent/acked/...) are reserved for F4b when
 // OT_CONTROL_ENABLED opens the path to driver.writeTags.
 export const commandStatusEnum = pgEnum("commandstatusenum", ["simulated", "sent", "acked", "failed", "timeout", "rejected"]);
+
+// === Sprint F5a — Andon + Interlock model (ALERT-ONLY engine) ===
+// SAFETY (F5a): the interlock engine raises Andon + records interlockEvents ONLY.
+// It NEVER writes a command to a machine (no commandDispatcher / driver.writeTags).
+// Auto block/stop is deferred to F5b → in F5a such an event is recorded 'skipped'.
+
+// Andon signal-tower state (visual signal — NOT a control command).
+export const andonStateEnum = pgEnum("andonstateenum", ["green", "yellow", "red", "call"]);
+// Why an Andon was raised.
+export const andonReasonEnum = pgEnum("andonreasonenum", ["quality", "material", "maintenance", "safety", "setup", "other"]);
+// Lifecycle of an Andon event (raise → acknowledge → resolve).
+export const andonStatusEnum = pgEnum("andonstatusenum", ["raised", "acknowledged", "resolved"]);
+// Source data feed that can trigger an interlock rule.
+export const interlockSourceTypeEnum = pgEnum("interlocksourcetypeenum", ["spc_violation", "ng_rate", "process_result", "telemetry_tag", "cpk"]);
+// Intended interlock action. In F5a 'alert' raises a yellow Andon; block/stop raise a red
+// Andon + a HITL proposal (requiresHumanConfirm) or are 'skipped' (auto, deferred to F5b).
+export const interlockActionEnum = pgEnum("interlockactionenum", ["alert", "block_downstream", "stop_line", "reduce_speed"]);
+// Granularity an interlock rule applies at.
+export const interlockScopeEnum = pgEnum("interlockscopeenum", ["line", "station", "machine"]);
+// Lifecycle/outcome of a fired interlock event. F5a never produces auto_blocked/
+// confirmed_blocked (no command path); auto block/stop → 'skipped' until F5b.
+export const interlockEventStatusEnum = pgEnum("interlockeventstatusenum", [
+  "fired",
+  "proposed",
+  "auto_blocked",
+  "confirmed_blocked",
+  "alert_only",
+  "skipped",
+  "resolved",
+  "failed",
+]);

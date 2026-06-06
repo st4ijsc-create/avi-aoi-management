@@ -113,7 +113,7 @@ export function initializeSocket(server: HttpServer): Server {
     console.log(`[Socket.io] Client connected: ${socket.id} type=${ct}${u ? ` user=${u.id}` : ""}`);
 
     // Join room for specific factory/workshop/machine updates
-    socket.on("subscribe", (data: { factoryId?: number; workshopId?: number; machineId?: number }) => {
+    socket.on("subscribe", (data: { factoryId?: number; workshopId?: number; machineId?: number; lineId?: number }) => {
       if (data.factoryId) {
         socket.join(`factory:${data.factoryId}`);
         console.log(`[Socket.io] ${socket.id} joined factory:${data.factoryId}`);
@@ -126,14 +126,20 @@ export function initializeSocket(server: HttpServer): Server {
         socket.join(`machine:${data.machineId}`);
         console.log(`[Socket.io] ${socket.id} joined machine:${data.machineId}`);
       }
+      // F5a — Andon/interlock events are emitted per production line.
+      if (data.lineId) {
+        socket.join(`line:${data.lineId}`);
+        console.log(`[Socket.io] ${socket.id} joined line:${data.lineId}`);
+      }
       // Everyone joins the global room for all alerts
       socket.join("global");
     });
 
-    socket.on("unsubscribe", (data: { factoryId?: number; workshopId?: number; machineId?: number }) => {
+    socket.on("unsubscribe", (data: { factoryId?: number; workshopId?: number; machineId?: number; lineId?: number }) => {
       if (data.factoryId) socket.leave(`factory:${data.factoryId}`);
       if (data.workshopId) socket.leave(`workshop:${data.workshopId}`);
       if (data.machineId) socket.leave(`machine:${data.machineId}`);
+      if (data.lineId) socket.leave(`line:${data.lineId}`);
     });
 
     socket.on("disconnect", () => {
@@ -767,6 +773,37 @@ export function emitSpcViolationAlert(alert: SpcViolationAlert): void {
     io.to(`machine:${alert.machineId}`).emit("spc:violation", alert);
   }
   console.log(`[SPC] ${alert.severity.toUpperCase()} violation: ${alert.ruleName} (${alert.metric})`);
+}
+
+// ─── Sprint F5a — Andon realtime event (ALERT-ONLY; NOT a control command) ───
+export interface AndonRealtimeEvent {
+  id: number;
+  state: "green" | "yellow" | "red" | "call";
+  reason: string;
+  status: "raised" | "acknowledged" | "resolved";
+  title: string;
+  message?: string | null;
+  lineId?: number | null;
+  stationId?: number | null;
+  machineId?: number | null;
+  raisedBySystem: boolean;
+  sourceInterlockEventId?: number | null;
+  raisedAt: Date | string;
+  /** Lifecycle phase that produced this emit (raise/acknowledge/resolve/escalate). */
+  event?: "raised" | "acknowledged" | "resolved" | "escalated";
+}
+
+/**
+ * Broadcast an Andon event to the global room + the relevant line/machine rooms.
+ * This is a SIGNAL only — it never writes to any machine. Mirrors
+ * emitSpcViolationAlert (no-op when io is not initialized).
+ */
+export function emitAndonEvent(event: AndonRealtimeEvent): void {
+  if (!io) return;
+  io.to("global").emit("andon:event", event);
+  if (event.lineId) io.to(`line:${event.lineId}`).emit("andon:event", event);
+  if (event.machineId) io.to(`machine:${event.machineId}`).emit("andon:event", event);
+  console.log(`[Andon] ${event.state.toUpperCase()} (${event.reason}) #${event.id} — ${event.event ?? "raised"}`);
 }
 
 // Emit alert escalation event
