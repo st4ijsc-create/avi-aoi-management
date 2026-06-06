@@ -1,22 +1,31 @@
 /**
- * Sprint F5a — Interlock engine (ALERT-ONLY).
+ * Sprint F5a/F5b — Interlock engine.
  *
  * ════════════════════════════════════════════════════════════════════════════
- * SAFETY — F5a HAS NO COMMAND PATH:
- *   - This module NEVER imports commandDispatcher and NEVER calls driver.writeTags.
- *     There is literally no code path from here to a machine write.
+ * SAFETY:
  *   - When an enabled+approved rule's condition is met:
  *       action='alert'                         → yellow Andon, event status 'alert_only'
  *       block/stop + requiresHumanConfirm=true  → red Andon, event status 'proposed'
- *                                                 (a human-confirm proposal; F5b will
- *                                                 wire the actual block on confirm)
- *       block/stop + requiresHumanConfirm=false → red Andon, event status 'skipped'
- *                                                 ("auto-block deferred to F5b" — no write)
- *       reduce_speed                            → treated like a block proposal/skip
- *   - A rule that is NOT enabled or NOT approved never auto-acts: it is recorded
- *     'alert_only' at most (defensive — engine only polls enabled rules anyway).
+ *                                                 (a human-confirm proposal; the actual
+ *                                                  block on confirm goes through the HITL
+ *                                                  dispatch path, NOT this engine)
+ *       block/stop + requiresHumanConfirm=false → red Andon, then (F5b) an AUTO-BLOCK
+ *                                                 via commandDispatcher — but ONLY when
+ *                                                 BOTH flags are on (see below). If a
+ *                                                 flag is missing → event 'skipped'
+ *                                                 (red Andon raised, NO machine write).
+ *   - F5b AUTO-BLOCK GATE — a deterministic, human-approved rule may auto-dispatch
+ *     a block/stop/reduce ONLY when:
+ *         isInterlockAutoBlockEnabled()  (INTERLOCK_AUTO_BLOCK_ENABLED==="true")  AND
+ *         isOtControlEnabled()           (OT_CONTROL_ENABLED==="true")
+ *     The dispatcher re-verifies the rule authorization independently
+ *     (verifyInterlockAuthorization) — defense-in-depth. The engine never writes
+ *     to a driver directly; it calls commandDispatcher.dispatch (server-internal).
+ *   - This module / dispatch path is NEVER exported to tRPC or the AI. The AI can
+ *     only propose inert rules; it has NO code path to an interlock dispatch.
  *   - No-op unless INTERLOCK_ENGINE_ENABLED === "true".
  *   - Every rule is evaluated inside try/catch: one bad rule cannot crash the loop.
+ *   - NO auto-chaining: one rule fires exactly one command to one target. Cooldown held.
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { and, eq, gte, sql, desc } from "drizzle-orm";
@@ -31,6 +40,7 @@ import {
   type InterlockRule,
 } from "../../../drizzle/schema";
 import { raiseAndon, type AndonState } from "../andon/andonService";
+import { dispatch, isInterlockAutoBlockEnabled, isOtControlEnabled } from "../ot/commandDispatcher";
 import {
   evaluateCondition,
   deriveObserved,
@@ -138,12 +148,24 @@ export async function evaluateRule(rule: InterlockRule): Promise<{ id: number; s
   );
   if (!met) return null;
 
-  // ── Decide the ALERT-ONLY outcome (no command path) ──────────────────────
+  // ── Decide the outcome ────────────────────────────────────────────────────
   const action = rule.action;
-  let status: "alert_only" | "proposed" | "skipped";
+  // An auto-block candidate = a block/stop/reduce rule that does NOT require a
+  // human confirm. The actual write only happens when BOTH F5b flags are on AND
+  // the dispatcher re-authorizes the rule.
+  const isAutoCandidate =
+    action !== "alert" &&
+    rule.requiresHumanConfirm === false &&
+    rule.approvedBy != null &&
+    !!rule.targetAdapterId &&
+    !!rule.commandTag;
+
+  let status: "alert_only" | "proposed" | "skipped" | "fired";
   let andonState: AndonState;
   let note: string | null = null;
   let pendingActionId: string | null = null;
+  // When true we will attempt a dispatch AFTER inserting the event.
+  let willAutoBlock = false;
 
   if (action === "alert") {
     status = "alert_only";
@@ -153,17 +175,25 @@ export async function evaluateRule(rule: InterlockRule): Promise<{ id: number; s
     andonState = "red";
     if (rule.requiresHumanConfirm) {
       status = "proposed";
-      // F5a records a proposal id for traceability; the actual block on confirm
-      // is wired in F5b. We do NOT create a dispatch path here.
+      // Records a proposal id for traceability; the actual block on confirm goes
+      // through the HITL dispatch path (not this engine).
       pendingActionId = `interlock-${rule.id}-${Date.now()}`;
-      note = "Human confirm required — block/stop proposed (no machine write in F5a).";
+      note = "Human confirm required — block/stop proposed (no auto machine write).";
+    } else if (isAutoCandidate && isInterlockAutoBlockEnabled() && isOtControlEnabled()) {
+      // F5b: deterministic auto-block authorized. Record 'fired'; dispatch below.
+      status = "fired";
+      willAutoBlock = true;
+      note = "auto-block firing (deterministic interlock rule).";
     } else {
+      // Missing a flag (or not a clean auto candidate) → no write. Red Andon only.
       status = "skipped";
-      note = "auto-block deferred to F5b (F5a has no command path).";
+      note = !isAutoCandidate
+        ? "auto-block not configured (needs requiresHumanConfirm=false + approved + targetAdapterId + commandTag)."
+        : `auto-block skipped — flags off (INTERLOCK_AUTO_BLOCK_ENABLED=${isInterlockAutoBlockEnabled()}, OT_CONTROL_ENABLED=${isOtControlEnabled()}).`;
     }
   }
 
-  // Insert the event first so the Andon can reference it.
+  // Insert the event first so the Andon (and dispatch) can reference it.
   const [event] = await db
     .insert(interlockEvents)
     .values({
@@ -198,7 +228,32 @@ export async function evaluateRule(rule: InterlockRule): Promise<{ id: number; s
   // Back-link the Andon onto the event.
   await db.update(interlockEvents).set({ andonEventId: andon.id }).where(eq(interlockEvents.id, event.id));
 
-  return { id: event.id, status };
+  // ── F5b — AUTO-BLOCK dispatch (deterministic, human-approved). ─────────────
+  // dispatch is the ONLY caller of driver.writeTags and re-verifies authorization.
+  // NO auto-chaining: one rule → one command → one target.
+  if (willAutoBlock) {
+    let finalStatus: "auto_blocked" | "failed" = "failed";
+    let commandLogId: number | null = null;
+    try {
+      const result = await dispatch({
+        adapterId: rule.targetAdapterId!,
+        machineId: rule.targetMachineId,
+        commandType: rule.action,
+        writes: [{ tagKey: rule.commandTag!, value: rule.commandValue ?? true }],
+        triggeredBy: { kind: "interlock", ruleId: rule.id, eventId: event.id, approvedBy: rule.approvedBy! },
+        idempotencyKey: `il-${rule.id}-${event.id}`,
+      });
+      finalStatus = result.ok ? "auto_blocked" : "failed";
+      commandLogId = result.commandLogIds[0] ?? null;
+    } catch (err) {
+      finalStatus = "failed";
+      console.error(`[Interlock] rule #${rule.id} auto-block dispatch threw:`, (err as Error)?.message || err);
+    }
+    await db.update(interlockEvents).set({ status: finalStatus, commandLogId }).where(eq(interlockEvents.id, event.id));
+    return { id: event.id, status: finalStatus };
+  }
+
+  return { id: event.id, status: String(status) };
 }
 
 /** Window start = now - windowSeconds (default 300s). */

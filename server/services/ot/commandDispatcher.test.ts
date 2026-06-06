@@ -81,6 +81,16 @@ vi.mock("../../../drizzle/schema", () => ({
   deviceAdapters: { __table: "device_adapters", id: { __name: "id" }, machineId: { __name: "machineId" }, isEnabled: { __name: "isEnabled" } },
   deviceTags: { __table: "device_tags", id: { __name: "id" }, adapterId: { __name: "adapterId" }, tagKey: { __name: "tagKey" }, dataType: { __name: "dataType" }, scale: { __name: "scale" }, offset: { __name: "offset" } },
   commandLog: { __table: "command_log", id: { __name: "id" }, idempotencyKey: { __name: "idempotencyKey" }, status: { __name: "status" } },
+  interlockRules: { __table: "interlock_rules", id: { __name: "id" } },
+  interlockEvents: { __table: "interlock_events", id: { __name: "id" } },
+}));
+
+// Audit trail — capture INTERLOCK_AUTO_BLOCK calls.
+const auditSpy = vi.fn(async () => ({ id: 1 }));
+vi.mock("../auditTrailService", () => ({
+  AUDIT_ACTIONS: { INTERLOCK_AUTO_BLOCK: "interlock_auto_block" },
+  createAuditContext: (x: any) => x,
+  logCrudOperation: (...a: any[]) => (auditSpy as any)(...a),
 }));
 
 // Active driver registry (otManager accessor mocked).
@@ -93,13 +103,11 @@ vi.mock("./otManager", () => ({
 import { dispatch } from "./commandDispatcher";
 
 const baseInput = (over: Partial<Parameters<typeof dispatch>[0]> = {}) => ({
-  actionId: "act-1",
   adapterId: 10,
   machineId: 5,
   commandType: "start",
   writes: [{ tagKey: "cmd_start", value: true }],
-  confirmedBy: 1,
-  requestedBy: 1,
+  triggeredBy: { kind: "hitl" as const, actionId: "act-1", confirmedBy: 1, requestedBy: 1 },
   lang: "vi" as const,
   idempotencyKey: "key-1",
   ...over,

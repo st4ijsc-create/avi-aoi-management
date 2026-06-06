@@ -210,6 +210,13 @@ export const deploymentStatusEnum = pgEnum("deploymentstatusenum", ["pending", "
 // OT_CONTROL_ENABLED opens the path to driver.writeTags.
 export const commandStatusEnum = pgEnum("commandstatusenum", ["simulated", "sent", "acked", "failed", "timeout", "rejected"]);
 
+// === Sprint F5b — who/what triggered a dispatched command ===
+// 'hitl'      → a human-confirmed AI write-action (F4 path; actionId/confirmedBy).
+// 'interlock' → a DETERMINISTIC, human-approved interlock rule auto-firing the
+//               command (F5b path; ruleId/eventId/approvedBy). The AI has NO code
+//               path to produce 'interlock' — it can only propose inert rules.
+export const commandTriggerKindEnum = pgEnum("commandtriggerkindenum", ["hitl", "interlock"]);
+
 // === Sprint F5a — Andon + Interlock model (ALERT-ONLY engine) ===
 // SAFETY (F5a): the interlock engine raises Andon + records interlockEvents ONLY.
 // It NEVER writes a command to a machine (no commandDispatcher / driver.writeTags).

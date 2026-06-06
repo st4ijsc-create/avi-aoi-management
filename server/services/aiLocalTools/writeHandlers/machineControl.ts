@@ -82,13 +82,18 @@ async function runDispatch(
 ): Promise<ToolExecuteResult> {
   const idempotencyKey = ctx.actionId ?? `mc-${args.machineId}-${args.commandType}-${Date.now()}`;
   const input: DispatchInput = {
-    actionId: ctx.actionId,
     adapterId: args.adapterId,
     machineId: args.machineId,
     commandType: args.commandType,
     writes: args.writes,
-    confirmedBy: ctx.user.id,
-    requestedBy: ctx.user.id,
+    // AI write-tools ALWAYS dispatch via the human-confirmed HITL path. There is
+    // no AI code path that produces triggeredBy.kind='interlock' (F5b safety).
+    triggeredBy: {
+      kind: "hitl",
+      actionId: ctx.actionId,
+      confirmedBy: ctx.user.id,
+      requestedBy: ctx.user.id,
+    },
     lang: ctx.lang,
     idempotencyKey,
   };

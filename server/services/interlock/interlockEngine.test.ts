@@ -1,16 +1,19 @@
 /**
- * Sprint F5a — interlockEngine tests (ALERT-ONLY; NO command path).
+ * Sprint F5a/F5b — interlockEngine tests.
  *
  * Key safety assertions:
  *   - enabled=false rules are never polled (runOnce queries enabled=true only).
  *   - requiresHumanConfirm=true block/stop → interlock_event status 'proposed'
  *     + a (system) Andon raised. NO command is dispatched.
- *   - auto (requiresHumanConfirm=false) block/stop in F5a → status 'skipped'
- *     (auto-block deferred to F5b) — NO command dispatched.
+ *   - auto (requiresHumanConfirm=false) block/stop WITHOUT both F5b flags → status
+ *     'skipped' — NO command dispatched (red Andon only).
+ *   - auto block/stop WITH both flags → dispatch(kind='interlock') is called with
+ *     the correct ruleId/eventId/approvedBy; event → 'auto_blocked' on ok.
  *   - action=alert → status 'alert_only' (yellow Andon).
  *   - cooldown: a rule fired within cooldownSeconds is skipped (no 2nd event).
  *   - one failing rule does not crash the loop.
- *   - the engine module does NOT reference a command dispatcher / writeTags.
+ *   - the engine ONLY ever produces triggeredBy.kind='interlock' (never 'hitl');
+ *     the AI has no code path here.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import fs from "node:fs";
@@ -104,6 +107,15 @@ vi.mock("../andon/andonService", () => ({
   raiseAndon: (...args: any[]) => raiseAndon(...args),
 }));
 
+// commandDispatcher mock: dispatch spy + flag accessors driven by test state.
+const dispatchSpy = vi.fn(async (_input: any) => ({ ok: true, simulated: false, status: "acked", results: [], commandLogIds: [555] }));
+const flags = { autoBlock: false, otControl: false };
+vi.mock("../ot/commandDispatcher", () => ({
+  dispatch: (...a: any[]) => (dispatchSpy as any)(...a),
+  isInterlockAutoBlockEnabled: () => flags.autoBlock,
+  isOtControlEnabled: () => flags.otControl,
+}));
+
 // Import AFTER mocks.
 import { runOnce, evaluateRule } from "./interlockEngine";
 
@@ -139,6 +151,9 @@ beforeEach(() => {
   state.insertedEvents = [];
   state.ruleUpdates = [];
   raiseAndon.mockClear();
+  dispatchSpy.mockClear();
+  flags.autoBlock = false;
+  flags.otControl = false;
 });
 
 describe("interlockEngine — ALERT-ONLY", () => {
@@ -169,14 +184,15 @@ describe("interlockEngine — ALERT-ONLY", () => {
     expect(raiseAndon.mock.calls[0][0]).toMatchObject({ state: "red" });
   });
 
-  it("auto block/stop (requiresHumanConfirm=false) in F5a → 'skipped' (deferred to F5b)", async () => {
+  it("auto block/stop (requiresHumanConfirm=false) with flags OFF → 'skipped', NO dispatch", async () => {
     state.observationCount = 5;
-    const ev = await evaluateRule(baseRule({ action: "block_downstream", requiresHumanConfirm: false }));
+    // flags.autoBlock / flags.otControl default false in beforeEach.
+    const ev = await evaluateRule(baseRule({ action: "block_downstream", requiresHumanConfirm: false, approvedBy: 42, targetAdapterId: 10, commandTag: "cmd_block" }));
     expect(ev?.status).toBe("skipped");
     expect(state.insertedEvents[0].status).toBe("skipped");
-    expect(state.insertedEvents[0].notes).toMatch(/deferred to F5b/i);
-    // Andon still raised (red), but NO command dispatched (no dispatcher exists).
+    // Andon still raised (red), but NO command dispatched (flags off).
     expect(raiseAndon.mock.calls[0][0]).toMatchObject({ state: "red" });
+    expect(dispatchSpy).not.toHaveBeenCalled();
   });
 
   it("does not fire when the condition is not met", async () => {
@@ -212,17 +228,78 @@ describe("interlockEngine — ALERT-ONLY", () => {
   });
 });
 
-describe("interlockEngine — source safety: no command path in the module", () => {
-  it("the engine source never imports a dispatcher or calls writeTags", () => {
-    const src = fs.readFileSync(path.join(__dirname, "interlockEngine.ts"), "utf-8");
-    // No import/require of the command dispatcher MODULE (prose mentions in the
-    // SAFETY comment are fine — we only forbid an actual module specifier).
-    expect(src).not.toMatch(/from\s+["'][^"']*commandDispatcher["']/);
-    expect(src).not.toMatch(/import\(["'][^"']*commandDispatcher["']\)/);
-    expect(src).not.toMatch(/require\(["'][^"']*commandDispatcher["']\)/);
-    // No invocation of driver.writeTags / .writeTags(...)
+describe("interlockEngine — F5b auto-block (deterministic, human-approved)", () => {
+  const autoRule = (over: Partial<any> = {}) =>
+    baseRule({ action: "block_downstream", requiresHumanConfirm: false, approvedBy: 42, targetAdapterId: 10, targetMachineId: 5, commandTag: "cmd_block", commandValue: true, ...over });
+
+  it("both flags ON + clean auto candidate → dispatch(kind='interlock'), event 'auto_blocked'", async () => {
+    flags.autoBlock = true;
+    flags.otControl = true;
+    state.observationCount = 5;
+    const ev = await evaluateRule(autoRule());
+    expect(dispatchSpy).toHaveBeenCalledTimes(1);
+    const arg = dispatchSpy.mock.calls[0][0];
+    expect(arg.triggeredBy).toMatchObject({ kind: "interlock", ruleId: 1, approvedBy: 42 });
+    expect(arg.adapterId).toBe(10);
+    expect(arg.writes[0]).toMatchObject({ tagKey: "cmd_block", value: true });
+    expect(arg.idempotencyKey).toMatch(/^il-1-/);
+    expect(ev?.status).toBe("auto_blocked");
+    // event status updated to auto_blocked + commandLogId back-linked
+    const update = state.ruleUpdates.find((u) => u.table === "interlock_events" && u.patch.status === "auto_blocked");
+    expect(update).toBeTruthy();
+    expect(update.patch.commandLogId).toBe(555);
+  });
+
+  it("dispatch returns ok:false → event 'failed'", async () => {
+    flags.autoBlock = true;
+    flags.otControl = true;
+    dispatchSpy.mockResolvedValueOnce({ ok: false, simulated: false, status: "rejected", results: [], commandLogIds: [] });
+    state.observationCount = 5;
+    const ev = await evaluateRule(autoRule());
+    expect(ev?.status).toBe("failed");
+  });
+
+  it("only autoBlock flag (OT control OFF) → 'skipped', NO dispatch", async () => {
+    flags.autoBlock = true;
+    flags.otControl = false;
+    state.observationCount = 5;
+    const ev = await evaluateRule(autoRule());
+    expect(ev?.status).toBe("skipped");
+    expect(dispatchSpy).not.toHaveBeenCalled();
+  });
+
+  it("requiresHumanConfirm=true → 'proposed', NO dispatch even with both flags ON", async () => {
+    flags.autoBlock = true;
+    flags.otControl = true;
+    state.observationCount = 5;
+    const ev = await evaluateRule(autoRule({ requiresHumanConfirm: true }));
+    expect(ev?.status).toBe("proposed");
+    expect(dispatchSpy).not.toHaveBeenCalled();
+  });
+
+  it("rule not approved (approvedBy null) → 'skipped', NO dispatch", async () => {
+    flags.autoBlock = true;
+    flags.otControl = true;
+    state.observationCount = 5;
+    const ev = await evaluateRule(autoRule({ approvedBy: null }));
+    expect(ev?.status).toBe("skipped");
+    expect(dispatchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("interlockEngine — source safety: ONLY interlock-triggered dispatch, no writeTags, no tRPC", () => {
+  const src = fs.readFileSync(path.join(__dirname, "interlockEngine.ts"), "utf-8");
+
+  it("the engine never calls driver.writeTags directly (dispatch is the only writer)", () => {
     expect(src).not.toMatch(/\.writeTags\s*\(/);
-    // No dispatch( call into the OT command path.
-    expect(src).not.toMatch(/\bdispatch\s*\(/);
+  });
+
+  it("the engine ONLY produces triggeredBy.kind='interlock' (never 'hitl')", () => {
+    expect(src).toMatch(/kind:\s*["']interlock["']/);
+    expect(src).not.toMatch(/kind:\s*["']hitl["']/);
+  });
+
+  it("the engine module is not exported to tRPC (no router import here)", () => {
+    expect(src).not.toMatch(/Router|trpc|publicProcedure|protectedProcedure/);
   });
 });

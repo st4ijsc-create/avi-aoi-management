@@ -8,8 +8,21 @@
  *     (proposeAction → confirmAction; RBAC #1 + #2 + audit) in aiCopilotActions.
  *   - dispatch() is the ONLY caller of driver.writeTags() (which reaches the
  *     physical device). No other code path may call writeTags / dispatch.
- *   - Defense-in-depth: dispatch() re-verifies the ai_pending_actions row is
- *     confirmed/executed AND owned by `confirmedBy` before doing anything.
+ *   - Two trigger sources, BOTH passing the same shared gates (allowlist
+ *     tag.writable, adapter/tag enabled, driver active, OT_CONTROL_ENABLED,
+ *     idempotency). Source is the discriminated `triggeredBy.kind`:
+ *       'hitl'      → a human-confirmed AI write-action (F4). dispatch re-verifies
+ *                     the ai_pending_actions row is confirmed/executed AND owned by
+ *                     `confirmedBy` before doing anything.
+ *       'interlock' → a DETERMINISTIC, human-approved interlock rule auto-firing
+ *                     (F5b). dispatch re-verifies (verifyInterlockAuthorization):
+ *                     rule enabled + approvedBy set & matching + requiresHumanConfirm
+ *                     =false + action∈{block_downstream,stop_line,reduce_speed} +
+ *                     target adapter/tag match, the event belongs to the rule, AND
+ *                     the master flag INTERLOCK_AUTO_BLOCK_ENABLED==="true".
+ *   - SAFETY: the AI has NO code path that produces kind='interlock'. The
+ *     interlock engine (server-internal) is the only caller of that branch; it is
+ *     never exported to tRPC. The AI may only propose inert rules.
  *   - Mode gate: when OT_CONTROL_ENABLED !== "true" (the DEFAULT) the dispatcher
  *     NEVER calls driver.writeTags — it records a `simulated` commandLog row and
  *     returns { simulated: true }.
@@ -34,14 +47,34 @@ import {
   deviceAdapters,
   deviceTags,
   commandLog,
+  interlockRules,
+  interlockEvents,
   type CommandLog,
 } from "../../../drizzle/schema";
 import { getActiveDriver } from "./otManager";
+import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTrailService";
 
 /** True when the operator has explicitly enabled real OT control (F4b). */
 export function isOtControlEnabled(): boolean {
   return process.env.OT_CONTROL_ENABLED === "true";
 }
+
+/**
+ * Master flag for the F5b auto-block path. When false (the DEFAULT) an
+ * 'interlock'-triggered dispatch is REJECTED outright (INTERLOCK_AUTO_BLOCK_DISABLED)
+ * and never writes — even if every other gate would pass. Bật = cho phép interlock
+ * rule TỰ ghi lệnh chặn/dừng xuống máy (vẫn cần OT_CONTROL_ENABLED + rule approved).
+ */
+export function isInterlockAutoBlockEnabled(): boolean {
+  return process.env.INTERLOCK_AUTO_BLOCK_ENABLED === "true";
+}
+
+/** Interlock actions that are allowed to auto-fire a command (allowlist). */
+const INTERLOCK_AUTO_ACTIONS: ReadonlySet<string> = new Set([
+  "block_downstream",
+  "stop_line",
+  "reduce_speed",
+]);
 
 export type DispatchStatus = CommandLog["status"]; // simulated | sent | acked | failed | timeout | rejected
 
@@ -50,20 +83,71 @@ export interface DispatchWrite {
   value: unknown;
 }
 
-export interface DispatchInput {
+/** F4 HITL trigger: a human-confirmed AI write-action. */
+export interface HitlTrigger {
+  kind: "hitl";
   /** ai_pending_actions.id of the confirmed HITL action (defense-in-depth). */
   actionId?: string;
-  adapterId: number;
-  machineId?: number | null;
-  commandType: string;
-  writes: DispatchWrite[];
   /** User who confirmed the HITL action (must own the pending row). */
   confirmedBy: number;
   /** User who originally requested (proposed) the action. */
   requestedBy: number;
+}
+
+/** F5b interlock trigger: a deterministic, human-approved interlock rule. */
+export interface InterlockTrigger {
+  kind: "interlock";
+  /** interlock_rules.id whose deterministic condition fired. */
+  ruleId: number;
+  /** interlock_events.id recorded for this firing (must belong to ruleId). */
+  eventId: number;
+  /** User who APPROVED the rule (must match interlock_rules.approvedBy). */
+  approvedBy: number;
+}
+
+export type DispatchTrigger = HitlTrigger | InterlockTrigger;
+
+export interface DispatchInput {
+  adapterId: number;
+  machineId?: number | null;
+  commandType: string;
+  writes: DispatchWrite[];
+  /** What authorized this command — sets the gate path AND commandLog provenance. */
+  triggeredBy: DispatchTrigger;
   lang?: "vi" | "en" | "zh";
   /** Unique key → at most one effective dispatch. */
   idempotencyKey: string;
+}
+
+/** Resolve the (requestedBy, confirmedBy) pair recorded on commandLog rows. */
+function actors(input: DispatchInput): { requestedBy: number; confirmedBy: number; actionId: string | null } {
+  if (input.triggeredBy.kind === "hitl") {
+    return {
+      requestedBy: input.triggeredBy.requestedBy,
+      confirmedBy: input.triggeredBy.confirmedBy,
+      actionId: input.triggeredBy.actionId ?? null,
+    };
+  }
+  // interlock: the approver of the rule owns responsibility (requested=confirmed).
+  return { requestedBy: input.triggeredBy.approvedBy, confirmedBy: input.triggeredBy.approvedBy, actionId: null };
+}
+
+/** commandLog provenance columns for the F5b interlock path (null for HITL). */
+function triggerCols(input: DispatchInput): {
+  triggerKind: "hitl" | "interlock";
+  interlockRuleId: number | null;
+  interlockEventId: number | null;
+  approvedBy: number | null;
+} {
+  if (input.triggeredBy.kind === "interlock") {
+    return {
+      triggerKind: "interlock",
+      interlockRuleId: input.triggeredBy.ruleId,
+      interlockEventId: input.triggeredBy.eventId,
+      approvedBy: input.triggeredBy.approvedBy,
+    };
+  }
+  return { triggerKind: "hitl", interlockRuleId: null, interlockEventId: null, approvedBy: null };
 }
 
 export interface DispatchPerWrite {
@@ -103,23 +187,35 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
     return { ok: false, simulated: false, status: "failed", reason: "DB_UNAVAILABLE", results: [], commandLogIds: [] };
   }
 
-  // ── (1) Defense-in-depth: the HITL pending action must be confirmed/executed
-  //        AND owned by the confirming user. ──────────────────────────────────
-  if (input.actionId) {
-    const [pending] = await db
-      .select()
-      .from(aiPendingActions)
-      .where(eq(aiPendingActions.id, input.actionId))
-      .limit(1);
+  // ── (1) Authorization gate — branch on the trigger source. ───────────────────
+  if (input.triggeredBy.kind === "hitl") {
+    // F4: defense-in-depth — the pending action must be confirmed/executed AND
+    // owned by the confirming user.
+    if (input.triggeredBy.actionId) {
+      const actionId = input.triggeredBy.actionId;
+      const confirmedBy = input.triggeredBy.confirmedBy;
+      const [pending] = await db
+        .select()
+        .from(aiPendingActions)
+        .where(eq(aiPendingActions.id, actionId))
+        .limit(1);
 
-    const confirmedOk =
-      !!pending &&
-      (pending.status === "confirmed" || pending.status === "executed") &&
-      pending.userId === input.confirmedBy;
+      const confirmedOk =
+        !!pending &&
+        (pending.status === "confirmed" || pending.status === "executed") &&
+        pending.userId === confirmedBy;
 
-    if (!confirmedOk) {
-      const ids = await writeRejected(db, input, "NOT_CONFIRMED", "HITL action not confirmed or owner mismatch");
-      return { ok: false, simulated: false, status: "rejected", reason: "NOT_CONFIRMED", results: failedResults(input, "NOT_CONFIRMED"), commandLogIds: ids };
+      if (!confirmedOk) {
+        const ids = await writeRejected(db, input, "NOT_CONFIRMED", "HITL action not confirmed or owner mismatch");
+        return { ok: false, simulated: false, status: "rejected", reason: "NOT_CONFIRMED", results: failedResults(input, "NOT_CONFIRMED"), commandLogIds: ids };
+      }
+    }
+  } else {
+    // F5b: deterministic interlock rule must be authorized (verifyInterlockAuthorization).
+    const auth = await verifyInterlockAuthorization(db, input, input.triggeredBy);
+    if (!auth.ok) {
+      const ids = await writeRejected(db, input, auth.reason, auth.detail);
+      return { ok: false, simulated: false, status: "rejected", reason: auth.reason, results: failedResults(input, auth.reason), commandLogIds: ids };
     }
   }
 
@@ -193,6 +289,8 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
   }
 
   // ── (5) MODE GATE. F4a default → DRY-RUN: do NOT call driver.writeTags. ───────
+  const who = actors(input);
+  const trig = triggerCols(input);
   if (!isOtControlEnabled()) {
     const commandLogIds: number[] = [];
     const results: DispatchPerWrite[] = [];
@@ -200,22 +298,24 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
       const [row] = await db
         .insert(commandLog)
         .values({
-          actionId: input.actionId ?? null,
+          actionId: who.actionId,
           adapterId: input.adapterId,
           machineId: input.machineId ?? null,
           tagKey: r.write.tagKey,
           address: r.address,
           commandType: input.commandType,
           requestedValue: r.write.value as any,
-          requestedBy: input.requestedBy,
-          confirmedBy: input.confirmedBy,
+          requestedBy: who.requestedBy,
+          confirmedBy: who.confirmedBy,
           status: "simulated",
+          ...trig,
           idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, results.length),
         })
         .returning({ id: commandLog.id });
       commandLogIds.push(row.id);
       results.push({ tagKey: r.write.tagKey, address: r.address, ok: true, status: "simulated" });
     }
+    if (input.triggeredBy.kind === "interlock") await auditInterlockAutoBlock(input, commandLogIds);
     return { ok: true, simulated: true, status: "simulated", results, commandLogIds };
   }
 
@@ -283,16 +383,17 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
     const [row] = await db
       .insert(commandLog)
       .values({
-        actionId: input.actionId ?? null,
+        actionId: who.actionId,
         adapterId: input.adapterId,
         machineId: input.machineId ?? null,
         tagKey: r.write.tagKey,
         address: r.address,
         commandType: input.commandType,
         requestedValue: r.write.value as any,
-        requestedBy: input.requestedBy,
-        confirmedBy: input.confirmedBy,
+        requestedBy: who.requestedBy,
+        confirmedBy: who.confirmedBy,
         status,
+        ...trig,
         errorText,
         idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, i),
         sentAt,
@@ -305,7 +406,101 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
 
   const allOk = results.length > 0 && results.every((x) => x.ok);
   const overall: DispatchStatus = allOk ? "acked" : timedOut ? "timeout" : "failed";
+  if (input.triggeredBy.kind === "interlock") await auditInterlockAutoBlock(input, commandLogIds);
   return { ok: allOk, simulated: false, status: overall, results, commandLogIds };
+}
+
+// ─── F5b — interlock authorization (defense-in-depth, multi-layer) ────────────
+
+/**
+ * Re-verify that an 'interlock'-triggered dispatch is authorized. ALL of the
+ * following must hold (any failure → reject, no write):
+ *   - INTERLOCK_AUTO_BLOCK_ENABLED === "true" (master flag; default off → reject)
+ *   - the rule exists AND enabled=true
+ *   - rule.approvedBy IS NOT NULL AND === triggeredBy.approvedBy (anti-forgery)
+ *   - rule.requiresHumanConfirm === false (this is the AUTO path, not HITL)
+ *   - rule.action ∈ {block_downstream, stop_line, reduce_speed} (allowlist)
+ *   - rule.targetAdapterId === input.adapterId
+ *   - rule.commandTag matches the tag being written
+ *   - the event exists, belongs to the rule, and is in a valid state (fired/auto_blocked)
+ *
+ * This runs IN ADDITION to the shared gates (tag.writable allowlist, adapter/tag
+ * enabled, driver active, OT_CONTROL_ENABLED, idempotency) applied to both paths.
+ */
+async function verifyInterlockAuthorization(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  input: DispatchInput,
+  trig: InterlockTrigger,
+): Promise<{ ok: true } | { ok: false; reason: string; detail: string }> {
+  // Master flag first — when off, the interlock path is fully closed.
+  if (!isInterlockAutoBlockEnabled()) {
+    return { ok: false, reason: "INTERLOCK_AUTO_BLOCK_DISABLED", detail: "INTERLOCK_AUTO_BLOCK_ENABLED is not 'true'" };
+  }
+
+  const [rule] = await db.select().from(interlockRules).where(eq(interlockRules.id, trig.ruleId)).limit(1);
+  if (!rule) {
+    return { ok: false, reason: "INTERLOCK_RULE_NOT_FOUND", detail: `Interlock rule #${trig.ruleId} not found` };
+  }
+  if (rule.enabled !== true) {
+    return { ok: false, reason: "INTERLOCK_RULE_DISABLED", detail: `Interlock rule #${trig.ruleId} is not enabled` };
+  }
+  if (rule.approvedBy == null || rule.approvedBy !== trig.approvedBy) {
+    return { ok: false, reason: "INTERLOCK_NOT_APPROVED", detail: "Rule not approved or approver mismatch" };
+  }
+  if (rule.requiresHumanConfirm !== false) {
+    return { ok: false, reason: "INTERLOCK_REQUIRES_HUMAN_CONFIRM", detail: "Rule requires human confirm — not an auto-block path" };
+  }
+  if (!INTERLOCK_AUTO_ACTIONS.has(rule.action)) {
+    return { ok: false, reason: "INTERLOCK_ACTION_NOT_ALLOWED", detail: `Action "${rule.action}" is not auto-block eligible` };
+  }
+  if (rule.targetAdapterId == null || rule.targetAdapterId !== input.adapterId) {
+    return { ok: false, reason: "INTERLOCK_TARGET_MISMATCH", detail: "Rule targetAdapterId does not match dispatch adapter" };
+  }
+  // commandTag must match the (single) tag being written.
+  const tagKeys = input.writes.map((w) => w.tagKey);
+  if (!rule.commandTag || !tagKeys.includes(rule.commandTag)) {
+    return { ok: false, reason: "INTERLOCK_TAG_MISMATCH", detail: "Rule commandTag does not match the written tag" };
+  }
+
+  // Defense-in-depth: the event must exist, belong to the rule, and be live.
+  const [event] = await db.select().from(interlockEvents).where(eq(interlockEvents.id, trig.eventId)).limit(1);
+  if (!event || event.ruleId !== trig.ruleId) {
+    return { ok: false, reason: "INTERLOCK_EVENT_INVALID", detail: "Interlock event missing or does not belong to the rule" };
+  }
+  if (event.status !== "fired" && event.status !== "auto_blocked") {
+    return { ok: false, reason: "INTERLOCK_EVENT_INVALID", detail: `Interlock event status "${event.status}" is not dispatchable` };
+  }
+
+  return { ok: true };
+}
+
+/** Audit an interlock auto-block dispatch (the deterministic, human-approved path). */
+async function auditInterlockAutoBlock(input: DispatchInput, commandLogIds: number[]): Promise<void> {
+  if (input.triggeredBy.kind !== "interlock") return;
+  const { ruleId, eventId, approvedBy } = input.triggeredBy;
+  await logCrudOperation(
+    createAuditContext({ user: { id: approvedBy, name: "system:interlock" } }),
+    {
+      action: AUDIT_ACTIONS.INTERLOCK_AUTO_BLOCK,
+      entityType: "interlock_rule",
+      entityId: ruleId,
+      entityName: `interlock rule #${ruleId}`,
+      details: {
+        operation: AUDIT_ACTIONS.INTERLOCK_AUTO_BLOCK,
+        metadata: {
+          ruleId,
+          eventId,
+          approvedBy,
+          adapterId: input.adapterId,
+          machineId: input.machineId ?? null,
+          commandType: input.commandType,
+          commandLogIds,
+          note: "auto-triggered by deterministic interlock rule",
+        },
+      },
+      status: "success",
+    },
+  );
 }
 
 // ─── commandLog writers (one row per write so the ledger is complete) ─────────
@@ -340,6 +535,8 @@ async function writeAll(
   address?: string,
 ): Promise<number[]> {
   const ids: number[] = [];
+  const who = actors(input);
+  const trig = triggerCols(input);
   const writes = onlyTagKey ? input.writes.filter((w) => w.tagKey === onlyTagKey) : input.writes;
   const list = writes.length > 0 ? writes : [{ tagKey: null as any, value: null }];
   for (let i = 0; i < list.length; i++) {
@@ -347,16 +544,17 @@ async function writeAll(
     const [row] = await db
       .insert(commandLog)
       .values({
-        actionId: input.actionId ?? null,
+        actionId: who.actionId,
         adapterId: input.adapterId,
         machineId: input.machineId ?? null,
         tagKey: w.tagKey ?? null,
         address: address ?? null,
         commandType: input.commandType,
         requestedValue: w.value as any,
-        requestedBy: input.requestedBy,
-        confirmedBy: input.confirmedBy,
+        requestedBy: who.requestedBy,
+        confirmedBy: who.confirmedBy,
         status,
+        ...trig,
         errorText: `${reason}: ${detail}`,
         idempotencyKey: perWriteKey(input.idempotencyKey, w.tagKey ?? "_", i),
       })

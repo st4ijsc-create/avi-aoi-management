@@ -106,6 +106,11 @@ export const AUDIT_ACTIONS = {
   AI_ACTION_EXECUTED: "ai_action_executed",
   AI_ACTION_DENIED: "ai_action_denied",
   AI_ACTION_CANCELLED: "ai_action_cancelled",
+
+  // Interlock auto-block (GĐ F5b) — a DETERMINISTIC, human-approved interlock
+  // rule auto-fired a block/stop/reduce command down to the machine. NOT an AI
+  // action: the AI has no code path here (it can only propose inert rules).
+  INTERLOCK_AUTO_BLOCK: "interlock_auto_block",
 } as const;
 
 export const ENTITY_TYPES = {

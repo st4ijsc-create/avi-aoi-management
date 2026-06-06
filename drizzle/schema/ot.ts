@@ -6,7 +6,7 @@
 //   - deviceTags:     individual addressable points read from an adapter
 //   - otTelemetry:    time-series samples ingested from tags
 import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, jsonb, index, unique } from "drizzle-orm/pg-core"; // `unique` used by deviceTags composite key
-import { otProtocolEnum, otDataTypeEnum, otAdapterStatusEnum, machineTypeEnum, recipeStatusEnum, deploymentStatusEnum, commandStatusEnum } from "./enums";
+import { otProtocolEnum, otDataTypeEnum, otAdapterStatusEnum, machineTypeEnum, recipeStatusEnum, deploymentStatusEnum, commandStatusEnum, commandTriggerKindEnum } from "./enums";
 
 /**
  * Device Adapters — một kết nối OT đã cấu hình (protocol + endpoint) tới PLC/SCADA/thiết bị.
@@ -165,6 +165,15 @@ export const commandLog = pgTable("command_log", {
   requestedBy: integer("requestedBy").notNull(),
   confirmedBy: integer("confirmedBy").notNull(),
   status: commandStatusEnum("status").default("simulated").notNull(),
+  // ── Sprint F5b (additive, nullable; F4 HITL rows keep default 'hitl') ──────
+  // What triggered this command. 'hitl' = human-confirmed AI write-action (F4);
+  // 'interlock' = deterministic, human-approved interlock rule auto-firing (F5b).
+  triggerKind: commandTriggerKindEnum("triggerKind").default("hitl").notNull(),
+  // For triggerKind='interlock': the rule + event that authorized this command,
+  // and the user who APPROVED that rule (they own responsibility for the auto-block).
+  interlockRuleId: integer("interlockRuleId"),
+  interlockEventId: integer("interlockEventId"),
+  approvedBy: integer("approvedBy"),
   ackValue: jsonb("ackValue"),
   errorText: text("errorText"),
   idempotencyKey: varchar("idempotencyKey", { length: 128 }).unique(),

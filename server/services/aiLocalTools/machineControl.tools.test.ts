@@ -152,9 +152,22 @@ describe("machine_start — HITL flow", () => {
     expect(dispatchSpy).toHaveBeenCalledTimes(1);
     const arg = dispatchSpy.mock.calls[0][0] as any;
     expect(arg.commandType).toBe("start");
-    expect(arg.confirmedBy).toBe(1);
-    expect(arg.actionId).toBe(p.pendingAction!.actionId); // defense-in-depth id passed through
+    // F5b: AI write-tools ALWAYS dispatch via the human-confirmed HITL path; they
+    // NEVER produce triggeredBy.kind='interlock'.
+    expect(arg.triggeredBy.kind).toBe("hitl");
+    expect(arg.triggeredBy.confirmedBy).toBe(1);
+    expect(arg.triggeredBy.requestedBy).toBe(1);
+    expect(arg.triggeredBy.actionId).toBe(p.pendingAction!.actionId); // defense-in-depth id passed through
     expect(arg.writes).toEqual([{ tagKey: "cmd_start", value: true }]);
+  });
+
+  it("AI SAFETY: an AI write-tool dispatch is NEVER triggeredBy.kind='interlock'", async () => {
+    const p = await proposeAction(tool("machine_stop"), { machineId: 5 }, ctx(ADMIN));
+    await confirmAction(p.pendingAction!.actionId, p.pendingAction!.token, ADMIN, "vi");
+    expect(dispatchSpy).toHaveBeenCalledTimes(1);
+    const arg = dispatchSpy.mock.calls[0][0] as any;
+    expect(arg.triggeredBy.kind).toBe("hitl");
+    expect(arg.triggeredBy.kind).not.toBe("interlock");
   });
 
   it("RBAC #2 lost at confirm → denied, dispatch NOT called", async () => {
