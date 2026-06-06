@@ -69,6 +69,7 @@
   ShieldCheck,
   GraduationCap,
   Leaf,
+  Plug,
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -560,6 +561,42 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin',
         requiredPermission: "admin_system",
         permissionCategory: "admin",
+      },
+    ],
+  },
+
+  // 6b. OT / MACHINE CONTROL (Sprint G2.2a — config + audit; no write-to-device path here)
+  {
+    id: "ot-control",
+    label: "nav.otGroup",
+    icon: <Cpu className="h-4 w-4" />,
+    description: "nav.otGroupDesc",
+    defaultOpen: false,
+    permissionCategory: "machine_control",
+    items: [
+      {
+        href: "/andon",
+        label: "nav.andonBoard",
+        icon: <AlertTriangle className="h-4 w-4" />,
+        description: "nav.andonBoardDesc",
+        requiredPermission: "andon",
+        permissionCategory: "andon",
+      },
+      {
+        href: "/device-adapters",
+        label: "nav.deviceAdapters",
+        icon: <Plug className="h-4 w-4" />,
+        description: "nav.deviceAdaptersDesc",
+        requiredPermission: "machine_control",
+        permissionCategory: "machine_control",
+      },
+      {
+        href: "/command-audit",
+        label: "nav.commandAudit",
+        icon: <ScrollText className="h-4 w-4" />,
+        description: "nav.commandAuditDesc",
+        requiredPermission: "machine_control",
+        permissionCategory: "machine_control",
       },
     ],
   },

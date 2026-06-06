@@ -104,6 +104,9 @@ import { aiAnomalyRouter } from "./routers/aiAnomalyRouter"; // B3: unsupervised
 import { aiSegmentationRouter } from "./routers/aiSegmentationRouter"; // B7: segmentation mask + sub-pixel metrology
 import { andonRouter } from "./routers/andonRouter"; // F5a: Andon (ALERT-ONLY)
 import { interlockRouter } from "./routers/interlockRouter"; // F5a: Interlock rules (ALERT-ONLY, no command path)
+import { deviceAdapterRouter } from "./routers/deviceAdapterRouter"; // G2.2a: OT adapter/tag CONFIG + read-only testConnection (no write path)
+import { machineRecipeRouter } from "./routers/machineRecipeRouter"; // G2.2a: recipe versioning + deploy (catalog/ledger only, no device push)
+import { commandLogRouter } from "./routers/commandLogRouter"; // G2.2a: command audit log (READ-ONLY)
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -327,6 +330,11 @@ export const appRouter = router({
   // F5a — Andon + Interlock (ALERT-ONLY; engine has no command path)
   andon: andonRouter,
   interlock: interlockRouter,
+
+  // G2.2a — OT machine-control CONFIG + audit (config/query only; no write-to-device path)
+  deviceAdapter: deviceAdapterRouter,
+  machineRecipe: machineRecipeRouter,
+  commandLog: commandLogRouter,
 
   // Process & SPC
   process: processRouter,

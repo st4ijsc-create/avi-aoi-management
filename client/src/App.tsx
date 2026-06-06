@@ -92,6 +92,8 @@ const AILocalKnowledgeBasePage = React.lazy(() => import("./pages/AILocalKnowled
 import TestAnnotationPage from "./pages/TestAnnotationPage";
 const MaskAnnotationPage = React.lazy(() => import("./pages/MaskAnnotationPage"));
 const AndonBoard = React.lazy(() => import("./pages/AndonBoard")); // F5a: Andon board (ALERT-ONLY)
+const DeviceAdapterManagement = React.lazy(() => import("./pages/DeviceAdapterManagement")); // G2.2a: OT adapter/tag CONFIG
+const CommandAuditLog = React.lazy(() => import("./pages/CommandAuditLog")); // G2.2a: command audit (READ-ONLY)
 import AOIPackages from "./pages/AOIPackages";
 import MqttBulletin from "./pages/MqttBulletin";
 import CorrelationAnalysis from "./pages/CorrelationAnalysis";
@@ -154,6 +156,8 @@ function Router() {
       <Route path="/login" component={Login} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/andon" component={AndonBoard} />
+      <Route path="/device-adapters" component={DeviceAdapterManagement} />
+      <Route path="/command-audit" component={CommandAuditLog} />
       <Route path="/history" component={History} />
       <Route path="/inspection/:id" component={InspectionDetail} />
       <Route path="/layout" component={Layout} />
