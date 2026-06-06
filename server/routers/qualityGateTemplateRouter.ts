@@ -168,8 +168,8 @@ export const qualityGateTemplateRouter = router({
           if (err.code === '42P01') throw new Error('Quality gate templates table not found. Please run migration 0067.');
           throw err;
         }
-        if (!result.rows[0]) throw new Error("Custom template not found");
-        const custom = result.rows[0] as any;
+        if (!((result as any).rows ?? result)[0]) throw new Error("Custom template not found");
+        const custom = ((result as any).rows ?? result)[0] as any;
         templateRules = typeof custom.rules === "string" ? JSON.parse(custom.rules) : custom.rules;
         templateName = custom.name;
         notifyRoles = typeof custom.notifyRoles === "string" ? JSON.parse(custom.notifyRoles) : (custom.notifyRoles || []);
@@ -208,7 +208,7 @@ export const qualityGateTemplateRouter = router({
           )
           RETURNING *
         `);
-        createdGates.push(result.rows[0]);
+        createdGates.push(((result as any).rows ?? result)[0]);
       }
 
       return { gatesCreated: createdGates.length, gates: createdGates };

@@ -2,8 +2,16 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { eq, and } from "drizzle-orm";
-import { getDb } from "../db";
+import { getDb as getDbRaw } from "../db";
 import { permissions, users, userRoles, type Permission, type InsertPermission } from "../../drizzle/schema";
+
+// Non-null DB accessor: throws if the database is not connected so downstream
+// queries can rely on a defined handle (resolves "db is possibly null").
+async function getDb() {
+  const db = await getDbRaw();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not connected" });
+  return db;
+}
 
 // Default role permissions mapping
 const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
@@ -937,14 +945,14 @@ export const permissionsRouter = router({
 
           await db.insert(permissions).values({
             userId: input.userId,
-            moduleName: tmpl.moduleName,
+            moduleName: tmpl.moduleName as any,
             canView: tmpl.canView ?? false,
             canCreate: tmpl.canCreate ?? false,
             canEdit: tmpl.canEdit ?? false,
             canDelete: tmpl.canDelete ?? false,
             canExport: tmpl.canExport ?? false,
             grantedBy: ctx.user.id,
-          });
+          } as any);
           applied++;
         } else {
           // Only insert if no existing permission for this module
@@ -960,14 +968,14 @@ export const permissionsRouter = router({
           if (!existingPerm) {
             await db.insert(permissions).values({
               userId: input.userId,
-              moduleName: tmpl.moduleName,
+              moduleName: tmpl.moduleName as any,
               canView: tmpl.canView ?? false,
               canCreate: tmpl.canCreate ?? false,
               canEdit: tmpl.canEdit ?? false,
               canDelete: tmpl.canDelete ?? false,
               canExport: tmpl.canExport ?? false,
               grantedBy: ctx.user.id,
-            });
+            } as any);
             applied++;
           } else {
             skipped++;
@@ -1025,14 +1033,14 @@ export const permissionsRouter = router({
 
         await db.insert(permissions).values({
           userId: input.userId,
-          moduleName: tmpl.moduleName,
+          moduleName: tmpl.moduleName as any,
           canView: tmpl.canView ?? false,
           canCreate: tmpl.canCreate ?? false,
           canEdit: tmpl.canEdit ?? false,
           canDelete: tmpl.canDelete ?? false,
           canExport: tmpl.canExport ?? false,
           grantedBy: ctx.user.id,
-        });
+        } as any);
         applied++;
       }
 

@@ -379,10 +379,10 @@ export async function* generateNarrativeStream(
           ts: Date.now(),
           capability: "text",
           provider: "gguf",
-          model: c.modelId,
+          model: c.modelId ?? '',
           success: true,
           fallbackUsed: false,
-          totalTimeMs: c.totalTimeMs,
+          totalTimeMs: c.totalTimeMs ?? 0,
           tokensGenerated: c.tokensGenerated,
           tokensPerSecond: c.tokensPerSecond,
         });

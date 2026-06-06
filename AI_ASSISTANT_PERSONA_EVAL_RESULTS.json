@@ -1,0 +1,2492 @@
+{
+  "baseUrl": "http://127.0.0.1:3000",
+  "runAt": "2026-05-12T18:10:03.900Z",
+  "overall": {
+    "passRatePct": 97,
+    "latencyP50Ms": 6348,
+    "latencyP95Ms": 8721,
+    "avgDepth": 0.56,
+    "personasWithDepth075": 0,
+    "personasTotal": 6,
+    "targets": {
+      "passRatePct": 95,
+      "latencyP95Ms": 11000,
+      "depth": 0.75,
+      "depthPersonaCoveragePct": 90
+    }
+  },
+  "byPersona": {
+    "P1_operator_new": {
+      "name": "Công nhân vận hành (mới vào nghề)",
+      "role": "worker",
+      "level": "basic",
+      "count": 5,
+      "sumPct": 435,
+      "sumDepth": 2.86,
+      "depthGteThreshold": 1,
+      "toolUsed": 2,
+      "citationOnly": 3,
+      "empty": 0,
+      "latencies": [
+        6801,
+        6151,
+        8397,
+        2499,
+        8260
+      ]
+    },
+    "P2_operator_exp": {
+      "name": "Công nhân vận hành (kinh nghiệm)",
+      "role": "worker",
+      "level": "basic",
+      "count": 5,
+      "sumPct": 469,
+      "sumDepth": 2.46,
+      "depthGteThreshold": 0,
+      "toolUsed": 5,
+      "citationOnly": 0,
+      "empty": 0,
+      "latencies": [
+        4287,
+        4924,
+        4906,
+        4960,
+        4419
+      ]
+    },
+    "P3_qa_engineer": {
+      "name": "Kỹ sư QA / Quy trình",
+      "role": "engineer",
+      "level": "technical",
+      "count": 8,
+      "sumPct": 735,
+      "sumDepth": 3.6000000000000005,
+      "depthGteThreshold": 0,
+      "toolUsed": 0,
+      "citationOnly": 8,
+      "empty": 0,
+      "latencies": [
+        8721,
+        1511,
+        6348,
+        6680,
+        9355,
+        6416,
+        4212,
+        6371
+      ]
+    },
+    "P4_production_mgr": {
+      "name": "Quản lý sản xuất",
+      "role": "manager",
+      "level": "manager",
+      "count": 5,
+      "sumPct": 467,
+      "sumDepth": 2.76,
+      "depthGteThreshold": 1,
+      "toolUsed": 5,
+      "citationOnly": 0,
+      "empty": 0,
+      "latencies": [
+        4984,
+        4877,
+        4737,
+        2587,
+        5220
+      ]
+    },
+    "P5_ai_engineer": {
+      "name": "Kỹ sư AI / Vision",
+      "role": "engineer",
+      "level": "technical",
+      "count": 5,
+      "sumPct": 466,
+      "sumDepth": 2.84,
+      "depthGteThreshold": 1,
+      "toolUsed": 1,
+      "citationOnly": 4,
+      "empty": 0,
+      "latencies": [
+        8596,
+        6284,
+        6668,
+        8470,
+        5973
+      ]
+    },
+    "P6_it_admin": {
+      "name": "Quản trị hệ thống (IT Admin)",
+      "role": "it_admin",
+      "level": "technical",
+      "count": 5,
+      "sumPct": 449,
+      "sumDepth": 3.5,
+      "depthGteThreshold": 2,
+      "toolUsed": 0,
+      "citationOnly": 5,
+      "empty": 0,
+      "latencies": [
+        8208,
+        6429,
+        8594,
+        7931,
+        7616
+      ]
+    }
+  },
+  "results": [
+    {
+      "persona": "P1_operator_new",
+      "personaName": "Công nhân vận hành (mới vào nghề)",
+      "userRole": "worker",
+      "level": "basic",
+      "question": "Làm sao để vào màn hình kiểm tra sản phẩm?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 6801,
+      "intent": "how_to",
+      "language": "vi",
+      "confidence": 0.938,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.754,
+          "src": "feature/knowledge/features/inspection/history.md",
+          "title": "Lịch sử kiểm tra (History) (part 4)"
+        },
+        {
+          "score": 0.746,
+          "src": "feature/knowledge/features/inspection/history.md",
+          "title": "Lịch sử kiểm tra (History) (part 2)"
+        },
+        {
+          "score": 0.736,
+          "src": "feature/knowledge/features/inspection/inspection-detail.md",
+          "title": "Chi tiết kiểm tra (Inspection Detail) (part 3)"
+        }
+      ],
+      "answerLength": 1061,
+      "answer": "Để vào màn hình kiểm tra sản phẩm, công nhân cần thực hiện các bước sau:\n\n1. Mở menu **Sản xuất › Lịch sử kiểm tra** hoặc truy cập trực tiếp `/history`.\n2. Khi đã ở trong màn hình này, hãy click vào một dòng để mở chi tiết của một lần kiểm tra cụ thể.\n3. Sau khi mở chi tiết, họ sẽ thấy màn hình `/inspection/:id` với đầy đủ thông tin về sản phẩm và kết quả kiểm tra.\n\nLưu ý/lỗi thường gặp:\n- Ảnh không tải hoặc mờ có thể do URL ảnh sai; storage (S3/MinIO) không khả dụng; watermark gây chậm.\n- Toạ độ overlay sai vị trí có thể do `positionX/Y` trong `measurement_point_defs` không khớp với ảnh thực tế; ảnh sản phẩm khác kích thước reference.\n\nLiên quan 2 chủ đề:\n- Quản lý Sản phẩm (Product Models): Để biết thêm thông tin về cách quản lý các mô hình sản phẩm, công nhân có thể tham khảo tài liệu liên quan.\n- Chi tiết kiểm tra (Inspection Detail): Công nhân cũng cần hiểu rõ hơn về cách sử dụng màn hình `/inspection/:id` để xem chi tiết về từng lần kiểm tra.\n\nAPI liên quan: `/api/inspection/:id/images`, `/api/measurement-point/:pointDefId/reference-image`",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 6,
+        "_max": 6,
+        "_pct": 100
+      },
+      "depth": {
+        "procedural": 1,
+        "roleAccuracy": 1,
+        "errorCoverage": 0.4,
+        "apiRefs": 0.7,
+        "examples": 0.4,
+        "total": 0.7,
+        "_signals": {
+          "headerCount": 0,
+          "numberedSteps": 3,
+          "bulletSteps": 4,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": false,
+          "errorCount": 1,
+          "apiHits": 2,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 4
+        }
+      }
+    },
+    {
+      "persona": "P1_operator_new",
+      "personaName": "Công nhân vận hành (mới vào nghề)",
+      "userRole": "worker",
+      "level": "basic",
+      "question": "Tôi thấy máy báo NG, phải làm gì tiếp theo?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 6151,
+      "intent": "general",
+      "language": "vi",
+      "confidence": 0.914,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": "get_machine_status",
+      "toolNote": null,
+      "toolSummary": "Tổng 47 máy: 0 online, 47 offline, 0 lỗi. Offline: AVI-GB300-01, GB300-AVI-01, MCH-FAC-BN-DIP-LA-ST1, MCH-FAC-BN-DIP-LB-ST1, MCH-FAC-BN-DIP-LB-ST2.",
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.745,
+          "src": "domain/knowledge/domain/howto-shift-change.md",
+          "title": "Hướng dẫn đổi ca làm việc (Shift change) (part 1)"
+        },
+        {
+          "score": 0.717,
+          "src": "feature/knowledge/features/monitoring/machine-registration.md",
+          "title": "Đăng ký máy (Machine Registration) (part 2)"
+        },
+        {
+          "score": 0.711,
+          "src": "feature/knowledge/features/production/production-scheduling.md",
+          "title": "Lập lịch sản xuất (Production Scheduling) (part 2)"
+        }
+      ],
+      "answerLength": 807,
+      "answer": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại. Tôi đề xuất bạn cần tìm hiểu thêm về quy trình xử lý báo cáo NG trên hệ thống AVI-AOI của công ty mình. Bạn có thể tham khảo các bước sau:\n\n1. **Kiểm tra trạng thái máy**: Đầu tiên, hãy kiểm tra xem máy đang chạy nào đã báo lỗi (NG). Điều này giúp bạn xác định được cụ thể là máy nào cần xử lý.\n\n2. **Xác minh thông tin báo cáo NG**: Đảm bảo rằng thông tin về lỗi đã được ghi chính xác và đầy đủ trên hệ thống, bao gồm cả thời điểm báo cáo và chi tiết lỗi.\n\n3. **Kiểm tra dữ liệu sản phẩm**: Nếu lỗi liên quan đến sản phẩm, hãy kiểm tra xem liệu có bất kỳ vấn đề nào với sản phẩm đang chạy hay không. Có thể cần phải kiểm tra lại các quy trình sản xuất hoặc chất lượng sản phẩm.\n\n4. **Hỏi trưởng ca hoặc IT admin**: Nếu bạn không chắc",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 0,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 5,
+        "_max": 6,
+        "_pct": 83
+      },
+      "depth": {
+        "procedural": 1,
+        "roleAccuracy": 1,
+        "errorCoverage": 1,
+        "apiRefs": 0,
+        "examples": 0,
+        "total": 0.6,
+        "_signals": {
+          "headerCount": 0,
+          "numberedSteps": 4,
+          "bulletSteps": 0,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": true,
+          "errorCount": 5,
+          "apiHits": 0,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 0
+        }
+      }
+    },
+    {
+      "persona": "P1_operator_new",
+      "personaName": "Công nhân vận hành (mới vào nghề)",
+      "userRole": "worker",
+      "level": "basic",
+      "question": "Cách đổi ca làm việc trong hệ thống?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 8397,
+      "intent": "how_to",
+      "language": "vi",
+      "confidence": 1,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.808,
+          "src": "feature/knowledge/features/settings/shift-config.md",
+          "title": "Cấu hình Ca làm việc (Shift Configuration) (part 1)"
+        },
+        {
+          "score": 0.793,
+          "src": "domain/knowledge/domain/howto-shift-change.md",
+          "title": "Hướng dẫn đổi ca làm việc (Shift change) (part 1)"
+        },
+        {
+          "score": 0.773,
+          "src": "feature/knowledge/features/admin/user-guide.md",
+          "title": "Hướng dẫn Người dùng (User Guide) (part 1)"
+        }
+      ],
+      "answerLength": 1308,
+      "answer": "Để đổi ca làm việc trong hệ thống AVI-AOI, công nhân cần tuân theo các bước sau:\n\n1. **Trưởng ca đến trước giờ giao 10 phút**: Trong menu `Sản xuất › Bàn giao ca`, họ sẽ xem danh sách các lô đang chạy, sản lượng tích lũy, số lỗi (NG), máy offline và alert chưa xử lý.\n\n2. **Điền ghi chú bàn giao**: Trưởng ca cũ cần điền một ghi chú ngắn mô tả tình trạng của máy hoặc lô đang chạy. \n\n3. **Hoàn tất bàn giao**: Bấm nút \"Hoàn tất bàn giao\" để hệ thống chốt ca và tạo bản ghi `ShiftHandover`.\n\n4. **Nhận ca mới**: Trưởng ca mới cần đăng nhập vào hệ thống, bấm nút \"Nhận ca\". Hệ thống sẽ mở ca mới và áp dụng `shiftId` cho mọi quét tiếp theo.\n\n5. **Công nhân tiếp tục vận hành**: Khi công nhân quét sản phẩm, `shiftId` mới đã được gắn tự động.\n\nNếu quên bấm \"Nhận ca\", hệ thống vẫn ghi nhận sản phẩm vào ca theo giờ chấm; nhưng sẽ không có `ShiftHandover` record. Trong trường hợp này, họ có thể sử dụng nút \"Bổ sung bàn giao\" để hoàn thiện quá trình.\n\nLưu ý rằng nếu có lô chưa kết thúc, nó **không bị split** giữa hai ca và sản lượng tích lũy được phân bổ theo `scannedAt`. \n\nHệ thống\n\nAPI liên quan: `/api/ai/local-kb/reload`, `/api/userguide/topics`, `/api/userguide/topic/:slug`, `/api/userguide/search`\nMàn hình liên quan: `/settings/shifts`, `/admin/user-guide`\nBiến cấu hình: `SYSTEM_TZ=Asia/Ho_Chi_Minh`",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 0,
+        "_total": 5,
+        "_max": 6,
+        "_pct": 83
+      },
+      "depth": {
+        "procedural": 1,
+        "roleAccuracy": 1,
+        "errorCoverage": 1,
+        "apiRefs": 1,
+        "examples": 0.4,
+        "total": 0.88,
+        "_signals": {
+          "headerCount": 0,
+          "numberedSteps": 5,
+          "bulletSteps": 0,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": true,
+          "errorCount": 4,
+          "apiHits": 5,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 6
+        }
+      }
+    },
+    {
+      "persona": "P1_operator_new",
+      "personaName": "Công nhân vận hành (mới vào nghề)",
+      "userRole": "worker",
+      "level": "basic",
+      "question": "Hôm nay máy của tôi đã kiểm tra được bao nhiêu sản phẩm?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 2499,
+      "intent": "list",
+      "language": "vi",
+      "confidence": 0.993,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": "get_today_stats",
+      "toolNote": null,
+      "toolSummary": "Hôm nay đã kiểm tra 0 sản phẩm: OK=0, NG=0, NTF=0. Tỉ lệ NG = 0%.",
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.814,
+          "src": "feature/knowledge/features/inspection/history.md",
+          "title": "Lịch sử kiểm tra (History) (part 4)"
+        },
+        {
+          "score": 0.775,
+          "src": "feature/knowledge/features/inspection/history.md",
+          "title": "Lịch sử kiểm tra (History) (part 2)"
+        },
+        {
+          "score": 0.752,
+          "src": "feature/knowledge/features/monitoring/machine-registration.md",
+          "title": "Đăng ký máy (Machine Registration) (part 2)"
+        }
+      ],
+      "answerLength": 202,
+      "answer": "Hôm nay máy của bạn đã kiểm tra được 0 sản phẩm. Kết quả kiểm tra hôm nay là OK=0, NG=0, NTF=0. Tỷ lệ lỗi (NG) là 0%. \n\n[1] Lịch sử kiểm tra (History) (part 4) | knowledge/features/inspection/history.md",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "toolWhenLive": 1,
+        "hasSteps": 0,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 6,
+        "_max": 7,
+        "_pct": 86
+      },
+      "depth": {
+        "procedural": 0.2,
+        "roleAccuracy": 0.6,
+        "errorCoverage": 0.4,
+        "apiRefs": 0,
+        "examples": 0.2,
+        "total": 0.28,
+        "_signals": {
+          "headerCount": 0,
+          "numberedSteps": 0,
+          "bulletSteps": 0,
+          "roleVocabHits": 0,
+          "featureCite": true,
+          "domainCite": false,
+          "errorCount": 1,
+          "apiHits": 0,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 1
+        }
+      }
+    },
+    {
+      "persona": "P1_operator_new",
+      "personaName": "Công nhân vận hành (mới vào nghề)",
+      "userRole": "worker",
+      "level": "basic",
+      "question": "Tôi quên mật khẩu, làm sao đăng nhập lại?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 8260,
+      "intent": "how_to",
+      "language": "vi",
+      "confidence": 0.85,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.69,
+          "src": "domain/knowledge/domain/howto-change-password.md",
+          "title": "Hướng dẫn đổi mật khẩu (part 1)"
+        },
+        {
+          "score": 0.67,
+          "src": "domain/knowledge/domain/howto-shift-change.md",
+          "title": "Hướng dẫn đổi ca làm việc (Shift change) (part 1)"
+        },
+        {
+          "score": 0.654,
+          "src": "domain/knowledge/domain/howto-shift-change.md",
+          "title": "Hướng dẫn đổi ca làm việc (Shift change) (part 2)"
+        }
+      ],
+      "answerLength": 1201,
+      "answer": "Để lấy lại mật khẩu trong hệ thống AVI/AOI, bạn có thể theo các bước sau:\n\n1. Trong giao diện người dùng (UI), tìm đến **\"Trang đăng nhập\"**.\n2. Bạn sẽ thấy một ô để nhập email hoặc username của mình. Nhập vào và bấm **\"Quên mật khẩu?\"**.\n3. Hệ thống sẽ gửi cho bạn một liên kết reset mật khẩu qua email. Nếu SMTP chưa được cấu hình, hãy liên hệ với quản trị viên để thực hiện việc reset thủ công tại `Menu › Quản trị › Người dùng › chọn user › Reset password`.\n4. Sau khi nhận được liên kết reset từ hệ thống, hãy mở link đó và điền lại thông tin cần thiết như mật khẩu mới (yêu cầu ≥ 8 ký tự, có chữ hoa, chữ thường, số) để cập nhật mật khẩu của bạn.\n\nNếu quên mật khẩu, bạn cũng có thể sử dụng các bước trong phần hướng dẫn đổi mật khẩu tại [1]. \n\nLưu ý: \n- Không nên dùng lại mật khẩu cũ trong 5 lần gần nhất.\n- Bật xác thực hai yếu tố (2FA) để tăng cường bảo mật. Bạn có thể bật xác thực này ở tab \"Bảo mật\" bằng cách quét QR code từ ứng dụng Authenticator như Google Authenticator hoặc Microsoft Authenticator.\n\nTrong quá trình sử dụng, nếu gặp lỗi liên quan đến thời gian địa lý, hãy kiểm tra và điều chỉnh `TZ` trên server (mặc định là `Asia/Ho_Chi_Minh`). Nếu sai, mọi cột giờ đều sẽ lệch 7h.",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 0,
+        "_total": 5,
+        "_max": 6,
+        "_pct": 83
+      },
+      "depth": {
+        "procedural": 1,
+        "roleAccuracy": 0.6,
+        "errorCoverage": 0.4,
+        "apiRefs": 0,
+        "examples": 0,
+        "total": 0.4,
+        "_signals": {
+          "headerCount": 0,
+          "numberedSteps": 4,
+          "bulletSteps": 2,
+          "roleVocabHits": 0,
+          "featureCite": false,
+          "domainCite": true,
+          "errorCount": 1,
+          "apiHits": 0,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 0
+        }
+      }
+    },
+    {
+      "persona": "P2_operator_exp",
+      "personaName": "Công nhân vận hành (kinh nghiệm)",
+      "userRole": "worker",
+      "level": "basic",
+      "question": "Trạng thái lô L20260505-001 thế nào?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 4287,
+      "intent": "general",
+      "language": "vi",
+      "confidence": 0.854,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": "get_lot_status",
+      "toolNote": "NOT_FOUND",
+      "toolSummary": "Không tìm thấy lệnh sản xuất \"L20260505-001\".",
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.698,
+          "src": "domain/knowledge/domain/howto-lot-management.md",
+          "title": "Quản lý lô sản xuất (Production Lot) (part 1)"
+        },
+        {
+          "score": 0.669,
+          "src": "feature/knowledge/features/production/production-orders.md",
+          "title": "Đơn hàng sản xuất (Production Orders) (part 2)"
+        },
+        {
+          "score": 0.666,
+          "src": "feature/knowledge/features/monitoring/machine-registration.md",
+          "title": "Đăng ký máy (Machine Registration) (part 2)"
+        }
+      ],
+      "answerLength": 547,
+      "answer": "Tình trạng của lô sản xuất L20260505-001 hiện tại chưa được tìm thấy trong dữ liệu thời gian thực. Để biết chính xác trạng thái của lô này, bạn có thể thử tra cứu thông qua API `/api/lots/:orderCode` với `orderCode` là `L20260505-001`. \n\nNếu bạn đã sử dụng API này nhưng vẫn không tìm thấy thông tin về lô L20260505-001, có thể đó là do lô này chưa được tạo hoặc trạng thái của nó đang ở một trạng thái khác ngoài `planned`, `running`, `completed`, `cancelled`. \n\nNếu bạn cần thêm hướng dẫn về cách sử dụng API, tôi có thể cung cấp thêm thông tin.",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "toolWhenLive": 1,
+        "hasSteps": 0,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 6,
+        "_max": 7,
+        "_pct": 86
+      },
+      "depth": {
+        "procedural": 0.2,
+        "roleAccuracy": 0.6,
+        "errorCoverage": 0.4,
+        "apiRefs": 0.4,
+        "examples": 0.2,
+        "total": 0.36,
+        "_signals": {
+          "headerCount": 0,
+          "numberedSteps": 0,
+          "bulletSteps": 0,
+          "roleVocabHits": 0,
+          "featureCite": true,
+          "domainCite": true,
+          "errorCount": 1,
+          "apiHits": 1,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 1
+        }
+      }
+    },
+    {
+      "persona": "P2_operator_exp",
+      "personaName": "Công nhân vận hành (kinh nghiệm)",
+      "userRole": "worker",
+      "level": "basic",
+      "question": "Máy nào đang offline?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 4924,
+      "intent": "general",
+      "language": "vi",
+      "confidence": 0.851,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": "get_machine_status",
+      "toolNote": null,
+      "toolSummary": "Tổng 47 máy: 0 online, 47 offline, 0 lỗi. Offline: AVI-GB300-01, GB300-AVI-01, MCH-FAC-BN-DIP-LA-ST1, MCH-FAC-BN-DIP-LB-ST1, MCH-FAC-BN-DIP-LB-ST2.",
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.688,
+          "src": "feature/knowledge/features/monitoring/machine-registration.md",
+          "title": "Đăng ký máy (Machine Registration) (part 2)"
+        },
+        {
+          "score": 0.674,
+          "src": "feature/knowledge/features/monitoring/machine-registration.md",
+          "title": "Đăng ký máy (Machine Registration) (part 4)"
+        },
+        {
+          "score": 0.66,
+          "src": "feature/knowledge/features/alerts/alerts-list.md",
+          "title": "Danh sách Cảnh báo (Alerts List) (part 1)"
+        }
+      ],
+      "answerLength": 787,
+      "answer": "### Tóm tắt\nCông nhân muốn biết danh sách các máy đangoffline.\n\n### Các bước làm\n\n1. **Xem Machine Status Monitor**:\n   - Mở URL `/machine-status` hoặc truy cập vào menu `Monitoring › Machine Status`.\n   - Trong giao diện, bạn sẽ thấy một grid card hiển thị trạng thái của tất cả các máy.\n   - Chọn tab \"Status History\" để xem lịch sử thay đổi trạng thái của từng máy.\n   - Máy đang offline sẽ có màu sắc và biểu tượng Wi-Fi bị tắt (icon Wifi/WifiOff).\n   - Kết quả: Bạn sẽ thấy danh sách các máy đangoffline.\n\n2. **Xem Danh sách Cảnh báo**:\n   - Truy cập URL `/alerts` hoặc vào menu `Cảnh báo › Danh sách cảnh báo`.\n   - Lọc theo trạng thái của máy, bạn sẽ tìm thấy các máy đã bị offline.\n   - Kết quả: Bạn sẽ thấy danh sách các máy đangoffline với thông tin về lý do và thời gian.\n\n###",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "toolWhenLive": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 7,
+        "_max": 7,
+        "_pct": 100
+      },
+      "depth": {
+        "procedural": 0.7,
+        "roleAccuracy": 1,
+        "errorCoverage": 1,
+        "apiRefs": 0,
+        "examples": 0,
+        "total": 0.54,
+        "_signals": {
+          "headerCount": 2,
+          "numberedSteps": 2,
+          "bulletSteps": 8,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": false,
+          "errorCount": 4,
+          "apiHits": 0,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 0
+        }
+      }
+    },
+    {
+      "persona": "P2_operator_exp",
+      "personaName": "Công nhân vận hành (kinh nghiệm)",
+      "userRole": "worker",
+      "level": "basic",
+      "question": "Top 5 lỗi nhiều nhất tuần này",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 4906,
+      "intent": "troubleshoot",
+      "language": "vi",
+      "confidence": 0.733,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": "get_ng_compare",
+      "toolNote": null,
+      "toolSummary": "tuần này: NG 0/0 (0%). tuần trước: NG 0/0 (0%). Tỉ lệ NG không đổi 0 điểm % (+0% tương đối).",
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.587,
+          "src": "feature/knowledge/features/inspection/history.md",
+          "title": "Lịch sử kiểm tra (History) (part 4)"
+        },
+        {
+          "score": 0.586,
+          "src": "feature/knowledge/features/production/production-dashboard.md",
+          "title": "Bảng điều khiển sản xuất (Production Dashboard) (part 2)"
+        },
+        {
+          "score": 0.56,
+          "src": "feature/knowledge/features/inspection/history.md",
+          "title": "Lịch sử kiểm tra (History) (part 2)"
+        }
+      ],
+      "answerLength": 669,
+      "answer": "### Tóm tắt\n\nĐể tìm top 5 lỗi nhiều nhất trong tuần này, bạn cần thực hiện các bước sau:\n\n1. Mở trang **Sản xuất › Lịch sử kiểm tra**.\n2. Lọc dữ liệu theo `dateFrom` và `dateTo` để chỉ xem sản phẩm từ đầu tuần đến nay.\n3. Chọn kết quả là `NG`.\n4. Bấm **Search** để hiển thị danh sách các lỗi.\n\n### Các bước\n\n1. **Mở trang**: Vào **Sản xuất › Lịch sử kiểm tra** trong UI.\n   - *Làm gì*: Mở trang lịch sử kiểm tra.\n   - *Ở đâu*: Trong menu Sản xuất, chọn Lịch sử kiểm tra.\n   - *Kết quả*: Hiển thị danh sách các lỗi từ đầu tuần đến nay.\n\n2. **Lọc dữ liệu**: Chọn khoảng ngày là `Hôm nay` và `Tuần`.\n   - *Làm gì*: Nhập `dateFrom` và\n\nMàn hình liên quan: `/inspection/:id`",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "toolWhenLive": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 7,
+        "_max": 7,
+        "_pct": 100
+      },
+      "depth": {
+        "procedural": 1,
+        "roleAccuracy": 0.6,
+        "errorCoverage": 1,
+        "apiRefs": 0,
+        "examples": 0.2,
+        "total": 0.56,
+        "_signals": {
+          "headerCount": 2,
+          "numberedSteps": 6,
+          "bulletSteps": 4,
+          "roleVocabHits": 0,
+          "featureCite": true,
+          "domainCite": false,
+          "errorCount": 3,
+          "apiHits": 0,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 1
+        }
+      }
+    },
+    {
+      "persona": "P2_operator_exp",
+      "personaName": "Công nhân vận hành (kinh nghiệm)",
+      "userRole": "worker",
+      "level": "basic",
+      "question": "Xu hướng lỗi 7 ngày qua",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 4960,
+      "intent": "troubleshoot",
+      "language": "vi",
+      "confidence": 0.859,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": "get_defect_trend",
+      "toolNote": null,
+      "toolSummary": "Xu hướng 7 ngày: tỉ lệ NG TB = 0%. Cao nhất ngày 2026-05-07 (0%).",
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.696,
+          "src": "feature/knowledge/features/production/production-dashboard.md",
+          "title": "Bảng điều khiển sản xuất (Production Dashboard) (part 2)"
+        },
+        {
+          "score": 0.679,
+          "src": "feature/knowledge/features/production/production-orders.md",
+          "title": "Đơn hàng sản xuất (Production Orders) (part 3)"
+        },
+        {
+          "score": 0.671,
+          "src": "feature/knowledge/features/products/product-management.md",
+          "title": "Quản lý Sản phẩm (Product Models) (part 2)"
+        }
+      ],
+      "answerLength": 798,
+      "answer": "### Tóm tắt\n\nTrợ lý hệ thống AVI/AOI on-prem cho công nhân được thiết kế để giúp họ quản lý và theo dõi quá trình sản xuất một cách hiệu quả. Các bước thao tác bao gồm mở trang từ menu *Sản xuất → Bảng điều khiển sản xuất*, chọn khoảng ngày, lọc theo nhà máy và dây chuyền, tìm kiếm trạm cụ thể, bật bộ lọc Low Yield, tự động làm mới dữ liệu, so sánh nhiều nhà máy, sao chép link với filter, chuyển tab phân tích, và xuất báo cáo.\n\n### Các bước\n\n1. **Mở trang**: Từ menu *Sản xuất → Bảng điều khiển sản xuất*. Mặc định hiển thị tab **Station View** với dữ liệu hôm nay.\n2. **Chọn khoảng ngày**: Bấm một trong các nút preset (Hôm nay / Hôm qua / 1 Tuần / 1 Tháng / 1 Năm) hoặc bấm **Custom** để mở lịch và chọn ngày bắt đầu\n\nAPI liên quan: `/api/public/products/by-code/:code`, `/api/reports/export`",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "toolWhenLive": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 7,
+        "_max": 7,
+        "_pct": 100
+      },
+      "depth": {
+        "procedural": 0.7,
+        "roleAccuracy": 1,
+        "errorCoverage": 0,
+        "apiRefs": 0.7,
+        "examples": 0.4,
+        "total": 0.56,
+        "_signals": {
+          "headerCount": 2,
+          "numberedSteps": 2,
+          "bulletSteps": 0,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": false,
+          "errorCount": 0,
+          "apiHits": 2,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 2
+        }
+      }
+    },
+    {
+      "persona": "P2_operator_exp",
+      "personaName": "Công nhân vận hành (kinh nghiệm)",
+      "userRole": "worker",
+      "level": "basic",
+      "question": "Lô của tôi sắp xong chưa?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 4419,
+      "intent": "general",
+      "language": "vi",
+      "confidence": 0.781,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": "get_lot_status",
+      "toolNote": "NOT_FOUND",
+      "toolSummary": "Không tìm thấy lệnh sản xuất \"<mã lệnh>\".",
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.64,
+          "src": "feature/knowledge/features/ai/ai-local-knowledge-base.md",
+          "title": "Cơ sở tri thức AI Local (AI Local Knowledge Base) (part 2)"
+        },
+        {
+          "score": 0.61,
+          "src": "domain/knowledge/domain/aoi-workflow.md",
+          "title": "AOI Workflow & SOP (Quy Trình Vận Hành Chuẩn) (part 3)"
+        },
+        {
+          "score": 0.606,
+          "src": "feature/knowledge/features/admin/audit-logs.md",
+          "title": "Audit Logs (part 1)"
+        }
+      ],
+      "answerLength": 554,
+      "answer": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại. Bạn có thể hỏi thêm về việc tạo AOI Package mới hoặc liên quan đến hệ thống audit logs. Để biết thêm thông tin, bạn có thể tham khảo các mục liên quan như cách tạo AOI Package và cách sử dụng Audit Logs.\n\nAPI liên quan: `/api/ai/local-kb/reload`, `/api/userguide/topics`, `/api/userguide/topic/:slug`, `/api/userguide/search`\nMàn hình liên quan: `/admin/audit-logs`, `/admin/enhanced-audit-logs`, `/admin/user-guide`\nBiến cấu hình: `USE_LEGACY_OLLAMA=true`, `KB_QA_NUM_PREDICT=384`",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 0,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 5,
+        "_max": 6,
+        "_pct": 83
+      },
+      "depth": {
+        "procedural": 0.2,
+        "roleAccuracy": 0.6,
+        "errorCoverage": 0,
+        "apiRefs": 1,
+        "examples": 0.4,
+        "total": 0.44,
+        "_signals": {
+          "headerCount": 0,
+          "numberedSteps": 0,
+          "bulletSteps": 0,
+          "roleVocabHits": 0,
+          "featureCite": true,
+          "domainCite": true,
+          "errorCount": 0,
+          "apiHits": 6,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 7
+        }
+      }
+    },
+    {
+      "persona": "P3_qa_engineer",
+      "personaName": "Kỹ sư QA / Quy trình",
+      "userRole": "engineer",
+      "level": "technical",
+      "question": "Hướng dẫn cài điểm đo cho sản phẩm",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 8721,
+      "intent": "how_to",
+      "language": "vi",
+      "confidence": 0.875,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.704,
+          "src": "feature/knowledge/features/admin/user-guide.md",
+          "title": "Hướng dẫn Người dùng (User Guide) (part 1)"
+        },
+        {
+          "score": 0.696,
+          "src": "feature/knowledge/features/products/product-management.md",
+          "title": "Quản lý Sản phẩm (Product Models) (part 2)"
+        },
+        {
+          "score": 0.679,
+          "src": "domain/knowledge/domain/howto-shift-change.md",
+          "title": "Hướng dẫn đổi ca làm việc (Shift change) (part 1)"
+        }
+      ],
+      "answerLength": 1281,
+      "answer": "### Tóm tắt\n\nĐây là hướng dẫn cài đặt và cấu hình các điểm đo cho sản phẩm trong hệ thống AVI-AOI. Các bước này bao gồm việc tạo mô hình sản phẩm, cấu hình điểm đo (measurement point shapes), và thêm điểm đo vào các mô hình sản phẩm cụ thể.\n\n### Các bước đánh số nêu\n\n1. **Mở trang quản lý sản phẩm** — Mở `/admin/user-guide` hoặc truy cập trực tiếp `/products`. Bảng hiển thị các cột: `Code`, `Name`, `Category`, `Số MP`, `Số máy gán`, `Updated at`.\n2. **Tạo mô hình mới** — Nhấn `+ New Product Model`. Dialog mở với các trường cần nhập:\n   - Trường nhập: `code` (bắt buộc, unique), `name` (bắt buộc), `category` (chọn từ dropdown), `description` (tuỳ chọn), `goldenImage` (upload — file PNG/JPG, khuyến nghị ≤ 5 MB).\n   - Tab `Fiducial Marks`: thêm các điểm fiducial (toạ độ X, Y, kiểu). Lưu ý: Hình dạng của điểm đo được xác định bởi `shape`, `coordinates`, và `pointType`.\n3. **Cấu hình điểm đo** — Nhấn vào tên mô hình → mở trang chi tiết, có các tab như `Overview`, `Measurement Points`, `Fiducial Marks`, `Versions`. Tại đây, kỹ sư sẽ cấu hình các hình dạng điểm đo cho từng mô hình sản phẩm.\n4. **Thêm điểm đo** — Chọn hình dạng cần thiết từ danh sách\n\nAPI liên quan: `/api/ai/local-kb/reload`, `/api/userguide/topics`, `/api/userguide/topic/:slug`, `/api/userguide/search`",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 0,
+        "_total": 5,
+        "_max": 6,
+        "_pct": 83
+      },
+      "depth": {
+        "procedural": 1,
+        "roleAccuracy": 1,
+        "errorCoverage": 0,
+        "apiRefs": 1,
+        "examples": 0.4,
+        "total": 0.68,
+        "_signals": {
+          "headerCount": 2,
+          "numberedSteps": 4,
+          "bulletSteps": 2,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": true,
+          "errorCount": 0,
+          "apiHits": 4,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 5
+        }
+      }
+    },
+    {
+      "persona": "P3_qa_engineer",
+      "personaName": "Kỹ sư QA / Quy trình",
+      "userRole": "engineer",
+      "level": "technical",
+      "question": "Cách tạo sản phẩm mới và liên kết với lệnh sản xuất?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 1511,
+      "intent": "how_to",
+      "language": "vi",
+      "confidence": 0.908,
+      "provider": "extractive",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.73,
+          "src": "feature/knowledge/features/production/production-orders.md",
+          "title": "Đơn hàng sản xuất (Production Orders) (part 5)"
+        },
+        {
+          "score": 0.723,
+          "src": "feature/knowledge/features/products/product-management.md",
+          "title": "Quản lý Sản phẩm (Product Models) (part 2)"
+        },
+        {
+          "score": 0.717,
+          "src": "feature/knowledge/features/production/production-orders.md",
+          "title": "Đơn hàng sản xuất (Production Orders) (part 3)"
+        }
+      ],
+      "answerLength": 198,
+      "answer": "Bạn muốn tra cứu lô sản xuất nào? Vui lòng cung cấp **mã lệnh sản xuất** (ví dụ `L20260505-001` hoặc `PO12345`).\nBạn cũng có thể vào *Menu › Sản xuất › Lệnh sản xuất* để chọn trực tiếp từ danh sách.",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 0,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 5,
+        "_max": 6,
+        "_pct": 83
+      },
+      "depth": {
+        "procedural": 0,
+        "roleAccuracy": 0.6,
+        "errorCoverage": 0,
+        "apiRefs": 0,
+        "examples": 0.4,
+        "total": 0.2,
+        "_signals": {
+          "headerCount": 0,
+          "numberedSteps": 0,
+          "bulletSteps": 0,
+          "roleVocabHits": 0,
+          "featureCite": true,
+          "domainCite": false,
+          "errorCount": 0,
+          "apiHits": 0,
+          "codeFences": 0,
+          "exampleMentions": 1,
+          "screenPath": 0
+        }
+      }
+    },
+    {
+      "persona": "P3_qa_engineer",
+      "personaName": "Kỹ sư QA / Quy trình",
+      "userRole": "engineer",
+      "level": "technical",
+      "question": "Các tham số cấu hình của một measurement point gồm những gì?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 6348,
+      "intent": "general",
+      "language": "vi",
+      "confidence": 1,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.942,
+          "src": "feature/knowledge/features/products/measurement-point-setup.md",
+          "title": "Cấu hình Điểm đo (Measurement Points) (part 2)"
+        },
+        {
+          "score": 0.926,
+          "src": "feature/knowledge/features/products/measurement-point-setup.md",
+          "title": "Cấu hình Điểm đo (Measurement Points) (part 1)"
+        },
+        {
+          "score": 0.867,
+          "src": "domain/knowledge/domain/howto-measurement-point-shapes.md",
+          "title": "Hướng dẫn — Cấu hình hình dạng điểm đo (measurement point shapes) (part 1)"
+        }
+      ],
+      "answerLength": 712,
+      "answer": "### Tóm tắt\n\nCấu hình điểm đo (Measurement Points) bao gồm các tham số như `pointCode`, `type`, `coordinates`, `nominal`, `USL`, `LSL`, `unit`, `algorithm`, và `aiModelId`. Các tham số này được cấu hình trên tab Measurement Points trong sản phẩm cụ thể.\n\n### Các bước\n\n1. **Mở tab Measurement Points**:\n   - *Đi làm gì*: Mở tab Measurement Points của một sản phẩm cụ thể.\n   - *Ở đâu*: Trong `/products/:productModelId` hoặc `/products/:id/points`.\n   - *Kết quả*: Bảng hiển thị các điểm đo với thông tin `pointCode`, `type`, `coordinates`, `nominal`, `USL`, `LSL`, `unit`, `algorithm`, và `aiModelId`.\n\n2. **Thêm điểm đo**:\n   - *Đi làm gì*: Thêm một điểm đo mới.\n   - *Ở đâu*: Trong `/products/:productModelId`",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 6,
+        "_max": 6,
+        "_pct": 100
+      },
+      "depth": {
+        "procedural": 0.7,
+        "roleAccuracy": 1,
+        "errorCoverage": 0,
+        "apiRefs": 0,
+        "examples": 0.4,
+        "total": 0.42,
+        "_signals": {
+          "headerCount": 2,
+          "numberedSteps": 2,
+          "bulletSteps": 5,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": true,
+          "errorCount": 0,
+          "apiHits": 0,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 3
+        }
+      }
+    },
+    {
+      "persona": "P3_qa_engineer",
+      "personaName": "Kỹ sư QA / Quy trình",
+      "userRole": "engineer",
+      "level": "technical",
+      "question": "Cho ví dụ cấu hình một điểm đo dạng vòng tròn (ring) với fiducial",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 6680,
+      "intent": "general",
+      "language": "vi",
+      "confidence": 1,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.81,
+          "src": "domain/knowledge/domain/howto-measurement-point-shapes.md",
+          "title": "Hướng dẫn — Cấu hình hình dạng điểm đo (measurement point shapes) (part 2)"
+        },
+        {
+          "score": 0.79,
+          "src": "feature/knowledge/features/products/measurement-point-setup.md",
+          "title": "Cấu hình Điểm đo (Measurement Points) (part 1)"
+        },
+        {
+          "score": 0.783,
+          "src": "feature/knowledge/features/products/measurement-point-setup.md",
+          "title": "Cấu hình Điểm đo (Measurement Points) (part 3)"
+        }
+      ],
+      "answerLength": 901,
+      "answer": "### Tóm tắt\n\nĐây là cách cấu hình một điểm đo dạng vòng tròn (ring) cùng với fiducial trên trợ lý kỹ thuật AVI/AOI on-prem. Điểm đo này sẽ được thêm vào mô hình sản phẩm `PCB-A7-V2` và sau đó được áp dụng cho các máy AOI.\n\n### Các bước\n\n1. **Mở danh sách Product Models**:\n   - Truy cập URL: `/products`.\n   - Mở tab `Measurement Points` của `PCB-A7-V2`.\n\n2. **Thêm điểm đo dạng vòng tròn (ring)**:\n   - Bấm vào `+ Thêm điểm`, chọn loại shape là `ring`.\n   - Vẽ vòng tròn ngoài và vòng tròn trong trên ảnh mẫu.\n   - Điền thông tin cho điểm đo:\n     - Mã điểm: `P-PCB-A7-V2-FID1` (ví dụ).\n     - Loại đo: `presence` (hoặc loại khác tùy thuộc yêu cầu).\n     - Tolerance: 5\n\nAPI liên quan: `/api/machines/:id/refresh-config`, `/api/public/products/:productCode/measurement-points`, `/api/public/products/by-code/:code`\nMàn hình liên quan: `/products/:productModelId`, `/products/PCB-A7-V2`, `/machines/5`",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 6,
+        "_max": 6,
+        "_pct": 100
+      },
+      "depth": {
+        "procedural": 0.7,
+        "roleAccuracy": 1,
+        "errorCoverage": 0,
+        "apiRefs": 1,
+        "examples": 0.4,
+        "total": 0.62,
+        "_signals": {
+          "headerCount": 2,
+          "numberedSteps": 2,
+          "bulletSteps": 8,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": true,
+          "errorCount": 0,
+          "apiHits": 3,
+          "codeFences": 0,
+          "exampleMentions": 1,
+          "screenPath": 6
+        }
+      }
+    },
+    {
+      "persona": "P3_qa_engineer",
+      "personaName": "Kỹ sư QA / Quy trình",
+      "userRole": "engineer",
+      "level": "technical",
+      "question": "Cách phân tích Pareto cho NG theo điểm đo trong tháng?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 9355,
+      "intent": "how_to",
+      "language": "vi",
+      "confidence": 1,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.922,
+          "src": "feature/knowledge/features/analytics/pareto-analysis.md",
+          "title": "Phân tích Pareto (Pareto Analysis) (part 1)"
+        },
+        {
+          "score": 0.902,
+          "src": "feature/knowledge/features/analytics/category-analytics.md",
+          "title": "Phân tích theo nhóm sản phẩm (Category Analytics) (part 2)"
+        },
+        {
+          "score": 0.837,
+          "src": "domain/knowledge/domain/howto-pareto-defects.md",
+          "title": "Phân tích Pareto NG — Hướng dẫn (part 1)"
+        }
+      ],
+      "answerLength": 1101,
+      "answer": "### Cách phân tích Pareto cho lỗi NG theo điểm đo trong tháng?\n\nĐể thực hiện phân tích Pareto cho lỗi NG theo điểm đo trong một tháng, bạn có thể sử dụng các API và bước sau đây:\n\n1. **Tạo bộ lọc:**\n   - Chọn khoảng thời gian là 30 ngày (tháng).\n   - Bộ lọc theo tất cả line/machine/factory.\n   \n2. **Xem biểu đồ Pareto:**\n   - Chọn tab `By Type` để xem lỗi theo loại.\n   - Áp dụng bộ lọc Factory / Line / Machine nếu cần.\n   - Với tab `By Time Period`, chọn `groupBy`: day hoặc week.\n   - Xem bar chart và đường tích lũy %, top-N có thể giới hạn (vd top 15).\n   \n3. **Xuất dữ liệu:**\n   - Nhấn \"Export CSV\" để tải xuống kết quả.\n\n### Các bước cụ thể:\n\n**Bước 1:** \n- Truy cập URL `/pareto-analysis` trong menu `Analytics → Pareto Analysis`.\n- Chọn khoảng thời gian là 30 ngày.\n- Áp dụng bộ lọc Factory / Line / Machine nếu cần.\n- Chọn tab `By Type`.\n\n**Bước 2:**\n- Xem biểu đồ Pareto với bar chart và đường tích lũy %.\n- Giới hạn top-N lỗi (vd top 15).\n- Xuất dữ liệu sang CSV.\n\n### Lưu ý/Lỗi thường gặp:\n\n- **Quá nhiều lỗi:** Áp dụng filter top-N để giảm độ phức tạp của biểu đồ.\n- **Dataset rỗng:**",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 0,
+        "_total": 5,
+        "_max": 6,
+        "_pct": 83
+      },
+      "depth": {
+        "procedural": 1,
+        "roleAccuracy": 0.6,
+        "errorCoverage": 1,
+        "apiRefs": 0,
+        "examples": 0.2,
+        "total": 0.56,
+        "_signals": {
+          "headerCount": 3,
+          "numberedSteps": 3,
+          "bulletSteps": 16,
+          "roleVocabHits": 0,
+          "featureCite": true,
+          "domainCite": true,
+          "errorCount": 6,
+          "apiHits": 0,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 1
+        }
+      }
+    },
+    {
+      "persona": "P3_qa_engineer",
+      "personaName": "Kỹ sư QA / Quy trình",
+      "userRole": "engineer",
+      "level": "technical",
+      "question": "SPC trong hệ thống dùng công thức nào để tính UCL/LCL?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 6416,
+      "intent": "general",
+      "language": "vi",
+      "confidence": 0.94,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.778,
+          "src": "domain/knowledge/domain/howto-spc-control.md",
+          "title": "SPC — Đường UCL / LCL / Cpk (part 1)"
+        },
+        {
+          "score": 0.726,
+          "src": "feature/knowledge/features/analytics/spc-rules.md",
+          "title": "Bộ luật SPC (SPC Rule Catalog) (part 3)"
+        },
+        {
+          "score": 0.69,
+          "src": "domain/knowledge/domain/howto-spc-control.md",
+          "title": "SPC — Đường UCL / LCL / Cpk (part 2)"
+        }
+      ],
+      "answerLength": 787,
+      "answer": "### Tóm tắt\n\nHệ thống AVI-AOI sử dụng công thức `mean ± 3·σ` để tính đường UCL và LCL trong SPC (Statistical Process Control).\n\n### Các bước\n\n1. **Tạo điểm đo**: Trong UI, chọn sản phẩm và điểm đo cần thiết.\n   - *Ở đâu*: Menu › Sản phẩm › Chọn SKU › tab \"Điểm đo\".\n   - *Làm gì*: Nhập hoặc bấm \"Tính từ N mẫu gần nhất\" (n=30 mặc định).\n2. **Cấu hình UCL/LCL**: Sau khi nhập dữ liệu, hệ thống tự động tính và hiển thị đường UCL và LCL.\n   - *Ở đâu*: tab \"Điểm đo\".\n   - *Làm gì*: Nhập hoặc bấm \"Tính từ N mẫu gần nhất\" (n=30 mặc định).\n   \n### Lưu ý/lỗi thường gặp\n\n- **Cấu hình UCL/LCL không tự sinh**: Nếu hệ thống không tự\n\nAPI liên quan: `/api/ai/local-kb/reload`, `/api/userguide/topics`, `/api/userguide/topic/:slug`, `/api/userguide/search`\nMàn hình liên quan: `/admin/user-guide`",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 6,
+        "_max": 6,
+        "_pct": 100
+      },
+      "depth": {
+        "procedural": 0.7,
+        "roleAccuracy": 0.6,
+        "errorCoverage": 0.7,
+        "apiRefs": 1,
+        "examples": 0.4,
+        "total": 0.68,
+        "_signals": {
+          "headerCount": 3,
+          "numberedSteps": 2,
+          "bulletSteps": 5,
+          "roleVocabHits": 0,
+          "featureCite": true,
+          "domainCite": true,
+          "errorCount": 2,
+          "apiHits": 4,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 5
+        }
+      }
+    },
+    {
+      "persona": "P3_qa_engineer",
+      "personaName": "Kỹ sư QA / Quy trình",
+      "userRole": "engineer",
+      "level": "technical",
+      "question": "có bao nhiêu Rules cho SPC",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 4212,
+      "intent": "list",
+      "language": "vi",
+      "confidence": 0.907,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.75,
+          "src": "feature/knowledge/features/analytics/spc-rules.md",
+          "title": "Bộ luật SPC (SPC Rule Catalog) (part 3)"
+        },
+        {
+          "score": 0.701,
+          "src": "feature/knowledge/features/analytics/spc-rules.md",
+          "title": "Bộ luật SPC (SPC Rule Catalog) (part 2)"
+        },
+        {
+          "score": 0.673,
+          "src": "feature/knowledge/features/alerts/mqtt-alert-rules.md",
+          "title": "Cảnh báo MQTT (MQTT Alert Rules) (part 1)"
+        }
+      ],
+      "answerLength": 230,
+      "answer": "SPC có tổng cộng **13 rules**: 4 luật Western Electric (`WE_1`..`WE_4`), 8 luật Nelson (`NELSON_1`..`NELSON_8`) và 1 luật EWMA (`EWMA_OOC`). \n\n[2] Bộ luật SPC (SPC Rule Catalog) (part 2) | knowledge/features/analytics/spc-rules.md",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 0,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "contentSpecific": 1,
+        "_total": 6,
+        "_max": 7,
+        "_pct": 86
+      },
+      "depth": {
+        "procedural": 0.2,
+        "roleAccuracy": 0.6,
+        "errorCoverage": 0,
+        "apiRefs": 0,
+        "examples": 0.2,
+        "total": 0.2,
+        "_signals": {
+          "headerCount": 0,
+          "numberedSteps": 0,
+          "bulletSteps": 0,
+          "roleVocabHits": 0,
+          "featureCite": true,
+          "domainCite": false,
+          "errorCount": 0,
+          "apiHits": 0,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 1
+        }
+      }
+    },
+    {
+      "persona": "P3_qa_engineer",
+      "personaName": "Kỹ sư QA / Quy trình",
+      "userRole": "engineer",
+      "level": "technical",
+      "question": "liệt kê các luật Nelson SPC",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 6371,
+      "intent": "list",
+      "language": "vi",
+      "confidence": 0.903,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.75,
+          "src": "feature/knowledge/features/analytics/spc-rules.md",
+          "title": "Bộ luật SPC (SPC Rule Catalog) (part 3)"
+        },
+        {
+          "score": 0.695,
+          "src": "feature/knowledge/features/analytics/spc-rules.md",
+          "title": "Bộ luật SPC (SPC Rule Catalog) (part 2)"
+        },
+        {
+          "score": 0.608,
+          "src": "feature/knowledge/features/analytics/spc-analysis.md",
+          "title": "Phân tích SPC (SPC Analysis) (part 1)"
+        }
+      ],
+      "answerLength": 458,
+      "answer": "Các luật Nelson trong hệ thống AVI-AOI bao gồm 8 luật sau:\n\n- `NELSON_1`: 1 điểm >3σ từ mean.\n- `NELSON_2`: 9 điểm cùng phía.\n- `NELSON_3`: 6 điểm tăng/giảm đơn điệu.\n- `NELSON_4`: 14 điểm xen kẽ.\n- `NELSON_5`: 2/3 điểm >2σ cùng phía.\n- `NELSON_6`: 4/5 điểm >1σ cùng phía.\n- `NELSON_7`: 15 điểm trong ±1σ (stratification).\n- `NELSON_8`: 8 điểm >1σ về cả hai phía.\n\nĐây là thông tin được lấy từ tài liệu [SPC Rules](knowledge/features/analytics/spc-rules.md).",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "contentSpecific": 1,
+        "_total": 7,
+        "_max": 7,
+        "_pct": 100
+      },
+      "depth": {
+        "procedural": 0.4,
+        "roleAccuracy": 0.6,
+        "errorCoverage": 0,
+        "apiRefs": 0,
+        "examples": 0.2,
+        "total": 0.24,
+        "_signals": {
+          "headerCount": 0,
+          "numberedSteps": 0,
+          "bulletSteps": 8,
+          "roleVocabHits": 0,
+          "featureCite": true,
+          "domainCite": false,
+          "errorCount": 0,
+          "apiHits": 0,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 1
+        }
+      }
+    },
+    {
+      "persona": "P4_production_mgr",
+      "personaName": "Quản lý sản xuất",
+      "userRole": "manager",
+      "level": "manager",
+      "question": "Hôm nay sản lượng toàn công ty thế nào?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 4984,
+      "intent": "architecture",
+      "language": "vi",
+      "confidence": 0.798,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": "get_today_stats",
+      "toolNote": null,
+      "toolSummary": "Hôm nay đã kiểm tra 0 sản phẩm: OK=0, NG=0, NTF=0. Tỉ lệ NG = 0%.",
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.639,
+          "src": "feature/knowledge/features/production/production-orders.md",
+          "title": "Đơn hàng sản xuất (Production Orders) (part 3)"
+        },
+        {
+          "score": 0.638,
+          "src": "feature/knowledge/features/production/production-scheduling.md",
+          "title": "Lập lịch sản xuất (Production Scheduling) (part 3)"
+        },
+        {
+          "score": 0.629,
+          "src": "feature/knowledge/features/production/production-orders.md",
+          "title": "Đơn hàng sản xuất (Production Orders) (part 5)"
+        }
+      ],
+      "answerLength": 713,
+      "answer": "### Tóm tắt\n\nHôm nay đã kiểm tra 0 sản phẩm. Tổng tỉ lệ lỗi là 0%.\n\n### Các bước\n\n1. **Kiểm tra số liệu**: Trong UI của Production Orders tab, chọn `Stats` để xem tổng số lượng đơn hàng và tỉ lệ hoàn thành.\n   - *Làm gì*: Kiểm tra số liệu trong Production Orders tab.\n   - *Ở đâu trong UI*: Chọn Stats card.\n   - *Kết quả*: Xem được số liệu thống kê về sản lượng hôm nay.\n\n2. **Kiểm tra tỉ lệ lỗi**: Trong UI của Production Orders tab, chọn `Stats` để xem tỉ lệ đơn hàng thành công và lỗi.\n   - *Làm gì*: Kiểm tra tỉ lệ lỗi trong Production Orders tab.\n   - *Ở đâu trong UI*: Chọn Stats card.\n   - *Kết quả*: Xem được tỉ lệ đơn hàng thành công và lỗi hôm nay.\n\n### Lưu ý/lỗi thường gặp\n\n- **Triệu chứng**: Số liệu",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "toolWhenLive": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 7,
+        "_max": 7,
+        "_pct": 100
+      },
+      "depth": {
+        "procedural": 0.7,
+        "roleAccuracy": 1,
+        "errorCoverage": 1,
+        "apiRefs": 0,
+        "examples": 0,
+        "total": 0.54,
+        "_signals": {
+          "headerCount": 3,
+          "numberedSteps": 2,
+          "bulletSteps": 7,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": false,
+          "errorCount": 6,
+          "apiHits": 0,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 0
+        }
+      }
+    },
+    {
+      "persona": "P4_production_mgr",
+      "personaName": "Quản lý sản xuất",
+      "userRole": "manager",
+      "level": "manager",
+      "question": "Tỉ lệ NG tháng này so với tháng trước?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 4877,
+      "intent": "general",
+      "language": "vi",
+      "confidence": 0.954,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": "get_ng_compare",
+      "toolNote": null,
+      "toolSummary": "tháng này: NG 0/0 (0%). tháng trước: NG 0/0 (0%). Tỉ lệ NG không đổi 0 điểm % (+0% tương đối).",
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.765,
+          "src": "feature/knowledge/features/monitoring/machine-registration.md",
+          "title": "Đăng ký máy (Machine Registration) (part 2)"
+        },
+        {
+          "score": 0.761,
+          "src": "domain/knowledge/domain/howto-ng-handling-sop.md",
+          "title": "SOP — Xử lý sản phẩm NG (Not Good) tại line AOI (part 1)"
+        },
+        {
+          "score": 0.757,
+          "src": "domain/knowledge/domain/howto-ng-handling-sop.md",
+          "title": "SOP — Xử lý sản phẩm NG (Not Good) tại line AOI (part 2)"
+        }
+      ],
+      "answerLength": 697,
+      "answer": "### Tóm tắt\n\nNguyễn có sự thay đổi về tỉ lệ NG giữa tháng này và tháng trước. Theo dữ liệu từ CSDL, tỉ lệ NG trong tháng này là 0%, tương tự như tháng trước cũng chỉ với 0%. Điều này cho thấy tỉ lệ NG không thay đổi so với tháng trước.\n\n### Các bước\n\n1. **Mở Cấu hình › Quản lý máy › Đăng ký máy** hoặc truy cập `/machine-registration`.\n   - *Làm gì*: Mở trang đăng ký máy.\n   - *Ở đâu trong UI*: Tab \"Cấu hình\" > \"Quản lý máy\" > \"Đăng ký máy\".\n   - *Kết quả*: Dữ liệu về các máy đang chờ phê duyệt được hiển thị, bao gồm thông tin như Mã máy, Tên, Loại, Serial Number, Firmware, và Ngày yêu cầu.\n\n2. **Mở Production Dashboard**.\n   - *Làm gì*: Mở trang bảng điều khiển sản xuất.\n   - *Ở đâu trong",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "toolWhenLive": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 7,
+        "_max": 7,
+        "_pct": 100
+      },
+      "depth": {
+        "procedural": 0.7,
+        "roleAccuracy": 1,
+        "errorCoverage": 0,
+        "apiRefs": 0,
+        "examples": 0,
+        "total": 0.34,
+        "_signals": {
+          "headerCount": 2,
+          "numberedSteps": 2,
+          "bulletSteps": 5,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": true,
+          "errorCount": 0,
+          "apiHits": 0,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 0
+        }
+      }
+    },
+    {
+      "persona": "P4_production_mgr",
+      "personaName": "Quản lý sản xuất",
+      "userRole": "manager",
+      "level": "manager",
+      "question": "Nhà máy nào có hiệu suất tốt nhất tuần này?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 4737,
+      "intent": "general",
+      "language": "vi",
+      "confidence": 0.762,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": "get_ng_compare",
+      "toolNote": null,
+      "toolSummary": "tuần này: NG 0/0 (0%). tuần trước: NG 0/0 (0%). Tỉ lệ NG không đổi 0 điểm % (+0% tương đối).",
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.624,
+          "src": "feature/knowledge/features/monitoring/machine-registration.md",
+          "title": "Đăng ký máy (Machine Registration) (part 2)"
+        },
+        {
+          "score": 0.595,
+          "src": "feature/knowledge/features/inspection/history.md",
+          "title": "Lịch sử kiểm tra (History) (part 4)"
+        },
+        {
+          "score": 0.58,
+          "src": "feature/knowledge/features/monitoring/machine-registration.md",
+          "title": "Đăng ký máy (Machine Registration) (part 3)"
+        }
+      ],
+      "answerLength": 881,
+      "answer": "### Tóm tắt\n\nĐể xác định nhà máy có hiệu suất tốt nhất trong tuần này, chúng ta cần xem xét các thông số KPI liên quan đến việc đăng ký và kiểm tra máy. Chúng tôi sẽ tập trung vào việc phân tích dữ liệu từ `/machine-registration` và `/inspection/history`.\n\n### Các bước\n\n1. **Xác định nhà máy có hiệu suất tốt nhất**:\n   - Truy cập `/machine-registration`.\n   - Lọc theo `Status = active`, `Last Inspection Date` gần đây nhất.\n   - Xem số lượng máy hoạt động và trạng thái (`pending`, `approved`) trong tuần này.\n\n2. **Xác định xu hướng kiểm tra máy**:\n   - Truy cập `/inspection/history`.\n   - Lọc theo `Machine ID` và `Status = NG` trong tuần này.\n   - Tính toán tỷ lệ số lượng máy bị báo lỗi (`NG`) so với tổng số máy hoạt động.\n\n### Lưu ý/lỗi thường gặp\n\n- **Không thấy máy ở tab Pending**: Máy chưa\n\nAPI liên quan: `/api/machine/submit-inspection`, `/api/machine/upload-image`",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "toolWhenLive": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 7,
+        "_max": 7,
+        "_pct": 100
+      },
+      "depth": {
+        "procedural": 0.7,
+        "roleAccuracy": 1,
+        "errorCoverage": 0.7,
+        "apiRefs": 0.7,
+        "examples": 0.4,
+        "total": 0.7,
+        "_signals": {
+          "headerCount": 3,
+          "numberedSteps": 2,
+          "bulletSteps": 7,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": false,
+          "errorCount": 2,
+          "apiHits": 2,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 4
+        }
+      }
+    },
+    {
+      "persona": "P4_production_mgr",
+      "personaName": "Quản lý sản xuất",
+      "userRole": "manager",
+      "level": "manager",
+      "question": "OEE của dây chuyền A đang là bao nhiêu?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 2587,
+      "intent": "list",
+      "language": "vi",
+      "confidence": 0.872,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": "get_oee",
+      "toolNote": "NOT_FOUND",
+      "toolSummary": "Chưa có dữ liệu OEE trong 7 ngày qua.",
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.701,
+          "src": "feature/knowledge/features/alerts/oee-targets.md",
+          "title": "Mục tiêu OEE (OEE Targets) (part 2)"
+        },
+        {
+          "score": 0.694,
+          "src": "feature/knowledge/features/alerts/oee-targets.md",
+          "title": "Mục tiêu OEE (OEE Targets) (part 1)"
+        },
+        {
+          "score": 0.68,
+          "src": "feature/knowledge/features/production/production-dashboard.md",
+          "title": "Bảng điều khiển sản xuất (Production Dashboard) (part 2)"
+        }
+      ],
+      "answerLength": 244,
+      "answer": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại. Đề xuất bạn cung cấp thêm chi tiết như dây chuyền cụ thể hoặc khoảng thời gian mà bạn muốn biết OEE của dây chuyền A. Điều đó sẽ giúp tôi tìm kiếm thông tin chính xác hơn.",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 0,
+        "hasNavPath": 0,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 4,
+        "_max": 6,
+        "_pct": 67
+      },
+      "depth": {
+        "procedural": 0.2,
+        "roleAccuracy": 1,
+        "errorCoverage": 0,
+        "apiRefs": 0,
+        "examples": 0,
+        "total": 0.24,
+        "_signals": {
+          "headerCount": 0,
+          "numberedSteps": 0,
+          "bulletSteps": 0,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": false,
+          "errorCount": 0,
+          "apiHits": 0,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 0
+        }
+      }
+    },
+    {
+      "persona": "P4_production_mgr",
+      "personaName": "Quản lý sản xuất",
+      "userRole": "manager",
+      "level": "manager",
+      "question": "Xuất báo cáo điều hành tuần qua dạng PDF được không?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 5220,
+      "intent": "general",
+      "language": "vi",
+      "confidence": 0.996,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": "get_defect_trend",
+      "toolNote": null,
+      "toolSummary": "Xu hướng 7 ngày: tỉ lệ NG TB = 0%. Cao nhất ngày 2026-05-07 (0%).",
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.813,
+          "src": "domain/knowledge/domain/howto-export-pdf-report.md",
+          "title": "Hướng dẫn — Xuất báo cáo PDF từ hệ thống AVI/AOI Management (part 1)"
+        },
+        {
+          "score": 0.781,
+          "src": "domain/knowledge/domain/howto-export-pdf-report.md",
+          "title": "Hướng dẫn — Xuất báo cáo PDF từ hệ thống AVI/AOI Management (part 2)"
+        },
+        {
+          "score": 0.742,
+          "src": "feature/knowledge/features/analytics/scheduled-reports.md",
+          "title": "Báo cáo định kỳ (part 2)"
+        }
+      ],
+      "answerLength": 1109,
+      "answer": "Theo dữ liệu thời gian thực cung cấp, xu hướng 7 ngày của tỉ lệ NG (Not Good) là 0%. Điều này cho thấy trong tuần qua, hệ thống AVI/AOI đã không phát hiện ra bất kỳ sản phẩm nào bị lỗi (NG). \n\nĐể xuất báo cáo PDF dạng định kỳ như Weekly Report, bạn có thể theo dõi các bước sau:\n\n1. Mở trang Reports từ menu *Sản xuất → Bảng điều khiển sản xuất*.\n2. Chọn khoảng thời gian là \"Hôm nay\" để lấy dữ liệu tuần qua.\n3. Lọc theo Factory và Line nếu cần.\n4. Nhấn vào nút **Export** ở góc phải của màn hình.\n\nLưu ý rằng, bạn sẽ được yêu cầu chọn định dạng file (PDF) và có thể bao gồm ảnh lỗi (defects) trong file PDF. \n\nNếu bạn muốn xuất báo cáo PDF tự động hàng tuần, bạn có thể sử dụng chức năng Báo cáo định kỳ như đã mô tả ở phần\n\nAPI liên quan: `/api/reports/export`\nMàn hình liên quan: `/uploads/reports/Bao`\n\nVí dụ:\n```http\nPOST /api/reports/export\nContent-Type: application/json\nCookie: <session>\n\n{\n  \"reportType\": \"shift\",          // shift | lot | pareto | oee | bulletin\n  \"format\": \"pdf\",                // pdf | xlsx\n  \"filter\": {\n    \"fromDate\": \"2026-05-11T00:00:00Z\",\n    \"toDate\":   \"2026-05-1\n…\n```",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 6,
+        "_max": 6,
+        "_pct": 100
+      },
+      "depth": {
+        "procedural": 1,
+        "roleAccuracy": 1,
+        "errorCoverage": 0.7,
+        "apiRefs": 1,
+        "examples": 1,
+        "total": 0.94,
+        "_signals": {
+          "headerCount": 0,
+          "numberedSteps": 4,
+          "bulletSteps": 0,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": true,
+          "errorCount": 2,
+          "apiHits": 3,
+          "codeFences": 2,
+          "exampleMentions": 1,
+          "screenPath": 3
+        }
+      }
+    },
+    {
+      "persona": "P5_ai_engineer",
+      "personaName": "Kỹ sư AI / Vision",
+      "userRole": "engineer",
+      "level": "technical",
+      "question": "Cách triển khai một mô hình AI mới lên edge device?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 8596,
+      "intent": "how_to",
+      "language": "vi",
+      "confidence": 1,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.858,
+          "src": "domain/knowledge/domain/howto-edge-model-deploy.md",
+          "title": "Hướng dẫn — Triển khai mô hình AI xuống Edge (máy AOI) (part 2)"
+        },
+        {
+          "score": 0.853,
+          "src": "domain/knowledge/domain/howto-edge-model-deploy.md",
+          "title": "Hướng dẫn — Triển khai mô hình AI xuống Edge (máy AOI) (part 1)"
+        },
+        {
+          "score": 0.722,
+          "src": "feature/knowledge/features/ai/ai-local-knowledge-base.md",
+          "title": "Cơ sở tri thức AI Local (AI Local Knowledge Base) (part 1)"
+        }
+      ],
+      "answerLength": 1114,
+      "answer": "Để triển khai một mô hình AI mới lên Edge Device (máy AOI), bạn cần tuân theo các bước sau:\n\n### 1. Tóm tắt\n- **Hướng dẫn**: Triển khai mô hình AI xuống Edge (máy AOI) (part 2)\n- **Cấu trúc dữ liệu**: `/etc/avi-edge/config.yaml` chứa cấu hình Edge Agent\n- **API**: `/api/ai/local-kb/reload` để reload knowledge base\n\n### 2. Các bước thực hiện trên UI\n1. Mở `Menu › AI Models`.\n2. Chọn model muốn deploy → tab **Versions** → chọn version đã PASS evaluation.\n3. Chuyển sang tab **Deployment** → bấm **+ Deploy mới**.\n4. Trong hộp thoại:\n   - **Target**: chọn từng máy hoặc theo line/factory.\n   - **Strategy**: `rolling` (deploy lần lượt 1 máy/phút).\n   - **Auto-rollback**: bật nếu inference fail-rate > 5 % trong 10 phút sau deploy.\n5. Bấm **Bắt đầu** → theo dõi cột **Status** (Pending → Downloading → Verifying → Active).\n\n### 3. Lưu ý/lỗi thường gặp\n- **Ollama offline**: Kiểm tra `ollama serve` để đảm bảo Ollama service đang hoạt động.\n- **Câu trả lời sai**: Reload KB, kiểm tra MD content & template.\n- **Chậm > 15s**: Giảm `KB_QA_NUM_PREDICT`, kiểm tra model size phù hợp RAM.\n- **Empty answer**: Mở rộng MD",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 0,
+        "_total": 5,
+        "_max": 6,
+        "_pct": 83
+      },
+      "depth": {
+        "procedural": 1,
+        "roleAccuracy": 1,
+        "errorCoverage": 1,
+        "apiRefs": 0.4,
+        "examples": 0.4,
+        "total": 0.76,
+        "_signals": {
+          "headerCount": 3,
+          "numberedSteps": 5,
+          "bulletSteps": 10,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": true,
+          "errorCount": 3,
+          "apiHits": 1,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 2
+        }
+      }
+    },
+    {
+      "persona": "P5_ai_engineer",
+      "personaName": "Kỹ sư AI / Vision",
+      "userRole": "engineer",
+      "level": "technical",
+      "question": "Confusion matrix của mô hình hiện tại ra sao?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 6284,
+      "intent": "general",
+      "language": "vi",
+      "confidence": 0.835,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.687,
+          "src": "feature/knowledge/features/ai/ai-performance.md",
+          "title": "Hiệu năng AI (AI Performance) (part 1)"
+        },
+        {
+          "score": 0.649,
+          "src": "feature/knowledge/features/inspection/inspection-detail.md",
+          "title": "Chi tiết kiểm tra (Inspection Detail) (part 2)"
+        },
+        {
+          "score": 0.644,
+          "src": "feature/knowledge/features/products/product-machine-mapping.md",
+          "title": "Gán Sản phẩm - Máy (Product-Machine Mapping) (part 2)"
+        }
+      ],
+      "answerLength": 978,
+      "answer": "### Tóm tắt\n\nTrong tài liệu được cung cấp, confusion matrix của mô hình AI được hiển thị trên trang `/ai-performance` trong UI. Các thông tin này bao gồm số lượng True Positive (TP), False Positive (FP), False Negative (FN), và True Negative (TN). \n\n### Các bước làm việc\n\n1. **Mở `/ai-performance`:**\n   - Trong giao diện người dùng (UI), mở trang `/ai-performance` để xem 4 metric cards (Accuracy, Precision, Recall, F1) và confusion matrix.\n   - Kết quả: Xem được thông tin về các chỉ số hiệu suất của mô hình AI.\n\n2. **Xem confusion matrix:**\n   - Trên trang `/ai-performance`, click vào phần confusion matrix để xem chi tiết.\n   - Kết quả: Xem được số lượng TP, FP, FN, TN tương ứng với từng class trong mô hình.\n\n### Lưu ý/lỗi thường gặp\n\n- **Metrics = 0:** Nếu các chỉ số như Accuracy, Precision,\n\nAPI liên quan: `/api/machines/:id/allowed-products`, `/api/inspection/:id/images`, `/api/measurement-point/:pointDefId/reference-image`, `/api/public/products/by-code/:code`",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 6,
+        "_max": 6,
+        "_pct": 100
+      },
+      "depth": {
+        "procedural": 0.7,
+        "roleAccuracy": 1,
+        "errorCoverage": 0.4,
+        "apiRefs": 1,
+        "examples": 0.4,
+        "total": 0.7,
+        "_signals": {
+          "headerCount": 3,
+          "numberedSteps": 2,
+          "bulletSteps": 5,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": false,
+          "errorCount": 1,
+          "apiHits": 4,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 4
+        }
+      }
+    },
+    {
+      "persona": "P5_ai_engineer",
+      "personaName": "Kỹ sư AI / Vision",
+      "userRole": "engineer",
+      "level": "technical",
+      "question": "Hệ thống có phát hiện model drift không, theo metric nào?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 6668,
+      "intent": "technical",
+      "language": "vi",
+      "confidence": 0.877,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": "get_ng_compare",
+      "toolNote": null,
+      "toolSummary": "tháng này: NG 0/0 (0%). tháng trước: NG 0/0 (0%). Tỉ lệ NG không đổi 0 điểm % (+0% tương đối).",
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.708,
+          "src": "feature/knowledge/features/analytics/category-analytics.md",
+          "title": "Phân tích theo nhóm sản phẩm (Category Analytics) (part 1)"
+        },
+        {
+          "score": 0.696,
+          "src": "feature/knowledge/features/ai/ai-model-management.md",
+          "title": "Quản lý Model AI (AI Model Management) (part 1)"
+        },
+        {
+          "score": 0.683,
+          "src": "feature/knowledge/features/products/product-management.md",
+          "title": "Quản lý Sản phẩm (Product Models) (part 2)"
+        }
+      ],
+      "answerLength": 930,
+      "answer": "Theo ngữ cảnh được cung cấp, hệ thống không có thông tin cụ thể về việc phát hiện drift của model AI. Tuy nhiên, trong tài liệu liên quan đến tính năng Hiệu năng AI (AI Performance), có một số thông tin có thể giúp chúng ta hiểu hơn về các chỉ số hiệu suất mà hệ thống theo dõi:\n\n- Hệ thống theo dõi các chỉ số như Accuracy, Precision, Recall và F1. Những chỉ số này được hiển thị trong 4 card metric.\n- Confusion matrix cũng được hiển thị để xem xét phân loại của model.\n\nTuy nhiên, tài liệu không đề cập đến việc phát hiện drift hoặc sử dụng bất kỳ metric nào cụ thể để theo dõi drift của model AI. \n\nĐể xác định liệu hệ thống có phát hiện drift hay không và theo dõi bằng metric nào, cần tìm hiểu thêm về tính năng này trong tài liệu liên quan đến Hiệu năng AI (AI Performance). Nếu thiếu thông tin, tôi sẽ chỉ ra rằng hệ thống không có thông tin chính xác về việc phát hiện\n\nAPI liên quan: `/api/public/products/by-code/:code`",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 6,
+        "_max": 6,
+        "_pct": 100
+      },
+      "depth": {
+        "procedural": 0.4,
+        "roleAccuracy": 1,
+        "errorCoverage": 0.4,
+        "apiRefs": 0.4,
+        "examples": 0.2,
+        "total": 0.48,
+        "_signals": {
+          "headerCount": 0,
+          "numberedSteps": 0,
+          "bulletSteps": 2,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": false,
+          "errorCount": 1,
+          "apiHits": 1,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 1
+        }
+      }
+    },
+    {
+      "persona": "P5_ai_engineer",
+      "personaName": "Kỹ sư AI / Vision",
+      "userRole": "engineer",
+      "level": "technical",
+      "question": "Cách chạy A/B testing giữa hai phiên bản model?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 8470,
+      "intent": "how_to",
+      "language": "vi",
+      "confidence": 0.857,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.689,
+          "src": "feature/knowledge/features/ai/ai-model-management.md",
+          "title": "Quản lý Model AI (AI Model Management) (part 2)"
+        },
+        {
+          "score": 0.681,
+          "src": "feature/knowledge/features/products/product-management.md",
+          "title": "Quản lý Sản phẩm (Product Models) (part 2)"
+        },
+        {
+          "score": 0.679,
+          "src": "feature/knowledge/features/ai/ai-model-management.md",
+          "title": "Quản lý Model AI (AI Model Management) (part 1)"
+        }
+      ],
+      "answerLength": 1252,
+      "answer": "Tôi không có thông tin chính xác về câu hỏi này trong tài liệu hiện tại. Để giúp bạn rõ hơn, tôi sẽ cung cấp một cách tổng quát để chạy A/B testing giữa hai phiên bản model AI trên nền tảng AVI/AOI.\n\n### Cách chạy A/B Testing\n\n1. **Tạo Mô hình mới và Version:**\n   - Engineer tạo mô hình `PCB-Defect-Detector` với type ONNX, status `DRAFT`. Sau đó upload file v1.onnx 1.2GB.\n   - Sau khi training, tạo version v2 với accuracy +3% → Activate v2.\n\n2. **Tạo Mô hình mới:**\n   - Engineer tạo mô hình mới với code khác và type ONNX, status `DRAFT`. Upload file v1.onnx 1.2GB.\n   - Sau khi training, tạo version v3 với accuracy +3%.\n\n3. **Lưu trữ các phiên bản:**\n   - Lưu cả hai phiên bản (v2 và v3) vào hệ thống để có thể so sánh.\n\n4. **Tạo Mô hình mới cho A/B Testing:**\n   - Engineer tạo mô hình mới với code khác, type ONNX, status `DRAFT`. Upload file v1.onnx 1.2GB.\n   - Sau khi training, tạo version v4 với accuracy +3%.\n\n5. **Activate phiên bản mới cho A/B Testing:**\n   - Activate version v4 để sử dụng trong quá trình A/B testing.\n\n6. **Tạo Mô hình mới cho Control Group:**\n   - Engineer tạo mô hình mới với code khác, type ONNX, status `DRAFT\n\nAPI liên quan: `/api/public/products/by-code/:code`\nMàn hình liên quan: `/analytics/defect-prediction`",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 0,
+        "_total": 5,
+        "_max": 6,
+        "_pct": 83
+      },
+      "depth": {
+        "procedural": 1,
+        "roleAccuracy": 1,
+        "errorCoverage": 0,
+        "apiRefs": 0.4,
+        "examples": 0.4,
+        "total": 0.56,
+        "_signals": {
+          "headerCount": 1,
+          "numberedSteps": 6,
+          "bulletSteps": 9,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": false,
+          "errorCount": 0,
+          "apiHits": 1,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 2
+        }
+      }
+    },
+    {
+      "persona": "P5_ai_engineer",
+      "personaName": "Kỹ sư AI / Vision",
+      "userRole": "engineer",
+      "level": "technical",
+      "question": "Active learning trong hệ thống hoạt động thế nào?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 5973,
+      "intent": "general",
+      "language": "vi",
+      "confidence": 1,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.944,
+          "src": "feature/knowledge/features/ai/ai-active-learning.md",
+          "title": "Active Learning (AI Active Learning) (part 1)"
+        },
+        {
+          "score": 0.851,
+          "src": "feature/knowledge/features/ai/ai-active-learning.md",
+          "title": "Active Learning (AI Active Learning) (part 2)"
+        },
+        {
+          "score": 0.735,
+          "src": "feature/knowledge/features/analytics/annotation-statistics.md",
+          "title": "Thống kê Annotation (part 1)"
+        }
+      ],
+      "answerLength": 804,
+      "answer": "Trợ lý kỹ thuật AVI/AOI on-prem cho kỹ sư hoạt động theo cách sau:\n\n1. **Tóm tắt**: Trong hệ thống này, Active Learning được triển khai dưới dạng một tính năng AI Active Learning trong menu AI → Active Learning. Người dùng có thể xem stats của queue mẫu cần gắn nhãn, review và đánh dấu các mẫu khó, đồng thời hệ thống sẽ đề xuất Retrain model khi cần thiết.\n\n2. **Các bước**:\n   - **Bước 1**: Mở trang `/ai-active-learning` để xem stats của queue mẫu cần gắn nhãn như số lượng mẫu trong queue, số mẫu đã được đánh dấu và độ chính xác.\n   - **Bước 2**: Trong tab `Review Queue`, hệ thống sẽ hiển thị mẫu đầu tiên với hình ảnh, nhãn dự đoán và mức độ tin cậy. Người dùng có thể đồng ý hoặc không đồng ý với nhãn dự đoán, hoặc chọn nhãn đúng từ dropdown rồi submit.\n   - **Bước 3**: Nếu mẫu khó, người dùng",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 6,
+        "_max": 6,
+        "_pct": 100
+      },
+      "depth": {
+        "procedural": 0.7,
+        "roleAccuracy": 1,
+        "errorCoverage": 0,
+        "apiRefs": 0,
+        "examples": 0,
+        "total": 0.34,
+        "_signals": {
+          "headerCount": 0,
+          "numberedSteps": 2,
+          "bulletSteps": 3,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": false,
+          "errorCount": 0,
+          "apiHits": 0,
+          "codeFences": 0,
+          "exampleMentions": 0,
+          "screenPath": 0
+        }
+      }
+    },
+    {
+      "persona": "P6_it_admin",
+      "personaName": "Quản trị hệ thống (IT Admin)",
+      "userRole": "it_admin",
+      "level": "technical",
+      "question": "Cách phân quyền cho một role mới?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 8208,
+      "intent": "how_to",
+      "language": "vi",
+      "confidence": 0.898,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.721,
+          "src": "feature/knowledge/features/admin/role-management.md",
+          "title": "Quản lý Vai trò (Role Management) (part 1)"
+        },
+        {
+          "score": 0.715,
+          "src": "feature/knowledge/features/admin/role-management.md",
+          "title": "Quản lý Vai trò (Role Management) (part 2)"
+        },
+        {
+          "score": 0.649,
+          "src": "feature/knowledge/features/admin/permission-mgmt.md",
+          "title": "Quản lý Quyền (Permission Management) (part 1)"
+        }
+      ],
+      "answerLength": 1277,
+      "answer": "Để phân quyền cho một role mới trong hệ thống AVI/AOI, kỹ sư cần thực hiện các bước sau:\n\n1. **Mở danh sách vai trò** — Truy cập vào `Admin` › `Roles & Permissions` › `Roles` trên màn hình `/admin/roles`.\n\n2. **Tạo vai trò mới** — Nhấn + New Role để tạo một role mới. Nhập tên và mô tả cho vai trò, sau đó gán các permissions cần thiết.\n\n3. **Gán permissions** — Trong tab Permissions, kỹ sư sẽ tìm thấy tree view theo resource → chọn từng action muốn cấp quyền cho role mới. \n\n4. **Save vai trò mới** — Sau khi đã cấu hình xong permissions, kỹ sư nhấn Save để lưu vai trò mới vào hệ thống.\n\n5. **Gán cho User** — Sang trang Users và gán vai trò mới cho các user cần thiết thông qua việc assign vai trò.\n\nLưu ý/lỗi thường gặp:\n\n- Nếu không thể xóa một role vì còn user được gán, kỹ sư cần tái phân quyền user trước.\n- Nếu user không thấy menu mới sau khi tạo hoặc cập nhật vai trò, họ nên logout và login lại để hệ thống cập nhật cache permissions.\n\nAPI liên quan:\n```ts\n// Tạo vai trò mới\ntRPC: role.create({ name: 'quality-engineer-line-a', description: 'Role for quality engineer line A' })\n\n// Gán permissions cho vai trò mới\ntRPC: role.assignPermissions(roleId, [permissionIds])\n\n// Gán vai trò cho user\ntRPC: user.update(userId, { roles: ['quality-engineer-line-a'] })\n``",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 0,
+        "_total": 5,
+        "_max": 6,
+        "_pct": 83
+      },
+      "depth": {
+        "procedural": 1,
+        "roleAccuracy": 1,
+        "errorCoverage": 0.7,
+        "apiRefs": 0,
+        "examples": 0.7,
+        "total": 0.68,
+        "_signals": {
+          "headerCount": 0,
+          "numberedSteps": 5,
+          "bulletSteps": 2,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": false,
+          "errorCount": 2,
+          "apiHits": 0,
+          "codeFences": 1,
+          "exampleMentions": 0,
+          "screenPath": 1
+        }
+      }
+    },
+    {
+      "persona": "P6_it_admin",
+      "personaName": "Quản trị hệ thống (IT Admin)",
+      "userRole": "it_admin",
+      "level": "technical",
+      "question": "MQTT broker chạy ở port nào và config ở đâu?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 6429,
+      "intent": "general",
+      "language": "vi",
+      "confidence": 1,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.829,
+          "src": "feature/knowledge/features/monitoring/mqtt-client-mgmt.md",
+          "title": "Quản lý MQTT Client (part 1)"
+        },
+        {
+          "score": 0.793,
+          "src": "feature/knowledge/features/monitoring/mqtt-replay.md",
+          "title": "MQTT Replay (part 1)"
+        },
+        {
+          "score": 0.776,
+          "src": "feature/knowledge/features/monitoring/mqtt-dashboard.md",
+          "title": "MQTT Dashboard (part 1)"
+        }
+      ],
+      "answerLength": 773,
+      "answer": "MQTT broker của bạn đang chạy trên một cổng cụ thể, nhưng tài liệu không cung cấp thông tin cụ thể về cổng đó. Để xác định cổng mà MQTT broker đang chạy, bạn có thể cần xem cấu hình của hệ thống hoặc liên hệ với người quản lý hệ thống.\n\nTài liệu chỉ ra rằng cấu hình của MQTT broker được lưu trong môi trường `.env`. Bạn có thể truy cập file này để tìm thông tin về cổng mà MQTT broker đang sử dụng. Cụ thể, bạn sẽ cần xem biến `MQTT_BROKER_URL` hoặc bất kỳ biến khác liên quan đến cổng.\n\nVí dụ, nếu cấu hình của bạn như sau:\n\n```env\nMQTT_BROKER_URL=\"ws://localhost:1883\"\n```\n\nĐó có nghĩa là MQTT broker đang chạy trên cổng 1883. \n\nNếu không tìm thấy thông tin này trong `.env`, bạn cần kiểm tra các cấu hình khác hoặc liên hệ với người quản lý hệ thống để biết cổng cụ thể",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 0,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 5,
+        "_max": 6,
+        "_pct": 83
+      },
+      "depth": {
+        "procedural": 0.2,
+        "roleAccuracy": 1,
+        "errorCoverage": 0,
+        "apiRefs": 0.4,
+        "examples": 1,
+        "total": 0.52,
+        "_signals": {
+          "headerCount": 0,
+          "numberedSteps": 0,
+          "bulletSteps": 0,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": false,
+          "errorCount": 0,
+          "apiHits": 1,
+          "codeFences": 2,
+          "exampleMentions": 1,
+          "screenPath": 0
+        }
+      }
+    },
+    {
+      "persona": "P6_it_admin",
+      "personaName": "Quản trị hệ thống (IT Admin)",
+      "userRole": "it_admin",
+      "level": "technical",
+      "question": "Cách tích hợp SSO / OAuth với hệ thống?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 8594,
+      "intent": "how_to",
+      "language": "vi",
+      "confidence": 1,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.833,
+          "src": "domain/knowledge/domain/howto-sso-oauth.md",
+          "title": "Hướng dẫn — Cấu hình SSO / OAuth cho AVI/AOI Management (part 1)"
+        },
+        {
+          "score": 0.829,
+          "src": "domain/knowledge/domain/howto-sso-oauth.md",
+          "title": "Hướng dẫn — Cấu hình SSO / OAuth cho AVI/AOI Management (part 2)"
+        },
+        {
+          "score": 0.617,
+          "src": "feature/knowledge/features/admin/user-management.md",
+          "title": "Quản lý Người dùng (part 1)"
+        }
+      ],
+      "answerLength": 1564,
+      "answer": "Để tích hợp SSO / OAuth với hệ thống AVI/AOI, bạn cần thực hiện các bước sau:\n\n1. **Cấu hình Azure Entra ID**:\n   - Trong Azure Portal, tạo ứng dụng mới và ghi lại `Application (client) ID` (`AZURE_CLIENT_ID`) và `Directory (tenant) ID` (`AZURE_TENANT_ID`).\n   - Tạo client secret và ghi lại vào file `.env`.\n   - Cấu hình API permissions cho Microsoft Graph với các permission: `openid`, `profile`, `email`, `User.Read`.\n\n2. **Cấu hình Google Workspace**:\n   - Trong file `.env`, cấu hình `SSO_PROVIDER=google` và cung cấp thông tin về `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, và `SSO_REDIRECT_URI`.\n\n3. **Cấu hình OIDC chung (Keycloak / Okta / Authentik)**:\n   - Cấu hình `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, và `SSO_REDIRECT_URI` trong file `.env`.\n   - Hệ thống tự discovery thông qua `${OIDC_ISSUER_URL}/.well-known/openid-configuration`.\n\n4. **Map role từ provider → role hệ thống**:\n   - Cấu hình `SSO_ROLE_MAP_GROUP_CLAIM=groups` và `SSO_ROLE_MAP` cho các nhóm cụ thể.\n\n5. **Quy trình đăng nhập SSO trên UI**:\n   - Người dùng sẽ thấy nút \"Đăng nhập với Microsoft / Google / SSO\" khi mở trang login.\n   - Trình duyệt sẽ redirect đến Id\n\nAPI liên quan: `/api/auth/oidc/callback`\nMàn hình liên quan: `/admin/users`, `/backup/avi`, `/apps/avi-aoi-management/uploads`\n\nVí dụ:\n```ini\nSSO_PROVIDER=azure\nAZURE_TENANT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\nAZURE_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\nAZURE_CLIENT_SECRET=<secret value>\nSSO_REDIRECT_URI=https://aoi.company.local/api/auth/oidc/callback\nSSO_DEFAULT_ROLE=viewer\n```",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 0,
+        "_total": 5,
+        "_max": 6,
+        "_pct": 83
+      },
+      "depth": {
+        "procedural": 1,
+        "roleAccuracy": 1,
+        "errorCoverage": 0,
+        "apiRefs": 1,
+        "examples": 1,
+        "total": 0.8,
+        "_signals": {
+          "headerCount": 0,
+          "numberedSteps": 5,
+          "bulletSteps": 9,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": true,
+          "errorCount": 0,
+          "apiHits": 4,
+          "codeFences": 2,
+          "exampleMentions": 1,
+          "screenPath": 5
+        }
+      }
+    },
+    {
+      "persona": "P6_it_admin",
+      "personaName": "Quản trị hệ thống (IT Admin)",
+      "userRole": "it_admin",
+      "level": "technical",
+      "question": "Backup database định kỳ ở đâu?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 7931,
+      "intent": "technical",
+      "language": "vi",
+      "confidence": 1,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.854,
+          "src": "feature/knowledge/features/admin/backup-restore.md",
+          "title": "Backup & Restore (part 1)"
+        },
+        {
+          "score": 0.751,
+          "src": "feature/knowledge/features/admin/backup-restore.md",
+          "title": "Backup & Restore (part 2)"
+        },
+        {
+          "score": 0.678,
+          "src": "domain/knowledge/domain/howto-backup-restore.md",
+          "title": "SOP — Sao lưu & phục hồi dữ liệu hệ thống AVI/AOI Management (part 1)"
+        }
+      ],
+      "answerLength": 1206,
+      "answer": "Backup database của hệ thống AVI/AOI Management được thực hiện ở `/backup/avi` trong thư mục dựa trên cấu hình trong `.env`. \n\nCác bước cụ thể để thực hiện backup database định kỳ như sau:\n\n1. **Backup Database**:\n   - Sử dụng lệnh `pg_dump` để sao lưu toàn bộ cơ sở dữ liệu Postgres.\n   ```bash\n   pg_dump -h localhost -U postgres -d avi_aoi_db -Fc -f /backup/avi_$(date +%F).dump\n   ```\n   Lưu ý rằng, trong cấu hình hiện tại, backup database được thực hiện bằng cách sử dụng `pg_dump` với tùy chọn `-Fc`, tạo ra một dump file nén (`-Fc`) và đặt tên dựa trên ngày hiện tại.\n\n2. **Backup Files**:\n   - Sử dụng lệnh `rsync` để sao lưu các tập tin trong thư mục `uploads/`.\n   ```bash\n   rsync -a --delete /apps/avi-aoi-management/uploads/ /backup/uploads/\n   ```\n   Lưu ý rằng, tùy thuộc vào cấu hình của hệ thống, backup file có thể được thực hiện bằng cách sử dụng lệnh `rsync` để sao lưu các tập tin trong thư mục `uploads/`.\n\n3. **Backup Knowledge Base**:\n   - Sử dụng lệnh `tar` để tạo một tệp ghi (`tar.gz`) chứa các tập tin trong thư mục `knowledge/`.\n   ```bash\n   tar -czf /backup/knowledge_$(date +%F).tar.gz -C /apps/avi-aoi-management knowledge/\n   ```\n   Lưu ý rằng, tùy thuộc vào cấu hình của",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 6,
+        "_max": 6,
+        "_pct": 100
+      },
+      "depth": {
+        "procedural": 1,
+        "roleAccuracy": 1,
+        "errorCoverage": 0,
+        "apiRefs": 0.4,
+        "examples": 1,
+        "total": 0.68,
+        "_signals": {
+          "headerCount": 0,
+          "numberedSteps": 3,
+          "bulletSteps": 3,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": true,
+          "errorCount": 0,
+          "apiHits": 1,
+          "codeFences": 6,
+          "exampleMentions": 0,
+          "screenPath": 6
+        }
+      }
+    },
+    {
+      "persona": "P6_it_admin",
+      "personaName": "Quản trị hệ thống (IT Admin)",
+      "userRole": "it_admin",
+      "level": "technical",
+      "question": "Cách bật/tắt license bypass cho môi trường dev?",
+      "httpStatus": 200,
+      "success": true,
+      "error": null,
+      "latencyMs": 7616,
+      "intent": "how_to",
+      "language": "vi",
+      "confidence": 1,
+      "provider": "ollama",
+      "cached": false,
+      "toolName": null,
+      "toolNote": null,
+      "toolSummary": null,
+      "citationsCount": 5,
+      "topCitations": [
+        {
+          "score": 0.949,
+          "src": "domain/knowledge/domain/howto-license-bypass-dev.md",
+          "title": "Hướng dẫn — License & bypass cho môi trường phát triển (dev) (part 1)"
+        },
+        {
+          "score": 0.91,
+          "src": "domain/knowledge/domain/howto-license-bypass-dev.md",
+          "title": "Hướng dẫn — License & bypass cho môi trường phát triển (dev) (part 2)"
+        },
+        {
+          "score": 0.779,
+          "src": "feature/knowledge/features/admin/license-mgmt.md",
+          "title": "Quản lý License (part 1)"
+        }
+      ],
+      "answerLength": 1161,
+      "answer": "Để bật hoặc tắt bypass license cho môi trường phát triển (dev), bạn cần thực hiện các bước sau:\n\n### 1. Đặt biến môi trường\n\n**Cách bật:**\n```ini\nNODE_ENV=development\nLICENSE_BYPASS=true            # bỏ qua kiểm tra license\nLICENSE_BYPASS_FEATURES=all    # bật toàn bộ feature flag\n```\n\n**Cách tắt:**\n```ini\nNODE_ENV=production\n```\n\n### 2. Sử dụng lệnh CLI\n\n**Cách bật:**\n\n```bash\ncp license.lic.example license.lic\n```\n\n**Cách tắt:**\n\n```bash\nrm -f license.lic\n```\n\n### 3. Kiểm tra trạng thái\n\nĐể kiểm tra xem bypass đã được kích hoạt hay chưa, bạn có thể sử dụng lệnh sau:\n\n```bash\ncurl http://localhost:3000/api/license/status\n```\n\nHoặc mở trực tiếp trên UI: `Cài đặt › Hệ thống › License`.\n\n### Lưu ý/lỗi thường gặp\n\n- **Lỗi `LICENSE_INVALID_SIGNATURE`:** Nếu file license bị sửa hoặc tải sai, bạn cần xin lại file từ nhà cung cấp.\n- **Lỗi `LICENSE_HOST_MISMATCH`:** Nếu MAC khác với MAC ký license, bạn cần kiểm tra interface chính và thay card mạng nếu cần.\n\n### Liên quan\n\n- [Hướng dẫn — License & bypass cho môi trường phát triển (dev)](knowledge/domain/howto-license-bypass-dev.md)\n- [Quản lý License (part 1)](knowledge/features/admin/license-mgmt.md)",
+      "score": {
+        "nonEmpty": 1,
+        "grounded": 1,
+        "hasSteps": 1,
+        "hasNavPath": 1,
+        "notHallucinated": 1,
+        "fastEnough": 1,
+        "_total": 6,
+        "_max": 6,
+        "_pct": 100
+      },
+      "depth": {
+        "procedural": 0.7,
+        "roleAccuracy": 1,
+        "errorCoverage": 1,
+        "apiRefs": 0.4,
+        "examples": 1,
+        "total": 0.82,
+        "_signals": {
+          "headerCount": 5,
+          "numberedSteps": 0,
+          "bulletSteps": 4,
+          "roleVocabHits": 2,
+          "featureCite": true,
+          "domainCite": true,
+          "errorCount": 3,
+          "apiHits": 1,
+          "codeFences": 10,
+          "exampleMentions": 1,
+          "screenPath": 3
+        }
+      }
+    }
+  ]
+}

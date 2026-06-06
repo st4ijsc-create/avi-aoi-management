@@ -697,7 +697,7 @@ export const mqttClientRouter = router({
       stationId: z.number().optional(),
       processId: z.number().optional(),
       topics: z.array(z.string()).optional(),
-      settings: z.record(z.any()).optional(),
+      settings: z.record(z.string(), z.any()).optional(),
     }))
     .mutation(async ({ input }) => {
       const { sendConfigureCommand } = await import('../services/mqttService');
@@ -804,7 +804,7 @@ export const mqttClientRouter = router({
     .input(z.object({
       deviceId: z.string().min(1),
       command: z.enum(['RESTART_APP', 'CHECK_UPDATE', 'FORCE_UPDATE']),
-      data: z.record(z.any()).optional(),
+      data: z.record(z.string(), z.any()).optional(),
     }))
     .mutation(async ({ input }) => {
       // SOFTWARE_UPDATE commands use dedicated message type

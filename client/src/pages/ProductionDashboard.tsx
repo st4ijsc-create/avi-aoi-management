@@ -2,11 +2,14 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { useLocaleDate, getActiveLocale } from "@/lib/format";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import ReportExportButton, { type ReportExportConfig } from "@/components/ReportExportButton";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import {
   Factory,
   Filter,
@@ -18,8 +21,11 @@ import {
   AlertTriangle,
   Target,
   BarChart3,
+  Link2,
+  RefreshCw,
+  Layers,
 } from "lucide-react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import {
   BarChart,
   Bar,
@@ -40,7 +46,7 @@ import {
 } from "recharts";
 import type { DateRange } from "react-day-picker";
 
-/* â”€â”€ Date Preset Helpers â”€â”€ */
+/* ── Date Preset Helpers ── */
 
 type DatePreset = "today" | "yesterday" | "week" | "month" | "year" | "custom";
 
@@ -78,7 +84,7 @@ const PARETO_COLORS = [
   "#64748b", "#d946ef", "#0ea5e9", "#84cc16", "#f43f5e",
 ];
 
-/* â”€â”€ Helpers â”€â”€ */
+/* ── Helpers ── */
 
 function getYieldLevel(value: number | null): "good" | "warn" | "bad" | "none" {
   if (value === null || value === undefined) return "none";
@@ -105,18 +111,18 @@ function getDefectTagStyle(code: string, name: string) {
   const lower = (code + " " + name).toLowerCase();
   if (lower.includes("irregular") || lower.includes("shift") || lower.includes("gap") || lower.includes("misalign") || lower.includes("loose") || lower.includes("flatness"))
     return { label: "Irregular", cls: "text-purple-400 border-purple-600/25 bg-purple-600/5" };
-  if (lower.includes("assy") || lower.includes("missing") || lower.includes("thiáº¿u") || lower.includes("screw") || lower.includes("clip") || lower.includes("orient") || lower.includes("láº¯p") || lower.includes("lá»‡ch") || lower.includes("ssd"))
+  if (lower.includes("assy") || lower.includes("missing") || lower.includes("thiếu") || lower.includes("screw") || lower.includes("clip") || lower.includes("orient") || lower.includes("lắp") || lower.includes("lệch") || lower.includes("ssd"))
     return { label: "ASSY", cls: "text-blue-400 border-blue-500/25 bg-blue-500/5" };
   if (lower.includes("damage") || lower.includes("buckle") || lower.includes("wrinkle") || lower.includes("scratch") || lower.includes("crack"))
     return { label: "Damage", cls: "text-red-400 border-red-500/25 bg-red-500/5" };
   if (lower.includes("pollution") || lower.includes("spot") || lower.includes("stain") || lower.includes("dirt") || lower.includes("dust"))
     return { label: "Pollution", cls: "text-yellow-400 border-yellow-500/25 bg-yellow-500/5" };
-  if (lower.includes("ntf") || lower.includes("cable") || lower.includes("contact") || lower.includes("lá»ng") || lower.includes("flying") || lower.includes("blockage"))
+  if (lower.includes("ntf") || lower.includes("cable") || lower.includes("contact") || lower.includes("lỏng") || lower.includes("flying") || lower.includes("blockage"))
     return { label: "NTF", cls: "text-emerald-400 border-emerald-500/25 bg-emerald-500/5" };
   return { label: code || "Other", cls: "text-muted-foreground border-border bg-muted/30" };
 }
 
-/* â”€â”€ PCB Thumbnail â”€â”€ */
+/* ── PCB Thumbnail ── */
 
 function PcbThumbnail({ seed }: { seed: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -175,7 +181,7 @@ function PcbThumbnail({ seed }: { seed: number }) {
   );
 }
 
-/* â”€â”€ Row skeleton â”€â”€ */
+/* ── Row skeleton ── */
 
 const GRID_COLS = "280px 110px 110px 110px 80px 80px 1fr 140px";
 
@@ -201,14 +207,20 @@ function StationRowSkeleton() {
   );
 }
 
-/* â”€â”€ Main Component â”€â”€ */
+/* ── Main Component ── */
 
 export default function ProductionDashboard() {
   const { t } = useTranslation();
+  const formatDate = useLocaleDate();
   const [, navigate] = useLocation();
-  const [selectedFactory, setSelectedFactory] = useState<string>("all");
-  const [selectedLine, setSelectedLine] = useState<string>("all");
-  const [activeTab, setActiveTab] = useState("station");
+  const search = useSearch();
+  const initialParams = useMemo(() => new URLSearchParams(search), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [selectedFactory, setSelectedFactory] = useState<string>(() => initialParams.get("factory") || "all");
+  const [selectedLine, setSelectedLine] = useState<string>(() => initialParams.get("line") || "all");
+  const [activeTab, setActiveTab] = useState(() => initialParams.get("tab") || "station");
+  const [lowYieldFilter, setLowYieldFilter] = useState<boolean>(() => initialParams.get("lowYield") === "1");
+  const [autoRefresh, setAutoRefresh] = useState<boolean>(() => initialParams.get("autoRefresh") === "1");
+  const [compareMode, setCompareMode] = useState<boolean>(() => initialParams.get("compare") === "1");
   const [datePreset, setDatePreset] = useState<DatePreset>("today");
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
   const [trendInterval, setTrendInterval] = useState<"hour" | "day" | "week">("day");
@@ -227,27 +239,32 @@ export default function ProductionDashboard() {
   const { data: lines } = trpc.line.list.useQuery();
 
   const commonInput = {
-    factoryId: selectedFactory !== "all" ? Number(selectedFactory) : undefined,
-    lineId: selectedLine !== "all" ? Number(selectedLine) : undefined,
+    factoryId: !compareMode && selectedFactory !== "all" ? Number(selectedFactory) : undefined,
+    lineId: !compareMode && selectedLine !== "all" ? Number(selectedLine) : undefined,
     startDate: dateRange.start,
     endDate: dateRange.end,
   };
 
-  const { data: stationDataRaw, isLoading } = trpc.productionDashboard.getStationOverview.useQuery(commonInput);
+  const refetchInterval = autoRefresh ? 30000 : false;
+
+  const { data: stationDataRaw, isLoading } = trpc.productionDashboard.getStationOverview.useQuery(
+    commonInput,
+    { refetchInterval },
+  );
   const stationData = Array.isArray(stationDataRaw) ? stationDataRaw : [];
 
   // Tab-specific queries (only fetch when active)
   const { data: defectData, isLoading: defectLoading } = trpc.productionDashboard.getDefectAnalysis.useQuery(
     commonInput,
-    { enabled: activeTab === "defect" },
+    { enabled: activeTab === "defect", refetchInterval: activeTab === "defect" ? refetchInterval : false },
   );
   const { data: trendData, isLoading: trendLoading } = trpc.productionDashboard.getTrendData.useQuery(
     { ...commonInput, interval: trendInterval },
-    { enabled: activeTab === "trend" },
+    { enabled: activeTab === "trend", refetchInterval: activeTab === "trend" ? refetchInterval : false },
   );
   const { data: spcData, isLoading: spcLoading } = trpc.productionDashboard.getSpcSummary.useQuery(
     commonInput,
-    { enabled: activeTab === "spc" },
+    { enabled: activeTab === "spc", refetchInterval: activeTab === "spc" ? refetchInterval : false },
   );
 
   // Summary KPIs
@@ -269,32 +286,119 @@ export default function ProductionDashboard() {
     };
   }, [stationData]);
 
+  // Per-factory aggregates for compare mode
+  const factoryAgg = useMemo(() => {
+    if (!compareMode || stationData.length === 0) return [] as Array<{ id: number; name: string; avgFPY: number; output: number; stations: number; lowYield: number }>;
+    const map = new Map<number, { id: number; name: string; okSum: number; inspSum: number; output: number; stations: number; lowYield: number }>();
+    for (const r of stationData) {
+      const f = (r as any).factory;
+      if (!f?.id) continue;
+      const cur = map.get(f.id) || { id: f.id, name: f.name || `#${f.id}`, okSum: 0, inspSum: 0, output: 0, stations: 0, lowYield: 0 };
+      cur.okSum += r.okCount;
+      cur.inspSum += r.totalInspections;
+      cur.output += r.output;
+      cur.stations += 1;
+      if (r.firstPassYield < 70) cur.lowYield += 1;
+      map.set(f.id, cur);
+    }
+    return Array.from(map.values()).map((x) => ({
+      id: x.id,
+      name: x.name,
+      avgFPY: x.inspSum > 0 ? Math.round((x.okSum / x.inspSum) * 10000) / 100 : 0,
+      output: x.output,
+      stations: x.stations,
+      lowYield: x.lowYield,
+    })).sort((a, b) => b.output - a.output);
+  }, [compareMode, stationData]);
+
   const todayStr = useMemo(
-    () => new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-    [],
+    () => formatDate.long(new Date()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [formatDate.long],
   );
 
+  // ── URL ⇄ State sync ──
+  const updateUrl = useCallback(
+    (next: { tab?: string; lowYield?: boolean; factory?: string; line?: string; autoRefresh?: boolean; compare?: boolean }) => {
+      const params = new URLSearchParams(window.location.search);
+      const tab = next.tab ?? activeTab;
+      const ly = next.lowYield ?? lowYieldFilter;
+      const fac = next.factory ?? selectedFactory;
+      const ln = next.line ?? selectedLine;
+      const ar = next.autoRefresh ?? autoRefresh;
+      const cmp = next.compare ?? compareMode;
+      if (tab && tab !== "station") params.set("tab", tab); else params.delete("tab");
+      if (ly) params.set("lowYield", "1"); else params.delete("lowYield");
+      if (fac && fac !== "all") params.set("factory", fac); else params.delete("factory");
+      if (ln && ln !== "all") params.set("line", ln); else params.delete("line");
+      if (ar) params.set("autoRefresh", "1"); else params.delete("autoRefresh");
+      if (cmp) params.set("compare", "1"); else params.delete("compare");
+      const qs = params.toString();
+      navigate(`/production-dashboard${qs ? `?${qs}` : ""}`, { replace: true } as any);
+    },
+    [activeTab, lowYieldFilter, selectedFactory, selectedLine, autoRefresh, compareMode, navigate],
+  );
+
+  const handleTabChange = useCallback(
+    (tab: string) => {
+      setActiveTab(tab);
+      updateUrl({ tab });
+    },
+    [updateUrl],
+  );
+
+  const handleLowYieldClick = useCallback(() => {
+    const next = !lowYieldFilter;
+    setLowYieldFilter(next);
+    setActiveTab("station");
+    updateUrl({ tab: "station", lowYield: next });
+  }, [lowYieldFilter, updateUrl]);
+
+  // Sync state when URL changes (back/forward)
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    const urlTab = params.get("tab") || "station";
+    const urlLY = params.get("lowYield") === "1";
+    const urlFac = params.get("factory") || "all";
+    const urlLine = params.get("line") || "all";
+    const urlCmp = params.get("compare") === "1";
+    if (urlTab !== activeTab) setActiveTab(urlTab);
+    if (urlLY !== lowYieldFilter) setLowYieldFilter(urlLY);
+    if (urlFac !== selectedFactory) setSelectedFactory(urlFac);
+    if (urlLine !== selectedLine) setSelectedLine(urlLine);
+    if (urlCmp !== compareMode) setCompareMode(urlCmp);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
   const getExportConfig = useCallback((): ReportExportConfig => {
-    const dateStr = `${dateRange.start.toLocaleDateString()} â€” ${dateRange.end.toLocaleDateString()}`;
+    const dateStr = `${formatDate.short(dateRange.start)} — ${formatDate.short(dateRange.end)}`;
     const sections: ReportExportConfig["sections"] = [];
 
     sections.push({
-      title: "Overview",
+      title: t("productionDashboard.exportOverview", "Overview"),
       type: "stats",
       stats: [
-        { label: "Stations", value: summary.totalStations },
-        { label: "Avg FPY", value: `${summary.avgFPY}%` },
-        { label: "Total Output", value: summary.totalOutput.toLocaleString() },
-        { label: "Avg Retests", value: `${summary.avgRetests}%` },
-        { label: "Low Yield", value: summary.lowYieldStations },
+        { label: t("productionDashboard.totalStations", "Stations"), value: summary.totalStations },
+        { label: t("productionDashboard.avgFPY", "Avg FPY"), value: `${summary.avgFPY}%` },
+        { label: t("productionDashboard.totalOutput", "Total Output"), value: summary.totalOutput.toLocaleString() },
+        { label: t("productionDashboard.avgRetests", "Avg Retests"), value: `${summary.avgRetests}%` },
+        { label: t("productionDashboard.lowYieldStations", "Low Yield"), value: summary.lowYieldStations },
       ],
     });
 
     if (stationData.length > 0) {
       sections.push({
-        title: "Station Performance",
+        title: t("productionDashboard.exportStationPerf", "Station Performance"),
         type: "table",
-        tableHeaders: ["Station", "Category", "FPY %", "Change %", "Final Yield %", "Output", "Retest %"],
+        tableHeaders: [
+          t("productionDashboard.colStation", "Station"),
+          t("productionDashboard.colCategory", "Category"),
+          t("productionDashboard.colFPY", "FPY %"),
+          t("productionDashboard.colChange", "Change %"),
+          t("productionDashboard.colFinalYield", "Final Yield %"),
+          t("productionDashboard.colOutput", "Output"),
+          t("productionDashboard.colRetests", "Retest %"),
+        ],
         tableRows: stationData.map((r: any) => [
           r.station.name, r.workshop?.name || r.line?.name || "",
           r.firstPassYield.toFixed(1), r.yieldChange.toFixed(2), r.finalYield.toFixed(1),
@@ -305,27 +409,32 @@ export default function ProductionDashboard() {
 
     if (defectData?.defectsByType?.length) {
       sections.push({
-        title: "Top Defects",
+        title: t("productionDashboard.exportTopDefects", "Top Defects"),
         type: "table",
-        tableHeaders: ["Code", "Name", "Count", "Rate"],
+        tableHeaders: [
+          t("productionDashboard.colCode", "Code"),
+          t("productionDashboard.colName", "Name"),
+          t("productionDashboard.colCount", "Count"),
+          t("productionDashboard.colRate", "Rate"),
+        ],
         tableRows: defectData.defectsByType.map((d: any) => [d.code, d.name, d.ngCount, `${d.percentage || 0}%`]),
       });
     }
 
     return {
-      title: "Production Dashboard Report",
+      title: t("productionDashboard.exportTitle", "Production Dashboard Report"),
       subtitle: dateStr,
       sections,
       filenamePrefix: "production_dashboard",
       orientation: "landscape",
     };
-  }, [summary, stationData, defectData, dateRange]);
+  }, [summary, stationData, defectData, dateRange, t]);
 
   return (
     <DashboardLayout>
       <div className="flex flex-col min-h-0">
-        {/* â”€â”€ Summary Strip â”€â”€ */}
-        <div className="bg-card border-b border-border px-7 py-2.5 flex items-center gap-8 overflow-x-auto">
+        {/* ── Summary Strip ── */}
+        <div className="bg-card border-b border-border px-3 sm:px-7 py-2 sm:py-2.5 flex items-center gap-4 sm:gap-8 overflow-x-auto">
           {/* Live badge */}
           <div className="flex items-center gap-2 border border-emerald-500/30 bg-emerald-500/10 rounded-full px-3 py-1 shrink-0">
             <span className="relative flex h-2 w-2">
@@ -375,7 +484,14 @@ export default function ProductionDashboard() {
             </span>
           </div>
           <div className="w-px h-8 bg-border shrink-0" />
-          <div className="flex flex-col gap-0.5 min-w-fit">
+          <button
+            type="button"
+            onClick={handleLowYieldClick}
+            title={t("productionDashboard.lowYieldFilterHint", "Click to filter low-yield stations")}
+            className={`flex flex-col gap-0.5 min-w-fit text-left rounded-md px-2 -mx-2 py-1 -my-1 transition-colors hover:bg-muted/40 cursor-pointer ${
+              lowYieldFilter ? "bg-yellow-500/10 ring-1 ring-yellow-500/40" : ""
+            }`}
+          >
             <span
               className={`text-lg font-semibold font-mono ${summary.lowYieldStations > 0 ? "text-yellow-500" : ""}`}
             >
@@ -383,12 +499,13 @@ export default function ProductionDashboard() {
             </span>
             <span className="text-[10px] text-muted-foreground/70 uppercase tracking-wider">
               {t("productionDashboard.lowYieldStations", "Low Yield Stations")}
+              {lowYieldFilter && <span className="ml-1 text-yellow-500">●</span>}
             </span>
-          </div>
+          </button>
         </div>
 
-        {/* â”€â”€ Toolbar â”€â”€ */}
-        <div className="bg-card border-b border-border px-7 py-2.5 flex items-center gap-3 overflow-x-auto">
+        {/* ── Toolbar ── */}
+        <div className="bg-card border-b border-border px-3 sm:px-7 py-2 sm:py-2.5 flex items-center gap-2 sm:gap-3 overflow-x-auto">
           {/* Tabs */}
           <div className="flex gap-0.5 bg-background border border-border rounded-lg p-0.5 shrink-0">
             {[
@@ -399,7 +516,7 @@ export default function ProductionDashboard() {
             ].map((tab) => (
               <button
                 key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
+                onClick={() => handleTabChange(tab.key)}
                 className={`px-3.5 py-1 rounded-md text-xs font-medium transition-colors ${
                   activeTab === tab.key
                     ? "bg-secondary text-foreground border border-border"
@@ -445,7 +562,7 @@ export default function ProductionDashboard() {
                 >
                   <CalendarDays className="h-3 w-3" />
                   {datePreset === "custom" && customRange?.from
-                    ? `${customRange.from.toLocaleDateString("en-US", { month: "short", day: "numeric" })}${customRange.to ? ` â€“ ${customRange.to.toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}`
+                    ? `${formatDate.short(customRange.from)}${customRange.to ? ` – ${formatDate.short(customRange.to)}` : ""}`
                     : t("productionDashboard.custom", "Custom")}
                 </button>
               </PopoverTrigger>
@@ -472,6 +589,7 @@ export default function ProductionDashboard() {
             onValueChange={(val) => {
               setSelectedFactory(val);
               setSelectedLine("all");
+              updateUrl({ factory: val, line: "all" });
             }}
           >
             <SelectTrigger className="w-40 h-8 text-xs shrink-0">
@@ -488,7 +606,7 @@ export default function ProductionDashboard() {
             </SelectContent>
           </Select>
 
-          <Select value={selectedLine} onValueChange={setSelectedLine}>
+          <Select value={selectedLine} onValueChange={(val) => { setSelectedLine(val); updateUrl({ line: val }); }}>
             <SelectTrigger className="w-40 h-8 text-xs shrink-0">
               <SelectValue placeholder={t("productionDashboard.allLines", "All Lines")} />
             </SelectTrigger>
@@ -502,11 +620,138 @@ export default function ProductionDashboard() {
             </SelectContent>
           </Select>
 
+          <Button
+            variant={autoRefresh ? "default" : "outline"}
+            size="sm"
+            className="h-8 text-xs shrink-0"
+            onClick={() => {
+              const next = !autoRefresh;
+              setAutoRefresh(next);
+              updateUrl({ autoRefresh: next });
+              toast.success(
+                next
+                  ? t("productionDashboard.autoRefreshOn", "Auto-refresh enabled (every 30s)")
+                  : t("productionDashboard.autoRefreshOff", "Auto-refresh disabled"),
+              );
+            }}
+            aria-label={t("productionDashboard.toggleAutoRefresh", "Toggle auto-refresh")}
+          >
+            <RefreshCw className={`h-3 w-3 mr-1 ${autoRefresh ? "animate-spin" : ""}`} />
+            {autoRefresh
+              ? t("productionDashboard.autoRefreshOnLabel", "Auto 30s")
+              : t("productionDashboard.autoRefreshLabel", "Auto-refresh")}
+          </Button>
+
+          <Button
+            variant={compareMode ? "default" : "outline"}
+            size="sm"
+            className="h-8 text-xs shrink-0"
+            onClick={() => {
+              const next = !compareMode;
+              setCompareMode(next);
+              // When entering compare mode, clear single-factory filter so we see all
+              if (next && selectedFactory !== "all") {
+                setSelectedFactory("all");
+                setSelectedLine("all");
+                updateUrl({ compare: next, factory: "all", line: "all" });
+              } else {
+                updateUrl({ compare: next });
+              }
+              toast.success(
+                next
+                  ? t("productionDashboard.compareOn", "Factory comparison enabled")
+                  : t("productionDashboard.compareOff", "Factory comparison disabled"),
+              );
+            }}
+            aria-label={t("productionDashboard.toggleCompare", "Toggle factory comparison")}
+            title={t("productionDashboard.compareHint", "Compare KPIs across factories")}
+          >
+            <Layers className="h-3 w-3 mr-1" />
+            {t("productionDashboard.compareFactories", "Compare")}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs shrink-0"
+            onClick={() => {
+              const url = window.location.href;
+              navigator.clipboard?.writeText(url).then(
+                () => toast.success(t("productionDashboard.linkCopied", "Link copied to clipboard")),
+                () => toast.error(t("productionDashboard.linkCopyFailed", "Failed to copy link")),
+              );
+            }}
+            aria-label={t("productionDashboard.copyLink", "Copy link with current filters")}
+          >
+            <Link2 className="h-3 w-3 mr-1" />
+            {t("productionDashboard.copyLink", "Copy link")}
+          </Button>
+
           <ReportExportButton getConfig={getExportConfig} />
         </div>
 
-        {/* â”€â”€ Tab Content â”€â”€ */}
+        {/* ── Tab Content ── */}
         <div className="overflow-auto flex-1">
+          {compareMode && factoryAgg.length > 0 && (
+            <div className="px-3 sm:px-7 pt-3 sm:pt-4">
+              <div className="bg-card border border-border rounded-md p-3 sm:p-4">
+                <div className="flex items-center justify-between mb-2 sm:mb-3 flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-primary" />
+                    <h3 className="text-sm font-semibold">
+                      {t("productionDashboard.compareTitle", "Factory Comparison")}
+                    </h3>
+                    <span className="text-xs text-muted-foreground">
+                      ({factoryAgg.length} {t("productionDashboard.factoriesShort", "factories")})
+                    </span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {t("productionDashboard.compareHint", "Compare KPIs across factories")}
+                  </span>
+                </div>
+                <div className="h-56 sm:h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={factoryAgg} margin={{ top: 10, right: 16, left: 0, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-15} textAnchor="end" height={50} />
+                      <YAxis yAxisId="left" tick={{ fontSize: 11 }} label={{ value: "%", position: "insideLeft", fontSize: 10 }} domain={[0, 100]} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
+                      <Tooltip />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Bar yAxisId="right" dataKey="output" name={t("productionDashboard.totalOutput", "Total Output")} fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                      <Line yAxisId="left" type="monotone" dataKey="avgFPY" name={t("productionDashboard.avgFPY", "Avg FPY")} stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} />
+                      <ReferenceLine yAxisId="left" y={70} stroke="#ef4444" strokeDasharray="4 4" label={{ value: "70%", fontSize: 10, fill: "#ef4444" }} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mt-3">
+                  {factoryAgg.map((f) => (
+                    <button
+                      key={f.id}
+                      onClick={() => {
+                        setCompareMode(false);
+                        setSelectedFactory(String(f.id));
+                        updateUrl({ compare: false, factory: String(f.id) });
+                      }}
+                      className="text-left bg-muted/40 hover:bg-muted rounded p-2 transition-colors"
+                      title={t("productionDashboard.drilldownFactory", "Click to filter by this factory")}
+                    >
+                      <div className="text-xs font-medium truncate">{f.name}</div>
+                      <div className="text-[11px] text-muted-foreground flex items-center justify-between mt-0.5">
+                        <span>FPY: <b className={f.avgFPY < 70 ? "text-red-500" : "text-emerald-600"}>{f.avgFPY}%</b></span>
+                        <span>{f.output.toLocaleString()}</span>
+                      </div>
+                      {f.lowYield > 0 && (
+                        <div className="text-[10px] text-amber-600 mt-0.5">
+                          ⚠ {f.lowYield} {t("productionDashboard.lowYieldStations", "Low Yield")}
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
           {activeTab === "station" && (
             <StationViewTab
               stationData={stationData}
@@ -515,6 +760,11 @@ export default function ProductionDashboard() {
               t={t}
               datePreset={datePreset}
               dateRange={dateRange}
+              lowYieldFilter={lowYieldFilter}
+              onClearLowYieldFilter={() => {
+                setLowYieldFilter(false);
+                updateUrl({ lowYield: false });
+              }}
             />
           )}
 
@@ -560,9 +810,9 @@ export default function ProductionDashboard() {
   );
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ══════════════════════════════════════════════════════════
    Station View Tab (existing table)
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   ══════════════════════════════════════════════════════════ */
 
 function StationViewTab({
   stationData,
@@ -571,6 +821,8 @@ function StationViewTab({
   t,
   datePreset,
   dateRange,
+  lowYieldFilter,
+  onClearLowYieldFilter,
 }: {
   stationData: any[];
   isLoading: boolean;
@@ -578,26 +830,32 @@ function StationViewTab({
   t: any;
   datePreset: string;
   dateRange: { start: Date; end: Date };
+  lowYieldFilter?: boolean;
+  onClearLowYieldFilter?: () => void;
 }) {
   const [searchText, setSearchText] = useState("");
 
   const filteredData = useMemo(() => {
-    if (!searchText.trim()) return stationData;
+    let rows = stationData;
+    if (lowYieldFilter) {
+      rows = rows.filter((row: any) => row.totalInspections > 0 && row.firstPassYield < 70);
+    }
+    if (!searchText.trim()) return rows;
     const q = searchText.toLowerCase().trim();
-    return stationData.filter((row: any) => {
+    return rows.filter((row: any) => {
       const name = (row.station?.name || "").toLowerCase();
       const code = (row.station?.code || "").toLowerCase();
       const line = (row.line?.name || "").toLowerCase();
       const workshop = (row.workshop?.name || "").toLowerCase();
       return name.includes(q) || code.includes(q) || line.includes(q) || workshop.includes(q);
     });
-  }, [stationData, searchText]);
+  }, [stationData, searchText, lowYieldFilter]);
 
   return (
     <div className="min-w-275">
       {/* Search Bar */}
-      <div className="px-7 py-2.5 border-b border-border bg-card sticky top-0 z-20">
-        <div className="relative max-w-xs">
+      <div className="px-7 py-2.5 border-b border-border bg-card sticky top-0 z-20 flex items-center gap-3">
+        <div className="relative max-w-xs flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
           <input
             type="text"
@@ -611,10 +869,22 @@ function StationViewTab({
               onClick={() => setSearchText("")}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground text-xs"
             >
-              âœ•
+              ✕
             </button>
           )}
         </div>
+        {lowYieldFilter && (
+          <button
+            type="button"
+            onClick={onClearLowYieldFilter}
+            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs font-medium bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border border-yellow-500/30 hover:bg-yellow-500/20"
+            title={t("productionDashboard.clearLowYieldFilter", "Clear filter")}
+          >
+            <AlertTriangle className="h-3 w-3" />
+            {t("productionDashboard.lowYieldFilterChip", "Low Yield Stations (FPY < 70%)")}
+            <span className="ml-1 opacity-70">✕</span>
+          </button>
+        )}
       </div>
 
       {/* Table Header */}
@@ -654,8 +924,8 @@ function StationViewTab({
           <Factory className="h-12 w-12 mb-3" />
           <p className="text-sm">
             {searchText
-              ? t("productionDashboard.noSearchResults", "No stations match '{{query}}'", { query: searchText })
-              : t("productionDashboard.noStations", "No stations found for the selected filters")}
+              ? t("productionDashboard.noSearchResults", "No stations match '{{query}}'.", { query: searchText })
+              : t("productionDashboard.noStations", "No station data found for the selected filters.")}
           </p>
         </div>
       ) : (
@@ -713,7 +983,7 @@ function StationViewTab({
                       isNoData ? "text-muted-foreground/40" : yieldColorMap[fpyLevel]
                     }`}
                   >
-                    {isNoData ? "â€” %" : `${row.firstPassYield.toFixed(1)}%`}
+                    {isNoData ? "— %" : `${row.firstPassYield.toFixed(1)}%`}
                   </span>
                   <div className="h-0.75 bg-border rounded-sm overflow-hidden mt-1 w-full">
                     <div
@@ -738,8 +1008,8 @@ function StationViewTab({
                     }`}
                   >
                     {isNoData ? "--" : `${Math.abs(row.yieldChange).toFixed(1)}%`}
-                    {changeDir === "up" && <span className="text-[10px]">â–²</span>}
-                    {changeDir === "down" && <span className="text-[10px]">â–¼</span>}
+                    {changeDir === "up" && <span className="text-[10px]">▲</span>}
+                    {changeDir === "down" && <span className="text-[10px]">▼</span>}
                   </span>
                   <span className="text-[10px] text-muted-foreground/50 leading-none mt-0.5">
                     Point change
@@ -753,7 +1023,7 @@ function StationViewTab({
                       isNoData ? "text-muted-foreground/40" : ""
                     }`}
                   >
-                    {isNoData ? "â€” %" : `${row.finalYield.toFixed(1)}%`}
+                    {isNoData ? "— %" : `${row.finalYield.toFixed(1)}%`}
                   </span>
                   <div className="h-0.75 bg-border rounded-sm overflow-hidden mt-1 w-full">
                     <div
@@ -785,7 +1055,7 @@ function StationViewTab({
                           : ""
                     }`}
                   >
-                    {isNoData ? "â€” %" : `${row.retestRate.toFixed(1)}%`}
+                    {isNoData ? "— %" : `${row.retestRate.toFixed(1)}%`}
                   </span>
                   <span className="text-[10px] text-muted-foreground/50 leading-none mt-0.5">Retests</span>
                 </div>
@@ -816,7 +1086,7 @@ function StationViewTab({
                             onClick={() => navigate(`/correlation-analysis?pointDefId=${defect.pointDefId}`)}
                             className="text-[10px] text-purple-400 hover:underline whitespace-nowrap shrink-0"
                           >
-                            Correlate â†—
+                            Correlate ↗
                           </button>
                         </div>
                       );
@@ -842,9 +1112,9 @@ function StationViewTab({
   );
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ══════════════════════════════════════════════════════════
    Defect Analysis Tab
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   ══════════════════════════════════════════════════════════ */
 
 function DefectAnalysisTab({
   data,
@@ -1001,9 +1271,9 @@ function DefectAnalysisTab({
   );
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ══════════════════════════════════════════════════════════
    Trend Tab
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   ══════════════════════════════════════════════════════════ */
 
 function TrendTab({
   data,
@@ -1123,9 +1393,10 @@ function formatPeriodLabel(period: string, interval: string): string {
   try {
     const d = new Date(period);
     if (isNaN(d.getTime())) return period;
-    if (interval === "hour") return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit" });
-    if (interval === "week") return `W${getISOWeek(d)} ${d.toLocaleString("en-US", { month: "short" })}`;
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const locale = getActiveLocale();
+    if (interval === "hour") return d.toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit" });
+    if (interval === "week") return `W${getISOWeek(d)} ${d.toLocaleString(locale, { month: "short" })}`;
+    return d.toLocaleDateString(locale, { month: "short", day: "numeric" });
   } catch { return period; }
 }
 
@@ -1137,9 +1408,9 @@ function getISOWeek(d: Date): number {
   return Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ══════════════════════════════════════════════════════════
    SPC Tab
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   ══════════════════════════════════════════════════════════ */
 
 function SpcTab({
   data,
@@ -1189,12 +1460,12 @@ function SpcTab({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <SpcKpiCard
           label="Avg Cpk"
-          value={spcRows.length > 0 ? (spcRows.reduce((s: number, r: any) => s + (r?.cpk || 0), 0) / spcRows.length).toFixed(2) : "â€”"}
+          value={spcRows.length > 0 ? (spcRows.reduce((s: number, r: any) => s + (r?.cpk || 0), 0) / spcRows.length).toFixed(2) : "—"}
           color={spcRows.some((r: any) => r?.cpk < 1) ? "text-red-500" : "text-emerald-500"}
         />
         <SpcKpiCard
           label="Avg Yield"
-          value={spcRows.length > 0 ? `${(spcRows.reduce((s: number, r: any) => s + (r?.fpy || 0), 0) / spcRows.length).toFixed(1)}%` : "â€”"}
+          value={spcRows.length > 0 ? `${(spcRows.reduce((s: number, r: any) => s + (r?.fpy || 0), 0) / spcRows.length).toFixed(1)}%` : "—"}
           color="text-blue-400"
         />
         <SpcKpiCard
@@ -1236,7 +1507,7 @@ function SpcTab({
               onClick={() => navigate(`/station-analysis/${row?.stationId}?dp=${datePreset}&from=${dateRange.start.toISOString()}&to=${dateRange.end.toISOString()}`)}
               className="text-[11px] text-purple-400 hover:underline"
             >
-              Deep analysis â†’
+              Deep analysis →
             </button>
           </div>
 
@@ -1288,7 +1559,7 @@ function SpcTab({
                   contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11 }}
                   formatter={(v: any) => [`${Number(v).toFixed(1)}%`, "Yield"]}
                   labelFormatter={(l) => {
-                    try { return new Date(l).toLocaleDateString("en-US", { month: "short", day: "numeric" }); }
+                    try { return new Date(l).toLocaleDateString(getActiveLocale(), { month: "short", day: "numeric" }); }
                     catch { return l; }
                   }}
                 />

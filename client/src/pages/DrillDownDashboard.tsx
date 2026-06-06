@@ -148,6 +148,7 @@ function StatsCard({
   icon: React.ComponentType<{ className?: string }>;
   color?: "blue" | "green" | "red" | "yellow";
 }) {
+  const { t } = useTranslation();
   const colorClasses = {
     blue: "bg-blue-500/10 text-blue-500",
     green: "bg-green-500/10 text-green-500",

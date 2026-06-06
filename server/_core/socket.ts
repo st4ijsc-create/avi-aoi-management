@@ -3,6 +3,7 @@ import { Server, Socket } from "socket.io";
 import { nanoid } from "nanoid";
 import * as db from "../db";
 import { sdk } from "./sdk";
+import { attachRedisAdapter } from "./socketRedisAdapter";
 
 let io: Server | null = null;
 
@@ -70,6 +71,10 @@ export function initializeSocket(server: HttpServer): Server {
     },
     path: "/api/socket.io",
   });
+
+  // Optional Redis adapter — unlocks horizontal scaling when REDIS_URL is set.
+  // No-op (in-memory) when REDIS_URL is absent or the adapter package is missing.
+  void attachRedisAdapter(io);
 
   // Handshake auth middleware — IEC 62443-2-1 CL2 realtime channel hardening.
   // Browser clients must present a valid session cookie; machine clients

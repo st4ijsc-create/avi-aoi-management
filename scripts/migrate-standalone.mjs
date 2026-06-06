@@ -28,6 +28,16 @@ const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
 const FORCE = args.includes('--force');
 
+// Legacy migrations that may have been partially applied outside the tracker.
+// For these files only, we can treat "already exists" errors as success,
+// but ONLY when explicit probe checks confirm key artifacts are present.
+const LEGACY_TOLERANT_MIGRATIONS = new Set(
+  (process.env.LEGACY_MIGRATION_TOLERANT_LIST ?? '0009_numerous_wilson_fisk.sql')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+);
+
 // ─── Load .env file (simple parser, no dependencies needed) ───
 function loadEnvFile(envPath) {
   if (!fs.existsSync(envPath)) return;
@@ -56,10 +66,11 @@ loadEnvFile(path.join(process.cwd(), '.env'));
 loadEnvFile(path.join(__dirname, '.env'));
 
 // ─── Resolve drizzle folder ──────────────────────────────────
-const DRIZZLE_DIR = path.join(__dirname, 'drizzle');
+// Script lives in scripts/, drizzle/ is one level up at project root
+const DRIZZLE_DIR = path.join(__dirname, '..', 'drizzle');
 if (!fs.existsSync(DRIZZLE_DIR)) {
   console.error('ERROR: drizzle/ folder not found at:', DRIZZLE_DIR);
-  console.error('       Make sure this script is in the same directory as the drizzle/ folder.');
+  console.error('       Expected drizzle/ at the project root.');
   process.exit(1);
 }
 
@@ -209,6 +220,24 @@ for (const file of pending) {
     successCount++;
     console.log(`    [OK]   ${file}`);
   } catch (e) {
+    // Controlled legacy fallback: only allow for known old migrations with
+    // already-exists failures and positive probe checks.
+    const canTreatAsLegacySuccess = await shouldTreatAsLegacySuccess(file, e, sql);
+    if (canTreatAsLegacySuccess) {
+      await sql`
+        INSERT INTO "__applied_migrations" (filename, checksum, success)
+        VALUES (${file}, ${checksum}, true)
+        ON CONFLICT (filename) DO UPDATE SET
+          applied_at = NOW(),
+          checksum = ${checksum},
+          success = true
+      `;
+      successCount++;
+      console.warn(`    [LEGACY-OK] ${file}`);
+      console.warn(`               ${e.message}`);
+      continue;
+    }
+
     failCount++;
     console.error(`    [FAIL] ${file}`);
     console.error(`           ${e.message}`);
@@ -306,4 +335,30 @@ function simpleHash(str) {
     hash = hash & hash; // Convert to 32-bit integer
   }
   return Math.abs(hash).toString(16).padStart(8, '0');
+}
+
+function isAlreadyExistsError(error) {
+  const code = error?.code;
+  const msg = String(error?.message ?? '').toLowerCase();
+  return code === '42710' || code === '42P07' || msg.includes('already exists');
+}
+
+async function shouldTreatAsLegacySuccess(file, error, sql) {
+  if (!LEGACY_TOLERANT_MIGRATIONS.has(file)) return false;
+  if (!isAlreadyExistsError(error)) return false;
+
+  // Probe checks per migration. Keep minimal and deterministic.
+  if (file === '0009_numerous_wilson_fisk.sql') {
+    const [{ hasEnum }] = await sql`
+      SELECT EXISTS(
+        SELECT 1 FROM pg_type WHERE typname = 'aipendingactionstatus'
+      ) AS "hasEnum"
+    `;
+    const [{ hasTable }] = await sql`
+      SELECT to_regclass('public.ai_pending_actions') IS NOT NULL AS "hasTable"
+    `;
+    return Boolean(hasEnum && hasTable);
+  }
+
+  return false;
 }

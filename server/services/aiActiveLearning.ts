@@ -68,8 +68,13 @@ export async function autoLabelImages(
       const confidence = inference.confidence;
       const topLabel = inference.topLabel;
 
-      // Calculate uncertainty (1 - confidence)
-      const uncertainty = 1 - confidence;
+      // Entropy-based uncertainty: H = -Σ p_i * log2(p_i) / log2(n_classes)
+      // Normalized to [0, 1]; outperforms margin sampling (1-conf) when multiple
+      // classes have similar probabilities (e.g. BGA tombstone vs. offset).
+      const probs = inference.predictions?.map(p => p.confidence) ?? [confidence, 1 - confidence];
+      const nClasses = Math.max(probs.length, 2);
+      const entropy = probs.reduce((h, p) => (p > 0 ? h - p * Math.log2(p) : h), 0);
+      const uncertainty = entropy / Math.log2(nClasses); // normalized 0–1
 
       // Route by confidence thresholds
       let status: "AUTO_LABELED" | "IN_REVIEW" | "EXPERT_REQUIRED";
@@ -291,37 +296,49 @@ export async function runDiversitySampling(
 
   if (queueItems.length === 0) return [];
 
-  // For each queue item, check if we have an embedding and calculate avg distance to others
+  // Batch-fetch embeddings for ALL candidate images in ONE query (fixes N+1)
+  const imageUrls = queueItems.map(q => q.imageUrl);
+  const embeddings = await db
+    .select({ id: aiImageEmbeddings.id, imageUrl: aiImageEmbeddings.imageUrl })
+    .from(aiImageEmbeddings)
+    .where(inArray(aiImageEmbeddings.imageUrl, imageUrls));
+
+  if (embeddings.length === 0) return [];
+
+  // Build a lookup: imageUrl → embedding id
+  const urlToEmbId = new Map(embeddings.map(e => [e.imageUrl, e.id]));
+  const candidateEmbIds = embeddings.map(e => e.id);
+
+  // One SQL query: for each candidate embedding, compute avg cosine distance
+  // to all labeled embeddings (diversity = low similarity to what's already labeled).
+  const diversityRows = await db.execute(
+    sql`SELECT e1.id            AS candidate_id,
+               e1."imageUrl"   AS image_url,
+               AVG(1 - (e1.embedding <=> e2.embedding)) AS avg_similarity
+        FROM ${aiImageEmbeddings} e1
+        JOIN ${aiImageEmbeddings} e2
+          ON e2.label IS NOT NULL
+         AND e2.id != e1.id
+        WHERE e1.id = ANY(${candidateEmbIds})
+        GROUP BY e1.id, e1."imageUrl"`,
+  ) as any;
+
+  // Map results back to queue items
+  const scoreByEmbId = new Map<number, number>(
+    (diversityRows.rows ?? []).map((r: any) => [
+      Number(r.candidate_id),
+      1 - parseFloat(r.avg_similarity ?? "0.5"), // diversity = 1 - similarity
+    ])
+  );
+
   const diversityScores: Array<{ queueId: number; imageUrl: string; diversityScore: number }> = [];
-
   for (const item of queueItems) {
-    // Find embedding for this image
-    const [emb] = await db
-      .select({ id: aiImageEmbeddings.id })
-      .from(aiImageEmbeddings)
-      .where(eq(aiImageEmbeddings.imageUrl, item.imageUrl))
-      .limit(1);
-
-    if (!emb) continue;
-
-    // Calculate average cosine distance to all labeled items
-    const result = await db.execute(
-      sql`SELECT AVG(1 - (e1.embedding <=> e2.embedding)) as avg_similarity
-          FROM ${aiImageEmbeddings} e1, ${aiImageEmbeddings} e2
-          WHERE e1.id = ${emb.id}
-          AND e2.id != ${emb.id}
-          AND e2.label IS NOT NULL
-          LIMIT 100`,
-    ) as any;
-
-    const avgSimilarity = parseFloat(result.rows?.[0]?.avg_similarity ?? "0.5");
-    // Higher diversity = lower similarity to existing labeled data
-    const diversityScore = 1 - avgSimilarity;
-
+    const embId = urlToEmbId.get(item.imageUrl);
+    if (!embId) continue;
     diversityScores.push({
       queueId: item.id,
       imageUrl: item.imageUrl,
-      diversityScore,
+      diversityScore: scoreByEmbId.get(embId) ?? 0.5, // default mid if no labeled data yet
     });
   }
 

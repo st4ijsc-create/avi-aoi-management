@@ -65,7 +65,7 @@ export async function paretoByDefectType(params: {
     LIMIT ${limit}
   `));
 
-  return buildParetoResult(result.rows as any[], "defect_type", startDate, endDate);
+  return buildParetoResult((Array.isArray(result) ? result : (result as any).rows || []) as any[], "defect_type", startDate, endDate);
 }
 
 /**
@@ -104,7 +104,7 @@ export async function paretoByMachine(params: {
     LIMIT ${limit}
   `));
 
-  return buildParetoResult(result.rows as any[], "machine", startDate, endDate);
+  return buildParetoResult((Array.isArray(result) ? result : (result as any).rows || []) as any[], "machine", startDate, endDate);
 }
 
 /**
@@ -141,7 +141,7 @@ export async function paretoByLine(params: {
     LIMIT ${limit}
   `));
 
-  return buildParetoResult(result.rows as any[], "line", startDate, endDate);
+  return buildParetoResult((Array.isArray(result) ? result : (result as any).rows || []) as any[], "line", startDate, endDate);
 }
 
 /**
@@ -197,7 +197,7 @@ export async function paretoByTimePeriod(params: {
     LIMIT ${limit}
   `));
 
-  return buildParetoResult(result.rows as any[], `time_${groupBy}`, startDate, endDate);
+  return buildParetoResult((Array.isArray(result) ? result : (result as any).rows || []) as any[], `time_${groupBy}`, startDate, endDate);
 }
 
 /**

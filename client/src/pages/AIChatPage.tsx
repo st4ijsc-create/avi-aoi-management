@@ -209,11 +209,11 @@ export default function AIChatPage() {
             )}
           </ScrollArea>
           {/* Tools info */}
-          {toolsData?.tools && (
+          {toolsData && toolsData.length > 0 && (
             <div className="p-3 border-t">
               <p className="text-xs text-muted-foreground flex items-center gap-1">
                 <Wrench className="h-3 w-3" />
-                {t("aiChat.toolsAvailable", "{{count}} công cụ AI khả dụng", { count: toolsData.tools.length })}
+                {t("aiChat.toolsAvailable", "{{count}} công cụ AI khả dụng", { count: toolsData.length })}
               </p>
             </div>
           )}

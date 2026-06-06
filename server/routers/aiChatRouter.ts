@@ -206,9 +206,9 @@ export const aiChatRouter = router({
           await db.insert(aiChatMessages).values({
             conversationId: convIdNum,
             role: "assistant",
-            content: result.reply ?? result.content ?? "",
-            toolCalls: result.toolCalls,
-            tokensUsed: result.usage?.total_tokens,
+            content: result.reply ?? (result as any).content ?? "",
+            toolCalls: (result as any).toolCalls,
+            tokensUsed: (result as any).usage?.total_tokens,
           });
           // Update conversation stats
           await db.update(aiChatConversations)

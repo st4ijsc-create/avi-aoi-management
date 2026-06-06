@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 
 export type ValidationRule = {
   required?: boolean;
@@ -23,6 +24,7 @@ export function useFormValidation<T extends Record<string, any>>(
 ) {
   const [errors, setErrors] = useState<ValidationErrors<T>>({});
   const [touched, setTouched] = useState<Partial<Record<keyof T, boolean>>>({});
+  const { t } = useTranslation();
 
   const validateField = useCallback(
     (field: keyof T, value: any): string | null => {
@@ -32,10 +34,10 @@ export function useFormValidation<T extends Record<string, any>>(
       // Required check
       if (rule.required) {
         if (value === undefined || value === null || value === "") {
-          return "Trường này là bắt buộc";
+          return t("validation.fieldRequired");
         }
         if (typeof value === "string" && value.trim() === "") {
-          return "Trường này là bắt buộc";
+          return t("validation.fieldRequired");
         }
       }
 
@@ -47,13 +49,13 @@ export function useFormValidation<T extends Record<string, any>>(
       // String validations
       if (typeof value === "string") {
         if (rule.minLength && value.length < rule.minLength) {
-          return `Tối thiểu ${rule.minLength} ký tự`;
+          return t("validation.minLength", { count: rule.minLength });
         }
         if (rule.maxLength && value.length > rule.maxLength) {
-          return `Tối đa ${rule.maxLength} ký tự`;
+          return t("validation.maxLength", { count: rule.maxLength });
         }
         if (rule.pattern && !rule.pattern.test(value)) {
-          return "Định dạng không hợp lệ";
+          return t("validation.invalidFormat");
         }
       }
 
@@ -61,10 +63,10 @@ export function useFormValidation<T extends Record<string, any>>(
       if (typeof value === "number" || !isNaN(Number(value))) {
         const numValue = Number(value);
         if (rule.min !== undefined && numValue < rule.min) {
-          return `Giá trị tối thiểu là ${rule.min}`;
+          return t("validation.minValue", { min: rule.min });
         }
         if (rule.max !== undefined && numValue > rule.max) {
-          return `Giá trị tối đa là ${rule.max}`;
+          return t("validation.maxValue", { max: rule.max });
         }
       }
 
@@ -75,7 +77,7 @@ export function useFormValidation<T extends Record<string, any>>(
 
       return null;
     },
-    [rules]
+    [rules, t]
   );
 
   const validate = useCallback(

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
@@ -8,6 +8,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,8 +33,16 @@ export default function ProductionOrders() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  // Debounce search input → server-side query (300ms)
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(id);
+  }, [searchTerm]);
   const [activeTab, setActiveTab] = useState("list");
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; code: string } | null>(null);
   
   // Form state
   const [orderCode, setOrderCode] = useState("");
@@ -37,10 +55,14 @@ export default function ProductionOrders() {
   const [priority, setPriority] = useState("0");
   const [notes, setNotes] = useState("");
 
-  // Queries
-  const { data: orders, refetch } = trpc.productionOrder.list.useQuery(
-    statusFilter !== "all" ? { status: statusFilter } : undefined
-  );
+  // Queries — server-side filtering for status + debounced search
+  const listInput = (() => {
+    const q: { status?: string; search?: string } = {};
+    if (statusFilter !== "all") q.status = statusFilter;
+    if (debouncedSearch) q.search = debouncedSearch;
+    return Object.keys(q).length > 0 ? q : undefined;
+  })();
+  const { data: orders, refetch } = trpc.productionOrder.list.useQuery(listInput);
   const { data: factories } = trpc.factory.list.useQuery();
   const { data: workshops } = trpc.workshop.list.useQuery();
   const { data: lines } = trpc.line.list.useQuery();
@@ -178,10 +200,13 @@ export default function ProductionOrders() {
     return Math.round((order.completedQuantity / order.targetQuantity) * 100);
   };
 
+  // Server already filters by debouncedSearch; mirror locally so typing feels instant
+  // before the debounce timer fires.
   const filteredOrders = orders?.filter((order) => {
-    const matchesSearch = order.orderCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.companyCode.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch;
+    if (!searchTerm) return true;
+    const q = searchTerm.toLowerCase();
+    return order.orderCode.toLowerCase().includes(q)
+      || order.companyCode.toLowerCase().includes(q);
   });
 
   const getFactoryName = (id: number) => factories?.find(f => f.id === id)?.name || "-";
@@ -198,7 +223,7 @@ export default function ProductionOrders() {
     <DashboardLayout title={t('production.title')} navItems={navItems} currentPath="/production-orders">
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold">{t('production.title')}</h1>
             <p className="text-muted-foreground">{t('production.description')}</p>
@@ -215,14 +240,14 @@ export default function ProductionOrders() {
                 <DialogTitle>{t('production.createNewTitle')}</DialogTitle>
                 <DialogDescription>{t('production.createNewDescription')}</DialogDescription>
               </DialogHeader>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto pr-1">
                 <div className="space-y-2">
                   <Label>{t('production.orderCode')} *</Label>
-                  <Input value={orderCode} onChange={(e) => setOrderCode(e.target.value)} placeholder="PO-2024-001" />
+                  <Input value={orderCode} onChange={(e) => setOrderCode(e.target.value)} placeholder={t('production.orderCodePlaceholder')} />
                 </div>
                 <div className="space-y-2">
                   <Label>{t('production.companyCode')} *</Label>
-                  <Input value={companyCode} onChange={(e) => setCompanyCode(e.target.value)} placeholder="CORP-001" />
+                  <Input value={companyCode} onChange={(e) => setCompanyCode(e.target.value)} placeholder={t('production.companyCodePlaceholder')} />
                 </div>
                 <div className="space-y-2">
                   <Label>{t('production.factory')} *</Label>
@@ -270,7 +295,7 @@ export default function ProductionOrders() {
                 </div>
                 <div className="space-y-2">
                   <Label>{t('production.targetQuantity')} *</Label>
-                  <Input type="number" value={targetQuantity} onChange={(e) => setTargetQuantity(e.target.value)} placeholder="1000" />
+                  <Input type="number" value={targetQuantity} onChange={(e) => setTargetQuantity(e.target.value)} placeholder={t('production.targetQuantityPlaceholder')} />
                 </div>
                 <div className="space-y-2">
                   <Label>{t('production.priority')}</Label>
@@ -407,15 +432,16 @@ export default function ProductionOrders() {
                 <CardDescription>{t('production.orderListDescription')}</CardDescription>
               </CardHeader>
               <CardContent>
+                <div className="max-h-[60vh] overflow-auto rounded-md border">
                 <Table>
-                  <TableHeader>
+                  <TableHeader className="sticky top-0 z-10 bg-background">
                     <TableRow>
                       <TableHead>{t('production.orderCode')}</TableHead>
                       <TableHead>{t('production.company')}</TableHead>
                       <TableHead>{t('production.line')}</TableHead>
                       <TableHead>{t('production.product')}</TableHead>
                       <TableHead>{t('production.progress')}</TableHead>
-                      <TableHead>OK/NG/NTF</TableHead>
+                      <TableHead>{t('production.okNgNtf')}</TableHead>
                       <TableHead>{t('production.status')}</TableHead>
                       <TableHead className="text-right">{t('common.actions')}</TableHead>
                     </TableRow>
@@ -455,17 +481,14 @@ export default function ProductionOrders() {
                         <TableCell>{getStatusBadge(order.status)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="icon" onClick={() => handleEdit(order)}>
+                            <Button variant="ghost" size="icon" aria-label={t('production.editOrder')} onClick={() => handleEdit(order)}>
                               <Edit className="w-4 h-4" />
                             </Button>
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => {
-                                if (confirm(t('production.confirmDelete'))) {
-                                  deleteMutation.mutate({ id: order.id });
-                                }
-                              }}
+                              aria-label={t('production.deleteOrder')}
+                              onClick={() => setDeleteTarget({ id: order.id, code: order.orderCode })}
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
@@ -482,6 +505,7 @@ export default function ProductionOrders() {
                     )}
                   </TableBody>
                 </Table>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -506,7 +530,7 @@ export default function ProductionOrders() {
               <DialogTitle>{t('production.editTitle')}</DialogTitle>
               <DialogDescription>{t('production.editDescription')}</DialogDescription>
             </DialogHeader>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto pr-1">
               <div className="space-y-2">
                 <Label>{t('production.orderCode')}</Label>
                 <Input value={orderCode} onChange={(e) => setOrderCode(e.target.value)} />
@@ -556,6 +580,31 @@ export default function ProductionOrders() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('production.deleteOrder')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('production.confirmDeleteDetail', { code: deleteTarget?.code ?? '', defaultValue: t('production.confirmDelete') })}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-red-600 hover:bg-red-700 text-white"
+                onClick={() => {
+                  if (deleteTarget) {
+                    deleteMutation.mutate({ id: deleteTarget.id });
+                    setDeleteTarget(null);
+                  }
+                }}
+              >
+                {t('common.delete')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </DashboardLayout>
   );

@@ -198,21 +198,25 @@ async function generateQualitySummary(
       endDate: end,
       factoryId: config.factoryId,
       workshopId: config.workshopId,
-    }),
+    } as any),
   ]);
 
   const s = stats as any;
   const qualityData: QualityReportData = {
-    periodStart: start,
-    periodEnd: end,
-    totalInspections: s.totalInspections || 0,
-    okCount: s.okCount || 0,
-    ngCount: s.ngCount || 0,
-    ntfCount: s.ntfCount || 0,
-    yieldRate: s.yieldRate || 0,
-    machineStats: ((machines as any)?.topMachines || []).map((m: any) => ({
+    period: { start, end },
+    summary: {
+      totalInspections: s.totalInspections || 0,
+      okCount: s.okCount || 0,
+      ngCount: s.ngCount || 0,
+      ntfCount: s.ntfCount || 0,
+      yieldRate: s.yieldRate || 0,
+      ngRate: s.ngRate || (s.totalInspections ? (s.ngCount / s.totalInspections) * 100 : 0),
+    },
+    byMachine: ((machines as any)?.topMachines || (machines as any)?.top || []).map((m: any) => ({
       machineName: m.machineName || m.machineCode,
+      machineCode: m.machineCode || '',
       totalInspections: m.totalInspections || 0,
+      okCount: m.okCount || 0,
       ngCount: m.ngCount || 0,
       yieldRate: m.yieldRate || 0,
     })),
@@ -224,6 +228,7 @@ async function generateQualitySummary(
     dailyTrend: (ngTrend as any[]).map((d: any) => ({
       date: d.date,
       totalInspections: d.total || d.totalInspections || 0,
+      okCount: d.okCount || 0,
       ngCount: d.ngCount || 0,
       yieldRate: d.yieldRate || 0,
     })),
@@ -231,6 +236,7 @@ async function generateQualitySummary(
 
   // Generate PDF
   const pdfBuffer = await generateQualityReportPDF(qualityData, {
+    title: 'Báo cáo Chất lượng',
     companyName: config.companyName || 'AVI/AOI Management',
     primaryColor: config.primaryColor || '#2563eb',
     logoUrl: config.logoUrl,
@@ -238,6 +244,7 @@ async function generateQualitySummary(
 
   // Generate PPTX
   const pptxBuffer = await exportQualityReportToPowerPoint(qualityData, {
+    title: 'Báo cáo Chất lượng',
     companyName: config.companyName || 'AVI/AOI Management',
     primaryColor: config.primaryColor || '#2563eb',
   });
@@ -256,7 +263,7 @@ async function generateComparisonReport(
   const comparisonType = config.comparisonType || 'week';
   
   const comparison = await generateComparison({
-    type: comparisonType,
+    periodType: comparisonType,
     currentStart: start,
     currentEnd: end,
     factoryId: config.factoryId,
@@ -265,6 +272,7 @@ async function generateComparisonReport(
   });
 
   // Generate PDF using PDFKit
+  // @ts-ignore - pdfkit has no bundled type declarations
   const PDFDocument = (await import('pdfkit')).default;
   const pdfBuffer = await new Promise<Buffer>((resolve) => {
     const doc = new PDFDocument({ size: 'A4', margin: 50 });
@@ -278,11 +286,11 @@ async function generateComparisonReport(
 
     // Current period
     doc.fontSize(12).fillColor('#333');
-    const cs = comparison.current;
+    const cs = comparison.currentPeriod.summary;
     doc.text(`Kỳ hiện tại: ${cs.totalInspections.toLocaleString('vi-VN')} kiểm tra, Yield: ${cs.yieldRate.toFixed(2)}%`);
     
     // Previous period
-    const ps = comparison.previous;
+    const ps = comparison.previousPeriod.summary;
     doc.text(`Kỳ trước: ${ps.totalInspections.toLocaleString('vi-VN')} kiểm tra, Yield: ${ps.yieldRate.toFixed(2)}%`);
     doc.moveDown();
 
@@ -290,15 +298,16 @@ async function generateComparisonReport(
     const changes = comparison.changes;
     doc.fontSize(14).fillColor('#1e40af').text('Thay đổi:');
     doc.fontSize(11).fillColor('#333');
-    doc.text(`  Tổng kiểm tra: ${changes.totalInspectionsChange > 0 ? '+' : ''}${changes.totalInspectionsChange.toFixed(1)}%`);
-    doc.text(`  Yield Rate: ${changes.yieldRateChange > 0 ? '+' : ''}${changes.yieldRateChange.toFixed(2)}pp`);
-    doc.text(`  NG Count: ${changes.ngCountChange > 0 ? '+' : ''}${changes.ngCountChange.toFixed(1)}%`);
+    doc.text(`  Tổng kiểm tra: ${changes.totalInspections.percent > 0 ? '+' : ''}${changes.totalInspections.percent.toFixed(1)}%`);
+    doc.text(`  Yield Rate: ${changes.yieldRate.value > 0 ? '+' : ''}${changes.yieldRate.value.toFixed(2)}pp`);
+    doc.text(`  NG Count: ${changes.ngCount.percent > 0 ? '+' : ''}${changes.ngCount.percent.toFixed(1)}%`);
 
     doc.end();
   });
 
   // Generate PPTX
   const pptxBuffer = await exportComparisonToPowerPoint(comparison, {
+    title: 'Báo cáo So sánh',
     companyName: config.companyName || 'AVI/AOI Management',
     primaryColor: config.primaryColor || '#2563eb',
   });
@@ -357,7 +366,7 @@ async function generateCustomBuilderReport(
           break;
         }
         case 'machine_comparison': {
-          const machines = await db.getTopBottomMachines({ startDate: start, endDate: end, factoryId: config.factoryId });
+          const machines = await db.getTopBottomMachines({ startDate: start, endDate: end, factoryId: config.factoryId } as any);
           widgetDataMap[widget.id] = machines;
           break;
         }
@@ -436,24 +445,24 @@ function generateQualityHtmlEmail(data: QualityReportData, config: EnhancedSched
     <div style="font-family:Arial;max-width:700px;margin:auto;">
       <div style="background:${pc};color:white;padding:20px;border-radius:8px 8px 0 0;text-align:center;">
         <h2 style="margin:0;">Báo cáo Chất lượng</h2>
-        <p style="margin:5px 0 0;">${data.periodStart.toLocaleDateString('vi-VN')} - ${data.periodEnd.toLocaleDateString('vi-VN')}</p>
+        <p style="margin:5px 0 0;">${data.period.start.toLocaleDateString('vi-VN')} - ${data.period.end.toLocaleDateString('vi-VN')}</p>
       </div>
       <div style="background:#f8fafc;padding:20px;border-radius:0 0 8px 8px;">
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
           <div style="flex:1;min-width:120px;background:white;padding:15px;border-radius:6px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
-            <div style="font-size:24px;font-weight:bold;color:${pc};">${formatNum(data.totalInspections)}</div>
+            <div style="font-size:24px;font-weight:bold;color:${pc};">${formatNum(data.summary.totalInspections)}</div>
             <div style="font-size:11px;color:#666;">Tổng kiểm tra</div>
           </div>
           <div style="flex:1;min-width:120px;background:white;padding:15px;border-radius:6px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
-            <div style="font-size:24px;font-weight:bold;color:${data.yieldRate >= 95 ? '#16a34a' : data.yieldRate >= 85 ? '#ca8a04' : '#dc2626'};">${data.yieldRate.toFixed(2)}%</div>
+            <div style="font-size:24px;font-weight:bold;color:${data.summary.yieldRate >= 95 ? '#16a34a' : data.summary.yieldRate >= 85 ? '#ca8a04' : '#dc2626'};">${data.summary.yieldRate.toFixed(2)}%</div>
             <div style="font-size:11px;color:#666;">Yield Rate</div>
           </div>
           <div style="flex:1;min-width:120px;background:white;padding:15px;border-radius:6px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
-            <div style="font-size:24px;font-weight:bold;color:#16a34a;">${formatNum(data.okCount)}</div>
+            <div style="font-size:24px;font-weight:bold;color:#16a34a;">${formatNum(data.summary.okCount)}</div>
             <div style="font-size:11px;color:#666;">OK</div>
           </div>
           <div style="flex:1;min-width:120px;background:white;padding:15px;border-radius:6px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
-            <div style="font-size:24px;font-weight:bold;color:#dc2626;">${formatNum(data.ngCount)}</div>
+            <div style="font-size:24px;font-weight:bold;color:#dc2626;">${formatNum(data.summary.ngCount)}</div>
             <div style="font-size:11px;color:#666;">NG</div>
           </div>
         </div>

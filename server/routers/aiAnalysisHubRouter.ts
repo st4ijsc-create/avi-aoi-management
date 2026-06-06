@@ -79,7 +79,7 @@ const capabilities = {
       description: "Find similar defect images using AI embeddings",
       category: "image",
       endpoint: "aiAnalysisHub.similarDefectSearch",
-      requiredInputs: ["imageKey", "modelId"],
+      requiredInputs: ["imageKey"],
       optionalInputs: ["topK", "minSimilarity"],
     },
     {
@@ -88,7 +88,7 @@ const capabilities = {
       description: "Combined VLM defect description + similarity search for rapid quality assessment",
       category: "image",
       endpoint: "aiAnalysisHub.quickQualityCheck",
-      requiredInputs: ["imageKey", "modelId"],
+      requiredInputs: ["imageKey"],
       optionalInputs: ["productModel", "machineCode"],
     },
   ],
@@ -249,17 +249,17 @@ export const aiAnalysisHubRouter = router({
   similarDefectSearch: protectedProcedure
     .input(z.object({
       imageKey: z.string().min(1),
-      modelId: z.number(),
+      modelId: z.number().optional(),
       topK: z.number().min(1).max(50).default(10),
       minSimilarity: z.number().min(0).max(1).default(0.7),
     }))
     .mutation(async ({ input }) => {
       const imageBuffer = await fs.promises.readFile(resolveImagePath(input.imageKey));
-      const results = await searchByImage(
+      const { results } = await searchByImage(
         input.modelId,
         imageBuffer,
         input.topK,
-        input.minSimilarity,
+        { minSimilarity: input.minSimilarity },
       );
       return { analysisType: "similar_defect_search", totalFound: results.length, results };
     }),
@@ -270,7 +270,7 @@ export const aiAnalysisHubRouter = router({
   quickQualityCheck: protectedProcedure
     .input(z.object({
       imageKey: z.string().min(1),
-      modelId: z.number(),
+      modelId: z.number().optional(),
       productModel: z.string().optional(),
       machineCode: z.string().optional(),
       topK: z.number().min(1).max(20).default(5),
@@ -284,7 +284,8 @@ export const aiAnalysisHubRouter = router({
           productModel: input.productModel,
           machineCode: input.machineCode,
         }).catch(e => ({ error: String(e), description: null })),
-        searchByImage(input.modelId, imageBuffer, input.topK, 0.5)
+        searchByImage(input.modelId, imageBuffer, input.topK, { minSimilarity: 0.5 })
+          .then((result) => result.results)
           .catch(() => [] as any[]),
       ]);
 
@@ -315,10 +316,9 @@ export const aiAnalysisHubRouter = router({
     .mutation(async ({ input }) => {
       const result = await analyzeTimeSeries(
         input.dataPoints as TimeSeriesPoint[],
-        input.algorithm,
-        { sensitivity: input.sensitivity, seasonalPeriod: input.seasonalPeriod },
+        { algorithm: input.algorithm, sensitivity: input.sensitivity, seasonalPeriod: input.seasonalPeriod } as any,
       );
-      return { analysisType: "time_series_analysis", algorithm: input.algorithm, ...result };
+      return { analysisType: "time_series_analysis", ...result, algorithm: input.algorithm };
     }),
 
   /**
@@ -335,7 +335,8 @@ export const aiAnalysisHubRouter = router({
       const result = await forecastWithConfidenceInterval(
         input.dataPoints as TimeSeriesPoint[],
         input.horizonSteps,
-        { confidenceLevel: input.confidenceLevel, seasonalPeriod: input.seasonalPeriod },
+        "ewma",
+        { confidenceLevel: input.confidenceLevel, seasonalPeriod: input.seasonalPeriod } as any,
       );
       return { analysisType: "production_forecast", horizon: input.horizonSteps, ...result };
     }),
@@ -352,7 +353,7 @@ export const aiAnalysisHubRouter = router({
     .mutation(async ({ input }) => {
       const result = await detectChangePoints(
         input.dataPoints as TimeSeriesPoint[],
-        { penalty: input.penalty, minSegmentLength: input.minSegmentLength },
+        input.penalty,
       );
       return { analysisType: "change_point_detection", ...result };
     }),

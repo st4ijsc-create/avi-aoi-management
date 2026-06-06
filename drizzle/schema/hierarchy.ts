@@ -1,18 +1,44 @@
-// Schema domain: Hierarchy tables (Factory > Workshop > Line > Station > Machine)
-import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, index } from "drizzle-orm/pg-core";
+// Schema domain: Hierarchy tables (Corporate > Factory > Workshop > Line > Station > Machine)
+import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { machineTypeEnum, statusEnum_1, operationStatusEnum, processTypeEnum } from "./enums";
+
+/**
+ * Corporate - Tập đoàn (cấp cao nhất)
+ * Enables proper multi-tenant corporate rollup with FK integrity.
+ * productInspections.corporateCode references this table's code.
+ */
+export const corporates = pgTable("corporates", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 50 }).notNull().unique(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  country: varchar("country", { length: 100 }),
+  contactEmail: varchar("contactEmail", { length: 320 }),
+  logoUrl: text("logoUrl"),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_corporates_code").on(table.code),
+  index("idx_corporates_active").on(table.isActive),
+]);
+
+export type Corporate = typeof corporates.$inferSelect;
+export type InsertCorporate = typeof corporates.$inferInsert;
 
 /**
  * Factory - Nhà máy (thuộc tập đoàn)
  */
 export const factories = pgTable("factories", {
   id: serial("id").primaryKey(),
+  corporateCode: varchar("corporateCode", { length: 50 }), // FK to corporates.code (nullable for back-compat)
   code: varchar("code", { length: 50 }).notNull().unique(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   address: text("address"),
   region: varchar("region", { length: 100 }), // Khu vực địa lý
   country: varchar("country", { length: 100 }),
+  timezone: varchar("timezone", { length: 64 }).default("Asia/Ho_Chi_Minh"), // IANA timezone for shift boundary calc
   mapPositionX: decimal("mapPositionX", { precision: 10, scale: 4 }), // Vị trí X trên bản đồ (0-1)
   mapPositionY: decimal("mapPositionY", { precision: 10, scale: 4 }), // Vị trí Y trên bản đồ (0-1)
   isActive: boolean("isActive").default(true).notNull(),
@@ -21,6 +47,7 @@ export const factories = pgTable("factories", {
 }, (table) => [
   index("idx_factories_code").on(table.code),
   index("idx_factories_active").on(table.isActive),
+  index("idx_factories_corporate").on(table.corporateCode),
 ]);
 
 export type Factory = typeof factories.$inferSelect;

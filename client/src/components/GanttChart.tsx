@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -93,6 +93,7 @@ function DraggableOrder({
   getProductName,
   getProgress,
   isDragging,
+  onResizeStart,
 }: {
   order: ProductionOrder;
   style: { left: string; width: string; className: string };
@@ -101,6 +102,7 @@ function DraggableOrder({
   getProductName: (id: number) => string;
   getProgress: (order: ProductionOrder) => number;
   isDragging?: boolean;
+  onResizeStart?: (order: ProductionOrder, edge: "start" | "end", clientX: number) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: `order-${order.id}`,
@@ -131,6 +133,15 @@ function DraggableOrder({
       {...attributes}
       {...listeners}
     >
+      <div
+        className="absolute left-0 top-0 h-full w-2 cursor-ew-resize bg-white/30 opacity-0 transition-opacity hover:opacity-100"
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          onResizeStart?.(order, "start", e.clientX);
+        }}
+        title="Resize start"
+      />
       <div className="px-2 py-1 text-white text-xs truncate flex items-center gap-1">
         <GripVertical className="w-3 h-3 opacity-60 shrink-0" />
         <div className="flex-1 min-w-0">
@@ -149,6 +160,15 @@ function DraggableOrder({
           style={{ width: `${getProgress(order)}%` }}
         />
       </div>
+      <div
+        className="absolute right-0 top-0 h-full w-2 cursor-ew-resize bg-white/30 opacity-0 transition-opacity hover:opacity-100"
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          onResizeStart?.(order, "end", e.clientX);
+        }}
+        title="Resize end"
+      />
     </div>
   );
 }
@@ -212,6 +232,14 @@ export default function GanttChart({
   const [undoStack, setUndoStack] = useState<ScheduleChange[]>([]);
   const [redoStack, setRedoStack] = useState<ScheduleChange[]>([]);
   const [isRescheduling, setIsRescheduling] = useState(false);
+  const [resizing, setResizing] = useState<{
+    order: ProductionOrder;
+    edge: "start" | "end";
+    startClientX: number;
+    currentClientX: number;
+    baseStart: Date;
+    baseEnd: Date;
+  } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // DnD sensors
@@ -313,17 +341,36 @@ export default function GanttChart({
   };
 
   // Calculate order position and width
-  const getOrderStyle = useCallback((order: ProductionOrder) => {
-    // Use scheduled dates if available, otherwise estimate from createdAt
-    const orderStart = order.scheduledStartDate 
-      ? new Date(order.scheduledStartDate) 
-      : new Date(order.createdAt);
-    
-    // Estimate order duration based on target quantity (1 day per 100 items)
+  const getOrderDates = useCallback((order: ProductionOrder) => {
+    const baseStart = order.scheduledStartDate ? new Date(order.scheduledStartDate) : new Date(order.createdAt);
     const estimatedDays = Math.max(1, Math.ceil(order.targetQuantity / 100));
-    const orderEnd = order.scheduledEndDate 
-      ? new Date(order.scheduledEndDate)
-      : addDays(orderStart, estimatedDays);
+    const baseEnd = order.scheduledEndDate ? new Date(order.scheduledEndDate) : addDays(baseStart, estimatedDays);
+
+    if (resizing?.order.id === order.id) {
+      const daysMoved = Math.round((resizing.currentClientX - resizing.startClientX) / cellWidth);
+      if (resizing.edge === "start") {
+        const movedStart = addDays(resizing.baseStart, daysMoved);
+        const maxStart = addDays(resizing.baseEnd, -1);
+        return {
+          start: movedStart < maxStart ? movedStart : maxStart,
+          end: new Date(resizing.baseEnd),
+        };
+      }
+
+      const movedEnd = addDays(resizing.baseEnd, daysMoved);
+      const minEnd = addDays(resizing.baseStart, 1);
+      return {
+        start: new Date(resizing.baseStart),
+        end: movedEnd > minEnd ? movedEnd : minEnd,
+      };
+    }
+
+    return { start: baseStart, end: baseEnd };
+  }, [cellWidth, resizing]);
+
+  // Calculate order position and width
+  const getOrderStyle = useCallback((order: ProductionOrder) => {
+    const { start: orderStart, end: orderEnd } = getOrderDates(order);
     
     const startOffset = differenceInDays(orderStart, dateRange.start);
     const duration = differenceInDays(orderEnd, orderStart);
@@ -345,7 +392,7 @@ export default function GanttChart({
       width: `${width}px`,
       className: statusColors[order.status] || "bg-gray-500/80 border-gray-600",
     };
-  }, [dateRange.start, cellWidth]);
+  }, [dateRange.start, cellWidth, getOrderDates]);
 
   // Navigate timeline
   const navigateTimeline = (direction: "prev" | "next") => {
@@ -450,6 +497,70 @@ export default function GanttChart({
     }
   };
 
+  const openScheduleConfirm = useCallback((order: ProductionOrder, newStartDate: Date, newEndDate: Date, targetLineId: number) => {
+    const ordersOnLine = orders.filter(o =>
+      o.lineId === targetLineId &&
+      o.id !== order.id &&
+      o.status !== 'cancelled'
+    );
+
+    const overlappingOrders = ordersOnLine.filter(o => {
+      const oStart = o.scheduledStartDate ? new Date(o.scheduledStartDate) : null;
+      const oEnd = o.scheduledEndDate ? new Date(o.scheduledEndDate) : null;
+      if (!oStart || !oEnd) return false;
+      return newStartDate < oEnd && newEndDate > oStart;
+    });
+
+    const lineInfo = lines.find(l => l.id === targetLineId);
+    let capacityWarning: { type: 'concurrent' | 'capacity'; message: string } | null = null;
+
+    if (lineInfo) {
+      const maxConcurrent = lineInfo.maxConcurrentOrders || 1;
+      const concurrentOrders = ordersOnLine.filter(o => {
+        if (o.status === 'completed') return false;
+        const oStart = o.scheduledStartDate ? new Date(o.scheduledStartDate) : null;
+        const oEnd = o.scheduledEndDate ? new Date(o.scheduledEndDate) : null;
+        if (!oStart || !oEnd) return false;
+        return newStartDate < oEnd && newEndDate > oStart;
+      });
+
+      if (concurrentOrders.length >= maxConcurrent) {
+        capacityWarning = {
+          type: 'concurrent',
+          message: t('gantt.concurrentWarning', { max: maxConcurrent, current: concurrentOrders.length }),
+        };
+      }
+
+      if (!capacityWarning && lineInfo.capacityPerHour && order.targetQuantity) {
+        const durationHours = (newEndDate.getTime() - newStartDate.getTime()) / (1000 * 60 * 60);
+        const maxCapacity = lineInfo.capacityPerHour * durationHours;
+
+        if (order.targetQuantity > maxCapacity) {
+          capacityWarning = {
+            type: 'capacity',
+            message: t('gantt.capacityWarning', {
+              quantity: order.targetQuantity,
+              maxCapacity: Math.floor(maxCapacity),
+              hours: durationHours.toFixed(1),
+              rate: lineInfo.capacityPerHour,
+            }),
+          };
+        }
+      }
+    }
+
+    setConfirmDialog({
+      open: true,
+      order,
+      newStartDate,
+      newEndDate,
+      newLineId: targetLineId !== order.lineId ? targetLineId : null,
+      hasOverlap: overlappingOrders.length > 0,
+      overlappingOrders: overlappingOrders.map(o => ({ orderCode: o.orderCode })),
+      capacityWarning,
+    });
+  }, [lines, orders, t]);
+
   // Handle drag end
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over, delta } = event;
@@ -477,69 +588,65 @@ export default function GanttChart({
     const newStartDate = addDays(currentStart, daysMoved);
     const newEndDate = addDays(currentEnd, daysMoved);
 
-    // Check for overlap with other orders on the same line
     const targetLine = targetLineId !== order.lineId ? targetLineId : order.lineId;
-    const ordersOnLine = orders.filter(o => 
-      o.lineId === targetLine && 
-      o.id !== order.id && 
-      o.status !== 'cancelled'
-    );
-    
-    const overlappingOrders = ordersOnLine.filter(o => {
-      const oStart = o.scheduledStartDate ? new Date(o.scheduledStartDate) : null;
-      const oEnd = o.scheduledEndDate ? new Date(o.scheduledEndDate) : null;
-      if (!oStart || !oEnd) return false;
-      return newStartDate < oEnd && newEndDate > oStart;
-    });
-
-    // Check capacity warning
-    const lineInfo = lines.find(l => l.id === targetLine);
-    let capacityWarning: { type: 'concurrent' | 'capacity'; message: string } | null = null;
-    
-    if (lineInfo) {
-      // Check concurrent orders
-      const maxConcurrent = lineInfo.maxConcurrentOrders || 1;
-      const concurrentOrders = ordersOnLine.filter(o => {
-        if (o.status === 'completed') return false;
-        const oStart = o.scheduledStartDate ? new Date(o.scheduledStartDate) : null;
-        const oEnd = o.scheduledEndDate ? new Date(o.scheduledEndDate) : null;
-        if (!oStart || !oEnd) return false;
-        return newStartDate < oEnd && newEndDate > oStart;
-      });
-      
-      if (concurrentOrders.length >= maxConcurrent) {
-        capacityWarning = {
-          type: 'concurrent',
-          message: t('gantt.concurrentWarning', { max: maxConcurrent, current: concurrentOrders.length })
-        };
-      }
-      
-      // Check production capacity
-      if (!capacityWarning && lineInfo.capacityPerHour && order.targetQuantity) {
-        const durationHours = (newEndDate.getTime() - newStartDate.getTime()) / (1000 * 60 * 60);
-        const maxCapacity = lineInfo.capacityPerHour * durationHours;
-        
-        if (order.targetQuantity > maxCapacity) {
-          capacityWarning = {
-            type: 'capacity',
-            message: t('gantt.capacityWarning', { quantity: order.targetQuantity, maxCapacity: Math.floor(maxCapacity), hours: durationHours.toFixed(1), rate: lineInfo.capacityPerHour })
-          };
-        }
-      }
-    }
-
-    // Show confirmation dialog with overlap and capacity warning
-    setConfirmDialog({
-      open: true,
-      order,
-      newStartDate,
-      newEndDate,
-      newLineId: targetLineId !== order.lineId ? targetLineId : null,
-      hasOverlap: overlappingOrders.length > 0,
-      overlappingOrders: overlappingOrders.map(o => ({ orderCode: o.orderCode })),
-      capacityWarning,
-    });
+    openScheduleConfirm(order, newStartDate, newEndDate, targetLine);
   };
+
+  const handleResizeStart = useCallback((order: ProductionOrder, edge: "start" | "end", clientX: number) => {
+    const baseStart = order.scheduledStartDate ? new Date(order.scheduledStartDate) : new Date(order.createdAt);
+    const estimatedDays = Math.max(1, Math.ceil(order.targetQuantity / 100));
+    const baseEnd = order.scheduledEndDate ? new Date(order.scheduledEndDate) : addDays(baseStart, estimatedDays);
+
+    setResizing({
+      order,
+      edge,
+      startClientX: clientX,
+      currentClientX: clientX,
+      baseStart,
+      baseEnd,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!resizing) return;
+
+    const onPointerMove = (event: PointerEvent) => {
+      setResizing(prev => prev ? { ...prev, currentClientX: event.clientX } : null);
+    };
+
+    const onPointerUp = () => {
+      setResizing(prev => {
+        if (!prev) return null;
+
+        const daysMoved = Math.round((prev.currentClientX - prev.startClientX) / cellWidth);
+        if (daysMoved === 0) return null;
+
+        let newStartDate = new Date(prev.baseStart);
+        let newEndDate = new Date(prev.baseEnd);
+
+        if (prev.edge === "start") {
+          newStartDate = addDays(prev.baseStart, daysMoved);
+          const maxStart = addDays(prev.baseEnd, -1);
+          if (newStartDate >= maxStart) newStartDate = maxStart;
+        } else {
+          newEndDate = addDays(prev.baseEnd, daysMoved);
+          const minEnd = addDays(prev.baseStart, 1);
+          if (newEndDate <= minEnd) newEndDate = minEnd;
+        }
+
+        openScheduleConfirm(prev.order, newStartDate, newEndDate, prev.order.lineId);
+        return null;
+      });
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp, { once: true });
+
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+  }, [cellWidth, openScheduleConfirm, resizing]);
 
   // Confirm reschedule
   const confirmReschedule = async () => {
@@ -934,7 +1041,7 @@ export default function GanttChart({
         {/* Drag hint */}
         {onOrderReschedule && (
           <p className="text-xs text-muted-foreground mt-2">
-            💡 {t('gantt.dragHint')}
+            💡 {t('gantt.dragHint', 'Kéo thanh để dời lịch, kéo mép trái/phải để chỉnh ngày bắt đầu/kết thúc.')}
           </p>
         )}
       </CardHeader>
@@ -1084,6 +1191,7 @@ export default function GanttChart({
                               getProductName={getProductName}
                               getProgress={getProgress}
                               isDragging={activeOrder?.id === order.id}
+                              onResizeStart={onOrderReschedule ? handleResizeStart : undefined}
                             />
                           );
                         })}

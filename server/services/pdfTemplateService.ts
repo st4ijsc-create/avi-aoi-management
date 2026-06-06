@@ -9,6 +9,7 @@
  * - NG Analysis Report
  */
 
+// @ts-ignore - pdfkit has no bundled type declarations
 import PDFDocument from "pdfkit";
 import * as db from "../db";
 

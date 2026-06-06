@@ -33,12 +33,12 @@ export async function createEdgeDeployment(options: {
     deviceName: options.deviceName,
     deviceType: options.deviceType ?? "GENERIC",
     machineId: options.machineId,
-    deployConfig: options.deployConfig ?? {
+    deployConfig: options.deployConfig ?? ({
       quantization: "none",
       runtime: "onnxruntime",
       maxBatchSize: 1,
       optimizationLevel: "basic",
-    },
+    } as any),
     createdBy: options.createdBy,
   });
 }
@@ -54,11 +54,12 @@ export async function packageModelForEdge(deploymentId: number) {
 
   try {
     // Get model version to find the file
-    const version = await db.getModelVersionForDeployment(deployment.modelId, deployment.modelVersion);
+    const version = await db.getModelVersionForDeployment(deployment.modelId, deployment.modelVersion ?? "");
     if (!version) throw new Error(`Model version ${deployment.modelVersion} not found`);
 
     // Get the model file URL from storage
-    const { url } = await storageGet(version.storageKey);
+    const v = version as any;
+    const { url } = await storageGet(v.storageKey || v.fileKey || v.filePath || "");
     // Read file from local filesystem if local mode
     let modelBuffer: Buffer;
     if (url.startsWith("/uploads/")) {
@@ -79,9 +80,9 @@ export async function packageModelForEdge(deploymentId: number) {
       modelVersion: deployment.modelVersion,
       deviceId: deployment.deviceId,
       deployConfig: deployment.deployConfig,
-      labels: version.labels ?? [],
-      inputWidth: version.inputWidth,
-      inputHeight: version.inputHeight,
+      labels: v.labels ?? [],
+      inputWidth: v.inputWidth,
+      inputHeight: v.inputHeight,
       createdAt: new Date().toISOString(),
     };
 
@@ -187,7 +188,7 @@ export async function syncEdgeResults(
       measurementResultId: result.measurementResultId,
       synced: true,
       syncedAt: new Date(),
-    });
+    } as any);
     syncedRecords.push(record);
   }
 

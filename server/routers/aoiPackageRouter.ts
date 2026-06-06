@@ -544,7 +544,7 @@ export const aoiPackageRouter = router({
 
           // Insert package image records
           if (normalizedMeasurements.length > 0) {
-            const imageRecords = normalizedMeasurements.map((point) => ({
+            const imageRecords = normalizedMeasurements.map((point: any) => ({
               packageId: pkg.id,
               pointCode: point.pointId || point.pointCode || point.code || 'UNKNOWN',
               pointName: point.name || null,
@@ -663,9 +663,9 @@ export const aoiPackageRouter = router({
                     if (pointsWithImages.length > existingRecords.length) {
                       const extraRecords = pointsWithImages.slice(existingRecords.length).map((point, idx) => {
                         const realIdx = existingRecords.length + idx;
-                        const pointCode = point.pointId || point.pointCode || point.code || `Point_${realIdx + 1}`;
+                        const pointCode = (point as any).pointId || (point as any).pointCode || point.code || `Point_${realIdx + 1}`;
                         const pointName = point.name || pointCode;
-                        const measuredVal = point.measuredValue !== undefined ? point.measuredValue : point.value;
+                        const measuredVal = (point as any).measuredValue !== undefined ? (point as any).measuredValue : point.value;
                         const measuredStr = measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null;
                         const isNumeric = measuredStr !== null && !isNaN(Number(measuredStr)) && measuredStr.trim() !== '';
                         return {
@@ -675,7 +675,7 @@ export const aoiPackageRouter = router({
                           measuredValueText: measuredStr,
                           result: (point.result || "NTF") as "OK" | "NG" | "NTF",
                           imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
-                          remark: point.remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`,
+                          remark: (point as any).remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`,
                           createdAt: inspectionTime,
                         };
                       });
@@ -684,9 +684,9 @@ export const aoiPackageRouter = router({
                   } else {
                     // Existing inspection but no measurement records yet — insert all
                     const measurementRecords = pointsWithImages.map((point, idx) => {
-                      const pointCode = point.pointId || point.pointCode || point.code || `Point_${idx + 1}`;
+                      const pointCode = (point as any).pointId || (point as any).pointCode || point.code || `Point_${idx + 1}`;
                       const pointName = point.name || pointCode;
-                      const measuredVal = point.measuredValue !== undefined ? point.measuredValue : point.value;
+                      const measuredVal = (point as any).measuredValue !== undefined ? (point as any).measuredValue : point.value;
                       const measuredStr = measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null;
                       const isNumeric = measuredStr !== null && !isNaN(Number(measuredStr)) && measuredStr.trim() !== '';
                       return {
@@ -696,7 +696,7 @@ export const aoiPackageRouter = router({
                         measuredValueText: measuredStr,
                         result: (point.result || "NTF") as "OK" | "NG" | "NTF",
                         imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
-                        remark: point.remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`,
+                        remark: (point as any).remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`,
                         createdAt: inspectionTime,
                       };
                     });
@@ -705,9 +705,9 @@ export const aoiPackageRouter = router({
                 } else {
                   // New inspection — insert all measurement records
                   const measurementRecords = pointsWithImages.map((point, idx) => {
-                    const pointCode = point.pointId || point.pointCode || point.code || `Point_${idx + 1}`;
+                    const pointCode = (point as any).pointId || (point as any).pointCode || point.code || `Point_${idx + 1}`;
                     const pointName = point.name || pointCode;
-                    const measuredVal = point.measuredValue !== undefined ? point.measuredValue : point.value;
+                    const measuredVal = (point as any).measuredValue !== undefined ? (point as any).measuredValue : point.value;
                     const measuredStr = measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null;
                     const isNumeric = measuredStr !== null && !isNaN(Number(measuredStr)) && measuredStr.trim() !== '';
                     return {
@@ -717,7 +717,7 @@ export const aoiPackageRouter = router({
                       measuredValueText: measuredStr,
                       result: (point.result || "NTF") as "OK" | "NG" | "NTF",
                       imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
-                      remark: point.remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`,
+                      remark: (point as any).remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`,
                       createdAt: inspectionTime,
                     };
                   });

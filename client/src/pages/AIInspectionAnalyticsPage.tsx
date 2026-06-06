@@ -163,18 +163,18 @@ export default function AIInspectionAnalyticsPage() {
   const stats = useMemo(() => {
     if (!batch.trend.data?.length) return null;
     const data = batch.trend.data;
-    const totalInsp = data.reduce((s, d) => s + d.total, 0);
-    const totalPass = data.reduce((s, d) => s + d.pass, 0);
+    const totalInsp = data.reduce((s: number, d: any) => s + d.total, 0);
+    const totalPass = data.reduce((s: number, d: any) => s + d.pass, 0);
     const yieldRate = totalInsp > 0 ? (totalPass / totalInsp) * 100 : 0;
-    const avgDefectRate = data.reduce((s, d) => s + d.defectRate, 0) / data.length;
+    const avgDefectRate = data.reduce((s: number, d: any) => s + d.defectRate, 0) / data.length;
 
     // Calculate trend
     if (data.length > 1) {
       const prevAvg =
-        data.slice(0, Math.floor(data.length / 2)).reduce((s, d) => s + d.defectRate, 0) /
+        data.slice(0, Math.floor(data.length / 2)).reduce((s: number, d: any) => s + d.defectRate, 0) /
         Math.floor(data.length / 2);
       const currAvg =
-        data.slice(Math.floor(data.length / 2)).reduce((s, d) => s + d.defectRate, 0) /
+        data.slice(Math.floor(data.length / 2)).reduce((s: number, d: any) => s + d.defectRate, 0) /
         Math.ceil(data.length / 2);
       const trend = ((currAvg - prevAvg) / prevAvg) * 100;
       return { totalInsp, totalPass, yieldRate, avgDefectRate, days: data.length, defectTrend: -trend };
@@ -343,7 +343,7 @@ export default function AIInspectionAnalyticsPage() {
           <Card className="border-red-500/30 bg-red-500/5">
             <CardContent className="pt-6">
               <div className="flex gap-4">
-                <AlertTriangle className="h-6 w-6 text-red-500 flex-shrink-0 mt-0.5" />
+                <AlertTriangle className="h-6 w-6 text-red-500 shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <h3 className="font-semibold text-sm text-red-700">
                     {t("common.error", "Error")}
@@ -452,7 +452,7 @@ export default function AIInspectionAnalyticsPage() {
                           name={t("aiAnalytics.count", "Count")}
                           radius={[4, 4, 0, 0]}
                         >
-                          {batch.pareto.data.map((_, i) => (
+                          {batch.pareto.data.map((_: any, i: number) => (
                             <Cell key={i} fill={ANALYTICS_COLORS[i % ANALYTICS_COLORS.length]} />
                           ))}
                         </Bar>
@@ -488,7 +488,7 @@ export default function AIInspectionAnalyticsPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {batch.risk.data.map((r, i) => (
+                      {batch.risk.data.map((r: any, i: number) => (
                         <RiskCard key={i} risk={r} t={t} />
                       ))}
                     </div>
@@ -653,7 +653,7 @@ export default function AIInspectionAnalyticsPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {machPerfPagination.paginatedData.map((m, i) => (
+                          {machPerfPagination.paginatedData.map((m: any, i: number) => (
                             <tr key={i} className="border-b hover:bg-muted/50">
                               <td className="py-2 px-3 font-medium">{m.machineCode}</td>
                               <td className="py-2 px-3 text-right">{m.totalInspections.toLocaleString()}</td>
@@ -705,7 +705,7 @@ export default function AIInspectionAnalyticsPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {batch.corr.data.map((c, i) => (
+                      {batch.corr.data.map((c: any, i: number) => (
                         <div key={i} className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
                           <div>
                             <span className="font-medium text-sm">{c.factor1}</span>
@@ -941,7 +941,7 @@ export default function AIInspectionAnalyticsPage() {
                 </div>
               ) : batch.risk.data?.length ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {batch.risk.data.map((r, i) => (
+                  {batch.risk.data.map((r: any, i: number) => (
                     <RiskCard key={i} risk={r} t={t} detailed />
                   ))}
                 </div>

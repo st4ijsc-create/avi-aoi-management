@@ -28,7 +28,7 @@ export const aiModelRouter = router({
       offset: z.number().min(0).optional(),
     }).optional())
     .query(async ({ input }) => {
-      return db.getAiModels(input ?? undefined);
+      return db.getAiModels((input ?? undefined) as any);
     }),
 
   getById: protectedProcedure
@@ -70,14 +70,14 @@ export const aiModelRouter = router({
         topK: z.number().optional(),
       }).optional(),
       productModelId: z.number().optional(),
-      metadata: z.record(z.unknown()).optional(),
+      metadata: z.record(z.string(), z.unknown()).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       return registerModel({
         ...input,
         createdBy: ctx.user.id,
         status: "UPLOADING",
-      });
+      } as any);
     }),
 
   update: adminProcedure
@@ -102,13 +102,13 @@ export const aiModelRouter = router({
         topK: z.number().optional(),
       }).optional(),
       productModelId: z.number().optional(),
-      metadata: z.record(z.unknown()).optional(),
+      metadata: z.record(z.string(), z.unknown()).optional(),
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
       const existing = await db.getAiModelById(id);
       if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "AI model not found" });
-      return db.updateAiModel(id, data);
+      return db.updateAiModel(id, data as any);
     }),
 
   delete: adminProcedure

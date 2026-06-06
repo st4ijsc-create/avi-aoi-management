@@ -4,6 +4,14 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { backupLogs, scheduledBackups } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, lte } from "drizzle-orm";
+import {
+  createPgDump,
+  restoreFromBackup,
+  listBackupFiles,
+  deleteBackupFile,
+  TABLE_CATEGORIES,
+} from "../services/backupService";
+import { testReplicationConnectivity } from "../services/backupReplicationService";
 
 export const backupRouter = router({
   // List backup history
@@ -15,7 +23,17 @@ export const backupRouter = router({
     return logs;
   }),
 
-  // Create manual backup
+  // List available table categories for selection
+  listCategories: protectedProcedure.query(() => {
+    return Object.entries(TABLE_CATEGORIES).map(([key, tables]) => ({
+      key,
+      label: key.charAt(0).toUpperCase() + key.slice(1),
+      tableCount: tables.length,
+      tables,
+    }));
+  }),
+
+  // Create manual backup via pg_dump
   createBackup: protectedProcedure
     .input(z.object({
       categories: z.array(z.string()).min(1),
@@ -29,49 +47,55 @@ export const backupRouter = router({
         throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền backup" });
       }
 
+      const databaseUrl = process.env.DATABASE_URL;
+      if (!databaseUrl) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DATABASE_URL not configured" });
+
+      // Resolve tables from selected categories
+      const tables = input.categories.flatMap(cat => TABLE_CATEGORIES[cat] ?? []);
+      const uniqueTables = [...new Set(tables)];
+
       const startTime = Date.now();
 
       try {
-        // Get database sizes for each table category
-        const tables = input.categories;
-        let totalRecords = 0;
-
-        for (const table of tables) {
-          try {
-            const result = await db.execute(sql`SELECT count(*) as cnt FROM information_schema.tables WHERE table_name = ${table}`);
-            if (result && Array.isArray(result) && result.length > 0) {
-              const countResult = await db.execute(sql.raw(`SELECT count(*) as cnt FROM "${table}"`));
-              if (countResult && Array.isArray(countResult) && countResult.length > 0) {
-                totalRecords += Number((countResult[0] as any).cnt) || 0;
-              }
-            }
-          } catch { /* skip if table doesn't exist */ }
-        }
-
-        const duration = Date.now() - startTime;
-        const fileName = `backup_${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+        const result = await createPgDump({
+          databaseUrl,
+          tables: uniqueTables,
+          label: input.categories.join("_"),
+        });
 
         const [log] = await db.insert(backupLogs).values({
           userId: ctx.user!.id,
           action: "export",
           categories: input.categories,
           status: "success",
-          fileSize: 0,
-          fileName,
-          recordCount: totalRecords,
-          metadata: { description: input.description, type: "manual" },
+          fileSize: result.fileSizeBytes,
+          fileName: result.fileName,
+          fileUrl: result.filePath,
+          recordCount: result.tableCount,
+          metadata: {
+            description: input.description,
+            type: "manual",
+            method: result.method,
+            sha256: result.sha256,
+            pgDumpVersion: result.pgDumpVersion,
+            offsite: result.offsite ?? { skipped: true },
+          },
           ipAddress: ctx.req?.ip || "unknown",
           userAgent: ctx.req?.headers?.["user-agent"] || "unknown",
-          duration,
+          duration: result.durationMs,
         }).returning();
 
         return {
           success: true,
           backupId: log.id,
-          fileName,
-          recordCount: totalRecords,
-          duration,
-          message: `Backup ${input.categories.length} danh mục thành công (${totalRecords} records)`,
+          fileName: result.fileName,
+          fileSizeBytes: result.fileSizeBytes,
+          sha256: result.sha256,
+          method: result.method,
+          tableCount: result.tableCount,
+          duration: result.durationMs,
+          offsite: result.offsite ?? { skipped: true },
+          message: `Backup ${input.categories.length} danh mục thành công (${result.tableCount} bảng, ${(result.fileSizeBytes / 1024).toFixed(1)} KB)`,
         };
       } catch (error: any) {
         const duration = Date.now() - startTime;
@@ -87,7 +111,7 @@ export const backupRouter = router({
       }
     }),
 
-  // Restore from backup
+  // Restore from backup file
   restoreBackup: protectedProcedure
     .input(z.object({
       backupId: z.number(),
@@ -101,51 +125,69 @@ export const backupRouter = router({
         throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền restore" });
       }
 
-      // Find the backup
       const [backup] = await db.select().from(backupLogs).where(eq(backupLogs.id, input.backupId));
-      if (!backup) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy bản backup" });
-      }
+      if (!backup) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy bản backup" });
+      if (!backup.fileUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "Bản backup này không có file — không thể restore" });
+
+      const databaseUrl = process.env.DATABASE_URL;
+      if (!databaseUrl) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DATABASE_URL not configured" });
 
       const startTime = Date.now();
-      const categoriesToRestore = input.categories || backup.categories;
+      const categoriesToRestore = input.categories ?? backup.categories ?? [];
+      const tablesToRestore = categoriesToRestore.flatMap(cat => TABLE_CATEGORIES[cat] ?? []);
 
       try {
-        const duration = Date.now() - startTime;
+        const result = await restoreFromBackup({
+          databaseUrl,
+          filePath: backup.fileUrl,
+          tables: tablesToRestore.length > 0 ? tablesToRestore : undefined,
+        });
 
         const [log] = await db.insert(backupLogs).values({
           userId: ctx.user!.id,
           action: "import",
           categories: categoriesToRestore,
-          status: "success",
+          status: result.warnings.length > 0 ? "partial" : "success",
           fileName: backup.fileName,
-          recordCount: backup.recordCount,
-          metadata: { type: "restore", sourceBackupId: input.backupId },
+          recordCount: result.restoredTables.length,
+          metadata: {
+            type: "restore",
+            sourceBackupId: input.backupId,
+            method: result.method,
+            warnings: result.warnings.slice(0, 10),
+          },
           ipAddress: ctx.req?.ip || "unknown",
           userAgent: ctx.req?.headers?.["user-agent"] || "unknown",
-          duration,
+          duration: result.durationMs,
         }).returning();
 
         return {
           success: true,
           restoreId: log.id,
-          categories: categoriesToRestore,
-          duration,
-          message: `Restore ${categoriesToRestore.length} danh mục thành công`,
+          restoredTables: result.restoredTables,
+          method: result.method,
+          warnings: result.warnings,
+          duration: result.durationMs,
+          message: `Restore thành công: ${result.restoredTables.length} bảng, ${result.durationMs}ms` +
+            (result.warnings.length > 0 ? ` (${result.warnings.length} cảnh báo)` : ""),
         };
       } catch (error: any) {
-        const duration = Date.now() - startTime;
         await db.insert(backupLogs).values({
           userId: ctx.user!.id,
           action: "import",
           categories: categoriesToRestore,
           status: "failed",
           errorMessage: error.message,
-          duration,
+          duration: Date.now() - startTime,
         });
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Restore failed: ${error.message}` });
       }
     }),
+
+  // List actual backup files on disk
+  listFiles: protectedProcedure.query(() => {
+    return listBackupFiles();
+  }),
 
   // Delete backup log
   deleteBackup: protectedProcedure
@@ -158,6 +200,10 @@ export const backupRouter = router({
         throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền xóa backup" });
       }
 
+      const [log] = await db.select().from(backupLogs).where(eq(backupLogs.id, input.id));
+      if (log?.fileUrl) {
+        try { deleteBackupFile(log.fileUrl); } catch { /* file may already be gone */ }
+      }
       await db.delete(backupLogs).where(eq(backupLogs.id, input.id));
       return { success: true, message: "Đã xóa bản backup" };
     }),
@@ -304,5 +350,38 @@ export const backupRouter = router({
       lastBackupAt: lastBackup[0]?.createdAt || null,
       lastBackupFileName: lastBackup[0]?.fileName || null,
     };
+  }),
+
+  // ==================== Off-site Replication (ISO 22301) ====================
+
+  // Get current replication mode/target from environment
+  getReplicationStatus: protectedProcedure.query(() => {
+    const s3Bucket = process.env.AWS_S3_BACKUP_BUCKET;
+    const offsiteDir = process.env.OFFSITE_BACKUP_DIR;
+
+    if (s3Bucket) {
+      const prefix = process.env.AWS_S3_BACKUP_PREFIX ?? "";
+      return {
+        mode: "s3" as const,
+        target: `s3://${s3Bucket}${prefix ? `/${prefix}` : ""}`,
+        region: process.env.AWS_REGION ?? null,
+        endpointUrl: process.env.AWS_S3_ENDPOINT_URL ?? null,
+        sse: process.env.AWS_S3_SSE ?? null,
+        storageClass: process.env.AWS_S3_STORAGE_CLASS ?? null,
+      };
+    }
+    if (offsiteDir) {
+      return { mode: "offsite_dir" as const, target: offsiteDir };
+    }
+    return { mode: "none" as const, target: null };
+  }),
+
+  // Test replication connectivity (admin only)
+  testReplication: protectedProcedure.mutation(async ({ ctx }) => {
+    if (ctx.user?.role !== "admin") {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền test replication" });
+    }
+    const result = await testReplicationConnectivity();
+    return result;
   }),
 });

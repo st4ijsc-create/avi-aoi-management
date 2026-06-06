@@ -11,6 +11,7 @@
 
 import Aedes from 'aedes';
 import { createServer } from 'aedes-server-factory';
+import { initUnsPublisher, publishNormalized, shutdownUnsPublisher } from './unsPublisher';
 import { drizzle } from 'drizzle-orm/mysql2';
 import { eq, and, sql, lt } from 'drizzle-orm';
 import * as schema from '../../drizzle/schema';
@@ -215,6 +216,9 @@ export function initMqttBroker() {
 
   // Initialize external MQTT client if enabled
   initExternalMqttClient();
+
+  // G1 — Initialize UNS publisher (normalize -> EMQX). No-op when UNS_BRIDGE_ENABLED=false.
+  initUnsPublisher();
 
   // Start stale client detection
   startStaleClientChecker();
@@ -444,6 +448,9 @@ function setupEventHandlers() {
     // Ignore system messages (starting with $) and messages without a client
     if (!client || packet.topic.startsWith('$')) return;
 
+    // G1 — Mirror message sang UNS broker (ISA-95/Sparkplug). No-op khi flag tắt.
+    publishNormalized(packet.topic, packet.payload);
+
     try {
       // Handle DEVICE_INFO messages: avi/client/{deviceId}/info
       const deviceInfoMatch = packet.topic.match(/^avi\/client\/([^/]+)\/info$/);
@@ -561,7 +568,7 @@ export async function sendConfigureCommand(deviceId: string, command: {
         .from(schema.mqttClients)
         .where(eq(schema.mqttClients.deviceId, deviceId))
         .limit(1)
-        .then(clients => {
+        .then((clients: any) => {
           return db!.insert(schema.mqttMessageLogs).values({
             messageType: 'COMMAND',
             topic,
@@ -571,7 +578,7 @@ export async function sendConfigureCommand(deviceId: string, command: {
             deliveryStatus: 'SENT',
           });
         })
-        .catch(logErr => console.error('[MQTT] Error logging command:', logErr));
+        .catch((logErr: any) => console.error('[MQTT] Error logging command:', logErr));
 
       resolve({ success: true, commandId });
     });
@@ -619,7 +626,7 @@ export async function sendSoftwareUpdateCommand(deviceId: string, command: 'CHEC
         .from(schema.mqttClients)
         .where(eq(schema.mqttClients.deviceId, deviceId))
         .limit(1)
-        .then(clients => {
+        .then((clients: any) => {
           return db!.insert(schema.mqttMessageLogs).values({
             messageType: 'COMMAND',
             topic,
@@ -629,7 +636,7 @@ export async function sendSoftwareUpdateCommand(deviceId: string, command: 'CHEC
             deliveryStatus: 'SENT',
           });
         })
-        .catch(logErr => console.error('[MQTT] Error logging command:', logErr));
+        .catch((logErr: any) => console.error('[MQTT] Error logging command:', logErr));
 
       resolve({ success: true, commandId });
     });
@@ -675,7 +682,7 @@ export async function publishFactoryAlertUpdate(versionInfo: Record<string, any>
           topic,
           payload,
           deliveryStatus: 'SENT',
-        }).catch(logErr => console.error('[MQTT] Error logging update broadcast:', logErr));
+        }).catch((logErr: any) => console.error('[MQTT] Error logging update broadcast:', logErr));
       }
 
       resolve({ success: true });
@@ -1121,7 +1128,7 @@ export async function publishBulletin(
     // Send FCM push notification to subscribed clients
     if (options.sendFcm) {
       try {
-        const { sendBulletinPushNotification } = await import('./fcmService');
+        const { sendBulletinPushNotification } = await import('./fcmService') as any;
         if (typeof sendBulletinPushNotification === 'function') {
           const stats = payload.statistics || {};
           const fcmResult = await sendBulletinPushNotification({
@@ -1284,6 +1291,8 @@ export function isMqttRunning(): boolean {
  */
 export function shutdownMqttBroker(): Promise<void> {
   stopStaleClientChecker();
+  // G1 — close UNS publisher connection (no-op if not initialized)
+  void shutdownUnsPublisher();
   return new Promise((resolve) => {
     if (mqttServer) {
       mqttServer.close(() => {

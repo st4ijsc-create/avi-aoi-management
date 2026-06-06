@@ -20,6 +20,8 @@ export const users = pgTable("users", {
   isActive: boolean("isActive").default(true).notNull(), // Trạng thái tài khoản
   twoFactorSecret: varchar("two_factor_secret", { length: 255 }), // TOTP secret for 2FA
   twoFactorEnabled: boolean("two_factor_enabled").default(false).notNull(), // 2FA enabled flag
+  loginAttempts: integer("loginAttempts").default(0).notNull(),  // failed login counter
+  lockedUntil: timestamp("lockedUntil"),                         // null = not locked
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -147,8 +149,7 @@ export const userCorporateAssignments = pgTable("user_corporate_assignments", {
 }, (table) => [
   index("idx_user_corporate_user").on(table.userId),
   index("idx_user_corporate_code").on(table.corporateCode),
-  // Unique constraint: một user không thể được assign vào cùng một corporate 2 lần
-  index("idx_user_corporate_unique").on(table.userId, table.corporateCode),
+  uniqueIndex("idx_user_corporate_unique").on(table.userId, table.corporateCode),
 ]);
 
 export type UserCorporateAssignment = typeof userCorporateAssignments.$inferSelect;

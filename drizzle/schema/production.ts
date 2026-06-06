@@ -1,6 +1,6 @@
 // Schema domain: Production tables
 import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, index, uniqueIndex, json } from "drizzle-orm/pg-core";
-import { statusEnum, processTypeEnum_1 } from "./enums";
+import { statusEnum, processTypeEnum_1, sessionStatusEnum } from "./enums";
 
 /**
  * Daily Statistics - Thống kê theo ngày cho performance
@@ -215,3 +215,60 @@ export const productionOrderTemplates = pgTable("production_order_templates", {
 
 export type ProductionOrderTemplate = typeof productionOrderTemplates.$inferSelect;
 export type InsertProductionOrderTemplate = typeof productionOrderTemplates.$inferInsert;
+
+/**
+ * Production Sessions - ISA-95 Level 3 shift session entity
+ * Tracks operator sign-in, shift KPIs, handover, and supervisor sign-off
+ */
+export const productionSessions = pgTable("production_sessions", {
+  id: serial("id").primaryKey(),
+  sessionCode: varchar("sessionCode", { length: 64 }).notNull().unique(),
+  shiftConfigId: integer("shiftConfigId").notNull(),
+  factoryId: integer("factoryId").notNull(),
+  workshopId: integer("workshopId").notNull(),
+  lineId: integer("lineId"),
+  productionOrderId: integer("productionOrderId"),
+  operatorId: integer("operatorId").notNull(),
+  supervisorId: integer("supervisorId"),
+  status: sessionStatusEnum("status").default("open").notNull(),
+  shiftDate: timestamp("shiftDate").notNull(),
+  plannedStart: timestamp("plannedStart").notNull(),
+  plannedEnd: timestamp("plannedEnd").notNull(),
+  actualStart: timestamp("actualStart").notNull(),
+  actualEnd: timestamp("actualEnd"),
+  // Shift handover
+  handoverToSessionId: integer("handoverToSessionId"),
+  handoverNotes: text("handoverNotes"),
+  // KPI snapshot captured at session close (total, ok, ng, oee, yield)
+  kpiSnapshot: json("kpiSnapshot").$type<{
+    totalCount: number;
+    okCount: number;
+    ngCount: number;
+    yieldRate: number;
+    oeePercent: number | null;
+    avgCycleTimeMs: number | null;
+  }>(),
+  operatorNotes: text("operatorNotes"),
+  // 21 CFR Part 11 §11.70 electronic supervisor sign-off
+  // Cryptographic binding: signoffSignature = HMAC-SHA256(SIGNOFF_SECRET, signoffPayload)
+  supervisorSignoff: boolean("supervisorSignoff").default(false).notNull(),
+  supervisorSignoffAt: timestamp("supervisorSignoffAt"),
+  signoffPayload: text("signoffPayload"),
+  signoffPayloadHash: varchar("signoffPayloadHash", { length: 64 }),
+  signoffSignature: varchar("signoffSignature", { length: 128 }),
+  signoffAlgorithm: varchar("signoffAlgorithm", { length: 32 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ps_shift_config").on(table.shiftConfigId),
+  index("idx_ps_factory").on(table.factoryId),
+  index("idx_ps_workshop").on(table.workshopId),
+  index("idx_ps_line").on(table.lineId),
+  index("idx_ps_operator").on(table.operatorId),
+  index("idx_ps_status").on(table.status),
+  index("idx_ps_shift_date").on(table.shiftDate),
+  index("idx_ps_order").on(table.productionOrderId),
+]);
+
+export type ProductionSession = typeof productionSessions.$inferSelect;
+export type InsertProductionSession = typeof productionSessions.$inferInsert;

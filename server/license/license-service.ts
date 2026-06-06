@@ -950,7 +950,13 @@ class LicenseService {
       allowedModules: sdkResult.moduleCodes || [],
       expiresAt: sdkResult.expiresAt ? new Date(sdkResult.expiresAt) : undefined,
       customerName: extra.customerName,
-      licenseType: sdkResult.licenseType,
+      licenseType: sdkResult.licenseType as
+        | "trial"
+        | "standard"
+        | "professional"
+        | "enterprise"
+        | "lifetime"
+        | undefined,
     });
 
     return {
@@ -978,7 +984,7 @@ class LicenseService {
       isValid: sdkResult.isValid,
       error: sdkResult.error,
       status: sdkResult.status,
-      customerName: sdkResult.customerName,
+      customerName: (sdkResult as any).customerName,
       licenseType: sdkResult.licenseType,
       expiresAt: sdkResult.expiresAt,
       moduleCodes: sdkResult.moduleCodes || [],
@@ -1268,7 +1274,7 @@ class LicenseService {
           customerName: extra.customerName || 'Offline Activation',
           customerEmail: null,
           companyName: null,
-          licenseType: sdkResult.licenseType || 'standard',
+          licenseType: (sdkResult.licenseType || 'standard') as any,
           status: 'active',
           allowedModules: sdkResult.moduleCodes || [],
           expiresAt: sdkResult.expiresAt ? new Date(sdkResult.expiresAt) : null,
@@ -1284,7 +1290,7 @@ class LicenseService {
           expiresAt: sdkResult.expiresAt ? new Date(sdkResult.expiresAt) : null,
           lastActivatedAt: new Date(),
           customerName: extra.customerName || existing.customerName,
-          licenseType: sdkResult.licenseType || existing.licenseType,
+          licenseType: (sdkResult.licenseType || existing.licenseType) as any,
         });
         licenseId = existing.id;
       }

@@ -149,6 +149,9 @@ type ShiftStats = {
 export default function Dashboard() {
   const { t } = useTranslation();
   type DashboardTimeRange = "today" | "yesterday" | "7days" | "15days" | "30days" | "custom";
+  const isDashboardTimeRange = (value: string): value is DashboardTimeRange => {
+    return ["today", "yesterday", "7days", "15days", "30days", "custom"].includes(value);
+  };
   
   const REFRESH_INTERVALS = useMemo(() => [
     { value: "5", label: t("dashboard.5seconds") },
@@ -158,7 +161,8 @@ export default function Dashboard() {
     { value: "0", label: t("dashboard.off") },
   ], [t]);
   const { user } = useAuth();
-  const [timeRange, setTimeRange] = useState<DashboardTimeRange>("today");
+  const [timeRange, setTimeRange] = useState<DashboardTimeRange>("7days");
+  const timeRangeStorageHydratedRef = useRef(false);
   const [customFromDate, setCustomFromDate] = useState<string>("");
   const [customToDate, setCustomToDate] = useState<string>("");
   const [selectedFactory, setSelectedFactory] = useState<string>("all");
@@ -334,6 +338,26 @@ export default function Dashboard() {
   useEffect(() => {
     localStorage.setItem('dashboard_visible_metrics', JSON.stringify(visibleMetrics));
   }, [visibleMetrics]);
+
+  const timeRangeStorageKey = useMemo(() => {
+    return user?.id ? `dashboard_time_range_user_${user.id}` : null;
+  }, [user?.id]);
+
+  // Restore last selected dashboard time range for current user
+  useEffect(() => {
+    if (!timeRangeStorageKey) return;
+    const saved = localStorage.getItem(timeRangeStorageKey);
+    if (saved && isDashboardTimeRange(saved)) {
+      setTimeRange(saved);
+    }
+    timeRangeStorageHydratedRef.current = true;
+  }, [timeRangeStorageKey]);
+
+  // Persist dashboard time range per user after hydration
+  useEffect(() => {
+    if (!timeRangeStorageKey || !timeRangeStorageHydratedRef.current) return;
+    localStorage.setItem(timeRangeStorageKey, timeRange);
+  }, [timeRangeStorageKey, timeRange]);
 
   // Calculate date range based on selection
   const dateRange = useMemo(() => {
@@ -877,9 +901,10 @@ export default function Dashboard() {
   };
 
   // Calculate yield alerts based on thresholds
+  const currentStats = (statsWithComparison as StatsWithComparison | undefined)?.current;
+
   const yieldAlerts = useMemo(() => {
-    const currentStats = (statsWithComparison as StatsWithComparison | undefined)?.current;
-    if (!currentStats || !yieldThresholds) return [];
+    if (!currentStats || !yieldThresholds || (currentStats.total ?? 0) <= 0) return [];
     
     const alerts: Array<{
       type: 'FPY' | 'FY' | 'NTF' | 'UPH';
@@ -938,7 +963,7 @@ export default function Dashboard() {
     });
 
     return alerts;
-  }, [statsWithComparison, yieldThresholds]);
+  }, [currentStats, yieldThresholds]);
 
   // Get status color based on FPY
   const getStatusColor = (fpy: number) => {
@@ -1005,6 +1030,11 @@ export default function Dashboard() {
 
   const stats = (statsWithComparison as StatsWithComparison | undefined)?.current;
   const trends = (statsWithComparison as StatsWithComparison | undefined)?.trends;
+  const showNoTodayDataBanner =
+    timeRange === "today" &&
+    !statsLoading &&
+    Boolean(statsWithComparison) &&
+    (stats?.total ?? 0) <= 0;
 
   // Prepare sparkline data
   const sparklineData = useMemo(() => {
@@ -1204,6 +1234,27 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {showNoTodayDataBanner && (
+          <Card className="border-warning/40 bg-warning/5">
+            <CardContent className="py-3 px-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-warning mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    {t("dashboard.noTodayDataTitle", "No inspection data for today")}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("dashboard.noTodayDataDesc", "Today currently has no records. Switch to a wider range to review recent production trends.")}
+                  </p>
+                </div>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setTimeRange("7days")}>
+                {t("dashboard.viewLast7Days", "View last 7 days")}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Summary Stats Cards with Trends - Moved to top */}
         {statsLoading ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -1361,9 +1412,13 @@ export default function Dashboard() {
                   ))}
                 </div>
               ) : (
-                <div className="flex items-center justify-center py-4 text-muted-foreground text-sm">
-                  <CheckCircle2 className="h-4 w-4 mr-2 text-success" />
-                  {t("dashboard.noAlerts")}
+                <div className="flex flex-col items-center justify-center py-4 text-muted-foreground text-sm text-center gap-1">
+                  <CheckCircle2 className="h-4 w-4 text-success" />
+                  <span>
+                    {(currentStats?.total ?? 0) > 0
+                      ? t("dashboard.noAlerts")
+                      : t("dashboard.noDataForAlerts", "No inspection data yet. Alerts will appear once production data is available.")}
+                  </span>
                 </div>
               )}
             </CardContent>

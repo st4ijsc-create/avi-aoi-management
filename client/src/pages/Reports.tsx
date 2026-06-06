@@ -54,6 +54,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { jsPDF } from "jspdf";
+import * as XLSX from "xlsx";
 
 const COLORS = {
   ok: "#10b981",
@@ -252,8 +254,6 @@ export default function Reports() {
   const handleExportExcel = async () => {
     setIsExporting(true);
     try {
-      const XLSX = await import("xlsx");
-      
       // Create workbook
       const wb = XLSX.utils.book_new();
       
@@ -322,7 +322,6 @@ export default function Reports() {
   const handleExportPDF = async () => {
     setIsExporting(true);
     try {
-      const { jsPDF } = await import("jspdf");
       const autoTable = (await import("jspdf-autotable")).default;
       
       const doc = new jsPDF();

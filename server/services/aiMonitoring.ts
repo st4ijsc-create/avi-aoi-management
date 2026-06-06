@@ -134,7 +134,7 @@ async function detectDrift(
     // Store drift score on the snapshot
     await db.updatePerformanceSnapshot(currentSnapshot.id, {
       driftScore: String(psi),
-      driftDetails: { psiScore: psi, method: "PSI", baselineSnapshotId: baseline.id },
+      driftDetails: { psiScore: psi, method: "PSI", baselineSnapshotId: baseline.id } as any,
     });
   }
 

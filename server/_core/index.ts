@@ -14,6 +14,7 @@ import { getDb } from "../db";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { initializeSocket } from "./socket";
+import { uploadGuard } from "./uploadValidation";
 import { startOfflineMonitor } from "./offlineMonitor";
 import { initializeEmailTransporter } from "./email";
 import { initializeScheduledReports, shutdownScheduledReports } from "../services/reportScheduler";
@@ -30,8 +31,11 @@ import { registerExternalInspectionRoutes } from "../routes/externalInspectionAp
 import { registerAiStreamingRoutes } from "../routes/aiStreamingApi";
 import { registerAiLocalKnowledgeRoutes } from "../routes/aiLocalKnowledgeApi";
 import { registerEdgeDownloadRoute } from "../routes/edgeDownload";
-import logger from "../logger";
+import logger, { installConsoleBridge } from "../logger";
 import { createApiLimiter, createAuthLimiter } from "./rateLimitConfig";
+
+// Chuẩn hoá log sang structured khi LOG_JSON=1 / LOG_BRIDGE_CONSOLE=1 (no-op nếu tắt).
+installConsoleBridge();
 
 /** Strip trailing Z so dates are always parsed as local time, not UTC */
 // drizzle-orm serializes Date via toISOString() (UTC representation).
@@ -69,6 +73,23 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  // QW4 — Observability bootstrap (Sentry / OpenTelemetry). No-op unless the
+  // corresponding env vars and packages are present. Must run before app init.
+  try {
+    const { initObservability } = await import("./observability");
+    await initObservability();
+  } catch (err) {
+    console.error("[Observability] init failed:", (err as any)?.message || err);
+  }
+
+  // G0 — Prometheus metrics bootstrap (feature-flag METRICS_ENABLED). No-op khi tắt.
+  try {
+    const { initMetrics } = await import("./metrics");
+    await initMetrics();
+  } catch (err) {
+    console.error("[Metrics] init failed:", (err as any)?.message || err);
+  }
+
   const app = express();
   // Choose HTTP or HTTPS server based on configuration
   let server: ReturnType<typeof createHttpServer> | ReturnType<typeof createHttpsServer>;
@@ -101,14 +122,42 @@ async function startServer() {
   
   // ============================================================
   // CORS Configuration for External Machine Clients (AOI/AVI)
-  // Allows cross-origin requests from C# applications on LAN
+  // Allow-list driven (GAP G13). Browser origins must be explicitly
+  // whitelisted via ALLOWED_ORIGINS (comma-separated). Non-browser LAN
+  // machine clients (C# apps) typically send no Origin header and are
+  // always permitted. When ALLOWED_ORIGINS is empty the middleware falls
+  // back to the previous permissive behaviour but logs a warning so the
+  // misconfiguration is visible in production.
   // ============================================================
+  const corsAllowList = (process.env.ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+  const corsAllowAll = corsAllowList.length === 0;
+  if (corsAllowAll) {
+    console.warn(
+      "[CORS] ALLOWED_ORIGINS is not configured — reflecting all browser origins. " +
+        "Set ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com to harden CORS.",
+    );
+  }
+
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    
-    // Allow all origins (for LAN devices)
-    res.setHeader("Access-Control-Allow-Origin", origin || "*");
-    res.setHeader("Access-Control-Allow-Credentials", "true");
+
+    // No Origin header => non-browser client (LAN machine). Always allow.
+    if (!origin) {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+    } else if (corsAllowAll || corsAllowList.includes(origin)) {
+      // Reflect only trusted origins so credentials can be shared safely.
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    } else {
+      // Untrusted browser origin: deny CORS but let the request through so
+      // non-credentialed/server-to-server calls are unaffected.
+      console.warn(`[CORS] Blocked browser origin not in ALLOWED_ORIGINS: ${origin}`);
+    }
+
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", 
       "Content-Type, Authorization, x-api-key, x-machine-code, X-API-Key, X-Machine-Code, User-Agent, Content-Length, Accept, Origin");
@@ -118,7 +167,6 @@ async function startServer() {
 
     // Handle preflight OPTIONS requests
     if (req.method === "OPTIONS") {
-      console.log(`[CORS] Preflight request: ${req.path}`);
       return res.status(204).end();
     }
 
@@ -151,6 +199,23 @@ async function startServer() {
   // Stricter rate limit for auth endpoints
   const authLimiter = createAuthLimiter();
   app.use('/api/auth/', authLimiter);
+
+  // G0 — Prometheus request metrics (no-op khi METRICS_ENABLED chưa bật)
+  try {
+    const { metricsMiddleware, metricsHandler } = await import("./metrics");
+    app.use(metricsMiddleware());
+    app.get("/metrics", metricsHandler);
+  } catch (err) {
+    console.error("[Metrics] middleware wiring failed:", (err as any)?.message || err);
+  }
+
+  // G1 — SSE realtime stream (no-op/404 khi SSE_ENABLED chưa bật)
+  try {
+    const { sseHandler } = await import("./sse");
+    app.get("/api/stream", sseHandler);
+  } catch (err) {
+    console.error("[SSE] route wiring failed:", (err as any)?.message || err);
+  }
 
   // Health check endpoint (rich diagnostics for Docker HEALTHCHECK / orchestrators)
   app.get('/health', async (_req, res) => {
@@ -263,7 +328,7 @@ async function startServer() {
       const w = req.query.w ? Math.min(Math.max(parseInt(String(req.query.w), 10) || 0, 32), 1920) : 0;
       if (!w) return next(); // No resize requested, fall through to express.static
       const q = req.query.q ? Math.min(Math.max(parseInt(String(req.query.q), 10) || 80, 10), 100) : 80;
-      const filePath = path.join(uploadsRoot, req.params[0]);
+      const filePath = path.join(uploadsRoot, (req.params as Record<string, string>)[0]);
       try {
         if (!fs.existsSync(filePath)) return next();
         const sharpMod = (await import("sharp")).default;
@@ -715,6 +780,7 @@ async function startServer() {
       const { factoryAlertVersions } = await import("../../drizzle/schema/mqtt");
       const { eq } = await import("drizzle-orm");
       const db = await getDb();
+      if (!db) return res.status(503).json({ error: "Database not connected" });
       const [active] = await db.select().from(factoryAlertVersions).where(eq(factoryAlertVersions.isActive, true)).limit(1);
       if (!active) {
         return res.status(404).json({ error: "No active version" });
@@ -739,6 +805,7 @@ async function startServer() {
       const { factoryAlertVersions } = await import("../../drizzle/schema/mqtt");
       const { desc } = await import("drizzle-orm");
       const db = await getDb();
+      if (!db) return res.status(503).json({ error: "Database not connected" });
       const all = await db.select().from(factoryAlertVersions).orderBy(desc(factoryAlertVersions.versionCode));
       res.json(all);
     } catch (error: any) {
@@ -783,6 +850,7 @@ async function startServer() {
       const { factoryAlertVersions } = await import("../../drizzle/schema/mqtt");
       const { eq } = await import("drizzle-orm");
       const db = await getDb();
+      if (!db) return res.status(503).json({ success: false, error: "Database not connected" });
       const [active] = await db.select().from(factoryAlertVersions).where(eq(factoryAlertVersions.isActive, true)).limit(1);
 
       if (!active) {
@@ -808,7 +876,7 @@ async function startServer() {
   });
 
   // POST /api/factory-alert/upload — Upload APK to versioned folder and save to DB
-  app.post("/api/factory-alert/upload", express.raw({ type: "*/*", limit: "200mb" }), async (req, res) => {
+  app.post("/api/factory-alert/upload", express.raw({ type: "*/*", limit: "200mb" }), uploadGuard("apk"), async (req, res) => {
     try {
       const version = (req.query.version as string)?.trim();
       const versionCode = parseInt(req.query.versionCode as string, 10);
@@ -838,6 +906,7 @@ async function startServer() {
       const { factoryAlertVersions } = await import("../../drizzle/schema/mqtt");
       const { eq } = await import("drizzle-orm");
       const db = await getDb();
+      if (!db) return res.status(503).json({ success: false, error: "Database not connected" });
 
       // Check if version already exists, update if so
       const [existing] = await db.select().from(factoryAlertVersions).where(eq(factoryAlertVersions.version, version)).limit(1);
@@ -879,6 +948,7 @@ async function startServer() {
       const { factoryAlertVersions } = await import("../../drizzle/schema/mqtt");
       const { eq } = await import("drizzle-orm");
       const db = await getDb();
+      if (!db) return res.status(503).json({ success: false, error: "Database not connected" });
 
       // Deactivate all
       await db.update(factoryAlertVersions).set({ isActive: false, updatedAt: new Date() });
@@ -901,6 +971,7 @@ async function startServer() {
       const { factoryAlertVersions } = await import("../../drizzle/schema/mqtt");
       const { eq } = await import("drizzle-orm");
       const db = await getDb();
+      if (!db) return res.status(503).json({ success: false, error: "Database not connected" });
 
       await db.update(factoryAlertVersions).set({ isActive: false, updatedAt: new Date() }).where(eq(factoryAlertVersions.id, id));
       res.json({ success: true });
@@ -917,6 +988,7 @@ async function startServer() {
       const { factoryAlertVersions } = await import("../../drizzle/schema/mqtt");
       const { eq } = await import("drizzle-orm");
       const db = await getDb();
+      if (!db) return res.status(503).json({ success: false, error: "Database not connected" });
 
       const [ver] = await db.select().from(factoryAlertVersions).where(eq(factoryAlertVersions.id, id)).limit(1);
       if (!ver) {
@@ -1113,11 +1185,33 @@ async function startServer() {
   //   1. Master API Key via header x-master-key  (for server-to-server)
   //   2. Bearer token via header Authorization   (for app clients that login with username/password)
   const validateExternalAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    // Option 1: Master API Key
-    const masterKey = req.header("x-master-key") || req.header("X-Master-Key") || (req.query.masterKey as string);
+    // Option 1: Master API Key.
+    // Header là kênh chuẩn. Query param (?masterKey=) bị deprecate vì rò rỉ qua log/URL:
+    // chỉ chấp nhận ngoài production và phát cảnh báo; bị chặn hẳn khi NODE_ENV=production
+    // hoặc DISABLE_QUERY_MASTER_KEY=1.
+    const headerKey = req.header("x-master-key") || req.header("X-Master-Key");
+    const queryKey = typeof req.query.masterKey === "string" ? req.query.masterKey : undefined;
+    const queryKeyBlocked =
+      process.env.NODE_ENV === "production" ||
+      process.env.DISABLE_QUERY_MASTER_KEY === "1" ||
+      process.env.DISABLE_QUERY_MASTER_KEY === "true";
+
+    if (queryKey && !headerKey) {
+      if (queryKeyBlocked) {
+        logger.warn({ path: req.path, ip: req.ip }, "[External] Rejected master key passed via query param (deprecated)");
+        return res.status(401).json({
+          success: false,
+          message: "Master key via query param is disabled. Use the x-master-key header.",
+        });
+      }
+      logger.warn({ path: req.path }, "[External] Master key via query param is deprecated; use x-master-key header");
+    }
+
+    const masterKey = headerKey || (queryKeyBlocked ? undefined : queryKey);
     if (masterKey === MASTER_API_KEY) {
       return next();
     }
+
 
     // Option 2: Bearer token (JWT from /api/external/auth/login)
     const authHeader = req.header("Authorization");
@@ -2611,6 +2705,21 @@ async function startServer() {
     res.json({ success: true, serverTime: new Date().toISOString() });
   });
 
+  // G4 — OpenAPI 3.0 spec cho REST external (public, chỉ mô tả hợp đồng).
+  app.get("/api/external/openapi.json", async (req, res) => {
+    try {
+      const { buildExternalOpenApiSpec } = await import("../openapi/externalApiSpec");
+      const proto = (req.header("x-forwarded-proto") || req.protocol || "http").split(",")[0];
+      const host = req.header("x-forwarded-host") || req.get("host") || "";
+      const serverUrl = host ? `${proto}://${host}` : "/";
+      res.json(buildExternalOpenApiSpec(serverUrl));
+    } catch (err) {
+      console.error("[OpenAPI] spec build failed:", err);
+      res.status(500).json({ success: false, message: "Failed to build OpenAPI spec" });
+    }
+  });
+
+
   // ============================================================
   // Station Statistics APIs — per-station KPIs, measurement point stats, fail history
   // ============================================================
@@ -3660,7 +3769,7 @@ async function startServer() {
   // AOI Package Upload - REST endpoint for binary ZIP upload
   // Agent uploads ZIP directly via this endpoint
   // ============================================================
-  app.put("/api/aoi/upload/:packageId", express.raw({ type: "*/*", limit: "200mb" }), async (req, res) => {
+  app.put("/api/aoi/upload/:packageId", express.raw({ type: "*/*", limit: "200mb" }), uploadGuard("zip"), async (req, res) => {
     const startTime = Date.now();
     
     // Ensure CORS headers are set (even on error responses)
@@ -4329,6 +4438,51 @@ async function startServer() {
     console.error("[EdgeStale] init failed:", (err as any)?.message || err);
   }
 
+  // QW3 — Materialized view refresh (machine_status_latest, hourly_yield_cache).
+  // Disabled by default; opt in via MATVIEW_REFRESH_ENABLED=true after 0111.
+  try {
+    const { startMaterializedViewRefresh } = await import("../services/materializedViewRefreshService");
+    startMaterializedViewRefresh();
+  } catch (err) {
+    console.error("[MatviewRefresh] init failed:", (err as any)?.message || err);
+  }
+
+  // G1 — Edge Gateway OPC-UA/Modbus ingest (scaffold).
+  // Disabled by default; opt in via OPCUA_GATEWAY_ENABLED=true + OPCUA_ENDPOINT_URL.
+  try {
+    const { startOpcuaGateway } = await import("../services/opcuaGateway");
+    await startOpcuaGateway();
+  } catch (err) {
+    console.error("[OpcuaGateway] init failed:", (err as any)?.message || err);
+  }
+
+  // F1.1 — OT Connectivity Framework (parallel to OPC-UA scaffold above).
+  // Disabled by default; opt in via OT_GATEWAY_ENABLED=true.
+  try {
+    const { startOt } = await import("../services/ot");
+    await startOt();
+  } catch (err) {
+    console.error("[OT] init failed:", (err as any)?.message || err);
+  }
+
+  // G2/G7 — PdM closed-loop: tự sinh maintenance work-order từ predictedFailureRisk.
+  // Disabled by default; opt in via PDM_WORKORDER_ENABLED=true.
+  try {
+    const { startPdmWorkOrderService } = await import("../services/pdmWorkOrderService");
+    startPdmWorkOrderService();
+  } catch (err) {
+    console.error("[PdmWorkOrder] init failed:", (err as any)?.message || err);
+  }
+
+  // G3/G12 — Disaster-Recovery verify-restore cadence (no-op khi cờ tắt).
+  // Opt in via DR_VERIFY_ENABLED=true.
+  try {
+    const { startDisasterRecoveryService } = await import("../services/disasterRecoveryService");
+    startDisasterRecoveryService();
+  } catch (err) {
+    console.error("[DR] init failed:", (err as any)?.message || err);
+  }
+
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
@@ -4373,6 +4527,22 @@ async function startServer() {
       shutdownMqttBroker();
       stopSummaryScheduler();
     }
+    // G1 — dừng edge gateway (no-op nếu chưa chạy)
+    import("../services/opcuaGateway")
+      .then((m) => m.stopOpcuaGateway())
+      .catch(() => {});
+    // F1.1 — dừng OT framework (no-op nếu chưa chạy)
+    import("../services/ot")
+      .then((m) => m.stopOt())
+      .catch(() => {});
+    // G2/G7 — dừng PdM work-order scheduler (no-op nếu chưa chạy)
+    import("../services/pdmWorkOrderService")
+      .then((m) => m.stopPdmWorkOrderService())
+      .catch(() => {});
+    // G3/G12 — dừng DR verify-restore (no-op nếu chưa chạy)
+    import("../services/disasterRecoveryService")
+      .then((m) => m.stopDisasterRecoveryService())
+      .catch(() => {});
     server.close(() => {
       logger.info("Server closed");
       process.exit(0);

@@ -124,7 +124,7 @@ export const inspectionRouter = router({
           trendPrediction: null,
           anomalies: [],
           recommendations: [],
-          summary: "KhÃ´ng Ä‘á»§ dá»¯ liá»‡u Ä‘á»ƒ phÃ¢n tÃ­ch (cáº§n tá»‘i thiá»ƒu 3 ngÃ y dá»¯ liá»‡u)",
+          summary: "Không đủ dữ liệu để phân tích (cần tối thiểu 3 ngày dữ liệu)",
         };
       }
 
@@ -192,23 +192,23 @@ export const inspectionRouter = router({
       const avgYield = yMean;
 
       if (slope < -0.5) {
-        recommendations.push("âš ï¸ Xu hÆ°á»›ng giáº£m: Yield Rate Ä‘ang giáº£m dáº§n. Cáº§n kiá»ƒm tra quy trÃ¬nh sáº£n xuáº¥t vÃ  cháº¥t lÆ°á»£ng nguyÃªn liá»‡u.");
+        recommendations.push("⚠️ Xu hướng giảm: Yield Rate đang giảm dần. Cần kiểm tra quy trình sản xuất và chất lượng nguyên liệu.");
       } else if (slope > 0.5) {
-        recommendations.push("âœ… Xu hÆ°á»›ng tÄƒng: Yield Rate Ä‘ang cáº£i thiá»‡n. Tiáº¿p tá»¥c duy trÃ¬ cÃ¡c biá»‡n phÃ¡p hiá»‡n táº¡i.");
+        recommendations.push("✅ Xu hướng tăng: Yield Rate đang cải thiện. Tiếp tục duy trì các biện pháp hiện tại.");
       }
 
       if (currentYield < 90) {
-        recommendations.push("ðŸš¨ Yield Rate hiá»‡n táº¡i dÆ°á»›i 90%. Cáº§n hÃ nh Ä‘á»™ng ngay Ä‘á»ƒ cáº£i thiá»‡n cháº¥t lÆ°á»£ng.");
+        recommendations.push("🚨 Yield Rate hiện tại dưới 90%. Cần hành động ngay để cải thiện chất lượng.");
       } else if (currentYield < 95) {
-        recommendations.push("ðŸ”¶ Yield Rate hiá»‡n táº¡i dÆ°á»›i 95%. Xem xÃ©t cÃ¡c Ä‘iá»ƒm Ä‘o lá»—i nhiá»u nháº¥t Ä‘á»ƒ cáº£i thiá»‡n.");
+        recommendations.push("🔶 Yield Rate hiện tại dưới 95%. Xem xét các điểm đo lỗi nhiều nhất để cải thiện.");
       }
 
       if (anomalies.length > 0) {
-        recommendations.push(`ðŸ” PhÃ¡t hiá»‡n ${anomalies.length} ngÃ y báº¥t thÆ°á»ng. Kiá»ƒm tra láº¡i dá»¯ liá»‡u vÃ  Ä‘iá»u kiá»‡n sáº£n xuáº¥t trong nhá»¯ng ngÃ y nÃ y.`);
+        recommendations.push(`🔍 Phát hiện ${anomalies.length} ngày bất thường. Kiểm tra lại dữ liệu và điều kiện sản xuất trong những ngày này.`);
       }
 
       if (stdDev > 5) {
-        recommendations.push("ðŸ“‰ Äá»™ biáº¿n Ä‘á»™ng cao: Yield Rate khÃ´ng á»•n Ä‘á»‹nh. Cáº§n chuáº©n hÃ³a quy trÃ¬nh sáº£n xuáº¥t.");
+        recommendations.push("📉 Độ biến động cao: Yield Rate không ổn định. Cần chuẩn hóa quy trình sản xuất.");
       }
 
       return {
@@ -220,7 +220,7 @@ export const inspectionRouter = router({
         },
         anomalies,
         recommendations,
-        summary: `PhÃ¢n tÃ­ch ${n} ngÃ y dá»¯ liá»‡u. Yield Rate trung bÃ¬nh: ${avgYield.toFixed(1)}%, Äá»™ lá»‡ch chuáº©n: ${stdDev.toFixed(2)}%`,
+        summary: `Phân tích ${n} ngày dữ liệu. Yield Rate trung bình: ${avgYield.toFixed(1)}%, Độ lệch chuẩn: ${stdDev.toFixed(2)}%`,
         statistics: {
           mean: avgYield,
           stdDev,
@@ -296,7 +296,7 @@ export const inspectionRouter = router({
 
       const patterns = Array.from(typeGroups.entries()).map(([type, points]) => ({
         clusterName: type === "visual" ? "Lỗi ngoại quan (Visual)"
-          : type === "dimension" ? "Lỗi kích thước (Dimension)"
+          : type === "dimension" ? "Lỗi k�ch thước (Dimension)"
           : type === "electrical" ? "Lỗi điện (Electrical)"
           : `Lỗi ${type}`,
         type,

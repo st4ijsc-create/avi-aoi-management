@@ -34,6 +34,9 @@ import {
   Cpu,
   HardDrive,
   Clock,
+  Activity,
+  Play,
+  X as XIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -90,7 +93,7 @@ export default function AISettingsPage() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-3 max-w-lg">
+          <TabsList className="grid w-full grid-cols-5 max-w-3xl">
             <TabsTrigger value="api-keys" className="flex items-center gap-2">
               <Key className="h-4 w-4" />
               {t('aiSettings.tabs.apiKeys', 'API Keys')}
@@ -102,6 +105,14 @@ export default function AISettingsPage() {
             <TabsTrigger value="system" className="flex items-center gap-2">
               <Database className="h-4 w-4" />
               {t('aiSettings.tabs.system', 'System')}
+            </TabsTrigger>
+            <TabsTrigger value="hybrid" className="flex items-center gap-2">
+              <Shield className="h-4 w-4" />
+              {t('aiSettings.tabs.hybrid', 'Hybrid Provider')}
+            </TabsTrigger>
+            <TabsTrigger value="monitoring" className="flex items-center gap-2">
+              <Activity className="h-4 w-4" />
+              {t('aiSettings.tabs.monitoring', 'Monitoring')}
             </TabsTrigger>
           </TabsList>
 
@@ -118,6 +129,16 @@ export default function AISettingsPage() {
           {/* System Tab */}
           <TabsContent value="system" className="space-y-4">
             <SystemConfigSection />
+          </TabsContent>
+
+          {/* Hybrid Provider Tab (S2.6) */}
+          <TabsContent value="hybrid" className="space-y-4">
+            <HybridProviderSection />
+          </TabsContent>
+
+          {/* Monitoring Tab (S3.5) */}
+          <TabsContent value="monitoring" className="space-y-4">
+            <MonitoringSection />
           </TabsContent>
         </Tabs>
       </div>
@@ -683,6 +704,491 @@ function SystemConfigSection() {
           {t('common.save', 'Save')}
         </Button>
       </div>
+    </div>
+  );
+}
+
+// ─── Hybrid Provider Section (S2.6) ──────────────────────────────────────────
+
+function HybridProviderSection() {
+  const { t } = useTranslation();
+  const { data, isLoading, refetch } = trpc.aiSettings.getHybridProviderStatus.useQuery(undefined, {
+    refetchInterval: 10_000,
+  });
+  const setConfig = trpc.aiSettings.setHybridProviderConfig.useMutation({
+    onSuccess: () => {
+      toast.success(t('aiSettings.hybrid.configUpdated', 'Provider config updated'));
+      refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const resetBreaker = trpc.aiSettings.resetHybridBreaker.useMutation({
+    onSuccess: () => {
+      toast.success(t('aiSettings.hybrid.breakerReset', 'Breaker reset'));
+      refetch();
+    },
+  });
+
+  if (isLoading || !data) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-48 w-full" />
+      </div>
+    );
+  }
+
+  const { config, ggufAvailable, openaiConfigured, breakers, recentEvents } = data;
+  const breakerKeys = Object.keys(breakers);
+
+  return (
+    <div className="space-y-4">
+      {/* Provider Toggle */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            {t('aiSettings.hybrid.provider', 'Primary Provider & Fallback')}
+          </CardTitle>
+          <CardDescription>
+            {t('aiSettings.hybrid.providerDesc', 'Choose primary AI provider; fallback automatically engages on failure or open circuit.')}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>{t('aiSettings.hybrid.primary', 'Primary Provider')}</Label>
+              <Select
+                value={config.primary}
+                onValueChange={(v) => setConfig.mutate({ primary: v as 'openai' | 'gguf' })}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="openai" disabled={!openaiConfigured}>
+                    OpenAI {!openaiConfigured && '(no API key)'}
+                  </SelectItem>
+                  <SelectItem value="gguf" disabled={!ggufAvailable}>
+                    GGUF (local) {!ggufAvailable && '(unavailable)'}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>{t('aiSettings.hybrid.fallback', 'Fallback Enabled')}</Label>
+              <div className="flex items-center gap-3 h-10">
+                <Switch
+                  checked={config.fallbackEnabled}
+                  onCheckedChange={(v) => setConfig.mutate({ fallbackEnabled: v })}
+                />
+                <span className="text-sm text-muted-foreground">
+                  {config.fallbackEnabled
+                    ? t('aiSettings.hybrid.fallbackOn', 'Auto-failover ON')
+                    : t('aiSettings.hybrid.fallbackOff', 'Disabled — primary only')}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 pt-2">
+            <Badge variant={openaiConfigured ? 'default' : 'secondary'}>
+              <Globe className="h-3 w-3 mr-1" /> OpenAI: {openaiConfigured ? 'Configured' : 'Missing key'}
+            </Badge>
+            <Badge variant={ggufAvailable ? 'default' : 'secondary'}>
+              <HardDrive className="h-3 w-3 mr-1" /> GGUF: {ggufAvailable ? 'Available' : 'Not loaded'}
+            </Badge>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Model Paths */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <HardDrive className="h-5 w-5" />
+            {t('aiSettings.hybrid.models', 'Model Configuration')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <ModelRow label="Cloud Text Model" value={config.cloudTextModel || '—'} />
+          <ModelRow label="Cloud Vision Model" value={config.cloudVisionModel || '—'} />
+          <ModelRow label="GGUF Text Model" value={config.ggufTextModel || '—'} />
+          <ModelRow label="GGUF Vision Model" value={config.ggufVisionModel || '—'} />
+          <ModelRow label="GGUF Vision MMProj" value={config.ggufVisionMmproj || '—'} />
+        </CardContent>
+      </Card>
+
+      {/* Circuit Breakers */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5" />
+              {t('aiSettings.hybrid.breakers', 'Circuit Breakers')}
+            </CardTitle>
+            <CardDescription>
+              {t('aiSettings.hybrid.breakersDesc', '3 failures within 60s opens the circuit for 5 minutes.')}
+            </CardDescription>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => resetBreaker.mutate({})}>
+            <RefreshCw className="h-4 w-4 mr-1" />
+            {t('aiSettings.hybrid.resetAll', 'Reset all')}
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {breakerKeys.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {t('aiSettings.hybrid.noBreakers', 'No breaker activity yet.')}
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {breakerKeys.map((k) => {
+                const b = breakers[k];
+                return (
+                  <div key={k} className="flex items-center justify-between border rounded-md p-3">
+                    <div className="flex items-center gap-3">
+                      <Badge variant={b.open ? 'destructive' : 'default'}>
+                        {b.open ? 'OPEN' : 'CLOSED'}
+                      </Badge>
+                      <span className="font-mono text-sm">{k}</span>
+                      <span className="text-xs text-muted-foreground">
+                        fails: {b.consecutiveFailures}
+                        {b.open && ` · until ${format(new Date(b.openUntil), 'HH:mm:ss')}`}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {b.lastError && (
+                        <span className="text-xs text-red-600 truncate max-w-xs" title={b.lastError}>
+                          {b.lastError}
+                        </span>
+                      )}
+                      <Button variant="ghost" size="sm" onClick={() => resetBreaker.mutate({ key: k })}>
+                        Reset
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Recent Events */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="h-5 w-5" />
+            {t('aiSettings.hybrid.events', 'Recent AI Events')}
+          </CardTitle>
+          <CardDescription>
+            {t('aiSettings.hybrid.eventsDesc', 'Latest 100 provider invocations (auto-refresh 10s).')}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ScrollArea className="h-80 w-full">
+            {recentEvents.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {t('aiSettings.hybrid.noEvents', 'No events recorded yet.')}
+              </p>
+            ) : (
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-background border-b">
+                  <tr className="text-left">
+                    <th className="p-2">Time</th>
+                    <th className="p-2">Cap</th>
+                    <th className="p-2">Provider</th>
+                    <th className="p-2">Model</th>
+                    <th className="p-2">Status</th>
+                    <th className="p-2 text-right">ms</th>
+                    <th className="p-2 text-right">tok/s</th>
+                    <th className="p-2">Error</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentEvents.map((e, i) => (
+                    <tr key={i} className="border-b hover:bg-muted/50">
+                      <td className="p-2 font-mono whitespace-nowrap">
+                        {format(new Date(e.ts), 'HH:mm:ss')}
+                      </td>
+                      <td className="p-2">{e.capability}</td>
+                      <td className="p-2">
+                        <Badge variant="outline" className="text-xs">
+                          {e.provider}
+                          {e.fallbackUsed && ' (fb)'}
+                        </Badge>
+                      </td>
+                      <td className="p-2 font-mono truncate max-w-40" title={e.model}>{e.model}</td>
+                      <td className="p-2">
+                        {e.success ? (
+                          <Badge variant="default" className="text-xs">OK</Badge>
+                        ) : (
+                          <Badge variant="destructive" className="text-xs">FAIL</Badge>
+                        )}
+                      </td>
+                      <td className="p-2 text-right">{e.totalTimeMs}</td>
+                      <td className="p-2 text-right">{e.tokensPerSecond?.toFixed(1) ?? '—'}</td>
+                      <td className="p-2 text-red-600 truncate max-w-50" title={e.error}>{e.error || ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </ScrollArea>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ModelRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between py-1 border-b last:border-0">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-mono">{value}</span>
+    </div>
+  );
+}
+
+// ─── Monitoring Section (S3.5) ───────────────────────────────────────────────
+
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
+  return sorted[idx];
+}
+
+function MonitoringSection() {
+  const { t } = useTranslation();
+
+  const hybrid = trpc.aiSettings.getHybridProviderStatus.useQuery(undefined, { refetchInterval: 10_000 });
+  const jobs = trpc.aiSettings.listAiJobs.useQuery({ limit: 50 }, { refetchInterval: 5_000 });
+  const rca = trpc.aiSettings.getBatchRcaStatus.useQuery(undefined, { refetchInterval: 30_000 });
+
+  const runRca = trpc.aiSettings.runBatchRcaNow.useMutation({
+    onSuccess: (r) => {
+      toast.success(`Batch RCA: ${r.succeeded}/${r.machinesProcessed} OK in ${r.durationMs}ms`);
+      rca.refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const cancelJob = trpc.aiSettings.cancelAiJob.useMutation({
+    onSuccess: () => jobs.refetch(),
+  });
+
+  if (hybrid.isLoading || !hybrid.data) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-48 w-full" />
+      </div>
+    );
+  }
+
+  const events = hybrid.data.recentEvents || [];
+  const total = events.length;
+  const okCount = events.filter((e: any) => e.success).length;
+  const failCount = total - okCount;
+  const fallbackCount = events.filter((e: any) => e.fallbackUsed).length;
+  const successRate = total > 0 ? Math.round((okCount / total) * 100) : 0;
+
+  // Latency stats
+  const latencies = events.map((e: any) => Number(e.totalTimeMs) || 0).sort((a: number, b: number) => a - b);
+  const p50 = percentile(latencies, 50);
+  const p95 = percentile(latencies, 95);
+  const p99 = percentile(latencies, 99);
+  const avgLatency = latencies.length > 0 ? Math.round(latencies.reduce((a: number, b: number) => a + b, 0) / latencies.length) : 0;
+
+  // Per-provider stats
+  const byProvider: Record<string, { total: number; ok: number; fail: number; totalMs: number }> = {};
+  for (const e of events) {
+    const p = e.provider as string;
+    if (!byProvider[p]) byProvider[p] = { total: 0, ok: 0, fail: 0, totalMs: 0 };
+    byProvider[p].total++;
+    if (e.success) byProvider[p].ok++;
+    else byProvider[p].fail++;
+    byProvider[p].totalMs += Number(e.totalTimeMs) || 0;
+  }
+
+  const queueSnapshot = jobs.data?.snapshot;
+  const jobList = jobs.data?.jobs || [];
+  const rcaStatus = rca.data;
+
+  return (
+    <div className="space-y-4">
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground">{t('aiSettings.monitoring.successRate', 'Success Rate')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{successRate}%</div>
+            <div className="text-xs text-muted-foreground">{okCount} OK · {failCount} fail · {fallbackCount} fb</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground">{t('aiSettings.monitoring.avgLatency', 'Avg Latency')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{avgLatency}<span className="text-sm font-normal text-muted-foreground"> ms</span></div>
+            <div className="text-xs text-muted-foreground">p50 {p50} · p95 {p95} · p99 {p99}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground">{t('aiSettings.monitoring.queue', 'Job Queue')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{queueSnapshot?.queued ?? 0}<span className="text-sm font-normal text-muted-foreground"> queued</span></div>
+            <div className="text-xs text-muted-foreground">
+              {queueSnapshot?.running ?? 0} running · cap {queueSnapshot?.concurrency ?? '—'} · max {queueSnapshot?.maxQueueSize ?? '—'}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground">{t('aiSettings.monitoring.batchRca', 'Batch RCA')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {rcaStatus?.lastRunStats ? `${rcaStatus.lastRunStats.succeeded}/${rcaStatus.lastRunStats.machinesProcessed}` : '—'}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {rcaStatus?.lastRunAt ? format(new Date(rcaStatus.lastRunAt), 'yyyy-MM-dd HH:mm') : t('aiSettings.monitoring.neverRun', 'never run')}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Per-provider breakdown */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-5 w-5" />
+            {t('aiSettings.monitoring.perProvider', 'Per-Provider Stats (last 100 events)')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {Object.keys(byProvider).length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t('aiSettings.monitoring.noData', 'No events yet.')}</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="border-b">
+                <tr className="text-left">
+                  <th className="p-2">Provider</th>
+                  <th className="p-2 text-right">Total</th>
+                  <th className="p-2 text-right">OK</th>
+                  <th className="p-2 text-right">Fail</th>
+                  <th className="p-2 text-right">Success %</th>
+                  <th className="p-2 text-right">Avg ms</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(byProvider).map(([p, s]) => (
+                  <tr key={p} className="border-b">
+                    <td className="p-2 font-mono">{p}</td>
+                    <td className="p-2 text-right">{s.total}</td>
+                    <td className="p-2 text-right text-green-600">{s.ok}</td>
+                    <td className="p-2 text-right text-red-600">{s.fail}</td>
+                    <td className="p-2 text-right">{s.total > 0 ? Math.round((s.ok / s.total) * 100) : 0}%</td>
+                    <td className="p-2 text-right">{s.total > 0 ? Math.round(s.totalMs / s.total) : 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Job queue list */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="h-5 w-5" />
+            {t('aiSettings.monitoring.jobs', 'AI Jobs')}
+          </CardTitle>
+          <CardDescription>
+            {t('aiSettings.monitoring.jobsDesc', 'Async narrative/insight jobs (auto-refresh 5s).')}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ScrollArea className="h-64 w-full">
+            {jobList.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t('aiSettings.monitoring.noJobs', 'No jobs.')}</p>
+            ) : (
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-background border-b">
+                  <tr className="text-left">
+                    <th className="p-2">Created</th>
+                    <th className="p-2">Kind</th>
+                    <th className="p-2">Status</th>
+                    <th className="p-2 text-right">Prompt len</th>
+                    <th className="p-2">Cache key</th>
+                    <th className="p-2">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {jobList.map((j: any) => (
+                    <tr key={j.id} className="border-b">
+                      <td className="p-2 font-mono whitespace-nowrap">{format(new Date(j.createdAt), 'HH:mm:ss')}</td>
+                      <td className="p-2">{j.kind}</td>
+                      <td className="p-2">
+                        <Badge variant={j.status === 'completed' ? 'default' : j.status === 'failed' ? 'destructive' : 'secondary'} className="text-xs">
+                          {j.status}
+                        </Badge>
+                      </td>
+                      <td className="p-2 text-right">{j.requestSummary?.promptLength ?? '—'}</td>
+                      <td className="p-2 font-mono truncate max-w-40" title={j.requestSummary?.cacheKey ?? ''}>
+                        {j.requestSummary?.cacheKey ?? '—'}
+                      </td>
+                      <td className="p-2">
+                        {j.status === 'queued' && (
+                          <Button variant="ghost" size="sm" onClick={() => cancelJob.mutate({ id: j.id })}>
+                            <XIcon className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </ScrollArea>
+        </CardContent>
+      </Card>
+
+      {/* Batch RCA card */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Brain className="h-5 w-5" />
+              {t('aiSettings.monitoring.batchRcaCron', 'Batch RCA Cron')}
+            </CardTitle>
+            <CardDescription>
+              {rcaStatus
+                ? `${rcaStatus.cron} (${rcaStatus.timezone}) · ${rcaStatus.enabled ? 'enabled' : 'disabled'}`
+                : t('aiSettings.monitoring.loading', 'loading...')}
+            </CardDescription>
+          </div>
+          <Button size="sm" onClick={() => runRca.mutate()} disabled={runRca.isPending}>
+            {runRca.isPending ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <Play className="h-4 w-4 mr-1" />}
+            {t('aiSettings.monitoring.runNow', 'Run now')}
+          </Button>
+        </CardHeader>
+        <CardContent className="text-sm">
+          {rcaStatus?.lastRunStats ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div><div className="text-xs text-muted-foreground">Machines</div><div className="font-bold">{rcaStatus.lastRunStats.machinesProcessed}</div></div>
+              <div><div className="text-xs text-muted-foreground">Succeeded</div><div className="font-bold text-green-600">{rcaStatus.lastRunStats.succeeded}</div></div>
+              <div><div className="text-xs text-muted-foreground">Failed</div><div className="font-bold text-red-600">{rcaStatus.lastRunStats.failed}</div></div>
+              <div><div className="text-xs text-muted-foreground">Duration</div><div className="font-bold">{rcaStatus.lastRunStats.durationMs} ms</div></div>
+            </div>
+          ) : (
+            <p className="text-muted-foreground">{t('aiSettings.monitoring.noRcaRuns', 'No batch runs recorded yet.')}</p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

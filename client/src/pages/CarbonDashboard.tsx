@@ -1,0 +1,207 @@
+import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
+import { trpc } from "@/lib/trpc";
+import DashboardLayout from "@/components/DashboardLayout";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+  Legend,
+} from "recharts";
+import { Leaf, Zap, Gauge, Factory } from "lucide-react";
+
+function num(v: unknown): number {
+  const n = typeof v === "number" ? v : parseFloat(String(v ?? ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function KpiCard({
+  icon,
+  label,
+  value,
+  unit,
+  accent,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  unit?: string;
+  accent?: string;
+}) {
+  return (
+    <Card>
+      <CardContent className="pt-6">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">{label}</span>
+          <span className={accent}>{icon}</span>
+        </div>
+        <div className="mt-2 text-2xl font-bold">
+          {value}
+          {unit && <span className="ml-1 text-sm font-normal text-muted-foreground">{unit}</span>}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function CarbonDashboard() {
+  const { t } = useTranslation();
+  const enpi = trpc.realtimeReport.enpiSummary.useQuery({ limit: 500 });
+
+  const rows = enpi.data ?? [];
+
+  const kpis = useMemo(() => {
+    let totalKwh = 0;
+    let totalCarbon = 0;
+    let goodUnits = 0;
+    let epuSum = 0;
+    let epuCount = 0;
+    for (const r of rows as any[]) {
+      totalKwh += num(r.totalKwh);
+      totalCarbon += num(r.carbonKg);
+      goodUnits += num(r.goodUnits);
+      const epu = num(r.energyPerUnit);
+      if (epu > 0) {
+        epuSum += epu;
+        epuCount += 1;
+      }
+    }
+    return {
+      totalKwh,
+      totalCarbon,
+      goodUnits,
+      avgEpu: epuCount > 0 ? epuSum / epuCount : 0,
+    };
+  }, [rows]);
+
+  // Xu hướng theo periodStart (carbon + kWh)
+  const trend = useMemo(() => {
+    return [...(rows as any[])]
+      .filter((r) => r.periodStart)
+      .sort((a, b) => new Date(a.periodStart).getTime() - new Date(b.periodStart).getTime())
+      .map((r) => ({
+        time: new Date(r.periodStart).toLocaleDateString(),
+        carbon: num(r.carbonKg),
+        kwh: num(r.totalKwh),
+      }));
+  }, [rows]);
+
+  // EnPI thực tế vs baseline theo máy (top 12 theo kWh)
+  const byMachine = useMemo(() => {
+    return [...(rows as any[])]
+      .map((r) => ({
+        machine: `#${r.machineId ?? "—"}`,
+        epu: num(r.energyPerUnit),
+        baseline: num(r.baselineEnergyPerUnit),
+        kwh: num(r.totalKwh),
+      }))
+      .sort((a, b) => b.kwh - a.kwh)
+      .slice(0, 12);
+  }, [rows]);
+
+  return (
+    <DashboardLayout>
+      <div className="space-y-6 p-1">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <Leaf className="h-6 w-6 text-emerald-600" />
+            {t("carbon.title", "Năng lượng & Carbon (ISO 50001)")}
+          </h1>
+          <p className="text-muted-foreground">
+            {t("carbon.subtitle", "EnPI, tiêu thụ năng lượng và phát thải CO₂ quy đổi theo máy")}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <KpiCard
+            icon={<Zap className="h-5 w-5" />}
+            label={t("carbon.totalKwh", "Tổng năng lượng")}
+            value={kpis.totalKwh.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+            unit="kWh"
+            accent="text-amber-500"
+          />
+          <KpiCard
+            icon={<Factory className="h-5 w-5" />}
+            label={t("carbon.totalCarbon", "Tổng phát thải")}
+            value={kpis.totalCarbon.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+            unit="kg CO₂"
+            accent="text-emerald-600"
+          />
+          <KpiCard
+            icon={<Gauge className="h-5 w-5" />}
+            label={t("carbon.avgEpu", "EnPI trung bình")}
+            value={kpis.avgEpu.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+            unit="kWh/SP"
+            accent="text-blue-500"
+          />
+          <KpiCard
+            icon={<Factory className="h-5 w-5" />}
+            label={t("carbon.goodUnits", "Sản phẩm đạt")}
+            value={kpis.goodUnits.toLocaleString()}
+            accent="text-violet-500"
+          />
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t("carbon.trend", "Xu hướng năng lượng & phát thải")}</CardTitle>
+            <CardDescription>{t("carbon.trendDesc", "kWh và CO₂ theo kỳ")}</CardDescription>
+          </CardHeader>
+          <CardContent className="h-72">
+            {trend.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trend}>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <XAxis dataKey="time" tick={{ fontSize: 11 }} />
+                  <YAxis yAxisId="left" width={44} tick={{ fontSize: 11 }} />
+                  <YAxis yAxisId="right" orientation="right" width={44} tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Legend />
+                  <Area yAxisId="left" type="monotone" dataKey="kwh" name="kWh" stroke="#f59e0b" fill="#f59e0b33" />
+                  <Area yAxisId="right" type="monotone" dataKey="carbon" name="CO₂ (kg)" stroke="#059669" fill="#05966933" />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
+                {t("carbon.noData", "Không có dữ liệu")}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t("carbon.byMachine", "EnPI thực tế vs baseline theo máy")}</CardTitle>
+            <CardDescription>{t("carbon.byMachineDesc", "Top 12 máy theo tiêu thụ kWh")}</CardDescription>
+          </CardHeader>
+          <CardContent className="h-80">
+            {byMachine.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={byMachine}>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <XAxis dataKey="machine" tick={{ fontSize: 11 }} />
+                  <YAxis width={44} tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="epu" name={t("carbon.epu", "EnPI thực tế")} fill="#2563eb" />
+                  <Bar dataKey="baseline" name={t("carbon.baseline", "Baseline")} fill="#94a3b8" />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
+                {t("carbon.noData", "Không có dữ liệu")}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </DashboardLayout>
+  );
+}

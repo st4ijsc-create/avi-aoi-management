@@ -127,3 +127,9 @@ uploads/edge-packages/
 # Python
 __pycache__/
 *.pyc
+
+# Model weights (not versioned in git)
+*.pt
+*.onnx
+*.gguf
+*.safetensors

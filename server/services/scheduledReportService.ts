@@ -212,12 +212,42 @@ class ScheduledReportService {
   }
 
   /**
-   * Get reports that are due to run
+   * Get reports that are due to run, queried from the database.
    */
   private async getDueReports(): Promise<ScheduledReport[]> {
-    // In a real implementation, this would query the database
-    // For now, return empty array - reports are configured via UI
-    return [];
+    const rows = await db.getReportsDueForSending();
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      type: (r.reportType ?? "statistics") as ReportType,
+      frequency: (r.schedule?.toLowerCase() ?? "daily") as ReportFrequency,
+      recipients: (r.recipients as string[]) ?? [],
+      isEnabled: r.isActive,
+      lastRunAt: r.lastSentAt ?? undefined,
+      nextRunAt: r.nextScheduledAt ?? undefined,
+      createdBy: r.createdBy,
+      createdAt: r.createdAt,
+    }));
+  }
+
+  /** Compute the next scheduled Date after now based on frequency + scheduleTime (HH:mm). */
+  private computeNextRun(frequency: ReportFrequency, scheduleTime: string): Date {
+    const [hh, mm] = (scheduleTime ?? "08:00").split(":").map(Number);
+    const next = new Date();
+    next.setSeconds(0, 0);
+    next.setHours(hh, mm);
+    switch (frequency) {
+      case "daily":
+        next.setDate(next.getDate() + 1);
+        break;
+      case "weekly":
+        next.setDate(next.getDate() + 7);
+        break;
+      case "monthly":
+        next.setMonth(next.getMonth() + 1);
+        break;
+    }
+    return next;
   }
 
   /**
@@ -238,13 +268,17 @@ class ScheduledReportService {
       });
     }
 
+    // Advance nextScheduledAt so this report is not re-triggered immediately
+    const nextRun = this.computeNextRun(report.frequency, "08:00");
+    await db.updateReportNextSchedule(report.id, nextRun);
+
     // Also notify owner
     await notifyOwner({
       title: `Báo cáo tự động: ${report.name}`,
       content: `Đã gửi báo cáo ${report.frequency} đến ${report.recipients.length} người nhận.\nTổng kiểm tra: ${content.summary.totalInspections}\nYield Rate: ${content.summary.yieldRate}%`,
     });
 
-    console.log(`[ScheduledReport] Report sent to ${report.recipients.length} recipients`);
+    console.log(`[ScheduledReport] Report sent to ${report.recipients.length} recipients. Next run: ${nextRun.toISOString()}`);
   }
 
   /**
@@ -566,51 +600,77 @@ class ScheduledReportService {
   }
 
   /**
-   * Generate OEE Report Content
+   * Generate OEE Report Content — reads from persistent oeeMetrics DB table,
+   * NOT the in-memory socket store (which is lost on server restart).
    */
   async generateOEEReportContent(report: ScheduledReport): Promise<OEEReportContent> {
     const { start, end } = this.getReportPeriod(report.frequency);
-    
-    // Import OEE functions
-    const { getAllMachinesOEE, getMachineHealthScore, getDowntimeHistory } = await import('../_core/socket');
-    
-    // Get all OEE metrics
-    const oeeData = getAllMachinesOEE().map(metrics => ({
-      machineId: metrics.machineId,
-      machineCode: metrics.machineCode,
-      availability: metrics.availability,
-      performance: metrics.performance,
-      quality: metrics.quality,
-      oee: metrics.oee,
-      timestamp: metrics.timestamp,
+
+    // Query persisted OEE metrics from DB for the report period
+    const { oeeMetrics, downtimeEvents } = await import('../../drizzle/schema');
+    const { getDb } = await import('../db/connection');
+    const { and, gte, lte, desc, sql } = await import('drizzle-orm');
+
+    const conn = await getDb();
+    const rows = conn ? await conn
+      .select({
+        machineId: oeeMetrics.machineId,
+        machineCode: oeeMetrics.machineCode,
+        availability: oeeMetrics.availability,
+        performance: oeeMetrics.performance,
+        quality: oeeMetrics.quality,
+        oee: oeeMetrics.oee,
+        timestamp: oeeMetrics.timestamp,
+      })
+      .from(oeeMetrics)
+      .where(and(gte(oeeMetrics.timestamp, start), lte(oeeMetrics.timestamp, end)))
+      .orderBy(desc(oeeMetrics.timestamp))
+      .limit(500) : [];
+
+    // Latest OEE per machine (most recent reading in the period)
+    const latestByMachine = new Map<number, typeof rows[0]>();
+    for (const row of rows) {
+      if (!latestByMachine.has(row.machineId)) latestByMachine.set(row.machineId, row);
+    }
+    const oeeData = Array.from(latestByMachine.values()).map(r => ({
+      machineId: r.machineId,
+      machineCode: r.machineCode,
+      // oeeMetrics stores as percentage×100 (e.g. 85.5% → 8550); convert back to 0-100
+      availability: Number(r.availability) / 100,
+      performance: Number(r.performance) / 100,
+      quality: Number(r.quality) / 100,
+      oee: Number(r.oee) / 100,
+      timestamp: r.timestamp,
     }));
-    
+
     // Calculate averages
-    const avgAvailability = oeeData.length > 0 
-      ? oeeData.reduce((sum, m) => sum + m.availability, 0) / oeeData.length 
-      : 0;
-    const avgPerformance = oeeData.length > 0 
-      ? oeeData.reduce((sum, m) => sum + m.performance, 0) / oeeData.length 
-      : 0;
-    const avgQuality = oeeData.length > 0 
-      ? oeeData.reduce((sum, m) => sum + m.quality, 0) / oeeData.length 
-      : 0;
-    const avgOEE = oeeData.length > 0 
-      ? oeeData.reduce((sum, m) => sum + m.oee, 0) / oeeData.length 
-      : 0;
-    
-    // Get downtime summary
-    const downtimeHistory = getDowntimeHistory();
+    const avgAvailability = oeeData.length > 0
+      ? oeeData.reduce((sum, m) => sum + m.availability, 0) / oeeData.length : 0;
+    const avgPerformance = oeeData.length > 0
+      ? oeeData.reduce((sum, m) => sum + m.performance, 0) / oeeData.length : 0;
+    const avgQuality = oeeData.length > 0
+      ? oeeData.reduce((sum, m) => sum + m.quality, 0) / oeeData.length : 0;
+    const avgOEE = oeeData.length > 0
+      ? oeeData.reduce((sum, m) => sum + m.oee, 0) / oeeData.length : 0;
+
+    // Downtime summary from persisted downtimeEvents table
+    const dtRows = conn ? await conn
+      .select({
+        category: downtimeEvents.category,
+        duration: downtimeEvents.duration,
+      })
+      .from(downtimeEvents)
+      .where(and(gte(downtimeEvents.startTime, start), lte(downtimeEvents.startTime, end))) : [];
+
     const downtimeByCategory: Record<string, number> = {};
     let totalDowntime = 0;
-    
-    downtimeHistory.forEach(d => {
+    for (const d of dtRows) {
       if (d.duration) {
         downtimeByCategory[d.category] = (downtimeByCategory[d.category] || 0) + d.duration;
         totalDowntime += d.duration;
       }
-    });
-    
+    }
+
     // Get machines needing attention (OEE < 80%)
     const machinesNeedingAttention = oeeData
       .filter(m => m.oee < 80)

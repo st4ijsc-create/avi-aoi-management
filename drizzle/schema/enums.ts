@@ -179,3 +179,11 @@ export const energySourceEnum = pgEnum("energysourceenum", ["electricity", "comp
 export const complianceViewEnum = pgEnum("complianceviewenum", ["CFR21_PART11", "IATF16949", "ISO9001", "ISO17025", "ISO50001"]);
 // Disaster-recovery verify-restore check outcome (G12)
 export const drCheckStatusEnum = pgEnum("drcheckstatusenum", ["passed", "failed", "skipped", "running"]);
+
+// === Sprint F1.1 — OT Connectivity Framework ===
+// Industrial protocol of an OT device adapter (driver scaffold; only "stub" is functional in F1.1)
+export const otProtocolEnum = pgEnum("otprotocolenum", ["opcua", "modbus", "s7", "mitsubishi-mc", "ethernet-ip", "stub"]);
+// Logical data type of an OT tag value
+export const otDataTypeEnum = pgEnum("otdatatypeenum", ["bool", "int", "float", "string", "json"]);
+// Runtime connection state of an OT adapter
+export const otAdapterStatusEnum = pgEnum("otadapterstatusenum", ["disabled", "connecting", "connected", "error"]);

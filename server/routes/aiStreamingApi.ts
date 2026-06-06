@@ -12,6 +12,7 @@ import {
   chatCompletionStream,
   isGgufAvailable,
 } from "../services/aiGgufEngine";
+import { generateNarrativeStream } from "../services/aiProviderRouter";
 
 /**
  * Register SSE streaming routes on the Express app
@@ -129,6 +130,59 @@ export function registerAiStreamingRoutes(app: express.Express) {
           jsonMode: jsonMode ?? false,
         },
         modelId,
+        abortController.signal,
+      );
+
+      for await (const chunk of stream) {
+        if (res.destroyed) break;
+        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+      }
+
+      res.write("data: [DONE]\n\n");
+      res.end();
+    } catch (err: any) {
+      if (!res.headersSent) {
+        res.status(500).json({ error: err.message });
+      } else {
+        res.write(`data: ${JSON.stringify({ type: "error", error: err.message })}\n\n`);
+        res.end();
+      }
+    }
+  });
+
+  // ─── SSE: Narrative Stream (Hybrid OpenAI + GGUF via provider router) ──
+  app.post("/api/ai/stream/narrative", async (req, res) => {
+    try {
+      const user = await sdk.authenticateRequest(req);
+      if (!user) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+
+      const { prompt, systemPrompt, maxTokens, temperature, language } = req.body;
+      if (!prompt || typeof prompt !== "string") {
+        res.status(400).json({ error: "prompt is required" });
+        return;
+      }
+
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      });
+
+      const abortController = new AbortController();
+      req.on("close", () => abortController.abort());
+
+      const stream = generateNarrativeStream(
+        {
+          prompt,
+          systemPrompt,
+          maxTokens: maxTokens ?? 1024,
+          temperature: temperature ?? 0.7,
+          language: language ?? "vi",
+        },
         abortController.signal,
       );
 

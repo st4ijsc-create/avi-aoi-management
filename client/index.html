@@ -8,7 +8,18 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <title>AVI/AOI Factory Management System</title>    
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-    
+
+    <!-- Geist font (matches --font-sans / --font-mono in index.css). Loading
+         the actual font fixes Vietnamese diacritic rendering at small sizes
+         in the AI tool-result cards and other UI surfaces; without this the
+         browser silently falls back to system fonts. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap"
+    />
+
     <!-- Suppress browser extension errors -->
     <script>
       // Suppress "message channel closed" errors from browser extensions

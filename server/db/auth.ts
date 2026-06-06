@@ -560,11 +560,11 @@ export async function hasAccessToCorporate(userId: number, corporateCode: string
 export async function hasAccessToFactory(userId: number, factoryCode: string): Promise<boolean> {
   const db = await getDb();
   if (!db) return false;
-  
+
   // Admin has access to all
   const user = await getUserById(userId);
   if (user?.role === 'admin') return true;
-  
+
   const assignments = await db.select()
     .from(userFactoryAssignments)
     .where(and(
@@ -572,6 +572,22 @@ export async function hasAccessToFactory(userId: number, factoryCode: string): P
       eq(userFactoryAssignments.factoryCode, factoryCode)
     ))
     .limit(1);
-  
+
   return assignments.length > 0;
+}
+
+/**
+ * Update brute-force lockout counters.
+ * Pass attempts=0 and lockedUntil=null to reset after a successful login.
+ */
+export async function updateUserLoginAttempts(
+  userId: number,
+  attempts: number,
+  lockedUntil: Date | null,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users)
+    .set({ loginAttempts: attempts, lockedUntil })
+    .where(eq(users.id, userId));
 }

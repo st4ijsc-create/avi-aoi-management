@@ -339,7 +339,7 @@ export default function DataSettings() {
     onSuccess: () => {
       toast.success(t("settings.createLineSuccess"));
       setLineDialogOpen(false);
-      setLineForm({ workshopId: "", code: "", name: "", description: "" });
+      setLineForm({ factoryId: "", workshopId: "", code: "", name: "", description: "" });
       refetchLines();
     },
     onError: (error) => toast.error(error.message),
@@ -349,7 +349,7 @@ export default function DataSettings() {
     onSuccess: () => {
       toast.success(t("settings.createStationSuccess"));
       setStationDialogOpen(false);
-      setStationForm({ lineId: "", code: "", name: "", description: "", orderIndex: "0" });
+      setStationForm({ factoryId: "", workshopId: "", lineId: "", code: "", name: "", description: "", orderIndex: "0" });
       refetchStations();
     },
     onError: (error) => toast.error(error.message),
@@ -359,7 +359,7 @@ export default function DataSettings() {
     onSuccess: (data) => {
       toast.success(t("settings.createMachineSuccessWithKey", { apiKey: data.apiKey }));
       setMachineDialogOpen(false);
-      setMachineForm({ stationId: "", code: "", name: "", machineType: "AVI", model: "", manufacturer: "", description: "" });
+      setMachineForm({ factoryId: "", workshopId: "", lineId: "", stationId: "", code: "", name: "", machineType: "AVI", model: "", manufacturer: "", description: "" });
       refetchMachines();
     },
     onError: (error) => toast.error(error.message),

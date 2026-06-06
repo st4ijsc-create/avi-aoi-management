@@ -124,7 +124,7 @@ export const pdfReportRouter = router({
         db.getDashboardStats({ startDate, endDate, factoryId, workshopId }),
         db.getNGTrendByDay({ startDate, endDate }),
         db.getTopNGMeasurementPoints({ startDate, endDate, limit: 10 }),
-        db.getTopBottomMachines({ startDate, endDate, factoryId, workshopId }),
+        db.getTopBottomMachines({ startDate, endDate, factoryId, workshopId } as any),
       ]);
 
       // Build report data
@@ -138,7 +138,7 @@ export const pdfReportRouter = router({
           yieldRate: stats?.yieldRate || 0,
           ngRate: stats?.total ? ((stats.ng || 0) / stats.total) * 100 : 0,
         },
-        byMachine: (topMachines?.topMachines || []).map((m: any) => ({
+        byMachine: ((topMachines as any)?.topMachines || (topMachines as any)?.top || []).map((m: any) => ({
           machineName: m.machineName || m.name || "Unknown",
           machineCode: m.machineCode || m.code || "",
           totalInspections: Number(m.totalInspections || m.total || 0),
@@ -225,7 +225,7 @@ export const pdfReportRouter = router({
         customSections: z.array(z.object({
           title: z.string(),
           type: z.string(),
-          config: z.record(z.any()).optional(),
+          config: z.record(z.string(), z.any()).optional(),
         })).optional(),
       }),
       config: z.object({

@@ -1537,7 +1537,7 @@ export default function AIModelManagementPage() {
                     modelId={selectedModelId}
                     onClose={() => setSelectedModelId(null)}
                     onRefresh={() => refetch()}
-                    t={t}
+                    t={t as any}
                   />
                 </CardContent>
               </Card>
@@ -1554,7 +1554,7 @@ export default function AIModelManagementPage() {
         onSubmit={handleCreate}
         isLoading={createMutation.isPending}
         isEdit={false}
-        t={t}
+        t={t as any}
       />
 
       {editingModel && (
@@ -1565,7 +1565,7 @@ export default function AIModelManagementPage() {
           onSubmit={handleUpdate}
           isLoading={updateMutation.isPending}
           isEdit={true}
-          t={t}
+          t={t as any}
         />
       )}
 
@@ -1576,7 +1576,7 @@ export default function AIModelManagementPage() {
           modelName={deletingModel.name}
           onConfirm={() => deleteMutation.mutate({ id: deletingModel.id })}
           isLoading={deleteMutation.isPending}
-          t={t}
+          t={t as any}
         />
       )}
     </DashboardLayout>

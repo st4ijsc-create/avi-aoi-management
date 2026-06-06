@@ -173,8 +173,8 @@ export const machineApiRouter = router({
         productModelId: productModelRecord?.id,
         productModel: resolvedProductModelCode,
         batchNumber: input.batchNumber,
-        overallResult: input.overallResult,
-        originalResult: input.overallResult,
+        overallResult: input.overallResult as any,
+        originalResult: input.overallResult as any,
         corporateCode: input.companyCode, // Mã tập đoàn
         factoryCode: input.factoryCode, // Mã nhà máy
         workshopCode: input.workshopCode, // Mã nhà xưởng
@@ -670,8 +670,8 @@ export const machineApiRouter = router({
                 Object.assign(updatePayload, { referenceImageKey: referenceImage.key });
               }
               // Compute and store image hash for deduplication
-              if (referenceImage.hash) {
-                Object.assign(updatePayload, { imageHash: referenceImage.hash });
+              if ((referenceImage as any).hash) {
+                Object.assign(updatePayload, { imageHash: (referenceImage as any).hash });
               }
             }
 
@@ -710,8 +710,8 @@ export const machineApiRouter = router({
               if (referenceImage.key) {
                 Object.assign(newPoint, { referenceImageKey: referenceImage.key });
               }
-              if (referenceImage.hash) {
-                Object.assign(newPoint, { imageHash: referenceImage.hash });
+              if ((referenceImage as any).hash) {
+                Object.assign(newPoint, { imageHash: (referenceImage as any).hash });
               }
             }
 

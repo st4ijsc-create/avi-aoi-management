@@ -54,7 +54,7 @@ import {
   ArrowDownRight,
 } from "lucide-react";
 
-// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Helpers ──────────────────────────────────────────
 function fmt(d: Date) {
   return d.toISOString().split("T")[0];
 }
@@ -71,7 +71,7 @@ const COLORS = [
   "#3b82f6", "#8b5cf6", "#ec4899", "#14b8a6", "#f59e0b",
 ];
 
-// â”€â”€â”€ Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Component ────────────────────────────────────────
 export default function AIInspectionAnalyticsPage() {
   const { t } = useTranslation();
   const range = defaultRange();
@@ -88,7 +88,7 @@ export default function AIInspectionAnalyticsPage() {
     ...(productModel ? { productModel } : {}),
   }), [startDate, endDate, machineId, productModel]);
 
-  // â”€â”€â”€ Queries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Queries ──────────────────────────────────────
   const trend = trpc.aiInspectionAnalytics.defectTrend.useQuery(period);
   const pareto = trpc.aiInspectionAnalytics.defectPareto.useQuery(period);
   const machPerf = trpc.aiInspectionAnalytics.machinePerformance.useQuery(period, { enabled: activeTab === "overview" || activeTab === "machines" });
@@ -101,7 +101,7 @@ export default function AIInspectionAnalyticsPage() {
 
   const isLoading = trend.isLoading || pareto.isLoading;
 
-  // â”€â”€â”€ Summary Stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Summary Stats ───────────────────────────────
   const stats = useMemo(() => {
     if (!trend.data?.length) return null;
     const totalInsp = trend.data.reduce((s, d) => s + d.total, 0);
@@ -138,7 +138,7 @@ export default function AIInspectionAnalyticsPage() {
     URL.revokeObjectURL(url);
   }
 
-  // â”€â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Render ───────────────────────────────────────
   return (
     <DashboardLayout>
       <div className="flex flex-col gap-6 p-4 md:p-6">
@@ -150,17 +150,17 @@ export default function AIInspectionAnalyticsPage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold tracking-tight">
-                {t("aiAnalytics.title", "PhÃ¢n TÃ­ch Kiá»ƒm Tra AI")}
+                {t("aiAnalytics.title", "Phân Tích Kiểm Tra AI")}
               </h1>
               <p className="text-sm text-muted-foreground">
-                {t("aiAnalytics.subtitle", "Xu hÆ°á»›ng, dá»± bÃ¡o, phÃ²ng ngá»«a vÃ  bÃ¡o cÃ¡o trá»±c quan")}
+                {t("aiAnalytics.subtitle", "Xu hướng, dự báo, phòng ngừa và báo cáo trực quan")}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2 ml-auto">
             <Button variant="outline" size="sm" onClick={refetchAll} disabled={isLoading}>
               <RefreshCw className={`h-4 w-4 mr-1 ${isLoading ? "animate-spin" : ""}`} />
-              {t("common.refresh", "LÃ m má»›i")}
+              {t("common.refresh", "Làm mới")}
             </Button>            <Button variant="outline" size="sm" onClick={exportTrendCsv} disabled={!trend.data?.length}>
               <Download className="h-4 w-4 mr-1" />
               {t("common.export", "Xuất CSV")}
@@ -173,7 +173,7 @@ export default function AIInspectionAnalyticsPage() {
             <div className="flex items-center gap-2">
               <Calendar className="h-4 w-4 text-muted-foreground" />
               <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-40" />
-              <span className="text-muted-foreground">â†’</span>
+              <span className="text-muted-foreground">→</span>
               <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-40" />
             </div>
             <Input
@@ -183,7 +183,7 @@ export default function AIInspectionAnalyticsPage() {
               className="w-32"
             />
             <Input
-              placeholder={t("aiAnalytics.productModel", "Model sáº£n pháº©m")}
+              placeholder={t("aiAnalytics.productModel", "Model sản phẩm")}
               value={productModel}
               onChange={e => setProductModel(e.target.value)}
               className="w-44"
@@ -195,26 +195,26 @@ export default function AIInspectionAnalyticsPage() {
         {stats && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <SummaryCard
-              title={t("aiAnalytics.totalInspections", "Tá»•ng kiá»ƒm tra")}
+              title={t("aiAnalytics.totalInspections", "Tổng kiểm tra")}
               value={stats.totalInsp.toLocaleString()}
               icon={<Activity className="h-4 w-4" />}
               color="text-blue-500"
             />
             <SummaryCard
-              title={t("aiAnalytics.yieldRate", "Tá»· lá»‡ Ä‘áº¡t")}
+              title={t("aiAnalytics.yieldRate", "Tỷ lệ đạt")}
               value={`${stats.yieldRate.toFixed(1)}%`}
               icon={stats.yieldRate >= 95 ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}
               color={stats.yieldRate >= 95 ? "text-green-500" : "text-red-500"}
             />
             <SummaryCard
-              title={t("aiAnalytics.avgDefectRate", "Tá»· lá»‡ lá»—i TB")}
+              title={t("aiAnalytics.avgDefectRate", "Tỷ lệ lỗi TB")}
               value={`${stats.avgDefectRate.toFixed(2)}%`}
               icon={<AlertTriangle className="h-4 w-4" />}
               color={stats.avgDefectRate < 5 ? "text-green-500" : "text-orange-500"}
             />
             <SummaryCard
-              title={t("aiAnalytics.analysisPeriod", "Khoáº£ng phÃ¢n tÃ­ch")}
-              value={`${stats.days} ${t("common.days", "ngÃ y")}`}
+              title={t("aiAnalytics.analysisPeriod", "Khoảng phân tích")}
+              value={`${stats.days} ${t("common.days", "ngày")}`}
               icon={<Clock className="h-4 w-4" />}
               color="text-slate-500"
             />
@@ -224,15 +224,15 @@ export default function AIInspectionAnalyticsPage() {
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid grid-cols-4 md:grid-cols-6 w-full">
-            <TabsTrigger value="overview">{t("aiAnalytics.tabs.overview", "Tá»•ng quan")}</TabsTrigger>
-            <TabsTrigger value="trend">{t("aiAnalytics.tabs.trend", "Xu hÆ°á»›ng")}</TabsTrigger>
-            <TabsTrigger value="machines">{t("aiAnalytics.tabs.machines", "MÃ¡y")}</TabsTrigger>
+            <TabsTrigger value="overview">{t("aiAnalytics.tabs.overview", "Tổng quan")}</TabsTrigger>
+            <TabsTrigger value="trend">{t("aiAnalytics.tabs.trend", "Xu hướng")}</TabsTrigger>
+            <TabsTrigger value="machines">{t("aiAnalytics.tabs.machines", "Máy")}</TabsTrigger>
             <TabsTrigger value="spc">{t("aiAnalytics.tabs.spc", "SPC")}</TabsTrigger>
-            <TabsTrigger value="forecast">{t("aiAnalytics.tabs.forecast", "Dá»± bÃ¡o")}</TabsTrigger>
-            <TabsTrigger value="risk">{t("aiAnalytics.tabs.risk", "Rá»§i ro")}</TabsTrigger>
+            <TabsTrigger value="forecast">{t("aiAnalytics.tabs.forecast", "Dự báo")}</TabsTrigger>
+            <TabsTrigger value="risk">{t("aiAnalytics.tabs.risk", "Rủi ro")}</TabsTrigger>
           </TabsList>
 
-          {/* â•â•â• OVERVIEW TAB â•â•â• */}
+          {/* ═══ OVERVIEW TAB ═══ */}
           <TabsContent value="overview" className="space-y-4">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Defect Trend */}
@@ -240,7 +240,7 @@ export default function AIInspectionAnalyticsPage() {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm flex items-center gap-2">
                     <TrendingUp className="h-4 w-4 text-cyan-500" />
-                    {t("aiAnalytics.defectTrend", "Xu hÆ°á»›ng lá»—i")}
+                    {t("aiAnalytics.defectTrend", "Xu hướng lỗi")}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -252,7 +252,7 @@ export default function AIInspectionAnalyticsPage() {
                           <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                           <YAxis tick={{ fontSize: 11 }} />
                           <RechartsTooltip />
-                          <Area type="monotone" dataKey="defectRate" stroke="#ef4444" fill="#ef444420" name={t("aiAnalytics.defectRate", "Tá»· lá»‡ lá»—i %")} />
+                          <Area type="monotone" dataKey="defectRate" stroke="#ef4444" fill="#ef444420" name={t("aiAnalytics.defectRate", "Tỷ lệ lỗi %")} />
                           <Area type="monotone" dataKey="yieldRate" stroke="#22c55e" fill="#22c55e20" name={t("aiAnalytics.yieldRate2", "Yield %")} />
                         </AreaChart>
                       </ResponsiveContainer>
@@ -265,7 +265,7 @@ export default function AIInspectionAnalyticsPage() {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm flex items-center gap-2">
                     <BarChart3 className="h-4 w-4 text-orange-500" />
-                    {t("aiAnalytics.pareto", "PhÃ¢n tÃ­ch Pareto lá»—i")}
+                    {t("aiAnalytics.pareto", "Phân tích Pareto lỗi")}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -278,12 +278,12 @@ export default function AIInspectionAnalyticsPage() {
                           <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
                           <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 11 }} />
                           <RechartsTooltip />
-                          <Bar yAxisId="left" dataKey="count" name={t("aiAnalytics.count", "Sá»‘ lÆ°á»£ng")} radius={[4, 4, 0, 0]}>
+                          <Bar yAxisId="left" dataKey="count" name={t("aiAnalytics.count", "Số lượng")} radius={[4, 4, 0, 0]}>
                             {pareto.data.map((_, i) => (
                               <Cell key={i} fill={COLORS[i % COLORS.length]} />
                             ))}
                           </Bar>
-                          <Line yAxisId="right" type="monotone" dataKey="cumulativePercentage" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} name={t("aiAnalytics.cumulative", "Tích lũy %")} />
+                          <Line yAxisId="right" type="monotone" dataKey="cumulativePercentage" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} name={t("aiAnalytics.cumulative", "T�ch lũy %")} />
                         </ComposedChart>
                       </ResponsiveContainer>
                     ) : <EmptyChart />}
@@ -297,7 +297,7 @@ export default function AIInspectionAnalyticsPage() {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm flex items-center gap-2">
                     <Shield className="h-4 w-4 text-red-500" />
-                    {t("aiAnalytics.risks", "ÄÃ¡nh giÃ¡ rá»§i ro")}
+                    {t("aiAnalytics.risks", "Đánh giá rủi ro")}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -311,13 +311,13 @@ export default function AIInspectionAnalyticsPage() {
             ) : null}
           </TabsContent>
 
-          {/* â•â•â• TREND TAB â•â•â• */}
+          {/* ═══ TREND TAB ═══ */}
           <TabsContent value="trend" className="space-y-4">
             <div className="grid grid-cols-1 gap-4">
               {/* Full trend chart */}
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">{t("aiAnalytics.dailyTrend", "Xu hÆ°á»›ng hÃ ng ngÃ y")}</CardTitle>
+                  <CardTitle className="text-sm">{t("aiAnalytics.dailyTrend", "Xu hướng hàng ngày")}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {trend.isLoading ? <Skeleton className="h-87.5" /> :
@@ -344,7 +344,7 @@ export default function AIInspectionAnalyticsPage() {
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
                       <Clock className="h-4 w-4 text-purple-500" />
-                      {t("aiAnalytics.shiftAnalysis", "PhÃ¢n tÃ­ch theo ca")}
+                      {t("aiAnalytics.shiftAnalysis", "Phân tích theo ca")}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -355,7 +355,7 @@ export default function AIInspectionAnalyticsPage() {
                         <YAxis tick={{ fontSize: 11 }} />
                         <RechartsTooltip />
                         <Legend />
-                        <Bar dataKey="totalInspections" fill="#3b82f6" name={t("aiAnalytics.totalInsp", "Tá»•ng KT")} radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="totalInspections" fill="#3b82f6" name={t("aiAnalytics.totalInsp", "Tổng KT")} radius={[4, 4, 0, 0]} />
                         <Bar dataKey="yieldRate" fill="#22c55e" name={t("aiAnalytics.yieldRate2", "Yield %")} radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
@@ -369,10 +369,10 @@ export default function AIInspectionAnalyticsPage() {
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
                       <Thermometer className="h-4 w-4 text-red-500" />
-                      {t("aiAnalytics.heatmap", "Heatmap lá»—i")}
+                      {t("aiAnalytics.heatmap", "Heatmap lỗi")}
                     </CardTitle>
                     <CardDescription className="text-xs">
-                      {t("aiAnalytics.heatmapDesc", "Ma tráº­n lá»—i theo mÃ¡y vÃ  loáº¡i lá»—i (mÃ u Ä‘áº­m = lá»—i nhiá»u)")}
+                      {t("aiAnalytics.heatmapDesc", "Ma trận lỗi theo máy và loại lỗi (màu đậm = lỗi nhiều)")}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -383,13 +383,13 @@ export default function AIInspectionAnalyticsPage() {
             </div>
           </TabsContent>
 
-          {/* â•â•â• MACHINES TAB â•â•â• */}
+          {/* ═══ MACHINES TAB ═══ */}
           <TabsContent value="machines" className="space-y-4">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Cpu className="h-4 w-4 text-violet-500" />
-                  {t("aiAnalytics.machineComparison", "So sÃ¡nh hiá»‡u suáº¥t mÃ¡y")}
+                  {t("aiAnalytics.machineComparison", "So sánh hiệu suất máy")}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -413,17 +413,17 @@ export default function AIInspectionAnalyticsPage() {
             {machPerf.data?.length ? (
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">{t("aiAnalytics.machineDetails", "Chi tiáº¿t mÃ¡y")}</CardTitle>
+                  <CardTitle className="text-sm">{t("aiAnalytics.machineDetails", "Chi tiết máy")}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ScrollArea className="h-75">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b text-left">
-                          <th className="py-2 px-3 font-medium">{t("aiAnalytics.machine", "MÃ¡y")}</th>
-                          <th className="py-2 px-3 font-medium text-right">{t("aiAnalytics.totalInsp", "Tá»•ng KT")}</th>
+                          <th className="py-2 px-3 font-medium">{t("aiAnalytics.machine", "Máy")}</th>
+                          <th className="py-2 px-3 font-medium text-right">{t("aiAnalytics.totalInsp", "Tổng KT")}</th>
                           <th className="py-2 px-3 font-medium text-right">Yield</th>
-                          <th className="py-2 px-3 font-medium text-right">{t("aiAnalytics.failRate", "Lá»—i %")}</th>
+                          <th className="py-2 px-3 font-medium text-right">{t("aiAnalytics.failRate", "Lỗi %")}</th>
                           <th className="py-2 px-3 font-medium text-right">{t("aiAnalytics.avgCycleTime", "Cycle (s)")}</th>
                         </tr>
                       </thead>
@@ -454,7 +454,7 @@ export default function AIInspectionAnalyticsPage() {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm flex items-center gap-2">
                     <Target className="h-4 w-4 text-blue-500" />
-                    {t("aiAnalytics.correlations", "TÆ°Æ¡ng quan cÃ¡c yáº¿u tá»‘")}
+                    {t("aiAnalytics.correlations", "Tương quan các yếu tố")}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -463,7 +463,7 @@ export default function AIInspectionAnalyticsPage() {
                       <div key={i} className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
                         <div>
                           <span className="font-medium text-sm">{c.factor1}</span>
-                          <span className="text-muted-foreground mx-2">â†”</span>
+                          <span className="text-muted-foreground mx-2">↔</span>
                           <span className="font-medium text-sm">{c.factor2}</span>
                         </div>
                         <div className="flex items-center gap-2">
@@ -480,16 +480,16 @@ export default function AIInspectionAnalyticsPage() {
             ) : null}
           </TabsContent>
 
-          {/* â•â•â• SPC TAB â•â•â• */}
+          {/* ═══ SPC TAB ═══ */}
           <TabsContent value="spc" className="space-y-4">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Activity className="h-4 w-4 text-green-500" />
-                  {t("aiAnalytics.controlChart", "Biá»ƒu Ä‘á»“ kiá»ƒm soÃ¡t (SPC XÌ„)")}
+                  {t("aiAnalytics.controlChart", "Biểu đồ kiểm soát (SPC X̄)")}
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  {t("aiAnalytics.spcDesc", "UCL/LCL Â± 3Ïƒ â€” CÃ¡c Ä‘iá»ƒm ngoÃ i giá»›i háº¡n Ä‘Æ°á»£c Ä‘Ã¡nh dáº¥u")}
+                  {t("aiAnalytics.spcDesc", "UCL/LCL ± 3σ — Các điểm ngoài giới hạn được đánh dấu")}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -505,7 +505,7 @@ export default function AIInspectionAnalyticsPage() {
                           <span>Cpk: <strong className={control.data.summary.cpk >= 1.33 ? "text-green-500" : control.data.summary.cpk >= 1.0 ? "text-yellow-500" : "text-red-500"}>{control.data.summary.cpk.toFixed(2)}</strong></span>
                         )}
                         <Badge variant={control.data.summary.outOfControlCount > 0 ? "destructive" : "default"} className="text-xs">
-                          {t("aiAnalytics.oocPoints", "Ngoài KS: {{count}}", { count: control.data.summary.outOfControlCount })}
+                          {t("aiAnalytics.oocPoints", "Ngo�i KS: {{count}}", { count: control.data.summary.outOfControlCount })}
                         </Badge>
                       </div>
                       <ResponsiveContainer width="100%" height={350}>
@@ -517,8 +517,8 @@ export default function AIInspectionAnalyticsPage() {
                           <ReferenceLine y={control.data.summary.ucl} stroke="#ef4444" strokeDasharray="5 5" label={{ value: "UCL", position: "right", fontSize: 10 }} />
                           <ReferenceLine y={control.data.summary.mean} stroke="#3b82f6" strokeDasharray="3 3" label={{ value: "CL", position: "right", fontSize: 10 }} />
                           <ReferenceLine y={control.data.summary.lcl} stroke="#ef4444" strokeDasharray="5 5" label={{ value: "LCL", position: "right", fontSize: 10 }} />
-                          <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={1.5} dot={false} name={t("aiAnalytics.value", "GiÃ¡ trá»‹")} />
-                          <Scatter dataKey="oocValue" fill="#ef4444" name={t("aiAnalytics.oocPoint", "NgoÃ i kiá»ƒm soÃ¡t")} />
+                          <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={1.5} dot={false} name={t("aiAnalytics.value", "Giá trị")} />
+                          <Scatter dataKey="oocValue" fill="#ef4444" name={t("aiAnalytics.oocPoint", "Ngoài kiểm soát")} />
                         </ComposedChart>
                       </ResponsiveContainer>
                     </div>
@@ -527,16 +527,16 @@ export default function AIInspectionAnalyticsPage() {
             </Card>
           </TabsContent>
 
-          {/* â•â•â• FORECAST TAB â•â•â• */}
+          {/* ═══ FORECAST TAB ═══ */}
           <TabsContent value="forecast" className="space-y-4">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-emerald-500" />
-                  {t("aiAnalytics.yieldForecast", "Dá»± bÃ¡o Yield (Holt-Winters)")}
+                  {t("aiAnalytics.yieldForecast", "Dự báo Yield (Holt-Winters)")}
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  {t("aiAnalytics.forecastDesc", "Dá»± bÃ¡o 7 ngÃ y tá»›i vá»›i khoáº£ng tin cáº­y")}
+                  {t("aiAnalytics.forecastDesc", "Dự báo 7 ngày tới với khoảng tin cậy")}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -544,7 +544,7 @@ export default function AIInspectionAnalyticsPage() {
                   forecast.data ? (
                     <div>
                       <div className="flex gap-4 mb-4 text-xs">
-                        <span>{t("aiAnalytics.forecastTrend", "Xu hÆ°á»›ng")}: <strong className={forecast.data.trend === "improving" ? "text-green-500" : forecast.data.trend === "declining" ? "text-red-500" : "text-yellow-500"}>{forecast.data.trend}</strong></span>
+                        <span>{t("aiAnalytics.forecastTrend", "Xu hướng")}: <strong className={forecast.data.trend === "improving" ? "text-green-500" : forecast.data.trend === "declining" ? "text-red-500" : "text-yellow-500"}>{forecast.data.trend}</strong></span>
                         <span>RMSE: <strong>{forecast.data.rmse?.toFixed(3)}</strong></span>
                       </div>
                       <ResponsiveContainer width="100%" height={350}>
@@ -557,10 +557,10 @@ export default function AIInspectionAnalyticsPage() {
                           <YAxis tick={{ fontSize: 11 }} domain={["auto", "auto"]} />
                           <RechartsTooltip />
                           <Legend />
-                          <Area type="monotone" dataKey="upper" stroke="none" fill="#22c55e10" name={t("aiAnalytics.upperBound", "Giá»›i háº¡n trÃªn")} />
-                          <Area type="monotone" dataKey="lower" stroke="none" fill="#22c55e10" name={t("aiAnalytics.lowerBound", "Giá»›i háº¡n dÆ°á»›i")} />
-                          <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} dot={false} name={t("aiAnalytics.actual", "Thá»±c táº¿")} />
-                          <Line type="monotone" dataKey="predicted" stroke="#22c55e" strokeWidth={2} strokeDasharray="5 5" dot={false} name={t("aiAnalytics.predicted", "Dá»± bÃ¡o")} />
+                          <Area type="monotone" dataKey="upper" stroke="none" fill="#22c55e10" name={t("aiAnalytics.upperBound", "Giới hạn trên")} />
+                          <Area type="monotone" dataKey="lower" stroke="none" fill="#22c55e10" name={t("aiAnalytics.lowerBound", "Giới hạn dưới")} />
+                          <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} dot={false} name={t("aiAnalytics.actual", "Thực tế")} />
+                          <Line type="monotone" dataKey="predicted" stroke="#22c55e" strokeWidth={2} strokeDasharray="5 5" dot={false} name={t("aiAnalytics.predicted", "Dự báo")} />
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>
@@ -569,7 +569,7 @@ export default function AIInspectionAnalyticsPage() {
             </Card>
           </TabsContent>
 
-          {/* â•â•â• RISK TAB â•â•â• */}
+          {/* ═══ RISK TAB ═══ */}
           <TabsContent value="risk" className="space-y-4">
             {risk.isLoading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -585,7 +585,7 @@ export default function AIInspectionAnalyticsPage() {
               <Card>
                 <CardContent className="py-12 text-center text-muted-foreground">
                   <Shield className="h-12 w-12 mx-auto mb-3 text-green-500" />
-                  <p className="font-medium">{t("aiAnalytics.noRisks", "KhÃ´ng phÃ¡t hiá»‡n rá»§i ro trong giai Ä‘oáº¡n nÃ y")}</p>
+                  <p className="font-medium">{t("aiAnalytics.noRisks", "Không phát hiện rủi ro trong giai đoạn này")}</p>
                 </CardContent>
               </Card>
             )}
@@ -596,7 +596,7 @@ export default function AIInspectionAnalyticsPage() {
   );
 }
 
-// â”€â”€â”€ Sub-Components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Sub-Components ───────────────────────────────────
 
 function SummaryCard({ title, value, icon, color }: { title: string; value: string; icon: React.ReactNode; color: string }) {
   return (
@@ -616,7 +616,7 @@ function EmptyChart() {
   const { t } = useTranslation();
   return (
     <div className="h-62.5 flex items-center justify-center text-muted-foreground text-sm">
-      {t("aiAnalytics.noData", "KhÃ´ng cÃ³ dá»¯ liá»‡u trong khoáº£ng thá»i gian nÃ y")}
+      {t("aiAnalytics.noData", "Không có dữ liệu trong khoảng thời gian này")}
     </div>
   );
 }
@@ -643,12 +643,12 @@ function RiskCard({ risk, t, detailed }: { risk: any; t: any; detailed?: boolean
         <p className="text-sm text-muted-foreground">{risk.description}</p>
         {risk.score != null && (
           <div className="mt-2 text-xs text-muted-foreground">
-            {t("aiAnalytics.riskScore", "Äiá»ƒm rá»§i ro")}: <strong>{risk.score.toFixed(0)}</strong>/100
+            {t("aiAnalytics.riskScore", "Điểm rủi ro")}: <strong>{risk.score.toFixed(0)}</strong>/100
           </div>
         )}
         {detailed && risk.recommendation && (
           <div className="mt-2 p-2 bg-muted/50 rounded text-xs">
-            <strong>{t("aiAnalytics.recommendation", "Khuyáº¿n nghá»‹")}:</strong> {risk.recommendation}
+            <strong>{t("aiAnalytics.recommendation", "Khuyến nghị")}:</strong> {risk.recommendation}
           </div>
         )}
       </CardContent>

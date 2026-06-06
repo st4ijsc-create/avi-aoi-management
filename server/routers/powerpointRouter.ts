@@ -37,7 +37,7 @@ export const powerpointRouter = router({
       const stats = await db.getDashboardStats({ startDate, endDate, factoryId, workshopId });
       const trendData = await db.getNGTrendByDay({ startDate, endDate });
       const topNG = await db.getTopNGMeasurementPoints({ startDate, endDate, limit: 10 });
-      const topMachines = await db.getTopBottomMachines({ startDate, endDate, factoryId, workshopId });
+      const topMachines = await db.getTopBottomMachines({ startDate, endDate, factoryId, workshopId } as any);
 
       const data: QualityReportData = {
         period: { start: startDate, end: endDate },
@@ -49,7 +49,7 @@ export const powerpointRouter = router({
           yieldRate: stats?.yieldRate || 0,
           ngRate: stats?.total ? ((stats.ng || 0) / stats.total) * 100 : 0,
         },
-        byMachine: (topMachines?.topMachines || []).map((m: any) => ({
+        byMachine: ((topMachines as any)?.topMachines || (topMachines as any)?.top || []).map((m: any) => ({
           machineName: m.machineName || m.name || "Unknown",
           machineCode: m.machineCode || m.code || "",
           totalInspections: Number(m.totalInspections || m.total || 0),
@@ -75,7 +75,7 @@ export const powerpointRouter = router({
         title: input.config?.title || "Báo cáo chất lượng",
         companyName: input.config?.companyName,
         primaryColor: input.config?.primaryColor,
-        author: input.config?.author || ctx.user?.name,
+        author: input.config?.author || ctx.user?.name || undefined,
       });
 
       return {
@@ -121,7 +121,7 @@ export const powerpointRouter = router({
         title: input.config?.title || "Báo cáo so sánh",
         companyName: input.config?.companyName,
         primaryColor: input.config?.primaryColor,
-        author: ctx.user?.name,
+        author: ctx.user?.name || undefined,
       });
 
       return {

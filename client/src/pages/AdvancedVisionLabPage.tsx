@@ -145,18 +145,18 @@ function TabCompare() {
         So sánh
       </Button>
       {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
-      {m.data && (
+      {m.data && (() => { const d = m.data as any; return (
         <div className="space-y-2">
           <div className="flex gap-2 items-center">
-            <Badge variant={m.data.verdict === "PASS" ? "default" : m.data.verdict === "FAIL" ? "destructive" : "secondary"}>
-              {m.data.verdict}
+            <Badge variant={d.verdict === "PASS" ? "default" : d.verdict === "FAIL" ? "destructive" : "secondary"}>
+              {d.verdict}
             </Badge>
-            <span className="text-sm text-muted-foreground">diffRatio = {(m.data.diffRatio * 100).toFixed(2)}%</span>
+            <span className="text-sm text-muted-foreground">diffRatio = {(d.diffRatio * 100).toFixed(2)}%</span>
           </div>
-          <p className="text-sm">{m.data.summary}</p>
-          <ResultJson data={m.data} />
+          <p className="text-sm">{d.summary}</p>
+          <ResultJson data={d} />
         </div>
-      )}
+      ); })()}
     </div>
   );
 }
@@ -214,7 +214,7 @@ function TabHeatmap() {
               ? <Badge variant="default">{t("align.aligned", "Đã căn")} · {t("align.angle", "Góc xoay")} {m.data.alignment?.angle ?? 0}° · dx {m.data.alignment?.dx ?? 0}, dy {m.data.alignment?.dy ?? 0} · {t("align.confidence", "Độ tin cậy căn")} {((m.data.alignment?.confidence ?? 0) * 100).toFixed(0)}%</Badge>
               : <Badge variant="outline">{t("align.notAligned", "Không căn (confidence thấp / cờ off)")}</Badge>}
           </div>
-          <img src={previewUrl(m.data.heatmapPngBase64, "image/png")} alt="heatmap" className="max-h-[480px] border rounded" />
+          <img src={previewUrl(m.data.heatmapPngBase64, "image/png")} alt="heatmap" className="max-h-120 border rounded" />
           <details className="text-xs"><summary className="cursor-pointer">Hotspots JSON</summary><ResultJson data={m.data.hotspots} /></details>
         </div>
       )}
@@ -261,11 +261,12 @@ function TabRoi() {
   const run = () => { if (!img) return toast.error("Chọn ảnh"); m.mutate({ image: img.base64 }); };
   const overlayStyle = useMemo(() => {
     if (!img || !m.data) return null;
+    const d = m.data as any;
     return {
-      left: `${(m.data.x / m.data.imageWidth) * 100}%`,
-      top: `${(m.data.y / m.data.imageHeight) * 100}%`,
-      width: `${(m.data.width / m.data.imageWidth) * 100}%`,
-      height: `${(m.data.height / m.data.imageHeight) * 100}%`,
+      left: `${(d.x / d.imageWidth) * 100}%`,
+      top: `${(d.y / d.imageHeight) * 100}%`,
+      width: `${(d.width / d.imageWidth) * 100}%`,
+      height: `${(d.height / d.imageHeight) * 100}%`,
     } as React.CSSProperties;
   }, [img, m.data]);
   return (
@@ -279,7 +280,7 @@ function TabRoi() {
       {m.data && img && (
         <div className="space-y-2">
           <div className="relative inline-block border rounded">
-            <img src={previewUrl(img.base64, img.mime)} alt="roi" className="max-h-[480px] block" />
+            <img src={previewUrl(img.base64, img.mime)} alt="roi" className="max-h-120 block" />
             {overlayStyle && <div className="absolute border-2 border-amber-400 bg-amber-400/20 pointer-events-none" style={overlayStyle} />}
           </div>
           <ResultJson data={m.data} />
@@ -407,13 +408,13 @@ function TabBatch() {
         Triage {imgs.length} ảnh
       </Button>
       {m.error && <p className="text-sm text-destructive">{m.error.message}</p>}
-      {m.data && (
+      {m.data && (() => { const d = m.data as any; return (
         <div className="space-y-2">
           <div className="text-sm text-muted-foreground">
-            Tổng {m.data.total} · OK {m.data.summary.ok} · NG {m.data.summary.ng} · REVIEW {m.data.summary.review}
+            Tổng {d.total} · OK {d.summary.ok} · NG {d.summary.ng} · REVIEW {d.summary.review}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {m.data.results.map((r, i) => (
+            {d.results.map((r: any, i: number) => (
               <div key={i} className="flex items-center gap-3 border rounded p-2">
                 {imgs[i] && <img src={previewUrl(imgs[i].base64, imgs[i].mime)} className="w-16 h-16 object-cover rounded" />}
                 <div className="flex-1 min-w-0">
@@ -427,7 +428,7 @@ function TabBatch() {
             ))}
           </div>
         </div>
-      )}
+      ); })()}
     </div>
   );
 }
@@ -563,7 +564,7 @@ function TabExplain() {
               </span>
             )}
           </div>
-          <img src={previewUrl(m.data.heatmapPngBase64, "image/png")} alt="xai-heatmap" className="max-h-[480px] border rounded" />
+          <img src={previewUrl(m.data.heatmapPngBase64, "image/png")} alt="xai-heatmap" className="max-h-120 border rounded" />
           <details className="text-xs"><summary className="cursor-pointer">notes</summary><ResultJson data={m.data.notes} /></details>
         </div>
       )}

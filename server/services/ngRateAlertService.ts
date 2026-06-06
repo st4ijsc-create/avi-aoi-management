@@ -621,7 +621,7 @@ async function enrichAlertWithAI(
         )
         .where(
           and(
-            eq(schema.productInspections.stationId, payload.station.id),
+            eq((schema.productInspections as any).stationId, payload.station.id),
             gte(schema.productInspections.inspectionTime, todayStart),
             eq(schema.measurementResults.result, "NG")
           )

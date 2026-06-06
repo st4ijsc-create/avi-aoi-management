@@ -16,7 +16,7 @@ export const dashboardRouter = router({
     .query(async ({ input, ctx }) => {
       // Check cache first
       const cacheKey = statsCache.generateKey(CACHE_KEYS.DASHBOARD_STATS, input);
-      const cached = statsCache.get(cacheKey);
+      const cached = statsCache.get<Awaited<ReturnType<typeof db.getDashboardStats>>>(cacheKey);
       if (cached) return cached;
 
       // Fetch from database
@@ -36,7 +36,7 @@ export const dashboardRouter = router({
     .query(async ({ input }) => {
       // Check cache first
       const cacheKey = statsCache.generateKey(CACHE_KEYS.MACHINE_STATS, input);
-      const cached = statsCache.get(cacheKey);
+      const cached = statsCache.get<Awaited<ReturnType<typeof db.getMachineStats>>>(cacheKey);
       if (cached) return cached;
 
       const stats = await db.getMachineStats(input.machineId, input.startDate, input.endDate);
@@ -52,30 +52,35 @@ export const dashboardRouter = router({
     .query(async ({ input }) => {
       // Check cache first to avoid N+1 queries
       const cacheKey = statsCache.generateKey(CACHE_KEYS.MACHINE_STATS + '_all', input);
-      const cached = statsCache.get(cacheKey);
+
+      const compute = async () => {
+        const machinesWithHierarchy = await db.getMachinesWithHierarchy();
+        const stats = await Promise.all(
+          machinesWithHierarchy.map(async (item) => {
+            // Use per-machine cache to avoid redundant DB calls
+            const perMachineCacheKey = statsCache.generateKey(CACHE_KEYS.MACHINE_STATS, { machineId: item.machine.id, startDate: input.startDate, endDate: input.endDate });
+            let machineStats = statsCache.get<Awaited<ReturnType<typeof db.getMachineStats>>>(perMachineCacheKey);
+            if (!machineStats) {
+              machineStats = await db.getMachineStats(item.machine.id, input.startDate, input.endDate);
+              statsCache.set(perMachineCacheKey, machineStats, CACHE_TTL.SHORT);
+            }
+            return {
+              machine: item.machine,
+              station: item.station,
+              line: item.line,
+              workshop: item.workshop,
+              factory: item.factory,
+              stats: machineStats,
+            };
+          })
+        );
+        return stats;
+      };
+
+      const cached = statsCache.get<Awaited<ReturnType<typeof compute>>>(cacheKey);
       if (cached) return cached;
 
-      const machinesWithHierarchy = await db.getMachinesWithHierarchy();
-      const stats = await Promise.all(
-        machinesWithHierarchy.map(async (item) => {
-          // Use per-machine cache to avoid redundant DB calls
-          const perMachineCacheKey = statsCache.generateKey(CACHE_KEYS.MACHINE_STATS, { machineId: item.machine.id, startDate: input.startDate, endDate: input.endDate });
-          let machineStats = statsCache.get(perMachineCacheKey);
-          if (!machineStats) {
-            machineStats = await db.getMachineStats(item.machine.id, input.startDate, input.endDate);
-            statsCache.set(perMachineCacheKey, machineStats, CACHE_TTL.SHORT);
-          }
-          return {
-            machine: item.machine,
-            station: item.station,
-            line: item.line,
-            workshop: item.workshop,
-            factory: item.factory,
-            stats: machineStats,
-          };
-        })
-      );
-
+      const stats = await compute();
       statsCache.set(cacheKey, stats, CACHE_TTL.SHORT);
       return stats;
     }),
@@ -89,7 +94,7 @@ export const dashboardRouter = router({
     .query(async ({ input }) => {
       // Check cache first
       const cacheKey = statsCache.generateKey(CACHE_KEYS.DAILY_STATS, input);
-      const cached = statsCache.get(cacheKey);
+      const cached = statsCache.get<Awaited<ReturnType<typeof db.getDailyStats>>>(cacheKey);
       if (cached) return cached;
 
       const stats = await db.getDailyStats(input.factoryId, input.workshopId, input.days);

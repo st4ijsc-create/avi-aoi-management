@@ -1,5 +1,5 @@
 // Schema domain: Inspection tables
-import { pgTable, pgEnum, serial, integer, text, timestamp, varchar, decimal, boolean, bigint, index, json } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, serial, integer, text, timestamp, varchar, decimal, boolean, bigint, index, json, jsonb } from "drizzle-orm/pg-core";
 import { overallResultEnum, originalResultEnum, aiDecisionEnum } from "./enums";
 
 export const productInspections = pgTable("product_inspections", {
@@ -42,6 +42,12 @@ export const productInspections = pgTable("product_inspections", {
     processingTimeMs?: number;
     reviewReason?: string;
   }>(),
+  // ============ P4.C G16 — Specialized subforms ============
+  // Discriminator (e.g. "FAI" | "IQC" | "OQC" | "AOI" | "FCT" ...). NULLABLE for back-compat.
+  inspectionType: varchar("inspectionType", { length: 40 }),
+  // Polymorphic payload validated server-side via inspectionVariant.validatePayload.
+  variantPayload: jsonb("variantPayload").$type<Record<string, unknown>>(),
+  // ============ end G16 ============
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [
@@ -58,6 +64,7 @@ export const productInspections = pgTable("product_inspections", {
   index("idx_inspections_workshop").on(table.workshopCode),
   index("idx_inspections_line").on(table.lineCode),
   index("idx_inspections_production_order").on(table.productionOrderCode),
+  index("idx_inspections_type").on(table.inspectionType),
 ]);
 
 export type ProductInspection = typeof productInspections.$inferSelect;
@@ -79,6 +86,33 @@ export const measurementResults = pgTable("measurement_results", {
   aiAnalysisResult: text("aiAnalysisResult"), // Kết quả phân tích AI
   aiConfidence: decimal("aiConfidence", { precision: 5, scale: 4 }),
   aiComparisonScore: decimal("aiComparisonScore", { precision: 5, scale: 4 }), // Điểm so sánh với ảnh mẫu
+  // ============ P2 — extended 3D / solder / xray measurement values ============
+  // All NULLABLE; populated only when the matching point def opts into 3D inspection.
+  valueZ: decimal("valueZ", { precision: 15, scale: 6 }),
+  valueHeight: decimal("valueHeight", { precision: 15, scale: 6 }),
+  valueArea: decimal("valueArea", { precision: 15, scale: 6 }),
+  valueVolume: decimal("valueVolume", { precision: 15, scale: 6 }),
+  valueVoidPct: decimal("valueVoidPct", { precision: 15, scale: 6 }),
+  valueCoplanarity: decimal("valueCoplanarity", { precision: 15, scale: 6 }),
+  valueWarpage: decimal("valueWarpage", { precision: 15, scale: 6 }),
+  valueOffsetX: decimal("valueOffsetX", { precision: 15, scale: 6 }),
+  valueOffsetY: decimal("valueOffsetY", { precision: 15, scale: 6 }),
+  valueTilt: decimal("valueTilt", { precision: 15, scale: 6 }),
+  valueThickness: decimal("valueThickness", { precision: 15, scale: 6 }),
+  // Optional FK to defect_catalog.id (no DB constraint — soft reference for back-compat).
+  defectCatalogId: integer("defectCatalogId"),
+  defectSeverity: varchar("defectSeverity", { length: 20 }),
+  // ============ Defect location on board image (pixel coordinates) ============
+  // Bounding box of defect region on the full board/panel image.
+  // Enables: visual overlay in UI, AI training data (YOLO/COCO format), defect density heatmap.
+  // Coordinates are in pixels relative to the top-left corner of imageUrl.
+  defectBboxX: integer("defectBboxX"),       // left pixel
+  defectBboxY: integer("defectBboxY"),       // top pixel
+  defectBboxW: integer("defectBboxW"),       // width in pixels
+  defectBboxH: integer("defectBboxH"),       // height in pixels
+  defectCropUrl: text("defectCropUrl"),      // pre-cropped defect region image (optional, for fast display)
+  defectCropKey: varchar("defectCropKey", { length: 255 }), // storage key for defectCropUrl
+  // ============ end defect location ============
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_results_inspection").on(table.inspectionId),

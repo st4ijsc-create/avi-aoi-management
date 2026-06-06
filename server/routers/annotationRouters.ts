@@ -396,7 +396,7 @@ export const annotationRouter = router({
       // Note: For simplicity, we'll filter in memory. In production, use proper SQL conditions.
       const result = await db.execute(query) as any;
       
-      let rows = [...result] || [];
+      let rows = Array.isArray(result) ? [...result] : ((result as any)?.rows ?? []);
       
       // Apply date filters
       if (input?.dateFrom) {
@@ -1183,7 +1183,7 @@ Respond in JSON format with an array of findings.`
         ORDER BY i."inspectionTime" DESC
         LIMIT 10000
       `) as any;
-      const rows = [...result] || [];
+      const rows = Array.isArray(result) ? [...result] : ((result as any)?.rows ?? []);
       
       if (input.format === 'json') {
         const exportData = rows.map((row: any) => {

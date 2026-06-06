@@ -1,6 +1,6 @@
 ﻿/**
  * MQTT Client Management Router
- * Quáº£n lÃ½ táº­p trung cÃ¡c MQTT Client profiles vÃ  assignments
+ * Quản lý tập trung các MQTT Client profiles và assignments
  */
 
 import { z } from "zod";

@@ -68,6 +68,8 @@ import { Link } from "wouter";
 import { format as formatDate, subDays, startOfDay, endOfDay } from "date-fns";
 import { vi } from "date-fns/locale";
 import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LineChart, Line, ScatterChart, Scatter, ZAxis } from "recharts";
+import { jsPDF } from "jspdf";
+import * as XLSX from "xlsx";
 
 export default function History() {
   const { t } = useTranslation();
@@ -700,7 +702,6 @@ export default function History() {
         toast.success(t('history.yieldExportSuccess', { format: format.toUpperCase() }));
       } else if (format === 'pdf') {
         // Create PDF using jsPDF
-        const { jsPDF } = await import('jspdf');
         const autoTable = (await import('jspdf-autotable')).default;
         
         const doc = new jsPDF();
@@ -794,14 +795,12 @@ export default function History() {
         URL.revokeObjectURL(url);
         toast.success(t('history.workstationExportSuccess', { format: 'CSV' }));
       } else if (format === 'excel') {
-        const XLSX = await import('xlsx');
         const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, t('history.wsWorkstation'));
         XLSX.writeFile(wb, `${filename}.xlsx`);
         toast.success(t('history.workstationExportSuccess', { format: 'Excel' }));
       } else if (format === 'pdf') {
-        const { jsPDF } = await import('jspdf');
         const autoTable = (await import('jspdf-autotable')).default;
         
         const doc = new jsPDF();

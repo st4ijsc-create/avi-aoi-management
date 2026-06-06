@@ -270,7 +270,7 @@ export default function Users() {
   };
 
   // Filter users
-  const filteredUsers = users?.filter((user: UserType) => {
+  const filteredUsers = users?.filter((user: any) => {
     const matchesSearch = 
       (user.name?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
       (user.username?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
@@ -331,7 +331,7 @@ export default function Users() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {users?.filter((u: UserType) => u.role === "admin").length || 0}
+                {users?.filter((u: any) => u.role === "admin").length || 0}
               </div>
             </CardContent>
           </Card>
@@ -342,7 +342,7 @@ export default function Users() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-600">
-                {users?.filter((u: UserType) => u.isActive).length || 0}
+                {users?.filter((u: any) => u.isActive).length || 0}
               </div>
             </CardContent>
           </Card>
@@ -353,7 +353,7 @@ export default function Users() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-red-600">
-                {users?.filter((u: UserType) => !u.isActive).length || 0}
+                {users?.filter((u: any) => !u.isActive).length || 0}
               </div>
             </CardContent>
           </Card>
@@ -392,7 +392,7 @@ export default function Users() {
                 />
               </div>
               <Select value={roleFilter} onValueChange={setRoleFilter}>
-                <SelectTrigger className="w-[150px]">
+                <SelectTrigger className="w-37.5">
                   <SelectValue placeholder="Vai trò" />
                 </SelectTrigger>
                 <SelectContent>
@@ -402,7 +402,7 @@ export default function Users() {
                 </SelectContent>
               </Select>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[150px]">
+                <SelectTrigger className="w-37.5">
                   <SelectValue placeholder="Trạng thái" />
                 </SelectTrigger>
                 <SelectContent>
@@ -438,11 +438,11 @@ export default function Users() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredUsers.map((user: UserType) => (
+                    {filteredUsers.map((user: any) => (
                       <TableRow key={user.id}>
                         <TableCell>
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center text-white font-semibold">
+                            <div className="w-10 h-10 rounded-full bg-linear-to-br from-teal-500 to-cyan-600 flex items-center justify-center text-white font-semibold">
                               {user.name?.charAt(0).toUpperCase() || "U"}
                             </div>
                             <div>

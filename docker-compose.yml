@@ -1,0 +1,106 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aoi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aoi}
+      POSTGRES_DB: ${POSTGRES_DB:-aoi_management}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aoi} -d ${POSTGRES_DB:-aoi_management}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # G1 — Broker MQTT HA (UNS / Sparkplug B). Cổng map lệch để tránh đụng aedes nội bộ (1883/8883).
+  emqx:
+    image: emqx/emqx:5.8
+    restart: unless-stopped
+    environment:
+      EMQX_NODE__COOKIE: aviaoiemqx
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: ${EMQX_DASHBOARD_PASSWORD:-public}
+    volumes:
+      - emqxdata:/opt/emqx/data
+    ports:
+      - "1884:1883"    # MQTT TCP  (host 1884 -> container 1883)
+      - "8084:8083"    # MQTT over WebSocket
+      - "18083:18083"  # Dashboard UI
+    healthcheck:
+      test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  # G1/G3 — TimescaleDB cho time-series (energy_readings). Cổng host 5433 để KHÔNG đụng PG18 local (5432).
+  timescaledb:
+    image: timescale/timescaledb:2.17.2-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${TSDB_USER:-tsdb}
+      POSTGRES_PASSWORD: ${TSDB_PASSWORD:-tsdb_pass}
+      POSTGRES_DB: ${TSDB_NAME:-avi_aoi_ts}
+    volumes:
+      - tsdbdata:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TSDB_USER:-tsdb} -d ${TSDB_NAME:-avi_aoi_ts}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgres://${POSTGRES_USER:-aoi}:${POSTGRES_PASSWORD:-aoi}@postgres:5432/${POSTGRES_DB:-aoi_management}
+      REDIS_URL: redis://redis:6379
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-300}
+      AUTH_RATE_LIMIT_PER_15MIN: ${AUTH_RATE_LIMIT_PER_15MIN:-30}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "3000:3000"
+    volumes:
+      - appuploads:/app/uploads
+      - appbackups:/app/backups
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  pgdata:
+  redisdata:
+  appuploads:
+  appbackups:
+  emqxdata:
+  tsdbdata:

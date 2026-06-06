@@ -146,10 +146,25 @@ export const templateRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const { createTemplate } = await import("../templateDb");
-      return createTemplate({
+      const result = await createTemplate({
         ...input,
         createdBy: ctx.user.id,
       });
+      try {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? undefined,
+          action: "template.create",
+          entityType: "product",
+          entityId: typeof result === "object" && result && "id" in result ? (result as any).id : undefined,
+          entityName: input.code,
+          details: { code: input.code, name: input.name, category: input.category, pointCount: input.points.length },
+          status: "success",
+        });
+      } catch (err) {
+        console.warn("audit log failed (template.create)", err);
+      }
+      return result;
     }),
 
   update: adminProcedure
@@ -175,27 +190,70 @@ export const templateRouter = router({
         orderIndex: z.number(),
       })).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { updateTemplate } = await import("../templateDb");
       const { id, ...data } = input;
-      return updateTemplate(id, data);
+      const result = await updateTemplate(id, data);
+      try {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? undefined,
+          action: "template.update",
+          entityType: "product",
+          entityId: id,
+          entityName: data.name ?? undefined,
+          details: { changedFields: Object.keys(data) },
+          status: "success",
+        });
+      } catch (err) {
+        console.warn("audit log failed (template.update)", err);
+      }
+      return result;
     }),
 
   delete: adminProcedure
-    .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
       const { deleteTemplate } = await import("../templateDb");
-      return deleteTemplate(input.id);
+      const result = await deleteTemplate(input.id);
+      try {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? undefined,
+          action: "template.delete",
+          entityType: "product",
+          entityId: input.id,
+          status: "success",
+        });
+      } catch (err) {
+        console.warn("audit log failed (template.delete)", err);
+      }
+      return result;
     }),
 
   clone: adminProcedure
     .input(z.object({
-      id: z.number(),
-      newCode: z.string().min(1).max(50),
+      id: z.number().int().positive(),
+      newCode: z.string().min(1).max(50).regex(/^[A-Za-z0-9_\-]+$/, "Code may only contain letters, digits, underscore, dash"),
     }))
     .mutation(async ({ input, ctx }) => {
       const { cloneTemplate } = await import("../templateDb");
-      return cloneTemplate(input.id, input.newCode, ctx.user.id);
+      const result = await cloneTemplate(input.id, input.newCode, ctx.user.id);
+      try {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? undefined,
+          action: "template.clone",
+          entityType: "product",
+          entityId: typeof result === "object" && result && "id" in result ? (result as any).id : undefined,
+          entityName: input.newCode,
+          details: { sourceId: input.id, newCode: input.newCode },
+          status: "success",
+        });
+      } catch (err) {
+        console.warn("audit log failed (template.clone)", err);
+      }
+      return result;
     }),
 });
 

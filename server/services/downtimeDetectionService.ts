@@ -235,7 +235,7 @@ export async function analyzeDowntimeRootCause(params: {
       LIMIT 10
     `));
 
-    const history = (recentDowntimes.rows || []).map((r: any) =>
+    const history = (((recentDowntimes as any).rows ?? recentDowntimes) || []).map((r: any) =>
       `${r.category}: ${r.reason || 'unknown'} (${r.duration || '?'}min)`
     ).join('; ');
 

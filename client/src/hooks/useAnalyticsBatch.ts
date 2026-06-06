@@ -19,7 +19,7 @@ export interface AnalyticsQueryParams {
 export interface AnalyticsBatchResult {
   trend: any;
   pareto: any;
-  machinePerf: any;
+  machPerf: any;
   forecast: any;
   risk: any;
   control: any;

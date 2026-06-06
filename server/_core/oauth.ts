@@ -339,20 +339,47 @@ export function registerOAuthRoutes(app: Express) {
         res.status(403).json({ error: "Tài khoản đã bị vô hiệu hóa" });
         return;
       }
-      
+
+      // Brute-force lockout check (IEC 62443-2-1 CL2 §CR 1.8)
+      const MAX_ATTEMPTS = 5;
+      const LOCKOUT_MINUTES = 15;
+      if (user.lockedUntil && user.lockedUntil > new Date()) {
+        const remaining = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
+        await db.createAuditLog({ userId: user.id, userName: user.name ?? username, action: 'login', entityType: 'auth', status: 'failure', details: { reason: 'account_locked' }, ipAddress: req.ip ?? req.socket.remoteAddress, userAgent: req.headers['user-agent'] }).catch(() => {});
+        res.status(429).json({ error: `Tài khoản tạm khóa do đăng nhập sai nhiều lần. Thử lại sau ${remaining} phút.` });
+        return;
+      }
+
       // Check if user has password (local account)
       if (!user.passwordHash) {
         res.status(400).json({ error: "Tài khoản này không hỗ trợ đăng nhập bằng mật khẩu" });
         return;
       }
-      
+
       // Verify password
       const isValid = await bcrypt.compare(password, user.passwordHash);
       if (!isValid) {
+        // Increment failure counter; lock after MAX_ATTEMPTS
+        const newAttempts = (user.loginAttempts ?? 0) + 1;
+        const lockedUntil = newAttempts >= MAX_ATTEMPTS
+          ? new Date(Date.now() + LOCKOUT_MINUTES * 60_000)
+          : null;
+        await db.updateUserLoginAttempts(user.id, newAttempts, lockedUntil);
+
         // Audit: failed login (wrong password)
-        await db.createAuditLog({ userId: user.id, userName: user.name ?? username, action: 'login', entityType: 'auth', status: 'failure', ipAddress: req.ip ?? req.socket.remoteAddress, userAgent: req.headers['user-agent'] }).catch(() => {});
-        res.status(401).json({ error: "Tên đăng nhập hoặc mật khẩu không đúng" });
+        await db.createAuditLog({ userId: user.id, userName: user.name ?? username, action: 'login', entityType: 'auth', status: 'failure', details: { reason: lockedUntil ? 'account_locked' : `attempt_${newAttempts}` }, ipAddress: req.ip ?? req.socket.remoteAddress, userAgent: req.headers['user-agent'] }).catch(() => {});
+
+        if (lockedUntil) {
+          res.status(429).json({ error: `Đăng nhập sai ${MAX_ATTEMPTS} lần. Tài khoản bị khóa ${LOCKOUT_MINUTES} phút.` });
+        } else {
+          res.status(401).json({ error: "Tên đăng nhập hoặc mật khẩu không đúng", attemptsRemaining: MAX_ATTEMPTS - newAttempts });
+        }
         return;
+      }
+
+      // Reset lockout on successful password verification
+      if ((user.loginAttempts ?? 0) > 0) {
+        await db.updateUserLoginAttempts(user.id, 0, null);
       }
       
       // Check if 2FA is enabled

@@ -35,7 +35,7 @@ const widgetSchema = z.object({
   y: z.number(),
   w: z.number(),
   h: z.number(),
-  config: z.record(z.any()).optional(),
+  config: z.record(z.string(), z.any()).optional(),
 });
 
 const reportDefinitionSchema = z.object({
@@ -248,7 +248,7 @@ export const reportBuilderRouter = router({
   getWidgetData: protectedProcedure
     .input(z.object({
       widgetType: z.string(),
-      config: z.record(z.any()).optional(),
+      config: z.record(z.string(), z.any()).optional(),
       filters: z.object({
         startDate: z.coerce.date().optional(),
         endDate: z.coerce.date().optional(),
@@ -297,7 +297,7 @@ export const reportBuilderRouter = router({
             endDate,
             factoryId: filters?.factoryId,
             workshopId: filters?.workshopId,
-          });
+          } as any);
           return { data };
         }
 

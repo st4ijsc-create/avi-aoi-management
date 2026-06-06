@@ -299,7 +299,7 @@ export function AnnotationComparison() {
   const renderImageWithAnnotations = (item: ComparisonItem | undefined, label: string, borderColor: string) => {
     if (!item) {
       return (
-        <div className="flex-1 flex items-center justify-center bg-muted rounded-lg min-h-[300px]">
+        <div className="flex-1 flex items-center justify-center bg-muted rounded-lg min-h-75">
           <div className="text-center text-muted-foreground">
             <ImageIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
             <p>{t('annotation.comparison.selectInspection')}</p>
@@ -512,8 +512,8 @@ export function AnnotationComparison() {
       {/* Results */}
       {isLoading ? (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          <Skeleton className="h-[400px]" />
-          <Skeleton className="h-[400px] lg:col-span-3" />
+          <Skeleton className="h-100" />
+          <Skeleton className="h-100 lg:col-span-3" />
         </div>
       ) : comparisonData?.groups && comparisonData.groups.length > 0 ? (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -523,7 +523,7 @@ export function AnnotationComparison() {
               <CardTitle className="text-sm">{t('annotation.comparison.measurementPointCount', { count: comparisonData.groups.length })}</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <ScrollArea className="h-[500px]">
+              <ScrollArea className="h-125">
                 <div className="space-y-1 p-2">
                   {comparisonData.groups.map((group) => (
                     <Button
@@ -688,7 +688,7 @@ export function AnnotationComparison() {
                       {renderImageWithAnnotations(rightItem, t('annotation.comparison.after'), 'border-green-500')}
                     </div>
                   ) : (
-                    <div className="relative min-h-[400px] bg-muted rounded-lg overflow-hidden">
+                    <div className="relative min-h-100 bg-muted rounded-lg overflow-hidden">
                       {/* Base image (left) */}
                       {leftItem && (
                         <div className="absolute inset-0 flex items-center justify-center">
@@ -773,7 +773,7 @@ export function AnnotationComparison() {
                   )}
                 </>
               ) : (
-                <div className="flex items-center justify-center h-[400px] text-muted-foreground">
+                <div className="flex items-center justify-center h-100 text-muted-foreground">
                   <div className="text-center">
                     <GitCompare className="h-12 w-12 mx-auto mb-3 opacity-50" />
                     <p>{t('annotation.comparison.selectFromList')}</p>
@@ -785,7 +785,7 @@ export function AnnotationComparison() {
         </div>
       ) : (
         <Card>
-          <CardContent className="flex items-center justify-center h-[200px] text-muted-foreground">
+          <CardContent className="flex items-center justify-center h-50 text-muted-foreground">
             <div className="text-center">
               <Search className="h-12 w-12 mx-auto mb-3 opacity-50" />
               <p>{t('annotation.comparison.enterSerialOrFilter')}</p>

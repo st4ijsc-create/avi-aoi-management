@@ -813,6 +813,9 @@ async function processOfflineChat(request: ChatRequest): Promise<ChatResponse> {
   const startDate = thirtyDaysAgo.toISOString().split("T")[0]!;
   const endDate = today.toISOString().split("T")[0]!;
 
+  const db = await getDb();
+  const machineCache = new Map<string, number>();
+
   // Extract machine code if mentioned (e.g. M-001)
   const machineMatch = msg.match(/\bm[-_]?\d+\b/i);
   const machineCode = machineMatch ? machineMatch[0].toUpperCase() : undefined;
@@ -830,7 +833,7 @@ async function processOfflineChat(request: ChatRequest): Promise<ChatResponse> {
     const runOverview = !wantsStats && !wantsTrends && !wantsMachine && !wantsRCA && !wantsModel && !wantsDefects;
 
     if (runOverview || wantsStats) {
-      const result = await toolQueryInspectionStats({ startDate, endDate, machineCode }) as any;
+      const result = await toolQueryInspectionStats({ startDate, endDate, machineCode }, db, machineCache) as any;
       toolsUsed.push("query_inspection_stats");
       if (!result.error) {
         parts.push(isVi
@@ -840,7 +843,7 @@ async function processOfflineChat(request: ChatRequest): Promise<ChatResponse> {
     }
 
     if (runOverview || wantsDefects) {
-      const result = await toolGetTopDefects({ startDate, endDate, machineCode, limit: 5 }) as any;
+      const result = await toolGetTopDefects({ startDate, endDate, machineCode, limit: 5 }, db, machineCache) as any;
       toolsUsed.push("get_top_defects");
       if (!result.error && result.topDefects?.length > 0) {
         const lines = result.topDefects.map((x: any, i: number) => `  ${i + 1}. ${x.type}: ${x.count} (${x.percentage})`).join("\n");
@@ -849,7 +852,7 @@ async function processOfflineChat(request: ChatRequest): Promise<ChatResponse> {
     }
 
     if (wantsTrends) {
-      const result = await toolGetDefectTrends({ startDate, endDate, machineCode }) as any;
+      const result = await toolGetDefectTrends({ startDate, endDate, machineCode }, db, machineCache) as any;
       toolsUsed.push("get_defect_trends");
       if (!result.error) {
         parts.push(isVi
@@ -859,7 +862,7 @@ async function processOfflineChat(request: ChatRequest): Promise<ChatResponse> {
     }
 
     if (wantsMachine && machineCode) {
-      const result = await toolGetMachineStatus({ machineCode }) as any;
+      const result = await toolGetMachineStatus({ machineCode }, db, machineCache) as any;
       toolsUsed.push("get_machine_status");
       if (!result.error) {
         parts.push(isVi
@@ -869,7 +872,7 @@ async function processOfflineChat(request: ChatRequest): Promise<ChatResponse> {
     }
 
     if (wantsModel) {
-      const result = await toolGetModelPerformance({}) as any;
+      const result = await toolGetModelPerformance({}, db) as any;
       toolsUsed.push("get_model_performance");
       if (!result.error && result.models?.length > 0) {
         const lines = result.models.slice(0, 3).map((m: any) =>
@@ -879,7 +882,7 @@ async function processOfflineChat(request: ChatRequest): Promise<ChatResponse> {
     }
 
     if (wantsRCA && machineCode) {
-      const result = await toolRunRCA({ machineCode, date: endDate }) as any;
+      const result = await toolRunRCA({ machineCode, date: endDate }, db, machineCache) as any;
       toolsUsed.push("run_root_cause_analysis");
       if (!result.error) {
         parts.push(isVi

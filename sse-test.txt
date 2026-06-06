@@ -1,0 +1,873 @@
+﻿data: {"type":"meta","intent":"troubleshoot","language":"vi","confidence":0.827,"citations":[{"id":"domain-887","sourcePath":"knowledge/domain/aoi-reports.md","title":"AOI Reports & Analytics (Báo Cáo và Phân Tích) (part 1)","sourceType":"domain","score":0.671717},{"id":"doc-707","sourcePath":"docs/USER_GUIDE.md","title":"Hướng Dẫn Sử Dụng Hệ Thống MES AVI/AOI (part 3)","sourceType":"doc","score":0.651461},{"id":"doc-705","sourcePath":"docs/USER_GUIDE.md","title":"Hướng Dẫn Sử Dụng Hệ Thống MES AVI/AOI (part 1)","sourceType":"doc","score":0.647707},{"id":"domain-888","sourcePath":"knowledge/domain/aoi-reports.md","title":"AOI Reports & Analytics (Báo Cáo và Phân Tích) (part 2)","sourceType":"domain","score":0.645356},{"id":"doc-659","sourcePath":"docs/SYSTEM_EVALUATION_REPORT.md","title":"Báo Cáo Đánh Giá Hệ Thống MES AVI/AOI (part 5)","sourceType":"doc","score":0.643427}]}
+
+data: {"type":"token","token":"Để "}
+
+data: {"type":"token","token":"xem "}
+
+data: {"type":"token","token":"báo "}
+
+data: {"type":"token","token":"cáo "}
+
+data: {"type":"token","token":"lỗi "}
+
+data: {"type":"token","token":"AOI, "}
+
+data: {"type":"token","token":"bạn "}
+
+data: {"type":"token","token":"có "}
+
+data: {"type":"token","token":"thể "}
+
+data: {"type":"token","token":"theo "}
+
+data: {"type":"token","token":"các "}
+
+data: {"type":"token","token":"bước "}
+
+data: {"type":"token","token":"sau:\n\n"}
+
+data: {"type":"token","token":"### "}
+
+data: {"type":"token","token":"1. "}
+
+data: {"type":"token","token":"Báo "}
+
+data: {"type":"token","token":"Cáo "}
+
+data: {"type":"token","token":"Defect "}
+
+data: {"type":"token","token":"Pareto "}
+
+data: {"type":"token","token":"Analysis "}
+
+data: {"type":"token","token":"(Phân "}
+
+data: {"type":"token","token":"Tích "}
+
+data: {"type":"token","token":"Phân "}
+
+data: {"type":"token","token":"Loại "}
+
+data: {"type":"token","token":"Lỗi)\n"}
+
+data: {"type":"token","token":"Bước "}
+
+data: {"type":"token","token":"này "}
+
+data: {"type":"token","token":"giúp "}
+
+data: {"type":"token","token":"bạn "}
+
+data: {"type":"token","token":"xác "}
+
+data: {"type":"token","token":"định "}
+
+data: {"type":"token","token":"top "}
+
+data: {"type":"token","token":"lỗi "}
+
+data: {"type":"token","token":"thường "}
+
+data: {"type":"token","token":"gặp "}
+
+data: {"type":"token","token":"và "}
+
+data: {"type":"token","token":"tập "}
+
+data: {"type":"token","token":"trung "}
+
+data: {"type":"token","token":"điều "}
+
+data: {"type":"token","token":"tra "}
+
+data: {"type":"token","token":"nguyên "}
+
+data: {"type":"token","token":"nhân "}
+
+data: {"type":"token","token":"gốc "}
+
+data: {"type":"token","token":"rễ.\n\n"}
+
+data: {"type":"token","token":"**Cách "}
+
+data: {"type":"token","token":"xem:**\n"}
+
+data: {"type":"token","token":"1. "}
+
+data: {"type":"token","token":"Đăng "}
+
+data: {"type":"token","token":"nhập "}
+
+data: {"type":"token","token":"vào "}
+
+data: {"type":"token","token":"hệ "}
+
+data: {"type":"token","token":"thống "}
+
+data: {"type":"token","token":"AOI.\n"}
+
+data: {"type":"token","token":"2. "}
+
+data: {"type":"token","token":"Truy "}
+
+data: {"type":"token","token":"cập "}
+
+data: {"type":"token","token":"vào "}
+
+data: {"type":"token","token":"**Reports "}
+
+data: {"type":"token","token":"→ "}
+
+data: {"type":"token","token":"Defect "}
+
+data: {"type":"token","token":"Pareto "}
+
+data: {"type":"token","token":"Analysis**.\n"}
+
+data: {"type":"token","token":"3. "}
+
+data: {"type":"token","token":"Chọn "}
+
+data: {"type":"token","token":"khoảng "}
+
+data: {"type":"token","token":"thời "}
+
+data: {"type":"token","token":"gian "}
+
+data: {"type":"token","token":"cần "}
+
+data: {"type":"token","token":"phân "}
+
+data: {"type":"token","token":"tích.\n"}
+
+data: {"type":"token","token":"4. "}
+
+data: {"type":"token","token":"Click "}
+
+data: {"type":"token","token":"**Generate** "}
+
+data: {"type":"token","token":"để "}
+
+data: {"type":"token","token":"tạo "}
+
+data: {"type":"token","token":"báo "}
+
+data: {"type":"token","token":"cáo.\n"}
+
+data: {"type":"token","token":"5. "}
+
+data: {"type":"token","token":"Export "}
+
+data: {"type":"token","token":"báo "}
+
+data: {"type":"token","token":"cáo "}
+
+data: {"type":"token","token":"sang "}
+
+data: {"type":"token","token":"định "}
+
+data: {"type":"token","token":"dạng "}
+
+data: {"type":"token","token":"PDF, "}
+
+data: {"type":"token","token":"Excel "}
+
+data: {"type":"token","token":"hoặc "}
+
+data: {"type":"token","token":"CSV.\n\n"}
+
+data: {"type":"token","token":"### "}
+
+data: {"type":"token","token":"2. "}
+
+data: {"type":"token","token":"Báo "}
+
+data: {"type":"token","token":"Cáo "}
+
+data: {"type":"token","token":"Lot "}
+
+data: {"type":"token","token":"(Lot "}
+
+data: {"type":"token","token":"Report)\n"}
+
+data: {"type":"token","token":"Báo "}
+
+data: {"type":"token","token":"cáo "}
+
+data: {"type":"token","token":"này "}
+
+data: {"type":"token","token":"cung "}
+
+data: {"type":"token","token":"cấp "}
+
+data: {"type":"token","token":"thông "}
+
+data: {"type":"token","token":"tin "}
+
+data: {"type":"token","token":"chi "}
+
+data: {"type":"token","token":"tiết "}
+
+data: {"type":"token","token":"về "}
+
+data: {"type":"token","token":"từng "}
+
+data: {"type":"token","token":"lô "}
+
+data: {"type":"token","token":"sản "}
+
+data: {"type":"token","token":"phẩm, "}
+
+data: {"type":"token","token":"bao "}
+
+data: {"type":"token","token":"gồm "}
+
+data: {"type":"token","token":"cả "}
+
+data: {"type":"token","token":"lỗi "}
+
+data: {"type":"token","token":"và "}
+
+data: {"type":"token","token":"tỷ "}
+
+data: {"type":"token","token":"lệ "}
+
+data: {"type":"token","token":"pass/fail.\n\n"}
+
+data: {"type":"token","token":"**Cách "}
+
+data: {"type":"token","token":"xem:**\n"}
+
+data: {"type":"token","token":"1. "}
+
+data: {"type":"token","token":"Đăng "}
+
+data: {"type":"token","token":"nhập "}
+
+data: {"type":"token","token":"vào "}
+
+data: {"type":"token","token":"hệ "}
+
+data: {"type":"token","token":"thống "}
+
+data: {"type":"token","token":"AOI.\n"}
+
+data: {"type":"token","token":"2. "}
+
+data: {"type":"token","token":"Truy "}
+
+data: {"type":"token","token":"cập "}
+
+data: {"type":"token","token":"vào "}
+
+data: {"type":"token","token":"**Reports "}
+
+data: {"type":"token","token":"→ "}
+
+data: {"type":"token","token":"Lot "}
+
+data: {"type":"token","token":"Report**.\n"}
+
+data: {"type":"token","token":"3. "}
+
+data: {"type":"token","token":"Chọn "}
+
+data: {"type":"token","token":"Work "}
+
+data: {"type":"token","token":"Order "}
+
+data: {"type":"token","token":"Number, "}
+
+data: {"type":"token","token":"Model/Part "}
+
+data: {"type":"token","token":"Number, "}
+
+data: {"type":"token","token":"và "}
+
+data: {"type":"token","token":"khoảng "}
+
+data: {"type":"token","token":"thời "}
+
+data: {"type":"token","token":"gian "}
+
+data: {"type":"token","token":"cần "}
+
+data: {"type":"token","token":"phân "}
+
+data: {"type":"token","token":"tích.\n"}
+
+data: {"type":"token","token":"4. "}
+
+data: {"type":"token","token":"Click "}
+
+data: {"type":"token","token":"**Generate** "}
+
+data: {"type":"token","token":"để "}
+
+data: {"type":"token","token":"tạo "}
+
+data: {"type":"token","token":"báo "}
+
+data: {"type":"token","token":"cáo.\n"}
+
+data: {"type":"token","token":"5. "}
+
+data: {"type":"token","token":"Export "}
+
+data: {"type":"token","token":"báo "}
+
+data: {"type":"token","token":"cáo "}
+
+data: {"type":"token","token":"sang "}
+
+data: {"type":"token","token":"định "}
+
+data: {"type":"token","token":"dạng "}
+
+data: {"type":"token","token":"PDF, "}
+
+data: {"type":"token","token":"Excel "}
+
+data: {"type":"token","token":"hoặc "}
+
+data: {"type":"token","token":"CSV.\n\n"}
+
+data: {"type":"token","token":"### "}
+
+data: {"type":"token","token":"3. "}
+
+data: {"type":"token","token":"Báo "}
+
+data: {"type":"token","token":"Cáo "}
+
+data: {"type":"token","token":"Xu "}
+
+data: {"type":"token","token":"Hướng "}
+
+data: {"type":"token","token":"(Trend "}
+
+data: {"type":"token","token":"Report)\n"}
+
+data: {"type":"token","token":"Báo "}
+
+data: {"type":"token","token":"cáo "}
+
+data: {"type":"token","token":"này "}
+
+data: {"type":"token","token":"giúp "}
+
+data: {"type":"token","token":"theo "}
+
+data: {"type":"token","token":"dõi "}
+
+data: {"type":"token","token":"xu "}
+
+data: {"type":"token","token":"hướng "}
+
+data: {"type":"token","token":"lỗi "}
+
+data: {"type":"token","token":"qua "}
+
+data: {"type":"token","token":"thời "}
+
+data: {"type":"token","token":"gian, "}
+
+data: {"type":"token","token":"hỗ "}
+
+data: {"type":"token","token":"trợ "}
+
+data: {"type":"token","token":"phát "}
+
+data: {"type":"token","token":"hiện "}
+
+data: {"type":"token","token":"vấn "}
+
+data: {"type":"token","token":"đề "}
+
+data: {"type":"token","token":"sớm.\n\n"}
+
+data: {"type":"token","token":"**Cách "}
+
+data: {"type":"token","token":"xem:**\n"}
+
+data: {"type":"token","token":"1. "}
+
+data: {"type":"token","token":"Đăng "}
+
+data: {"type":"token","token":"nhập "}
+
+data: {"type":"token","token":"vào "}
+
+data: {"type":"token","token":"hệ "}
+
+data: {"type":"token","token":"thống "}
+
+data: {"type":"token","token":"AOI.\n"}
+
+data: {"type":"token","token":"2. "}
+
+data: {"type":"token","token":"Truy "}
+
+data: {"type":"token","token":"cập "}
+
+data: {"type":"token","token":"vào "}
+
+data: {"type":"token","token":"**Reports "}
+
+data: {"type":"token","token":"→ "}
+
+data: {"type":"token","token":"Trend "}
+
+data: {"type":"token","token":"Report**.\n"}
+
+data: {"type":"token","token":"3. "}
+
+data: {"type":"token","token":"Chọn "}
+
+data: {"type":"token","token":"khoảng "}
+
+data: {"type":"token","token":"thời "}
+
+data: {"type":"token","token":"gian "}
+
+data: {"type":"token","token":"cần "}
+
+data: {"type":"token","token":"phân "}
+
+data: {"type":"token","token":"tích.\n"}
+
+data: {"type":"token","token":"4. "}
+
+data: {"type":"token","token":"Xem "}
+
+data: {"type":"token","token":"biểu "}
+
+data: {"type":"token","token":"đồ "}
+
+data: {"type":"token","token":"xu "}
+
+data: {"type":"token","token":"hướng "}
+
+data: {"type":"token","token":"và "}
+
+data: {"type":"token","token":"các "}
+
+data: {"type":"token","token":"chỉ "}
+
+data: {"type":"token","token":"số "}
+
+data: {"type":"token","token":"theo "}
+
+data: {"type":"token","token":"dõi.\n"}
+
+data: {"type":"token","token":"5. "}
+
+data: {"type":"token","token":"Nếu "}
+
+data: {"type":"token","token":"có, "}
+
+data: {"type":"token","token":"sử "}
+
+data: {"type":"token","token":"dụng "}
+
+data: {"type":"token","token":"công "}
+
+data: {"type":"token","token":"thức "}
+
+data: {"type":"token","token":"để "}
+
+data: {"type":"token","token":"tính "}
+
+data: {"type":"token","token":"FPY "}
+
+data: {"type":"token","token":"(First "}
+
+data: {"type":"token","token":"Pass "}
+
+data: {"type":"token","token":"Yield) "}
+
+data: {"type":"token","token":"và "}
+
+data: {"type":"token","token":"Final "}
+
+data: {"type":"token","token":"Yield.\n\n"}
+
+data: {"type":"token","token":"### "}
+
+data: {"type":"token","token":"4. "}
+
+data: {"type":"token","token":"Báo "}
+
+data: {"type":"token","token":"Cáo "}
+
+data: {"type":"token","token":"Chi "}
+
+data: {"type":"token","token":"Tiết "}
+
+data: {"type":"token","token":"Bảng "}
+
+data: {"type":"token","token":"Kiểm "}
+
+data: {"type":"token","token":"Tra\n"}
+
+data: {"type":"token","token":"Báo "}
+
+data: {"type":"token","token":"cáo "}
+
+data: {"type":"token","token":"này "}
+
+data: {"type":"token","token":"cung "}
+
+data: {"type":"token","token":"cấp "}
+
+data: {"type":"token","token":"thông "}
+
+data: {"type":"token","token":"tin "}
+
+data: {"type":"token","token":"chi "}
+
+data: {"type":"token","token":"tiết "}
+
+data: {"type":"token","token":"về "}
+
+data: {"type":"token","token":"từng "}
+
+data: {"type":"token","token":"bảng "}
+
+data: {"type":"token","token":"kiểm "}
+
+data: {"type":"token","token":"tra, "}
+
+data: {"type":"token","token":"bao "}
+
+data: {"type":"token","token":"gồm "}
+
+data: {"type":"token","token":"mã "}
+
+data: {"type":"token","token":"lỗi "}
+
+data: {"type":"token","token":"và "}
+
+data: {"type":"token","token":"hình "}
+
+data: {"type":"token","token":"ảnh "}
+
+data: {"type":"token","token":"lỗi.\n\n"}
+
+data: {"type":"token","token":"**Cách "}
+
+data: {"type":"token","token":"xem:**\n"}
+
+data: {"type":"token","token":"1. "}
+
+data: {"type":"token","token":"Đăng "}
+
+data: {"type":"token","token":"nhập "}
+
+data: {"type":"token","token":"vào "}
+
+data: {"type":"token","token":"hệ "}
+
+data: {"type":"token","token":"thống "}
+
+data: {"type":"token","token":"AOI.\n"}
+
+data: {"type":"token","token":"2. "}
+
+data: {"type":"token","token":"Truy "}
+
+data: {"type":"token","token":"cập "}
+
+data: {"type":"token","token":"vào "}
+
+data: {"type":"token","token":"**Reports "}
+
+data: {"type":"token","token":"→ "}
+
+data: {"type":"token","token":"Board "}
+
+data: {"type":"token","token":"Detail "}
+
+data: {"type":"token","token":"Report**.\n"}
+
+data: {"type":"token","token":"3. "}
+
+data: {"type":"token","token":"Chọn "}
+
+data: {"type":"token","token":"serial "}
+
+data: {"type":"token","token":"number "}
+
+data: {"type":"token","token":"hoặc "}
+
+data: {"type":"token","token":"khoảng "}
+
+data: {"type":"token","token":"thời "}
+
+data: {"type":"token","token":"gian "}
+
+data: {"type":"token","token":"cần "}
+
+data: {"type":"token","token":"phân "}
+
+data: {"type":"token","token":"tích.\n"}
+
+data: {"type":"token","token":"4. "}
+
+data: {"type":"token","token":"Click "}
+
+data: {"type":"token","token":"**Generate** "}
+
+data: {"type":"token","token":"để "}
+
+data: {"type":"token","token":"tạo "}
+
+data: {"type":"token","token":"báo "}
+
+data: {"type":"token","token":"cáo.\n"}
+
+data: {"type":"token","token":"5. "}
+
+data: {"type":"token","token":"Export "}
+
+data: {"type":"token","token":"báo "}
+
+data: {"type":"token","token":"cáo "}
+
+data: {"type":"token","token":"sang "}
+
+data: {"type":"token","token":"định "}
+
+data: {"type":"token","token":"dạng "}
+
+data: {"type":"token","token":"PDF, "}
+
+data: {"type":"token","token":"Excel "}
+
+data: {"type":"token","token":"hoặc "}
+
+data: {"type":"token","token":"CSV.\n\n"}
+
+data: {"type":"token","token":"### "}
+
+data: {"type":"token","token":"API "}
+
+data: {"type":"token","token":"và "}
+
+data: {"type":"token","token":"Schema\n"}
+
+data: {"type":"token","token":"Nếu "}
+
+data: {"type":"token","token":"bạn "}
+
+data: {"type":"token","token":"muốn "}
+
+data: {"type":"token","token":"truy "}
+
+data: {"type":"token","token":"xuất "}
+
+data: {"type":"token","token":"dữ "}
+
+data: {"type":"token","token":"liệu "}
+
+data: {"type":"token","token":"lỗi "}
+
+data: {"type":"token","token":"AOI "}
+
+data: {"type":"token","token":"thông "}
+
+data: {"type":"token","token":"qua "}
+
+data: {"type":"token","token":"API, "}
+
+data: {"type":"token","token":"bạn "}
+
+data: {"type":"token","token":"có "}
+
+data: {"type":"token","token":"thể "}
+
+data: {"type":"token","token":"tham "}
+
+data: {"type":"token","token":"khảo "}
+
+data: {"type":"token","token":"tài "}
+
+data: {"type":"token","token":"liệu "}
+
+data: {"type":"token","token":"`apidocs/EXTERNAL_INSPECTION_API.md`:\n\n"}
+
+data: {"type":"token","token":"```markdown\n"}
+
+data: {"type":"token","token":"- "}
+
+data: {"type":"token","token":"**Query "}
+
+data: {"type":"token","token":"NG "}
+
+data: {"type":"token","token":"boards "}
+
+data: {"type":"token","token":"trong "}
+
+data: {"type":"token","token":"khoảng "}
+
+data: {"type":"token","token":"thời "}
+
+data: {"type":"token","token":"gian:** \n  "}
+
+data: {"type":"token","token":"```http\n  "}
+
+data: {"type":"token","token":"GET "}
+
+data: {"type":"token","token":"/api/v1/inspection/ngBoards?startDate=2023-01-01&endDate=2023-01-31\n  "}
+
+data: {"type":"token","token":"```\n\n"}
+
+data: {"type":"token","token":"- "}
+
+data: {"type":"token","token":"**Download "}
+
+data: {"type":"token","token":"defect "}
+
+data: {"type":"token","token":"images:**\n  "}
+
+data: {"type":"token","token":"```http\n  "}
+
+data: {"type":"token","token":"GET "}
+
+data: {"type":"token","token":"/api/v1/inspection/images/{serialNumber}\n  "}
+
+data: {"type":"token","token":"```\n\n"}
+
+data: {"type":"token","token":"- "}
+
+data: {"type":"token","token":"**Submit "}
+
+data: {"type":"token","token":"rework "}
+
+data: {"type":"token","token":"results:**\n  "}
+
+data: {"type":"token","token":"```json\n  "}
+
+data: {"type":"token","token":"POST "}
+
+data: {"type":"token","token":"/api/v1/inspection/reworkResults\n  "}
+
+data: {"type":"token","token":"{\n    "}
+
+data: {"type":"token","token":"\"serialNumber\": "}
+
+data: {"type":"token","token":"\"A123456\",\n    "}
+
+data: {"type":"token","token":"\"reworkStatus\": "}
+
+data: {"type":"token","token":"\"Pass\"\n  "}
+
+data: {"type":"token","token":"}\n  "}
+
+data: {"type":"token","token":"```\n"}
+
+data: {"type":"token","token":"```\n\n"}
+
+data: {"type":"token","token":"### "}
+
+data: {"type":"token","token":"Cấu "}
+
+data: {"type":"token","token":"Hình "}
+
+data: {"type":"token","token":"Hệ "}
+
+data: {"type":"token","token":"Thống\n"}
+
+data: {"type":"token","token":"Để "}
+
+data: {"type":"token","token":"cấu "}
+
+data: {"type":"token","token":"hình "}
+
+data: {"type":"token","token":"hệ "}
+
+data: {"type":"token","token":"thống, "}
+
+data: {"type":"token","token":"bạn "}
+
+data: {"type":"token","token":"có "}
+
+data: {"type":"token","token":"thể "}
+
+data: {"type":"token","token":"truy "}
+
+data: {"type":"token","token":"cập "}
+
+data: {"type":"token","token":"vào "}
+
+data: {"type":"token","token":"**Settings "}
+
+data: {"type":"token","token":"→ "}
+
+data: {"type":"token","token":"Integration "}
+
+data: {"type":"token","token":"→ "}
+
+data: {"type":"token","token":"MES** "}
+
+data: {"type":"token","token":"để "}
+
+data: {"type":"token","token":"tích "}
+
+data: {"type":"token","token":"hợp "}
+
+data: {"type":"token","token":"tự "}
+
+data: {"type":"token","token":"động "}
+
+data: {"type":"token","token":"với "}
+
+data: {"type":"token","token":"MES:\n\n"}
+
+data: {"type":"token","token":"```markdown\n"}
+
+data: {"type":"token","token":"- "}
+
+data: {"type":"token","token":"Export "}
+
+data: {"type":"token","token":"kết "}
+
+data: {"type":"token","token":"quả "}
+
+data: {"type":"token","token":"kiểm "}
+
+data: {"type":"token","token":"tra:\n  "}
+
+data: {"type":"token","token":"```http\n  "}
+
+data: {"type":"token","token":"GET "}
+
+data: {"type":"token","token":"/api/v1/inspection/export?reportType=LotReport&startDate=2023-01-01&endDate=2023-01-31\n  "}
+
+data: {"type":"token","token":"```\n\n"}
+
+data: {"type":"token","token":"- "}
+
+data: {"type":"token","token":"Cấu "}
+
+data: {"type":"token","token":"hình "}
+
+data: {"type":"token","token":"ngưỡng "}
+
+data: {"type":"token","token":"cảnh "}
+
+data: {"type":"token","token":"báo:\n  "}
+
+data: {"type":"token","token":"```json\n  "}
+
+data: {"type":"token","token":"PUT "}
+
+data: {"type":"token","token":"/api/v1/systemConfig/yieldThresholds\n  "}
+
+data: {"type":"token","token":"{\n    "}
+
+data: {"type":"token","token":"\"yieldThreshold\":"}
+
+data: {"type":"done"}
+
+

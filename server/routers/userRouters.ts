@@ -374,11 +374,12 @@ export const userRouter = router({
   // Revoke all other sessions
   revokeAllSessions: protectedProcedure
     .input(z.object({
-      exceptCurrentSession: z.boolean().optional(),
+      // When provided, this session id is preserved (typically the caller's current session).
+      // Clients can obtain it from `getMySessions` (the row matching the active token).
+      currentSessionId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      // TODO: Get current session ID from context if needed
-      await db.revokeAllSessions(ctx.user.id);
+      await db.revokeAllSessions(ctx.user.id, input.currentSessionId);
       return { success: true };
     }),
 });

@@ -524,10 +524,15 @@ const edgeRouter = router({
 });
 
 // ─── Combined Advanced AI Router ──────────────────────────────
+// DISABLED (local-AI migration): training, abTest, edge sub-routers no longer registered.
+// Kept in source for rollback; only `batch` and `monitoring` are exposed.
 export const aiAdvancedRouter = router({
   batch: batchRouter,
-  training: trainingRouter,
-  abTest: abTestRouter,
+  // training: trainingRouter,
+  // abTest: abTestRouter,
   monitoring: monitoringRouter,
-  edge: edgeRouter,
+  // edge: edgeRouter,
 });
+
+// Suppress unused-binding warnings for retained code blocks.
+void trainingRouter; void abTestRouter; void edgeRouter;

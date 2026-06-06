@@ -570,7 +570,13 @@ export default function StationAnalysis() {
         {/* ── Header ── */}
         <div className="border-b border-border bg-card px-7 py-4">
           <div className="flex items-center gap-3 mb-3">
-            <Link href="/production-dashboard">
+            <Link
+              href={
+                summary
+                  ? `/production-dashboard?factory=${summary.factory.id}&line=${summary.line.id}`
+                  : "/production-dashboard"
+              }
+            >
               <button className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
                 <ArrowLeft className="h-3.5 w-3.5" />
                 {t("stationAnalysis.breadcrumb.dashboard")}

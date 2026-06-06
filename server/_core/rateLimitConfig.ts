@@ -1,13 +1,23 @@
 import rateLimit from "express-rate-limit";
 
+const envInt = (name: string, fallback: number): number => {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+
+const API_PER_MIN = envInt("RATE_LIMIT_PER_MINUTE", 300);
+const AUTH_PER_15MIN = envInt("AUTH_RATE_LIMIT_PER_15MIN", 30);
+
 export const API_RATE_LIMIT = {
   windowMs: 60 * 1000,
-  max: 100,
+  max: API_PER_MIN,
 };
 
 export const AUTH_RATE_LIMIT = {
   windowMs: 15 * 60 * 1000,
-  max: 30,
+  max: AUTH_PER_15MIN,
 };
 
 export function createApiLimiter() {

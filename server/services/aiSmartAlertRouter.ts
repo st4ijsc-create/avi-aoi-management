@@ -152,7 +152,7 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
       status: "ACTIVE",
       notificationSent: true,
       notificationSentAt: new Date(),
-    })
+    } as any)
     .returning({ id: predictiveAlerts.id });
 
   // Track for auto-escalation

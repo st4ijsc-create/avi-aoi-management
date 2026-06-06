@@ -170,6 +170,17 @@ export default function OEEDashboard() {
     { machineId: selectedMachine! },
     { enabled: !!selectedMachine }
   );
+  const semiE10Q = trpc.mqttClient.semiE10Breakdown.useQuery(
+    {
+      machineId: selectedMachine!,
+      from: new Date(Date.now() - 8 * 3600 * 1000),
+      to: new Date(),
+      totalCount: machineOEE?.details?.totalCount ?? 0,
+      goodCount: machineOEE?.details?.goodCount ?? 0,
+      idealCycleTimeSec: machineOEE?.details?.idealCycleTime ?? 30,
+    },
+    { enabled: !!selectedMachine && !!machineOEE, refetchInterval: 60_000 },
+  );
 
   // Mutations
   const calculateOEEMutation = trpc.mqttClient.calculateOEE.useMutation({
@@ -607,9 +618,12 @@ export default function OEEDashboard() {
                     </div>
                   ))}
                   {(!allOEE || allOEE.length === 0) && (
-                    <p className="text-center text-muted-foreground py-4">
-                      {t('oee.noOeeData')}
-                    </p>
+                    <div className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-6 text-center">
+                      <p className="font-medium text-foreground">{t('oee.noOeeData')}</p>
+                      <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
+                        {t('oee.noOeeDataHelp', 'Start recording inspections or reconnect a machine to populate OEE, downtime, and comparison charts.')}
+                      </p>
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -719,6 +733,83 @@ export default function OEEDashboard() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* SEMI E10 / ISO 22400 Breakdown (8h window) */}
+            {selectedMachine && semiE10Q.data && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">
+                    SEMI E10 / ISO 22400-2 — 8h Equipment State Breakdown
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {(() => {
+                    const b = semiE10Q.data.breakdown;
+                    const a = semiE10Q.data.alert;
+                    const banner =
+                      a.level === "critical"
+                        ? "bg-red-500/10 border-red-500 text-red-700 dark:text-red-300"
+                        : a.level === "warning"
+                          ? "bg-amber-500/10 border-amber-500 text-amber-700 dark:text-amber-300"
+                          : "bg-green-500/10 border-green-500 text-green-700 dark:text-green-300";
+                    const tiles: Array<{ k: keyof typeof b.states; label: string; color: string }> = [
+                      { k: "PT", label: "Productive (PT)", color: "text-green-600" },
+                      { k: "SB", label: "Standby (SB)", color: "text-blue-600" },
+                      { k: "ET", label: "Engineering (ET)", color: "text-indigo-600" },
+                      { k: "SD", label: "Sched. Downtime (SD)", color: "text-amber-600" },
+                      { k: "UD", label: "Unsched. Down (UD)", color: "text-red-600" },
+                      { k: "NS", label: "Non-Scheduled (NS)", color: "text-muted-foreground" },
+                    ];
+                    return (
+                      <>
+                        <div className={`rounded-md border p-3 ${banner}`}>
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">{a.message}</span>
+                            <Badge variant="outline" className="font-mono">
+                              OEE {(a.oeePct / 100).toFixed(1)}%
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                          {tiles.map((t) => (
+                            <div key={t.k} className="rounded-md border p-3">
+                              <div className="text-xs text-muted-foreground">{t.label}</div>
+                              <div className={`text-xl font-semibold ${t.color}`}>
+                                {Math.round(b.states[t.k])}
+                                <span className="text-xs text-muted-foreground ml-1">min</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <div className="flex items-center justify-between text-sm mb-1">
+                              <span>Availability</span>
+                              <span className="font-mono">{(b.availability * 100).toFixed(1)}%</span>
+                            </div>
+                            <Progress value={b.availability * 100} />
+                          </div>
+                          <div>
+                            <div className="flex items-center justify-between text-sm mb-1">
+                              <span>Performance</span>
+                              <span className="font-mono">{(b.performance * 100).toFixed(1)}%</span>
+                            </div>
+                            <Progress value={b.performance * 100} />
+                          </div>
+                          <div>
+                            <div className="flex items-center justify-between text-sm mb-1">
+                              <span>Quality</span>
+                              <span className="font-mono">{(b.quality * 100).toFixed(1)}%</span>
+                            </div>
+                            <Progress value={b.quality * 100} />
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+            )}
 
             {/* OEE Comparison Chart */}
             {allOEE && allOEE.length > 0 && (
