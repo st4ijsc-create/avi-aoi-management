@@ -82,6 +82,7 @@ const AIActiveLearningPage = React.lazy(() => import("./pages/AIActiveLearningPa
 const AIImageSearchPage = React.lazy(() => import("./pages/AIImageSearchPage"));
 const AIReportsPage = React.lazy(() => import("./pages/AIReportsPage"));
 const AITimeSeriesPage = React.lazy(() => import("./pages/AITimeSeriesPage"));
+const EnergyAnalyticsPage = React.lazy(() => import("./pages/EnergyAnalyticsPage")); // G2.6b: energy analytics (READ/ANALYTICS only)
 const AISettingsPage = React.lazy(() => import("./pages/AISettingsPage"));
 const AIDataProcessingPage = React.lazy(() => import("./pages/AIDataProcessingPage"));
 const AIModelManagementPage = React.lazy(() => import("./pages/AIModelManagementPage"));
@@ -220,6 +221,7 @@ function Router() {
       <Route path="/digital-twin" component={DigitalTwinDashboard} />
       <Route path="/realtime-report" component={RealtimeReportView} />
       <Route path="/carbon-dashboard" component={CarbonDashboard} />
+      <Route path="/energy-analytics" component={EnergyAnalyticsPage} />
       <Route path="/drill-down" component={DrillDownDashboard} />
       <Route path="/annotation-statistics" component={AnnotationStatistics} />
       <Route path="/annotation-comparison" component={AnnotationComparisonPage} />

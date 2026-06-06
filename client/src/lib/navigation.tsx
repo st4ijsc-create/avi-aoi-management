@@ -72,6 +72,7 @@
   Plug,
   FlaskConical,
   ShieldAlert,
+  Zap,
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -348,12 +349,20 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "analytics_oee",
         permissionCategory: "analytics",
       },
-      { 
-        href: "/carbon-dashboard", 
-        label: "nav.carbonDashboard", 
+      {
+        href: "/carbon-dashboard",
+        label: "nav.carbonDashboard",
         icon: <Leaf className="h-4 w-4" />,
         description: "nav.carbonDashboardDesc",
         requiredPermission: "analytics_oee",
+        permissionCategory: "analytics",
+      },
+      {
+        href: "/energy-analytics",
+        label: "nav.energyAnalytics",
+        icon: <Zap className="h-4 w-4" />,
+        description: "nav.energyAnalyticsDesc",
+        requiredPermission: "energy",
         permissionCategory: "analytics",
       },
       { 
