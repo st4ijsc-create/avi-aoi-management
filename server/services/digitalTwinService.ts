@@ -132,3 +132,180 @@ export function simulateWhatIf(input: WhatIfInput): WhatIfResult {
     perStation,
   };
 }
+
+// ===============================================================
+// G2.7 — WIP flow + station-load heatmap + prediction overlay
+// PURE helpers (no DB, no machine-write). Color is computed HERE
+// (single source TWIN_STATUS_COLORS) and the FE renders it verbatim.
+// ===============================================================
+
+/** A single in-process WIP row (subset of wipTracking columns we read). */
+export interface WipRow {
+  currentStationId: number | null;
+  serialNumber: string | null;
+  exitedAt: Date | string | null;
+}
+
+export interface WipStationAgg {
+  count: number;
+  serials: string[];
+}
+
+export interface WipFlowAggregate {
+  byStation: Map<number, WipStationAgg>;
+  totalWip: number;
+  stationCount: number;
+}
+
+/**
+ * Gom WIP đang trong chuyền theo station. WIP đã rời chuyền (exitedAt != null)
+ * KHÔNG được tính. Pure — không phụ thuộc DB.
+ */
+export function aggregateWipFlow(rows: WipRow[]): WipFlowAggregate {
+  const byStation = new Map<number, WipStationAgg>();
+  let totalWip = 0;
+  for (const r of rows) {
+    if (r.exitedAt != null) continue;          // đã rời chuyền → bỏ qua
+    if (r.currentStationId == null) continue;
+    const sid = r.currentStationId;
+    const cur = byStation.get(sid) ?? { count: 0, serials: [] };
+    cur.count += 1;
+    if (r.serialNumber) cur.serials.push(r.serialNumber);
+    byStation.set(sid, cur);
+    totalWip += 1;
+  }
+  return { byStation, totalWip, stationCount: byStation.size };
+}
+
+export type DominantState = "starved" | "blocked" | "processing" | "idle";
+
+/** Đầu vào heatmap: dwell-agg theo station (avg ms) + utilization tùy chọn. */
+export interface StationLoadInput {
+  stationId: number;
+  avgDwellMs?: number;
+  avgStarvedMs?: number;
+  avgBlockedMs?: number;
+  /** 0-100 nếu có (vd. từ lineBalanceMetrics.utilizationPct); nếu thiếu suy ra từ dwell. */
+  utilizationPct?: number | null;
+  samples?: number;
+}
+
+export interface StationLoadCell {
+  stationId: number;
+  loadPct: number;            // 0-100
+  dominantState: DominantState;
+  color: string;              // hex từ service (single source)
+}
+
+/**
+ * Tính heatmap tải trạm. dominantState:
+ *  - starved  → amber  (TWIN_STATUS_COLORS.starved) khi starved chiếm ưu thế
+ *  - blocked  → orange (TWIN_STATUS_COLORS.blocked) khi blocked chiếm ưu thế
+ *  - processing → lerp green→red theo loadPct (xanh nhẹ tải → đỏ quá tải)
+ *  - idle     → gray (TWIN_STATUS_COLORS.stopped) khi không có tải/sample
+ * Pure — màu lấy từ TWIN_STATUS_COLORS / lerpHex.
+ */
+export function stationLoadHeatmap(inputs: StationLoadInput[]): StationLoadCell[] {
+  return inputs.map((s) => {
+    const dwell = Math.max(0, s.avgDwellMs ?? 0);
+    const starved = Math.max(0, s.avgStarvedMs ?? 0);
+    const blocked = Math.max(0, s.avgBlockedMs ?? 0);
+    const samples = s.samples ?? 0;
+
+    // loadPct: ưu tiên utilization rõ ràng; nếu không, suy ra từ tỷ lệ processing/dwell.
+    let loadPct: number;
+    if (s.utilizationPct != null) {
+      loadPct = clampPct(s.utilizationPct);
+    } else if (dwell > 0) {
+      const processingMs = Math.max(0, dwell - starved - blocked);
+      loadPct = clampPct((processingMs / dwell) * 100);
+    } else {
+      loadPct = 0;
+    }
+
+    let dominantState: DominantState;
+    let color: string;
+
+    if (samples === 0 && dwell === 0) {
+      dominantState = "idle";
+      color = colorForStatus("stopped");
+    } else if (starved > blocked && starved > 0) {
+      dominantState = "starved";
+      color = colorForStatus("starved");   // amber
+    } else if (blocked >= starved && blocked > 0) {
+      dominantState = "blocked";
+      color = colorForStatus("blocked");    // orange
+    } else if (loadPct <= 0) {
+      dominantState = "idle";
+      color = colorForStatus("stopped");
+    } else {
+      dominantState = "processing";
+      // green (#22c55e) → red (#ef4444) theo loadPct
+      color = lerpHex("#22c55e", "#ef4444", clampPct(loadPct) / 100);
+    }
+
+    return { stationId: s.stationId, loadPct: Math.round(loadPct * 10) / 10, dominantState, color };
+  });
+}
+
+export type CongestionRisk = "low" | "medium" | "high";
+
+/** Forecast WIP cho 1 station (giá trị dự báo + station id). */
+export interface StationForecast {
+  stationId: number;
+  predictedWipNext1h: number;
+}
+
+export interface PredictionOverlayCell {
+  stationId: number;
+  predictedWipNext1h: number;
+  congestionRisk: CongestionRisk;
+  color: string;          // gray/amber/red — overlay text+màu, KHÔNG hành động
+  messageKey: string;     // i18n key (FE render text)
+}
+
+/**
+ * Overlay dự báo tắc nghẽn: so predictedWipNext1h với ngưỡng.
+ *  >= threshold      → high   (red,    digitalTwin.prediction.high)
+ *  >= threshold*0.6  → medium (amber,  digitalTwin.prediction.medium)
+ *  còn lại           → low    (gray,   digitalTwin.prediction.low)
+ * Pure — chỉ tạo text + màu, không thực hiện hành động nào.
+ */
+export function buildPredictionOverlay(
+  forecasts: StationForecast[],
+  threshold: number,
+): PredictionOverlayCell[] {
+  const thr = Math.max(0, threshold);
+  const medThr = thr * 0.6;
+  return forecasts.map((f) => {
+    const wip = Math.max(0, f.predictedWipNext1h);
+    let congestionRisk: CongestionRisk;
+    let color: string;
+    let messageKey: string;
+    if (wip >= thr && thr > 0) {
+      congestionRisk = "high";
+      color = colorForStatus("error");      // red
+      messageKey = "digitalTwin.prediction.high";
+    } else if (wip >= medThr && thr > 0) {
+      congestionRisk = "medium";
+      color = colorForStatus("starved");    // amber
+      messageKey = "digitalTwin.prediction.medium";
+    } else {
+      congestionRisk = "low";
+      color = colorForStatus("stopped");    // gray
+      messageKey = "digitalTwin.prediction.low";
+    }
+    return {
+      stationId: f.stationId,
+      predictedWipNext1h: Math.round(wip * 10) / 10,
+      congestionRisk,
+      color,
+      messageKey,
+    };
+  });
+}
+
+function clampPct(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(0, Math.min(100, v));
+}

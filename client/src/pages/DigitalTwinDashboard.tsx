@@ -17,7 +17,11 @@ import {
   Cpu,
   Heart,
   AlertTriangle,
+  Workflow,
+  Gauge,
+  TrendingUp,
 } from "lucide-react";
+import { useTwinStream } from "@/hooks/useTwinStream";
 
 /** Màu nền semantic theo màu twin trả về từ server (status+health). */
 function twinDot(color?: string | null) {
@@ -57,6 +61,18 @@ export default function DigitalTwinDashboard() {
   const whatIf = trpc.digitalTwin.whatIf.useQuery(whatIfInput!, {
     enabled: !!whatIfInput,
   });
+
+  // --- G2.7: WIP flow + station load + prediction (read-only) ---
+  const [lineId, setLineId] = useState<number>(1);
+  const twinStream = useTwinStream({ lineId });
+  const stationLoad = trpc.digitalTwin.stationLoadHeatmap.useQuery(
+    { lineId, hours: 24 },
+    { enabled: lineId > 0 },
+  );
+  const prediction = trpc.digitalTwin.predictionOverlay.useQuery(
+    { lineId, horizonHours: 1 },
+    { enabled: lineId > 0 },
+  );
 
   const twinRows = twin.data ?? [];
   const heatRows = heatmap.data ?? [];
@@ -167,6 +183,18 @@ export default function DigitalTwinDashboard() {
             <TabsTrigger value="whatif">
               <FlaskConical className="mr-2 h-4 w-4" />
               {t("digitalTwin.tabWhatIf", "Mô phỏng what-if")}
+            </TabsTrigger>
+            <TabsTrigger value="wipflow">
+              <Workflow className="mr-2 h-4 w-4" />
+              {t("digitalTwin.tabWipFlow", "Dòng WIP")}
+            </TabsTrigger>
+            <TabsTrigger value="stationload">
+              <Gauge className="mr-2 h-4 w-4" />
+              {t("digitalTwin.tabStationLoad", "Tải trạm")}
+            </TabsTrigger>
+            <TabsTrigger value="prediction">
+              <TrendingUp className="mr-2 h-4 w-4" />
+              {t("digitalTwin.tabPrediction", "Dự báo tắc nghẽn")}
             </TabsTrigger>
           </TabsList>
 
@@ -321,6 +349,153 @@ export default function DigitalTwinDashboard() {
                   <p className="text-sm text-muted-foreground">{t("common.noData", "Không có dữ liệu")}</p>
                 ) : (
                   <WhatIfResult data={whatIf.data} t={t as any} />
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* G2.7 — line selector shared by WIP/load/prediction tabs */}
+
+          {/* TAB: WIP flow */}
+          <TabsContent value="wipflow" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  {t("digitalTwin.wipFlow.title", "Dòng WIP theo trạm")}
+                  <Badge variant={twinStream.isStreaming ? "default" : "secondary"}>
+                    {twinStream.isStreaming
+                      ? t("digitalTwin.wipFlow.streaming", "Đang stream")
+                      : t("digitalTwin.wipFlow.polling", "Đang poll")}
+                  </Badge>
+                </CardTitle>
+                <CardDescription>
+                  {t("digitalTwin.wipFlow.desc", "Số bán thành phẩm đang trong chuyền tại mỗi trạm")}
+                </CardDescription>
+                <div className="flex items-end gap-2 pt-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">{t("digitalTwin.station", "Trạm")} / Line ID</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={lineId}
+                      onChange={(e) => setLineId(Math.max(1, Number(e.target.value) || 1))}
+                      className="w-28"
+                    />
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {twinStream.stations.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    {t("digitalTwin.wipFlow.noData", "Không có WIP trong chuyền")}
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+                    {twinStream.stations.map((s) => (
+                      <div
+                        key={s.stationId}
+                        className="rounded-lg border p-3 text-sm transition-all duration-300"
+                        style={s.color ? { borderColor: s.color } : undefined}
+                      >
+                        <div className="flex items-center gap-2">
+                          {twinDot(s.color)}
+                          <span className="font-mono text-xs opacity-80">#{s.stationId}</span>
+                        </div>
+                        <div className="text-2xl font-bold">{s.wipCount}</div>
+                        <div className="text-xs opacity-70">{t("digitalTwin.wipFlow.wipCount", "Số WIP")}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB: Station load heatmap */}
+          <TabsContent value="stationload" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("digitalTwin.stationLoad.title", "Heatmap tải trạm")}</CardTitle>
+                <CardDescription>
+                  {t("digitalTwin.stationLoad.desc", "Mức tải và trạng thái chủ đạo của từng trạm")}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {stationLoad.isLoading ? (
+                  <p className="text-sm text-muted-foreground">{t("common.loading", "Đang tải...")}</p>
+                ) : !stationLoad.data || stationLoad.data.cells.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{t("common.noData", "Không có dữ liệu")}</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+                    {stationLoad.data.cells.map((c) => (
+                      <div
+                        key={c.stationId}
+                        className="rounded-lg border-2 p-3 text-sm"
+                        style={{ borderColor: c.color, backgroundColor: `${c.color}22` }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-xs opacity-80">#{c.stationId}</span>
+                          {stationLoad.data.bottleneckStationId === c.stationId && (
+                            <Badge variant="destructive" className="text-[9px]">
+                              {t("digitalTwin.stationLoad.bottleneck", "Nút thắt")}
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="text-lg font-bold">{c.loadPct}%</div>
+                        <div className="text-xs opacity-80">
+                          {t(`digitalTwin.stationLoad.${c.dominantState}`, c.dominantState)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB: Prediction overlay */}
+          <TabsContent value="prediction" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("digitalTwin.prediction.title", "Dự báo tắc nghẽn")}</CardTitle>
+                <CardDescription>
+                  {t("digitalTwin.prediction.desc", "Ước lượng WIP giờ tới và mức rủi ro (chỉ cảnh báo)")}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {prediction.isLoading ? (
+                  <p className="text-sm text-muted-foreground">{t("common.loading", "Đang tải...")}</p>
+                ) : !prediction.data || !prediction.data.available ? (
+                  <p className="text-sm text-muted-foreground">
+                    {t("digitalTwin.prediction.unavailable", "Chưa đủ dữ liệu để dự báo")}
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {prediction.data.cells.map((c) => (
+                      <div
+                        key={c.stationId}
+                        className="flex items-center justify-between rounded-lg border-2 p-3"
+                        style={{ borderColor: c.color }}
+                      >
+                        <div className="flex items-center gap-3">
+                          {twinDot(c.color)}
+                          <div>
+                            <div className="text-sm font-semibold">
+                              {t(c.messageKey, c.congestionRisk)}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {t("digitalTwin.prediction.predictedWip", "WIP dự báo (1h)")}: {c.predictedWipNext1h}
+                            </div>
+                          </div>
+                        </div>
+                        <Badge
+                          variant={c.congestionRisk === "high" ? "destructive" : c.congestionRisk === "medium" ? "secondary" : "default"}
+                        >
+                          {c.congestionRisk.toUpperCase()}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </CardContent>
             </Card>

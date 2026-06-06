@@ -518,6 +518,9 @@ export function initializeSocket(server: HttpServer): Server {
     initNotificationService(io!);
   });
   
+  // G2.7 — start the WIP twin broadcaster (no-op unless TWIN_STREAM_ENABLED=true).
+  startTwinBroadcaster();
+
   console.log("[Socket.io] WebSocket server initialized");
   return io;
 }
@@ -804,6 +807,75 @@ export function emitAndonEvent(event: AndonRealtimeEvent): void {
   if (event.lineId) io.to(`line:${event.lineId}`).emit("andon:event", event);
   if (event.machineId) io.to(`machine:${event.machineId}`).emit("andon:event", event);
   console.log(`[Andon] ${event.state.toUpperCase()} (${event.reason}) #${event.id} — ${event.event ?? "raised"}`);
+}
+
+// ============ G2.7 — DIGITAL TWIN STREAM (signal-only, gated) ============
+
+/**
+ * Per-station snapshot pushed to twin viewers. Color/loadPct/dominantState are
+ * computed server-side (single source: digitalTwinService) — the FE renders them
+ * verbatim. No machine-write, no DB-write happens on this path.
+ */
+export interface TwinStationSnapshot {
+  stationId: number;
+  wipCount: number;
+  loadPct?: number;
+  color?: string;
+  dominantState?: "starved" | "blocked" | "processing" | "idle";
+}
+
+export interface TwinUpdateEvent {
+  lineId?: number | null;
+  layoutId?: number | null;
+  stations: TwinStationSnapshot[];
+  ts: number;
+}
+
+function twinStreamEnabled(): boolean {
+  return process.env.TWIN_STREAM_ENABLED === "true";
+}
+
+/**
+ * Broadcast a digital-twin WIP/load snapshot. SIGNAL ONLY — never writes to any
+ * machine or DB. Gated: no-op when io is not initialized OR the feature flag is
+ * off (default), so the FE falls back to polling (backward-compatible).
+ */
+export function emitTwinUpdate(event: TwinUpdateEvent): void {
+  if (!io || !twinStreamEnabled()) return;   // gate: off → no emit, FE polls
+  io.to("global").emit("twin:update", event);
+  if (event.lineId) io.to(`line:${event.lineId}`).emit("twin:update", event);
+}
+
+// Read-only broadcaster: periodically reads WIP-by-station (SELECT only) and
+// emits a twin:update. Separated from any write-path. Gated by the same flag.
+let twinBroadcaster: ReturnType<typeof setInterval> | null = null;
+
+export function startTwinBroadcaster(intervalMs = 2000): void {
+  if (twinBroadcaster || !io || !twinStreamEnabled()) return;
+  twinBroadcaster = setInterval(() => {
+    if (!io || !twinStreamEnabled()) return;
+    // Lazy import keeps socket.ts free of DB-layer import cycles.
+    import("../db/twin")
+      .then(({ getWipByStation }) => getWipByStation())
+      .then((rows) => {
+        if (!rows.length) return;
+        emitTwinUpdate({
+          stations: rows.map((r) => ({ stationId: r.currentStationId, wipCount: r.count })),
+          ts: Date.now(),
+        });
+      })
+      .catch((err) => console.error("[Twin] broadcaster read failed:", err));
+  }, Math.max(500, intervalMs));
+  if (typeof (twinBroadcaster as any)?.unref === "function") (twinBroadcaster as any).unref();
+  console.log("[Twin] WIP broadcaster started (read-only, gated)");
+}
+
+export function stopTwinBroadcaster(): void {
+  if (twinBroadcaster) {
+    clearInterval(twinBroadcaster);
+    twinBroadcaster = null;
+    console.log("[Twin] WIP broadcaster stopped");
+  }
 }
 
 // Emit alert escalation event

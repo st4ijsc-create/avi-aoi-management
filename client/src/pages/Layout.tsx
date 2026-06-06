@@ -35,12 +35,14 @@ import {
   Crosshair,
   X,
   Activity,
-  BarChart3
+  BarChart3,
+  Workflow
 } from "lucide-react";
 import { navItems } from "@/lib/navigation";
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useParams, useSearch } from "wouter";
 import WorkshopLayoutEditor from "@/components/WorkshopLayoutEditor";
+import { useTwinStream } from "@/hooks/useTwinStream";
 
 type MachineWithStats = {
   id: number;
@@ -54,6 +56,7 @@ type MachineWithStats = {
   positionY: number;
   width: number;
   height: number;
+  stationId?: number | null;
   stationCode?: string | null;
   stageName?: string | null;
   stageCode?: string | null;
@@ -100,6 +103,20 @@ export default function Layout() {
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [snapToGrid, setSnapToGrid] = useState(true);
   const GRID_SIZE = 50; // Grid size in pixels
+
+  // G2.7 — WIP flow overlay (read-only visualization; stream or poll fallback).
+  const [showWipFlow, setShowWipFlow] = useState(false);
+  const twinStream = useTwinStream({
+    layoutId: selectedLayout ? parseInt(selectedLayout) : undefined,
+    enabled: showWipFlow,
+  });
+  const wipByStation = useMemo(() => {
+    const m = new Map<number, { wipCount: number; color?: string; dominantState?: string }>();
+    for (const s of twinStream.stations) {
+      m.set(s.stationId, { wipCount: s.wipCount, color: s.color, dominantState: s.dominantState });
+    }
+    return m;
+  }, [twinStream.stations]);
   
   // Save position to history
   const saveToHistory = (newPositions: Record<number, { x: number; y: number }>) => {
@@ -290,6 +307,7 @@ export default function Layout() {
         positionY: pos.positionY,
         width: pos.width,
         height: pos.height,
+        stationId: (machineFromList as any)?.stationId ?? pos.stationId ?? null,
         stationCode: pos.stationCode ?? null,
         stageName: pos.stageName ?? null,
         stageCode: pos.stageCode ?? null,
@@ -653,15 +671,25 @@ export default function Layout() {
                       <div className="w-px h-6 bg-border mx-1" />
                       
                       {/* Snap to grid toggle */}
-                      <Button 
-                        variant={snapToGrid ? "default" : "outline"} 
-                        size="icon" 
+                      <Button
+                        variant={snapToGrid ? "default" : "outline"}
+                        size="icon"
                         onClick={() => setSnapToGrid(!snapToGrid)}
                         title={snapToGrid ? t('layout.disableGrid') : t('layout.enableGrid')}
                       >
                         <Grid3X3 className="h-4 w-4" />
                       </Button>
-                      
+
+                      {/* G2.7 — WIP flow overlay toggle (read-only) */}
+                      <Button
+                        variant={showWipFlow ? "default" : "outline"}
+                        size="icon"
+                        onClick={() => setShowWipFlow(v => !v)}
+                        title={t('digitalTwin.tabWipFlow', 'WIP flow')}
+                      >
+                        <Workflow className="h-4 w-4" />
+                      </Button>
+
                       <div className="w-px h-6 bg-border mx-1" />
                       
                       {/* Zoom controls */}
@@ -811,6 +839,18 @@ export default function Layout() {
                               }`}>
                                 {machine.stats.total > 0 ? `${machine.stats.yieldRate.toFixed(1)}%` : 'N/A'}
                               </div>
+
+                              {/* G2.7 — WIP flow badge (read-only overlay; color from server) */}
+                              {showWipFlow && machine.stationId != null && wipByStation.has(machine.stationId) && (
+                                <div
+                                  className="absolute top-1 left-1 flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold text-white shadow ring-1 ring-white/40 transition-all duration-300"
+                                  style={{ backgroundColor: wipByStation.get(machine.stationId)!.color || '#3b82f6' }}
+                                  title={t('digitalTwin.wipFlow.wipCount', 'WIP')}
+                                >
+                                  <Workflow className="h-3 w-3" />
+                                  {wipByStation.get(machine.stationId)!.wipCount}
+                                </div>
+                              )}
 
                               {/* Simple Label Overlay */}
                               <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 rounded-b-lg">

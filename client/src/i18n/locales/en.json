@@ -859,6 +859,40 @@
     "clearError": "Clear error",
     "addRedisUrl": "Add redis url"
   },
+  "digitalTwin": {
+    "tabWipFlow": "WIP Flow",
+    "tabStationLoad": "Station Load",
+    "tabPrediction": "Congestion Forecast",
+    "wipFlow": {
+      "title": "WIP flow by station",
+      "desc": "Work-in-process units currently on the line per station (realtime/poll)",
+      "wipCount": "WIP count",
+      "streaming": "Streaming",
+      "polling": "Polling",
+      "noData": "No WIP on the line"
+    },
+    "stationLoad": {
+      "title": "Station load heatmap",
+      "desc": "Load level and dominant state per station (color computed server-side)",
+      "loadPct": "Load (%)",
+      "state": "State",
+      "starved": "Starved",
+      "blocked": "Blocked",
+      "processing": "Processing",
+      "idle": "Idle",
+      "bottleneck": "Bottleneck"
+    },
+    "prediction": {
+      "title": "Congestion forecast",
+      "desc": "Estimated next-hour WIP and congestion risk (advisory only, no action)",
+      "predictedWip": "Predicted WIP (1h)",
+      "risk": "Risk",
+      "high": "High congestion risk — predicted WIP exceeds threshold",
+      "medium": "Medium congestion risk — monitor closely",
+      "low": "Low risk — within limits",
+      "unavailable": "Insufficient data to forecast"
+    }
+  },
   "common": {
     "zoomOut": "Zoom out",
     "zoomIn": "Zoom in",

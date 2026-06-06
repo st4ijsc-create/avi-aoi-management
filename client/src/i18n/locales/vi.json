@@ -859,6 +859,40 @@
     "noEvents": "Không Sự kiện",
     "mode": "Chế độ"
   },
+  "digitalTwin": {
+    "tabWipFlow": "Dòng WIP",
+    "tabStationLoad": "Tải trạm",
+    "tabPrediction": "Dự báo tắc nghẽn",
+    "wipFlow": {
+      "title": "Dòng WIP theo trạm",
+      "desc": "Số bán thành phẩm đang trong chuyền tại mỗi trạm (realtime/poll)",
+      "wipCount": "Số WIP",
+      "streaming": "Đang stream",
+      "polling": "Đang poll",
+      "noData": "Không có WIP trong chuyền"
+    },
+    "stationLoad": {
+      "title": "Heatmap tải trạm",
+      "desc": "Mức tải và trạng thái chủ đạo của từng trạm (màu tính tại server)",
+      "loadPct": "Tải (%)",
+      "state": "Trạng thái",
+      "starved": "Thiếu liệu",
+      "blocked": "Bị chặn",
+      "processing": "Đang xử lý",
+      "idle": "Nhàn rỗi",
+      "bottleneck": "Nút thắt"
+    },
+    "prediction": {
+      "title": "Dự báo tắc nghẽn",
+      "desc": "Ước lượng WIP giờ tới và mức rủi ro tắc nghẽn (chỉ cảnh báo, không hành động)",
+      "predictedWip": "WIP dự báo (1h)",
+      "risk": "Rủi ro",
+      "high": "Rủi ro tắc nghẽn cao — WIP dự báo vượt ngưỡng",
+      "medium": "Rủi ro tắc nghẽn trung bình — theo dõi sát",
+      "low": "Rủi ro thấp — trong tầm kiểm soát",
+      "unavailable": "Chưa đủ dữ liệu để dự báo"
+    }
+  },
   "common": {
     "pleaseEnterSerialNumber": "Please enter Số seri Số",
     "imageCompareDescription": "Hình ảnh So sánh Mô tả",

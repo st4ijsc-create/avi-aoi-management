@@ -859,6 +859,40 @@
     "clearError": "Clear错误",
     "addRedisUrl": "添加redisurl"
   },
+  "digitalTwin": {
+    "tabWipFlow": "WIP 流",
+    "tabStationLoad": "工位负载",
+    "tabPrediction": "拥堵预测",
+    "wipFlow": {
+      "title": "按工位的 WIP 流",
+      "desc": "各工位当前在产的在制品数量（实时/轮询）",
+      "wipCount": "WIP 数量",
+      "streaming": "实时流",
+      "polling": "轮询中",
+      "noData": "产线上无在制品"
+    },
+    "stationLoad": {
+      "title": "工位负载热力图",
+      "desc": "各工位的负载水平与主导状态（颜色由服务端计算）",
+      "loadPct": "负载 (%)",
+      "state": "状态",
+      "starved": "缺料",
+      "blocked": "阻塞",
+      "processing": "处理中",
+      "idle": "空闲",
+      "bottleneck": "瓶颈"
+    },
+    "prediction": {
+      "title": "拥堵预测",
+      "desc": "预估下一小时 WIP 与拥堵风险（仅提示，不执行操作）",
+      "predictedWip": "预测 WIP (1小时)",
+      "risk": "风险",
+      "high": "高拥堵风险 — 预测 WIP 超过阈值",
+      "medium": "中等拥堵风险 — 密切关注",
+      "low": "低风险 — 在控制范围内",
+      "unavailable": "数据不足，无法预测"
+    }
+  },
   "common": {
     "zoomOut": "缩小",
     "zoomIn": "放大",
