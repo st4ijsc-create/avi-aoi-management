@@ -12,6 +12,38 @@
     "expired": "The proposal has expired.",
     "failed": "Could not execute."
   },
+  "agent": {
+    "playbooks": "Playbooks",
+    "stepsLabel": "steps",
+    "step": "Step",
+    "start": "Start",
+    "next": "Next",
+    "stop": "Stop",
+    "stopped": "Session stopped.",
+    "dismiss": "Dismiss",
+    "planGoal": "Plan a multi-step task for this request",
+    "startFailed": "Could not build a plan.",
+    "emptyPlan": "No actionable plan could be built.",
+    "confirmHint": "Confirm the write above to continue.",
+    "status": {
+      "planning": "Planning",
+      "awaiting_approval": "Awaiting approval",
+      "running": "Running",
+      "awaiting_confirm": "Awaiting write confirm",
+      "paused": "Paused",
+      "done": "Done",
+      "aborted": "Aborted",
+      "failed": "Failed"
+    },
+    "kind": {
+      "read": "Read",
+      "write": "Write",
+      "guidance": "Guidance",
+      "navigate": "Navigate",
+      "prefill": "Prefill",
+      "branch": "Branch"
+    }
+  },
   "canary": {
     "tab": "A/B Canary",
     "title": "A/B Canary (live)",

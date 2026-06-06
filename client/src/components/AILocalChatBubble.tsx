@@ -38,6 +38,21 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import Markdown from "react-markdown";
 import { AIToolResultCard, type ToolResultPayload } from "./AIToolResultCard";
+import {
+  AgentPlanCard,
+  type AgentPlanView,
+  type AgentSessionStatus,
+  type AgentStepResultView,
+} from "./AgentPlanCard";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ListChecks } from "lucide-react";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -134,6 +149,27 @@ interface PendingAction {
   expiresAt: string;
 }
 
+// G2.3c — agentic multi-step session state (FE flow control only). The plan +
+// step outcomes come from aiAgent.* router; this component NEVER executes a tool
+// and NEVER calls commandDispatcher. Each write step is confirmed individually
+// via the existing confirm card (which here calls aiAgent.confirmStep — the
+// orchestrator re-uses the CORE confirmAction/HITL and only then advances).
+interface AgentSessionState {
+  sessionId: string;
+  goal: string;
+  plan: AgentPlanView;
+  status: AgentSessionStatus;
+  cursor: number;
+  stepResults: AgentStepResultView[];
+  /** Pending write at the current step (awaiting_confirm) — drives the confirm card. */
+  pendingAction: PendingAction | null;
+  /** Backend-surfaced message (paused reason / empty-plan note). */
+  message: string | null;
+  /** Confirm-card UI state for the current pending write (mirrors chat pendingAction). */
+  actionState: "pending" | "executed" | "cancelled" | "denied" | "expired";
+  actionMessage: string | null;
+}
+
 // ─── Web Speech API types ─────────────────────────────────────────────────────
 
 interface SpeechRecognitionEvent extends Event {
@@ -197,6 +233,86 @@ function buildConversationHistory(messages: ChatMessage[]): ConversationTurn[] {
     .map((m) => ({ role: m.type === "user" ? "user" : "assistant", content: m.content }));
 }
 
+// ─── Reusable HITL write confirm card ─────────────────────────────────────────
+// Shared by the inline chat pending_action AND the agentic write step. Pure
+// presentation + Confirm/Cancel buttons; the parent owns the mutation.
+function ConfirmActionCard({
+  action,
+  state,
+  message,
+  busy,
+  onConfirm,
+  onCancel,
+  t,
+}: {
+  action: PendingAction;
+  state: ChatMessage["actionState"];
+  message?: string | null;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  t: (key: string, fallback: string) => string;
+}) {
+  return (
+    <div className="rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-2.5 space-y-2 text-[11px]">
+      <div className="flex items-center gap-1.5 font-semibold text-amber-800 dark:text-amber-300">
+        <AlertCircle className="size-3.5" />
+        {t("copilot.confirmTitle", "Xác nhận thao tác ghi")}
+      </div>
+      <p className="text-foreground/90">{action.summary}</p>
+      {action.preview.changes.length > 0 && (
+        <table className="w-full text-[10.5px] border-collapse">
+          <thead>
+            <tr className="text-muted-foreground">
+              <th className="text-left font-medium py-0.5">{t("copilot.field", "Trường")}</th>
+              <th className="text-left font-medium py-0.5">{t("copilot.before", "Trước")}</th>
+              <th className="text-left font-medium py-0.5">{t("copilot.after", "Sau")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {action.preview.changes.map((c, i) => (
+              <tr key={i} className="border-t border-amber-200/60 dark:border-amber-900/40">
+                <td className="py-0.5 pr-1.5 font-medium">{c.displayName ?? c.field}</td>
+                <td className="py-0.5 pr-1.5 text-muted-foreground">{c.oldValue === null || c.oldValue === undefined ? "—" : String(c.oldValue)}</td>
+                <td className="py-0.5 text-foreground">{c.newValue === null || c.newValue === undefined ? "—" : String(c.newValue)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {action.preview.warnings.length > 0 && (
+        <ul className="list-disc list-inside text-red-600 dark:text-red-400 space-y-0.5">
+          {action.preview.warnings.map((w, i) => (
+            <li key={i}>{w}</li>
+          ))}
+        </ul>
+      )}
+      {state === "pending" ? (
+        <div className="flex items-center gap-2 pt-0.5">
+          <Button size="sm" className="h-6 px-2.5 text-[11px]" disabled={busy} onClick={onConfirm}>
+            {t("copilot.confirm", "Xác nhận")}
+          </Button>
+          <Button size="sm" variant="outline" className="h-6 px-2.5 text-[11px]" disabled={busy} onClick={onCancel}>
+            {t("copilot.cancel", "Hủy")}
+          </Button>
+        </div>
+      ) : (
+        <div
+          className={cn(
+            "text-[11px] font-medium",
+            state === "executed" ? "text-green-600 dark:text-green-400" : "text-muted-foreground",
+          )}
+        >
+          {state === "executed" && t("copilot.executed", "Đã thực thi.")}
+          {state === "cancelled" && t("copilot.cancelled", "Đã hủy.")}
+          {state === "denied" && (message ?? t("copilot.denied", "Không có quyền."))}
+          {state === "expired" && t("copilot.expired", "Đã hết hạn.")}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function AILocalChatBubble() {
@@ -231,6 +347,28 @@ export function AILocalChatBubble() {
   // GĐ2 — HITL write-action confirm/cancel.
   const confirmActionMutation = trpc.aiCopilot.confirmAction.useMutation();
   const cancelActionMutation = trpc.aiCopilot.cancelAction.useMutation();
+
+  // ── G2.3c — agentic multi-step (FE flow control only) ───────────────────────
+  const [agentSession, setAgentSession] = useState<AgentSessionState | null>(null);
+  const utils = trpc.useUtils();
+  const startSessionMutation = trpc.aiAgent.startSession.useMutation();
+  const approvePlanMutation = trpc.aiAgent.approvePlan.useMutation();
+  const confirmStepMutation = trpc.aiAgent.confirmStep.useMutation();
+  const cancelSessionMutation = trpc.aiAgent.cancelSession.useMutation();
+  const startPlaybookMutation = trpc.aiAgent.startPlaybook.useMutation();
+  // Gate: empty/disabled for non-agentic roles → no agentic UI shown.
+  const { data: playbooksData } = trpc.aiAgent.listPlaybooks.useQuery(undefined, {
+    enabled: !!user,
+    staleTime: 5 * 60 * 1000,
+  });
+  const agenticEnabled = playbooksData?.enabled === true;
+  const playbooks = playbooksData?.playbooks ?? [];
+  const agentBusy =
+    startSessionMutation.isPending ||
+    approvePlanMutation.isPending ||
+    confirmStepMutation.isPending ||
+    cancelSessionMutation.isPending ||
+    startPlaybookMutation.isPending;
 
   const isReady = health?.ready || false;
   const quickQuestions = QUICK_QUESTIONS;
@@ -601,6 +739,183 @@ export function AILocalChatBubble() {
     [cancelActionMutation, t],
   );
 
+  // ─── G2.3c — agentic plan flow (start / approve / confirm-step / cancel) ───────
+  // Authoritative state always comes from getSession; the pending write at the
+  // current step is derived from the last awaiting_confirm step result's payload
+  // (which IS the proposeAction DTO — same shape as the chat confirm card).
+  const derivePending = useCallback(
+    (status: AgentSessionStatus, stepResults: AgentStepResultView[]): PendingAction | null => {
+      if (status !== "awaiting_confirm") return null;
+      const last = stepResults[stepResults.length - 1];
+      if (!last || last.status !== "awaiting_confirm") return null;
+      const payload = (last as any).payload as PendingAction | undefined;
+      return payload ?? null;
+    },
+    [],
+  );
+
+  // Refresh the agentic session from the server (cursor/status/stepResults +
+  // derived pending write). Also fires navigate/prefill directives for any
+  // newly-completed client step.
+  const refreshAgentSession = useCallback(
+    async (sessionId: string, prevDoneCount = 0) => {
+      const lang = (i18n.language as "vi" | "en" | "zh") ?? "vi";
+      const row = await utils.aiAgent.getSession.fetch({ sessionId });
+      if (!row) {
+        setAgentSession(null);
+        return;
+      }
+      const status = row.status as AgentSessionStatus;
+      const plan = (row.plan ?? { steps: [] }) as AgentPlanView;
+      const stepResults = (row.stepResults ?? []) as unknown as AgentStepResultView[];
+
+      // Execute client directives (navigate / prefill) for newly-completed steps.
+      const completedClient = stepResults.filter(
+        (r) => (r.kind === "navigate" || r.kind === "prefill") && r.status === "done",
+      );
+      for (const r of completedClient.slice(prevDoneCount)) {
+        const directive = (r as any).payload as
+          | { action?: string; route?: string; values?: Record<string, unknown> }
+          | undefined;
+        if (directive?.route) {
+          if (directive.action === "prefill_form" && directive.values) {
+            publishPrefill(directive.route, directive.values);
+          }
+          setLocation(directive.route);
+        }
+      }
+
+      setAgentSession({
+        sessionId,
+        goal: row.goal,
+        plan,
+        status,
+        cursor: row.cursor,
+        stepResults,
+        pendingAction: derivePending(status, stepResults),
+        message: null,
+        actionState: "pending",
+        actionMessage: null,
+      });
+      void lang;
+    },
+    [utils, i18n.language, publishPrefill, setLocation, derivePending],
+  );
+
+  const handleStartAgentSession = useCallback(
+    async (goal: string) => {
+      if (!agenticEnabled || agentBusy) return;
+      const trimmed = goal.trim();
+      if (!trimmed) return;
+      try {
+        const res = await startSessionMutation.mutateAsync({
+          goal: trimmed,
+          lang: (i18n.language as "vi" | "en" | "zh") ?? "vi",
+        });
+        if (!res.ok || res.enabled === false || !res.sessionId) {
+          if (res.enabled === false) return; // gated — stay silent, normal chat still works
+          toast.error(res.message ?? t("agent.startFailed", "Không thể lập kế hoạch."));
+          return;
+        }
+        setAgentSession({
+          sessionId: res.sessionId,
+          goal: trimmed,
+          plan: (res.plan ?? { steps: [] }) as AgentPlanView,
+          status: (res.status ?? "awaiting_approval") as AgentSessionStatus,
+          cursor: 0,
+          stepResults: [],
+          pendingAction: null,
+          message: res.message ?? null,
+          actionState: "pending",
+          actionMessage: null,
+        });
+      } catch {
+        toast.error(t("agent.startFailed", "Không thể lập kế hoạch."));
+      }
+    },
+    [agenticEnabled, agentBusy, startSessionMutation, i18n.language, t],
+  );
+
+  const handleStartPlaybook = useCallback(
+    async (playbookId: string) => {
+      if (!agenticEnabled || agentBusy) return;
+      try {
+        const res = await startPlaybookMutation.mutateAsync({
+          playbookId,
+          lang: (i18n.language as "vi" | "en" | "zh") ?? "vi",
+        });
+        if (!res.ok || res.enabled === false || !res.sessionId) {
+          if (res.enabled === false) return;
+          toast.error(res.message ?? t("agent.startFailed", "Không thể bắt đầu playbook."));
+          return;
+        }
+        setAgentSession({
+          sessionId: res.sessionId,
+          goal: res.plan?.summary ?? playbookId,
+          plan: (res.plan ?? { steps: [] }) as AgentPlanView,
+          status: (res.status ?? "awaiting_approval") as AgentSessionStatus,
+          cursor: 0,
+          stepResults: [],
+          pendingAction: null,
+          message: res.message ?? null,
+          actionState: "pending",
+          actionMessage: null,
+        });
+      } catch {
+        toast.error(t("agent.startFailed", "Không thể bắt đầu playbook."));
+      }
+    },
+    [agenticEnabled, agentBusy, startPlaybookMutation, i18n.language, t],
+  );
+
+  const handleApprovePlan = useCallback(async () => {
+    if (!agentSession || agentBusy) return;
+    try {
+      const res = await approvePlanMutation.mutateAsync({ sessionId: agentSession.sessionId });
+      await refreshAgentSession(agentSession.sessionId, agentSession.stepResults.length);
+      if (!res.ok && res.message) {
+        setAgentSession((s) => (s ? { ...s, message: res.message ?? null } : s));
+      }
+    } catch {
+      toast.error(t("agent.startFailed", "Không thể bắt đầu."));
+    }
+  }, [agentSession, agentBusy, approvePlanMutation, refreshAgentSession, t]);
+
+  // Confirm the pending WRITE at the current step. confirmStep calls the CORE
+  // confirmAction (HITL) server-side, then advances — we never execute the tool.
+  const handleAgentConfirmStep = useCallback(async () => {
+    if (!agentSession || agentBusy) return;
+    const pa = agentSession.pendingAction;
+    if (!pa || agentSession.status !== "awaiting_confirm") return;
+    try {
+      const res = await confirmStepMutation.mutateAsync({
+        sessionId: agentSession.sessionId,
+        actionId: pa.actionId,
+        token: pa.token,
+      });
+      const prevDone = agentSession.stepResults.filter(
+        (r) => (r.kind === "navigate" || r.kind === "prefill") && r.status === "done",
+      ).length;
+      await refreshAgentSession(agentSession.sessionId, prevDone);
+      if (res.ok) toast.success(t("copilot.executed", "Đã thực thi."));
+      else toast.error(res.message ?? t("copilot.failed", "Không thể thực thi."));
+    } catch {
+      toast.error(t("copilot.failed", "Không thể thực thi."));
+    }
+  }, [agentSession, agentBusy, confirmStepMutation, refreshAgentSession, t]);
+
+  // Cancel the whole session (also cancels any pending proposed write server-side).
+  const handleCancelAgentSession = useCallback(async () => {
+    if (!agentSession) return;
+    try {
+      await cancelSessionMutation.mutateAsync({ sessionId: agentSession.sessionId });
+      setAgentSession((s) => (s ? { ...s, status: "aborted", pendingAction: null } : s));
+      toast.success(t("agent.stopped", "Đã dừng phiên."));
+    } catch {
+      toast.error(t("copilot.failed", "Không thể dừng."));
+    }
+  }, [agentSession, cancelSessionMutation, t]);
+
   // ─── Clear history ────────────────────────────────────────────────────────────
   const handleClearHistory = useCallback(() => {
     setMessages([]);
@@ -661,6 +976,43 @@ export function AILocalChatBubble() {
               </div>
             </div>
             <div className="flex items-center gap-0.5 shrink-0">
+              {/* G2.3c — Playbook picker (only for agentic roles). */}
+              {agenticEnabled && playbooks.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                      title={t("agent.playbooks", "Playbook")}
+                      disabled={agentBusy || !!agentSession}
+                    >
+                      <ListChecks className="size-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="max-w-72">
+                    <DropdownMenuLabel>{t("agent.playbooks", "Playbook")}</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {playbooks.map((pb) => {
+                      const title =
+                        pb.title?.[(i18n.language as "vi" | "en" | "zh")] ?? pb.title?.vi ?? pb.id;
+                      return (
+                        <DropdownMenuItem
+                          key={pb.id}
+                          onClick={() => handleStartPlaybook(pb.id)}
+                          className="flex-col items-start gap-0.5"
+                        >
+                          <span className="text-xs font-medium">{title}</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {pb.stepCount} {t("agent.stepsLabel", "bước")}
+                            {pb.category ? ` · ${pb.category}` : ""}
+                          </span>
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
               <Button
                 size="icon"
                 variant="ghost"
@@ -753,73 +1105,15 @@ export function AILocalChatBubble() {
                             <>
                               {msg.toolResult && <AIToolResultCard toolResult={msg.toolResult} />}
                               {msg.pendingAction && (
-                                <div className="rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-2.5 space-y-2 text-[11px]">
-                                  <div className="flex items-center gap-1.5 font-semibold text-amber-800 dark:text-amber-300">
-                                    <AlertCircle className="size-3.5" />
-                                    {t("copilot.confirmTitle", "Xác nhận thao tác ghi")}
-                                  </div>
-                                  <p className="text-foreground/90">{msg.pendingAction.summary}</p>
-                                  {msg.pendingAction.preview.changes.length > 0 && (
-                                    <table className="w-full text-[10.5px] border-collapse">
-                                      <thead>
-                                        <tr className="text-muted-foreground">
-                                          <th className="text-left font-medium py-0.5">{t("copilot.field", "Trường")}</th>
-                                          <th className="text-left font-medium py-0.5">{t("copilot.before", "Trước")}</th>
-                                          <th className="text-left font-medium py-0.5">{t("copilot.after", "Sau")}</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {msg.pendingAction.preview.changes.map((c, i) => (
-                                          <tr key={i} className="border-t border-amber-200/60 dark:border-amber-900/40">
-                                            <td className="py-0.5 pr-1.5 font-medium">{c.displayName ?? c.field}</td>
-                                            <td className="py-0.5 pr-1.5 text-muted-foreground">{c.oldValue === null || c.oldValue === undefined ? "—" : String(c.oldValue)}</td>
-                                            <td className="py-0.5 text-foreground">{c.newValue === null || c.newValue === undefined ? "—" : String(c.newValue)}</td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  )}
-                                  {msg.pendingAction.preview.warnings.length > 0 && (
-                                    <ul className="list-disc list-inside text-red-600 dark:text-red-400 space-y-0.5">
-                                      {msg.pendingAction.preview.warnings.map((w, i) => (
-                                        <li key={i}>{w}</li>
-                                      ))}
-                                    </ul>
-                                  )}
-                                  {msg.actionState === "pending" ? (
-                                    <div className="flex items-center gap-2 pt-0.5">
-                                      <Button
-                                        size="sm"
-                                        className="h-6 px-2.5 text-[11px]"
-                                        disabled={confirmActionMutation.isPending}
-                                        onClick={() => handleConfirmAction(msg)}
-                                      >
-                                        {t("copilot.confirm", "Xác nhận")}
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="h-6 px-2.5 text-[11px]"
-                                        disabled={cancelActionMutation.isPending}
-                                        onClick={() => handleCancelAction(msg)}
-                                      >
-                                        {t("copilot.cancel", "Hủy")}
-                                      </Button>
-                                    </div>
-                                  ) : (
-                                    <div
-                                      className={cn(
-                                        "text-[11px] font-medium",
-                                        msg.actionState === "executed" ? "text-green-600 dark:text-green-400" : "text-muted-foreground",
-                                      )}
-                                    >
-                                      {msg.actionState === "executed" && (t("copilot.executed", "Đã thực thi."))}
-                                      {msg.actionState === "cancelled" && (t("copilot.cancelled", "Đã hủy."))}
-                                      {msg.actionState === "denied" && (msg.actionMessage ?? t("copilot.denied", "Không có quyền."))}
-                                      {msg.actionState === "expired" && (t("copilot.expired", "Đã hết hạn."))}
-                                    </div>
-                                  )}
-                                </div>
+                                <ConfirmActionCard
+                                  action={msg.pendingAction}
+                                  state={msg.actionState}
+                                  message={msg.actionMessage}
+                                  busy={confirmActionMutation.isPending || cancelActionMutation.isPending}
+                                  onConfirm={() => handleConfirmAction(msg)}
+                                  onCancel={() => handleCancelAction(msg)}
+                                  t={t}
+                                />
                               )}
                               <div className="prose prose-xs dark:prose-invert max-w-none text-xs leading-relaxed">
                                 <Markdown>{msg.content}</Markdown>
@@ -950,6 +1244,50 @@ export function AILocalChatBubble() {
             )}
           </div>
 
+          {/* G2.3c — agentic plan panel (only for agentic roles, when a session exists) */}
+          {agenticEnabled && agentSession && (
+            <div className="px-3 pb-2 shrink-0 border-t pt-2 max-h-64 overflow-y-auto">
+              <AgentPlanCard
+                goal={agentSession.goal}
+                plan={agentSession.plan}
+                status={agentSession.status}
+                cursor={agentSession.cursor}
+                stepResults={agentSession.stepResults}
+                busy={agentBusy}
+                message={agentSession.message}
+                onApprove={handleApprovePlan}
+                onCancel={handleCancelAgentSession}
+                confirmCard={
+                  agentSession.pendingAction ? (
+                    <ConfirmActionCard
+                      action={agentSession.pendingAction}
+                      state={agentSession.actionState}
+                      message={agentSession.actionMessage}
+                      busy={agentBusy}
+                      onConfirm={handleAgentConfirmStep}
+                      onCancel={handleCancelAgentSession}
+                      t={t}
+                    />
+                  ) : null
+                }
+              />
+              {(agentSession.status === "done" ||
+                agentSession.status === "aborted" ||
+                agentSession.status === "failed") && (
+                <div className="flex justify-end pt-1.5">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-[11px] text-muted-foreground"
+                    onClick={() => setAgentSession(null)}
+                  >
+                    {t("agent.dismiss", "Đóng")}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Quick chips */}
           {messages.length > 0 && !isStreaming && (
             <div className="px-3 pb-1 shrink-0">
@@ -999,6 +1337,19 @@ export function AILocalChatBubble() {
                 className="flex-1 min-h-9 max-h-24 resize-none border-0 focus-visible:ring-0 p-0 text-sm"
                 rows={1}
               />
+              {/* G2.3c — start an agentic plan from the typed goal (agentic roles only) */}
+              {agenticEnabled && !agentSession && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="shrink-0 h-8 w-8 rounded-lg text-primary"
+                  onClick={() => handleStartAgentSession(question)}
+                  disabled={!isReady || isStreaming || agentBusy || !question.trim()}
+                  title={t("agent.planGoal", "Lập kế hoạch nhiều bước cho yêu cầu này")}
+                >
+                  {agentBusy ? <Loader2 className="size-3.5 animate-spin" /> : <ListChecks className="size-3.5" />}
+                </Button>
+              )}
               {/* Voice button */}
               <Button
                 size="icon"

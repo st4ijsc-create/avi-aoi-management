@@ -12,6 +12,38 @@
     "expired": "Đề xuất đã hết hạn.",
     "failed": "Không thể thực thi."
   },
+  "agent": {
+    "playbooks": "Playbook",
+    "stepsLabel": "bước",
+    "step": "Bước",
+    "start": "Bắt đầu",
+    "next": "Tiếp",
+    "stop": "Dừng",
+    "stopped": "Đã dừng phiên.",
+    "dismiss": "Đóng",
+    "planGoal": "Lập kế hoạch nhiều bước cho yêu cầu này",
+    "startFailed": "Không thể lập kế hoạch.",
+    "emptyPlan": "Chưa lập được kế hoạch khả thi.",
+    "confirmHint": "Xác nhận thao tác ghi ở trên để tiếp tục.",
+    "status": {
+      "planning": "Đang lập kế hoạch",
+      "awaiting_approval": "Chờ duyệt",
+      "running": "Đang chạy",
+      "awaiting_confirm": "Chờ xác nhận ghi",
+      "paused": "Tạm dừng",
+      "done": "Hoàn tất",
+      "aborted": "Đã huỷ",
+      "failed": "Thất bại"
+    },
+    "kind": {
+      "read": "Đọc",
+      "write": "Ghi",
+      "guidance": "Hướng dẫn",
+      "navigate": "Điều hướng",
+      "prefill": "Điền sẵn",
+      "branch": "Rẽ nhánh"
+    }
+  },
   "canary": {
     "tab": "A/B Canary",
     "title": "A/B Canary (trực tiếp)",
