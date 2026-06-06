@@ -509,6 +509,52 @@ export const productionOrderRouter = router({
       return { runId: id, ...result, kpiSummary: payload.kpiSummary, aiExplanation };
     }),
 
+  // G2.5a: Generate a DRAFT APS schedule run via CP-SAT (OR-Tools) with a
+  // heuristic fallback. DRAFT-only — apply still goes through applyScheduleRun
+  // (HITL). The solver is OFF by default (APS_SOLVER_ENABLED).
+  generateApsScheduleRun: adminProcedure
+    .input(z.object({
+      factoryId: z.number().optional(),
+      lineId: z.number().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { generateApsSchedule } = await import("../services/apsService");
+      const { solverMode, payload, baseline, algorithm } = await generateApsSchedule({
+        factoryId: input.factoryId,
+        lineId: input.lineId,
+      });
+
+      const { id } = await db.createScheduleRun(
+        {
+          factoryId: input.factoryId ?? null,
+          lineId: input.lineId ?? null,
+          algorithm,
+          status: "DRAFT",
+          kpiSummary: payload.kpiSummary,
+          conflictCount: payload.conflictCount,
+          createdBy: ctx.user.id,
+        },
+        payload.items.map((it) => ({
+          productionOrderId: it.productionOrderId,
+          lineId: it.lineId,
+          suggestedStart: it.suggestedStart,
+          suggestedEnd: it.suggestedEnd,
+          reason: it.reason,
+          stationId: it.stationId,
+          setupMinutes: it.setupMinutes,
+          sequenceIndex: it.sequenceIndex,
+        })),
+      );
+
+      return {
+        runId: id,
+        solverMode,
+        algorithm,
+        kpiSummary: payload.kpiSummary,
+        baseline,
+      };
+    }),
+
   applyScheduleRun: adminProcedure
     .input(z.object({ runId: z.number() }))
     .mutation(async ({ input }) => {

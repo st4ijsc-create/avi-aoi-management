@@ -24,6 +24,13 @@ export const scheduleRuns = pgTable("schedule_runs", {
     makespanHours: number | null;
     avgUtilization: number | null;
     aiExplanation?: string | null;
+    // G2.5a APS additive (type-only): how the run was produced + solver objective.
+    solverMode?: "cpsat" | "fallback_heuristic";
+    objective?: {
+      makespanMin?: number | null;
+      totalTardinessMin?: number | null;
+      totalSetupMin?: number | null;
+    } | null;
   }>(),
   conflictCount: integer("conflictCount").default(0).notNull(),
   createdBy: integer("createdBy"),
@@ -51,6 +58,10 @@ export const scheduleRunItems = pgTable("schedule_run_items", {
   suggestedEnd: timestamp("suggestedEnd").notNull(),
   reason: text("reason"),
   applied: boolean("applied").default(false).notNull(),
+  // G2.5a APS additive (all nullable, backward-compatible with heuristic runs).
+  stationId: integer("stationId"),       // station/machine the op was placed on
+  setupMinutes: integer("setupMinutes"), // changeover minutes before this op
+  sequenceIndex: integer("sequenceIndex"), // ordering position on its station
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
   index("idx_schedule_run_items_run").on(table.runId),
@@ -60,6 +71,31 @@ export const scheduleRunItems = pgTable("schedule_run_items", {
 
 export type ScheduleRunItem = typeof scheduleRunItems.$inferSelect;
 export type InsertScheduleRunItem = typeof scheduleRunItems.$inferInsert;
+
+/**
+ * Machine Capacity — G2.5a APS resource model.
+ * Describes parallel capacity + default changeover per machine/station/line so
+ * the CP-SAT solver can model AddNoOverlap intervals. Additive, opt-in: when a
+ * line has no rows the solver falls back to single-capacity-per-station.
+ */
+export const machineCapacity = pgTable("machine_capacity", {
+  id: serial("id").primaryKey(),
+  lineId: integer("lineId").notNull(),
+  stationId: integer("stationId"),
+  machineId: integer("machineId"),
+  parallelCapacity: integer("parallelCapacity").default(1).notNull(),
+  changeoverDefaultMin: integer("changeoverDefaultMin").default(0).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_machine_capacity_line").on(table.lineId),
+  index("idx_machine_capacity_station").on(table.stationId),
+  index("idx_machine_capacity_machine").on(table.machineId),
+]);
+
+export type MachineCapacity = typeof machineCapacity.$inferSelect;
+export type InsertMachineCapacity = typeof machineCapacity.$inferInsert;
 
 /**
  * Machine Sensor Readings — optional, feature-flagged sensor stream (e.g. vibration).

@@ -11,6 +11,7 @@ import {
   productionLines,
   scheduleRuns, InsertScheduleRun,
   scheduleRunItems, InsertScheduleRunItem,
+  machineCapacity,
 } from "../../drizzle/schema";
 
 // ============ SHIFT CONFIG FUNCTIONS ============
@@ -668,6 +669,23 @@ export async function applyScheduleSuggestion(suggestion: ScheduleOptimizationRe
       status: 'pending',
     })
     .where(eq(productionOrders.id, suggestion.orderId));
+}
+
+// ============ G2.5a APS: machine capacity ============
+
+/**
+ * Read active machine-capacity rows (G2.5a APS resource model). Optional lineId
+ * filter. Returns [] when the DB is unavailable so the solver degrades to
+ * single-capacity-per-station.
+ */
+export async function getMachineCapacity(lineId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(machineCapacity.isActive, true)];
+  if (lineId) conditions.push(eq(machineCapacity.lineId, lineId));
+  return db.select().from(machineCapacity)
+    .where(and(...conditions))
+    .orderBy(machineCapacity.lineId, machineCapacity.stationId);
 }
 
 // ============ WS-4 SCHEDULE RUNS (audit + apply) ============

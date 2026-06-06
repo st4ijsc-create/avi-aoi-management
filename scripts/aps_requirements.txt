@@ -1,0 +1,3 @@
+# APS CP-SAT solver sidecar (G2.5a). Install into .venv:
+#   .venv\Scripts\pip install -r scripts/aps_requirements.txt
+ortools==9.15.6755
