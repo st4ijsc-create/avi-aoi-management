@@ -22,6 +22,12 @@ export interface ParsedS7Address {
   s7: string;
   /** Là địa chỉ bit (X / Mx.y) → true (đọc về boolean). */
   isBit: boolean;
+  /**
+   * G2.1 — vùng CHỈ ĐỌC trên PLC (process inputs): area I/E (digital inputs) và
+   * PI (peripheral inputs). writeTags với địa chỉ này → ok:false "register type
+   * not writable" (không gửi xuống thiết bị). DB/M/Q/A/PQ là ghi được.
+   */
+  isReadOnly: boolean;
 }
 
 // Các tiền tố TYPE NodeS7 hợp lệ trong data block.
@@ -53,7 +59,8 @@ export function parseS7Address(address: string): ParsedS7Address {
     if (isBit && db[4] === undefined) {
       throw new Error(`S7 DB bit address requires .<bit>: ${address}`);
     }
-    return { s7: up, isBit };
+    // Data blocks are always writable.
+    return { s7: up, isBit, isReadOnly: false };
   }
 
   // Memory/IO/PI/PQ: <AREA><MODIFIER?><offset>[.<bit>]
@@ -61,12 +68,15 @@ export function parseS7Address(address: string): ParsedS7Address {
   //   MODIFIER: X bit, B byte, W word, D dword, R real, none = bit nếu có .bit
   const mem = up.match(/^([MIEQAT C]|PI|PQ)([XBWDR]?)(\d+)(?:\.(\d+))?$/);
   if (mem) {
+    const area = mem[1];
     const modifier = mem[2];
     const hasBit = mem[4] !== undefined;
     // Bit khi: có chỉ định bit (.y) và không phải word/dword/real
     const isBit =
       (modifier === "X") || (modifier === "" && hasBit);
-    return { s7: up, isBit };
+    // Process INPUTS là read-only: I/E (digital input), PI (peripheral input).
+    const isReadOnly = area === "I" || area === "E" || area === "PI";
+    return { s7: up, isBit, isReadOnly };
   }
 
   throw new Error(`invalid S7 address: ${address}`);

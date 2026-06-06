@@ -11,7 +11,10 @@
  * - readTags: newTag theo parseEipTag (name+program), readTag từng tag, coerceEipValue,
  *   áp scale/offset Ở DRIVER. Lỗi 1 tag → quality:"bad" (không sập batch).
  * - subscribe: POLL setInterval; unref; close()=clearInterval.
- * - writeTags: VẪN CHẶN (ok:false "write via HITL only (F4)").
+ * - writeTags (F4b/G2.1): GHI THẬT — per-tag tuần tự. parseEipTag→newTag→inverse
+ *   scale/offset+coerce→set tag.value→await PLC.writeTag(tag) (withTimeout). Lỗi 1
+ *   tag → ok:false cô lập (không kéo sập batch). EIP không cần isReadOnly — gate
+ *   ghi nằm ở deviceTags.writable (commandDispatcher). ⚠️ chỉ commandDispatcher gọi.
  * - disconnect: PLC.disconnect().
  *
  * packageName = "st-ethernet-ip" (lib pure-JS, feature-complete cho ControlLogix/CompactLogix;
@@ -31,6 +34,23 @@ import type {
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseEipTag, coerceEipValue } from "./eipTag";
+import { inverseScale } from "./otScale";
+
+/** Ép raw (đã inverse scale) sang kiểu st-ethernet-ip chấp nhận theo dataType. */
+function coerceEipWrite(raw: unknown, dataType: string): number | boolean | string {
+  switch (dataType) {
+    case "bool":
+      return Boolean(raw);
+    case "int":
+      return Math.round(Number(raw));
+    case "float":
+      return Number(raw);
+    case "string":
+    case "json":
+    default:
+      return String(raw);
+  }
+}
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
@@ -201,13 +221,46 @@ export class EthernetIpDriver extends NotImplementedDriver {
     };
   }
 
-  // F4b: ethernet-ip GIỮ ok:false — capability ghi bật dần ở sprint sau.
+  /** Ghi một write; trả OtCommandResult (không throw). */
+  private async writeOne(w: OtWrite): Promise<OtCommandResult> {
+    try {
+      const { name, program } = parseEipTag(w.address);
+      const dataType = w.dataType ?? "float";
+      const raw = inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0);
+      const value = coerceEipWrite(raw, dataType);
+
+      const eipTag = this.plc.newTag(name, program ?? null);
+      // st-ethernet-ip: set tag.value rồi await PLC.writeTag(tag).
+      eipTag.value = value;
+      await withTimeout(this.plc.writeTag(eipTag, value), 5000, "eip writeTag");
+
+      this.lastOkAt = new Date();
+      return { tagKey: w.tagKey, ok: true };
+    } catch (err) {
+      const msg = (err as Error)?.message || String(err);
+      this.lastError = msg;
+      return { tagKey: w.tagKey, ok: false, error: msg };
+    }
+  }
+
+  /**
+   * ⚠️ ONLY commandDispatcher may call this — write reaches physical device.
+   *
+   * Ghi giá trị xuống PLC EtherNet/IP. Reachable CHỈ qua HITL execute() →
+   * dispatch(). Ghi TUẦN TỰ per-tag: parseEipTag→newTag→inverse scale/offset+
+   * coerce→await writeTag. Lỗi 1 tag được cô lập (ok:false), không kéo sập batch.
+   */
   override async writeTags(writes: OtWrite[]): Promise<OtCommandResult[]> {
-    return writes.map((w) => ({
-      tagKey: w.tagKey,
-      ok: false,
-      error: "write via HITL only (F4)",
-    }));
+    if (!this.connected || !this.plc) {
+      throw new Error("EthernetIpDriver: not connected");
+    }
+    if (writes.length === 0) return [];
+
+    const out: OtCommandResult[] = [];
+    for (const w of writes) {
+      out.push(await this.writeOne(w));
+    }
+    return out;
   }
 
   override async health(): Promise<OtHealth> {

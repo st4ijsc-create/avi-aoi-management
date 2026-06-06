@@ -24,6 +24,10 @@ describe("S7Driver (mocked nodes7)", () => {
       readAllItems: vi.fn((cb: (bad: boolean, vals: Record<string, unknown>) => void) =>
         cb(false, values),
       ),
+      writeItems: vi.fn((_k: string[], _v: unknown[], cb: (bad: boolean) => void) => {
+        cb(false);
+        return 0;
+      }),
       dropConnection: vi.fn((cb: () => void) => cb()),
       ...overrides,
     };
@@ -34,7 +38,7 @@ describe("S7Driver (mocked nodes7)", () => {
     return conn;
   }
 
-  it("connect → readTags decode + scale/offset; writeTags ok:false; disconnect", async () => {
+  it("connect → readTags decode + scale/offset; disconnect", async () => {
     mockNodeS7({ temp: 2, run: true });
     const { S7Driver } = await import("./s7Driver");
     const d = new S7Driver();
@@ -49,12 +53,93 @@ describe("S7Driver (mocked nodes7)", () => {
     const run = samples.find((s) => s.tagKey === "run")!;
     expect(run.value).toBe(true);
 
-    const w = await d.writeTags([{ tagKey: "run", address: "M0.0", value: true }]);
-    expect(w[0].ok).toBe(false);
-    expect(w[0].error).toMatch(/HITL only \(F4\)/);
-
     await d.disconnect();
     expect(d.isConnected()).toBe(false);
+  });
+
+  it("writeTags GHI THẬT: ok + inverse scale (scale2 offset10 value110→raw50) + bool", async () => {
+    const conn = mockNodeS7({});
+    const { S7Driver } = await import("./s7Driver");
+    const d = new S7Driver();
+    await d.connect({ endpoint: "127.0.0.1" });
+
+    const res = await d.writeTags([
+      { tagKey: "sp", address: "DB1,INT12", value: 110, dataType: "int", scale: 2, offset: 10 },
+      { tagKey: "run", address: "M0.0", value: true, dataType: "bool" },
+    ]);
+    expect(res.every((r) => r.ok)).toBe(true);
+    expect(conn.writeItems).toHaveBeenCalledTimes(1);
+    const [keys, values] = conn.writeItems.mock.calls[0];
+    expect(keys).toEqual(["sp", "run"]);
+    expect(values[0]).toBe(50); // (110-10)/2
+    expect(values[1]).toBe(true);
+  });
+
+  it("writeTags read-only area (I0.0) → ok:false 'register type not writable', writeItems NOT called", async () => {
+    const conn = mockNodeS7({});
+    const { S7Driver } = await import("./s7Driver");
+    const d = new S7Driver();
+    await d.connect({ endpoint: "127.0.0.1" });
+
+    const res = await d.writeTags([{ tagKey: "in", address: "I0.0", value: true, dataType: "bool" }]);
+    expect(res[0].ok).toBe(false);
+    expect(res[0].error).toMatch(/not writable/);
+    expect(conn.writeItems).not.toHaveBeenCalled();
+  });
+
+  it("writeTags parse fail isolate (1 sai 1 đúng)", async () => {
+    const conn = mockNodeS7({}, {
+      writeItems: vi.fn((_k: string[], _v: unknown[], cb: (bad: boolean) => void) => {
+        cb(false);
+        return 0;
+      }),
+    });
+    const { S7Driver } = await import("./s7Driver");
+    const d = new S7Driver();
+    await d.connect({ endpoint: "127.0.0.1" });
+
+    const res = await d.writeTags([
+      { tagKey: "bad", address: "??invalid??", value: 1, dataType: "int" },
+      { tagKey: "ok", address: "DB1,INT0", value: 5, dataType: "int" },
+    ]);
+    expect(res.find((r) => r.tagKey === "bad")!.ok).toBe(false);
+    expect(res.find((r) => r.tagKey === "ok")!.ok).toBe(true);
+    const keys = conn.writeItems.mock.calls[0][0];
+    expect(keys).toEqual(["ok"]); // chỉ write tag hợp lệ
+  });
+
+  it("writeTags busy (writeItems trả 1) → ok:false 'S7 write busy'", async () => {
+    mockNodeS7({}, {
+      writeItems: vi.fn((_k: string[], _v: unknown[], _cb: (bad: boolean) => void) => 1),
+    });
+    const { S7Driver } = await import("./s7Driver");
+    const d = new S7Driver();
+    await d.connect({ endpoint: "127.0.0.1" });
+    const res = await d.writeTags([{ tagKey: "sp", address: "DB1,INT0", value: 1, dataType: "int" }]);
+    expect(res[0].ok).toBe(false);
+    expect(res[0].error).toMatch(/busy/i);
+  });
+
+  it("writeTags bad quality (cb(true)) → ok:false 'bad write quality'", async () => {
+    mockNodeS7({}, {
+      writeItems: vi.fn((_k: string[], _v: unknown[], cb: (bad: boolean) => void) => {
+        cb(true);
+        return 0;
+      }),
+    });
+    const { S7Driver } = await import("./s7Driver");
+    const d = new S7Driver();
+    await d.connect({ endpoint: "127.0.0.1" });
+    const res = await d.writeTags([{ tagKey: "sp", address: "DB1,INT0", value: 1, dataType: "int" }]);
+    expect(res[0].ok).toBe(false);
+    expect(res[0].error).toMatch(/bad write quality/);
+  });
+
+  it("writeTags throws when not connected", async () => {
+    mockNodeS7({});
+    const { S7Driver } = await import("./s7Driver");
+    const d = new S7Driver();
+    await expect(d.writeTags([{ tagKey: "sp", address: "DB1,INT0", value: 1 }])).rejects.toThrow(/not connected/);
   });
 
   it("BAD value (null) → quality bad", async () => {

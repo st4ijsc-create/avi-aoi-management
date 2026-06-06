@@ -22,7 +22,15 @@ export interface ParsedMcAddress {
   device: string;
   /** Là địa chỉ bit → true (đọc về boolean). */
   isBit: boolean;
+  /**
+   * G2.1 — device CHỈ ĐỌC: X (input relay) và DX (direct input). writeTags với
+   * device này → ok:false "register type not writable" (không gửi xuống thiết bị).
+   */
+  isReadOnly: boolean;
 }
+
+// Device CHỈ ĐỌC (input) — không cho ghi.
+const READ_ONLY_DEVICES = new Set(["X", "DX"]);
 
 // Device kiểu BIT trong MELSEC (đọc về boolean).
 const BIT_DEVICES = new Set(["M", "X", "Y", "B", "S", "L", "F", "SM", "SB", "DX", "DY", "V"]);
@@ -52,12 +60,13 @@ export function parseMcAddress(address: string): ParsedMcAddress {
   const device = m[1];
   const hasBit = m[3] !== undefined;
 
+  const isReadOnly = READ_ONLY_DEVICES.has(device);
   if (BIT_DEVICES.has(device)) {
-    return { mc: up, device, isBit: true };
+    return { mc: up, device, isBit: true, isReadOnly };
   }
   if (WORD_DEVICES.has(device)) {
     // ".bit" trên word device (vd D6000.1) → đọc bit đơn
-    return { mc: up, device, isBit: hasBit };
+    return { mc: up, device, isBit: hasBit, isReadOnly };
   }
 
   throw new Error(`unknown MC device: ${device} (in ${address})`);

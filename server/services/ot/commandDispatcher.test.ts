@@ -95,9 +95,19 @@ vi.mock("../auditTrailService", () => ({
 
 // Active driver registry (otManager accessor mocked).
 const writeTagsSpy = vi.fn(async (writes: any[]) => writes.map((w) => ({ tagKey: w.tagKey, ok: true })));
+// G2.1 read-back: default echoes the REQUESTED value back (→ verified) — tests override.
+const readTagsSpy = vi.fn(async (tags: any[]) =>
+  tags.map((t) => ({ tagKey: t.tagKey, raw: null, value: lastWriteValueByKey.get(t.tagKey) ?? null, quality: "good", timestamp: new Date() })),
+);
+// Capture what was requested so the default readTags can echo it back.
+const lastWriteValueByKey = new Map<string, unknown>();
+writeTagsSpy.mockImplementation(async (writes: any[]) => {
+  for (const w of writes) lastWriteValueByKey.set(w.tagKey, w.value);
+  return writes.map((w) => ({ tagKey: w.tagKey, ok: true }));
+});
 let driverConnected = true;
 vi.mock("./otManager", () => ({
-  getActiveDriver: vi.fn((_id: number) => (driverConnected ? { isConnected: () => true, writeTags: (...a: any[]) => (writeTagsSpy as any)(...a) } : undefined)),
+  getActiveDriver: vi.fn((_id: number) => (driverConnected ? { isConnected: () => true, writeTags: (...a: any[]) => (writeTagsSpy as any)(...a), readTags: (...a: any[]) => (readTagsSpy as any)(...a) } : undefined)),
 }));
 
 import { dispatch } from "./commandDispatcher";
@@ -116,8 +126,19 @@ const baseInput = (over: Partial<Parameters<typeof dispatch>[0]> = {}) => ({
 beforeEach(() => {
   reset();
   vi.clearAllMocks();
+  lastWriteValueByKey.clear();
   driverConnected = true;
   process.env.OT_CONTROL_ENABLED = "false";
+  delete process.env.OT_READBACK_ENABLED;
+  delete process.env.OT_READBACK_FLOAT_TOLERANCE;
+  // restore default writeTags impl after clearAllMocks wiped it.
+  writeTagsSpy.mockImplementation(async (writes: any[]) => {
+    for (const w of writes) lastWriteValueByKey.set(w.tagKey, w.value);
+    return writes.map((w) => ({ tagKey: w.tagKey, ok: true }));
+  });
+  readTagsSpy.mockImplementation(async (tags: any[]) =>
+    tags.map((t) => ({ tagKey: t.tagKey, raw: null, value: lastWriteValueByKey.get(t.tagKey) ?? null, quality: "good", timestamp: new Date() })),
+  );
   // default: enabled adapter + writable tag + confirmed action
   adapters.push({ id: 10, machineId: 5, code: "A10", isEnabled: true });
   tags.push({ id: 100, adapterId: 10, tagKey: "cmd_start", address: "ns=1;s=Start", dataType: "bool", scale: "1", offset: "0", writable: true, isEnabled: true });
@@ -264,5 +285,89 @@ describe("commandDispatcher — F4b real write (OT_CONTROL_ENABLED=true)", () =>
     expect(sent[0].dataType).toBe("float");
     expect(sent[0].scale).toBe(10);
     expect(sent[0].offset).toBe(1);
+  });
+});
+
+describe("commandDispatcher — G2.1 read-back ack (OT_CONTROL_ENABLED+OT_READBACK_ENABLED)", () => {
+  beforeEach(() => {
+    process.env.OT_CONTROL_ENABLED = "true";
+    process.env.OT_READBACK_ENABLED = "true";
+    delete process.env.OT_CONTROL_TIMEOUT_MS;
+  });
+
+  it("read-back matches → acked_verified + readBackValue, ok stays true", async () => {
+    // default readTags echoes the requested value (true) back.
+    const r = await dispatch(baseInput());
+    expect(r.ok).toBe(true);
+    expect(r.status).toBe("acked_verified");
+    expect(readTagsSpy).toHaveBeenCalledTimes(1);
+    expect(cmdLog[0].status).toBe("acked_verified");
+    expect(cmdLog[0].readBackValue).toBe(true);
+  });
+
+  it("read-back mismatch → acked_unverified, ok STILL true (WARN only, NOT failed)", async () => {
+    readTagsSpy.mockImplementationOnce(async (rt: any[]) =>
+      rt.map((t) => ({ tagKey: t.tagKey, raw: null, value: false, quality: "good", timestamp: new Date() })),
+    );
+    const r = await dispatch(baseInput());
+    expect(r.ok).toBe(true); // <-- KHÔNG failed
+    expect(r.status).toBe("acked_unverified");
+    expect(cmdLog[0].status).toBe("acked_unverified");
+    expect(cmdLog[0].readBackValue).toBe(false);
+    expect(cmdLog[0].errorText).toMatch(/readback mismatch/);
+  });
+
+  it("float read-back within tolerance → acked_verified", async () => {
+    tags[0].dataType = "float";
+    tags[0].scale = "1";
+    tags[0].offset = "0";
+    const input = baseInput({ writes: [{ tagKey: "cmd_start", value: 25.0 }] });
+    readTagsSpy.mockImplementationOnce(async (rt: any[]) =>
+      rt.map((t) => ({ tagKey: t.tagKey, raw: null, value: 25.0000004, quality: "good", timestamp: new Date() })),
+    );
+    const r = await dispatch(input);
+    expect(r.status).toBe("acked_verified");
+  });
+
+  it("readTags throws → acked_unverified, readTags called EXACTLY once (no retry), ok true", async () => {
+    readTagsSpy.mockImplementationOnce(async () => { throw new Error("read failure"); });
+    const r = await dispatch(baseInput());
+    expect(r.ok).toBe(true);
+    expect(r.status).toBe("acked_unverified");
+    expect(readTagsSpy).toHaveBeenCalledTimes(1);
+    expect(cmdLog[0].errorText).toMatch(/readback unavailable/);
+  });
+
+  it("read-back returns bad quality / null value → acked_unverified", async () => {
+    readTagsSpy.mockImplementationOnce(async (rt: any[]) =>
+      rt.map((t) => ({ tagKey: t.tagKey, raw: null, value: null, quality: "bad", timestamp: new Date() })),
+    );
+    const r = await dispatch(baseInput());
+    expect(r.status).toBe("acked_unverified");
+  });
+
+  it("OT_READBACK_ENABLED off → status acked (old), readTags NOT called", async () => {
+    process.env.OT_READBACK_ENABLED = "false";
+    const r = await dispatch(baseInput());
+    expect(r.status).toBe("acked");
+    expect(readTagsSpy).not.toHaveBeenCalled();
+  });
+
+  it("write failed → NO read-back (readTags not called), status failed", async () => {
+    writeTagsSpy.mockImplementationOnce(async (w: any[]) => w.map((x) => ({ tagKey: x.tagKey, ok: false, error: "NAK" })));
+    const r = await dispatch(baseInput());
+    expect(r.status).toBe("failed");
+    expect(readTagsSpy).not.toHaveBeenCalled();
+  });
+
+  it("idempotency: 2nd dispatch with new acked_verified status returns cached (ok), no new row, readTags not re-called", async () => {
+    const r1 = await dispatch(baseInput());
+    expect(r1.status).toBe("acked_verified");
+    expect(readTagsSpy).toHaveBeenCalledTimes(1);
+    const r2 = await dispatch(baseInput());
+    expect(r2.status).toBe("acked_verified");
+    expect(r2.ok).toBe(true);
+    expect(cmdLog).toHaveLength(1);
+    expect(readTagsSpy).toHaveBeenCalledTimes(1); // not re-called
   });
 });

@@ -208,7 +208,11 @@ export const deploymentStatusEnum = pgEnum("deploymentstatusenum", ["pending", "
 // Outcome of a dispatched machine command. In F4a only "simulated" is produced
 // (DRY-RUN); the wire states (sent/acked/...) are reserved for F4b when
 // OT_CONTROL_ENABLED opens the path to driver.writeTags.
-export const commandStatusEnum = pgEnum("commandstatusenum", ["simulated", "sent", "acked", "failed", "timeout", "rejected"]);
+// Sprint G2.1 adds read-back ack verification:
+//   acked_verified   = write ok AND read-back matched the requested value.
+//   acked_unverified = write ok BUT read-back mismatched / unavailable (WARN only;
+//                      NOT failed, NO blind retry — quyết định #4). ok stays true.
+export const commandStatusEnum = pgEnum("commandstatusenum", ["simulated", "sent", "acked", "failed", "timeout", "rejected", "acked_verified", "acked_unverified"]);
 
 // === Sprint F5b — who/what triggered a dispatched command ===
 // 'hitl'      → a human-confirmed AI write-action (F4 path; actionId/confirmedBy).

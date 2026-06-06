@@ -22,6 +22,7 @@ describe("EthernetIpDriver (mocked st-ethernet-ip)", () => {
       readTag: vi.fn(async (tag: any) => {
         tag.value = valueByTagName[tag.name];
       }),
+      writeTag: vi.fn(async () => {}),
       disconnect: vi.fn(async () => {}),
       ...overrides,
     };
@@ -29,7 +30,7 @@ describe("EthernetIpDriver (mocked st-ethernet-ip)", () => {
     return plc;
   }
 
-  it("connect → readTags decode + scale/offset; writeTags ok:false; disconnect", async () => {
+  it("connect → readTags decode + scale/offset; disconnect", async () => {
     mockEip({ Temperature: 2, RunFlag: true });
     const { EthernetIpDriver } = await import("./ethernetIpDriver");
     const d = new EthernetIpDriver();
@@ -44,12 +45,51 @@ describe("EthernetIpDriver (mocked st-ethernet-ip)", () => {
     const run = samples.find((s) => s.tagKey === "run")!;
     expect(run.value).toBe(true);
 
-    const w = await d.writeTags([{ tagKey: "run", address: "Program:Main.RunFlag", value: true }]);
-    expect(w[0].ok).toBe(false);
-    expect(w[0].error).toMatch(/HITL only \(F4\)/);
-
     await d.disconnect();
     expect(d.isConnected()).toBe(false);
+  });
+
+  it("writeTags GHI THẬT: per-tag tuần tự, ok + inverse scale (scale2 offset10 value110→raw50) + bool", async () => {
+    const plc = mockEip({});
+    const { EthernetIpDriver } = await import("./ethernetIpDriver");
+    const d = new EthernetIpDriver();
+    await d.connect({ endpoint: "192.168.1.10" });
+
+    const res = await d.writeTags([
+      { tagKey: "sp", address: "SetPoint", value: 110, dataType: "int", scale: 2, offset: 10 },
+      { tagKey: "run", address: "Program:Main.RunFlag", value: true, dataType: "bool" },
+    ]);
+    expect(res.every((r) => r.ok)).toBe(true);
+    expect(plc.writeTag).toHaveBeenCalledTimes(2); // per-tag tuần tự
+    // tag.value đã set raw 50 trước khi writeTag.
+    const firstTag = plc.writeTag.mock.calls[0][0];
+    expect(firstTag.value).toBe(50); // (110-10)/2
+  });
+
+  it("writeTags isolate: 1 tag throw → ok:false, tag kia ok:true", async () => {
+    mockEip({}, {
+      writeTag: vi.fn(async (tag: any) => {
+        if (tag.name === "BadTag") throw new Error("CIP write failed");
+      }),
+    });
+    const { EthernetIpDriver } = await import("./ethernetIpDriver");
+    const d = new EthernetIpDriver();
+    await d.connect({ endpoint: "192.168.1.10" });
+
+    const res = await d.writeTags([
+      { tagKey: "bad", address: "BadTag", value: 1, dataType: "int" },
+      { tagKey: "ok", address: "GoodTag", value: 2, dataType: "int" },
+    ]);
+    expect(res.find((r) => r.tagKey === "bad")!.ok).toBe(false);
+    expect(res.find((r) => r.tagKey === "bad")!.error).toMatch(/CIP write failed/);
+    expect(res.find((r) => r.tagKey === "ok")!.ok).toBe(true);
+  });
+
+  it("writeTags throws when not connected", async () => {
+    mockEip({});
+    const { EthernetIpDriver } = await import("./ethernetIpDriver");
+    const d = new EthernetIpDriver();
+    await expect(d.writeTags([{ tagKey: "sp", address: "SetPoint", value: 1 }])).rejects.toThrow(/not connected/);
   });
 
   it("per-tag read error → quality bad, no crash", async () => {

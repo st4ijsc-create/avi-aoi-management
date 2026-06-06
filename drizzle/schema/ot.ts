@@ -175,6 +175,11 @@ export const commandLog = pgTable("command_log", {
   interlockEventId: integer("interlockEventId"),
   approvedBy: integer("approvedBy"),
   ackValue: jsonb("ackValue"),
+  // Sprint G2.1 — value read back from the device AFTER a successful write
+  // (already scaled to the user's value). null when read-back disabled/unavailable.
+  // `verified` is NOT a separate column — it is encoded in status
+  // (acked_verified vs acked_unverified).
+  readBackValue: jsonb("readBackValue"),
   errorText: text("errorText"),
   idempotencyKey: varchar("idempotencyKey", { length: 128 }).unique(),
   sentAt: timestamp("sentAt"),

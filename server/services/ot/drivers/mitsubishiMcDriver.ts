@@ -11,7 +11,10 @@
  * - connect: initiateConnection race timeout; thiếu lib → throw "mcprotocol not installed".
  * - readTags: coerceMcValue + áp scale/offset Ở DRIVER; item lỗi → quality:"bad".
  * - subscribe: POLL setInterval; unref; close()=clearInterval.
- * - writeTags: VẪN CHẶN (ok:false "write via HITL only (F4)").
+ * - writeTags (F4b/G2.1): GHI THẬT qua mcprotocol.writeItems(keys[],values[],cb(anyBad))
+ *   — pattern y hệt NodeS7. setTranslationCB; inverse scale/offset + coerce; device
+ *   read-only (X/DX) → ok:false; writeItems trả 1 (busy) → ok:false "MC write busy";
+ *   anyBadQualities → ok:false "bad write quality". ⚠️ chỉ commandDispatcher gọi.
  * - disconnect: dropConnection.
  */
 import type {
@@ -28,6 +31,23 @@ import type {
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseMcAddress, coerceMcValue } from "./mcAddress";
+import { inverseScale } from "./otScale";
+
+/** Ép raw (đã inverse scale) sang kiểu mcprotocol chấp nhận theo dataType. */
+function coerceMcWrite(raw: unknown, dataType: string): number | boolean | string {
+  switch (dataType) {
+    case "bool":
+      return Boolean(raw);
+    case "int":
+      return Math.round(Number(raw));
+    case "float":
+      return Number(raw);
+    case "string":
+    case "json":
+    default:
+      return String(raw);
+  }
+}
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
@@ -202,13 +222,74 @@ export class MitsubishiMcDriver extends NotImplementedDriver {
     };
   }
 
-  // F4b: mitsubishi-mc GIỮ ok:false — capability ghi bật dần ở sprint sau.
+  /**
+   * ⚠️ ONLY commandDispatcher may call this — write reaches physical device.
+   *
+   * Ghi giá trị xuống PLC MELSEC qua mcprotocol.writeItems. Reachable CHỈ qua HITL
+   * execute() → dispatch(). Pattern y hệt S7: parseMcAddress (read-only X/DX →
+   * ok:false isolate); inverse scale/offset + coerce; setTranslationCB;
+   * writeItems(keys[],values[],cb(anyBad)). writeItems trả 1 (busy) → ok:false
+   * "MC write busy"; cb(anyBadQualities=true) → ok:false "bad write quality";
+   * else ok:true cả batch. Lỗi parse từng write được cô lập.
+   */
   override async writeTags(writes: OtWrite[]): Promise<OtCommandResult[]> {
-    return writes.map((w) => ({
-      tagKey: w.tagKey,
-      ok: false,
-      error: "write via HITL only (F4)",
-    }));
+    if (!this.connected || !this.conn) {
+      throw new Error("MitsubishiMcDriver: not connected");
+    }
+    if (writes.length === 0) return [];
+
+    const prepared: Array<{ tagKey: string; addr?: string; value?: unknown; error?: string }> =
+      writes.map((w) => {
+        try {
+          const parsed = parseMcAddress(w.address);
+          if (parsed.isReadOnly) {
+            return { tagKey: w.tagKey, error: "register type not writable" };
+          }
+          const dataType = w.dataType ?? "float";
+          const raw = inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0);
+          return { tagKey: w.tagKey, addr: parsed.mc, value: coerceMcWrite(raw, dataType) };
+        } catch (err) {
+          return { tagKey: w.tagKey, error: (err as Error)?.message || String(err) };
+        }
+      });
+
+    const writable = prepared.filter((p) => p.error === undefined);
+    if (writable.length === 0) {
+      return prepared.map((p) => ({ tagKey: p.tagKey, ok: false, error: p.error }));
+    }
+
+    const addrByKey = new Map<string, string>();
+    for (const p of writable) addrByKey.set(p.tagKey, p.addr!);
+    this.conn.setTranslationCB((tag: string) => addrByKey.get(tag));
+
+    const keys = writable.map((p) => p.tagKey);
+    const values = writable.map((p) => p.value);
+
+    let batchError: string | null = null;
+    try {
+      await withTimeout(
+        new Promise<void>((resolve, reject) => {
+          const rc = this.conn.writeItems(keys, values, (anyBadQualities: boolean) => {
+            if (anyBadQualities) reject(new Error("bad write quality"));
+            else resolve();
+          });
+          if (rc === 1) reject(new Error("MC write busy"));
+        }),
+        5000,
+        "mc writeItems",
+      );
+    } catch (err) {
+      batchError = (err as Error)?.message || String(err);
+      this.lastError = batchError;
+    }
+
+    if (!batchError) this.lastOkAt = new Date();
+
+    return prepared.map((p) => {
+      if (p.error !== undefined) return { tagKey: p.tagKey, ok: false, error: p.error };
+      if (batchError) return { tagKey: p.tagKey, ok: false, error: batchError };
+      return { tagKey: p.tagKey, ok: true };
+    });
   }
 
   override async health(): Promise<OtHealth> {

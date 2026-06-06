@@ -12,7 +12,11 @@
  * - readTags: đọc theo địa chỉ, coerceS7Value, áp scale/offset Ở DRIVER, OtSample.
  *   NodeS7 trả giá trị BAD (null) cho item lỗi → quality:"bad" (không sập batch).
  * - subscribe: POLL setInterval gọi readTags; timer.unref(); close()=clearInterval.
- * - writeTags: VẪN CHẶN (ok:false "write via HITL only (F4)").
+ * - writeTags (F4b/G2.1): GHI THẬT qua NodeS7.writeItems(keys[],values[],cb(anyBad)).
+ *   setTranslationCB như readTags; inverse scale/offset + coerce theo dataType;
+ *   địa chỉ read-only (I/E/PI) → ok:false; writeItems trả 1 (busy) → ok:false
+ *   "S7 write busy"; anyBadQualities → ok:false "bad write quality". ⚠️ chỉ
+ *   commandDispatcher được gọi (xem comment writeTags).
  * - disconnect: dropConnection.
  *
  * Giữ extends NotImplementedDriver, override method, tái dùng loadPackage()/packageName.
@@ -31,6 +35,23 @@ import type {
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseS7Address, coerceS7Value } from "./s7Address";
+import { inverseScale } from "./otScale";
+
+/** Ép raw (đã inverse scale) sang kiểu NodeS7 chấp nhận theo dataType. */
+function coerceS7Write(raw: unknown, dataType: string): number | boolean | string {
+  switch (dataType) {
+    case "bool":
+      return Boolean(raw);
+    case "int":
+      return Math.round(Number(raw));
+    case "float":
+      return Number(raw);
+    case "string":
+    case "json":
+    default:
+      return String(raw);
+  }
+}
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
@@ -213,13 +234,79 @@ export class S7Driver extends NotImplementedDriver {
     };
   }
 
-  // F4b: s7 GIỮ ok:false — capability ghi bật dần ở sprint sau.
+  /**
+   * ⚠️ ONLY commandDispatcher may call this — write reaches physical device.
+   *
+   * Ghi giá trị xuống PLC S7 qua NodeS7.writeItems. Reachable CHỈ qua HITL
+   * execute() → dispatch(). Với mỗi write: parseS7Address (read-only I/E/PI →
+   * ok:false isolate); inverse scale/offset (int/float) → coerce theo dataType;
+   * setTranslationCB ánh xạ tagKey→địa chỉ; writeItems(keys[],values[],cb(anyBad)).
+   * writeItems trả 1 (busy, đồng bộ) → ok:false "S7 write busy" (không chờ cb);
+   * cb(anyBadQualities=true) → ok:false "bad write quality" cả batch;
+   * anyBadQualities=false → ok:true cả batch. Lỗi parse từng write được cô lập.
+   */
   override async writeTags(writes: OtWrite[]): Promise<OtCommandResult[]> {
-    return writes.map((w) => ({
-      tagKey: w.tagKey,
-      ok: false,
-      error: "write via HITL only (F4)",
-    }));
+    if (!this.connected || !this.conn) {
+      throw new Error("S7Driver: not connected");
+    }
+    if (writes.length === 0) return [];
+
+    // Chuẩn bị từng write; cô lập lỗi parse / read-only (không kéo sập batch).
+    const prepared: Array<{ tagKey: string; addr?: string; value?: unknown; error?: string }> =
+      writes.map((w) => {
+        try {
+          const parsed = parseS7Address(w.address);
+          if (parsed.isReadOnly) {
+            return { tagKey: w.tagKey, error: "register type not writable" };
+          }
+          const dataType = w.dataType ?? "float";
+          const raw = inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0);
+          return { tagKey: w.tagKey, addr: parsed.s7, value: coerceS7Write(raw, dataType) };
+        } catch (err) {
+          return { tagKey: w.tagKey, error: (err as Error)?.message || String(err) };
+        }
+      });
+
+    const writable = prepared.filter((p) => p.error === undefined);
+    if (writable.length === 0) {
+      // Toàn bộ lỗi parse/read-only — không gọi writeItems.
+      return prepared.map((p) => ({ tagKey: p.tagKey, ok: false, error: p.error }));
+    }
+
+    // Ánh xạ tagKey → địa chỉ S7 (translation callback của NodeS7).
+    const addrByKey = new Map<string, string>();
+    for (const p of writable) addrByKey.set(p.tagKey, p.addr!);
+    this.conn.setTranslationCB((tag: string) => addrByKey.get(tag));
+
+    const keys = writable.map((p) => p.tagKey);
+    const values = writable.map((p) => p.value);
+
+    let batchError: string | null = null;
+    try {
+      await withTimeout(
+        new Promise<void>((resolve, reject) => {
+          // writeItems trả 1 (đồng bộ) nếu busy → coi là lỗi, KHÔNG chờ callback.
+          const rc = this.conn.writeItems(keys, values, (anyBadQualities: boolean) => {
+            if (anyBadQualities) reject(new Error("bad write quality"));
+            else resolve();
+          });
+          if (rc === 1) reject(new Error("S7 write busy"));
+        }),
+        5000,
+        "s7 writeItems",
+      );
+    } catch (err) {
+      batchError = (err as Error)?.message || String(err);
+      this.lastError = batchError;
+    }
+
+    if (!batchError) this.lastOkAt = new Date();
+
+    return prepared.map((p) => {
+      if (p.error !== undefined) return { tagKey: p.tagKey, ok: false, error: p.error };
+      if (batchError) return { tagKey: p.tagKey, ok: false, error: batchError };
+      return { tagKey: p.tagKey, ok: true };
+    });
   }
 
   override async health(): Promise<OtHealth> {

@@ -28,10 +28,16 @@
  *     returns { simulated: true }.
  *   - F4b (OT_CONTROL_ENABLED==="true"): after ALL F4a gates pass, dispatch calls
  *     driver.writeTags() under a timeout (OT_CONTROL_TIMEOUT_MS, default 5000ms).
- *     write ok → status='acked' (ack=write-ok; read-back verify is a later TODO);
- *     write ok:false → 'failed'; timeout → 'timeout'; throw → 'failed'.
- *     opcua+modbus drivers write for real; s7/mitsubishi-mc/ethernet-ip still
- *     return ok:false (capability enabled incrementally).
+ *     write ok → status='acked'; write ok:false → 'failed'; timeout → 'timeout';
+ *     throw → 'failed'. All 5 drivers (opcua/modbus/s7/mitsubishi-mc/ethernet-ip)
+ *     write for real.
+ *   - G2.1 READ-BACK (OT_READBACK_ENABLED==="true", default OFF): when a write
+ *     acked AND read-back is enabled, dispatch issues ONE driver.readTags() (under
+ *     the same timeout) on the acked tags and compares the read value (already
+ *     scaled) to the requested value. Match → 'acked_verified'; mismatch / bad /
+ *     readTags throws-or-times-out → 'acked_unverified' (WARN ONLY — ok STAYS true,
+ *     NEVER 'failed', NO blind retry; quyết định #4). readTags is called AT MOST
+ *     ONCE per dispatch. Flag OFF → behaviour unchanged ('acked', no readTags).
  *   - Every branch (rejected / failed / simulated / acked / timeout) writes a
  *     commandLog row. The tag.writable allowlist is enforced BEFORE any write.
  *   - Idempotency: a prior terminal commandLog for the same idempotencyKey is
@@ -53,10 +59,27 @@ import {
 } from "../../../drizzle/schema";
 import { getActiveDriver } from "./otManager";
 import { AUDIT_ACTIONS, createAuditContext, logCrudOperation } from "../auditTrailService";
+import type { OtTagAddress } from "./otDriver";
+import { readbackMatches } from "./drivers/readbackCompare";
 
 /** True when the operator has explicitly enabled real OT control (F4b). */
 export function isOtControlEnabled(): boolean {
   return process.env.OT_CONTROL_ENABLED === "true";
+}
+
+/**
+ * G2.1 — True when read-back ack verification is enabled (default OFF). Read at
+ * RUNTIME (not module load) so tests/operators can toggle it. When OFF, an acked
+ * write keeps status 'acked' and dispatch NEVER calls driver.readTags.
+ */
+export function isOtReadbackEnabled(): boolean {
+  return process.env.OT_READBACK_ENABLED === "true";
+}
+
+/** Float tolerance for read-back compare (default 1e-6). */
+function readbackFloatTolerance(): number {
+  const t = Number(process.env.OT_READBACK_FLOAT_TOLERANCE);
+  return Number.isFinite(t) && t > 0 ? t : 1e-6;
 }
 
 /**
@@ -170,6 +193,8 @@ export interface DispatchResult {
 const TERMINAL_STATUSES: ReadonlySet<DispatchStatus> = new Set([
   "simulated",
   "acked",
+  "acked_verified",
+  "acked_unverified",
   "failed",
   "timeout",
   "rejected",
@@ -230,7 +255,11 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
     .limit(1);
   if (existing && TERMINAL_STATUSES.has(existing.status)) {
     const cachedOk =
-      existing.status === "simulated" || existing.status === "acked" || existing.status === "sent";
+      existing.status === "simulated" ||
+      existing.status === "acked" ||
+      existing.status === "acked_verified" ||
+      existing.status === "acked_unverified" ||
+      existing.status === "sent";
     return {
       ok: cachedOk,
       simulated: existing.status === "simulated",
@@ -322,8 +351,11 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
   // ── (5b) F4b — REAL WRITE PATH. Reachable ONLY when OT_CONTROL_ENABLED==="true"
   //         AND only after every F4a gate above (confirm+owner, idempotency,
   //         allowlist writable, driver active). driver.writeTags() reaches the
-  //         physical device. ack (F4b) = write returned ok; read-back verify is a
-  //         TODO for a later sprint. NO blind retry.
+  //         physical device. ack (F4b) = write returned ok. NO blind retry.
+  //         G2.1: when OT_READBACK_ENABLED, a SINGLE driver.readTags() verifies the
+  //         acked writes (acked_verified / acked_unverified — WARN only). The
+  //         per-write outcome + read-back status are computed BEFORE inserting the
+  //         commandLog rows so the ledger stays append-only (insert ONCE, no update).
   const sentAt = new Date();
   const commandLogIds: number[] = [];
 
@@ -352,34 +384,99 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
     writeResults = [];
   }
 
-  // Decide a per-write status from the outcome.
+  // Decide a per-write outcome from the write result (status BEFORE read-back).
   const timedOut = writeResults === TIMEOUT;
   const resultsArr = Array.isArray(writeResults) ? writeResults : [];
 
-  const results: DispatchPerWrite[] = [];
-  for (let i = 0; i < resolved.length; i++) {
-    const r = resolved[i];
-    let status: DispatchStatus;
-    let ok: boolean;
-    let errorText: string | null;
-
+  // Pre-insert outcome per resolved write. `ok` is fixed by the WRITE result;
+  // read-back only refines an acked write's status (verified/unverified) and
+  // NEVER flips ok → false (quyết định #4).
+  interface Outcome {
+    idx: number;
+    ok: boolean;
+    status: DispatchStatus;
+    errorText: string | null;
+    readBackValue: unknown;
+  }
+  const outcomes: Outcome[] = resolved.map((r, i) => {
     if (timedOut) {
-      status = "timeout";
-      ok = false;
-      errorText = `write timeout after ${timeoutMs}ms`;
-    } else if (threwError) {
-      status = "failed";
-      ok = false;
-      errorText = threwError;
-    } else {
-      const wr =
-        resultsArr.find((x) => x.tagKey === r.write.tagKey) ??
-        { tagKey: r.write.tagKey, ok: false, error: "no result" };
-      ok = wr.ok === true;
-      status = ok ? "acked" : "failed";
-      errorText = ok ? null : (wr.error ?? "write failed");
+      return { idx: i, ok: false, status: "timeout", errorText: `write timeout after ${timeoutMs}ms`, readBackValue: null };
+    }
+    if (threwError) {
+      return { idx: i, ok: false, status: "failed", errorText: threwError, readBackValue: null };
+    }
+    const wr =
+      resultsArr.find((x) => x.tagKey === r.write.tagKey) ??
+      { tagKey: r.write.tagKey, ok: false, error: "no result" };
+    const ok = wr.ok === true;
+    return {
+      idx: i,
+      ok,
+      status: ok ? "acked" : "failed",
+      errorText: ok ? null : (wr.error ?? "write failed"),
+      readBackValue: null,
+    };
+  });
+
+  // ── G2.1 READ-BACK — ONLY when control + read-back enabled AND ≥1 write acked.
+  //    A SINGLE driver.readTags() (under the same timeout). readTags throwing /
+  //    timing out → ALL acked writes become acked_unverified (WARN only; NO retry).
+  if (isOtReadbackEnabled() && outcomes.some((o) => o.status === "acked")) {
+    const ackedIdx = outcomes.filter((o) => o.status === "acked").map((o) => o.idx);
+    const readTags: OtTagAddress[] = ackedIdx.map((i) => {
+      const r = resolved[i];
+      return {
+        tagKey: r.write.tagKey,
+        address: r.address,
+        dataType: (r.dataType ?? "float") as OtTagAddress["dataType"],
+        scale: r.scale,
+        offset: r.offset,
+      };
+    });
+
+    const RB_TIMEOUT = Symbol("rb_timeout");
+    let samples: Awaited<ReturnType<typeof driver.readTags>> | typeof RB_TIMEOUT | null = null;
+    let readbackUnavailable = false;
+    try {
+      samples = await Promise.race([
+        driver.readTags(readTags),
+        new Promise<typeof RB_TIMEOUT>((resolve) => setTimeout(() => resolve(RB_TIMEOUT), timeoutMs)),
+      ]);
+      if (samples === RB_TIMEOUT) readbackUnavailable = true;
+    } catch {
+      // readTags throwing → read-back unavailable (NOT failed, NO retry).
+      readbackUnavailable = true;
     }
 
+    const tol = readbackFloatTolerance();
+    const sampleArr = Array.isArray(samples) ? samples : [];
+    for (const i of ackedIdx) {
+      const o = outcomes[i];
+      const r = resolved[i];
+      if (readbackUnavailable) {
+        o.status = "acked_unverified";
+        o.errorText = "readback unavailable";
+        continue;
+      }
+      const s = sampleArr.find((x) => x.tagKey === r.write.tagKey);
+      const actual = s ? s.value : null;
+      const dataType = (r.dataType ?? "float") as OtTagAddress["dataType"];
+      const matched = s != null && readbackMatches(r.write.value, actual, dataType, tol);
+      if (matched) {
+        o.status = "acked_verified";
+        o.readBackValue = actual;
+      } else {
+        o.status = "acked_unverified";
+        o.readBackValue = actual;
+        o.errorText = `readback mismatch: expected=${String(r.write.value)} actual=${String(actual)}`;
+      }
+    }
+  }
+
+  // Insert one commandLog row per write (append-only — single insert per write).
+  const results: DispatchPerWrite[] = [];
+  for (const o of outcomes) {
+    const r = resolved[o.idx];
     const [row] = await db
       .insert(commandLog)
       .values({
@@ -392,20 +489,33 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
         requestedValue: r.write.value as any,
         requestedBy: who.requestedBy,
         confirmedBy: who.confirmedBy,
-        status,
+        status: o.status,
         ...trig,
-        errorText,
-        idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, i),
+        readBackValue: o.readBackValue as any,
+        errorText: o.errorText,
+        idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, o.idx),
         sentAt,
-        ackedAt: ok ? new Date() : null,
+        ackedAt: o.ok ? new Date() : null,
       })
       .returning({ id: commandLog.id });
     commandLogIds.push(row.id);
-    results.push({ tagKey: r.write.tagKey, address: r.address, ok, status, error: errorText ?? undefined });
+    results.push({ tagKey: r.write.tagKey, address: r.address, ok: o.ok, status: o.status, error: o.errorText ?? undefined });
   }
 
+  // Overall: ok is true iff every WRITE acked (verified or not). status rolls up:
+  //   any failed → 'failed'; timeout → 'timeout'; all verified → 'acked_verified';
+  //   else (≥1 unverified, none failed) → 'acked_unverified'; else (no read-back) 'acked'.
   const allOk = results.length > 0 && results.every((x) => x.ok);
-  const overall: DispatchStatus = allOk ? "acked" : timedOut ? "timeout" : "failed";
+  let overall: DispatchStatus;
+  if (!allOk) {
+    overall = timedOut ? "timeout" : "failed";
+  } else if (outcomes.every((o) => o.status === "acked_verified")) {
+    overall = "acked_verified";
+  } else if (outcomes.some((o) => o.status === "acked_unverified")) {
+    overall = "acked_unverified";
+  } else {
+    overall = "acked";
+  }
   if (input.triggeredBy.kind === "interlock") await auditInterlockAutoBlock(input, commandLogIds);
   return { ok: allOk, simulated: false, status: overall, results, commandLogIds };
 }
