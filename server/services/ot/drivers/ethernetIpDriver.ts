@@ -25,6 +25,7 @@ import type {
   OtSample,
   OtSubscriptionHandle,
   OtCommandResult,
+  OtWrite,
   OtHealth,
   OnOtSample,
 } from "../otDriver";
@@ -200,9 +201,8 @@ export class EthernetIpDriver extends NotImplementedDriver {
     };
   }
 
-  override async writeTags(
-    writes: Array<{ tagKey: string; address: string; value: unknown }>,
-  ): Promise<OtCommandResult[]> {
+  // F4b: ethernet-ip GIỮ ok:false — capability ghi bật dần ở sprint sau.
+  override async writeTags(writes: OtWrite[]): Promise<OtCommandResult[]> {
     return writes.map((w) => ({
       tagKey: w.tagKey,
       ok: false,

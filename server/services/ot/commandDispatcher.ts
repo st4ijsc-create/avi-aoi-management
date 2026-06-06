@@ -1,20 +1,28 @@
 /**
- * Sprint F4a — Command Dispatcher (the ONE entry to send a machine command).
+ * Sprint F4a/F4b — Command Dispatcher (the ONE entry to send a machine command).
  *
  * ════════════════════════════════════════════════════════════════════════════
- * SAFETY (F4a — DRY-RUN, no device write):
+ * SAFETY:
  *   - This module is NOT exported to tRPC. It is reachable ONLY from a write-tool's
  *     execute(), which itself runs ONLY after the HITL confirm flow
  *     (proposeAction → confirmAction; RBAC #1 + #2 + audit) in aiCopilotActions.
+ *   - dispatch() is the ONLY caller of driver.writeTags() (which reaches the
+ *     physical device). No other code path may call writeTags / dispatch.
  *   - Defense-in-depth: dispatch() re-verifies the ai_pending_actions row is
  *     confirmed/executed AND owned by `confirmedBy` before doing anything.
- *   - Mode gate: when OT_CONTROL_ENABLED !== "true" (the F4a default) the
- *     dispatcher NEVER calls driver.writeTags — it records a `simulated`
- *     commandLog row and returns { simulated: true }. The 5 real drivers'
- *     writeTags still return ok:false until F4b explicitly opens the path.
- *   - Every branch (rejected / failed / simulated) writes a commandLog row.
+ *   - Mode gate: when OT_CONTROL_ENABLED !== "true" (the DEFAULT) the dispatcher
+ *     NEVER calls driver.writeTags — it records a `simulated` commandLog row and
+ *     returns { simulated: true }.
+ *   - F4b (OT_CONTROL_ENABLED==="true"): after ALL F4a gates pass, dispatch calls
+ *     driver.writeTags() under a timeout (OT_CONTROL_TIMEOUT_MS, default 5000ms).
+ *     write ok → status='acked' (ack=write-ok; read-back verify is a later TODO);
+ *     write ok:false → 'failed'; timeout → 'timeout'; throw → 'failed'.
+ *     opcua+modbus drivers write for real; s7/mitsubishi-mc/ethernet-ip still
+ *     return ok:false (capability enabled incrementally).
+ *   - Every branch (rejected / failed / simulated / acked / timeout) writes a
+ *     commandLog row. The tag.writable allowlist is enforced BEFORE any write.
  *   - Idempotency: a prior terminal commandLog for the same idempotencyKey is
- *     returned as-is (no second dispatch).
+ *     returned as-is (no second dispatch / no blind retry).
  *   - NO auto-chaining: dispatch handles exactly one command request.
  * ════════════════════════════════════════════════════════════════════════════
  */
@@ -125,12 +133,14 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
     .where(eq(commandLog.idempotencyKey, probeKey))
     .limit(1);
   if (existing && TERMINAL_STATUSES.has(existing.status)) {
+    const cachedOk =
+      existing.status === "simulated" || existing.status === "acked" || existing.status === "sent";
     return {
-      ok: existing.status === "simulated" || existing.status === "acked" || existing.status === "sent",
+      ok: cachedOk,
       simulated: existing.status === "simulated",
       status: existing.status,
       reason: existing.errorText ?? undefined,
-      results: input.writes.map((w) => ({ tagKey: w.tagKey, address: existing.address ?? undefined, ok: existing.status === "simulated", status: existing.status, error: existing.errorText ?? undefined })),
+      results: input.writes.map((w) => ({ tagKey: w.tagKey, address: existing.address ?? undefined, ok: cachedOk, status: existing.status, error: existing.errorText ?? undefined })),
       commandLogIds: [existing.id],
     };
   }
@@ -142,7 +152,13 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
     return { ok: false, simulated: false, status: "rejected", reason: "ADAPTER_DISABLED", results: failedResults(input, "ADAPTER_DISABLED"), commandLogIds: ids };
   }
 
-  const resolved: Array<{ write: DispatchWrite; address: string }> = [];
+  const resolved: Array<{
+    write: DispatchWrite;
+    address: string;
+    dataType?: string;
+    scale?: number;
+    offset?: number;
+  }> = [];
   for (const w of input.writes) {
     const [tag] = await db
       .select()
@@ -159,7 +175,14 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
       const ids = await writeRejected(db, input, "TAG_NOT_WRITABLE", `Tag "${w.tagKey}" is not writable`, w.tagKey, tag.address);
       return { ok: false, simulated: false, status: "rejected", reason: "TAG_NOT_WRITABLE", results: failedResults(input, "TAG_NOT_WRITABLE"), commandLogIds: ids };
     }
-    resolved.push({ write: w, address: tag.address });
+    resolved.push({
+      write: w,
+      address: tag.address,
+      dataType: tag.dataType ?? undefined,
+      // scale/offset là decimal → string trong DB; ép sang number cho driver.
+      scale: tag.scale != null ? Number(tag.scale) : undefined,
+      offset: tag.offset != null ? Number(tag.offset) : undefined,
+    });
   }
 
   // ── (4) Resolve a connected driver. ─────────────────────────────────────────
@@ -196,21 +219,67 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
     return { ok: true, simulated: true, status: "simulated", results, commandLogIds };
   }
 
-  // ── (5b) F4b ONLY — real write path. NOT reachable in F4a (gate above).
-  // TODO(F4b): when OT_CONTROL_ENABLED === "true", call driver.writeTags(...)
-  //            with the resolved {tagKey,address,value}, map OtCommandResult →
-  //            commandLog status sent/acked/failed/timeout, set sentAt/ackedAt.
-  //            Until F4b lands, the 5 protocol drivers' writeTags() still return
-  //            ok:false, so even this branch would not mutate a device.
+  // ── (5b) F4b — REAL WRITE PATH. Reachable ONLY when OT_CONTROL_ENABLED==="true"
+  //         AND only after every F4a gate above (confirm+owner, idempotency,
+  //         allowlist writable, driver active). driver.writeTags() reaches the
+  //         physical device. ack (F4b) = write returned ok; read-back verify is a
+  //         TODO for a later sprint. NO blind retry.
+  const sentAt = new Date();
   const commandLogIds: number[] = [];
+
+  // Map resolved → driver writes (carry dataType/scale/offset for INVERSE scale).
+  const driverWrites = resolved.map((r) => ({
+    tagKey: r.write.tagKey,
+    address: r.address,
+    value: r.write.value,
+    dataType: r.dataType as any,
+    scale: r.scale,
+    offset: r.offset,
+  }));
+
+  const timeoutMs = Number(process.env.OT_CONTROL_TIMEOUT_MS ?? 5000) || 5000;
+  const TIMEOUT = Symbol("timeout");
+
+  let writeResults: Awaited<ReturnType<typeof driver.writeTags>> | typeof TIMEOUT;
+  let threwError: string | null = null;
+  try {
+    writeResults = await Promise.race([
+      driver.writeTags(driverWrites),
+      new Promise<typeof TIMEOUT>((resolve) => setTimeout(() => resolve(TIMEOUT), timeoutMs)),
+    ]);
+  } catch (err) {
+    threwError = (err as Error)?.message || String(err);
+    writeResults = [];
+  }
+
+  // Decide a per-write status from the outcome.
+  const timedOut = writeResults === TIMEOUT;
+  const resultsArr = Array.isArray(writeResults) ? writeResults : [];
+
   const results: DispatchPerWrite[] = [];
-  const writeResults = await driver.writeTags(
-    resolved.map((r) => ({ tagKey: r.write.tagKey, address: r.address, value: r.write.value })),
-  );
   for (let i = 0; i < resolved.length; i++) {
     const r = resolved[i];
-    const wr = writeResults.find((x) => x.tagKey === r.write.tagKey) ?? { tagKey: r.write.tagKey, ok: false, error: "no result" };
-    const status: DispatchStatus = wr.ok ? "sent" : "failed";
+    let status: DispatchStatus;
+    let ok: boolean;
+    let errorText: string | null;
+
+    if (timedOut) {
+      status = "timeout";
+      ok = false;
+      errorText = `write timeout after ${timeoutMs}ms`;
+    } else if (threwError) {
+      status = "failed";
+      ok = false;
+      errorText = threwError;
+    } else {
+      const wr =
+        resultsArr.find((x) => x.tagKey === r.write.tagKey) ??
+        { tagKey: r.write.tagKey, ok: false, error: "no result" };
+      ok = wr.ok === true;
+      status = ok ? "acked" : "failed";
+      errorText = ok ? null : (wr.error ?? "write failed");
+    }
+
     const [row] = await db
       .insert(commandLog)
       .values({
@@ -224,16 +293,19 @@ export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
         requestedBy: input.requestedBy,
         confirmedBy: input.confirmedBy,
         status,
-        errorText: wr.ok ? null : (wr.error ?? "write failed"),
+        errorText,
         idempotencyKey: perWriteKey(input.idempotencyKey, r.write.tagKey, i),
-        sentAt: wr.ok ? new Date() : null,
+        sentAt,
+        ackedAt: ok ? new Date() : null,
       })
       .returning({ id: commandLog.id });
     commandLogIds.push(row.id);
-    results.push({ tagKey: r.write.tagKey, address: r.address, ok: wr.ok, status, error: wr.ok ? undefined : (wr.error ?? "write failed") });
+    results.push({ tagKey: r.write.tagKey, address: r.address, ok, status, error: errorText ?? undefined });
   }
-  const allOk = results.every((x) => x.ok);
-  return { ok: allOk, simulated: false, status: allOk ? "sent" : "failed", results, commandLogIds };
+
+  const allOk = results.length > 0 && results.every((x) => x.ok);
+  const overall: DispatchStatus = allOk ? "acked" : timedOut ? "timeout" : "failed";
+  return { ok: allOk, simulated: false, status: overall, results, commandLogIds };
 }
 
 // ─── commandLog writers (one row per write so the ledger is complete) ─────────

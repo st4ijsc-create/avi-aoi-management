@@ -7,7 +7,9 @@
  *   read{Coils|DiscreteInputs} → decodeModbus → áp scale/offset → OtSample.
  *   Lỗi 1 tag → quality:"bad", KHÔNG sập cả batch.
  * - subscribe: POLL bằng setInterval gọi readTags; timer.unref(); close()=clearInterval.
- * - writeTags: VẪN CHẶN (ok:false "write via HITL only (F4)").
+ * - writeTags (F4b): coil→writeCoil; holding int→writeRegister; holding float→
+ *   writeRegisters (2 word). input/discrete = read-only → ok:false.
+ *   ⚠️ GHI XUỐNG THIẾT BỊ THẬT — chỉ commandDispatcher được gọi (xem comment writeTags).
  * - Thiếu lib → connect() throw "modbus-serial not installed" để otManager skip.
  *
  * Áp scale/offset Ở DRIVER (decodeModbus chỉ trả raw) — nhất quán với OPC-UA.
@@ -20,6 +22,7 @@ import type {
   OtSample,
   OtSubscriptionHandle,
   OtCommandResult,
+  OtWrite,
   OtHealth,
   OnOtSample,
 } from "../otDriver";
@@ -27,9 +30,11 @@ import { NotImplementedDriver } from "./notImplementedDriver";
 import {
   parseModbusAddress,
   decodeModbus,
+  encodeModbus,
   wordCountFor,
   type DecodeModbusOpts,
 } from "./modbusDecode";
+import { inverseScale } from "./otScale";
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
@@ -228,14 +233,58 @@ export class ModbusDriver extends NotImplementedDriver {
     };
   }
 
-  override async writeTags(
-    writes: Array<{ tagKey: string; address: string; value: unknown }>,
-  ): Promise<OtCommandResult[]> {
-    return writes.map((w) => ({
-      tagKey: w.tagKey,
-      ok: false,
-      error: "write via HITL only (F4)",
-    }));
+  /** Ghi một write; trả OtCommandResult (không throw). */
+  private async writeOne(w: OtWrite): Promise<OtCommandResult> {
+    try {
+      const { registerType, register } = parseModbusAddress(w.address);
+
+      if (registerType === "input" || registerType === "discrete") {
+        return { tagKey: w.tagKey, ok: false, error: "register type not writable" };
+      }
+
+      if (registerType === "coil") {
+        await this.client.writeCoil(register, Boolean(w.value));
+        return { tagKey: w.tagKey, ok: true };
+      }
+
+      // holding register — int (1 word) hoặc float (2 word).
+      const dataType = w.dataType ?? "int";
+      // INVERSE scale/offset (int/float); bool không tới đây với holding.
+      const raw = inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0) as number;
+      const words = encodeModbus(raw, dataType, this.decodeOpts);
+
+      if (wordCountFor(dataType) > 1 || words.length > 1) {
+        await this.client.writeRegisters(register, words);
+      } else {
+        await this.client.writeRegister(register, words[0]);
+      }
+      return { tagKey: w.tagKey, ok: true };
+    } catch (err) {
+      const msg = (err as Error)?.message || String(err);
+      this.lastError = msg;
+      return { tagKey: w.tagKey, ok: false, error: msg };
+    }
+  }
+
+  /**
+   * ⚠️ ONLY commandDispatcher may call this — write reaches physical device.
+   *
+   * Ghi giá trị xuống Modbus. Reachable CHỈ qua HITL execute() → dispatch().
+   * coil→writeCoil; holding int→writeRegister; holding float→writeRegisters;
+   * input/discrete = read-only → ok:false. Ghi tuần tự (Modbus TCP nối tiếp).
+   */
+  override async writeTags(writes: OtWrite[]): Promise<OtCommandResult[]> {
+    if (!this.connected || !this.client) {
+      throw new Error("ModbusDriver: not connected");
+    }
+    if (writes.length === 0) return [];
+
+    const out: OtCommandResult[] = [];
+    for (const w of writes) {
+      out.push(await this.writeOne(w));
+    }
+    if (out.every((r) => r.ok)) this.lastOkAt = new Date();
+    return out;
   }
 
   override async health(): Promise<OtHealth> {

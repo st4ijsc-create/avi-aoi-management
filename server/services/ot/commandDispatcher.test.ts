@@ -79,7 +79,7 @@ vi.mock("../../db/connection", () => ({ getDb: vi.fn(async () => makeFakeDb()) }
 vi.mock("../../../drizzle/schema", () => ({
   aiPendingActions: { __table: "ai_pending_actions", id: { __name: "id" }, status: { __name: "status" }, userId: { __name: "userId" } },
   deviceAdapters: { __table: "device_adapters", id: { __name: "id" }, machineId: { __name: "machineId" }, isEnabled: { __name: "isEnabled" } },
-  deviceTags: { __table: "device_tags", id: { __name: "id" }, adapterId: { __name: "adapterId" }, tagKey: { __name: "tagKey" } },
+  deviceTags: { __table: "device_tags", id: { __name: "id" }, adapterId: { __name: "adapterId" }, tagKey: { __name: "tagKey" }, dataType: { __name: "dataType" }, scale: { __name: "scale" }, offset: { __name: "offset" } },
   commandLog: { __table: "command_log", id: { __name: "id" }, idempotencyKey: { __name: "idempotencyKey" }, status: { __name: "status" } },
 }));
 
@@ -112,7 +112,7 @@ beforeEach(() => {
   process.env.OT_CONTROL_ENABLED = "false";
   // default: enabled adapter + writable tag + confirmed action
   adapters.push({ id: 10, machineId: 5, code: "A10", isEnabled: true });
-  tags.push({ id: 100, adapterId: 10, tagKey: "cmd_start", address: "ns=1;s=Start", writable: true, isEnabled: true });
+  tags.push({ id: 100, adapterId: 10, tagKey: "cmd_start", address: "ns=1;s=Start", dataType: "bool", scale: "1", offset: "0", writable: true, isEnabled: true });
   pending.set("act-1", { id: "act-1", status: "confirmed", userId: 1 });
 });
 
@@ -170,5 +170,91 @@ describe("commandDispatcher — F4a safety", () => {
     const r2 = await dispatch(baseInput());
     expect(r2.status).toBe("simulated");
     expect(cmdLog).toHaveLength(1); // no new row inserted
+  });
+});
+
+describe("commandDispatcher — F4b real write (OT_CONTROL_ENABLED=true)", () => {
+  beforeEach(() => {
+    process.env.OT_CONTROL_ENABLED = "true";
+    delete process.env.OT_CONTROL_TIMEOUT_MS;
+  });
+
+  it("writeTags ok → status=acked, writeTags called ONCE with resolved address", async () => {
+    const r = await dispatch(baseInput());
+    expect(r.simulated).toBe(false);
+    expect(r.status).toBe("acked");
+    expect(r.ok).toBe(true);
+    expect(writeTagsSpy).toHaveBeenCalledTimes(1);
+    const sent = writeTagsSpy.mock.calls[0][0];
+    expect(sent).toHaveLength(1);
+    expect(sent[0].tagKey).toBe("cmd_start");
+    expect(sent[0].address).toBe("ns=1;s=Start"); // resolved from deviceTags
+    expect(cmdLog[0].status).toBe("acked");
+    expect(cmdLog[0].sentAt).toBeInstanceOf(Date);
+    expect(cmdLog[0].ackedAt).toBeInstanceOf(Date);
+  });
+
+  it("writeTags returns ok:false → status=failed", async () => {
+    writeTagsSpy.mockImplementationOnce(async (w: any[]) => w.map((x) => ({ tagKey: x.tagKey, ok: false, error: "device NAK" })));
+    const r = await dispatch(baseInput());
+    expect(r.status).toBe("failed");
+    expect(r.ok).toBe(false);
+    expect(r.results[0].error).toMatch(/device NAK/);
+    expect(cmdLog[0].status).toBe("failed");
+    expect(cmdLog[0].ackedAt).toBeNull();
+  });
+
+  it("writeTags hangs → status=timeout (short OT_CONTROL_TIMEOUT_MS)", async () => {
+    process.env.OT_CONTROL_TIMEOUT_MS = "30";
+    writeTagsSpy.mockImplementationOnce(() => new Promise(() => { /* never resolves */ }));
+    const r = await dispatch(baseInput());
+    expect(r.status).toBe("timeout");
+    expect(r.ok).toBe(false);
+    expect(cmdLog[0].status).toBe("timeout");
+  });
+
+  it("writeTags throws → status=failed (no crash)", async () => {
+    writeTagsSpy.mockImplementationOnce(async () => { throw new Error("transport closed"); });
+    const r = await dispatch(baseInput());
+    expect(r.status).toBe("failed");
+    expect(r.results[0].error).toMatch(/transport closed/);
+  });
+
+  it("idempotency: 2nd dispatch (same key) returns cached acked, writeTags NOT called again", async () => {
+    const r1 = await dispatch(baseInput());
+    expect(r1.status).toBe("acked");
+    expect(writeTagsSpy).toHaveBeenCalledTimes(1);
+    const r2 = await dispatch(baseInput());
+    expect(r2.status).toBe("acked");
+    expect(r2.ok).toBe(true);
+    expect(writeTagsSpy).toHaveBeenCalledTimes(1); // not called again
+    expect(cmdLog).toHaveLength(1); // no new row
+  });
+
+  it("SAFETY (no regression): not confirmed → rejected, writeTags 0× even with control ON", async () => {
+    pending.set("act-1", { id: "act-1", status: "proposed", userId: 1 });
+    const r = await dispatch(baseInput());
+    expect(r.status).toBe("rejected");
+    expect(r.reason).toBe("NOT_CONFIRMED");
+    expect(writeTagsSpy).not.toHaveBeenCalled();
+  });
+
+  it("SAFETY (no regression): tag not writable → rejected, writeTags 0× even with control ON", async () => {
+    tags[0].writable = false;
+    const r = await dispatch(baseInput());
+    expect(r.status).toBe("rejected");
+    expect(r.reason).toBe("TAG_NOT_WRITABLE");
+    expect(writeTagsSpy).not.toHaveBeenCalled();
+  });
+
+  it("inverse scale/offset resolved from deviceTags is passed to driver", async () => {
+    tags[0].dataType = "float";
+    tags[0].scale = "10";
+    tags[0].offset = "1";
+    await dispatch(baseInput());
+    const sent = writeTagsSpy.mock.calls[0][0];
+    expect(sent[0].dataType).toBe("float");
+    expect(sent[0].scale).toBe(10);
+    expect(sent[0].offset).toBe(1);
   });
 });

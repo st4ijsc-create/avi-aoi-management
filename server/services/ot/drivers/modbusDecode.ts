@@ -185,3 +185,44 @@ export function decodeModbus(
       return words[0] & 0xffff;
   }
 }
+
+/**
+ * Mã hoá một số RAW thành mảng word (16-bit) để GHI xuống Modbus — đối xứng
+ * decodeModbus (round-trip encode→decode trả lại giá trị gốc với cùng opts).
+ *
+ *   - bool → [value ? 1 : 0]
+ *   - int  → 1 word: int16 (signed) hoặc uint16, kẹp & 0xffff
+ *   - float → float32 ghép 2 word theo wordOrder + endianness
+ *
+ * KHÔNG áp scale/offset (driver đã inverse-scale trước khi gọi). Dùng cho coil
+ * (1 word) và holding register.
+ */
+export function encodeModbus(
+  value: number | boolean,
+  dataType: OtDataType,
+  opts: DecodeModbusOpts = {},
+): number[] {
+  const endianness = opts.endianness ?? "big";
+  const wordOrder = opts.wordOrder ?? "big";
+
+  switch (dataType) {
+    case "bool":
+      return [value ? 1 : 0];
+
+    case "float": {
+      const buf = Buffer.alloc(4);
+      if (endianness === "big") buf.writeFloatBE(Number(value), 0);
+      else buf.writeFloatLE(Number(value), 0);
+      const first = buf.readUInt16BE(0);
+      const second = buf.readUInt16BE(2);
+      // wordOrder big → first(hi) đứng trước; little → swap.
+      return wordOrder === "big" ? [first, second] : [second, first];
+    }
+
+    case "int":
+    default: {
+      // int16/uint16: ép về 16-bit không dấu để gửi xuống.
+      return [Math.round(Number(value)) & 0xffff];
+    }
+  }
+}

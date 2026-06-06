@@ -2,7 +2,7 @@
  * Sprint F1.2 — modbusDecode helper tests (THUẦN, offline).
  */
 import { describe, it, expect } from "vitest";
-import { parseModbusAddress, wordCountFor, decodeModbus } from "./modbusDecode";
+import { parseModbusAddress, wordCountFor, decodeModbus, encodeModbus } from "./modbusDecode";
 
 describe("parseModbusAddress", () => {
   it("40001 / 4x:1 / holding:40001 all map to holding register 0", () => {
@@ -84,5 +84,48 @@ describe("decodeModbus", () => {
 
   it("float requires 2 words", () => {
     expect(() => decodeModbus([0x3f80], "float")).toThrow(/2 words/);
+  });
+});
+
+describe("encodeModbus (F4b — symmetric to decodeModbus)", () => {
+  it("bool", () => {
+    expect(encodeModbus(true, "bool")).toEqual([1]);
+    expect(encodeModbus(false, "bool")).toEqual([0]);
+  });
+
+  it("int16 → 1 word, negative wraps to 16-bit", () => {
+    expect(encodeModbus(100, "int")).toEqual([100]);
+    expect(encodeModbus(-1, "int")).toEqual([0xffff]);
+    expect(encodeModbus(-32768, "int")).toEqual([0x8000]);
+  });
+
+  it("round-trip int16 signed (default)", () => {
+    for (const v of [0, 100, -1, -32768, 32767]) {
+      const words = encodeModbus(v, "int");
+      expect(decodeModbus(words, "int")).toBe(v);
+    }
+  });
+
+  it("round-trip float32 big word order / big endianness (default)", () => {
+    for (const v of [1.0, 3.14, -42.5, 0]) {
+      const words = encodeModbus(v, "float");
+      expect(decodeModbus(words, "float")).toBeCloseTo(v, 4);
+    }
+  });
+
+  it("round-trip float32 little word order", () => {
+    const opts = { wordOrder: "little" as const };
+    const words = encodeModbus(3.14, "float", opts);
+    expect(decodeModbus(words, "float", opts)).toBeCloseTo(3.14, 4);
+  });
+
+  it("round-trip float32 little endianness", () => {
+    const opts = { endianness: "little" as const };
+    const words = encodeModbus(-12.5, "float", opts);
+    expect(decodeModbus(words, "float", opts)).toBeCloseTo(-12.5, 4);
+  });
+
+  it("float32 big word order produces [hi, lo] (1.0 = [0x3F80,0x0000])", () => {
+    expect(encodeModbus(1.0, "float")).toEqual([0x3f80, 0x0000]);
   });
 });

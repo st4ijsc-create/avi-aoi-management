@@ -61,6 +61,21 @@ export interface OtCommandResult {
   error?: string;
 }
 
+/**
+ * Một lệnh ghi xuống thiết bị. Ngoài {tagKey,address,value}, driver cần
+ * dataType + scale/offset để áp INVERSE scale (giá trị người dùng → raw ghi).
+ * dataType/scale/offset là TUỲ CHỌN (commandDispatcher F4b resolve từ deviceTags);
+ * thiếu → coi raw = value (không inverse), dataType mặc định suy từ typeof value.
+ */
+export interface OtWrite {
+  tagKey: string;
+  address: string;
+  value: unknown;
+  dataType?: OtDataType;
+  scale?: number;
+  offset?: number;
+}
+
 /** Callback nhận mỗi mẫu từ subscription. */
 export type OnOtSample = (sample: OtSample) => void | Promise<void>;
 
@@ -74,7 +89,7 @@ export interface OtDriver {
   isConnected(): boolean;
   readTags(tags: OtTagAddress[]): Promise<OtSample[]>;
   subscribe(tags: OtTagAddress[], onSample: OnOtSample, intervalMs?: number): Promise<OtSubscriptionHandle>;
-  writeTags(writes: Array<{ tagKey: string; address: string; value: unknown }>): Promise<OtCommandResult[]>;
+  writeTags(writes: OtWrite[]): Promise<OtCommandResult[]>;
   health(): Promise<OtHealth>;
 }
 

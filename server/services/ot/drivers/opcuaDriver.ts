@@ -5,7 +5,8 @@
  * - readTags: session.read([{nodeId, attributeId: Value}]) → normalizeOpcuaValue (áp scale/offset).
  * - subscribe: POLL bằng setInterval gọi readTags (KHÔNG dùng monitoredItem); timer.unref().
  *   close() chỉ clearInterval; disconnect() đóng session/client.
- * - writeTags: VẪN CHẶN (ok:false "write via HITL only (F4)") — điều khiển 2 chiều để F4.
+ * - writeTags (F4b): session.write([{nodeId, attributeId:Value, value:{value:Variant}}]).
+ *   ⚠️ GHI XUỐNG THIẾT BỊ THẬT — chỉ commandDispatcher được gọi (xem comment writeTags).
  * - Thiếu lib → connect() throw "node-opcua not installed" để otManager skip (không sập).
  *
  * Giữ extends NotImplementedDriver, override các method, tái dùng loadPackage()/packageName.
@@ -18,11 +19,13 @@ import type {
   OtSample,
   OtSubscriptionHandle,
   OtCommandResult,
+  OtWrite,
   OtHealth,
   OnOtSample,
 } from "../otDriver";
 import { NotImplementedDriver } from "./notImplementedDriver";
 import { parseOpcuaAddress, normalizeOpcuaValue } from "./opcuaAddress";
+import { inverseScale } from "./otScale";
 
 /** Chạy promise với timeout; quá hạn → reject. */
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
@@ -41,6 +44,8 @@ export class OpcuaDriver extends NotImplementedDriver {
   private client: any = null;
   private session: any = null;
   private AttributeIds: any = null;
+  private DataType: any = null;
+  private Variant: any = null;
   private connected = false;
   private connectedAt: Date | null = null;
   private lastOkAt: Date | undefined;
@@ -52,8 +57,10 @@ export class OpcuaDriver extends NotImplementedDriver {
     if (!pkg) {
       throw new Error("node-opcua not installed");
     }
-    const { OPCUAClient, AttributeIds } = pkg;
+    const { OPCUAClient, AttributeIds, DataType, Variant } = pkg;
     this.AttributeIds = AttributeIds;
+    this.DataType = DataType;
+    this.Variant = Variant;
 
     const timeoutMs = cfg.timeoutMs ?? 5000;
     const client = OPCUAClient.create({
@@ -191,14 +198,99 @@ export class OpcuaDriver extends NotImplementedDriver {
     };
   }
 
-  override async writeTags(
-    writes: Array<{ tagKey: string; address: string; value: unknown }>,
-  ): Promise<OtCommandResult[]> {
-    return writes.map((w) => ({
-      tagKey: w.tagKey,
-      ok: false,
-      error: "write via HITL only (F4)",
-    }));
+  /**
+   * ⚠️ ONLY commandDispatcher may call this — write reaches physical device.
+   *
+   * Ghi giá trị xuống node OPC-UA. Reachable CHỈ qua HITL execute() → dispatch().
+   * Với mỗi write: inverse scale/offset (int/float) → coerce theo dataType →
+   * session.write([{nodeId, attributeId:Value, value:{value: Variant}}]).
+   * StatusCode good → ok:true; lỗi/exception → ok:false.
+   */
+  override async writeTags(writes: OtWrite[]): Promise<OtCommandResult[]> {
+    if (!this.connected || !this.session) {
+      throw new Error("OpcuaDriver: not connected");
+    }
+    if (writes.length === 0) return [];
+
+    // Chuẩn bị nodesToWrite + nhớ map lỗi parse từng write (không kéo sập batch).
+    const prepared: Array<{ tagKey: string; node?: any; error?: string }> = writes.map((w) => {
+      try {
+        const dataType = w.dataType ?? "float";
+        // INVERSE scale/offset — chỉ int/float (bool/string giữ nguyên).
+        const raw = inverseScale(w.value, dataType, w.scale ?? 1, w.offset ?? 0);
+        const { nodeId } = parseOpcuaAddress(w.address);
+        const variantValue = this.coerce(raw, dataType);
+        const node = {
+          nodeId,
+          attributeId: this.AttributeIds.Value,
+          value: { value: variantValue },
+        };
+        return { tagKey: w.tagKey, node };
+      } catch (err) {
+        return { tagKey: w.tagKey, error: (err as Error)?.message || String(err) };
+      }
+    });
+
+    const toWrite = prepared.filter((p) => p.node).map((p) => p.node);
+    let statusCodes: any[] = [];
+    if (toWrite.length > 0) {
+      try {
+        const res = await this.session.write(toWrite);
+        statusCodes = Array.isArray(res) ? res : [res];
+      } catch (err) {
+        const msg = (err as Error)?.message || String(err);
+        this.lastError = msg;
+        // Toàn batch lỗi I/O → tất cả node-đã-prepare fail; giữ lỗi parse riêng.
+        return prepared.map((p) => ({
+          tagKey: p.tagKey,
+          ok: false,
+          error: p.error ?? msg,
+        }));
+      }
+    }
+
+    // Ghép statusCode về từng write theo thứ tự các node đã gửi.
+    let scIdx = 0;
+    const out: OtCommandResult[] = prepared.map((p) => {
+      if (p.error) return { tagKey: p.tagKey, ok: false, error: p.error };
+      const sc = statusCodes[scIdx++];
+      const scVal = typeof sc?.value === "number" ? sc.value : 0;
+      const good = scVal === 0; // StatusCodes.Good
+      if (good) return { tagKey: p.tagKey, ok: true };
+      const name = sc?.name ?? sc?.description ?? `status ${scVal}`;
+      return { tagKey: p.tagKey, ok: false, error: `bad status: ${name}` };
+    });
+    if (out.every((r) => r.ok)) this.lastOkAt = new Date();
+    return out;
+  }
+
+  /** Bọc raw vào Variant theo OtDataType (int→Int32, float→Double, bool→Boolean, string→String). */
+  private coerce(raw: unknown, dataType: string): any {
+    const DataType = this.DataType ?? {};
+    const Variant = this.Variant;
+    let dt: any;
+    let value: any;
+    switch (dataType) {
+      case "bool":
+        dt = DataType.Boolean;
+        value = Boolean(raw);
+        break;
+      case "int":
+        dt = DataType.Int32; // Int32 phổ biến nhất với PLC.
+        value = Math.round(Number(raw));
+        break;
+      case "float":
+        dt = DataType.Double;
+        value = Number(raw);
+        break;
+      case "string":
+      default:
+        dt = DataType.String;
+        value = String(raw);
+        break;
+    }
+    // Dùng Variant nếu lib cung cấp; fallback object phẳng cho test/lib tối giản.
+    return Variant ? new Variant({ dataType: dt, value }) : { dataType: dt, value };
   }
 
   override async health(): Promise<OtHealth> {

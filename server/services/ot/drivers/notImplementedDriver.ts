@@ -14,6 +14,7 @@ import type {
   OtSample,
   OtSubscriptionHandle,
   OtCommandResult,
+  OtWrite,
   OtHealth,
   OnOtSample,
 } from "../otDriver";
@@ -52,9 +53,7 @@ export abstract class NotImplementedDriver implements OtDriver {
     throw new Error(`${this.protocol} driver not implemented (${this.phase})`);
   }
 
-  async writeTags(
-    _writes: Array<{ tagKey: string; address: string; value: unknown }>,
-  ): Promise<OtCommandResult[]> {
+  async writeTags(_writes: OtWrite[]): Promise<OtCommandResult[]> {
     throw new Error(`${this.protocol} driver not implemented (${this.phase})`);
   }
 
