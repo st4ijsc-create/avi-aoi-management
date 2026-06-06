@@ -165,6 +165,20 @@ export const aiPendingActionStatusEnum = pgEnum("aipendingactionstatus", [
   "cancelled",
 ]);
 
+// AI Copilot agent session lifecycle (GĐ3b multi-step agentic orchestrator).
+// planning → awaiting_approval → running → (awaiting_confirm at each write) →
+// done | aborted | failed; paused when a write is blocked (limit/denied/error).
+export const agentSessionStatusEnum = pgEnum("aiagentsessionstatus", [
+  "planning",
+  "awaiting_approval",
+  "running",
+  "awaiting_confirm",
+  "paused",
+  "done",
+  "aborted",
+  "failed",
+]);
+
 // Production Session enums (ISA-95 shift session)
 export const sessionStatusEnum = pgEnum("sessionstatusenum", ["open", "paused", "closed", "transferred"]);
 

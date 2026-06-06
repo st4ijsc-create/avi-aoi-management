@@ -19,7 +19,7 @@ const pgvector = (dimensions: number) =>
       return `vector(${dimensions})`;
     },
   });
-import { changeTypeEnum, alertTypeEnum_1, maintenanceUrgencyEnum, statusEnum_5, analysisTypeEnum, statusEnum_6, statusEnum_8, periodTypeEnum_1, suggestionTypeEnum, statusEnum_9, feedbackTypeEnum, errorCategoryEnum, accuracyTrendEnum, exportFormatEnum_1, statusEnum_10, modelFormatEnum, modelStatusEnum, inferenceStatusEnum, batchJobStatusEnum, batchItemStatusEnum, abTestStatusEnum, abTestVariantEnum, abTestWinnerEnum, driftAlertTypeEnum, driftSeverityEnum, edgeDeployStatusEnum, trainingJobStatusEnum, aiDecisionEnum, ensembleStrategyEnum, labelQueueStatusEnum, samplingStrategyEnum, chatRoleEnum, apiKeyProviderEnum, apiKeyStatusEnum, aiPendingActionStatusEnum } from "./enums";
+import { changeTypeEnum, alertTypeEnum_1, maintenanceUrgencyEnum, statusEnum_5, analysisTypeEnum, statusEnum_6, statusEnum_8, periodTypeEnum_1, suggestionTypeEnum, statusEnum_9, feedbackTypeEnum, errorCategoryEnum, accuracyTrendEnum, exportFormatEnum_1, statusEnum_10, modelFormatEnum, modelStatusEnum, inferenceStatusEnum, batchJobStatusEnum, batchItemStatusEnum, abTestStatusEnum, abTestVariantEnum, abTestWinnerEnum, driftAlertTypeEnum, driftSeverityEnum, edgeDeployStatusEnum, trainingJobStatusEnum, aiDecisionEnum, ensembleStrategyEnum, labelQueueStatusEnum, samplingStrategyEnum, chatRoleEnum, apiKeyProviderEnum, apiKeyStatusEnum, aiPendingActionStatusEnum, agentSessionStatusEnum } from "./enums";
 
 // ============= Image Annotations =============
 export const imageAnnotations = pgTable("image_annotations", {
@@ -1548,3 +1548,69 @@ export const aiPendingActions = pgTable("ai_pending_actions", {
 
 export type AiPendingAction = typeof aiPendingActions.$inferSelect;
 export type InsertAiPendingAction = typeof aiPendingActions.$inferInsert;
+
+// ============= GĐ3b — AI Copilot Agent Sessions (multi-step orchestrator) =============
+//
+// Server-side state for a multi-step agentic plan. The orchestrator STANDS ON TOP
+// of the HITL write flow: it only ever calls proposeAction (write step) +
+// confirmAction (core, user-triggered via tRPC). It NEVER executes a tool directly
+// and NEVER auto-confirms. advance() STOPS at every write step (status
+// awaiting_confirm); the cursor only moves past a write after the user confirms it
+// (confirmStep → core confirmAction). Migration: drizzle/0017_ai_agent_sessions.sql.
+
+/** A single planned step produced by the planner (validated against the registry). */
+export interface AgentPlanStep {
+  /** read = run immediately; write = HITL propose+confirm; guidance/navigate/prefill = client directive; branch = conditional cursor jump. */
+  kind: "read" | "write" | "guidance" | "navigate" | "prefill" | "branch";
+  /** Registered tool name (null for guidance/branch which carry no tool). */
+  tool?: string | null;
+  /** Args validated against tool.parameters at plan time. */
+  args?: Record<string, unknown>;
+  /** Short human-readable reason this step exists. */
+  rationale?: string;
+}
+
+export interface AgentPlan {
+  steps: AgentPlanStep[];
+  /** Optional planner-emitted summary of the overall approach. */
+  summary?: string;
+}
+
+/** Outcome of a single executed/handled step (appended to stepResults in order). */
+export interface AgentStepResult {
+  index: number;
+  kind: AgentPlanStep["kind"];
+  tool?: string | null;
+  status: "done" | "awaiting_confirm" | "skipped" | "failed";
+  /** Linked ai_pending_actions id for a write step. */
+  actionId?: string | null;
+  /** Compact result/payload (tool result, client directive, or error message). */
+  payload?: unknown;
+  message?: string;
+}
+
+export const aiAgentSessions = pgTable("ai_agent_sessions", {
+  // uuid primary key (session id).
+  id: varchar("id", { length: 64 }).primaryKey(),
+  userId: integer("userId").notNull(),
+  userRole: varchar("userRole", { length: 50 }).notNull(),
+  goal: text("goal").notNull(),
+  planJson: json("planJson").$type<AgentPlan>(),
+  cursor: integer("cursor").default(0).notNull(),
+  status: agentSessionStatusEnum("status").default("planning").notNull(),
+  stepResults: json("stepResults").$type<AgentStepResult[]>().default([]).notNull(),
+  linkedActionIds: json("linkedActionIds").$type<string[]>().default([]).notNull(),
+  writeCount: integer("writeCount").default(0).notNull(),
+  playbookId: varchar("playbookId", { length: 120 }),
+  lang: varchar("lang", { length: 5 }).default("vi").notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_agent_sessions_user").on(table.userId),
+  index("idx_ai_agent_sessions_status").on(table.status),
+  index("idx_ai_agent_sessions_expires").on(table.expiresAt),
+]);
+
+export type AiAgentSession = typeof aiAgentSessions.$inferSelect;
+export type InsertAiAgentSession = typeof aiAgentSessions.$inferInsert;
