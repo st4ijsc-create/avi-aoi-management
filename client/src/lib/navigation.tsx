@@ -70,6 +70,8 @@
   GraduationCap,
   Leaf,
   Plug,
+  FlaskConical,
+  ShieldAlert,
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -589,6 +591,22 @@ export const navGroups: NavGroup[] = [
         description: "nav.deviceAdaptersDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
+      },
+      {
+        href: "/recipes",
+        label: "nav.recipes",
+        icon: <FlaskConical className="h-4 w-4" />,
+        description: "nav.recipesDesc",
+        requiredPermission: "machine_control",
+        permissionCategory: "machine_control",
+      },
+      {
+        href: "/interlock-rules",
+        label: "nav.interlockRules",
+        icon: <ShieldAlert className="h-4 w-4" />,
+        description: "nav.interlockRulesDesc",
+        requiredPermission: "interlock",
+        permissionCategory: "interlock",
       },
       {
         href: "/command-audit",
