@@ -24,6 +24,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import GanttChart from "@/components/GanttChart";
+import ApsSchedulingPanel from "@/components/ApsSchedulingPanel";
 import {
   CalendarDays,
   Play,
@@ -515,6 +516,10 @@ export default function ProductionScheduling() {
               <ListOrdered className="h-4 w-4 mr-1" />
               {t("scheduling.orderList", "Danh sách đơn")}
             </TabsTrigger>
+            <TabsTrigger value="aps">
+              <Zap className="h-4 w-4 mr-1" />
+              {t("aps.tabTitle", "APS (CP-SAT)")}
+            </TabsTrigger>
           </TabsList>
 
           {/* Gantt Chart */}
@@ -669,6 +674,11 @@ export default function ProductionScheduling() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* APS (CP-SAT) — DRAFT + KPI compare + station Gantt + HITL apply */}
+          <TabsContent value="aps">
+            <ApsSchedulingPanel factoryId={1} />
           </TabsContent>
         </Tabs>
       </div>

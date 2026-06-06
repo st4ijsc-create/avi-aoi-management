@@ -72,6 +72,19 @@ export interface GenerateApsInput {
   lineId?: number;
 }
 
+export interface KpiComparePoint {
+  makespanHours: number | null;
+  lateOrders: number;
+  solverMode?: SolverMode;
+  objective?: ApsParsedObjective | null;
+}
+
+export interface CompareApsKpiResult {
+  aps: KpiComparePoint;
+  fifo: KpiComparePoint;
+  priority: KpiComparePoint;
+}
+
 // ─── Helpers ───────────────────────────────────────────────────
 
 function toSchedulableOrders(orders: any[], lines: any[]): SchedulableOrder[] {
@@ -289,4 +302,56 @@ export async function generateApsSchedule(input: GenerateApsInput): Promise<Gene
   };
 
   return { solverMode: "fallback_heuristic", payload, baseline, algorithm: result.algorithm };
+}
+
+/**
+ * Read-only KPI comparison: APS (CP-SAT or fallback) vs FIFO vs Priority
+ * baselines. Reuses generateApsSchedule for the APS path (which already computes
+ * the FIFO baseline in-memory) and runs Priority in-memory too. Touches NO write
+ * paths — never persists a schedule run. Safe for a HITL compare panel.
+ */
+export async function compareApsKpi(input: GenerateApsInput): Promise<CompareApsKpiResult> {
+  // APS path also returns the FIFO baseline KPI computed on the same order set.
+  const apsRun = await generateApsSchedule(input);
+
+  // Re-derive the same schedulable order set for the Priority baseline so all
+  // three KPIs are computed over an identical problem instance.
+  const orders = await db.getProductionOrders(
+    input.factoryId || input.lineId
+      ? { factoryId: input.factoryId, lineId: input.lineId }
+      : undefined,
+  );
+  const lines = await db.getProductionLines();
+  const schedulableLines = (lines as any[]).map((l) => ({
+    id: l.id,
+    name: l.name,
+    maxConcurrent: l.maxConcurrentOrders ?? 1,
+    capacityPerHour: l.capacityPerHour ?? null,
+  }));
+  const capacityByLine: Record<number, number | null> = {};
+  for (const l of schedulableLines) capacityByLine[l.id] = l.capacityPerHour;
+  const context: ScheduleContext = { capacityByLine };
+
+  let schedulable = toSchedulableOrders(orders as any[], lines as any[]);
+  const cap = apsMaxJobs();
+  if (schedulable.length > cap) schedulable = schedulable.slice(0, cap);
+
+  const priorityKpi = kpiFromHeuristic(schedulePriority(schedulable, schedulableLines, context));
+
+  return {
+    aps: {
+      makespanHours: apsRun.payload.kpiSummary.makespanHours,
+      lateOrders: apsRun.payload.kpiSummary.lateOrders,
+      solverMode: apsRun.solverMode,
+      objective: apsRun.payload.kpiSummary.objective ?? null,
+    },
+    fifo: {
+      makespanHours: apsRun.baseline.makespanHours,
+      lateOrders: apsRun.baseline.lateOrders,
+    },
+    priority: {
+      makespanHours: priorityKpi.makespanHours,
+      lateOrders: priorityKpi.lateOrders,
+    },
+  };
 }

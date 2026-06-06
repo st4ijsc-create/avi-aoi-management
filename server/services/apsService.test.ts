@@ -36,7 +36,7 @@ vi.mock("./apsSolver", async (importOriginal) => {
   return { ...actual, runApsSolver: (...a: any[]) => runApsSolverMock(...a) };
 });
 
-import { generateApsSchedule } from "./apsService";
+import { generateApsSchedule, compareApsKpi } from "./apsService";
 
 const EPOCH = new Date("2026-06-01T00:00:00.000Z");
 
@@ -120,6 +120,22 @@ describe("generateApsSchedule — cpsat path", () => {
     expect(out.baseline).toHaveProperty("makespanHours");
     expect(out.baseline).toHaveProperty("lateOrders");
     expect(typeof out.baseline.lateOrders).toBe("number");
+  });
+});
+
+describe("compareApsKpi — read-only KPI compare (G2.5b)", () => {
+  it("returns aps + fifo + priority KPI points without persisting a run", async () => {
+    // The DB mock exposes ONLY read functions (no createScheduleRun). If
+    // compareApsKpi tried to write a run it would throw — passing proves it is
+    // read-only over the same order set.
+    const out = await compareApsKpi({ lineId: 10 });
+    expect(out.aps).toHaveProperty("makespanHours");
+    expect(out.aps).toHaveProperty("lateOrders");
+    expect(out.aps.solverMode).toBe("fallback_heuristic");
+    expect(out.fifo).toHaveProperty("makespanHours");
+    expect(typeof out.fifo.lateOrders).toBe("number");
+    expect(out.priority).toHaveProperty("makespanHours");
+    expect(typeof out.priority.lateOrders).toBe("number");
   });
 });
 

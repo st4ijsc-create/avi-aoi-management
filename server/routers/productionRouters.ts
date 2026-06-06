@@ -555,6 +555,18 @@ export const productionOrderRouter = router({
       };
     }),
 
+  // G2.5b: Read-only KPI comparison APS vs FIFO vs Priority. Does NOT persist
+  // any schedule run (no createScheduleRun) — pure compare for the HITL panel.
+  compareScheduleKpi: protectedProcedure
+    .input(z.object({
+      factoryId: z.number().optional(),
+      lineId: z.number().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const { compareApsKpi } = await import("../services/apsService");
+      return compareApsKpi({ factoryId: input?.factoryId, lineId: input?.lineId });
+    }),
+
   applyScheduleRun: adminProcedure
     .input(z.object({ runId: z.number() }))
     .mutation(async ({ input }) => {
