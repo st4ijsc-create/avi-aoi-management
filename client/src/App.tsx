@@ -96,6 +96,7 @@ const DeviceAdapterManagement = React.lazy(() => import("./pages/DeviceAdapterMa
 const CommandAuditLog = React.lazy(() => import("./pages/CommandAuditLog")); // G2.2a: command audit (READ-ONLY)
 const RecipeManagement = React.lazy(() => import("./pages/RecipeManagement")); // G2.2b: recipe catalog + deploy ledger (CONFIG/VIEW)
 const InterlockRuleManagement = React.lazy(() => import("./pages/InterlockRuleManagement")); // G2.2b: interlock rule admin (CONFIG/VIEW)
+const BomManagement = React.lazy(() => import("./pages/BomManagement")); // G2.4: BOM + Feeder + component genealogy (data/telemetry/trace)
 import AOIPackages from "./pages/AOIPackages";
 import MqttBulletin from "./pages/MqttBulletin";
 import CorrelationAnalysis from "./pages/CorrelationAnalysis";
@@ -162,6 +163,7 @@ function Router() {
       <Route path="/command-audit" component={CommandAuditLog} />
       <Route path="/recipes" component={RecipeManagement} />
       <Route path="/interlock-rules" component={InterlockRuleManagement} />
+      <Route path="/bom-management" component={BomManagement} />
       <Route path="/history" component={History} />
       <Route path="/inspection/:id" component={InspectionDetail} />
       <Route path="/layout" component={Layout} />

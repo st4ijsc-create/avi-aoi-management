@@ -3616,6 +3616,8 @@
     "andonBoardDesc": "Andon alert signals (alert-only, no machine control)",
     "deviceAdapters": "Device Adapter",
     "deviceAdaptersDesc": "Manage OT connection config and tag definitions",
+    "bomManagement": "BOM & Feeder",
+    "bomManagementDesc": "BOM, feeder material and component genealogy (no machine write)",
     "commandAudit": "Command Audit Log",
     "commandAuditDesc": "Audit log of every machine control command (read-only)",
     "recipes": "Machine Recipes",

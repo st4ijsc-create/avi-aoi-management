@@ -1,5 +1,6 @@
 // Schema domain: MES / WIP / Traceability / Predictive Maintenance (Giai đoạn 2 — G5/G6/G7)
-import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import {
   wipStatusEnum,
   lotDispositionEnum,
@@ -302,3 +303,126 @@ export const pmEffectivenessMetrics = pgTable("pm_effectiveness_metrics", {
 
 export type PmEffectivenessMetric = typeof pmEffectivenessMetrics.$inferSelect;
 export type InsertPmEffectivenessMetric = typeof pmEffectivenessMetrics.$inferInsert;
+
+// =============================================================
+// G2.4 — BOM + Feeder material + Component genealogy (component → serial)
+//
+// SAFETY: pure DB master-data + material telemetry. NO machine-write path here
+// (no commandDispatcher / driver.writeTags). componentInstallations records the
+// OUTCOME of an install (telemetry), parallel to processResults; the genealogy
+// append re-uses the existing "merge" event (payload.kind="componentInstallation")
+// and does NOT widen GenealogyEventType / eventTypeSchema.
+//
+// status columns are varchar (NOT new pg enums) on purpose → migration stays
+// additive (CREATE TABLE/INDEX only, no ALTER TYPE on existing enums).
+// =============================================================
+
+/**
+ * BOM Definitions — Bill-of-materials cho 1 product model (versioned).
+ */
+export const bomDefinitions = pgTable("bom_definitions", {
+  id: serial("id").primaryKey(),
+  productModelId: integer("productModelId").notNull(),
+  code: varchar("code", { length: 100 }).notNull(),
+  version: integer("version").default(1).notNull(),
+  name: varchar("name", { length: 255 }),
+  status: varchar("status", { length: 20 }).default("draft").notNull(), // draft|active|archived
+  notes: text("notes"),
+  createdBy: integer("createdBy"),
+  isActive: boolean("isActive").default(true).notNull(),
+  deletedAt: timestamp("deletedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uq_bomdef_model_code_version").on(table.productModelId, table.code, table.version),
+  index("idx_bomdef_model").on(table.productModelId),
+  index("idx_bomdef_status").on(table.status),
+  index("idx_bomdef_deleted").on(table.deletedAt),
+]);
+
+export type BomDefinition = typeof bomDefinitions.$inferSelect;
+export type InsertBomDefinition = typeof bomDefinitions.$inferInsert;
+
+/**
+ * BOM Line Items — từng dòng linh kiện trong 1 BOM.
+ */
+export const bomLineItems = pgTable("bom_line_items", {
+  id: serial("id").primaryKey(),
+  bomId: integer("bomId").notNull(),
+  componentCode: varchar("componentCode", { length: 100 }).notNull(),
+  componentName: varchar("componentName", { length: 255 }),
+  qtyPer: decimal("qtyPer", { precision: 14, scale: 4 }).notNull(),
+  unit: varchar("unit", { length: 16 }).default("pcs").notNull(),
+  refDesignator: varchar("refDesignator", { length: 255 }),
+  alternateGroup: varchar("alternateGroup", { length: 64 }),
+  isOptional: boolean("isOptional").default(false).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_bomline_bom").on(table.bomId),
+  index("idx_bomline_component").on(table.componentCode),
+]);
+
+export type BomLineItem = typeof bomLineItems.$inferSelect;
+export type InsertBomLineItem = typeof bomLineItems.$inferInsert;
+
+/**
+ * Feeder Materials — vật liệu đã nạp lên feeder/slot của 1 máy.
+ * qtyOnFeeder bị trừ dần khi linh kiện được lắp (consumeFeederMaterial, clamp ≥0).
+ */
+export const feederMaterials = pgTable("feeder_materials", {
+  id: serial("id").primaryKey(),
+  machineId: integer("machineId").notNull(),
+  slotCode: varchar("slotCode", { length: 40 }),
+  componentCode: varchar("componentCode", { length: 100 }).notNull(),
+  supplierLotId: integer("supplierLotId"),
+  qtyOnFeeder: decimal("qtyOnFeeder", { precision: 14, scale: 3 }).default("0").notNull(),
+  consumptionRatePerHour: decimal("consumptionRatePerHour", { precision: 14, scale: 3 }),
+  reorderLevel: decimal("reorderLevel", { precision: 14, scale: 3 }).default("0").notNull(),
+  status: varchar("status", { length: 20 }).default("active").notNull(), // active|depleted|removed
+  loadedAt: timestamp("loadedAt"),
+  loadedBy: integer("loadedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_feeder_machine").on(table.machineId),
+  index("idx_feeder_component").on(table.componentCode),
+  index("idx_feeder_suplot").on(table.supplierLotId),
+  // unique slot per machine when slotCode is provided (partial index — NULL slots not constrained)
+  uniqueIndex("uq_feeder_machine_slot").on(table.machineId, table.slotCode).where(sql`"slotCode" IS NOT NULL`),
+]);
+
+export type FeederMaterial = typeof feederMaterials.$inferSelect;
+export type InsertFeederMaterial = typeof feederMaterials.$inferInsert;
+
+/**
+ * Component Installations — telemetry KẾT QUẢ lắp 1 component vào 1 serial board.
+ * Mắt xích genealogy component → serial (forward) / lot → serials (reverse).
+ * genealogyHash = currHash của event "merge" đã append (null nếu chain lỗi — isolation).
+ */
+export const componentInstallations = pgTable("component_installations", {
+  id: serial("id").primaryKey(),
+  serialNumber: varchar("serialNumber", { length: 128 }).notNull(), // board được lắp
+  componentCode: varchar("componentCode", { length: 100 }).notNull(),
+  componentSerial: varchar("componentSerial", { length: 128 }),       // serial linh kiện (nếu có)
+  supplierLotId: integer("supplierLotId"),
+  feederMaterialId: integer("feederMaterialId"),
+  machineId: integer("machineId"),
+  bomLineItemId: integer("bomLineItemId"),
+  qty: decimal("qty", { precision: 14, scale: 4 }).default("1").notNull(),
+  refDesignator: varchar("refDesignator", { length: 120 }),
+  genealogyHash: varchar("genealogyHash", { length: 64 }),
+  installedAt: timestamp("installedAt").defaultNow().notNull(),
+  installedBy: integer("installedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_compinst_serial").on(table.serialNumber),
+  index("idx_compinst_component").on(table.componentCode),
+  index("idx_compinst_suplot").on(table.supplierLotId),
+  index("idx_compinst_machine").on(table.machineId),
+  index("idx_compinst_genhash").on(table.genealogyHash),
+]);
+
+export type ComponentInstallation = typeof componentInstallations.$inferSelect;
+export type InsertComponentInstallation = typeof componentInstallations.$inferInsert;

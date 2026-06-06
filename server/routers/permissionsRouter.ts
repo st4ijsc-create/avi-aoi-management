@@ -104,6 +104,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     // Andon + Interlock (Sprint F5a — ALERT-ONLY; interlock engine has no command path)
     { category: 'andon', moduleName: 'andon', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
     { category: 'interlock', moduleName: 'interlock', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    // MES BOM + Feeder + Component genealogy (Sprint G2.4 — master data + material telemetry, NO machine write)
+    { category: 'mes_bom', moduleName: 'mes_bom', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
     // Annotations
     { category: 'annotations', moduleName: 'annotation_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'annotations', moduleName: 'annotation_create', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
@@ -157,6 +159,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     // Andon + Interlock (F5a) — supervisor manages Andon + interlock rules (no delete on andon)
     { category: 'andon', moduleName: 'andon', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'interlock', moduleName: 'interlock', canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: false },
+    // MES BOM (G2.4) — supervisor (manager) manages BOM/feeder fully (no delete on definitions)
+    { category: 'mes_bom', moduleName: 'mes_bom', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
     // Annotations
     { category: 'annotations', moduleName: 'annotation_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'annotations', moduleName: 'annotation_create', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
@@ -191,6 +195,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'annotations', moduleName: 'annotation_ai', canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
     // Andon (F5a) — quality inspector can raise/ack/resolve quality Andons (no interlock rule mgmt)
     { category: 'andon', moduleName: 'andon', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // MES BOM (G2.4) — quality reviews BOM/feeder + records installs (no delete on definitions)
+    { category: 'mes_bom', moduleName: 'mes_bom', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
   ],
   operator: [
     // Operator can view assigned machines and submit inspection data
@@ -278,7 +284,8 @@ const permissionCategoryEnum = z.enum([
   'annotations',
   'machine_control',
   'andon',
-  'interlock'
+  'interlock',
+  'mes_bom'
 ]);
 
 export const permissionsRouter = router({
@@ -760,6 +767,9 @@ export const permissionsRouter = router({
         // ======================== ANDON + INTERLOCK (Sprint F5a — ALERT-ONLY) ========================
         { category: 'andon', moduleName: 'andon', displayName: 'Andon (Cảnh báo)', displayNameEn: 'Andon', displayNameZh: 'Andon 安灯', description: 'Tín hiệu Andon: raise (canCreate), ack/resolve (canEdit), xem danh sách/metrics (canView). Andon CHỈ là tín hiệu — KHÔNG ghi lệnh máy.' },
         { category: 'interlock', moduleName: 'interlock', displayName: 'Interlock (Khóa liên động)', displayNameEn: 'Interlock', displayNameZh: '联锁规则', description: 'Quy tắc interlock: tạo (canCreate), sửa/bật-tắt (canEdit), xóa (canDelete), xem (canView). Duyệt rule là admin-only. F5a ALERT-ONLY — engine KHÔNG ghi lệnh máy.' },
+
+        // ======================== MES BOM (Sprint G2.4 — BOM + Feeder + component genealogy) ========================
+        { category: 'mes_bom', moduleName: 'mes_bom', displayName: 'BOM & Feeder (MES)', displayNameEn: 'BOM & Feeder (MES)', displayNameZh: 'BOM 与上料 (MES)', description: 'Quản lý BOM + dòng linh kiện, gán/nạp feeder (canCreate/canEdit), lưu trữ/xóa (canDelete), ghi nhận lắp linh kiện + truy vết 2 chiều (canView). Chỉ dữ liệu + telemetry vật tư — KHÔNG ghi lệnh máy.' },
 
         // ======================== ANNOTATIONS ========================
         { category: 'annotations', moduleName: 'annotation_view', displayName: 'Xem Annotation', description: 'Xem annotation trên hình ảnh kiểm tra' },

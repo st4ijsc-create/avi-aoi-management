@@ -3609,6 +3609,8 @@
     "andonBoardDesc": "Andon 警报信号（仅警报，不控制设备）",
     "deviceAdapters": "设备适配器",
     "deviceAdaptersDesc": "管理 OT 连接配置和标签定义",
+    "bomManagement": "BOM 与上料",
+    "bomManagementDesc": "BOM、上料物料与元件谱系追溯（不写设备）",
     "commandAudit": "命令审计日志",
     "commandAuditDesc": "所有设备控制命令的审计日志（只读）",
     "recipes": "设备配方",

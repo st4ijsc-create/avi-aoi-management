@@ -616,6 +616,14 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
       },
+      {
+        href: "/bom-management",
+        label: "nav.bomManagement",
+        icon: <Boxes className="h-4 w-4" />,
+        description: "nav.bomManagementDesc",
+        requiredPermission: "mes_bom",
+        permissionCategory: "mes_bom",
+      },
     ],
   },
 

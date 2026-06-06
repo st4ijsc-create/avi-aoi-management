@@ -3639,6 +3639,8 @@
     "andonBoardDesc": "Tín hiệu cảnh báo Andon (chỉ cảnh báo, không điều khiển máy)",
     "deviceAdapters": "Device Adapter",
     "deviceAdaptersDesc": "Quản lý cấu hình kết nối OT và định nghĩa tag",
+    "bomManagement": "BOM & Feeder",
+    "bomManagementDesc": "BOM, vật liệu feeder và truy vết linh kiện (không ghi máy)",
     "commandAudit": "Nhật ký lệnh",
     "commandAuditDesc": "Nhật ký kiểm toán mọi lệnh điều khiển máy (chỉ xem)",
     "recipes": "Recipe máy",

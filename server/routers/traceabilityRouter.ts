@@ -13,6 +13,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db/connection";
+import { listInstallationsBySerial } from "../db/bom"; // G2.4: component installs for a serial
 import { eq, or } from "drizzle-orm";
 import {
   wipTracking,
@@ -28,7 +29,7 @@ export const traceabilityRouter = router({
     .query(async ({ input }) => {
       const database = await getDb();
       if (!database) {
-        return { serialNumber: input.serialNumber, found: false, wip: [], upstream: [], downstream: [] };
+        return { serialNumber: input.serialNumber, found: false, wip: [], upstream: [], downstream: [], components: [] };
       }
 
       // WIP record(s) cho serial (kèm chuỗi cha qua parentSerialNumber).
@@ -39,6 +40,9 @@ export const traceabilityRouter = router({
           eq(wipTracking.serialNumber, input.serialNumber),
           eq(wipTracking.parentSerialNumber, input.serialNumber),
         ));
+
+      // G2.4 (additive): component installations for this serial (component → board).
+      const components = await listInstallationsBySerial(input.serialNumber);
 
       // Disposition liên quan serial (downstream: rework/scrap/return + customerReturnRef).
       const dispRows = await database
@@ -87,10 +91,11 @@ export const traceabilityRouter = router({
 
       return {
         serialNumber: input.serialNumber,
-        found: wipRows.length > 0 || dispRows.length > 0,
+        found: wipRows.length > 0 || dispRows.length > 0 || components.length > 0,
         wip: wipRows,
         upstream,
         downstream,
+        components,
       };
     }),
 
