@@ -5,7 +5,8 @@
  * registry. Dispatches by `type` to a small dedicated card.
  */
 
-import { Activity, AlertTriangle, CheckCircle2, Database, Gauge, TrendingUp, XCircle } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Database, Gauge, TrendingDown, TrendingUp, XCircle } from "lucide-react";
+import { Line, LineChart, ResponsiveContainer } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -80,17 +81,148 @@ export type ToolResultPayload =
       }>;
       textSummary: string;
       note?: string;
+    }
+  // ── Sprint F6 line-monitoring tools (shapes mirror handlersF6.ts /
+  //    insightHandlersF6.ts exactly) ─────────────────────────────────────────
+  | {
+      type: "process_result";
+      title: string;
+      data: {
+        rows: Array<{
+          serialNumber: string;
+          machineId: number;
+          stepType: string;
+          result: string;
+          measuredAt: string;
+          metrics: Record<string, unknown> | null;
+        }>;
+        summary: { pass: number; fail: number; warn: number; skip: number; failRate: number };
+      };
+      textSummary: string;
+      note?: string;
+    }
+  | {
+      type: "process_metric_trend";
+      title: string;
+      data: {
+        metricKey: string;
+        source: "process" | "telemetry";
+        bucket: "hour" | "day";
+        series: Array<{ ts: number; value: number }>;
+        trend: "increasing" | "decreasing" | "stable";
+        mean: number;
+        anomalyCount: number;
+        forecastNext: number | null;
+      };
+      textSummary: string;
+      note?: string;
+    }
+  | {
+      type: "line_balance";
+      title: string;
+      data: {
+        lineId: number;
+        periodStart: string | null;
+        taktTimeMs: number | null;
+        avgCycleTimeMs: number | null;
+        maxCycleTimeMs: number | null;
+        utilizationPct: number | null;
+        balanceRatePct: number | null;
+        wipCount: number;
+        topStarved: { stationId: number; avgStarvedMs: number } | null;
+        topBlocked: { stationId: number; avgBlockedMs: number } | null;
+      } | null;
+      textSummary: string;
+      note?: string;
+    }
+  | {
+      type: "throughput";
+      title: string;
+      data: {
+        bucket: "hour" | "day";
+        series: Array<{ ts: number; value: number }>;
+        totalPass: number;
+      };
+      textSummary: string;
+      note?: string;
+    }
+  | {
+      type: "palletizer_status";
+      title: string;
+      data: {
+        machineId: number | null;
+        machineCode: string | null;
+        operationStatus: string | null;
+        lastHeartbeat: string | null;
+        latestTelemetry: Array<{ tagKey: string; value: number | string | null; unit: string | null; ts: string }>;
+        latestResult: { result: string; measuredAt: string } | null;
+      } | null;
+      textSummary: string;
+      note?: string;
+    }
+  | {
+      type: "ot_telemetry";
+      title: string;
+      data: {
+        rows: Array<{
+          tagKey: string;
+          value: number | string | null;
+          unit: string | null;
+          quality: string;
+          ts: string;
+        }>;
+      };
+      textSummary: string;
+      note?: string;
+    }
+  | {
+      type: "line_insight";
+      title: string;
+      data: {
+        lineId: number;
+        points: number;
+        cycleTrend: "increasing" | "decreasing" | "stable";
+        wipTrend: "increasing" | "decreasing" | "stable";
+        latestMaxCycleMs: number | null;
+        taktTimeMs: number | null;
+        forecastMaxCycleMs: number | null;
+        taktBreachForecast: boolean;
+      } | null;
+      textSummary: string;
+      note?: string;
+    }
+  | {
+      type: "correlation_insight";
+      title: string;
+      data: {
+        upstreamStepType: string;
+        downstreamStepType: string | null;
+        metricKey: string;
+        paired: number;
+        pearson: number | null;
+        failBins: Array<{ range: string; count: number; fail: number; failRate: number }>;
+      } | null;
+      textSummary: string;
+      note?: string;
     };
 
 // Tool result types that have a dedicated card body below. Any other type
-// (e.g. Sprint F6 line_balance / process_metric_trend / line_insight /
-// correlation_insight, or other server-only types) falls back to textSummary.
+// (server-only types) falls back to textSummary.
 const KNOWN_CARD_TYPES = new Set<string>([
   "today_stats",
   "lot_status",
   "machine_status",
   "defect_trend",
   "top_defects",
+  // Sprint F6 line-monitoring tools.
+  "process_result",
+  "process_metric_trend",
+  "line_balance",
+  "throughput",
+  "palletizer_status",
+  "ot_telemetry",
+  "line_insight",
+  "correlation_insight",
 ]);
 
 interface Props {
@@ -133,9 +265,40 @@ export function AIToolResultCard({ toolResult }: Props) {
         <TopDefectsBody data={toolResult.data} />
       )}
 
+      {/* ── Sprint F6 cards ── */}
+      {toolResult.type === "process_result" &&
+        toolResult.note !== "DB_UNAVAILABLE" &&
+        toolResult.note !== "NOT_FOUND" && <ProcessResultBody data={toolResult.data} />}
+      {toolResult.type === "process_metric_trend" &&
+        toolResult.note !== "DB_UNAVAILABLE" &&
+        toolResult.note !== "NOT_FOUND" && <MetricTrendBody data={toolResult.data} />}
+      {toolResult.type === "line_balance" &&
+        toolResult.data &&
+        toolResult.note !== "DB_UNAVAILABLE" &&
+        toolResult.note !== "NOT_FOUND" && <LineBalanceBody data={toolResult.data} />}
+      {toolResult.type === "throughput" &&
+        toolResult.note !== "DB_UNAVAILABLE" &&
+        toolResult.note !== "NOT_FOUND" && <ThroughputBody data={toolResult.data} />}
+      {toolResult.type === "palletizer_status" &&
+        toolResult.data &&
+        toolResult.note !== "DB_UNAVAILABLE" &&
+        toolResult.note !== "NOT_FOUND" && <PalletizerStatusBody data={toolResult.data} />}
+      {toolResult.type === "ot_telemetry" &&
+        toolResult.note !== "DB_UNAVAILABLE" &&
+        toolResult.note !== "NOT_FOUND" && <OtTelemetryBody data={toolResult.data} />}
+      {toolResult.type === "line_insight" &&
+        toolResult.note !== "DB_UNAVAILABLE" &&
+        toolResult.note !== "NOT_FOUND" && (
+          <InsightTextBody textSummary={toolResult.textSummary} />
+        )}
+      {toolResult.type === "correlation_insight" &&
+        toolResult.note !== "DB_UNAVAILABLE" &&
+        toolResult.note !== "NOT_FOUND" && (
+          <InsightTextBody textSummary={toolResult.textSummary} />
+        )}
+
       {/* Generic fallback: render textSummary for any type without a dedicated
-          card body (e.g. Sprint F6 line_balance / process_metric_trend /
-          line_insight / correlation_insight). */}
+          card body. */}
       {!KNOWN_CARD_TYPES.has(toolResult.type) &&
         toolResult.note !== "DB_UNAVAILABLE" &&
         toolResult.note !== "NOT_FOUND" && (
@@ -293,6 +456,282 @@ function TopDefectsBody({ data }: { data: Extract<ToolResultPayload, { type: "to
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ---- F6: process_result ----
+function ProcessResultBody({ data }: { data: Extract<ToolResultPayload, { type: "process_result" }>["data"] }) {
+  const s = data.summary;
+  const failColor = s.failRate >= 5 ? "text-red-600" : s.failRate >= 2 ? "text-amber-600" : "text-emerald-600";
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-4 gap-1.5">
+        <Stat label="Pass" value={s.pass} color="text-emerald-600" icon={<CheckCircle2 className="size-3" />} />
+        <Stat label="Fail" value={s.fail} color="text-red-600" icon={<XCircle className="size-3" />} />
+        <Stat label="Warn" value={s.warn} color="text-amber-600" icon={<AlertTriangle className="size-3" />} />
+        <Stat label="Skip" value={s.skip} icon={<Activity className="size-3" />} />
+      </div>
+      <div className={cn("flex items-center gap-1.5 font-medium", failColor)}>
+        <TrendingUp className="size-3" />
+        Tỉ lệ fail: {s.failRate}%
+      </div>
+      {data.rows.length > 0 && (
+        <div className="space-y-0.5">
+          <div className="text-muted-foreground text-[11px]">Bản ghi gần nhất:</div>
+          {data.rows.slice(0, 5).map((r, i) => (
+            <div key={`${r.serialNumber}-${i}`} className="flex items-center gap-1.5 text-[11px]">
+              <span className="font-mono truncate flex-1">{r.serialNumber}</span>
+              <span className="text-muted-foreground truncate">{r.stepType}</span>
+              <Badge variant="outline" className={cn("h-4 px-1 text-[9px] shrink-0", resultColor(r.result))}>
+                {r.result}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function resultColor(result: string): string {
+  const r = result.toLowerCase();
+  if (r === "pass") return "border-emerald-300 text-emerald-700";
+  if (r === "fail") return "border-red-300 text-red-700";
+  if (r === "warn") return "border-amber-300 text-amber-700";
+  return "border-slate-300 text-slate-700";
+}
+
+// ---- F6: process_metric_trend (sparkline) ----
+function MetricTrendBody({ data }: { data: Extract<ToolResultPayload, { type: "process_metric_trend" }>["data"] }) {
+  const trendIcon =
+    data.trend === "increasing" ? (
+      <TrendingUp className="size-3 text-red-600" />
+    ) : data.trend === "decreasing" ? (
+      <TrendingDown className="size-3 text-emerald-600" />
+    ) : (
+      <Activity className="size-3 text-muted-foreground" />
+    );
+  const trendVi = data.trend === "increasing" ? "Tăng" : data.trend === "decreasing" ? "Giảm" : "Ổn định";
+  const chartData = data.series.map((p) => ({ ts: p.ts, value: p.value }));
+  return (
+    <div className="space-y-2">
+      {chartData.length >= 2 && (
+        <div className="h-16 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
+              <Line
+                type="monotone"
+                dataKey="value"
+                stroke="hsl(var(--primary))"
+                strokeWidth={1.5}
+                dot={false}
+                isAnimationActive={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+      <div className="grid grid-cols-3 gap-1.5">
+        <Stat label="TB" value={data.mean} />
+        <Stat label="Bất thường" value={data.anomalyCount} color={data.anomalyCount > 0 ? "text-amber-600" : undefined} />
+        <Stat label="Dự báo" value={data.forecastNext ?? 0} color="text-primary" />
+      </div>
+      <div className="flex items-center gap-1.5 text-[11px]">
+        {trendIcon}
+        <span className="font-medium">Xu hướng: {trendVi}</span>
+        <span className="text-muted-foreground ml-auto">
+          {data.metricKey} · {data.series.length} điểm/{data.bucket}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ---- F6: line_balance ----
+function LineBalanceBody({ data }: { data: NonNullable<Extract<ToolResultPayload, { type: "line_balance" }>["data"]> }) {
+  const taktBreach =
+    data.taktTimeMs != null && data.maxCycleTimeMs != null && data.maxCycleTimeMs > data.taktTimeMs;
+  const ms = (v: number | null) => (v == null ? "?" : `${v}ms`);
+  const pctV = (v: number | null) => (v == null ? "?" : `${v}%`);
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+        <LBCell label="Takt" value={ms(data.taktTimeMs)} />
+        <LBCell label="Cycle TB" value={ms(data.avgCycleTimeMs)} />
+        <LBCell label="Cycle max" value={ms(data.maxCycleTimeMs)} highlight={taktBreach} />
+        <LBCell label="Hệ số CB" value={pctV(data.balanceRatePct)} />
+        <LBCell label="Sử dụng" value={pctV(data.utilizationPct)} />
+        <LBCell label="WIP" value={String(data.wipCount)} />
+      </div>
+      {taktBreach && (
+        <div className="flex items-center gap-1.5 text-red-600 font-medium">
+          <AlertTriangle className="size-3" />
+          Cycle max vượt takt → có nút thắt.
+        </div>
+      )}
+      {(data.topBlocked || data.topStarved) && (
+        <div className="space-y-0.5 text-[11px]">
+          {data.topBlocked && data.topBlocked.avgBlockedMs > 0 && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Trạm bị chặn nhất</span>
+              <span className="text-red-600">#{data.topBlocked.stationId} ({data.topBlocked.avgBlockedMs}ms)</span>
+            </div>
+          )}
+          {data.topStarved && data.topStarved.avgStarvedMs > 0 && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Trạm thiếu liệu nhất</span>
+              <span className="text-amber-600">#{data.topStarved.stationId} ({data.topStarved.avgStarvedMs}ms)</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LBCell({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div className="rounded-md bg-muted/60 px-1.5 py-1">
+      <div className="text-[10px] text-muted-foreground">{label}</div>
+      <div className={cn("font-semibold tabular-nums", highlight && "text-red-600")}>{value}</div>
+    </div>
+  );
+}
+
+// ---- F6: throughput (mini bar, mirrors DefectTrendBody) ----
+function ThroughputBody({ data }: { data: Extract<ToolResultPayload, { type: "throughput" }>["data"] }) {
+  const max = Math.max(1, ...data.series.map((s) => s.value));
+  return (
+    <div className="space-y-1.5">
+      {data.series.length > 0 && (
+        <div className="flex items-end gap-0.5 h-16">
+          {data.series.map((s) => {
+            const h = (s.value / max) * 100;
+            return (
+              <div
+                key={s.ts}
+                className="flex-1 flex flex-col items-center justify-end"
+                title={`${new Date(s.ts).toISOString().slice(0, 16)}: ${s.value}`}
+              >
+                <div className="w-full rounded-sm bg-primary" style={{ height: `${Math.max(4, h)}%` }} />
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div className="flex items-center justify-between text-[11px]">
+        <span className="text-muted-foreground">{data.series.length} {data.bucket} hoạt động</span>
+        <span className="font-semibold text-emerald-600">Tổng pass: {data.totalPass}</span>
+      </div>
+    </div>
+  );
+}
+
+// ---- F6: palletizer_status ----
+function PalletizerStatusBody({
+  data,
+}: {
+  data: NonNullable<Extract<ToolResultPayload, { type: "palletizer_status" }>["data"]>;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5 text-[11px]">
+        {data.machineCode && <span className="font-mono font-medium">{data.machineCode}</span>}
+        <Badge variant="outline" className="h-4 px-1 text-[9px]">
+          {data.operationStatus ?? "?"}
+        </Badge>
+        <span className="text-muted-foreground ml-auto">
+          {data.lastHeartbeat ? data.lastHeartbeat.slice(0, 16) : "không có heartbeat"}
+        </span>
+      </div>
+      {data.latestResult && (
+        <div className="flex items-center gap-1.5 text-[11px]">
+          <span className="text-muted-foreground">Kết quả gần nhất:</span>
+          <Badge variant="outline" className={cn("h-4 px-1 text-[9px]", resultColor(data.latestResult.result))}>
+            {data.latestResult.result}
+          </Badge>
+          <span className="text-muted-foreground">{data.latestResult.measuredAt.slice(0, 16)}</span>
+        </div>
+      )}
+      {data.latestTelemetry.length > 0 ? (
+        <div className="space-y-0.5">
+          <div className="text-muted-foreground text-[11px]">Telemetry:</div>
+          {data.latestTelemetry.slice(0, 6).map((t, i) => (
+            <div key={`${t.tagKey}-${i}`} className="flex items-center justify-between text-[11px]">
+              <span className="font-mono truncate">{t.tagKey}</span>
+              <span className="tabular-nums">
+                {t.value ?? "?"}
+                {t.unit ?? ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-muted-foreground italic text-[11px]">Chưa có telemetry.</div>
+      )}
+    </div>
+  );
+}
+
+// ---- F6: ot_telemetry ----
+function OtTelemetryBody({ data }: { data: Extract<ToolResultPayload, { type: "ot_telemetry" }>["data"] }) {
+  if (data.rows.length === 0) {
+    return <div className="text-muted-foreground italic text-[11px]">Không có telemetry.</div>;
+  }
+  return (
+    <div className="space-y-0.5 max-h-48 overflow-y-auto">
+      <div className="grid grid-cols-[1fr_auto_auto] gap-2 text-[10px] text-muted-foreground border-b border-border/50 pb-0.5">
+        <span>Tag</span>
+        <span className="text-right">Giá trị</span>
+        <span className="text-right">Quality</span>
+      </div>
+      {data.rows.map((r, i) => (
+        <div key={`${r.tagKey}-${i}`} className="grid grid-cols-[1fr_auto_auto] gap-2 text-[11px] items-center">
+          <span className="font-mono truncate">{r.tagKey}</span>
+          <span className="text-right tabular-nums">
+            {r.value ?? "?"}
+            {r.unit ?? ""}
+          </span>
+          <span
+            className={cn(
+              "text-right text-[10px]",
+              r.quality.toLowerCase() === "good" ? "text-emerald-600" : "text-amber-600",
+            )}
+          >
+            {r.quality}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---- F6: line_insight / correlation_insight (structured text narrative) ----
+function InsightTextBody({ textSummary }: { textSummary: string }) {
+  // The insight handlers build a multi-section Vietnamese narrative joined by
+  // "\n" with [Hiện trạng]/[Dự báo]/[ĐỀ XUẤT]/[Phân bố lỗi …] markers. Render
+  // each line as a block; bold the leading [marker] for readability.
+  const lines = textSummary.split("\n").filter((l) => l.trim().length > 0);
+  return (
+    <div className="space-y-1.5 text-foreground/90">
+      {lines.map((line, i) => {
+        const m = line.match(/^\s*\[([^\]]+)\]\s*(.*)$/);
+        if (m) {
+          const isAdvice = /đề xuất/i.test(m[1]);
+          return (
+            <div key={i} className="text-[11px] leading-relaxed">
+              <span className={cn("font-semibold", isAdvice ? "text-primary" : "text-foreground")}>[{m[1]}]</span>{" "}
+              <span>{m[2]}</span>
+            </div>
+          );
+        }
+        return (
+          <div key={i} className="text-[11px] leading-relaxed">
+            {line}
+          </div>
+        );
+      })}
     </div>
   );
 }
