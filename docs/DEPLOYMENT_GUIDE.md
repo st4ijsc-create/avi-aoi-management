@@ -39,9 +39,10 @@
 |----------|-----------|
 | Node.js | 18.x hoặc 22.x |
 | pnpm | 8.x+ |
-| MySQL/TiDB | 8.0+ |
-| MQTT Broker | Mosquitto 2.x hoặc HiveMQ |
-| Redis (optional) | 7.x |
+| PostgreSQL | 16+ (khuyến nghị 16/18) — cần extension **pgvector** cho tìm kiếm ảnh/embedding AI |
+| TimescaleDB (tùy chọn) | 2.17+ — chỉ khi bật time-series nâng cao (`TSDB_URL`) |
+| MQTT Broker | **Đã nhúng sẵn (aedes)** trong ứng dụng — không cần cài ngoài. EMQX 5.x chỉ cần khi dùng UNS/Sparkplug B đa nhà máy |
+| Redis (optional) | 7.x — cache phân tán + Socket.IO adapter khi chạy nhiều instance |
 | Nginx (reverse proxy) | 1.24+ |
 
 ---
@@ -78,24 +79,38 @@ cd /opt/avi-aoi-management
 
 ## 3. Cài Đặt Database
 
-### 3.1 MySQL Setup
+> Hệ thống chạy trên **PostgreSQL** (qua Drizzle ORM, driver `postgres-js`). Kết nối cấu hình bằng biến môi trường `DATABASE_URL`. Extension **pgvector** cần thiết cho tìm kiếm ảnh/embedding AI (có cơ chế fallback brute-force nếu thiếu, nhưng nên cài để đạt hiệu năng).
+
+### 3.1 PostgreSQL Setup
 
 ```bash
-# Install MySQL
-sudo apt-get install mysql-server
+# Install PostgreSQL 16 (Ubuntu/Debian)
+sudo apt-get install -y postgresql-16 postgresql-contrib-16
 
-# Secure installation
-sudo mysql_secure_installation
+# (khuyến nghị) cài pgvector
+sudo apt-get install -y postgresql-16-pgvector
 
 # Create database and user
-sudo mysql -u root -p
+sudo -u postgres psql
 ```
 
 ```sql
-CREATE DATABASE avi_aoi_mes CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'mes_user'@'localhost' IDENTIFIED BY 'your_secure_password';
-GRANT ALL PRIVILEGES ON avi_aoi_mes.* TO 'mes_user'@'localhost';
-FLUSH PRIVILEGES;
+CREATE DATABASE avi_aoi_mes;
+CREATE USER mes_user WITH ENCRYPTED PASSWORD 'your_secure_password';
+GRANT ALL PRIVILEGES ON DATABASE avi_aoi_mes TO mes_user;
+-- Kết nối vào DB rồi bật extension pgvector:
+\c avi_aoi_mes
+CREATE EXTENSION IF NOT EXISTS vector;
+-- LƯU Ý BẢO MẬT: app KHÔNG nên kết nối bằng superuser — RLS audit-log
+-- (append-only) chỉ có hiệu lực khi app dùng user thường (mes_user).
+```
+
+Đặt `DATABASE_URL` trong `.env`:
+
+```env
+DATABASE_URL=postgres://mes_user:your_secure_password@localhost:5432/avi_aoi_mes
+# (tùy chọn) time-series nâng cao trên TimescaleDB riêng:
+# TSDB_URL=postgres://mes_user:...@localhost:5433/avi_aoi_tsdb
 ```
 
 ### 3.2 Database Migration
@@ -106,7 +121,7 @@ cd /opt/avi-aoi-management
 # Install dependencies
 pnpm install
 
-# Run migrations
+# Run migrations (drizzle-kit generate + runner standalone áp file drizzle/*.sql)
 pnpm db:push
 ```
 
@@ -114,52 +129,41 @@ pnpm db:push
 
 ## 4. Cấu Hình MQTT Broker
 
-### 4.1 Cài Đặt Mosquitto
+> **Không cần cài broker ngoài.** Ứng dụng nhúng sẵn broker **aedes** (TCP + WebSocket), bật bằng `MQTT_ENABLED=true`. Thiết bị/máy kết nối trực tiếp tới ứng dụng. Mosquitto/HiveMQ KHÔNG còn được dùng.
 
-```bash
-# Install Mosquitto
-sudo apt-get install mosquitto mosquitto-clients
+### 4.1 Cấu Hình Broker Nhúng (aedes)
 
-# Enable and start service
-sudo systemctl enable mosquitto
-sudo systemctl start mosquitto
+Đặt trong `.env`:
+
+```env
+MQTT_ENABLED=true
+MQTT_PORT=1883          # listener TCP cho thiết bị/máy
+MQTT_WS_PORT=8883       # listener WebSocket cho client trình duyệt
+# Xác thực client dựa trên đăng ký thiết bị trong DB (bảng mqttClients),
+# username dạng "deviceId:deviceName:deviceModel".
 ```
 
-### 4.2 Cấu Hình Mosquitto
+Topic chuẩn của hệ thống:
 
-Tạo file `/etc/mosquitto/conf.d/mes.conf`:
-
-```conf
-# Listener configuration
-listener 1883
-protocol mqtt
-
-# WebSocket listener (for browser clients)
-listener 9001
-protocol websockets
-
-# Authentication
-allow_anonymous false
-password_file /etc/mosquitto/passwd
-
-# Logging
-log_dest file /var/log/mosquitto/mosquitto.log
-log_type all
-
-# Persistence
-persistence true
-persistence_location /var/lib/mosquitto/
+```
+avi/factory/{factory}/workshop/{workshop}/station/{station}/errors|summary
+avi/client/{clientId}/commands
+avi/system/broadcast
 ```
 
-### 4.3 Tạo User MQTT
+> ⚠️ **Bảo mật (cần làm trước production):** broker nhúng hiện bind `0.0.0.0` và chưa bật TLS. Với môi trường production nên đặt sau reverse proxy/TLS terminator, hoặc dùng EMQX có TLS (xem 4.2). Đây là hạng mục đang được xử lý trong Phase 1 (WS1.3) của lộ trình nâng cấp.
 
-```bash
-# Create password file
-sudo mosquitto_passwd -c /etc/mosquitto/passwd mes_system
+### 4.2 (Tùy chọn) EMQX cho UNS / Sparkplug B đa nhà máy
 
-# Restart Mosquitto
-sudo systemctl restart mosquitto
+Chỉ cần khi bật Unified Namespace liên nhà máy. Bật bằng các biến:
+
+```env
+UNS_BRIDGE_ENABLED=true
+UNS_SPARKPLUG_ENABLED=true
+UNS_BROKER_URL=mqtt://emqx-host:1884   # broker EMQX riêng, port khác broker nhúng để tránh loop
 ```
+
+Ứng dụng chỉ **publish** sang EMQX (chuẩn hóa topic theo ISA-95); không tiêu thụ lệnh điều khiển từ EMQX.
 
 ---
 
