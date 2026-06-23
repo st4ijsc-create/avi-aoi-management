@@ -4461,6 +4461,16 @@ async function startServer() {
     console.error("[MatviewRefresh] init failed:", (err as any)?.message || err);
   }
 
+  // P1 WS1.1 — Data retention pruning for high-volume time-series/log tables.
+  // Disabled by default (it deletes data). Opt in via DATA_RETENTION_ENABLED=true;
+  // use DATA_RETENTION_DRY_RUN=true for a safe first pass.
+  try {
+    const { startDataRetention } = await import("../services/dataRetentionService");
+    startDataRetention();
+  } catch (err) {
+    console.error("[Retention] init failed:", (err as any)?.message || err);
+  }
+
   // G1 — Edge Gateway OPC-UA/Modbus ingest (scaffold).
   // Disabled by default; opt in via OPCUA_GATEWAY_ENABLED=true + OPCUA_ENDPOINT_URL.
   try {
@@ -4573,6 +4583,10 @@ async function startServer() {
     // G3/G12 — dừng DR verify-restore (no-op nếu chưa chạy)
     import("../services/disasterRecoveryService")
       .then((m) => m.stopDisasterRecoveryService())
+      .catch(() => {});
+    // P1 WS1.1 — dừng data retention sweeper (no-op nếu chưa chạy)
+    import("../services/dataRetentionService")
+      .then((m) => m.stopDataRetention())
       .catch(() => {});
     server.close(() => {
       logger.info("Server closed");
