@@ -13,6 +13,7 @@ import { appRouter } from "../routers";
 import { getDb } from "../db";
 import { MACHINE_TYPES } from "../constants/machineTypes";
 import { createContext } from "./context";
+import { isValidMasterKey } from "./masterKey";
 import { serveStatic, setupVite } from "./vite";
 import { initializeSocket } from "./socket";
 import { uploadGuard } from "./uploadValidation";
@@ -134,12 +135,24 @@ async function startServer() {
     .split(",")
     .map((o) => o.trim())
     .filter(Boolean);
-  const corsAllowAll = corsAllowList.length === 0;
-  if (corsAllowAll) {
-    console.warn(
-      "[CORS] ALLOWED_ORIGINS is not configured — reflecting all browser origins. " +
-        "Set ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com to harden CORS.",
-    );
+  const corsIsProd = process.env.NODE_ENV === "production";
+  // Hardening (WS0.2): never reflect arbitrary browser origins with credentials
+  // in production. When ALLOWED_ORIGINS is empty in production we lock down
+  // cross-origin browser access (same-origin SPA + no-Origin LAN machine
+  // clients are unaffected). In development we keep the permissive fallback.
+  const corsAllowAll = corsAllowList.length === 0 && !corsIsProd;
+  if (corsAllowList.length === 0) {
+    if (corsIsProd) {
+      console.error(
+        "[CORS] ALLOWED_ORIGINS is not configured in production — cross-origin " +
+          "browser requests are DENIED. Set ALLOWED_ORIGINS=https://app.example.com to allow them.",
+      );
+    } else {
+      console.warn(
+        "[CORS] ALLOWED_ORIGINS is not configured — reflecting all browser origins (dev only). " +
+          "Set ALLOWED_ORIGINS to harden CORS.",
+      );
+    }
   }
 
   app.use((req, res, next) => {
@@ -1180,8 +1193,6 @@ async function startServer() {
   // Allows AVI/AOI clients to auto-register machines and get API keys
   // Uses Master API Key for authentication
   // ============================================================
-  const MASTER_API_KEY = process.env.MASTER_API_KEY || "master_api_key_change_me";
-  
   // Middleware to validate external app access:
   //   1. Master API Key via header x-master-key  (for server-to-server)
   //   2. Bearer token via header Authorization   (for app clients that login with username/password)
@@ -1209,7 +1220,7 @@ async function startServer() {
     }
 
     const masterKey = headerKey || (queryKeyBlocked ? undefined : queryKey);
-    if (masterKey === MASTER_API_KEY) {
+    if (isValidMasterKey(masterKey)) {
       return next();
     }
 
@@ -3773,13 +3784,16 @@ async function startServer() {
   app.put("/api/aoi/upload/:packageId", express.raw({ type: "*/*", limit: "200mb" }), uploadGuard("zip"), async (req, res) => {
     const startTime = Date.now();
     
-    // Ensure CORS headers are set (even on error responses)
+    // Ensure CORS headers are set (even on error responses). Hardening (WS0.2):
+    // only reflect allow-listed origins with credentials — never an arbitrary
+    // origin. The global CORS middleware already ran for this request.
     const origin = req.headers.origin;
-    if (origin) {
+    if (origin && (corsAllowAll || corsAllowList.includes(origin))) {
       res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
       res.setHeader("Access-Control-Allow-Credentials", "true");
     }
-    
+
     try {
       const { packageId } = req.params;
       const apiKey = req.header("x-api-key") || req.header("X-API-Key") || "";
@@ -4271,11 +4285,10 @@ async function startServer() {
       const masterKey = req.header("x-master-key") || (req.query.masterKey as string) || "";
       const apiKey = req.header("x-api-key") || (req.query.apiKey as string) || "";
       const machineCode = req.header("x-machine-code") || (req.query.machineCode as string) || "";
-      const MASTER_API_KEY = process.env.MASTER_API_KEY || "master_api_key_change_me";
 
       // Validate access
       let authorized = false;
-      if (masterKey && masterKey === MASTER_API_KEY) {
+      if (isValidMasterKey(masterKey)) {
         authorized = true;
       } else if (apiKey) {
         const machine = await import("../db").then(m => m.getMachineByApiKey(apiKey));

@@ -1,6 +1,7 @@
 import { publicProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { isValidMasterKey } from "../_core/masterKey";
 import * as db from "../db";
 import { storageGet, resolveImageToDataUrl } from "../storage";
 import { getDb } from "../db/connection";
@@ -53,12 +54,10 @@ function extractImageDimensionsFromDataUri(dataUri: string): { width: number; he
 // Cho phép ứng dụng bên thứ 3 truy xuất thông tin sản phẩm, ảnh mẫu và điểm đo
 // Xác thực bằng masterKey, apiKey hoặc machineCode
 
-const MASTER_API_KEY = process.env.MASTER_API_KEY || "master_api_key_change_me";
-
 async function validateAccess(input: { apiKey?: string; machineCode?: string; masterKey?: string }) {
   // Option 1: Master API Key (cho app bên thứ 3 dùng x-master-key)
   if (input.masterKey) {
-    if (input.masterKey === MASTER_API_KEY) return null;
+    if (isValidMasterKey(input.masterKey)) return null;
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid master key" });
   }
   // Option 2: Machine API Key

@@ -183,7 +183,16 @@ class SDKServer {
     options: { expiresInMs?: number } = {}
   ): Promise<string> {
     const issuedAt = Date.now();
-    const expiresInMs = options.expiresInMs ?? ONE_YEAR_MS;
+    // Session TTL is operator-configurable via SESSION_TTL_DAYS (hardening:
+    // the previous hardcoded 1-year cookie is long-lived; recommend 7–30 days
+    // in production). Default preserved at 1 year to avoid invalidating
+    // existing sessions on upgrade.
+    const ttlDays = Number(process.env.SESSION_TTL_DAYS);
+    const defaultTtlMs =
+      Number.isFinite(ttlDays) && ttlDays > 0
+        ? ttlDays * 24 * 60 * 60 * 1000
+        : ONE_YEAR_MS;
+    const expiresInMs = options.expiresInMs ?? defaultTtlMs;
     const expirationSeconds = Math.floor((issuedAt + expiresInMs) / 1000);
     const secretKey = this.getSessionSecret();
 
