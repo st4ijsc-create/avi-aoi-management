@@ -35,7 +35,66 @@ const requireUser = t.middleware(async opts => {
   });
 });
 
-export const protectedProcedure = t.procedure.use(requireUser);
+/**
+ * Global audit middleware (Phase 0 WS0.5).
+ *
+ * Records every authenticated MUTATION to the audit log (who/what/when +
+ * success|failure + duration). Scoped to authenticated procedures so the
+ * high-volume public machine-ingest path (publicProcedure) is not flooded
+ * into the audit trail. Fire-and-forget: auditing never blocks or fails the
+ * request. Disable with AUDIT_ALL_MUTATIONS=false. Input values are NOT
+ * logged here (avoids leaking secrets); call sites that need field-level
+ * diffs continue to use auditTrailService directly.
+ */
+const auditAllMutations = process.env.AUDIT_ALL_MUTATIONS !== "false";
+
+const auditMutationMiddleware = t.middleware(async (opts) => {
+  const { ctx, next, type, path } = opts;
+  if (!auditAllMutations || type !== "mutation") {
+    return next();
+  }
+
+  const startedAt = Date.now();
+  const result = await next();
+
+  // Fire-and-forget; dynamic import avoids module load-order coupling.
+  try {
+    const u = ctx.user as { id?: number; username?: string; name?: string } | null;
+    const errorCode = result.ok ? undefined : (result as { error?: { code?: string } }).error?.code;
+    void import("../services/auditTrailService")
+      .then(({ logCrudOperation }) =>
+        logCrudOperation(
+          {
+            userId: u?.id ?? null,
+            userName: u?.username ?? u?.name ?? null,
+            ipAddress: ctx.req?.ip ?? null,
+            userAgent: (ctx.req?.headers?.["user-agent"] as string | undefined) ?? null,
+            source: "trpc",
+          },
+          {
+            action: path,
+            entityType: "trpc_mutation",
+            details: {
+              operation: "mutation",
+              duration: Date.now() - startedAt,
+              metadata: { path, ok: result.ok },
+              ...(errorCode ? { errorMessage: errorCode } : {}),
+            },
+            status: result.ok ? "success" : "failure",
+          },
+        ),
+      )
+      .catch(() => {
+        /* auditing must never affect the request */
+      });
+  } catch {
+    /* swallow */
+  }
+
+  return result;
+});
+
+export const protectedProcedure = t.procedure.use(requireUser).use(auditMutationMiddleware);
 
 export const adminProcedure = t.procedure.use(
   t.middleware(async opts => {
@@ -59,7 +118,7 @@ export const adminProcedure = t.procedure.use(
       },
     });
   }),
-);
+).use(auditMutationMiddleware);
 
 // Role-based procedure factory — accepts an array of allowed roles
 type UserRole = 'admin' | 'supervisor' | 'quality_inspector' | 'operator' | 'maintenance' | 'viewer' | 'user';
@@ -99,7 +158,7 @@ export function roleProcedure(...allowedRoles: UserRole[]) {
 
       return next({ ctx: { ...ctx, user: ctx.user } });
     }),
-  );
+  ).use(auditMutationMiddleware);
 }
 
 // Pre-built role procedures for common use cases
