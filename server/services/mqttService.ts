@@ -11,6 +11,7 @@
 
 import Aedes from 'aedes';
 import { createServer } from 'aedes-server-factory';
+import { readFileSync } from 'fs';
 import { initUnsPublisher, publishNormalized, publishAoiBridge, publishNdeathGraceful, shutdownUnsPublisher } from './unsPublisher';
 import { mapAoiTopicToSparkplug } from './uns/aoiBridge';
 import { drizzle } from 'drizzle-orm/mysql2';
@@ -162,6 +163,7 @@ export function processAedesPublish(topic: string, payload: Buffer | string | un
 let aedes: Aedes | null = null;
 let mqttServer: ReturnType<typeof createServer> | null = null;
 let mqttWsServer: ReturnType<typeof createServer> | null = null;
+let mqttTlsServer: ReturnType<typeof createServer> | null = null;
 let db: any = null;
 let mqttHandlersInitialized = false;
 let mqttPortConflictDetected = false;
@@ -174,6 +176,18 @@ let staleClientTimer: NodeJS.Timeout | null = null;
 const MQTT_PORT = parseInt(process.env.MQTT_PORT || '1883');
 const MQTT_WS_PORT = parseInt(process.env.MQTT_WS_PORT || '8883');
 const MQTT_ENABLED = process.env.MQTT_ENABLED === 'true';
+
+// Phase 1 WS1.3 — Broker hardening (all opt-in, backward-compatible).
+// TLS (MQTTS): additive listener on MQTT_TLS_PORT when MQTT_TLS_ENABLED=true and
+// cert/key paths are provided; existing plaintext listeners are unchanged.
+const MQTT_TLS_ENABLED = process.env.MQTT_TLS_ENABLED === 'true';
+const MQTT_TLS_PORT = parseInt(process.env.MQTT_TLS_PORT || '8884');
+const MQTT_TLS_CERT = process.env.MQTT_TLS_CERT || '';
+const MQTT_TLS_KEY = process.env.MQTT_TLS_KEY || '';
+// Per-device password enforcement: when true, a client whose DB record has a
+// password set must present a matching MQTT password. Devices with no stored
+// password keep working (so enabling this never locks out existing devices).
+const MQTT_REQUIRE_PASSWORD = process.env.MQTT_REQUIRE_PASSWORD === 'true';
 
 // External MQTT broker configuration (HiveMQ Public or custom)
 const EXTERNAL_MQTT_ENABLED = process.env.EXTERNAL_MQTT_ENABLED === 'true';
@@ -262,6 +276,25 @@ export function initMqttBroker() {
   mqttWsServer.listen(MQTT_WS_PORT, '0.0.0.0', () => {
     console.log(`[MQTT] WebSocket broker started on 0.0.0.0:${MQTT_WS_PORT}`);
   });
+
+  // Phase 1 WS1.3 — Optional MQTTS (TLS) listener. Additive: existing plaintext
+  // listeners are untouched. Requires MQTT_TLS_CERT + MQTT_TLS_KEY (PEM files).
+  if (MQTT_TLS_ENABLED) {
+    if (!MQTT_TLS_CERT || !MQTT_TLS_KEY) {
+      console.error('[MQTT] MQTT_TLS_ENABLED but MQTT_TLS_CERT/MQTT_TLS_KEY not set — skipping TLS listener.');
+    } else {
+      try {
+        const tlsOpts = { key: readFileSync(MQTT_TLS_KEY), cert: readFileSync(MQTT_TLS_CERT) };
+        mqttTlsServer = createServer(aedes, { tls: tlsOpts });
+        attachServerErrorHandler(mqttTlsServer, 'TLS broker', MQTT_TLS_PORT);
+        mqttTlsServer.listen(MQTT_TLS_PORT, '0.0.0.0', () => {
+          console.log(`[MQTT] TLS (MQTTS) broker started on 0.0.0.0:${MQTT_TLS_PORT}`);
+        });
+      } catch (err) {
+        console.error('[MQTT] Failed to start TLS listener:', (err as Error)?.message ?? err);
+      }
+    }
+  }
 
   // If DB was initialized earlier (e.g. in tests), attach handlers now
   if (db && !mqttHandlersInitialized) {
@@ -364,7 +397,20 @@ function setupEventHandlers() {
 
       if (existingClient.length > 0) {
         const mqttClient = existingClient[0];
-        
+
+        // Phase 1 WS1.3 — per-device password enforcement (opt-in). Only enforced
+        // when this device has a password configured, so enabling the flag never
+        // locks out existing password-less devices. (Stored plaintext per the
+        // existing column design.)
+        if (MQTT_REQUIRE_PASSWORD && mqttClient.password) {
+          const supplied = password?.toString() ?? '';
+          if (supplied !== mqttClient.password) {
+            console.warn(`[MQTT] Auth rejected (bad password) for device ${deviceId}`);
+            callback({ returnCode: 4 } as any, false);
+            return;
+          }
+        }
+
         // Check if approved
         if (mqttClient.approvalStatus === 'REJECTED' && mqttClient.isActive) {
           callback({ returnCode: 5 } as any, false);
@@ -1356,6 +1402,11 @@ export function shutdownMqttBroker(): Promise<void> {
     // G1 — close UNS publisher connection (no-op if not initialized)
     .finally(() => { void shutdownUnsPublisher(); });
   return new Promise((resolve) => {
+    // Phase 1 WS1.3 — close optional TLS listener if running.
+    if (mqttTlsServer) {
+      mqttTlsServer.close(() => console.log('[MQTT] TLS server closed'));
+      mqttTlsServer = null;
+    }
     if (mqttServer) {
       mqttServer.close(() => {
         console.log('[MQTT] Server closed');
