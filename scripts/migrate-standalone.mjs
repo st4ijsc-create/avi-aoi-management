@@ -27,6 +27,13 @@ const __dirname = path.dirname(__filename);
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
 const FORCE = args.includes('--force');
+// Strict mode (Phase 0 WS0.1): fail-fast on genuine errors instead of
+// silently continuing. "already exists" errors and legacy MySQL files remain
+// tolerated. Opt-in via --strict or MIGRATE_STRICT=1 (default off to preserve
+// the existing lenient provisioning behaviour).
+const STRICT = args.includes('--strict')
+  || process.env.MIGRATE_STRICT === '1'
+  || process.env.MIGRATE_STRICT === 'true';
 
 // Legacy migrations that may have been partially applied outside the tracker.
 // For these files only, we can treat "already exists" errors as success,
@@ -187,7 +194,7 @@ let failCount = 0;
 for (const file of pending) {
   const filePath = path.join(DRIZZLE_DIR, file);
   const content = fs.readFileSync(filePath, 'utf-8').trim();
-  
+
   if (!content) {
     console.log(`    [SKIP] ${file} (empty file)`);
     continue;
@@ -195,6 +202,23 @@ for (const file of pending) {
 
   // Simple checksum (sum of char codes, not crypto - just for tracking)
   const checksum = simpleHash(content);
+
+  // Skip dead legacy MySQL-syntax migrations (Phase 0 WS0.1). These predate
+  // the Postgres rebaseline and always errored on Postgres (then got swallowed,
+  // producing noisy FAIL rows). Backticks / AUTO_INCREMENT / ENGINE= never
+  // appear in valid Postgres DDL, so detection is unambiguous. Record them as
+  // applied so they leave the pending list permanently.
+  if (isLegacyMysqlMigration(content)) {
+    try {
+      await sql`
+        INSERT INTO "__applied_migrations" (filename, checksum, success)
+        VALUES (${file}, ${checksum}, true)
+        ON CONFLICT (filename) DO UPDATE SET applied_at = NOW(), checksum = ${checksum}, success = true
+      `;
+    } catch (_) { /* ignore tracking errors */ }
+    console.log(`    [SKIP-LEGACY] ${file} (MySQL-syntax, not applicable to Postgres)`);
+    continue;
+  }
 
   try {
     // Split by statement breakpoints (drizzle uses --> statement-breakpoint)
@@ -254,8 +278,17 @@ for (const file of pending) {
       `;
     } catch (_) { /* ignore tracking errors */ }
 
-    // Don't stop on failure - some migrations may fail because tables/columns already exist
-    // The IF NOT EXISTS patterns in most files make this safe
+    // Strict mode: a genuine (non-"already exists") error stops the run so it
+    // is not silently recorded and skipped. "already exists" stays tolerated.
+    if (STRICT && !isAlreadyExistsError(e)) {
+      console.error('\n  [STRICT] Stopping on genuine migration error (MIGRATE_STRICT enabled).');
+      await sql.end();
+      process.exit(1);
+    }
+
+    // Default (lenient): don't stop on failure - some migrations may fail
+    // because tables/columns already exist. The IF NOT EXISTS patterns make
+    // this safe for routine provisioning.
   }
 }
 
@@ -335,6 +368,18 @@ function simpleHash(str) {
     hash = hash & hash; // Convert to 32-bit integer
   }
   return Math.abs(hash).toString(16).padStart(8, '0');
+}
+
+function isLegacyMysqlMigration(content) {
+  // MySQL-only DDL markers that never appear in valid Postgres migrations.
+  // Deliberately conservative: we do NOT key off backticks alone (some valid
+  // Postgres files contain a stray backtick in comments/strings). AUTO_INCREMENT
+  // and ENGINE=InnoDB are unambiguous and match exactly the dead legacy set.
+  // A false negative is harmless (file is simply attempted as before); a false
+  // positive (skipping a real Postgres migration) must never happen.
+  if (/\bAUTO_INCREMENT\b/i.test(content)) return true;
+  if (/\bENGINE\s*=\s*InnoDB\b/i.test(content)) return true;
+  return false;
 }
 
 function isAlreadyExistsError(error) {
