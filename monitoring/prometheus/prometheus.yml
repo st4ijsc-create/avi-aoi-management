@@ -1,0 +1,23 @@
+# Phase 1 WS1.5 — Prometheus scrape config for the AVI/AOI platform.
+#
+# The app exposes Prometheus metrics at GET /metrics when METRICS_ENABLED=true
+# (and the optional `prom-client` package is installed). Metrics are prefixed
+# `avi_aoi_` and include Node default metrics + HTTP request counter/histogram.
+#
+# Adjust `targets` to your app host:port. If the app runs in the same compose
+# network as Prometheus, use the service name (e.g. app:3000).
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    system: avi-aoi
+
+scrape_configs:
+  - job_name: avi-aoi-app
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - host.docker.internal:3000   # app /metrics (change to app:3000 if same network)
+        labels:
+          service: avi-aoi-app

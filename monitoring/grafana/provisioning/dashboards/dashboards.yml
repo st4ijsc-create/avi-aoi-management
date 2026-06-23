@@ -1,0 +1,12 @@
+# Phase 1 WS1.5 — Grafana dashboard provider.
+apiVersion: 1
+providers:
+  - name: avi-aoi
+    orgId: 1
+    folder: AVI-AOI
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
