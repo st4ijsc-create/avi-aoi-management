@@ -4,7 +4,7 @@
 // It captures the OUTCOME of a generic process/station step (torque, dispense volume,
 // cycle, functional test, …) emitted by ANY machine type — NOT a control command and NOT
 // a replacement for the AOI/AVI inspection tables. Backward-compatible, no regression.
-import { pgTable, serial, integer, varchar, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, varchar, jsonb, timestamp, index, primaryKey } from "drizzle-orm/pg-core";
 import { machineTypeEnum, processResultEnum } from "./enums";
 
 /**
@@ -12,7 +12,8 @@ import { machineTypeEnum, processResultEnum } from "./enums";
  * Telemetry kết quả (pass/fail/warn/skip) kèm số liệu đo (metrics). KHÔNG phải lệnh điều khiển.
  */
 export const processResults = pgTable("process_results", {
-  id: serial("id").primaryKey(),
+  // Composite PK (id, measuredAt) for the TimescaleDB hypertable (0118).
+  id: serial("id"),
   serialNumber: varchar("serialNumber", { length: 128 }).notNull(),
   machineId: integer("machineId").notNull(),
   machineType: machineTypeEnum("machineType"), // denormalized snapshot (nullable)
@@ -28,6 +29,7 @@ export const processResults = pgTable("process_results", {
   recordedBy: integer("recordedBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
+  primaryKey({ columns: [table.id, table.measuredAt] }),
   index("idx_process_results_serial").on(table.serialNumber),
   index("idx_process_results_machine").on(table.machineId),
   index("idx_process_results_step").on(table.stepType),

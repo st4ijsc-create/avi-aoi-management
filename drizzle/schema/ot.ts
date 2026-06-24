@@ -5,7 +5,7 @@
 //   - deviceAdapters: one configured connection to a PLC/SCADA/device (protocol + endpoint)
 //   - deviceTags:     individual addressable points read from an adapter
 //   - otTelemetry:    time-series samples ingested from tags
-import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, jsonb, index, unique } from "drizzle-orm/pg-core"; // `unique` used by deviceTags composite key
+import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, json, jsonb, index, unique, primaryKey } from "drizzle-orm/pg-core"; // `unique` used by deviceTags composite key; `primaryKey` for hypertable composite PK
 import { otProtocolEnum, otDataTypeEnum, otAdapterStatusEnum, machineTypeEnum, recipeStatusEnum, deploymentStatusEnum, commandStatusEnum, commandTriggerKindEnum } from "./enums";
 
 /**
@@ -67,7 +67,9 @@ export type InsertDeviceTag = typeof deviceTags.$inferInsert;
  * Số → valueNumeric; bool/string/json → valueText (xem ingest.mapSampleToRow).
  */
 export const otTelemetry = pgTable("ot_telemetry", {
-  id: serial("id").primaryKey(),
+  // Composite PK (id, timestamp) — required for the TimescaleDB hypertable
+  // (see drizzle/0118_timescale_hypertables.sql). `id` keeps its serial default.
+  id: serial("id"),
   adapterId: integer("adapterId").notNull(),
   machineId: integer("machineId"),
   tagKey: varchar("tagKey", { length: 128 }).notNull(),
@@ -77,6 +79,7 @@ export const otTelemetry = pgTable("ot_telemetry", {
   timestamp: timestamp("timestamp").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
+  primaryKey({ columns: [table.id, table.timestamp] }),
   index("idx_ot_telemetry_adapter").on(table.adapterId),
   index("idx_ot_telemetry_machine").on(table.machineId),
   index("idx_ot_telemetry_tag_time").on(table.tagKey, table.timestamp),

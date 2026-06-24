@@ -1,9 +1,10 @@
 // Schema domain: OEE tables
-import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, index, primaryKey } from "drizzle-orm/pg-core";
 import { periodTypeEnum, categoryEnum, detectionMethodEnum } from "./enums";
 
 export const oeeMetrics = pgTable("oee_metrics", {
-  id: serial("id").primaryKey(),
+  // Composite PK (id, timestamp) for the TimescaleDB hypertable (0118).
+  id: serial("id"),
   machineId: integer("machineId").notNull(),
   machineCode: varchar("machineCode", { length: 50 }).notNull(),
   // Time period
@@ -26,6 +27,7 @@ export const oeeMetrics = pgTable("oee_metrics", {
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [
+  primaryKey({ columns: [table.id, table.timestamp] }),
   index("idx_oee_machine").on(table.machineId),
   index("idx_oee_machine_code").on(table.machineCode),
   index("idx_oee_timestamp").on(table.timestamp),

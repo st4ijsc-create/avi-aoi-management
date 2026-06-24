@@ -1,5 +1,5 @@
 // Schema domain: Machine tables
-import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, varchar, decimal, boolean, index, primaryKey } from "drizzle-orm/pg-core";
 import { statusEnum_1, operationStatusEnum, protocolEnum, connectionStatusEnum, maintenanceUrgencyEnum } from "./enums";
 
 /**
@@ -27,7 +27,8 @@ export type InsertMachineStatusLog = typeof machineStatusLogs.$inferInsert;
  * Machine Heartbeat History - Lịch sử heartbeat chi tiết
  */
 export const machineHeartbeats = pgTable("machine_heartbeats", {
-  id: serial("id").primaryKey(),
+  // Composite PK (id, timestamp) for the TimescaleDB hypertable (0118).
+  id: serial("id"),
   machineId: integer("machineId").notNull(),
   ipAddress: varchar("ipAddress", { length: 45 }),
   status: operationStatusEnum("status").default("running").notNull(),
@@ -37,6 +38,7 @@ export const machineHeartbeats = pgTable("machine_heartbeats", {
   temperature: decimal("temperature", { precision: 5, scale: 2 }),
   timestamp: timestamp("timestamp").defaultNow().notNull(),
 }, (table) => [
+  primaryKey({ columns: [table.id, table.timestamp] }),
   index("idx_heartbeats_machine").on(table.machineId),
   index("idx_heartbeats_timestamp").on(table.timestamp),
 ]);
