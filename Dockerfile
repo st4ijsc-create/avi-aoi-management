@@ -1,11 +1,19 @@
 # syntax=docker/dockerfile:1.7
-# Multi-stage build for avi-aoi-management (Node 20 + pnpm)
-ARG NODE_VERSION=20-alpine
+# Multi-stage build for avi-aoi-management (Node 20 + pnpm).
+# Base: Debian glibc (bookworm-slim) — KHÔNG dùng alpine/musl vì native deps nặng
+# (onnxruntime-node, sharp, node-llama-cpp, puppeteer) chỉ có prebuilt glibc; trên
+# musl chúng lỗi ERR_DLOPEN_FAILED (thiếu ld-linux-x86-64.so.2) khi nạp .so.
+ARG NODE_VERSION=20-bookworm-slim
 
 # ---- deps stage: install all deps (incl. dev) for build ----
 FROM node:${NODE_VERSION} AS deps
 WORKDIR /app
-RUN apk add --no-cache python3 make g++ postgresql-client
+# node-llama-cpp: bỏ qua postinstall build (cần model .gguf mount lúc chạy; engine
+# degrade honestly khi không có binding). Tránh git-clone + compile llama.cpp.
+ENV NODE_LLAMA_CPP_SKIP_DOWNLOAD=true
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 make g++ ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@10.4.1 --activate
 COPY package.json pnpm-lock.yaml ./
 COPY patches ./patches
@@ -20,9 +28,12 @@ RUN pnpm run build
 FROM node:${NODE_VERSION} AS runtime
 WORKDIR /app
 ENV NODE_ENV=production \
-    PORT=3000
-RUN apk add --no-cache postgresql-client tini && \
-    addgroup -S app && adduser -S app -G app
+    PORT=3000 \
+    NODE_LLAMA_CPP_SKIP_DOWNLOAD=true
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      postgresql-client tini wget ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system app && useradd --system --gid app --home-dir /app app
 RUN corepack enable && corepack prepare pnpm@10.4.1 --activate
 
 COPY package.json pnpm-lock.yaml ./
@@ -41,5 +52,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD wget -qO- http://127.0.0.1:${PORT}/health || exit 1
 
-ENTRYPOINT ["/sbin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "dist/index.js"]

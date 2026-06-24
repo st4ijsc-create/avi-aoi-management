@@ -26,7 +26,11 @@ END $$;
 -- DEFAULT partition (catches anything outside the 24-month window).
 DO $$
 BEGIN
-  IF NOT EXISTS (
+  -- Chỉ tạo DEFAULT partition khi measurement_samples thực sự là bảng partitioned
+  -- (xem 0092: bảng có thể bị giữ nguyên dạng thường nếu đã có dữ liệu).
+  IF (SELECT relkind FROM pg_class WHERE relname = 'measurement_samples') IS DISTINCT FROM 'p' THEN
+    RAISE NOTICE '[0099] measurement_samples chưa partition — bỏ qua DEFAULT partition.';
+  ELSIF NOT EXISTS (
     SELECT 1 FROM pg_class WHERE relname = 'measurement_samples_default'
   ) THEN
     EXECUTE $sql$

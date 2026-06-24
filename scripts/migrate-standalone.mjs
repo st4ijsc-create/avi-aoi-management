@@ -320,34 +320,44 @@ function splitStatements(content) {
     return content.split('--> statement-breakpoint').map(s => s.trim()).filter(Boolean);
   }
   
-  // For custom migration files, split by semicolons outside of $$ blocks
-  // But handle DO $$ ... END $$; blocks correctly
+  // For custom migration files, split by semicolons outside of dollar-quoted blocks.
+  // Track a STACK of dollar-quote tags so NAMED + NESTED quotes work, e.g.
+  //   DO $$ ... EXECUTE $sql$ ... $sql$; ... END $$;
+  //   CREATE FUNCTION ... AS $func$ ... ; ... $func$;
+  // The previous logic only counted bare `$$`, so `;` inside a `$func$` body was
+  // wrongly treated as a statement boundary → "unterminated dollar-quoted string".
   const statements = [];
   let current = '';
-  let inDollarBlock = false;
-  
+  const dollarStack = []; // open dollar-quote tags, e.g. '$$', '$func$', '$sql$'
+
   const lines = content.split('\n');
   for (const line of lines) {
     const trimmed = line.trim();
-    
-    // Skip empty lines and comments at statement boundaries
+
+    // Skip empty lines and comments at statement boundaries (but keep them when
+    // inside a dollar-quoted block so function/DO bodies stay intact).
     if (!trimmed || trimmed.startsWith('--')) {
-      if (inDollarBlock) {
+      if (dollarStack.length > 0) {
         current += line + '\n';
       }
       continue;
     }
-    
+
     current += line + '\n';
-    
-    // Track $$ blocks
-    const dollarMatches = (line.match(/\$\$/g) || []).length;
-    if (dollarMatches % 2 !== 0) {
-      inDollarBlock = !inDollarBlock;
+
+    // Update the dollar-quote stack from every $tag$ token on this line. A token
+    // matching the current open tag CLOSES it (pop); otherwise it OPENS one (push).
+    const tokens = line.match(/\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$/g) || [];
+    for (const tok of tokens) {
+      if (dollarStack.length > 0 && dollarStack[dollarStack.length - 1] === tok) {
+        dollarStack.pop();
+      } else {
+        dollarStack.push(tok);
+      }
     }
-    
-    // If we're not in a $$ block and line ends with ;, it's a statement boundary
-    if (!inDollarBlock && trimmed.endsWith(';')) {
+
+    // Statement boundary only when outside any dollar-quoted block.
+    if (dollarStack.length === 0 && trimmed.endsWith(';')) {
       statements.push(current.trim());
       current = '';
     }
@@ -379,6 +389,18 @@ function isLegacyMysqlMigration(content) {
   // positive (skipping a real Postgres migration) must never happen.
   if (/\bAUTO_INCREMENT\b/i.test(content)) return true;
   if (/\bENGINE\s*=\s*InnoDB\b/i.test(content)) return true;
+  // MySQL backtick-quoted identifiers (e.g. `table`, `column`) never appear in valid
+  // Postgres DDL — PG quotes identifiers with double quotes. Key off a backtick-
+  // IDENTIFIER PAIR on a NON-comment line: a lone stray backtick or a markdown
+  // `code` span inside a `--` comment won't match, so a real Postgres migration is
+  // never misclassified (a false positive — skipping a live migration — must never happen).
+  const codeLines = content
+    .split('\n')
+    .filter((l) => {
+      const t = l.trim();
+      return t && !t.startsWith('--');
+    });
+  if (codeLines.some((l) => /`[A-Za-z_][A-Za-z0-9_]*`/.test(l))) return true;
   return false;
 }
 

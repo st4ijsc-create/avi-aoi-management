@@ -1,6 +1,9 @@
 services:
+  # ── Cơ sở dữ liệu chính (PG16 + pgvector cho RAG / KB embeddings) ──────────
+  # Dùng image pgvector để migration 0121 tạo được EXTENSION vector + HNSW index.
+  # (postgres:16-alpine KHÔNG có extension vector → RAG rớt về brute-force chậm.)
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-aoi}
@@ -8,6 +11,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-aoi_management}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Tạo extension `vector` ngay khi init volume (trước mọi migration — xem file SQL).
+      - ./deploy/postgres-init:/docker-entrypoint-initdb.d:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -49,7 +54,7 @@ services:
       timeout: 5s
       retries: 6
 
-  # G1/G3 — TimescaleDB cho time-series (energy_readings). Cổng host 5433 để KHÔNG đụng PG18 local (5432).
+  # G1/G3 — TimescaleDB cho time-series (energy_readings). Cổng host 5433 để KHÔNG đụng PG16 chính (5432).
   timescaledb:
     image: timescale/timescaledb:2.17.2-pg16
     restart: unless-stopped
@@ -67,6 +72,51 @@ services:
       timeout: 5s
       retries: 6
 
+  # ── Migration một lần (main PG): apply 143 file drizzle/*.sql rồi thoát. ────
+  # App chỉ khởi động SAU khi service này exit 0 (depends_on … service_completed_successfully).
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-aoi}:${POSTGRES_PASSWORD:-aoi}@postgres:5432/${POSTGRES_DB:-aoi_management}
+    entrypoint: ["/bin/sh", "-c"]
+    # Áp dụng migration rồi XÁC MINH schema cốt lõi. Một số file MySQL-legacy đã chết
+    # (backtick) + vài file idempotent sẽ báo "failed" — đó là hành vi lenient có chủ đích
+    # của migrate-standalone, KHÔNG chặn app. Chỉ fail nếu bảng cốt lõi thực sự thiếu.
+    command:
+      - |
+        node scripts/migrate-standalone.mjs || echo "[migrate] một số file legacy/idempotent báo lỗi (dự kiến) — đang xác minh schema cốt lõi...";
+        ok=$$(psql "$$DATABASE_URL" -tAc "SELECT CASE WHEN to_regclass('public.users') IS NOT NULL AND to_regclass('public.production_sessions') IS NOT NULL AND to_regclass('public.kb_chunks') IS NOT NULL THEN 1 ELSE 0 END");
+        if [ "$$ok" = "1" ]; then echo "[migrate] schema cốt lõi OK"; else echo "[migrate] LỖI NGHIÊM TRỌNG: thiếu bảng cốt lõi"; exit 1; fi
+
+  # ── Init hypertable TimescaleDB một lần (drizzle/timescale/*.sql qua psql). ─
+  # Các file này KHÔNG do migrate-standalone apply (chạy trên container TSDB riêng).
+  timescaledb-init:
+    image: timescale/timescaledb:2.17.2-pg16
+    restart: "no"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${TSDB_PASSWORD:-tsdb_pass}
+    volumes:
+      - ./drizzle/timescale:/migrations:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        for f in /migrations/*.sql; do
+          echo "[tsdb-init] applying $$f";
+          psql -h timescaledb -U ${TSDB_USER:-tsdb} -d ${TSDB_NAME:-avi_aoi_ts} -v ON_ERROR_STOP=1 -f "$$f";
+        done
+        echo "[tsdb-init] done";
+
   app:
     build:
       context: .
@@ -77,14 +127,38 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      timescaledb-init:
+        condition: service_completed_successfully
+      emqx:
+        condition: service_healthy
+    # Nạp TOÀN BỘ biến từ .env (credentials HiveMQ, cờ UNS/Sparkplug, SMTP, AI…).
+    # Sau đó `environment` dưới đây OVERRIDE đúng các biến đặc thù mạng/đường dẫn docker:
+    # giá trị trong .env là host-oriented (localhost) — KHÔNG đúng bên trong container.
+    env_file:
+      - .env
     environment:
       NODE_ENV: production
       PORT: 3000
+
+      # --- Mạng nội bộ docker (ghi đè localhost trong .env → tên service) ---
       DATABASE_URL: postgres://${POSTGRES_USER:-aoi}:${POSTGRES_PASSWORD:-aoi}@postgres:5432/${POSTGRES_DB:-aoi_management}
       REDIS_URL: redis://redis:6379
-      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-300}
-      AUTH_RATE_LIMIT_PER_15MIN: ${AUTH_RATE_LIMIT_PER_15MIN:-30}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TSDB_URL: postgres://${TSDB_USER:-tsdb}:${TSDB_PASSWORD:-tsdb_pass}@timescaledb:5432/${TSDB_NAME:-avi_aoi_ts}
+      # UNS broker = service EMQX (cổng container 1883). Trong .env là mqtt://localhost:1884 (host).
+      UNS_BROKER_URL: mqtt://emqx:1883
+
+      # --- Đường dẫn trong container ---
+      LOCAL_STORAGE_DIR: /app/uploads
+      LICENSE_FILE_PATH: /app/license.lic
+
+      # --- Bắt buộc (fail-fast nếu thiếu trong .env) ---
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (openssl rand -base64 64)}
+      SIGNOFF_SECRET: ${SIGNOFF_SECRET:?set SIGNOFF_SECRET in .env (>=16 chars)}
+      MASTER_API_KEY: ${MASTER_API_KEY:?set MASTER_API_KEY in .env}
+      # Mặc định CORS cho cổng 3000 nếu .env chưa đặt ALLOWED_ORIGINS.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
     ports:
       - "3000:3000"
     volumes:

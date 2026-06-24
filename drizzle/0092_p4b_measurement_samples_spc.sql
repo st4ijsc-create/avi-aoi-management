@@ -5,10 +5,36 @@
 -- Used for: rolling Cpk/Ppk, EWMA charts, Western Electric / Nelson rules.
 -- ============================================================================
 
--- Parent partitioned table (only created if not exists)
+-- Parent partitioned table. NOTE: an earlier auto-generated migration (0008) may
+-- have already created "measurement_samples" as a PLAIN (non-partitioned) table.
+-- Cột giống hệt bản này; bảng KHÔNG có FK trỏ tới. Nên: nếu bảng tồn tại nhưng
+-- chưa partition và còn RỖNG → drop + tạo lại dạng partitioned (an toàn). Nếu đã có
+-- dữ liệu → giữ nguyên (không phá dữ liệu) và bỏ qua việc tạo partition theo tháng.
 DO $$
+DECLARE
+  v_exists      boolean;
+  v_partitioned boolean := false;
+  v_has_rows    boolean := false;
+  v_need_create boolean := false;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'measurement_samples') THEN
+  SELECT EXISTS(SELECT 1 FROM pg_class WHERE relname = 'measurement_samples') INTO v_exists;
+  IF NOT v_exists THEN
+    v_need_create := true;
+  ELSE
+    SELECT (relkind = 'p') INTO v_partitioned FROM pg_class WHERE relname = 'measurement_samples';
+    IF NOT v_partitioned THEN
+      EXECUTE 'SELECT EXISTS(SELECT 1 FROM measurement_samples LIMIT 1)' INTO v_has_rows;
+      IF v_has_rows THEN
+        RAISE NOTICE '[0092] measurement_samples tồn tại dạng NON-partitioned và có dữ liệu — giữ nguyên; bỏ qua partition theo tháng.';
+      ELSE
+        DROP TABLE "measurement_samples";
+        v_need_create := true;
+        RAISE NOTICE '[0092] chuyển measurement_samples (rỗng) sang dạng partitioned.';
+      END IF;
+    END IF;
+  END IF;
+
+  IF v_need_create THEN
     EXECUTE $sql$
       CREATE TABLE "measurement_samples" (
         "id" bigserial NOT NULL,
@@ -42,6 +68,11 @@ DECLARE
   start_ts text;
   end_ts text;
 BEGIN
+  -- Bảng chưa partition (vd bị giữ nguyên vì đã có dữ liệu) → no-op an toàn,
+  -- tránh lỗi "is not partitioned" khi cron/migration gọi hàm này.
+  IF (SELECT relkind FROM pg_class WHERE relname = 'measurement_samples') IS DISTINCT FROM 'p' THEN
+    RETURN;
+  END IF;
   partition_name := format('measurement_samples_y%sm%s',
     to_char(p_year, 'FM0000'),
     to_char(p_month, 'FM00'));
