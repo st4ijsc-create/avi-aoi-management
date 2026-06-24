@@ -60,3 +60,11 @@ createRoot(document.getElementById("root")!).render(
     </QueryClientProvider>
   </trpc.Provider>
 );
+
+// Phase 5 WS5.1 — register the PWA service worker (production only, to avoid
+// stale-cache surprises during dev/HMR).
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}

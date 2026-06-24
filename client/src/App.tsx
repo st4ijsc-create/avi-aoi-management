@@ -8,6 +8,8 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { AiCopilotProvider } from "./contexts/AiCopilotContext";
 import { AILocalChatBubble } from "./components/AILocalChatBubble";
+import { ConnectionBanner } from "./components/ConnectionBanner";
+import { useKioskMode } from "./hooks/useKioskMode";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
@@ -286,11 +288,13 @@ function Router() {
 }
 
 function App() {
+  useKioskMode();
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="dark" switchable>
         <TooltipProvider>
           <AiCopilotProvider>
+            <ConnectionBanner />
             <Toaster />
             <Router />
             {/* C3a — global copilot bubble: mounted ONCE here (inside the tRPC

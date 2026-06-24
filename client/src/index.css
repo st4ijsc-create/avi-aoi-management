@@ -559,3 +559,13 @@
     width: 100%;
   }
 }
+/* Phase 5 WS5.1 — Kiosk mode (?kiosk=1): hide app chrome for shop-floor
+   tablets (Andon / MES boards). Toggled by useKioskMode() adding .kiosk-mode
+   to <html>. */
+.kiosk-mode [data-app-chrome="sidebar"],
+.kiosk-mode [data-app-chrome="header"] {
+  display: none !important;
+}
+.kiosk-mode main {
+  padding: 0 !important;
+}

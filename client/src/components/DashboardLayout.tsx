@@ -270,7 +270,7 @@ function DashboardLayoutContent({
 
   return (
     <>
-      <div className="relative" ref={sidebarRef}>
+      <div className="relative" ref={sidebarRef} data-app-chrome="sidebar">
         <Sidebar
           collapsible="icon"
           className="border-r border-sidebar-border"
@@ -401,7 +401,7 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset className="bg-background">
-        <div className="flex border-b border-border h-14 items-center justify-between bg-card/95 px-2 sm:px-3 backdrop-blur supports-backdrop-filter:backdrop-blur sticky top-0 z-40">
+        <div data-app-chrome="header" className="flex border-b border-border h-14 items-center justify-between bg-card/95 px-2 sm:px-3 backdrop-blur supports-backdrop-filter:backdrop-blur sticky top-0 z-40">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             {isMobile && <SidebarTrigger className="h-9 w-9 rounded-lg shrink-0" />}
             <span className="font-medium text-foreground text-sm sm:text-base truncate">
