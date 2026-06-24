@@ -19,6 +19,7 @@
  */
 
 import mqtt, { type MqttClient } from "mqtt";
+import { readFileSync } from "fs";
 import { normalize, isUnsBridgeEnabled } from "./unsBridge";
 import { SparkplugNode, type MetricSample, type MetricDef } from "./uns/sparkplugNode";
 
@@ -75,6 +76,20 @@ export function initUnsPublisher(): void {
   if (UNS_BROKER_USERNAME) {
     options.username = UNS_BROKER_USERNAME;
     options.password = UNS_BROKER_PASSWORD;
+  }
+  // Phase 1 WS1.4 — TLS to the EMQX broker (mqtts://). Provide UNS_TLS_CA for a
+  // proper CA chain; set UNS_TLS_REJECT_UNAUTHORIZED=false only for dev
+  // self-signed certs.
+  if (UNS_BROKER_URL.startsWith("mqtts://") || UNS_BROKER_URL.startsWith("tls://")) {
+    options.rejectUnauthorized = process.env.UNS_TLS_REJECT_UNAUTHORIZED !== "false";
+    const caPath = process.env.UNS_TLS_CA;
+    if (caPath) {
+      try {
+        options.ca = readFileSync(caPath);
+      } catch (e) {
+        console.error("[UNS] Failed to read UNS_TLS_CA:", (e as Error)?.message ?? e);
+      }
+    }
   }
 
   // Sparkplug-B: chuẩn bị node + đặt NDEATH làm MQTT will (encode TRƯỚC connect).

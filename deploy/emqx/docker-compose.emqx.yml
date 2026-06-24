@@ -1,0 +1,44 @@
+# Phase 1 WS1.3/1.4 — EMQX single node with TLS (MQTTS).
+# Single node (no cluster/HA yet). Used as the UNS broker the app publishes to.
+#
+# Usage:
+#   1) Generate dev certs (or drop real CA-signed certs into ./certs):
+#        bash deploy/emqx/certs/generate-certs.sh
+#   2) docker compose -f deploy/emqx/docker-compose.emqx.yml up -d
+#   3) Point the app at it (.env):
+#        UNS_BRIDGE_ENABLED=true
+#        UNS_BROKER_URL=mqtts://localhost:8883
+#        UNS_TLS_CA=deploy/emqx/certs/ca.crt           # for the dev self-signed CA
+#        # UNS_TLS_REJECT_UNAUTHORIZED=false            # alt for dev only
+#        UNS_BROKER_USERNAME=avi_uns
+#        UNS_BROKER_PASSWORD=change_me
+#
+# Dashboard: http://localhost:18083 (default admin / public — change it).
+
+services:
+  emqx:
+    image: emqx/emqx:5.8.1
+    container_name: avi-aoi-emqx
+    restart: unless-stopped
+    environment:
+      EMQX_NODE__NAME: emqx@127.0.0.1
+      EMQX_NODE__COOKIE: avi_aoi_emqx_cookie
+      # Allow anonymous off — require username/password (set via dashboard or API).
+      EMQX_ALLOW_ANONYMOUS: "false"
+      # TLS listener (MQTTS) on 8883 using mounted certs.
+      EMQX_LISTENERS__SSL__DEFAULT__BIND: "0.0.0.0:8883"
+      EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__CERTFILE: "/opt/emqx/etc/certs/server.crt"
+      EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__KEYFILE: "/opt/emqx/etc/certs/server.key"
+      EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__CACERTFILE: "/opt/emqx/etc/certs/ca.crt"
+    ports:
+      - "1883:1883"     # plain MQTT (optional; disable in prod if TLS-only)
+      - "8883:8883"     # MQTTS (TLS)
+      - "18083:18083"   # dashboard
+    volumes:
+      - ./certs:/opt/emqx/etc/certs:ro
+      - emqx-data:/opt/emqx/data
+      - emqx-log:/opt/emqx/log
+
+volumes:
+  emqx-data:
+  emqx-log:
