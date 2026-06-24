@@ -1,29 +1,45 @@
-# Phase 1 WS1.2 — Tenant RLS rollout (staged, not yet active)
+# Phase 1 WS1.2/WS4 — Tenant RLS rollout (safe-by-default)
 
-Today tenant isolation is **app-layer only** (`server/_core/accessControl.ts`
-adds `corporateCode/factoryCode` filters). A query bug can cross tenants. This
-workstream prepares **database-enforced** isolation via PostgreSQL Row-Level
-Security, but ships it **disabled** because it has a wide blast radius and must
-be tested against a real DB first.
+Tenant isolation was **app-layer only** (`server/_core/accessControl.ts`). This
+adds **database-enforced** isolation via PostgreSQL Row-Level Security, designed
+so it can be **enabled on every tenant table without breaking the app**, then
+tightened.
 
-## Artifacts (ready, inert)
-- `drizzle/optional/0001_tenant_rls.sql` — RLS enable + policies (operator-applied; the migration runner does **not** auto-apply `drizzle/optional/`).
-- `server/db/tenantContext.ts` — `withTenantScope(db, scope, fn)` sets per-transaction GUCs (`SET LOCAL`) the policies read. **Not yet wired into the request path.**
+## The safe-by-default design
+`drizzle/optional/0002_tenant_rls_all.sql` defines `app_tenant_allows()` to be
+**inert** — it returns TRUE (allow-all) unless the connection sets
+`app.tenant_rls_active='on'`. Enforcement only happens inside
+`withTenantScope()`, which sets that GUC (plus the codes / bypass) with
+`SET LOCAL` for one transaction. So:
+
+- Enable RLS on the tables now → unscoped queries (global `db`) keep working.
+- Queries run via `withTenantScope(db, scope, fn)` → policies enforce.
+- Admin/service: `withTenantScope(db, { bypass: true }, fn)` → see all.
+
+## What's wired
+- **Migration** `drizzle/optional/0002_tenant_rls_all.sql` — RLS + policies on `product_inspections` and `inspection_packages` (the tables with denormalized tenant codes) + limited-role template. Operator-applied (runner doesn't auto-apply `drizzle/optional/`).
+- **Middleware** `tenantScopeMiddleware` in `server/_core/trpc.ts` (flag `TENANT_RLS_ENABLED`, default off) — derives the caller's scope via `getTenantScope` and exposes it on `ctx.tenantScope`.
+- **Mechanism** `server/db/tenantContext.ts` — `withTenantScope(db, scope, fn)` sets the GUCs (incl. `tenant_rls_active='on'`) per transaction.
+
+## Remaining step (data-layer adoption)
+The middleware provides `ctx.tenantScope`; the **data-layer queries on tenant
+tables must run inside `withTenantScope`** for enforcement to take effect, e.g.:
+
+```ts
+// inside a protected procedure
+return withTenantScope(db, ctx.tenantScope, (tx) =>
+  tx.select().from(productInspections)...   // RLS enforced for this tx
+);
+```
+
+This adoption is incremental and testable table-by-table.
 
 ## Hard preconditions
-1. **App must NOT connect as the table owner or a superuser** — RLS is bypassed for them, so it would silently do nothing. Create a dedicated app role with `GRANT`s but no ownership.
-2. Every request path that touches tenant tables must run under `withTenantScope` (admin/service → `{ bypass: true }`).
+1. **App must connect as a NON-owner role** (template in the SQL) — RLS is bypassed for the table owner / superusers.
+2. Test on staging: confirm a non-admin sees only their factories' rows under `withTenantScope`, and admin/bypass sees all; confirm unscoped queries are unaffected before adoption.
 
-## Recommended sequence
-1. Staging DB, non-owner app role.
-2. Wire `withTenantScope` into the inspection/process/OEE read+write paths; derive scope from `ctx.user` assignments (mirror `getAccessFilterConditions`).
-3. Apply `0001_tenant_rls.sql` on staging; run the suite; confirm cross-tenant queries return zero rows and admin/bypass sees all.
-4. Extend policies to `process_results` (lineCode), `oee_metrics` (resolve machine→factory), and other denormalized tables.
-5. Add a trigger (follow-up) to keep denormalized tenant codes consistent with the hierarchy, or backfill+validate on write.
-6. Roll to production behind a maintenance window; rollback = `DISABLE ROW LEVEL SECURITY` + drop policies (documented in the SQL).
-
-## Why not enabled now
-Auto-enabling RLS without the per-request context wired would make non-admin
-connections see **zero rows** across the app. The wiring + non-owner role +
-end-to-end test is a focused, DB-backed effort — intentionally separated from
-this code-readiness commit.
+## Child tables
+`measurement_results`, `process_results`, `package_images`, … have no
+denormalized tenant code; they reach the tenant via a join. Enable RLS on them
+only after adding a denormalized code or an EXISTS-subquery policy — otherwise a
+scoped query returns zero child rows. Tracked as follow-up.

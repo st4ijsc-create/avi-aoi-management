@@ -94,7 +94,33 @@ const auditMutationMiddleware = t.middleware(async (opts) => {
   return result;
 });
 
-export const protectedProcedure = t.procedure.use(requireUser).use(auditMutationMiddleware);
+/**
+ * Tenant scope middleware (Phase 1 WS4 — RLS).
+ *
+ * When TENANT_RLS_ENABLED=true, derives the caller's tenant scope (factory /
+ * corporate codes, admin → bypass) from their assignments and exposes it on
+ * ctx.tenantScope. Data-layer code then runs tenant-table queries via
+ * server/db/tenantContext.withTenantScope(db, ctx.tenantScope, fn) to activate
+ * the RLS policies. Default off → zero cost and no behaviour change.
+ */
+const tenantRlsEnabled = process.env.TENANT_RLS_ENABLED === "true";
+
+const tenantScopeMiddleware = t.middleware(async (opts) => {
+  const { ctx, next } = opts;
+  if (!tenantRlsEnabled || !ctx.user) return next();
+  try {
+    const { getTenantScope } = await import("./accessControl");
+    const scope = await getTenantScope(ctx.user.id, String(ctx.user.role));
+    return next({ ctx: { ...ctx, tenantScope: scope } });
+  } catch {
+    return next(); // never block a request on scope derivation
+  }
+});
+
+export const protectedProcedure = t.procedure
+  .use(requireUser)
+  .use(auditMutationMiddleware)
+  .use(tenantScopeMiddleware);
 
 export const adminProcedure = t.procedure.use(
   t.middleware(async opts => {
@@ -118,7 +144,7 @@ export const adminProcedure = t.procedure.use(
       },
     });
   }),
-).use(auditMutationMiddleware);
+).use(auditMutationMiddleware).use(tenantScopeMiddleware);
 
 // Role-based procedure factory — accepts an array of allowed roles
 type UserRole = 'admin' | 'supervisor' | 'quality_inspector' | 'operator' | 'maintenance' | 'viewer' | 'user';
@@ -158,7 +184,7 @@ export function roleProcedure(...allowedRoles: UserRole[]) {
 
       return next({ ctx: { ...ctx, user: ctx.user } });
     }),
-  ).use(auditMutationMiddleware);
+  ).use(auditMutationMiddleware).use(tenantScopeMiddleware);
 }
 
 // Pre-built role procedures for common use cases

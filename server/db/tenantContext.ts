@@ -37,6 +37,10 @@ export async function applyTenantContext(tx: TxLike, scope: TenantScope): Promis
   const factories = (scope.factoryCodes ?? []).join(",");
   const corporates = (scope.corporateCodes ?? []).join(",");
   // set_config(key, value, is_local=true) == SET LOCAL — scoped to this tx.
+  // Setting tenant_rls_active='on' activates the RLS policies for THIS tx only;
+  // outside a tenant scope the policies stay inert (default-allow), so enabling
+  // RLS at the table level never breaks unscoped queries.
+  await tx.execute(sql`SELECT set_config('app.tenant_rls_active', 'on', true)`);
   await tx.execute(sql`SELECT set_config('app.tenant_bypass', ${scope.bypass ? "on" : "off"}, true)`);
   await tx.execute(sql`SELECT set_config('app.tenant_factory_codes', ${factories}, true)`);
   await tx.execute(sql`SELECT set_config('app.tenant_corporate_codes', ${corporates}, true)`);

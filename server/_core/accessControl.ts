@@ -54,6 +54,19 @@ export async function getUserAssignmentCodes(userId: number, userRole: string): 
 }
 
 /**
+ * Tenant scope for DB-level Row-Level Security (Phase 1 WS1.2/WS4).
+ * Mirrors getUserAssignmentCodes into the shape consumed by
+ * server/db/tenantContext.ts `withTenantScope` (admin → bypass).
+ */
+export async function getTenantScope(
+  userId: number,
+  userRole: string,
+): Promise<{ bypass: boolean; corporateCodes: string[]; factoryCodes: string[] }> {
+  const { corporateCodes, factoryCodes, isAdmin } = await getUserAssignmentCodes(userId, userRole);
+  return { bypass: isAdmin, corporateCodes, factoryCodes };
+}
+
+/**
  * Build SQL access filter conditions for the productInspections table.
  * 
  * - Admin users: returns undefined (no filter).
