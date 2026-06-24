@@ -4480,6 +4480,15 @@ async function startServer() {
     console.error("[Orchestration] init failed:", (err as any)?.message || err);
   }
 
+  // P4 WS4.2 — AI orchestration watcher (event bus → local LLM advisory).
+  // Disabled by default; opt in via AI_ORCHESTRATION_ENABLED=true. Advisory only.
+  try {
+    const { startAiWatcher } = await import("../services/orchestration/aiWatcher");
+    startAiWatcher();
+  } catch (err) {
+    console.error("[AIWatcher] init failed:", (err as any)?.message || err);
+  }
+
   // P3 — Robotics framework (Fanuc/Mitsubishi/Delta/Techman + sim). Importing the
   // module registers the vendor drivers. Disabled by default; opt in via
   // ROBOT_GATEWAY_ENABLED=true. Motion control is dry-run unless ROBOT_CONTROL_ENABLED=true.
@@ -4614,6 +4623,10 @@ async function startServer() {
     // P3 — dừng robotics framework (no-op nếu chưa chạy)
     import("../services/robot")
       .then((m) => m.stopRobots())
+      .catch(() => {});
+    // P4 WS4.2 — dừng AI orchestration watcher (no-op nếu chưa chạy)
+    import("../services/orchestration/aiWatcher")
+      .then((m) => m.stopAiWatcher())
       .catch(() => {});
     server.close(() => {
       logger.info("Server closed");

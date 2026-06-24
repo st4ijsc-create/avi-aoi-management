@@ -111,6 +111,7 @@ import { deviceAdapterRouter } from "./routers/deviceAdapterRouter"; // G2.2a: O
 import { machineRecipeRouter } from "./routers/machineRecipeRouter"; // G2.2a: recipe versioning + deploy (catalog/ledger only, no device push)
 import { commandLogRouter } from "./routers/commandLogRouter"; // G2.2a: command audit log (READ-ONLY)
 import { robotRouter } from "./routers/robotRouter"; // Phase 3: robot registry/telemetry/jobs (control via internal dispatcher)
+import { aiInsightRouter } from "./routers/aiInsightRouter"; // Phase 4: AI orchestration insights (advisory, read + ack)
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -340,6 +341,7 @@ export const appRouter = router({
   machineRecipe: machineRecipeRouter,
   commandLog: commandLogRouter,
   robot: robotRouter,
+  aiInsight: aiInsightRouter,
 
   // Process & SPC
   process: processRouter,

@@ -1,0 +1,120 @@
+/**
+ * AI orchestration watcher (Phase 4 WS4.2) — the local-AI "brain" on the bus.
+ *
+ * Subscribes to the unified event bus and, when the orchestration rules engine
+ * flags a significant pattern (`orchestration.triggered`), asks the LOCAL LLM for
+ * a concise root-cause hypothesis + recommended next step, and persists it as an
+ * advisory `ai_insights` row. It also re-publishes `ai.insight` on the bus.
+ *
+ * ⚠️ SAFETY: advisory-only. The watcher NEVER executes an action or issues a
+ * device command. Any actionable step a human accepts is created/executed
+ * through the existing ai_pending_actions HITL flow + the OT/robot dispatchers.
+ *
+ * Throttled per machine (AI_WATCHER_MIN_INTERVAL_MS) to protect the single GGUF
+ * inference slot. Flag-gated AI_ORCHESTRATION_ENABLED (default off → no cost).
+ */
+import { eventBus, type DomainEvent } from "../../_core/eventBus";
+
+let enabled = false;
+const unsubscribers: Array<() => void> = [];
+const lastRunByMachine = new Map<string, number>();
+
+function minIntervalMs(): number {
+  const v = Number(process.env.AI_WATCHER_MIN_INTERVAL_MS);
+  return Number.isFinite(v) && v > 0 ? v : 60_000;
+}
+
+async function generateAdvisory(rule: string, machine: string, ctx: Record<string, unknown>): Promise<string | null> {
+  try {
+    const { invokeLLM } = await import("../../_core/llm");
+    const res = await invokeLLM({
+      messages: [
+        {
+          role: "system",
+          content:
+            "Bạn là kỹ sư chất lượng nhà máy. Trả lời NGẮN GỌN bằng tiếng Việt: " +
+            "(1) một giả thuyết nguyên nhân gốc khả dĩ, (2) một bước hành động đề xuất tiếp theo. " +
+            "Không bịa số liệu; nếu thiếu dữ liệu, nói rõ cần kiểm tra gì.",
+        },
+        {
+          role: "user",
+          content:
+            `Sự kiện điều phối: rule="${rule}", máy="${machine}". ` +
+            `Bối cảnh: ${JSON.stringify(ctx)}. ` +
+            `Hãy đưa giả thuyết nguyên nhân + bước tiếp theo.`,
+        },
+      ],
+      maxTokens: 300,
+    });
+    const choice = res.choices?.[0]?.message?.content;
+    const text = typeof choice === "string" ? choice : Array.isArray(choice)
+      ? choice.map((c) => (typeof c === "object" && c && "text" in c ? (c as { text?: string }).text ?? "" : "")).join(" ")
+      : "";
+    return text.trim() || null;
+  } catch (err) {
+    console.error("[AIWatcher] LLM advisory failed:", (err as Error)?.message ?? err);
+    return null; // GGUF unavailable → skip (don't store junk)
+  }
+}
+
+async function storeInsight(source: string, machine: string, body: string, ctx: Record<string, unknown>): Promise<number | undefined> {
+  try {
+    const { getDb } = await import("../../db/connection");
+    const { aiInsights } = await import("../../../drizzle/schema");
+    const db = await getDb();
+    if (!db) return undefined;
+    const [row] = await db.insert(aiInsights).values({
+      source,
+      machineCode: machine,
+      severity: "warning",
+      title: `AI advisory: ${source} @ ${machine}`,
+      body,
+      contextJson: ctx,
+      status: "new",
+    }).returning({ id: aiInsights.id });
+    return row?.id;
+  } catch (err) {
+    console.error("[AIWatcher] store insight failed:", (err as Error)?.message ?? err);
+    return undefined;
+  }
+}
+
+async function onTriggered(e: DomainEvent): Promise<void> {
+  const p = (e.payload ?? {}) as { rule?: string; machine?: string; count?: number };
+  const machine = String(p.machine ?? "unknown");
+  const rule = String(p.rule ?? "event");
+
+  const now = e.ts;
+  const last = lastRunByMachine.get(machine) ?? 0;
+  if (now - last < minIntervalMs()) return; // throttle per machine
+  lastRunByMachine.set(machine, now);
+
+  const ctx: Record<string, unknown> = { rule, count: p.count };
+  const body = await generateAdvisory(rule, machine, ctx);
+  if (!body) return;
+
+  const id = await storeInsight(rule, machine, body, ctx);
+  eventBus.publish("ai.insight", { id, rule, machine }, "aiWatcher");
+  console.log(`[AIWatcher] insight #${id ?? "?"} for ${machine} (${rule})`);
+}
+
+export function startAiWatcher(): void {
+  if (process.env.AI_ORCHESTRATION_ENABLED !== "true") return; // safe default off
+  if (enabled) return;
+  enabled = true;
+  unsubscribers.push(eventBus.subscribe("orchestration.triggered", onTriggered));
+  console.log("[AIWatcher] started (event bus → local LLM advisory)");
+}
+
+export function stopAiWatcher(): void {
+  for (const u of unsubscribers) {
+    try {
+      u();
+    } catch {
+      /* ignore */
+    }
+  }
+  unsubscribers.length = 0;
+  lastRunByMachine.clear();
+  enabled = false;
+}

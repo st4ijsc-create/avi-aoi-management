@@ -26,3 +26,4 @@ export * from "./process";
 export * from "./andon";
 export * from "./interlock";
 export * from "./robot";
+export * from "./aiInsight";
