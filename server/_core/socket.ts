@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import * as db from "../db";
 import { sdk } from "./sdk";
 import { attachRedisAdapter } from "./socketRedisAdapter";
+import { eventBus, EventTypes } from "./eventBus";
 
 let io: Server | null = null;
 
@@ -647,6 +648,12 @@ export async function testManualConnection(
 
 // Emit inspection alert to all connected clients
 export function emitInspectionAlert(alert: InspectionAlert): void {
+  // Orchestration backbone (Phase 2): publish to the internal event bus
+  // regardless of socket state, so server-side consumers always see it.
+  eventBus.publish(EventTypes.INSPECTION_ALERT, alert, "socket");
+  if (alert.type === "NG_ALERT") eventBus.publish(EventTypes.NG_ALERT, alert, "socket");
+  if (alert.type === "YIELD_WARNING") eventBus.publish(EventTypes.YIELD_WARNING, alert, "socket");
+
   if (!io) {
     console.warn("[Socket.io] Cannot emit alert: Socket.io not initialized");
     return;
@@ -770,6 +777,7 @@ export interface SpcViolationAlert {
 }
 
 export function emitSpcViolationAlert(alert: SpcViolationAlert): void {
+  eventBus.publish(EventTypes.SPC_VIOLATION, alert, "socket");
   if (!io) return;
   io.to("global").emit("spc:violation", alert);
   if (alert.machineId) {
@@ -802,6 +810,7 @@ export interface AndonRealtimeEvent {
  * emitSpcViolationAlert (no-op when io is not initialized).
  */
 export function emitAndonEvent(event: AndonRealtimeEvent): void {
+  eventBus.publish(EventTypes.ANDON, event, "socket");
   if (!io) return;
   io.to("global").emit("andon:event", event);
   if (event.lineId) io.to(`line:${event.lineId}`).emit("andon:event", event);

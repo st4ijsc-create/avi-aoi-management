@@ -4471,6 +4471,15 @@ async function startServer() {
     console.error("[Retention] init failed:", (err as any)?.message || err);
   }
 
+  // P2 WS2.3 — Orchestration rules engine (subscribes to the event bus).
+  // Disabled by default; opt in via ORCHESTRATION_ENABLED=true. Notify/audit only.
+  try {
+    const { startOrchestration } = await import("../services/orchestration/rulesEngine");
+    startOrchestration();
+  } catch (err) {
+    console.error("[Orchestration] init failed:", (err as any)?.message || err);
+  }
+
   // G1 — Edge Gateway OPC-UA/Modbus ingest (scaffold).
   // Disabled by default; opt in via OPCUA_GATEWAY_ENABLED=true + OPCUA_ENDPOINT_URL.
   try {
@@ -4587,6 +4596,10 @@ async function startServer() {
     // P1 WS1.1 — dừng data retention sweeper (no-op nếu chưa chạy)
     import("../services/dataRetentionService")
       .then((m) => m.stopDataRetention())
+      .catch(() => {});
+    // P2 WS2.3 — dừng orchestration rules engine (no-op nếu chưa chạy)
+    import("../services/orchestration/rulesEngine")
+      .then((m) => m.stopOrchestration())
       .catch(() => {});
     server.close(() => {
       logger.info("Server closed");
