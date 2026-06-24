@@ -112,6 +112,7 @@ import { machineRecipeRouter } from "./routers/machineRecipeRouter"; // G2.2a: r
 import { commandLogRouter } from "./routers/commandLogRouter"; // G2.2a: command audit log (READ-ONLY)
 import { robotRouter } from "./routers/robotRouter"; // Phase 3: robot registry/telemetry/jobs (control via internal dispatcher)
 import { aiInsightRouter } from "./routers/aiInsightRouter"; // Phase 4: AI orchestration insights (advisory, read + ack)
+import { kbVectorRouter } from "./routers/kbVectorRouter"; // Phase 4: KB pgvector store (ingest + search)
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -342,6 +343,7 @@ export const appRouter = router({
   commandLog: commandLogRouter,
   robot: robotRouter,
   aiInsight: aiInsightRouter,
+  kbVector: kbVectorRouter,
 
   // Process & SPC
   process: processRouter,
