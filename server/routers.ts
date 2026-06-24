@@ -110,6 +110,7 @@ import { interlockRouter } from "./routers/interlockRouter"; // F5a: Interlock r
 import { deviceAdapterRouter } from "./routers/deviceAdapterRouter"; // G2.2a: OT adapter/tag CONFIG + read-only testConnection (no write path)
 import { machineRecipeRouter } from "./routers/machineRecipeRouter"; // G2.2a: recipe versioning + deploy (catalog/ledger only, no device push)
 import { commandLogRouter } from "./routers/commandLogRouter"; // G2.2a: command audit log (READ-ONLY)
+import { robotRouter } from "./routers/robotRouter"; // Phase 3: robot registry/telemetry/jobs (control via internal dispatcher)
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -338,6 +339,7 @@ export const appRouter = router({
   deviceAdapter: deviceAdapterRouter,
   machineRecipe: machineRecipeRouter,
   commandLog: commandLogRouter,
+  robot: robotRouter,
 
   // Process & SPC
   process: processRouter,

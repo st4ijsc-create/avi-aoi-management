@@ -4480,6 +4480,16 @@ async function startServer() {
     console.error("[Orchestration] init failed:", (err as any)?.message || err);
   }
 
+  // P3 — Robotics framework (Fanuc/Mitsubishi/Delta/Techman + sim). Importing the
+  // module registers the vendor drivers. Disabled by default; opt in via
+  // ROBOT_GATEWAY_ENABLED=true. Motion control is dry-run unless ROBOT_CONTROL_ENABLED=true.
+  try {
+    const { startRobots } = await import("../services/robot");
+    await startRobots();
+  } catch (err) {
+    console.error("[Robot] init failed:", (err as any)?.message || err);
+  }
+
   // G1 — Edge Gateway OPC-UA/Modbus ingest (scaffold).
   // Disabled by default; opt in via OPCUA_GATEWAY_ENABLED=true + OPCUA_ENDPOINT_URL.
   try {
@@ -4600,6 +4610,10 @@ async function startServer() {
     // P2 WS2.3 — dừng orchestration rules engine (no-op nếu chưa chạy)
     import("../services/orchestration/rulesEngine")
       .then((m) => m.stopOrchestration())
+      .catch(() => {});
+    // P3 — dừng robotics framework (no-op nếu chưa chạy)
+    import("../services/robot")
+      .then((m) => m.stopRobots())
       .catch(() => {});
     server.close(() => {
       logger.info("Server closed");
