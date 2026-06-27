@@ -305,7 +305,7 @@ export default function WorkstationManagement() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-4">
-              <div className="flex-1 min-w-[200px]">
+              <div className="flex-1 min-w-50">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
@@ -317,7 +317,7 @@ export default function WorkstationManagement() {
                 </div>
               </div>
               <Select value={filterFactoryId} onValueChange={setFilterFactoryId}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-45">
                   <SelectValue placeholder={t('machines.factory')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -330,7 +330,7 @@ export default function WorkstationManagement() {
                 </SelectContent>
               </Select>
               <Select value={filterLineId} onValueChange={setFilterLineId}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-45">
                   <SelectValue placeholder={t('machines.line')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -343,7 +343,7 @@ export default function WorkstationManagement() {
                 </SelectContent>
               </Select>
               <Select value={filterProcessType} onValueChange={setFilterProcessType}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-45">
                   <SelectValue placeholder={t('machines.processType')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -378,7 +378,7 @@ export default function WorkstationManagement() {
                   <TableHead>{t('machines.line')}</TableHead>
                   <TableHead>{t('machines.order')}</TableHead>
                   <TableHead>{t('common.status')}</TableHead>
-                  <TableHead className="w-[50px]"></TableHead>
+                  <TableHead className="w-12.5"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

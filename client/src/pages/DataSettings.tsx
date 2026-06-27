@@ -99,6 +99,14 @@ export default function DataSettings() {
       setLocation('/monitoring-setting?tab=device-management');
       return;
     }
+    if (tabFromUrl === 'workstations') {
+      setLocation('/datasettings?tab=workstation-mgmt');
+      return;
+    }
+    if (tabFromUrl === 'product-models') {
+      setLocation('/products');
+      return;
+    }
     if (tabFromUrl !== activeTab) {
       setActiveTab(tabFromUrl);
     }
@@ -797,15 +805,6 @@ export default function DataSettings() {
                       <Cpu className="h-4 w-4" />
                       {t("settings.sidebar.inspectionMachine")}
                     </button>
-                    <button
-                      onClick={() => handleTabChange('workstations')}
-                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
-                        activeTab === 'workstations' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
-                      }`}
-                    >
-                      <Cog className="h-4 w-4" />
-                      {t("settings.sidebar.workstation")}
-                    </button>
                   </div>
                 )}
               </div>
@@ -866,15 +865,6 @@ export default function DataSettings() {
                     >
                       <FolderTree className="h-4 w-4" />
                       {t("settings.sidebar.productCategory")}
-                    </button>
-                    <button
-                      onClick={() => handleTabChange('product-models')}
-                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
-                        activeTab === 'product-models' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
-                      }`}
-                    >
-                      <Award className="h-4 w-4" />
-                      {t("settings.sidebar.productModel")}
                     </button>
                     <button
                       onClick={() => handleTabChange('product-machine-mapping')}
@@ -1923,11 +1913,6 @@ export default function DataSettings() {
             </Card>
           </TabsContent>
 
-          {/* Workstations Tab */}
-          <TabsContent value="workstations">
-            <WorkstationManagement />
-          </TabsContent>
-
           {/* Shifts Tab */}
           <TabsContent value="shifts">
             <Card className="glass-card">
@@ -2338,32 +2323,6 @@ export default function DataSettings() {
           {/* Product Categories Tab */}
           <TabsContent value="product-categories">
             <ProductCategoryManagement />
-          </TabsContent>
-
-          {/* Product Models Tab */}
-          <TabsContent value="product-models">
-            <Card>
-              <CardHeader>
-                <CardTitle>{t("settings.productModels")}</CardTitle>
-                <CardDescription>{t("settings.productModelsDesc")}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col items-center justify-center py-12 space-y-4">
-                  <Package className="h-16 w-16 text-muted-foreground" />
-                  <div className="text-center space-y-2">
-                    <p className="text-lg font-medium">{t("settings.manageProductModels")}</p>
-                    <p className="text-sm text-muted-foreground">{t("settings.manageProductModelsDesc")}</p>
-                  </div>
-                  <Button 
-                    onClick={() => setLocation("/products")}
-                    className="gap-2"
-                  >
-                    <Package className="h-4 w-4" />
-                    {t("settings.openProductModelsPage")}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
           </TabsContent>
 
           {/* Product Machine Mapping Tab */}

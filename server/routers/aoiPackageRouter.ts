@@ -786,6 +786,22 @@ export const aoiPackageRouter = router({
             },
           });
 
+          // Embed-at-ingest (Phase A2/A4): queue DINOv2 visual embeddings for this
+          // inspection's images. Non-blocking + flag-gated (AOI_EMBEDDING_ENABLED);
+          // never throws — must not affect commit success.
+          try {
+            if (linkedInspectionId) {
+              const { enqueueAoiImageEmbedding } = await import("../services/aoiImageEmbeddingWorker");
+              enqueueAoiImageEmbedding({
+                inspectionId: linkedInspectionId,
+                packageId: pkg.packageId,
+                storageKey: pkg.storageKey ?? null,
+              });
+            }
+          } catch (e) {
+            console.warn("[aoiEmbed] enqueue failed:", (e as any)?.message ?? e);
+          }
+
           return {
             success: true,
             alreadyCommitted: false,

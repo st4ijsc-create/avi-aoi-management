@@ -1,0 +1,203 @@
+/**
+ * AI Brain Dashboard
+ * Observability for the local-AI "brain":
+ *  - Cognitive Escalation Ladder — request distribution across tiers (from aiGguf.routerStats)
+ *  - Local engine health — GPU mode, VRAM, resident models, inference queue (from aiGguf.health)
+ *
+ * Note: routerStats is an in-memory counter — it reflects activity since the server last started.
+ */
+
+import { useTranslation } from "react-i18next";
+import DashboardLayout from "@/components/DashboardLayout";
+import { trpc } from "@/lib/trpc";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import {
+  Brain,
+  Cpu,
+  Zap,
+  Layers,
+  Eye,
+  UserCheck,
+  Gauge,
+  RefreshCw,
+  CheckCircle2,
+  XCircle,
+  Server,
+  ListChecks,
+} from "lucide-react";
+
+// Cognitive Escalation Ladder — tier metadata (mirrors aiModelRouter.ts Tier 0–4).
+const TIERS = [
+  { n: 0, icon: ListChecks, label: "Tier 0 · Reflex", desc: "Rule / SQL / heuristic — không LLM", bar: "bg-slate-400", text: "text-slate-500", bg: "bg-slate-500/10" },
+  { n: 1, icon: Zap, label: "Tier 1 · Fast", desc: "Model nhỏ (3B): intent, chat ngắn, extract", bar: "bg-emerald-500", text: "text-emerald-500", bg: "bg-emerald-500/10" },
+  { n: 2, icon: Layers, label: "Tier 2 · Deep", desc: "Model lớn (7B) + RAG: RCA, report, reasoning", bar: "bg-blue-500", text: "text-blue-500", bg: "bg-blue-500/10" },
+  { n: 3, icon: Eye, label: "Tier 3 · Perception", desc: "Vision (Qwen2.5-VL): mô tả lỗi, visual QA", bar: "bg-fuchsia-500", text: "text-fuchsia-500", bg: "bg-fuchsia-500/10" },
+  { n: 4, icon: UserCheck, label: "Tier 4 · Human / HITL", desc: "Hành động ghi, độ tin cậy thấp → người duyệt", bar: "bg-amber-500", text: "text-amber-500", bg: "bg-amber-500/10" },
+] as const;
+
+function fmtGB(bytes?: number): string {
+  if (!bytes || bytes <= 0) return "—";
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
+
+export default function AIBrainDashboard() {
+  const { t } = useTranslation();
+  const router = trpc.aiGguf.routerStats.useQuery(undefined, { refetchInterval: 5000 });
+  const health = trpc.aiGguf.health.useQuery(undefined, { refetchInterval: 5000 });
+
+  const stats = router.data;
+  const total = stats?.total ?? 0;
+  const byTier = stats?.byTier ?? {};
+  const h = health.data;
+  const vram = h?.vram ?? null;
+  const vramPct = vram && vram.total > 0 ? Math.min(100, (vram.used / vram.total) * 100) : 0;
+
+  const refreshAll = () => { router.refetch(); health.refetch(); };
+
+  return (
+    <DashboardLayout>
+      <div className="flex flex-col gap-6 p-4 md:p-6">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+              <Brain className="h-6 w-6 text-indigo-500" />
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold">{t("aiBrain.title", "AI Brain")}</h1>
+              <p className="text-sm text-muted-foreground">
+                {t("aiBrain.subtitle", "Giám sát bộ não AI cục bộ — phân tầng độ khó & sức khỏe engine")}
+              </p>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={refreshAll}>
+            <RefreshCw className="h-4 w-4 mr-1.5" />
+            {t("common.refresh", "Làm mới")}
+          </Button>
+        </div>
+
+        {/* Engine health summary */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* GPU mode */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription className="flex items-center gap-1.5"><Cpu className="h-3.5 w-3.5" />{t("aiBrain.engine", "Engine")}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {health.isLoading ? <Skeleton className="h-6 w-24" /> : (
+                <>
+                  <div className="text-lg font-semibold">{h?.gpuMode ?? "—"}</div>
+                  <Badge variant={h?.operational ? "default" : "secondary"} className="mt-1">
+                    {h?.operational ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <XCircle className="h-3 w-3 mr-1" />}
+                    {h?.operational ? t("aiBrain.operational", "Hoạt động") : t("aiBrain.idle", "Chưa nạp model")}
+                  </Badge>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* VRAM */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription className="flex items-center gap-1.5"><Gauge className="h-3.5 w-3.5" />VRAM</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {health.isLoading ? <Skeleton className="h-6 w-24" /> : vram ? (
+                <>
+                  <div className="text-lg font-semibold">{fmtGB(vram.used)} <span className="text-sm text-muted-foreground font-normal">/ {fmtGB(vram.total)}</span></div>
+                  <div className="mt-2 h-2 w-full rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${vramPct}%` }} />
+                  </div>
+                </>
+              ) : <div className="text-sm text-muted-foreground">{t("aiBrain.noVram", "CPU / không có VRAM")}</div>}
+            </CardContent>
+          </Card>
+
+          {/* Models loaded */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription className="flex items-center gap-1.5"><Server className="h-3.5 w-3.5" />{t("aiBrain.models", "Model nóng")}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {health.isLoading ? <Skeleton className="h-6 w-16" /> : (
+                <>
+                  <div className="text-lg font-semibold">{h?.modelsLoaded ?? 0} <span className="text-sm text-muted-foreground font-normal">/ {h?.maxLoadedModels ?? "—"}</span></div>
+                  <div className="text-xs text-muted-foreground mt-1">{h?.totalLoadedHuman ?? "—"} · {h?.modelsAvailable ?? 0} {t("aiBrain.available", "có sẵn")}</div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Queue */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription className="flex items-center gap-1.5"><ListChecks className="h-3.5 w-3.5" />{t("aiBrain.queue", "Hàng đợi suy luận")}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {health.isLoading ? <Skeleton className="h-6 w-16" /> : (
+                <>
+                  <div className="text-lg font-semibold">{h?.queue?.running ?? 0} <span className="text-sm text-muted-foreground font-normal">{t("aiBrain.running", "chạy")}</span></div>
+                  <div className="text-xs text-muted-foreground mt-1">{h?.queue?.queued ?? 0} {t("aiBrain.queued", "chờ")} · max {h?.queue?.max ?? "—"}</div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Cognitive Escalation Ladder */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2"><Brain className="h-4 w-4 text-indigo-500" />{t("aiBrain.ladder", "Thang leo nhận thức (dễ → khó)")}</CardTitle>
+                <CardDescription>{t("aiBrain.ladderDesc", "Phân bố yêu cầu theo tầng kể từ lần khởi động server gần nhất")}</CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant={stats?.fastModelConfigured ? "default" : "secondary"}>
+                  <Zap className="h-3 w-3 mr-1" />
+                  {stats?.fastModelConfigured ? t("aiBrain.fastOn", "Fast-tier (3B) bật") : t("aiBrain.fastOff", "Chưa có fast-tier")}
+                </Badge>
+                <Badge variant="outline">{total} {t("aiBrain.requests", "yêu cầu")}</Badge>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {router.isLoading ? (
+              <>{[0, 1, 2, 3, 4].map(i => <Skeleton key={i} className="h-12 w-full" />)}</>
+            ) : total === 0 ? (
+              <div className="text-sm text-muted-foreground py-6 text-center">
+                {t("aiBrain.noData", "Chưa có yêu cầu AI nào được định tuyến. Hãy dùng AI Chat / phân tích để bắt đầu thu thập.")}
+              </div>
+            ) : (
+              TIERS.map(tier => {
+                const count = (byTier as Record<number, number>)[tier.n] ?? 0;
+                const pct = total > 0 ? (count / total) * 100 : 0;
+                const Icon = tier.icon;
+                return (
+                  <div key={tier.n} className="flex items-center gap-3">
+                    <div className={`h-9 w-9 shrink-0 rounded-lg ${tier.bg} flex items-center justify-center`}>
+                      <Icon className={`h-5 w-5 ${tier.text}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium truncate">{tier.label}</span>
+                        <span className="text-sm tabular-nums text-muted-foreground shrink-0">{count} · {pct.toFixed(0)}%</span>
+                      </div>
+                      <div className="mt-1 h-2 w-full rounded-full bg-muted overflow-hidden">
+                        <div className={`h-full rounded-full ${tier.bar} transition-all`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5 truncate">{tier.desc}</div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </DashboardLayout>
+  );
+}

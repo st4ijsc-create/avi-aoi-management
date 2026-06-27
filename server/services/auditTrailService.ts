@@ -21,7 +21,7 @@ export interface AuditContext {
   userAgent?: string | null;
   sessionId?: string | null;
   requestId?: string | null;
-  source?: "web" | "api" | "mqtt" | "system" | "scheduler";
+  source?: "web" | "api" | "mqtt" | "system" | "scheduler" | "trpc" | "orchestration";
 }
 
 export interface AuditChangeField {

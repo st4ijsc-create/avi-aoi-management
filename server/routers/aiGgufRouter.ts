@@ -192,6 +192,12 @@ export const aiGgufRouter = router({
     return getEngineHealth();
   }),
 
+  // ─── Model Router telemetry (tier distribution for "AI Brain" dashboard) ──
+  routerStats: protectedProcedure.query(async () => {
+    const { getRouterStats } = await import("../services/aiModelRouter");
+    return getRouterStats();
+  }),
+
   // ─── Embedding ──────────────────────────────────────
   embedding: protectedProcedure
     .input(z.object({

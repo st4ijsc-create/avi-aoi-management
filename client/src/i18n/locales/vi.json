@@ -7229,6 +7229,10 @@
         "title": "Giám Sát Mô Hình",
         "desc": "Phát hiện trôi dạt mô hình, theo dõi ảnh chụp hiệu suất và quản lý cảnh báo"
       },
+      "aiBrain": {
+        "title": "AI Brain",
+        "desc": "Giám sát bộ não AI cục bộ — phân tầng độ khó (dễ→khó) & sức khỏe engine GPU"
+      },
       "dataProcessing": {
         "title": "Xử Lý Dữ Liệu",
         "desc": "Xử lý, tăng cường và chuẩn bị dữ liệu ảnh cho huấn luyện mô hình AI"

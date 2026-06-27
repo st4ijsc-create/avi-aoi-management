@@ -147,3 +147,4 @@ import "./writeHandlers/yield";            // set_yield_threshold
 import "./writeHandlers/client";           // navigate, prefill_form (client_action)
 import "./writeHandlers/machineControl";   // F4a: machine_start/stop/pause/reset/select_recipe/download_job/set_machine_param/acknowledge_machine_alarm (OT HITL, DRY-RUN)
 import "./writeHandlers/interlock";        // F5a: propose_interlock_rule (HITL; rule always disabled/unapproved; ALERT-ONLY)
+import "./writeHandlers/engineering";      // B1: ENGINEERING write-tools — adjust_ng_threshold / configure_inspection_param / create_ng_threshold / update_product_quality_target (HITL propose→confirm)

@@ -607,7 +607,10 @@ export async function classifyToolIntentLLM(question: string): Promise<ToolDecis
     // Default: bundled GGUF engine with grammar-constrained JSON (always parseable).
     try {
       const { generateJSON, isGgufAvailable } = await import("../aiGgufEngine");
+      const { route } = await import("../aiModelRouter");
       if (await isGgufAvailable()) {
+        // Model Router: intent classification is Tier 1 (fast model when GGUF_FAST_MODEL set).
+        const intentRoute = route({ task: "intent", text: question });
         const { data } = await generateJSON<{ tool?: unknown; args?: unknown }>(
           TOOL_INTENT_SCHEMA,
           {
@@ -616,6 +619,7 @@ export async function classifyToolIntentLLM(question: string): Promise<ToolDecis
             temperature: 0,
             topP: 0.8,
           },
+          intentRoute.modelId,
         );
         if (data && typeof data.tool === "string") {
           parsed = {

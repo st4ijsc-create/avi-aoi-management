@@ -7206,6 +7206,10 @@
         "title": "Model Monitoring",
         "desc": "Detect model drift, track performance snapshots, and manage quality alerts"
       },
+      "aiBrain": {
+        "title": "AI Brain",
+        "desc": "Local AI brain observability — request tier distribution (easy→hard) & GPU engine health"
+      },
       "dataProcessing": {
         "title": "Data Processing",
         "desc": "Process, augment, and prepare image data for AI model training"

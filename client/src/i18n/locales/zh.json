@@ -7180,6 +7180,10 @@
         "title": "模型监控",
         "desc": "检测模型漂移，跟踪性能快照，管理质量警报"
       },
+      "aiBrain": {
+        "title": "AI Brain",
+        "desc": "本地 AI 大脑可观测性 — 请求分层分布（易→难）与 GPU 引擎健康"
+      },
       "dataProcessing": {
         "title": "数据处理",
         "desc": "处理、增强和准备图像数据用于AI模型训练"

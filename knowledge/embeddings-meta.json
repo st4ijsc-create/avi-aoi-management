@@ -1,14 +1,8 @@
 {
-  "generatedAt": "2026-06-05T08:03:31.887Z",
+  "generatedAt": "2026-06-26T17:44:27.110Z",
   "engine": "gguf",
-  "model": "mxbai-embed-large-v1-f16",
-  "mode": "incremental",
+  "model": "Qwen3-Embedding-0.6B-f16",
   "totalEmbedded": 1196,
-  "added": 0,
-  "changed": 0,
-  "unchanged": 1196,
-  "removed": 0,
-  "skipped": 0,
-  "elapsedMs": 553,
+  "elapsedMs": 821965,
   "outputFile": "knowledge/embeddings.jsonl"
 }

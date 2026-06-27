@@ -41,7 +41,9 @@ function controlEnabled(): boolean {
 
 async function record(
   input: RobotDispatchInput,
-  status: RobotDispatchResult["status"],
+  // "running" is accepted so an in-flight job can be recorded before it reaches a terminal
+  // state; the completedAt guard below relies on it. Callers currently pass terminal statuses.
+  status: RobotDispatchResult["status"] | "running",
   result?: Record<string, unknown>,
   errorText?: string,
 ): Promise<number | undefined> {

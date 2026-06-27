@@ -26,31 +26,37 @@ function minIntervalMs(): number {
 
 async function generateAdvisory(rule: string, machine: string, ctx: Record<string, unknown>): Promise<string | null> {
   try {
-    const { invokeLLM } = await import("../../_core/llm");
-    const res = await invokeLLM({
-      messages: [
-        {
-          role: "system",
-          content:
-            "Bạn là kỹ sư chất lượng nhà máy. Trả lời NGẮN GỌN bằng tiếng Việt: " +
-            "(1) một giả thuyết nguyên nhân gốc khả dĩ, (2) một bước hành động đề xuất tiếp theo. " +
-            "Không bịa số liệu; nếu thiếu dữ liệu, nói rõ cần kiểm tra gì.",
-        },
-        {
-          role: "user",
-          content:
-            `Sự kiện điều phối: rule="${rule}", máy="${machine}". ` +
-            `Bối cảnh: ${JSON.stringify(ctx)}. ` +
-            `Hãy đưa giả thuyết nguyên nhân + bước tiếp theo.`,
-        },
-      ],
-      maxTokens: 300,
-    });
-    const choice = res.choices?.[0]?.message?.content;
-    const text = typeof choice === "string" ? choice : Array.isArray(choice)
-      ? choice.map((c) => (typeof c === "object" && c && "text" in c ? (c as { text?: string }).text ?? "" : "")).join(" ")
-      : "";
-    return text.trim() || null;
+    // Route the advisory through the Model Router (Cognitive Escalation Ladder).
+    // An orchestration advisory is a root-cause hypothesis → task "rca", which the
+    // router classifies as "hard" → Tier 2 deep/reasoning model (explicit 30B/7B).
+    // Same pattern as aiChatAssistant.ts: route() picks the model, then we hand the
+    // resolved modelId + tuned decoding params to the GGUF engine's chatCompletion.
+    const { chatCompletion } = await import("../../services/aiGgufEngine");
+    const { route } = await import("../../services/aiModelRouter");
+    const userPrompt =
+      `Sự kiện điều phối: rule="${rule}", máy="${machine}". ` +
+      `Bối cảnh: ${JSON.stringify(ctx)}. ` +
+      `Hãy đưa giả thuyết nguyên nhân + bước tiếp theo.`;
+    const advRoute = route({ task: "rca", text: userPrompt });
+    const res = await chatCompletion(
+      {
+        messages: [
+          {
+            role: "system",
+            content:
+              "Bạn là kỹ sư chất lượng nhà máy. Trả lời NGẮN GỌN bằng tiếng Việt: " +
+              "(1) một giả thuyết nguyên nhân gốc khả dĩ, (2) một bước hành động đề xuất tiếp theo. " +
+              "Không bịa số liệu; nếu thiếu dữ liệu, nói rõ cần kiểm tra gì.",
+          },
+          { role: "user", content: userPrompt },
+        ],
+        maxTokens: Math.min(advRoute.maxTokens, 300), // advisory stays concise
+        temperature: advRoute.temperature,
+        contextSize: advRoute.contextSize,
+      },
+      advRoute.modelId,
+    );
+    return res.text.trim() || null;
   } catch (err) {
     console.error("[AIWatcher] LLM advisory failed:", (err as Error)?.message ?? err);
     return null; // GGUF unavailable → skip (don't store junk)

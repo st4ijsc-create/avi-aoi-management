@@ -261,10 +261,13 @@ async function processGgufChat(request: ChatRequest): Promise<ChatResponse> {
   const toolResults: Record<string, unknown> = {};
 
   try {
-    // Step 1: Use GGUF to classify intent and select tools
+    // Step 1: Use GGUF to classify intent and select tools.
+    // Model Router (Tier 1 fast) picks the model; keep low temp for deterministic classification.
     const { chatCompletion } = await import("./aiGgufEngine");
+    const { route } = await import("./aiModelRouter");
     const selectionPrompt = buildToolSelectionPrompt();
 
+    const selRoute = route({ task: "intent", text: request.userMessage });
     const selectionResult = await chatCompletion({
       messages: [
         { role: "system", content: selectionPrompt },
@@ -272,7 +275,7 @@ async function processGgufChat(request: ChatRequest): Promise<ChatResponse> {
       ],
       maxTokens: 256,
       temperature: 0.1, // Low temperature for deterministic classification
-    });
+    }, selRoute.modelId);
 
     const selectedTools = parseToolSelection(selectionResult.text, startDate, endDate);
 
@@ -301,6 +304,7 @@ async function processGgufChat(request: ChatRequest): Promise<ChatResponse> {
   // Use GGUF to generate a natural language response from the tool results
   try {
     const { chatCompletion } = await import("./aiGgufEngine");
+    const { route } = await import("./aiModelRouter");
     const systemPrompt = buildSystemPrompt(request.language ?? "vi") +
       "\nYou have access to factory inspection data. Use the provided data to answer the user's question naturally.";
 
@@ -317,7 +321,12 @@ async function processGgufChat(request: ChatRequest): Promise<ChatResponse> {
       { role: "user" as const, content: request.userMessage + dataContext },
     ];
 
-    const result = await chatCompletion({ messages, maxTokens: 800, temperature: 0.3 });
+    // Model Router: route final answer by difficulty (dễ→3B/Tier1, khó→7B/Tier2) + tuned decoding.
+    const ansRoute = route({ task: "chat", text: request.userMessage });
+    const result = await chatCompletion(
+      { messages, maxTokens: ansRoute.maxTokens, temperature: ansRoute.temperature },
+      ansRoute.modelId,
+    );
 
     const footer = isVi
       ? `\n\n_Sử dụng local LLM (GGUF) — không cần API key._`

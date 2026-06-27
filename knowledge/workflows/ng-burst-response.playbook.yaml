@@ -1,0 +1,73 @@
+# Playbook — Phản ứng khi phát hiện "NG burst" (chùm NG) trên một máy AOI.
+# Kích hoạt bối cảnh: rulesEngine phát 'orchestration.triggered' rule=ng_burst →
+# kỹ sư mở playbook này để điều tra & xử lý có quy trình. Doc 04 §B1.5.
+#
+# AN TOÀN: deterministic, do người soạn. Step `tool` (acknowledge_alert) là
+# WRITE-ACTION đi qua proposeAction → người dùng xác nhận (HITL) → confirmAction.
+# Không có bước nào ghi xuống máy; mọi điều chỉnh ngưỡng/cấu hình do người quyết.
+#
+# Context (ctx) kỳ vọng khi start: { machine, alertId, note } — interpolate vào
+# argsTemplate; key thiếu sẽ bị engine drop (zod của tool quyết định hợp lệ).
+id: ng-burst-response
+category: quality
+title:
+  vi: "Phản ứng NG burst — điều tra & xử lý chùm lỗi"
+  en: "NG burst response — investigate and handle a defect cluster"
+  zh: "NG 突发响应 — 调查并处理缺陷集群"
+requiredPermission:
+  module: mqtt_alerts
+  action: canEdit
+steps:
+  - type: guidance
+    text:
+      vi: "Xác nhận hiện trạng: đã phát hiện chùm NG vượt ngưỡng trên một máy. Tạm dừng nguồn cấp nếu line cho phép, cô lập các sản phẩm NG vào khay đỏ 'Chờ phân loại'."
+      en: "Confirm the situation: a threshold-exceeding NG cluster was detected on one machine. Pause feeding if the line permits, and isolate the NG units in the red 'pending' tray."
+      zh: "确认现状：某台机器检测到超阈值的 NG 集群。若产线允许则暂停上料，并将 NG 产品隔离到红色待分类托盘。"
+  - type: navigate
+    route: /mqtt-alerts
+    text:
+      vi: "Mở trang Cảnh báo MQTT để xem các cảnh báo NG hiện hành của máy."
+      en: "Open the MQTT Alerts page to review the machine's active NG alerts."
+      zh: "打开 MQTT 告警页面查看该机器当前的 NG 告警。"
+  - type: navigate
+    route: /ai-inspection-analytics
+    text:
+      vi: "Mở phân tích kiểm tra AI để xem các ảnh NG gần đây và tìm điểm/dạng lỗi tương đồng (image search)."
+      en: "Open AI inspection analytics to review recent NG images and find similar defect patterns (image search)."
+      zh: "打开 AI 检测分析查看最近的 NG 图像并查找相似缺陷模式（图像检索）。"
+  - type: branch
+    branch:
+      - key: false_call
+        text:
+          vi: "Lỗi giả (false call): camera/ánh sáng/căn chỉnh sai → ghi false call, kiểm tra lại setup kiểm tra."
+          en: "False call: camera/lighting/alignment issue → mark false call, re-check the inspection setup."
+          zh: "误判：相机/光照/对位问题 → 标记误判，重新检查检测配置。"
+      - key: real_defect
+        text:
+          vi: "Lỗi thật & lặp lại: nghi vấn quy trình thượng nguồn (in/hàn/gắn linh kiện) → chuyển RCA và đề xuất rework."
+          en: "Real, recurring defect: suspect an upstream process (print/solder/placement) → escalate to RCA and propose rework."
+          zh: "真实且重复的缺陷：怀疑上游工序（印刷/焊接/贴装）→ 升级根因分析并建议返工。"
+    text:
+      vi: "Phân loại nguyên nhân chùm NG: lỗi giả hay lỗi thật lặp lại."
+      en: "Classify the NG cluster cause: false call vs recurring real defect."
+      zh: "区分 NG 集群原因：误判还是重复出现的真实缺陷。"
+  - type: navigate
+    route: /root-cause-analysis
+    text:
+      vi: "Nếu là lỗi thật lặp lại: mở Phân tích nguyên nhân gốc (RCA) để ghi nhận giả thuyết và phân công xử lý."
+      en: "If a recurring real defect: open Root Cause Analysis to record the hypothesis and assign follow-up."
+      zh: "若为重复的真实缺陷：打开根因分析记录假设并分配后续处理。"
+  - type: tool
+    tool: acknowledge_alert
+    argsTemplate:
+      id: "{{alertId}}"
+      note: "{{note}}"
+    text:
+      vi: "Xác nhận (acknowledge) cảnh báo NG burst sau khi đã xử lý — WRITE-ACTION, cần người dùng xác nhận (HITL)."
+      en: "Acknowledge the NG-burst alert once handled — WRITE-ACTION, requires user confirmation (HITL)."
+      zh: "处理完成后确认 NG 突发告警 — 写操作，需要用户确认（HITL）。"
+  - type: confirm
+    text:
+      vi: "Chốt: ghi lại số sản phẩm cô lập, biện pháp tạm thời, và bước theo dõi (kiểm 100% lô tiếp theo nếu cần)."
+      en: "Wrap up: record the isolated count, the temporary countermeasure, and the follow-up (100% screen the next lot if needed)."
+      zh: "收尾：记录隔离数量、临时对策及后续跟踪（必要时对下一批 100% 全检）。"

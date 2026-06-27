@@ -26,6 +26,7 @@ import {
   Wifi,
   Book,
   FlaskConical,
+  Gauge,
 } from "lucide-react";
 
 const aiFeatures = [
@@ -47,6 +48,7 @@ const aiFeatures = [
   { key: "batchInference", icon: Layers, href: "/ai-batch-jobs", color: "text-indigo-500", bg: "bg-indigo-500/10", category: "models" },
   // X3: "abTesting" tile removed — live A/B canary is a tab in the Performance dashboard (/ai-performance).
   // System
+  { key: "aiBrain", icon: Gauge, href: "/ai-brain", color: "text-indigo-500", bg: "bg-indigo-500/10", category: "system" },
   { key: "monitoring", icon: MonitorCheck, href: "/ai-monitoring", color: "text-emerald-500", bg: "bg-emerald-500/10", category: "system" },
   { key: "dataProcessing", icon: Database, href: "/ai-data-processing", color: "text-teal-500", bg: "bg-teal-500/10", category: "system" },
   { key: "settings", icon: Settings, href: "/ai-settings", color: "text-slate-500", bg: "bg-slate-500/10", category: "system" },

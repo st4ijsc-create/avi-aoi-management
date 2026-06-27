@@ -65,6 +65,23 @@ const GPU_LAYERS = (() => {
   const n = parseInt(process.env.LLAMA_VISION_GPU_LAYERS || "999", 10);
   return Number.isFinite(n) ? n : 999;
 })();
+/** Context size (-c) for the vision sidecar. Default 8192. Qwen2.5-VL/Qwen3-VL's native 128k+ ctx
+ *  would otherwise allocate several GB of KV-cache per process — wasteful for single-image
+ *  describe/QA. B0.2: enforce a sane upper cap (LLAMA_VISION_CTX_MAX, default 16384) so a
+ *  misconfigured value can't blow the VRAM budget; default 8192 stays well within it. */
+const VISION_CTX_MAX = (() => {
+  const n = parseInt(process.env.LLAMA_VISION_CTX_MAX || "16384", 10);
+  return Number.isFinite(n) && n > 0 ? n : 16384;
+})();
+const VISION_CTX = (() => {
+  const n = parseInt(process.env.LLAMA_VISION_CTX || "8192", 10);
+  const v = Number.isFinite(n) && n > 0 ? n : 8192;
+  if (v > VISION_CTX_MAX) {
+    console.warn(`[llamaVisionSidecar] LLAMA_VISION_CTX=${v} exceeds cap ${VISION_CTX_MAX}; clamping to ${VISION_CTX_MAX}.`);
+    return VISION_CTX_MAX;
+  }
+  return v;
+})();
 
 function baseUrl(): string {
   return `http://${VISION_HOST}:${VISION_PORT}`;
@@ -194,6 +211,9 @@ export async function ensureSidecar(): Promise<void> {
       "--host", cfg.host,
       "--port", String(cfg.port),
       "-ngl", String(GPU_LAYERS),
+      "-c", String(VISION_CTX),
+      // Qwen3-VL (and modern VLMs) need the jinja chat template for correct multimodal formatting.
+      "--jinja",
     ];
     console.log(`[llamaVisionSidecar] spawning: ${cfg.binPath} ${args.join(" ")}`);
 

@@ -535,38 +535,41 @@ export async function storeEmbedding(params: {
   if (!db) throw new Error("Database not available");
 
   const embeddingStr = formatVectorLiteral(params.embedding);
+  const metaStr = params.metadata != null ? JSON.stringify(params.metadata) : null;
 
-  const [row] = await db
-    .insert(aiImageEmbeddings)
-    .values({
-      inspectionId: params.inspectionId ?? null,
-      measurementResultId: params.measurementResultId ?? null,
-      imageUrl: params.imageUrl,
-      embedding: embeddingStr,
-      embeddingDim: params.dim,
-      modelCode: params.modelCode,
-      label: params.label ?? null,
-      confidence: params.confidence?.toFixed(4) ?? null,
-      defectType: params.defectType ?? null,
-      machineId: params.machineId ?? null,
-      productModelId: params.productModelId ?? null,
-      metadata: params.metadata ?? null,
-    })
-    .returning({ id: aiImageEmbeddings.id });
+  // INSERT bằng raw SQL chỉ nêu các cột CÓ THẬT — KHÔNG đụng `embedding_vec` (cột pgvector).
+  // Lý do: drizzle `.insert().values()` luôn phát cột embedding_vec=default, sẽ FAIL trên DB
+  // không cài pgvector (cột không tồn tại). Cột pgvector vẫn được set ở bước UPDATE bên dưới
+  // (chỉ cho dim 1024 + best-effort). Trên DB có pgvector, embedding_vec để NULL rồi UPDATE.
+  const inserted: any = await db.execute(sql`
+    INSERT INTO ai_image_embeddings
+      ("inspectionId", "measurementResultId", "imageUrl", "embedding", "embeddingDim",
+       "modelCode", "label", "confidence", "defectType", "machineId", "productModelId", "metadata")
+    VALUES
+      (${params.inspectionId ?? null}, ${params.measurementResultId ?? null}, ${params.imageUrl},
+       ${embeddingStr}, ${params.dim}, ${params.modelCode}, ${params.label ?? null},
+       ${params.confidence?.toFixed(4) ?? null}, ${params.defectType ?? null},
+       ${params.machineId ?? null}, ${params.productModelId ?? null}, ${metaStr}::json)
+    RETURNING id
+  `);
+  // db.execute shape varies by driver (postgres-js RowList vs node-postgres {rows}).
+  const insertedId: number = Array.isArray(inserted)
+    ? inserted[0]?.id
+    : inserted?.rows?.[0]?.id;
 
   // Ghi đồng thời cột pgvector embedding_vec cho dòng 1024-dim (cùng không gian KB).
   // Best-effort: nếu pgvector/cột chưa sẵn sàng → bỏ qua, cột TEXT vẫn là nguồn raw.
-  if (params.dim === DEFAULT_EMBEDDING_DIM) {
+  if (params.dim === DEFAULT_EMBEDDING_DIM && insertedId != null) {
     try {
       await db.execute(
-        sql`UPDATE ai_image_embeddings SET embedding_vec = ${embeddingStr}::vector(${sql.raw(String(DEFAULT_EMBEDDING_DIM))}) WHERE id = ${row.id}`,
+        sql`UPDATE ai_image_embeddings SET embedding_vec = ${embeddingStr}::vector(${sql.raw(String(DEFAULT_EMBEDDING_DIM))}) WHERE id = ${insertedId}`,
       );
     } catch (e) {
       console.warn("[aiImageEmbedding] storeEmbedding: skip embedding_vec write (pgvector unavailable):", (e as Error)?.message);
     }
   }
 
-  return row.id;
+  return insertedId;
 }
 
 // ─── Find Similar Images ─────────────────────────────────────────────────────

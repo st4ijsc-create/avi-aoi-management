@@ -53,7 +53,7 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
-const MODEL_PATH = process.env.DINOV2_MODEL_PATH ?? "D:/16.AI/model.onnx";
+const MODEL_PATH = process.env.DINOV2_MODEL_PATH ?? "D:/SOURCES/16.AI/model.onnx";
 const MODEL_CODE = process.env.DINOV2_MODEL_CODE ?? "dinov2-small";
 const EMBED_DIM = Number(process.env.DINOV2_EMBED_DIM ?? 384);
 

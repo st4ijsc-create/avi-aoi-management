@@ -386,6 +386,12 @@ importers:
       '@builder.io/vite-plugin-jsx-loc':
         specifier: ^0.1.1
         version: 0.1.1(vite@7.3.1(@types/node@24.12.0)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0))
+      '@node-llama-cpp/win-x64-cuda':
+        specifier: 3.18.1
+        version: 3.18.1
+      '@node-llama-cpp/win-x64-cuda-ext':
+        specifier: 3.18.1
+        version: 3.18.1
       '@playwright/test':
         specifier: ^1.49.1
         version: 1.60.0
@@ -9083,11 +9089,9 @@ snapshots:
   '@node-llama-cpp/win-arm64@3.18.1':
     optional: true
 
-  '@node-llama-cpp/win-x64-cuda-ext@3.18.1':
-    optional: true
+  '@node-llama-cpp/win-x64-cuda-ext@3.18.1': {}
 
-  '@node-llama-cpp/win-x64-cuda@3.18.1':
-    optional: true
+  '@node-llama-cpp/win-x64-cuda@3.18.1': {}
 
   '@node-llama-cpp/win-x64-vulkan@3.18.1':
     optional: true

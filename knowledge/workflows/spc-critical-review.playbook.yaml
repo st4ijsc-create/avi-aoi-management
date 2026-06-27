@@ -1,0 +1,81 @@
+# Playbook — Rà soát khi có vi phạm SPC mức 'critical' trên một điểm đo/máy.
+# Kích hoạt bối cảnh: rulesEngine phát 'orchestration.triggered' rule=spc_critical
+# → kỹ sư mở playbook này để rà xu hướng và quyết định có cần xem lại ngưỡng/spec.
+# Doc 04 §B1.5.
+#
+# AN TOÀN: deterministic. Việc THAY ĐỔI giới hạn spec (USL/LSL/Target) là quyết
+# định kỹ thuật nhạy cảm → KHÔNG tự động hoá ở đây. Playbook dẫn người tới đúng
+# trang để xem xét; bước ghi (set_spec_limits) để dạng PLACEHOLDER đã chú thích
+# bên dưới, chỉ bật khi đã chốt giá trị + qua HITL confirm. Không bypass HITL.
+#
+# Context (ctx) kỳ vọng khi start: { machine, ruleName }.
+id: spc-critical-review
+category: quality
+title:
+  vi: "Rà soát vi phạm SPC critical — xem xu hướng & cân nhắc ngưỡng"
+  en: "SPC critical review — inspect the trend and consider thresholds"
+  zh: "SPC 严重违规复核 — 检查趋势并评估阈值"
+requiredPermission:
+  module: spc_analysis
+  action: canView
+steps:
+  - type: guidance
+    text:
+      vi: "Ghi nhận vi phạm SPC mức critical. KHÔNG vội đổi spec — trước hết xác minh dữ liệu có thật (không phải lỗi đo/nhập)."
+      en: "Note the critical SPC violation. Do NOT change the spec yet — first verify the data is real (not a measurement/entry error)."
+      zh: "记录严重 SPC 违规。先不要修改规格 — 首先确认数据真实（非测量/录入错误）。"
+  - type: navigate
+    route: /spc-analysis
+    text:
+      vi: "Mở Phân tích SPC để xem control chart của điểm đo: kiểu vi phạm (xu hướng/lệch/ngoài giới hạn) và mức độ."
+      en: "Open SPC Analysis to view the point's control chart: violation type (trend/shift/out-of-limit) and magnitude."
+      zh: "打开 SPC 分析查看测量点的控制图：违规类型（趋势/偏移/超限）及程度。"
+  - type: navigate
+    route: /correlation-analysis
+    text:
+      vi: "Mở Phân tích tương quan để kiểm tra liên hệ giữa thông số quá trình và sai lệch — tìm biến nguyên nhân khả dĩ."
+      en: "Open Correlation Analysis to check process parameters vs the deviation — find a plausible causal variable."
+      zh: "打开相关性分析检查工艺参数与偏差的关系 — 寻找可能的因果变量。"
+  - type: branch
+    branch:
+      - key: process_drift
+        text:
+          vi: "Xu hướng trôi (drift) quá trình: điều chỉnh/hiệu chuẩn thiết bị thượng nguồn; giữ nguyên spec."
+          en: "Process drift: adjust/calibrate the upstream equipment; keep the spec unchanged."
+          zh: "工艺漂移：调整/校准上游设备；规格保持不变。"
+      - key: spec_review
+        text:
+          vi: "Spec không còn phù hợp năng lực quá trình (Cpk): đề xuất xem lại USL/LSL/Target qua quy trình kỹ thuật."
+          en: "Spec no longer matches process capability (Cpk): propose reviewing USL/LSL/Target via the engineering process."
+          zh: "规格不再匹配工序能力（Cpk）：通过工程流程建议复核 USL/LSL/Target。"
+    text:
+      vi: "Quyết định hướng xử lý: hiệu chỉnh quá trình hay xem lại spec."
+      en: "Decide the path: correct the process or review the spec."
+      zh: "决定处理路径：修正工艺还是复核规格。"
+  - type: navigate
+    route: /datasettings
+    text:
+      vi: "Nếu chọn xem lại spec: mở Cài đặt dữ liệu → điểm đo để đối chiếu giới hạn hiện tại trước khi đề xuất giá trị mới."
+      en: "If reviewing the spec: open Data Settings → measurement points to check the current limits before proposing new values."
+      zh: "若复核规格：打开数据设置 → 测量点，在提议新值前核对当前限值。"
+  # PLACEHOLDER (HITL) — đặt lại giới hạn spec. Chỉ bật khi đã chốt giá trị mới
+  # cùng kỹ thuật và truyền qua ctx (measurementPointDefId, usl, lsl, target).
+  # set_spec_limits là write-tool đã đăng ký (module settings_measurement_points,
+  # canEdit) → đi qua proposeAction → người dùng xác nhận (HITL) → confirmAction.
+  # KHÔNG bật tự động: thay đổi spec là quyết định kỹ thuật cần con người duyệt.
+  # - type: tool
+  #   tool: set_spec_limits
+  #   argsTemplate:
+  #     measurementPointDefId: "{{measurementPointDefId}}"
+  #     usl: "{{usl}}"
+  #     lsl: "{{lsl}}"
+  #     target: "{{target}}"
+  #   text:
+  #     vi: "Cập nhật giới hạn spec đã được kỹ thuật chốt — WRITE-ACTION, cần HITL."
+  #     en: "Apply the engineering-approved spec limits — WRITE-ACTION, requires HITL."
+  #     zh: "应用工程批准的规格限值 — 写操作，需要 HITL。"
+  - type: confirm
+    text:
+      vi: "Chốt: ghi lại kết luận (drift hay spec), hành động đã thực hiện và người chịu trách nhiệm theo dõi."
+      en: "Wrap up: record the conclusion (drift vs spec), the action taken, and the owner for follow-up."
+      zh: "收尾：记录结论（漂移或规格）、已采取的措施及跟踪负责人。"

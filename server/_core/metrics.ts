@@ -62,6 +62,16 @@ export async function initMetrics(): Promise<boolean> {
       registers: [reg],
     });
 
+    // B0.3 — AI Brain runtime telemetry (tier throughput, latency, queue,
+    // resident models, VRAM). Collected read-only from router/engine getters
+    // on each scrape. Fail-safe: never throws into init.
+    try {
+      const { registerAiBrainMetrics } = await import("../services/aiMetrics");
+      await registerAiBrainMetrics(client, reg);
+    } catch (err) {
+      console.warn("[Metrics] AI brain metrics off:", (err as Error)?.message);
+    }
+
     registry = reg as PromRegistry;
     console.log("[Metrics] Prometheus metrics đã bật tại /metrics");
     return true;

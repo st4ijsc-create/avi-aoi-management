@@ -18,6 +18,9 @@
 import path from "path";
 import fs from "fs";
 import { withGgufSlot, withGgufSlotGenerator, getGgufQueueStats } from "./ggufConcurrency";
+// Read-only telemetry hook (TASK A): observeInference is a no-op when METRICS_ENABLED is off
+// and never throws. Imported only to record per-generation latency into the histogram.
+import { observeInference } from "./aiMetrics";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -26,8 +29,9 @@ export interface GgufModelConfig {
   modelPath: string;
   /** Context size in tokens. Default 4096 */
   contextSize?: number;
-  /** Number of GPU layers to offload (-1 = all). Default -1 */
-  gpuLayers?: number;
+  /** GPU layers to offload. "max" = all (default), "auto" = as many as fit VRAM, or a number.
+   *  NOTE: node-llama-cpp 3.x treats -1 as 0 (CPU) — do NOT use -1 to mean "all". */
+  gpuLayers?: number | "max" | "auto";
   /** Number of threads for CPU inference. Default: auto */
   threads?: number;
   /** Batch size for prompt processing. Default 512 */
@@ -57,6 +61,12 @@ export interface GgufGenerateOptions {
   jsonMode?: boolean;
   /** Language hint */
   language?: "en" | "vi";
+  /**
+   * B0.2 — Per-task KV-cache sizing hint. Requested context size (n_ctx) for the model
+   * the FIRST time it is loaded. Trivial/fast tasks pass a small value so they don't
+   * allocate a huge KV-cache. Ignored if the model is already resident (context is shared).
+   */
+  contextSize?: number;
 }
 
 export interface GgufChatMessage {
@@ -72,6 +82,8 @@ export interface GgufChatOptions {
   topK?: number;
   repeatPenalty?: number;
   jsonMode?: boolean;
+  /** B0.2 — Per-task KV-cache sizing hint (n_ctx on first load). See GgufGenerateOptions.contextSize. */
+  contextSize?: number;
 }
 
 export interface GgufModelInfo {
@@ -151,11 +163,71 @@ const GGUF_MAX_VRAM_MB = (() => {
   const n = parseInt(process.env.GGUF_MAX_VRAM_MB || "0", 10);
   return Number.isFinite(n) && n >= 0 ? n : 0;
 })();
+/**
+ * B0.1 — VRAM threshold guard (%): before loading another model, if VRAM usage is at/above
+ * this percentage of total, evict LRU idle model(s) first; if none can be freed, log a clear
+ * warning and DEFER (allow temporary overflow rather than crash). Default 90. Set 0/100+ to
+ * disable. Best-effort & fail-safe: telemetry failures never throw.
+ */
+const GGUF_VRAM_GUARD_PCT = (() => {
+  const n = parseInt(process.env.GGUF_VRAM_GUARD_PCT || "90", 10);
+  return Number.isFinite(n) && n > 0 && n < 100 ? n : 90;
+})();
 /** Number of parallel sequences per context. Default 4. */
 const GGUF_SEQUENCES = (() => {
   const n = parseInt(process.env.GGUF_SEQUENCES || "4", 10);
   return Number.isFinite(n) && n > 0 ? n : 4;
 })();
+/**
+ * B0.2 — Default context size (n_ctx) when neither caller nor router supplies a per-task hint.
+ * Kept modest so we don't allocate a huge KV-cache by default (Qwen3 supports up to 256K but
+ * that would cost large VRAM). Per-task hints from the Model Router override this on first load.
+ */
+const GGUF_DEFAULT_CTX = (() => {
+  const n = parseInt(process.env.GGUF_DEFAULT_CTX || "4096", 10);
+  return Number.isFinite(n) && n > 0 ? n : 4096;
+})();
+/** Hard upper bound for any requested per-task context size (guards against absurd KV-cache). */
+const GGUF_MAX_CTX = (() => {
+  const n = parseInt(process.env.GGUF_MAX_CTX || "32768", 10);
+  return Number.isFinite(n) && n > 0 ? n : 32768;
+})();
+
+/** Clamp a requested context size into [256, GGUF_MAX_CTX]; undefined → GGUF_DEFAULT_CTX. */
+function resolveContextSize(requested?: number): number {
+  if (typeof requested !== "number" || !Number.isFinite(requested) || requested <= 0) {
+    return GGUF_DEFAULT_CTX;
+  }
+  return Math.min(Math.max(Math.floor(requested), 256), GGUF_MAX_CTX);
+}
+
+/** TASK A — Basename of the configured fast model (GGUF_FAST_MODEL), sans ".gguf". Empty if unset. */
+const GGUF_FAST_MODEL_BASENAME = (() => {
+  const v = (process.env.GGUF_FAST_MODEL || "").trim();
+  return v ? path.basename(v).replace(/\.gguf$/i, "") : "";
+})();
+
+/**
+ * TASK A — Coarse tier label for the latency histogram, derived locally from the resolved
+ * model basename (no call-site changes): "fast" when it matches GGUF_FAST_MODEL, else "deep".
+ * (embed/vision are observed elsewhere / out of scope here.)
+ */
+function tierLabelForModel(modelId: string): "fast" | "deep" {
+  return GGUF_FAST_MODEL_BASENAME && modelId === GGUF_FAST_MODEL_BASENAME ? "fast" : "deep";
+}
+
+/**
+ * TASK A — Record one completed generation's wall-clock latency. Fully fail-safe:
+ * observeInference is itself a no-op/never-throws, but we still guard to be certain telemetry
+ * can never affect inference.
+ */
+function recordInferenceLatency(modelId: string, startTimeMs: number): void {
+  try {
+    observeInference(tierLabelForModel(modelId), modelId, (Date.now() - startTimeMs) / 1000);
+  } catch {
+    /* telemetry must never affect inference */
+  }
+}
 
 /**
  * Ensure the GGUF models directory exists
@@ -173,6 +245,19 @@ async function getLlama(): Promise<any> {
   if (llamaInstance) return llamaInstance;
 
   try {
+    // Ensure CUDA runtime DLLs (cudart/cublas) are discoverable when offloading to GPU.
+    // The CUDA Toolkit installer adds its bin to system PATH, but prepend it explicitly
+    // for robustness (covers the app launched before a PATH refresh). GGUF_CUDA_BIN
+    // overrides; otherwise fall back to %CUDA_PATH%\bin.
+    if (process.env.GGUF_GPU !== "false") {
+      const cudaBin = process.env.GGUF_CUDA_BIN
+        || (process.env.CUDA_PATH ? `${process.env.CUDA_PATH}\\bin` : "");
+      if (cudaBin && !(process.env.PATH || "").includes(cudaBin)) {
+        process.env.PATH = `${cudaBin};${process.env.PATH || ""}`;
+        console.log("[aiGgufEngine] prepended CUDA bin to PATH:", cudaBin);
+      }
+    }
+
     const { getLlama: initLlama } = await import("node-llama-cpp");
     llamaInstance = await initLlama({
       gpu: process.env.GGUF_GPU === "false" ? false : "auto",
@@ -186,6 +271,75 @@ async function getLlama(): Promise<any> {
 }
 
 // ─── LRU eviction & memory guard ───────────────────────────────
+
+/**
+ * B0.1 — Best-effort VRAM snapshot in bytes. Primary source is node-llama-cpp's
+ * `getVramState()` ({ total, used, free }); if that is unavailable/zero (e.g. CPU build
+ * or unified memory), fall back to `nvidia-smi`. NEVER throws — returns null on any failure
+ * so the load path degrades truthfully instead of crashing.
+ */
+async function readVramState(): Promise<{ used: number; total: number } | null> {
+  // 1) node-llama-cpp native VRAM state.
+  if (llamaInstance && typeof llamaInstance.getVramState === "function") {
+    try {
+      const v = await llamaInstance.getVramState();
+      if (v && typeof v.used === "number" && typeof v.total === "number" && v.total > 0) {
+        return { used: v.used, total: v.total };
+      }
+    } catch {
+      // fall through to nvidia-smi
+    }
+  }
+  // 2) nvidia-smi fallback (bytes = MiB * 1024 * 1024).
+  try {
+    const { execFileSync } = await import("child_process");
+    const out = execFileSync(
+      "nvidia-smi",
+      ["--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"],
+      { timeout: 3000, windowsHide: true },
+    ).toString();
+    const first = out.split(/\r?\n/).find((l) => l.trim().length > 0) || "";
+    const [usedMib, totalMib] = first.split(",").map((s) => parseInt(s.trim(), 10));
+    if (Number.isFinite(usedMib) && Number.isFinite(totalMib) && totalMib > 0) {
+      return { used: usedMib * 1024 * 1024, total: totalMib * 1024 * 1024 };
+    }
+  } catch {
+    // nvidia-smi missing / not a GPU host — telemetry unavailable.
+  }
+  return null;
+}
+
+/**
+ * B0.1 — VRAM threshold guard. Before loading the Nth model, if VRAM usage is at/above
+ * GGUF_VRAM_GUARD_PCT of total, evict LRU idle model(s) until back under threshold. If no
+ * idle model can be freed while still over threshold, log a clear warning and DEFER (allow
+ * temporary overflow) rather than throw — node-llama-cpp will still attempt the load, but the
+ * operator is warned of OOM risk. Fail-safe: telemetry failure skips the guard silently.
+ */
+async function enforceVramGuard(): Promise<void> {
+  if (!llamaInstance) return; // engine not initialized → nothing loaded yet
+  let guard = 0;
+  while (guard++ < loadedModels.size + 1) {
+    const vram = await readVramState();
+    if (!vram) return; // telemetry unavailable → best-effort: skip guard
+    const usedPct = (vram.used / vram.total) * 100;
+    if (usedPct < GGUF_VRAM_GUARD_PCT) return; // under threshold → ok to load
+    const usedMb = Math.round(vram.used / 1024 / 1024);
+    const totalMb = Math.round(vram.total / 1024 / 1024);
+    const evicted = await evictLRU();
+    if (!evicted) {
+      console.warn(
+        `[aiGgufEngine] VRAM guard: used ${usedMb}/${totalMb}MB (${usedPct.toFixed(0)}%) ` +
+          `≥ ${GGUF_VRAM_GUARD_PCT}% but no idle model to evict — deferring/allowing load with OOM risk.`,
+      );
+      return;
+    }
+    console.warn(
+      `[aiGgufEngine] VRAM guard: used ${usedMb}/${totalMb}MB (${usedPct.toFixed(0)}%) ` +
+        `≥ ${GGUF_VRAM_GUARD_PCT}% — evicted LRU model "${evicted}" before loading.`,
+    );
+  }
+}
 
 /**
  * Pick the least-recently-used model with refCount === 0 and unload it.
@@ -248,6 +402,10 @@ async function ensureCapacity(): Promise<void> {
       console.warn("[aiGgufEngine] getVramState failed; skipping VRAM cap enforcement:", (err as any)?.message ?? err);
     }
   }
+
+  // B0.1 — percentage-based VRAM threshold guard (default on at 90%). Evicts LRU idle
+  // model(s) when VRAM is near full before loading another; never throws on telemetry failure.
+  await enforceVramGuard();
 }
 
 /**
@@ -348,11 +506,16 @@ export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
 
   const model = await llama.loadModel({
     modelPath: resolvedPath,
-    gpuLayers: config.gpuLayers ?? -1,
-  });
+    // "max" offloads ALL layers to GPU (full speed). When the engine runs CPU-only
+    // (GGUF_GPU=false → getLlama gpu:false), node-llama-cpp ignores this. Never pass -1
+    // here: node-llama-cpp 3.x interprets -1 as 0 layers → silent CPU inference.
+    gpuLayers: config.gpuLayers ?? "max",
+  } as any);
 
+  // B0.2 — respect a requested per-task contextSize (clamped); else GGUF_DEFAULT_CTX.
+  const resolvedCtx = resolveContextSize(config.contextSize);
   const context = await model.createContext({
-    contextSize: config.contextSize ?? 4096,
+    contextSize: resolvedCtx,
     batchSize: config.batchSize ?? 512,
     flashAttention: config.flashAttention !== false,
     sequences: GGUF_SEQUENCES,
@@ -416,7 +579,7 @@ function releaseModel(loaded: LoadedModel | undefined): void {
 /**
  * Get or load a model — loads from default path if not already in memory
  */
-async function getOrLoadModel(modelId?: string): Promise<{ modelId: string; loaded: LoadedModel }> {
+async function getOrLoadModel(modelId?: string, contextSize?: number): Promise<{ modelId: string; loaded: LoadedModel }> {
   if (modelId && loadedModels.has(modelId)) {
     const loaded = loadedModels.get(modelId)!;
     loaded.lastUsedAt = new Date();
@@ -439,7 +602,8 @@ async function getOrLoadModel(modelId?: string): Promise<{ modelId: string; load
     // Try to auto-load the default model from env
     const defaultModel = process.env.GGUF_DEFAULT_MODEL;
     if (defaultModel) {
-      const id = await loadGgufModel({ modelPath: defaultModel });
+      // B0.2 — forward the per-task contextSize hint on first load (KV-cache sizing).
+      const id = await loadGgufModel({ modelPath: defaultModel, contextSize });
       return getOrLoadModel(id);
     }
 
@@ -447,7 +611,7 @@ async function getOrLoadModel(modelId?: string): Promise<{ modelId: string; load
     ensureModelsDir();
     const files = fs.readdirSync(GGUF_MODELS_DIR).filter(f => f.endsWith(".gguf"));
     if (files.length > 0) {
-      const id = await loadGgufModel({ modelPath: files[0] });
+      const id = await loadGgufModel({ modelPath: files[0], contextSize });
       return getOrLoadModel(id);
     }
 
@@ -455,7 +619,7 @@ async function getOrLoadModel(modelId?: string): Promise<{ modelId: string; load
   }
 
   // Try to load the specified model
-  const id = await loadGgufModel({ modelPath: `${modelId}.gguf` });
+  const id = await loadGgufModel({ modelPath: `${modelId}.gguf`, contextSize });
   return getOrLoadModel(id);
 }
 
@@ -465,7 +629,7 @@ async function getOrLoadModel(modelId?: string): Promise<{ modelId: string; load
  * Generate text using a loaded GGUF model
  */
 export async function generateText(options: GgufGenerateOptions, modelId?: string): Promise<GgufGenerateResult> {
-  const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId);
+  const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
   const startTime = Date.now();
 
   // Build prompt with system message
@@ -502,6 +666,7 @@ export async function generateText(options: GgufGenerateOptions, modelId?: strin
       } as any);
 
       const totalTimeMs = Date.now() - startTime;
+      recordInferenceLatency(resolvedId, startTime); // TASK A: per-generation latency histogram
       // Accurate token counting using model tokenizer
       const tokensPrompt = loaded.model.tokenize(fullPrompt).length;
       const tokensGenerated = loaded.model.tokenize(response).length;
@@ -526,7 +691,7 @@ export async function generateText(options: GgufGenerateOptions, modelId?: strin
  * Chat completion with message history
  */
 export async function chatCompletion(options: GgufChatOptions, modelId?: string): Promise<GgufGenerateResult> {
-  const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId);
+  const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
   const startTime = Date.now();
 
   // Build conversation from message history
@@ -563,6 +728,7 @@ export async function chatCompletion(options: GgufChatOptions, modelId?: string)
       });
 
       const totalTimeMs = Date.now() - startTime;
+      recordInferenceLatency(resolvedId, startTime); // TASK A: per-generation latency histogram
       const tokensPrompt = loaded.model.tokenize(prompt).length;
       const tokensGenerated = loaded.model.tokenize(response).length;
 
@@ -596,7 +762,7 @@ export async function generateJSON<T = unknown>(
   options: GgufGenerateOptions,
   modelId?: string,
 ): Promise<{ data: T; raw: string; tokensGenerated: number; tokensPrompt: number; totalTimeMs: number; tokensPerSecond: number; modelId: string; }> {
-  const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId);
+  const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
   const startTime = Date.now();
 
   const llamaMod: any = await import("node-llama-cpp");
@@ -640,6 +806,7 @@ export async function generateJSON<T = unknown>(
       });
 
       const totalTimeMs = Date.now() - startTime;
+      recordInferenceLatency(resolvedId, startTime); // TASK A: per-generation latency histogram
       const tokensPrompt = loaded.model.tokenize(fullPrompt).length;
       const tokensGenerated = loaded.model.tokenize(response).length;
 
@@ -760,7 +927,7 @@ export async function* generateTextStream(
   modelId?: string,
   signal?: AbortSignal,
 ): AsyncGenerator<GgufStreamChunk> {
-  const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId);
+  const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
   const startTime = Date.now();
 
   let fullPrompt = options.prompt;
@@ -828,6 +995,7 @@ export async function* generateTextStream(
 
       const response = await promptPromise;
       const totalTimeMs = Date.now() - startTime;
+      recordInferenceLatency(resolvedId, startTime); // TASK A: per-generation latency histogram
       const tokensPrompt = loaded.model.tokenize(fullPrompt).length;
       const tokensGenerated = loaded.model.tokenize(response).length;
 
@@ -857,7 +1025,7 @@ export async function* chatCompletionStream(
   modelId?: string,
   signal?: AbortSignal,
 ): AsyncGenerator<GgufStreamChunk> {
-  const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId);
+  const { modelId: resolvedId, loaded } = await getOrLoadModel(modelId, options.contextSize);
   const startTime = Date.now();
 
   const systemMsg = options.messages.find(m => m.role === "system");
@@ -925,6 +1093,7 @@ export async function* chatCompletionStream(
 
       const response = await promptPromise;
       const totalTimeMs = Date.now() - startTime;
+      recordInferenceLatency(resolvedId, startTime); // TASK A: per-generation latency histogram
       const tokensPrompt = loaded.model.tokenize(prompt).length;
       const tokensGenerated = loaded.model.tokenize(response).length;
 

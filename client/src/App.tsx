@@ -91,6 +91,7 @@ const AIModelManagementPage = React.lazy(() => import("./pages/AIModelManagement
 const AIInspectionAnalyticsPage = React.lazy(() => import("./pages/AIInspectionAnalyticsPage"));
 const AdvancedVisionLabPage = React.lazy(() => import("./pages/AdvancedVisionLabPage"));
 const AIGgufModelsPage = React.lazy(() => import("./pages/AIGgufModelsPage"));
+const AIBrainDashboard = React.lazy(() => import("./pages/AIBrainDashboard"));
 const AILocalKnowledgeBasePage = React.lazy(() => import("./pages/AILocalKnowledgeBasePage"));
 import TestAnnotationPage from "./pages/TestAnnotationPage";
 const MaskAnnotationPage = React.lazy(() => import("./pages/MaskAnnotationPage"));
@@ -253,6 +254,7 @@ function Router() {
       <Route path="/ai-inspection-analytics"><AIPageWrapper><AIInspectionAnalyticsPage /></AIPageWrapper></Route>
       <Route path="/ai-advanced-vision-lab"><AIPageWrapper><AdvancedVisionLabPage /></AIPageWrapper></Route>
       <Route path="/ai-gguf-models"><AIPageWrapper><AIGgufModelsPage /></AIPageWrapper></Route>
+      <Route path="/ai-brain"><AIPageWrapper><AIBrainDashboard /></AIPageWrapper></Route>
       <Route path="/ai-local-kb"><AIPageWrapper><AILocalKnowledgeBasePage /></AIPageWrapper></Route>
       <Route path="/test-annotation" component={TestAnnotationPage} />
       <Route path="/mask-annotation"><AIPageWrapper><MaskAnnotationPage /></AIPageWrapper></Route>
