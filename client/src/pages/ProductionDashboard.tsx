@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import ReportExportButton, { type ReportExportConfig } from "@/components/ReportExportButton";
+import MachineAISummary from "@/components/MachineAISummary";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
@@ -24,6 +25,7 @@ import {
   Link2,
   RefreshCw,
   Layers,
+  Sparkles,
 } from "lucide-react";
 import { useLocation, useSearch } from "wouter";
 import {
@@ -690,6 +692,9 @@ export default function ProductionDashboard() {
           <ReportExportButton getConfig={getExportConfig} />
         </div>
 
+        {/* ── AI signals (production-embedded) ── */}
+        <MachineAISignalsSection t={t} />
+
         {/* ── Tab Content ── */}
         <div className="overflow-auto flex-1">
           {compareMode && factoryAgg.length > 0 && (
@@ -807,6 +812,69 @@ export default function ProductionDashboard() {
         }
       `}</style>
     </DashboardLayout>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   AI Signals Section (production-embedded MachineAISummary cards)
+   ══════════════════════════════════════════════════════════ */
+
+function MachineAISignalsSection({ t }: { t: any }) {
+  const [collapsed, setCollapsed] = useState(false);
+  // Top machines by failure risk — guarded: renders nothing if the procedure
+  // is unavailable / empty so the dashboard is unaffected when PdM is off.
+  const { data, isLoading } = trpc.predictiveMaintenance.listRulForecast.useQuery(
+    { limit: 6 },
+    { staleTime: 60_000, retry: false },
+  );
+  const machines = Array.isArray(data) ? data : [];
+
+  // Hide entirely when there is no PdM data (no noise on the kiosk).
+  if (!isLoading && machines.length === 0) return null;
+
+  return (
+    <div className="px-3 sm:px-7 pt-3 sm:pt-4">
+      <div className="bg-card border border-border rounded-md p-3 sm:p-4">
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          className="flex items-center justify-between w-full mb-2"
+        >
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-semibold">
+              {t("machineAI.sectionTitle", "Tín hiệu AI theo máy")}
+            </h3>
+            <span className="text-xs text-muted-foreground">
+              {t("machineAI.sectionHint", "Rủi ro hỏng hóc · bất thường · khuyến nghị")}
+            </span>
+          </div>
+          <span className="text-xs text-muted-foreground">{collapsed ? "▼" : "▲"}</span>
+        </button>
+
+        {!collapsed && (
+          isLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-28 w-full rounded-lg" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {machines.map((m: any) => (
+                <MachineAISummary
+                  key={m.machineId}
+                  machineId={m.machineId}
+                  machineCode={m.machineCode}
+                  machineName={m.machineName}
+                  compact
+                />
+              ))}
+            </div>
+          )
+        )}
+      </div>
+    </div>
   );
 }
 

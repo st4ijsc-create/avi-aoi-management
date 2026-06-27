@@ -10,7 +10,30 @@
     "cancelled": "已取消。",
     "denied": "您没有执行此操作的权限。",
     "expired": "该提议已过期。",
-    "failed": "无法执行。"
+    "failed": "无法执行。",
+    "summaryLabel": "操作摘要",
+    "changesTitle": "变更",
+    "warningsTitle": "重要提示",
+    "expiresIn": "{{time}} 后过期",
+    "expiresLabel": "剩余时间",
+    "arrow": "→"
+  },
+  "quickQuestions": {
+    "operator": {
+      "ngRepeat": "哪台机器出现重复的 NG 缺陷？",
+      "oeeWeek": "本周 OEE？",
+      "threshold": "超过阈值时提醒我"
+    },
+    "maintenance": {
+      "raiseNg": "提高 X 机器的 NG 阈值",
+      "config": "配置检测参数",
+      "pdm": "哪台机器即将需要维护 (PdM)？"
+    },
+    "supervisor": {
+      "kpiWeek": "每周 KPI 报告",
+      "topDefects": "前 5 大 NG 缺陷",
+      "yieldTrend": "良率趋势"
+    }
   },
   "agent": {
     "playbooks": "操作手册",
@@ -3815,6 +3838,10 @@
     "adminRolesDesc": "管理用户角色和权限组",
     "adminSetting": "管理设置",
     "adminSettingDesc": "配置角色、审计、API和许可证管理",
+    "aiAssistantGroup": "AI 助手",
+    "aiAssistantGroupDesc": "与 AI 助手对话",
+    "aiAssistant": "AI 助手",
+    "aiAssistantDesc": "使用 AI 进行问答、分析和操作辅助",
     "aiAnalyticsGroup": "AI 分析",
     "aiAnalyticsGroupDesc": "AI 模型性能与管理",
     "aiHub": "AI 中心",
@@ -7268,7 +7295,79 @@
     "placeholder": "询问有关检测、质量或缺陷的任何问题...",
     "toolsAvailable": "可用工具",
     "toolUsed": "已用工具",
-    "untitled": "未命名对话"
+    "untitled": "未命名对话",
+    "whatYouCanAsk": "您可以询问 KPI、缺陷、设备性能，或使用下方的引导式工程任务。",
+    "suggestedPrompts": "建议问题",
+    "suggest": {
+      "kpiWeek": "总结本周生产 KPI",
+      "topDefects": "今天最多的缺陷是什么？",
+      "lowYield": "哪个工位 FPY 最低？",
+      "pdm": "哪台设备故障风险最高？"
+    }
+  },
+  "aiGuided": {
+    "sectionTitle": "引导式工程任务",
+    "hitlNote": "注意：该操作将发送给 AI 助手，您仍需在确认卡中确认后才会生效。",
+    "cancel": "取消",
+    "send": "发送给助手",
+    "loading": "加载中...",
+    "noData": "无数据",
+    "unnamed": "未命名",
+    "errRequired": "请填写所有必填字段。",
+    "errNumber": "值必须为数字。",
+    "errInteger": "值必须为整数。",
+    "errRange": "{{field}} 必须在 {{min}}–{{max}} 之间。",
+    "errAtLeastOne": "请至少输入一个要更改的值。",
+    "errCritLtWarn": "严重阈值必须 ≥ 警告阈值。",
+    "errMinGtTarget": "最低 FPY 必须 ≤ 目标 FPY。",
+    "adjustNg": {
+      "title": "调整 NG 阈值",
+      "desc": "更改现有 NG 阈值的警告 / 严重阈值 (%)。"
+    },
+    "configInspect": {
+      "title": "配置检测参数",
+      "desc": "为现有 NG 阈值设置最小样本量 / 冷却时间。"
+    },
+    "createNg": {
+      "title": "创建 NG 阈值",
+      "desc": "为某个工位添加新的 NG 阈值配置记录。"
+    },
+    "updateTarget": {
+      "title": "更新质量目标",
+      "desc": "为某个产品型号设置目标 / 最低 FPY (%)。"
+    },
+    "field": {
+      "ngThreshold": "NG 阈值",
+      "ngThresholdPlaceholder": "选择 NG 阈值",
+      "station": "工位",
+      "stationPlaceholder": "选择工位",
+      "productModel": "产品型号",
+      "productModelPlaceholder": "选择产品型号",
+      "name": "阈值名称",
+      "warning": "警告阈值 (%)",
+      "critical": "严重阈值 (%)",
+      "minSample": "最小样本量",
+      "cooldown": "冷却时间（分钟）",
+      "targetFpy": "目标 FPY (%)",
+      "minFpy": "最低 FPY (%)"
+    }
+  },
+  "machineAI": {
+    "title": "AI 信号",
+    "sectionTitle": "各设备 AI 信号",
+    "sectionHint": "故障风险 · 异常 · 建议",
+    "askAI": "问 AI",
+    "askQuestion": "设备 {{machine}} 有哪些 AI 信号？总结故障风险和异常。",
+    "loading": "加载中...",
+    "noSignal": "暂无 AI 信号",
+    "noData": "—",
+    "anomaly": "异常",
+    "anomalyReady": "监控中",
+    "anomalyNotReady": "未设置",
+    "pdm": "故障风险",
+    "pdmValue": "{{risk}}%",
+    "pdmValueDays": "{{risk}}% · ~{{days}} 天",
+    "latestInsight": "最新建议"
   },
   "qg": {
     "title": "AI质量门",

@@ -142,15 +142,15 @@ function stepGlyph(
   result: AgentStepResultView | undefined,
   sessionStatus: AgentSessionStatus,
 ) {
-  if (result?.status === "done") return <CheckCircle2 className="size-3.5 text-green-600" />;
-  if (result?.status === "failed") return <XCircle className="size-3.5 text-red-500" />;
-  if (result?.status === "skipped") return <CircleDashed className="size-3.5 text-muted-foreground" />;
+  if (result?.status === "done") return <CheckCircle2 className="size-4 text-green-600" />;
+  if (result?.status === "failed") return <XCircle className="size-4 text-red-500" />;
+  if (result?.status === "skipped") return <CircleDashed className="size-4 text-muted-foreground" />;
   if (result?.status === "awaiting_confirm")
-    return <AlertCircle className="size-3.5 text-amber-600" />;
+    return <AlertCircle className="size-4 text-amber-600" />;
   // No result yet.
   if (index === cursor && sessionStatus === "running")
-    return <Loader2 className="size-3.5 text-blue-500 animate-spin" />;
-  return <CircleDashed className="size-3.5 text-muted-foreground/50" />;
+    return <Loader2 className="size-4 text-blue-500 animate-spin" />;
+  return <CircleDashed className="size-4 text-muted-foreground/50" />;
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────────
@@ -187,19 +187,19 @@ export function AgentPlanCard({
   const canCancel = !isTerminal;
 
   return (
-    <div className="rounded-lg border border-primary/30 bg-primary/[0.03] dark:bg-primary/[0.06] p-2.5 space-y-2 text-[11px]">
+    <div className="rounded-lg border border-primary/30 bg-primary/[0.03] dark:bg-primary/[0.06] p-2.5 space-y-2 text-[12.5px]">
       {/* Header: goal + status badge */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5 font-semibold text-foreground">
-            <Compass className="size-3.5 text-primary shrink-0" />
+          <div className="flex items-center gap-1.5 font-semibold text-foreground text-[13px]">
+            <Compass className="size-4 text-primary shrink-0" />
             <span className="truncate">{plan.summary || goal}</span>
           </div>
           {plan.summary && goal && plan.summary !== goal && (
-            <p className="text-[10.5px] text-muted-foreground mt-0.5 truncate">{goal}</p>
+            <p className="text-[11.5px] text-muted-foreground mt-0.5 truncate">{goal}</p>
           )}
         </div>
-        <Badge variant={badge.variant} className={cn("shrink-0 text-[10px] h-4 px-1.5", badge.className)}>
+        <Badge variant={badge.variant} className={cn("shrink-0 text-[11px] h-5 px-1.5", badge.className)}>
           {t(`agent.status.${status}`, status)}
         </Badge>
       </div>
@@ -207,57 +207,82 @@ export function AgentPlanCard({
       {/* Progress x/n */}
       {total > 0 && (
         <div className="space-y-1">
-          <div className="flex items-center justify-between text-[10.5px] text-muted-foreground">
+          <div className="flex items-center justify-between text-[11.5px] text-muted-foreground">
             <span>
               {t("agent.step", "Bước")} {Math.min(completed, total)}/{total}
             </span>
             <span>{progressPct}%</span>
           </div>
-          <Progress value={progressPct} className="h-1.5" />
+          <Progress value={progressPct} className="h-2" />
         </div>
       )}
 
       {/* Empty plan (planner degraded / no actionable steps) */}
       {total === 0 && (
-        <p className="text-[10.5px] text-muted-foreground">
+        <p className="text-[11.5px] text-muted-foreground">
           {message || t("agent.emptyPlan", "Chưa lập được kế hoạch khả thi.")}
         </p>
       )}
 
       {/* Step list */}
       {total > 0 && (
-        <ol className="space-y-1">
+        <ol className="space-y-1.5">
           {steps.map((step, i) => {
             const result = resultByIndex.get(i);
             const isCurrent = i === cursor && !isTerminal;
+            const isDone = result?.status === "done";
             return (
               <li
                 key={i}
                 className={cn(
-                  "flex items-start gap-1.5 rounded px-1.5 py-1",
-                  isCurrent ? "bg-primary/10 ring-1 ring-primary/30" : "bg-background/40",
+                  "flex items-start gap-2 rounded-md px-2 py-1.5 transition-colors",
+                  isCurrent
+                    ? "bg-primary/10 ring-1 ring-primary/40 border-l-2 border-primary"
+                    : isDone
+                      ? "bg-green-50/60 dark:bg-green-950/20"
+                      : "bg-background/40",
                 )}
               >
-                <span className="shrink-0 mt-px">
+                {/* Step number badge for clear ordering on a kiosk */}
+                <span className="shrink-0 mt-0.5 flex items-center gap-1">
+                  <span
+                    className={cn(
+                      "inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-semibold tabular-nums",
+                      isCurrent
+                        ? "bg-primary text-primary-foreground"
+                        : isDone
+                          ? "bg-green-600 text-white"
+                          : "bg-muted text-muted-foreground",
+                    )}
+                  >
+                    {i + 1}
+                  </span>
                   {stepGlyph(i, cursor, result, status)}
                 </span>
-                <span className="shrink-0 mt-px">{kindIcon(step.kind)}</span>
+                <span className="shrink-0 mt-0.5">{kindIcon(step.kind)}</span>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1">
-                    <span className="text-[9.5px] uppercase tracking-wide text-muted-foreground">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10.5px] uppercase tracking-wide text-muted-foreground">
                       {t(`agent.kind.${step.kind}`, step.kind)}
                     </span>
                     {step.tool && (
-                      <span className="text-[9.5px] font-mono text-muted-foreground/80 truncate">
+                      <span className="text-[10.5px] font-mono text-muted-foreground/80 truncate">
                         {step.tool}
                       </span>
                     )}
                   </div>
                   {step.rationale && (
-                    <p className="text-foreground/85 leading-snug">{step.rationale}</p>
+                    <p
+                      className={cn(
+                        "leading-snug text-[12.5px]",
+                        isCurrent ? "font-semibold text-foreground" : "text-foreground/85",
+                      )}
+                    >
+                      {step.rationale}
+                    </p>
                   )}
                   {result?.status === "failed" && result.message && (
-                    <p className="text-red-600 dark:text-red-400 leading-snug">{result.message}</p>
+                    <p className="text-red-600 dark:text-red-400 leading-snug text-[12px]">{result.message}</p>
                   )}
                 </div>
               </li>
@@ -273,7 +298,7 @@ export function AgentPlanCard({
       {message && (status === "paused" || isTerminal) && total > 0 && (
         <p
           className={cn(
-            "text-[10.5px] leading-snug",
+            "text-[11.5px] leading-snug",
             status === "failed" || status === "aborted"
               ? "text-red-600 dark:text-red-400"
               : "text-muted-foreground",
@@ -289,17 +314,17 @@ export function AgentPlanCard({
           {canApprove && (
             <Button
               size="sm"
-              className="h-6 px-2.5 text-[11px]"
+              className="h-8 px-3 text-[12.5px] font-semibold"
               disabled={busy}
               onClick={onApprove}
             >
-              {busy ? <Loader2 className="size-3 animate-spin mr-1" /> : <Play className="size-3 mr-1" />}
+              {busy ? <Loader2 className="size-3.5 animate-spin mr-1" /> : <Play className="size-3.5 mr-1" />}
               {t("agent.start", "Bắt đầu")}
             </Button>
           )}
           {status === "awaiting_confirm" && (
-            <span className="flex items-center gap-1 text-[10.5px] text-amber-700 dark:text-amber-400">
-              <ArrowRight className="size-3" />
+            <span className="flex items-center gap-1 text-[11.5px] text-amber-700 dark:text-amber-400">
+              <ArrowRight className="size-3.5" />
               {t("agent.confirmHint", "Xác nhận thao tác ghi ở trên để tiếp tục.")}
             </span>
           )}
@@ -307,11 +332,11 @@ export function AgentPlanCard({
             <Button
               size="sm"
               variant="outline"
-              className="h-6 px-2.5 text-[11px] ml-auto"
+              className="h-8 px-3 text-[12.5px] ml-auto"
               disabled={busy}
               onClick={onCancel}
             >
-              <Square className="size-3 mr-1" />
+              <Square className="size-3.5 mr-1" />
               {t("agent.stop", "Dừng")}
             </Button>
           )}

@@ -144,6 +144,27 @@ export const navGroups: NavGroup[] = [
     ],
   },
 
+  // 1b. AI ASSISTANT — top-level shortcut so technicians/operators reach the
+  // AI chat in ≤1 click (the full chat also stays under the AI Analytics group).
+  // No requiredRole / requiredPermission / permissionCategory → visible to every
+  // authenticated role (operator, maintenance, supervisor, …); the chat page
+  // itself enforces its own access. License gating still applies per-route.
+  {
+    id: "ai-assistant",
+    label: "nav.aiAssistantGroup",
+    icon: <Sparkles className="h-4 w-4" />,
+    description: "nav.aiAssistantGroupDesc",
+    defaultOpen: false,
+    items: [
+      {
+        href: "/ai-chat",
+        label: "nav.aiAssistant",
+        icon: <MessageSquare className="h-4 w-4" />,
+        description: "nav.aiAssistantDesc",
+      },
+    ],
+  },
+
   // 2. CORPORATE
   {
     id: "corporate",

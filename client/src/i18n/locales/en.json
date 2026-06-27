@@ -10,7 +10,30 @@
     "cancelled": "Cancelled.",
     "denied": "You do not have permission to perform this action.",
     "expired": "The proposal has expired.",
-    "failed": "Could not execute."
+    "failed": "Could not execute.",
+    "summaryLabel": "Action summary",
+    "changesTitle": "Changes",
+    "warningsTitle": "Important notes",
+    "expiresIn": "Expires in {{time}}",
+    "expiresLabel": "Time remaining",
+    "arrow": "→"
+  },
+  "quickQuestions": {
+    "operator": {
+      "ngRepeat": "Which machine has repeating NG defects?",
+      "oeeWeek": "OEE this week?",
+      "threshold": "Alert me when over threshold"
+    },
+    "maintenance": {
+      "raiseNg": "Raise NG threshold for machine X",
+      "config": "Configure inspection parameters",
+      "pdm": "Which machine needs maintenance soon (PdM)?"
+    },
+    "supervisor": {
+      "kpiWeek": "Weekly KPI report",
+      "topDefects": "Top 5 NG defects",
+      "yieldTrend": "Yield trend"
+    }
   },
   "agent": {
     "playbooks": "Playbooks",
@@ -3822,6 +3845,10 @@
     "adminRolesDesc": "Create and configure permission roles",
     "adminSetting": "Admin Setting",
     "adminSettingDesc": "Configure roles, audit, API, and license management",
+    "aiAssistantGroup": "AI Assistant",
+    "aiAssistantGroupDesc": "Chat with the AI assistant",
+    "aiAssistant": "AI Assistant",
+    "aiAssistantDesc": "Ask, analyze and get AI-assisted actions",
     "aiAnalyticsGroup": "AI Analytics",
     "aiAnalyticsGroupDesc": "AI model performance and management",
     "aiHub": "AI Hub",
@@ -7294,7 +7321,79 @@
     "placeholder": "Ask anything about inspections, quality, or defects...",
     "toolsAvailable": "Tools available",
     "toolUsed": "Tool used",
-    "untitled": "Untitled Conversation"
+    "untitled": "Untitled Conversation",
+    "whatYouCanAsk": "You can ask about KPIs, defects, machine performance — or use the guided engineering tasks below.",
+    "suggestedPrompts": "Suggested prompts",
+    "suggest": {
+      "kpiWeek": "Summarize this week's production KPIs",
+      "topDefects": "What are today's top defects?",
+      "lowYield": "Which station has the lowest FPY?",
+      "pdm": "Which machine has the highest failure risk?"
+    }
+  },
+  "aiGuided": {
+    "sectionTitle": "Guided engineering tasks",
+    "hitlNote": "Note: this action is sent to the AI assistant and you still need to CONFIRM it in the confirmation card before it applies.",
+    "cancel": "Cancel",
+    "send": "Send to assistant",
+    "loading": "Loading...",
+    "noData": "No data",
+    "unnamed": "Unnamed",
+    "errRequired": "Please fill in all required fields.",
+    "errNumber": "Value must be a number.",
+    "errInteger": "Value must be an integer.",
+    "errRange": "{{field}} must be between {{min}}–{{max}}.",
+    "errAtLeastOne": "Enter at least one value to change.",
+    "errCritLtWarn": "Critical threshold must be ≥ warning threshold.",
+    "errMinGtTarget": "Min FPY must be ≤ target FPY.",
+    "adjustNg": {
+      "title": "Adjust NG threshold",
+      "desc": "Change the warning / critical threshold (%) of an existing NG threshold."
+    },
+    "configInspect": {
+      "title": "Configure inspection params",
+      "desc": "Set minimum sample size / cooldown for an existing NG threshold."
+    },
+    "createNg": {
+      "title": "Create NG threshold",
+      "desc": "Add a new NG threshold config record for a station."
+    },
+    "updateTarget": {
+      "title": "Update quality target",
+      "desc": "Set target / min FPY (%) for a product model."
+    },
+    "field": {
+      "ngThreshold": "NG threshold",
+      "ngThresholdPlaceholder": "Select NG threshold",
+      "station": "Station",
+      "stationPlaceholder": "Select station",
+      "productModel": "Product model",
+      "productModelPlaceholder": "Select product model",
+      "name": "Threshold name",
+      "warning": "Warning threshold (%)",
+      "critical": "Critical threshold (%)",
+      "minSample": "Min sample size",
+      "cooldown": "Cooldown (minutes)",
+      "targetFpy": "Target FPY (%)",
+      "minFpy": "Min FPY (%)"
+    }
+  },
+  "machineAI": {
+    "title": "AI signals",
+    "sectionTitle": "Per-machine AI signals",
+    "sectionHint": "Failure risk · anomaly · recommendation",
+    "askAI": "Ask AI",
+    "askQuestion": "What AI signals does machine {{machine}} have? Summarize failure risk and anomalies.",
+    "loading": "Loading...",
+    "noSignal": "No AI signal yet",
+    "noData": "—",
+    "anomaly": "Anomaly",
+    "anomalyReady": "Monitoring",
+    "anomalyNotReady": "Not set up",
+    "pdm": "Failure risk",
+    "pdmValue": "{{risk}}%",
+    "pdmValueDays": "{{risk}}% · ~{{days}} days",
+    "latestInsight": "Latest recommendation"
   },
   "qg": {
     "title": "AI Quality Gate",

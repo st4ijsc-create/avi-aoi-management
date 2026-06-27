@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearch } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
+import AIGuidedActionCards from "@/components/AIGuidedActionCards";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,16 +22,27 @@ import {
   Wrench,
   StopCircle,
   Zap,
+  Lightbulb,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAIStream } from "@/hooks/useAIStream";
 
+// Localized "suggested prompts" shown in the empty state for discoverability.
+const SUGGESTED_PROMPTS: { emoji: string; key: string; fallback: string }[] = [
+  { emoji: "📊", key: "aiChat.suggest.kpiWeek", fallback: "Tóm tắt KPI sản xuất tuần này" },
+  { emoji: "🏆", key: "aiChat.suggest.topDefects", fallback: "Top lỗi nhiều nhất hôm nay là gì?" },
+  { emoji: "📉", key: "aiChat.suggest.lowYield", fallback: "Trạm nào có FPY thấp nhất?" },
+  { emoji: "🔧", key: "aiChat.suggest.pdm", fallback: "Máy nào có nguy cơ hỏng cao nhất?" },
+];
+
 export default function AIChatPage() {
   const { t } = useTranslation();
+  const search = useSearch();
   const [selectedConvId, setSelectedConvId] = useState<number | null>(null);
   const [inputMessage, setInputMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const prefillSentRef = useRef(false);
 
   // Streaming hook
   const { streamingText, isStreaming, error: streamError, startStream, stopStream } = useAIStream();
@@ -95,9 +108,24 @@ export default function AIChatPage() {
     }
   }, [streamError]);
 
-  const handleSend = async () => {
-    if (!inputMessage.trim()) return;
-    const userMsg = inputMessage;
+  // Deep-link prefill: /ai-chat?q=... (e.g. from MachineAISummary "Hỏi AI").
+  // Send once when the page mounts with a query param.
+  useEffect(() => {
+    if (prefillSentRef.current) return;
+    const params = new URLSearchParams(search);
+    const q = params.get("q");
+    if (q && q.trim()) {
+      prefillSentRef.current = true;
+      // eslint-disable-next-line @typescript-eslint/no-use-before-define
+      void handleSend(q);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  const handleSend = async (override?: string) => {
+    const source = typeof override === "string" ? override : inputMessage;
+    if (!source.trim()) return;
+    const userMsg = source;
     setInputMessage("");
     setOptimisticUserMsg(userMsg);
 
@@ -226,10 +254,34 @@ export default function AIChatPage() {
               {/* Messages */}
               <ScrollArea className="flex-1 p-4">
                 <div className="max-w-3xl mx-auto space-y-4">
-                  {messages.length === 0 && (
-                    <div className="text-center py-20 text-muted-foreground">
-                      <Bot className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                      <p className="text-sm">{t("aiChat.startPrompt", "Hãy đặt câu hỏi về chất lượng sản xuất, phân tích lỗi, hoặc hiệu suất mô hình AI...")}</p>
+                  {messages.length === 0 && !optimisticUserMsg && !isStreaming && (
+                    <div className="py-10">
+                      <div className="text-center text-muted-foreground mb-6">
+                        <Bot className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                        <p className="text-sm">{t("aiChat.startPrompt", "Hãy đặt câu hỏi về chất lượng sản xuất, phân tích lỗi, hoặc hiệu suất mô hình AI...")}</p>
+                      </div>
+                      <div className="mb-5">
+                        <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+                          <Lightbulb className="h-3.5 w-3.5 text-primary" />
+                          {t("aiChat.suggestedPrompts", "Gợi ý câu hỏi")}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {SUGGESTED_PROMPTS.map((p, i) => {
+                            const text = t(p.key, p.fallback);
+                            return (
+                              <button
+                                key={i}
+                                onClick={() => handleSend(text)}
+                                disabled={isBusy}
+                                className="text-xs px-3 py-1.5 rounded-full border bg-background hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {p.emoji} {text}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <AIGuidedActionCards onSend={(req) => handleSend(req)} disabled={isBusy} />
                     </div>
                   )}
                   {messages.map((msg: any) => (
@@ -330,7 +382,7 @@ export default function AIChatPage() {
                     </Button>
                   ) : (
                     <Button
-                      onClick={handleSend}
+                      onClick={() => handleSend()}
                       disabled={!inputMessage.trim() || isBusy}
                     >
                       <Send className="h-4 w-4" />
@@ -340,25 +392,64 @@ export default function AIChatPage() {
               </div>
             </>
           ) : (
-            /* Empty state */
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center max-w-md">
-                <MessageSquare className="h-16 w-16 mx-auto mb-4 text-muted-foreground/30" />
-                <h2 className="text-lg font-semibold mb-2">
-                  {t("aiChat.welcomeTitle", "AI Manufacturing Copilot")}
-                </h2>
-                <p className="text-sm text-muted-foreground mb-4">
-                  {t("aiChat.welcomeDesc", "Trợ lý AI thông minh hỗ trợ phân tích chất lượng, dự đoán lỗi, và tối ưu hóa quy trình sản xuất.")}
-                </p>
-                <Button
-                  onClick={() => createConv.mutate({ title: t("aiChat.newConversation", "Hội thoại mới") })}
-                  disabled={createConv.isPending}
-                >
-                  <Plus className="h-4 w-4 mr-1.5" />
-                  {t("aiChat.startNew", "Bắt đầu hội thoại")}
-                </Button>
+            /* Empty state — welcome + discoverability (suggested prompts + guided cards) */
+            <ScrollArea className="flex-1">
+              <div className="max-w-2xl mx-auto px-4 py-10">
+                <div className="text-center mb-6">
+                  <MessageSquare className="h-14 w-14 mx-auto mb-3 text-muted-foreground/30" />
+                  <h2 className="text-lg font-semibold mb-2">
+                    {t("aiChat.welcomeTitle", "AI Manufacturing Copilot")}
+                  </h2>
+                  <p className="text-sm text-muted-foreground mb-1">
+                    {t("aiChat.welcomeDesc", "Trợ lý AI thông minh hỗ trợ phân tích chất lượng, dự đoán lỗi, và tối ưu hóa quy trình sản xuất.")}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("aiChat.whatYouCanAsk", "Bạn có thể hỏi về KPI, lỗi, hiệu suất máy — hoặc dùng các tác vụ kỹ thuật có hướng dẫn bên dưới.")}
+                  </p>
+                </div>
+
+                {/* Suggested prompts */}
+                <div className="mb-6">
+                  <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+                    <Lightbulb className="h-3.5 w-3.5 text-primary" />
+                    {t("aiChat.suggestedPrompts", "Gợi ý câu hỏi")}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {SUGGESTED_PROMPTS.map((p, i) => {
+                      const text = t(p.key, p.fallback);
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => handleSend(text)}
+                          disabled={isBusy || createConv.isPending}
+                          className="text-xs px-3 py-1.5 rounded-full border bg-background hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {p.emoji} {text}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Guided write-action cards (role-gated inside the component) */}
+                <AIGuidedActionCards
+                  onSend={(req) => handleSend(req)}
+                  disabled={isBusy || createConv.isPending}
+                  className="mb-6"
+                />
+
+                <div className="text-center">
+                  <Button
+                    variant="outline"
+                    onClick={() => createConv.mutate({ title: t("aiChat.newConversation", "Hội thoại mới") })}
+                    disabled={createConv.isPending}
+                  >
+                    <Plus className="h-4 w-4 mr-1.5" />
+                    {t("aiChat.startNew", "Bắt đầu hội thoại")}
+                  </Button>
+                </div>
               </div>
-            </div>
+            </ScrollArea>
           )}
         </div>
       </div>

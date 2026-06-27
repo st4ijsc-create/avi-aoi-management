@@ -33,6 +33,7 @@ import {
   MicOff,
   Trash2,
   ChevronRight,
+  Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -64,17 +65,40 @@ const MAX_STORED_MESSAGES = 40;
 // assistant's tone/scope — it never grants permissions; the backend still
 // validates it. Falls back to "worker" for unknown/loading users.
 
-const QUICK_QUESTIONS: Array<{ label: string; question: string }> = [
-  { label: "📋 Xem kết quả kiểm tra", question: "Làm thế nào để xem kết quả kiểm tra AOI chi tiết?" },
-  { label: "⚙️ Cài đặt máy", question: "Cách cấu hình thông số máy kiểm tra AOI?" },
-  { label: "📦 Thêm sản phẩm", question: "Hướng dẫn thêm sản phẩm và cài điểm đo cho sản phẩm mới?" },
-  { label: "📈 Tỷ lệ yield", question: "Tỷ lệ yield và OEE của các dây chuyền hiện tại?" },
-  { label: "⚠️ Lỗi lặp lại", question: "Những lỗi AOI nào đang lặp lại nhiều nhất gần đây?" },
-  { label: "📊 KPI tuần", question: "Báo cáo KPI kiểm tra của tuần này so với tuần trước?" },
-  { label: "🔔 Cài cảnh báo", question: "Cách cài đặt cảnh báo khi tỷ lệ lỗi vượt ngưỡng?" },
-  { label: "👥 Quản lý user", question: "Cách thêm, sửa, xóa tài khoản và phân quyền người dùng?" },
-  { label: "🗄️ Backup DB", question: "Quy trình sao lưu và phục hồi cơ sở dữ liệu?" },
-];
+// Role-filtered example prompts. Keyed by i18n so they localize (vi/en/zh).
+// The label IS the question sent to the assistant (with an emoji prefix for
+// scannability on a kiosk). Grouped by AI role (mapAppRoleToAiRole):
+//   worker   ← operator/viewer            → shop-floor monitoring prompts
+//   engineer ← maintenance/quality        → config + predictive-maintenance
+//   manager  ← supervisor                 → KPI / reporting
+//   it_admin ← admin                      → reuses the manager set
+type QuickQuestionKey = { emoji: string; key: string };
+
+const QUICK_QUESTIONS_BY_ROLE: Record<
+  "worker" | "engineer" | "manager" | "it_admin",
+  QuickQuestionKey[]
+> = {
+  worker: [
+    { emoji: "⚠️", key: "quickQuestions.operator.ngRepeat" },
+    { emoji: "📈", key: "quickQuestions.operator.oeeWeek" },
+    { emoji: "🔔", key: "quickQuestions.operator.threshold" },
+  ],
+  engineer: [
+    { emoji: "⚙️", key: "quickQuestions.maintenance.raiseNg" },
+    { emoji: "🛠️", key: "quickQuestions.maintenance.config" },
+    { emoji: "🔧", key: "quickQuestions.maintenance.pdm" },
+  ],
+  manager: [
+    { emoji: "📊", key: "quickQuestions.supervisor.kpiWeek" },
+    { emoji: "🏆", key: "quickQuestions.supervisor.topDefects" },
+    { emoji: "📉", key: "quickQuestions.supervisor.yieldTrend" },
+  ],
+  it_admin: [
+    { emoji: "📊", key: "quickQuestions.supervisor.kpiWeek" },
+    { emoji: "🏆", key: "quickQuestions.supervisor.topDefects" },
+    { emoji: "📉", key: "quickQuestions.supervisor.yieldTrend" },
+  ],
+};
 
 const TYPING_STAGES = [
   "🔍 Đang tìm kiếm nguồn...",
@@ -236,6 +260,32 @@ function buildConversationHistory(messages: ChatMessage[]): ConversationTurn[] {
 // ─── Reusable HITL write confirm card ─────────────────────────────────────────
 // Shared by the inline chat pending_action AND the agentic write step. Pure
 // presentation + Confirm/Cancel buttons; the parent owns the mutation.
+// Render a primitive value for the before/after cells (handles null/undefined).
+function formatActionValue(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  if (typeof v === "boolean") return v ? "✓" : "✗";
+  return String(v);
+}
+
+// Live TTL countdown — recomputes "mm:ss" remaining until expiresAt every second.
+function useTtlCountdown(expiresAt: string, active: boolean) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [active, expiresAt]);
+  const msLeft = Math.max(0, new Date(expiresAt).getTime() - now);
+  const totalSec = Math.floor(msLeft / 1000);
+  const mm = Math.floor(totalSec / 60);
+  const ss = totalSec % 60;
+  return {
+    expired: msLeft <= 0,
+    label: `${mm}:${ss.toString().padStart(2, "0")}`,
+    urgent: msLeft > 0 && msLeft <= 60_000, // < 1 min remaining
+  };
+}
+
 function ConfirmActionCard({
   action,
   state,
@@ -253,53 +303,102 @@ function ConfirmActionCard({
   onCancel: () => void;
   t: (key: string, fallback: string) => string;
 }) {
+  const ttl = useTtlCountdown(action.expiresAt, state === "pending");
+  // Prefer the richer human-readable summary when present.
+  const summaryLine = action.preview.humanSummary || action.summary;
+
   return (
-    <div className="rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-2.5 space-y-2 text-[11px]">
-      <div className="flex items-center gap-1.5 font-semibold text-amber-800 dark:text-amber-300">
-        <AlertCircle className="size-3.5" />
-        {t("copilot.confirmTitle", "Xác nhận thao tác ghi")}
+    <div className="rounded-lg border-2 border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-2.5 text-[13px]">
+      {/* Header + live TTL countdown */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 font-semibold text-amber-800 dark:text-amber-300 text-[13px]">
+          <AlertCircle className="size-4 shrink-0" />
+          {t("copilot.confirmTitle", "Xác nhận thao tác ghi")}
+        </div>
+        {state === "pending" && (
+          <span
+            className={cn(
+              "flex items-center gap-1 shrink-0 rounded-full border px-2 py-0.5 text-[12px] font-mono font-semibold tabular-nums",
+              ttl.urgent
+                ? "border-red-300 bg-red-100 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+                : "border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
+            )}
+            title={t("copilot.expiresLabel", "Thời gian còn lại")}
+          >
+            <Clock className="size-3.5" />
+            {ttl.expired ? "0:00" : ttl.label}
+          </span>
+        )}
       </div>
-      <p className="text-foreground/90">{action.summary}</p>
+
+      {/* Bold large plain-language summary line first */}
+      <p className="text-[14px] font-bold leading-snug text-foreground">{summaryLine}</p>
+
+      {/* Color-coded before → after (old gray, new green) */}
       {action.preview.changes.length > 0 && (
-        <table className="w-full text-[10.5px] border-collapse">
-          <thead>
-            <tr className="text-muted-foreground">
-              <th className="text-left font-medium py-0.5">{t("copilot.field", "Trường")}</th>
-              <th className="text-left font-medium py-0.5">{t("copilot.before", "Trước")}</th>
-              <th className="text-left font-medium py-0.5">{t("copilot.after", "Sau")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {action.preview.changes.map((c, i) => (
-              <tr key={i} className="border-t border-amber-200/60 dark:border-amber-900/40">
-                <td className="py-0.5 pr-1.5 font-medium">{c.displayName ?? c.field}</td>
-                <td className="py-0.5 pr-1.5 text-muted-foreground">{c.oldValue === null || c.oldValue === undefined ? "—" : String(c.oldValue)}</td>
-                <td className="py-0.5 text-foreground">{c.newValue === null || c.newValue === undefined ? "—" : String(c.newValue)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {action.preview.warnings.length > 0 && (
-        <ul className="list-disc list-inside text-red-600 dark:text-red-400 space-y-0.5">
-          {action.preview.warnings.map((w, i) => (
-            <li key={i}>{w}</li>
+        <div className="space-y-1.5">
+          {action.preview.changes.map((c, i) => (
+            <div
+              key={i}
+              className="flex flex-wrap items-center gap-1.5 rounded-md bg-background/70 border border-border/50 px-2 py-1.5 text-[13px]"
+            >
+              <span className="font-medium text-foreground">{c.displayName ?? c.field}:</span>
+              <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground line-through decoration-muted-foreground/50">
+                {formatActionValue(c.oldValue)}
+              </span>
+              <span className="text-muted-foreground" aria-hidden>
+                {t("copilot.arrow", "→")}
+              </span>
+              <span className="rounded bg-green-100 px-1.5 py-0.5 font-semibold text-green-800 dark:bg-green-950/50 dark:text-green-300">
+                {formatActionValue(c.newValue)}
+              </span>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
+
+      {/* Warnings with icon + plain language */}
+      {action.preview.warnings.length > 0 && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1.5 dark:border-red-900/50 dark:bg-red-950/30">
+          <div className="mb-0.5 flex items-center gap-1.5 text-[12px] font-semibold text-red-700 dark:text-red-400">
+            <AlertCircle className="size-3.5 shrink-0" />
+            {t("copilot.warningsTitle", "Lưu ý quan trọng")}
+          </div>
+          <ul className="space-y-0.5 text-[13px] text-red-700 dark:text-red-300">
+            {action.preview.warnings.map((w, i) => (
+              <li key={i} className="flex items-start gap-1.5">
+                <span aria-hidden className="mt-px shrink-0">⚠️</span>
+                <span className="leading-snug">{w}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Larger Confirm / Cancel buttons (min 44px height) */}
       {state === "pending" ? (
         <div className="flex items-center gap-2 pt-0.5">
-          <Button size="sm" className="h-6 px-2.5 text-[11px]" disabled={busy} onClick={onConfirm}>
+          <Button
+            className="h-11 min-h-[44px] flex-1 text-[14px] font-semibold"
+            disabled={busy || ttl.expired}
+            onClick={onConfirm}
+          >
+            {busy ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null}
             {t("copilot.confirm", "Xác nhận")}
           </Button>
-          <Button size="sm" variant="outline" className="h-6 px-2.5 text-[11px]" disabled={busy} onClick={onCancel}>
+          <Button
+            variant="outline"
+            className="h-11 min-h-[44px] flex-1 text-[14px]"
+            disabled={busy}
+            onClick={onCancel}
+          >
             {t("copilot.cancel", "Hủy")}
           </Button>
         </div>
       ) : (
         <div
           className={cn(
-            "text-[11px] font-medium",
+            "text-[13px] font-medium",
             state === "executed" ? "text-green-600 dark:text-green-400" : "text-muted-foreground",
           )}
         >
@@ -371,7 +470,14 @@ export function AILocalChatBubble() {
     startPlaybookMutation.isPending;
 
   const isReady = health?.ready || false;
-  const quickQuestions = QUICK_QUESTIONS;
+  // Role-filtered example prompts (operators no longer see admin tasks). The
+  // localized label IS the question we send to the assistant.
+  const quickQuestions = (QUICK_QUESTIONS_BY_ROLE[userRole] ?? QUICK_QUESTIONS_BY_ROLE.worker).map(
+    (q) => {
+      const text = t(q.key);
+      return { label: `${q.emoji} ${text}`, question: text };
+    },
+  );
 
   // ─── Persist messages ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -937,6 +1043,9 @@ export function AILocalChatBubble() {
   // C3a — mounted globally at App root; hide entirely when not logged in
   // (e.g. /login) so the bubble only appears for authenticated users.
   if (!user) return null;
+  // UX group A — the global FAB is redundant on the full-page chat (/ai-chat),
+  // so hide it there to avoid two AI entry points stacking on the same screen.
+  if (location.startsWith("/ai-chat")) return null;
 
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
@@ -1401,7 +1510,8 @@ export function AILocalChatBubble() {
             setMinimized(false);
           }
         }}
-        title="Trợ lý thông minh"
+        title={t("nav.aiAssistant", "Trợ lý AI")}
+        aria-label={t("nav.aiAssistant", "Trợ lý AI")}
       >
         {open && !minimized ? (
           <X className="size-5" />

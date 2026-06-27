@@ -10,7 +10,30 @@
     "cancelled": "Đã hủy.",
     "denied": "Bạn không có quyền thực hiện thao tác này.",
     "expired": "Đề xuất đã hết hạn.",
-    "failed": "Không thể thực thi."
+    "failed": "Không thể thực thi.",
+    "summaryLabel": "Tóm tắt thao tác",
+    "changesTitle": "Thay đổi",
+    "warningsTitle": "Lưu ý quan trọng",
+    "expiresIn": "Hết hạn sau {{time}}",
+    "expiresLabel": "Thời gian còn lại",
+    "arrow": "→"
+  },
+  "quickQuestions": {
+    "operator": {
+      "ngRepeat": "Thấy lỗi NG lặp lại ở máy nào?",
+      "oeeWeek": "OEE tuần này?",
+      "threshold": "Cảnh báo khi vượt ngưỡng"
+    },
+    "maintenance": {
+      "raiseNg": "Tăng ngưỡng NG cho máy X",
+      "config": "Cấu hình thông số kiểm tra",
+      "pdm": "Máy nào sắp cần bảo trì (PdM)?"
+    },
+    "supervisor": {
+      "kpiWeek": "Báo cáo KPI tuần",
+      "topDefects": "Top 5 lỗi NG",
+      "yieldTrend": "Xu hướng yield"
+    }
   },
   "agent": {
     "playbooks": "Playbook",
@@ -3845,6 +3868,10 @@
     "adminRolesDesc": "Tạo và cấu hình vai trò phân quyền",
     "adminSetting": "Cài đặt Quản trị",
     "adminSettingDesc": "Cấu hình vai trò, nhật ký kiểm tra, API và quản lý giấy phép",
+    "aiAssistantGroup": "Trợ lý AI",
+    "aiAssistantGroupDesc": "Trò chuyện với trợ lý AI",
+    "aiAssistant": "Trợ lý AI",
+    "aiAssistantDesc": "Hỏi đáp, phân tích và hỗ trợ thao tác bằng AI",
     "aiAnalyticsGroup": "Phân tích AI",
     "aiAnalyticsGroupDesc": "Hiệu suất và quản lý mô hình AI",
     "aiHub": "Trung tâm AI",
@@ -7317,7 +7344,79 @@
     "placeholder": "Hỏi bất cứ điều gì về kiểm tra, chất lượng hoặc lỗi...",
     "toolsAvailable": "Công cụ khả dụng",
     "toolUsed": "Công cụ đã dùng",
-    "untitled": "Cuộc Hội Thoại Chưa Đặt Tên"
+    "untitled": "Cuộc Hội Thoại Chưa Đặt Tên",
+    "whatYouCanAsk": "Bạn có thể hỏi về KPI, lỗi, hiệu suất máy — hoặc dùng các tác vụ kỹ thuật có hướng dẫn bên dưới.",
+    "suggestedPrompts": "Gợi ý câu hỏi",
+    "suggest": {
+      "kpiWeek": "Tóm tắt KPI sản xuất tuần này",
+      "topDefects": "Top lỗi nhiều nhất hôm nay là gì?",
+      "lowYield": "Trạm nào có FPY thấp nhất?",
+      "pdm": "Máy nào có nguy cơ hỏng cao nhất?"
+    }
+  },
+  "aiGuided": {
+    "sectionTitle": "Tác vụ kỹ thuật có hướng dẫn",
+    "hitlNote": "Lưu ý: thao tác sẽ được gửi tới trợ lý AI và bạn vẫn cần XÁC NHẬN ở thẻ xác nhận trước khi áp dụng.",
+    "cancel": "Hủy",
+    "send": "Gửi tới trợ lý",
+    "loading": "Đang tải...",
+    "noData": "Không có dữ liệu",
+    "unnamed": "Không tên",
+    "errRequired": "Vui lòng nhập đầy đủ các trường bắt buộc.",
+    "errNumber": "Giá trị phải là số.",
+    "errInteger": "Giá trị phải là số nguyên.",
+    "errRange": "Giá trị {{field}} phải trong khoảng {{min}}–{{max}}.",
+    "errAtLeastOne": "Cần nhập ít nhất một giá trị để thay đổi.",
+    "errCritLtWarn": "Ngưỡng nghiêm trọng phải ≥ ngưỡng cảnh báo.",
+    "errMinGtTarget": "FPY tối thiểu phải ≤ mục tiêu FPY.",
+    "adjustNg": {
+      "title": "Điều chỉnh ngưỡng NG",
+      "desc": "Thay đổi ngưỡng cảnh báo / nghiêm trọng (%) của một ngưỡng NG có sẵn."
+    },
+    "configInspect": {
+      "title": "Cấu hình tham số kiểm tra",
+      "desc": "Đặt số mẫu tối thiểu / cooldown cho một ngưỡng NG có sẵn."
+    },
+    "createNg": {
+      "title": "Tạo ngưỡng NG mới",
+      "desc": "Thêm một bản ghi cấu hình ngưỡng NG mới cho một trạm."
+    },
+    "updateTarget": {
+      "title": "Cập nhật mục tiêu chất lượng",
+      "desc": "Đặt mục tiêu / tối thiểu FPY (%) cho một mẫu sản phẩm."
+    },
+    "field": {
+      "ngThreshold": "Ngưỡng NG",
+      "ngThresholdPlaceholder": "Chọn ngưỡng NG",
+      "station": "Trạm",
+      "stationPlaceholder": "Chọn trạm",
+      "productModel": "Mẫu sản phẩm",
+      "productModelPlaceholder": "Chọn mẫu sản phẩm",
+      "name": "Tên ngưỡng",
+      "warning": "Ngưỡng cảnh báo (%)",
+      "critical": "Ngưỡng nghiêm trọng (%)",
+      "minSample": "Số mẫu tối thiểu",
+      "cooldown": "Cooldown (phút)",
+      "targetFpy": "Mục tiêu FPY (%)",
+      "minFpy": "FPY tối thiểu (%)"
+    }
+  },
+  "machineAI": {
+    "title": "Tín hiệu AI",
+    "sectionTitle": "Tín hiệu AI theo máy",
+    "sectionHint": "Rủi ro hỏng hóc · bất thường · khuyến nghị",
+    "askAI": "Hỏi AI",
+    "askQuestion": "Máy {{machine}} đang có tín hiệu AI gì? Tóm tắt rủi ro hỏng hóc và bất thường.",
+    "loading": "Đang tải...",
+    "noSignal": "Chưa có tín hiệu AI",
+    "noData": "—",
+    "anomaly": "Bất thường",
+    "anomalyReady": "Đang giám sát",
+    "anomalyNotReady": "Chưa thiết lập",
+    "pdm": "Rủi ro hỏng hóc",
+    "pdmValue": "{{risk}}%",
+    "pdmValueDays": "{{risk}}% · ~{{days}} ngày",
+    "latestInsight": "Khuyến nghị mới nhất"
   },
   "qg": {
     "title": "Cổng Chất Lượng AI",
