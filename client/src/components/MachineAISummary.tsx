@@ -3,15 +3,15 @@
  *
  * A compact, glanceable card showing per-machine AI signals for operators
  * watching the line (big readable text/colors, tablet/kiosk-friendly):
- *   1. Anomaly status   ← aiAnomaly.stats (vision memory-bank readiness per machine)
+ *   1. Anomaly status   ← aiAnomaly.latestForMachine (realtime latest score + recent rate)
  *   2. PdM risk         ← predictiveMaintenance.getMachineRisk (failure risk + days-to-failure)
  *   3. Latest AI insight ← aiInsight.list (advisory insight for this machine)
  *
  * Data sources & guarding:
- *   - There is NO live per-machine anomaly SCORE read query (scoring needs a
- *     base64 image upload via aiAnomaly.score). We therefore use
- *     aiAnomaly.stats as a readiness/health proxy (profiles built / bank size)
- *     and clearly degrade to "Chưa có tín hiệu AI" when nothing is available.
+ *   - aiAnomaly.latestForMachine reads the most-recent scored AOI image embeddings
+ *     for THIS machine (metadata->'anomaly') and returns latestScore/threshold +
+ *     a recent anomaly-rate window. hasData:false → degrade to
+ *     "Chưa có tín hiệu AI" / "Chưa thiết lập giám sát".
  *   - Every query is optional-chained and the card renders gracefully when a
  *     procedure errors, is loading, or returns nothing.
  *
@@ -57,7 +57,7 @@ export default function MachineAISummary({
   className,
   compact,
 }: MachineAISummaryProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [, navigate] = useLocation();
 
   // ── PdM risk (guarded) ──────────────────────────────────────────────────────
@@ -65,10 +65,10 @@ export default function MachineAISummary({
     { machineId },
     { enabled: machineId > 0, staleTime: 60_000, retry: false },
   );
-  // ── Anomaly readiness proxy (guarded — no live score query exists) ──────────
-  const anomalyQuery = trpc.aiAnomaly.stats.useQuery(
+  // ── Anomaly realtime latest-score (guarded) ─────────────────────────────────
+  const anomalyQuery = trpc.aiAnomaly.latestForMachine.useQuery(
     { machineId },
-    { enabled: machineId > 0, staleTime: 60_000, retry: false },
+    { enabled: machineId > 0, staleTime: 30_000, retry: false },
   );
   // ── Latest advisory insight for this machine (guarded) ──────────────────────
   const insightQuery = trpc.aiInsight.list.useQuery(
@@ -95,14 +95,39 @@ export default function MachineAISummary({
     return { tone, urgency, failureRisk: Math.round(risk.failureRisk ?? 0), days };
   }, [risk]);
 
-  // ── Derive anomaly signal (readiness proxy) ─────────────────────────────────
+  // ── Derive anomaly signal (realtime latest score) ───────────────────────────
   const anom = useMemo(() => {
-    if (!anomaly) return null;
-    const vectors = Number((anomaly as any).totalVectors ?? 0);
-    const profiles = Array.isArray((anomaly as any).profiles) ? (anomaly as any).profiles.length : 0;
-    if (vectors <= 0 && profiles <= 0) return { tone: "muted" as Tone, ready: false, vectors, profiles };
-    return { tone: "green" as Tone, ready: true, vectors, profiles };
+    if (!anomaly?.hasData) return null;
+    const score = typeof anomaly.latestScore === "number" ? anomaly.latestScore : null;
+    const threshold = typeof anomaly.latestThreshold === "number" ? anomaly.latestThreshold : null;
+    // Color rule: red if flagged anomaly (or score ≥ threshold);
+    // amber if "warm" (score ≥ 80% of threshold); else green.
+    let tone: Tone = "green";
+    if (anomaly.isAnomaly || (score != null && threshold != null && score >= threshold)) {
+      tone = "red";
+    } else if (score != null && threshold != null && threshold > 0 && score >= threshold * 0.8) {
+      tone = "amber";
+    }
+    const windowCount = anomaly.recent?.windowCount ?? 0;
+    const anomalyCount = anomaly.recent?.anomalyCount ?? 0;
+    const latestAt = anomaly.latestAt ? new Date(anomaly.latestAt) : null;
+    return { tone, score, threshold, windowCount, anomalyCount, latestAt };
   }, [anomaly]);
+
+  // Lightweight, locale-aware "x ago" for the latest scored timestamp.
+  const timeAgo = (date: Date | null): string | null => {
+    if (!date) return null;
+    const sec = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+    const lang = i18n.language?.startsWith("vi") ? "vi" : i18n.language?.startsWith("zh") ? "zh" : "en";
+    const pick = (vi: string, en: string, zh: string) => (lang === "vi" ? vi : lang === "zh" ? zh : en);
+    if (sec < 60) return pick("vừa xong", "just now", "刚刚");
+    const min = Math.floor(sec / 60);
+    if (min < 60) return pick(`${min} phút trước`, `${min}m ago`, `${min}分钟前`);
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return pick(`${hr} giờ trước`, `${hr}h ago`, `${hr}小时前`);
+    const day = Math.floor(hr / 24);
+    return pick(`${day} ngày trước`, `${day}d ago`, `${day}天前`);
+  };
 
   // ── Derive insight signal ───────────────────────────────────────────────────
   const ins = useMemo(() => {
@@ -112,7 +137,7 @@ export default function MachineAISummary({
     return { tone, title: insight.title as string, severity: sev };
   }, [insight]);
 
-  const hasAnySignal = !!pdm || !!anom?.ready || !!ins;
+  const hasAnySignal = !!pdm || !!anom || !!ins;
 
   const askAI = () => {
     const label = machineCode ?? machineName ?? `#${machineId}`;
@@ -159,19 +184,39 @@ export default function MachineAISummary({
         </p>
       ) : (
         <div className="space-y-2">
-          {/* Anomaly */}
-          <SignalRow
-            icon={Activity}
-            label={t("machineAI.anomaly", "Bất thường")}
-            tone={anom ? anom.tone : "muted"}
-            value={
-              !anom
-                ? t("machineAI.noData", "—")
-                : anom.ready
-                  ? t("machineAI.anomalyReady", "Đang giám sát")
-                  : t("machineAI.anomalyNotReady", "Chưa thiết lập")
-            }
-          />
+          {/* Anomaly — realtime latest score */}
+          {!anom ? (
+            <SignalRow
+              icon={Activity}
+              label={t("machineAI.anomaly", "Bất thường")}
+              tone="muted"
+              value={t("machineAI.anomalyNotMonitored", "Chưa thiết lập giám sát")}
+            />
+          ) : (
+            <div className="flex items-start justify-between gap-2">
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground pt-0.5">
+                <Activity className="h-3.5 w-3.5" />
+                {t("machineAI.anomaly", "Bất thường")}
+              </span>
+              <div className="flex flex-col items-end gap-0.5 min-w-0">
+                <span className={cn("flex items-center gap-1.5 text-sm font-semibold", toneText[anom.tone])}>
+                  <span className={cn("inline-block h-2 w-2 rounded-full", toneDot[anom.tone])} />
+                  {anom.score != null
+                    ? t("machineAI.anomalyScore", "Điểm {{score}}", { score: anom.score.toFixed(2) })
+                    : t("machineAI.anomalyReady", "Đang giám sát")}
+                </span>
+                <span className="text-[11px] text-muted-foreground leading-tight text-right">
+                  {t("machineAI.anomalyRecent", "{{n}}/{{total}} bất thường gần đây", {
+                    n: anom.anomalyCount,
+                    total: anom.windowCount,
+                  })}
+                  {anom.latestAt && (
+                    <span className="opacity-70"> · {timeAgo(anom.latestAt)}</span>
+                  )}
+                </span>
+              </div>
+            </div>
+          )}
           {/* PdM risk */}
           <SignalRow
             icon={ShieldAlert}

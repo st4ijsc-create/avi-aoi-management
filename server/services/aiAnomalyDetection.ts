@@ -28,7 +28,10 @@ import {
   upsertProfile,
   getProfile,
   getBankStats,
+  readStoredEmbeddings,
+  writeAnomalyMetadata,
   type AnomalyScope,
+  type ProfileInput,
 } from "../db/aiAnomaly";
 
 // ─── Cờ cấu hình (env, có default an toàn) ─────────────────────────────────────
@@ -379,28 +382,71 @@ export async function buildMemoryBank(params: BuildBankParams): Promise<BuildBan
     sourceVotes.heuristic > 0 ? "heuristic" : "text-of-image";
   const degraded = primarySource !== "onnx";
 
-  // 2) Coreset subsample.
-  const allVectors = embedded.map((e) => e.vector);
+  const result = await buildBankFromVectors({
+    vectors: embedded.map((e) => ({ vector: e.vector, imageUrl: e.imageUrl })),
+    scope: {
+      productModelId: params.productModelId ?? null,
+      machineId: params.machineId ?? null,
+      modelCode: anomalyModelCode(primarySource, params.modelId ?? null),
+    },
+    source: primarySource,
+    degraded,
+    coresetRatio,
+    k,
+  });
+
+  return { ...result, embedFailures };
+}
+
+// ─── Shared build core (vectors → coreset → bank + profile) ───────────────────
+
+export interface BuildBankFromVectorsParams {
+  vectors: Array<{ vector: number[]; imageUrl?: string | null }>;
+  scope: AnomalyScope;
+  source: EmbeddingSource;
+  degraded: boolean;
+  coresetRatio?: number;
+  k?: number;
+  /** Cờ bootstrap/low-confidence (ít vector OK). Đẩy vào profile.distStats để UI thấy. */
+  bootstrap?: boolean;
+}
+
+/**
+ * LÕI dùng chung của build memory bank, thuần vector (không cần ảnh/model):
+ *   1. greedy coreset subsample.
+ *   2. Lưu ai_anomaly_memory_bank (xóa bank cũ cùng scope trước).
+ *   3. Tính phân bố khoảng cách nội bộ (kNN tự thân) → threshold = quantile p99.
+ *   4. Lưu ai_anomaly_profiles.
+ *
+ * `buildMemoryBank` (từ ảnh) và `buildBankFromStoredEmbeddings` (từ vector DB) đều
+ * gọi hàm này → KHÔNG nhân đôi math coreset/kNN/threshold.
+ */
+export async function buildBankFromVectors(
+  params: BuildBankFromVectorsParams,
+): Promise<Omit<BuildBankResult, "embedFailures">> {
+  const k = params.k ?? DEFAULT_KNN_K;
+  const coresetRatio = params.coresetRatio ?? DEFAULT_CORESET_RATIO;
+  const { scope, source } = params;
+
+  if (params.vectors.length === 0) {
+    throw new Error("No vectors provided to build the memory bank");
+  }
+
+  // 1) Coreset subsample.
+  const allVectors = params.vectors.map((e) => e.vector);
   const keepIdx = greedyCoreset(allVectors, coresetRatio);
   const keptSet = new Set(keepIdx);
-  const bank = embedded.filter((_, i) => keptSet.has(i));
+  const bank = params.vectors.filter((_, i) => keptSet.has(i));
   const bankVectors = bank.map((b) => b.vector);
-  const dim = bankVectors[0]?.length ?? 0;
 
-  const scope: AnomalyScope = {
-    productModelId: params.productModelId ?? null,
-    machineId: params.machineId ?? null,
-    modelCode: anomalyModelCode(primarySource, params.modelId ?? null),
-  };
-
-  // 3) Lưu bank (xóa cũ trước → rebuild sạch).
+  // 2) Lưu bank (xóa cũ trước → rebuild sạch).
   await clearBank(scope);
   await insertBankRows(
     scope,
-    bank.map((b) => ({ vector: b.vector, dim: b.vector.length, source: b.source, imageUrl: b.imageUrl })),
+    bank.map((b) => ({ vector: b.vector, dim: b.vector.length, source, imageUrl: b.imageUrl ?? null })),
   );
 
-  // 4) Phân bố khoảng cách nội bộ: với mỗi điểm bank, kNN distance tới các điểm còn lại.
+  // 3) Phân bố khoảng cách nội bộ: với mỗi điểm bank, kNN distance tới các điểm còn lại.
   const distances: number[] = [];
   for (let i = 0; i < bankVectors.length; i++) {
     const others = bankVectors.filter((_, j) => j !== i);
@@ -414,26 +460,208 @@ export async function buildMemoryBank(params: BuildBankParams): Promise<BuildBan
     ? Math.max(quantileSorted(sortedDist, THRESHOLD_PERCENTILE), distStats.max)
     : 0;
 
-  // 5) Lưu profile.
+  // 4) Lưu profile. bootstrap → đánh dấu degraded (low-confidence) + cờ trong distStats.
+  const profileDegraded = params.degraded || !!params.bootstrap;
   await upsertProfile(scope, {
     threshold,
     k,
-    distStats,
+    distStats: params.bootstrap
+      ? ({ ...distStats, bootstrap: true } as ProfileInput["distStats"])
+      : distStats,
     bankSize: bank.length,
-    source: primarySource,
-    degraded,
+    source,
+    degraded: profileDegraded,
   });
 
   return {
     scope,
     bankSize: bank.length,
-    rawCount: embedded.length,
+    rawCount: params.vectors.length,
     threshold,
     k,
-    source: primarySource,
-    degraded,
+    source,
+    degraded: profileDegraded,
     distStats,
-    embedFailures,
+  };
+}
+
+// ─── Build bank from STORED embeddings (no image bytes, no model load) ─────────
+
+/** Dưới ngưỡng này → bank coi là bootstrap/low-confidence (cảnh báo rõ ràng). */
+const BOOTSTRAP_MIN_OK = Math.max(2, Number(process.env.ANOMALY_BOOTSTRAP_MIN_OK ?? 10));
+
+export interface BuildBankFromStoredParams {
+  machineId?: number | null;
+  productModelId?: number | null;
+  /** modelCode trong ai_image_embeddings (mặc định "dinov2-small"). */
+  modelCode?: string;
+  /** Chỉ lấy ảnh OK (JOIN product_inspections.overallResult='OK'). Mặc định true. */
+  okOnly?: boolean;
+  coresetRatio?: number;
+  k?: number;
+}
+
+export interface BuildBankFromStoredResult extends Omit<BuildBankResult, "embedFailures"> {
+  storedCount: number;
+  bootstrap: boolean;
+  embeddingModelCode: string;
+}
+
+/**
+ * Dựng PatchCore memory bank từ vector ĐÃ LƯU trong ai_image_embeddings (DINOv2 384-d).
+ * KHÔNG cần ảnh gốc, KHÔNG load model — đọc vector text → coreset → bank + threshold.
+ *
+ * scope bank tách theo embeddingModelCode (vd "dinov2-small") để query backfill khớp
+ * đúng không gian vector. okOnly → chỉ ảnh OK (normal) như PatchCore yêu cầu.
+ *
+ * Trung thực với dữ liệu nhỏ: nếu < BOOTSTRAP_MIN_OK vector OK → VẪN build nhưng đánh
+ * dấu profile/metadata bootstrap=low-confidence + log cảnh báo rõ.
+ */
+export async function buildBankFromStoredEmbeddings(
+  params: BuildBankFromStoredParams,
+): Promise<BuildBankFromStoredResult> {
+  const embeddingModelCode = params.modelCode ?? "dinov2-small";
+  const okOnly = params.okOnly ?? true;
+
+  const stored = await readStoredEmbeddings({
+    machineId: params.machineId ?? null,
+    productModelId: params.productModelId ?? null,
+    modelCode: embeddingModelCode,
+    okOnly,
+  });
+
+  if (stored.length === 0) {
+    throw new Error(
+      `No stored embeddings found for modelCode=${embeddingModelCode}` +
+      `${okOnly ? " (okOnly=true → no OK-labelled vectors)" : ""}`,
+    );
+  }
+
+  // Chỉ giữ vector cùng chiều (an toàn nếu DB lẫn dim khác nhau) — lấy dim đa số.
+  const dimCounts = new Map<number, number>();
+  for (const r of stored) dimCounts.set(r.vector.length, (dimCounts.get(r.vector.length) ?? 0) + 1);
+  let majorityDim = stored[0].vector.length;
+  let majorityCount = 0;
+  for (const [d, c] of dimCounts) if (c > majorityCount) { majorityCount = c; majorityDim = d; }
+  const usable = stored.filter((r) => r.vector.length === majorityDim);
+
+  const bootstrap = usable.length < BOOTSTRAP_MIN_OK;
+  if (bootstrap) {
+    console.warn(
+      `[aiAnomalyDetection] buildBankFromStoredEmbeddings: only ${usable.length} usable OK vector(s) ` +
+      `(< ${BOOTSTRAP_MIN_OK}) for modelCode=${embeddingModelCode} machineId=${params.machineId ?? "any"} ` +
+      `→ building BOOTSTRAP / low-confidence bank. Threshold is weak; embed more OK images and rebuild.`,
+    );
+  }
+
+  // Vector DINOv2 lưu sẵn coi là source "onnx" (feature học sâu thật, không degrade
+  // theo tầng heuristic). modelCode bank = "anomaly:onnx:<embeddingModelCode>".
+  const source: EmbeddingSource = "onnx";
+  const scope: AnomalyScope = {
+    productModelId: params.productModelId ?? null,
+    machineId: params.machineId ?? null,
+    modelCode: `anomaly:onnx:${embeddingModelCode}`,
+  };
+
+  const core = await buildBankFromVectors({
+    vectors: usable.map((r) => ({ vector: r.vector, imageUrl: r.imageUrl })),
+    scope,
+    source,
+    degraded: false,
+    coresetRatio: params.coresetRatio,
+    k: params.k,
+    bootstrap,
+  });
+
+  return { ...core, storedCount: usable.length, bootstrap, embeddingModelCode };
+}
+
+// ─── Backfill anomaly scores from STORED embeddings ───────────────────────────
+
+export interface BackfillParams {
+  machineId?: number | null;
+  productModelId?: number | null;
+  /** modelCode trong ai_image_embeddings (mặc định "dinov2-small"). */
+  modelCode?: string;
+  limit?: number;
+}
+
+export interface BackfillResult {
+  scope: ScoreFromVectorScope;
+  scanned: number;
+  scored: number;
+  flaggedAnomaly: number;
+  failures: number;
+  bankAvailable: boolean;
+  threshold: number | null;
+}
+
+/**
+ * Chấm anomaly cho TẤT CẢ vector đã lưu trong scope (không chỉ OK) bằng scoreFromVector
+ * vs bank, rồi ghi metadata.anomaly (idempotent jsonb merge, cùng shape worker + cờ
+ * backfill:true). KHÔNG cần ảnh/model — thuần vector.
+ *
+ * Fail-safe per row: 1 dòng lỗi → đếm failures, không dừng. Idempotent ở tầng SQL
+ * (jsonb '||' ghi đè "anomaly") → re-run an toàn.
+ */
+export async function backfillAnomalyScores(params: BackfillParams): Promise<BackfillResult> {
+  const embeddingModelCode = params.modelCode ?? "dinov2-small";
+  const scope: ScoreFromVectorScope = {
+    productModelId: params.productModelId ?? null,
+    machineId: params.machineId ?? null,
+    modelCode: `anomaly:onnx:${embeddingModelCode}`,
+  };
+
+  // Đọc MỌI vector trong scope (okOnly=false) — kể cả NG → chấm để phát hiện anomaly.
+  const stored = await readStoredEmbeddings({
+    machineId: params.machineId ?? null,
+    productModelId: params.productModelId ?? null,
+    modelCode: embeddingModelCode,
+    okOnly: false,
+    limit: params.limit,
+  });
+
+  let scored = 0;
+  let flaggedAnomaly = 0;
+  let failures = 0;
+  let threshold: number | null = null;
+  let bankAvailable = false;
+
+  for (const row of stored) {
+    try {
+      const r = await scoreFromVector(row.vector, scope, { source: "onnx", degraded: false });
+      if (r.bankSize > 0) bankAvailable = true;
+      if (r.threshold != null) threshold = r.threshold;
+
+      const anomaly = {
+        score: Number(r.score.toFixed(6)),
+        threshold: r.threshold,
+        isAnomaly: r.isAnomaly,
+        source: r.source,
+        degraded: r.degraded,
+        bankSize: r.bankSize,
+        k: r.k,
+        reason: r.reason ?? null,
+        backfill: true,
+        scoredAt: new Date().toISOString(),
+      };
+      await writeAnomalyMetadata(row.id, anomaly);
+      scored++;
+      if (r.isAnomaly) flaggedAnomaly++;
+    } catch (e) {
+      failures++;
+      console.warn(`[aiAnomalyDetection] backfill emb#${row.id} failed:`, (e as Error)?.message ?? e);
+    }
+  }
+
+  return {
+    scope,
+    scanned: stored.length,
+    scored,
+    flaggedAnomaly,
+    failures,
+    bankAvailable,
+    threshold,
   };
 }
 
@@ -477,6 +705,32 @@ export async function scoreImage(params: ScoreParams): Promise<ScoreResult> {
     modelCode: anomalyModelCode(emb.source, params.modelId ?? null),
   };
 
+  return scoreFromVector(emb.vector, scope, { source: emb.source, degraded: emb.degraded });
+}
+
+// ─── Score from VECTOR (pure kNN-vs-threshold core, exported) ──────────────────
+
+export interface ScoreFromVectorScope {
+  productModelId: number | null;
+  machineId: number | null;
+  /** Scope-key bank (vd "anomaly:onnx:dinov2-small"). */
+  modelCode: string;
+}
+
+/**
+ * LÕI scoring thuần: vector → kNN distance tới bank (scope) → so threshold profile.
+ * `scoreImage` = embed ảnh rồi gọi hàm này; backfill cũng gọi trực tiếp (không embed).
+ *
+ * Fail-safe tuyệt đối: DB null / không profile / bank rỗng / lệch chiều → score an
+ * toàn (isAnomaly false, reason rõ), KHÔNG throw.
+ */
+export async function scoreFromVector(
+  vector: number[],
+  scope: ScoreFromVectorScope,
+  opts: { source?: EmbeddingSource | "none"; degraded?: boolean } = {},
+): Promise<ScoreResult> {
+  const source = opts.source ?? "onnx";
+
   let profile: Awaited<ReturnType<typeof getProfile>> = null;
   let bank: number[][] = [];
   try {
@@ -484,7 +738,7 @@ export async function scoreImage(params: ScoreParams): Promise<ScoreResult> {
     bank = await loadBank(scope, ANOMALY_BANK_SCAN_LIMIT);
   } catch (e) {
     return {
-      score: 0, isAnomaly: false, threshold: null, source: emb.source, degraded: true,
+      score: 0, isAnomaly: false, threshold: null, source, degraded: true,
       bankSize: 0, k: profile?.k ?? DEFAULT_KNN_K, reason: `bank_unavailable:${(e as Error)?.message ?? "db"}`,
     };
   }
@@ -492,24 +746,24 @@ export async function scoreImage(params: ScoreParams): Promise<ScoreResult> {
   if (!profile || bank.length === 0) {
     return {
       score: 0, isAnomaly: false, threshold: profile ? Number(profile.threshold) : null,
-      source: emb.source, degraded: true, bankSize: bank.length, k: profile?.k ?? DEFAULT_KNN_K,
+      source, degraded: true, bankSize: bank.length, k: profile?.k ?? DEFAULT_KNN_K,
       reason: !profile ? "no_profile" : "empty_bank",
     };
   }
 
   const k = profile.k ?? DEFAULT_KNN_K;
   // Chỉ so cùng chiều (an toàn khi bank build bằng source khác query).
-  const dim = emb.vector.length;
+  const dim = vector.length;
   const sameDimBank = bank.filter((v) => v.length === dim);
   if (sameDimBank.length === 0) {
     return {
       score: 0, isAnomaly: false, threshold: Number(profile.threshold),
-      source: emb.source, degraded: true, bankSize: bank.length, k,
+      source, degraded: true, bankSize: bank.length, k,
       reason: "dim_mismatch",
     };
   }
 
-  const score = knnScore(emb.vector, sameDimBank, k);
+  const score = knnScore(vector, sameDimBank, k);
   const threshold = Number(profile.threshold);
   const isAnomaly = score > threshold;
 
@@ -517,9 +771,9 @@ export async function scoreImage(params: ScoreParams): Promise<ScoreResult> {
     score,
     isAnomaly,
     threshold,
-    source: emb.source,
+    source,
     // degraded = cờ embedding HOẶC profile build ở chế độ degrade.
-    degraded: emb.degraded || !!profile.degraded,
+    degraded: !!opts.degraded || !!profile.degraded,
     bankSize: sameDimBank.length,
     k,
   };

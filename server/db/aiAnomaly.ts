@@ -74,22 +74,24 @@ export async function insertBankRows(scope: AnomalyScope, rows: BankRowInput[]):
   if (!db) throw new Error("Database not available");
   if (rows.length === 0) return 0;
 
-  const values = rows.map((r) => ({
-    productModelId: scope.productModelId,
-    machineId: scope.machineId,
-    modelCode: scope.modelCode,
-    embedding: formatVectorLiteral(r.vector),
-    embeddingDim: r.dim,
-    source: r.source,
-    imageUrl: r.imageUrl ?? null,
-  }));
+  // Insert qua raw SQL CHỈ các cột chắc chắn tồn tại (KHÔNG đụng embedding_vec — cột
+  // pgvector OPTIONAL, có thể chưa được migrate). embedding_vec điền best-effort bên dưới.
+  const inserted: Array<{ id: number }> = [];
+  for (const r of rows) {
+    const res = await db.execute(sql`
+      INSERT INTO ai_anomaly_memory_bank
+        ("productModelId", "machineId", "modelCode", "embedding", "embeddingDim", "source", "imageUrl")
+      VALUES (
+        ${scope.productModelId}, ${scope.machineId}, ${scope.modelCode},
+        ${formatVectorLiteral(r.vector)}, ${r.dim}, ${r.source}, ${r.imageUrl ?? null}
+      )
+      RETURNING id
+    `);
+    const resRows = ((res as { rows?: unknown[] }).rows ?? (res as unknown[])) as Array<{ id: number | string }>;
+    if (resRows[0]) inserted.push({ id: Number(resRows[0].id) });
+  }
 
-  const inserted = await db
-    .insert(aiAnomalyMemoryBank)
-    .values(values)
-    .returning({ id: aiAnomalyMemoryBank.id });
-
-  // Best-effort: ghi cột pgvector embedding_vec cho dòng 1024-dim. Thiếu pgvector → bỏ qua.
+  // Best-effort: ghi cột pgvector embedding_vec cho dòng 1024-dim. Thiếu pgvector/cột → bỏ qua.
   for (let i = 0; i < inserted.length; i++) {
     const r = rows[i];
     if (r.dim !== DEFAULT_EMBEDDING_DIM) continue;
@@ -99,8 +101,8 @@ export async function insertBankRows(scope: AnomalyScope, rows: BankRowInput[]):
         sql`UPDATE ai_anomaly_memory_bank SET embedding_vec = ${lit}::vector(${sql.raw(String(DEFAULT_EMBEDDING_DIM))}) WHERE id = ${inserted[i].id}`,
       );
     } catch {
-      // pgvector chưa sẵn sàng → cột TEXT vẫn là nguồn raw.
-      break; // nếu 1 dòng lỗi do thiếu pgvector thì các dòng sau cũng lỗi → dừng sớm.
+      // pgvector/cột chưa sẵn sàng → cột TEXT vẫn là nguồn raw.
+      break; // nếu 1 dòng lỗi do thiếu cột thì các dòng sau cũng lỗi → dừng sớm.
     }
   }
 
@@ -129,6 +131,95 @@ export async function loadBank(scope: AnomalyScope, limit: number): Promise<numb
     if (v.length > 0) out.push(v);
   }
   return out;
+}
+
+// ─── Stored embedding read (ai_image_embeddings) ──────────────────────────────
+
+export interface StoredEmbeddingRow {
+  id: number;
+  vector: number[];
+  dim: number;
+  imageUrl: string | null;
+}
+
+export interface StoredEmbeddingFilter {
+  machineId?: number | null;
+  productModelId?: number | null;
+  modelCode: string;
+  /** Khi true → JOIN product_inspections, chỉ giữ overallResult='OK'. */
+  okOnly?: boolean;
+  limit?: number;
+}
+
+/**
+ * Đọc vector đã LƯU trong ai_image_embeddings theo scope (machine/product/modelCode).
+ * Không cần ảnh gốc — parse cột TEXT embedding "[...]" → number[].
+ *
+ * okOnly=true → JOIN product_inspections trên inspectionId, giữ overallResult='OK'
+ * (chỉ ảnh OK để dựng memory bank PatchCore).
+ *
+ * getDb null → [] (đường brute-force JS, fail-safe).
+ */
+export async function readStoredEmbeddings(filter: StoredEmbeddingFilter): Promise<StoredEmbeddingRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conds: SQL[] = [sql`e."modelCode" = ${filter.modelCode}`];
+  if (filter.machineId != null) conds.push(sql`e."machineId" = ${filter.machineId}`);
+  if (filter.productModelId != null) conds.push(sql`e."productModelId" = ${filter.productModelId}`);
+
+  const joinClause = filter.okOnly
+    ? sql`JOIN product_inspections pi ON pi."id" = e."inspectionId"`
+    : sql``;
+  if (filter.okOnly) conds.push(sql`pi."overallResult" = 'OK'`);
+
+  const whereClause = sql.join(conds, sql` AND `);
+  const lim = Math.max(1, Math.min(filter.limit ?? 100000, 1000000));
+
+  const result = await db.execute(sql`
+    SELECT e."id" AS id, e."embedding" AS embedding, e."embeddingDim" AS dim, e."imageUrl" AS image_url
+    FROM ai_image_embeddings e
+    ${joinClause}
+    WHERE ${whereClause}
+    ORDER BY e."id" ASC
+    LIMIT ${lim}
+  `);
+
+  const rows = ((result as { rows?: unknown[] }).rows ?? (result as unknown[])) as Array<{
+    id: number | string;
+    embedding: string | null;
+    dim: number | string | null;
+    image_url: string | null;
+  }>;
+
+  const out: StoredEmbeddingRow[] = [];
+  for (const r of rows) {
+    const vec = parseVectorLiteral(r.embedding);
+    if (vec.length === 0) continue;
+    out.push({
+      id: Number(r.id),
+      vector: vec,
+      dim: r.dim != null ? Number(r.dim) : vec.length,
+      imageUrl: r.image_url ?? null,
+    });
+  }
+  return out;
+}
+
+/**
+ * Ghi kết quả anomaly vào ai_image_embeddings.metadata->'anomaly' (idempotent jsonb
+ * merge: giữ khóa cũ, ghi đè "anomaly"). Trùng shape worker ghi + cờ backfill:true.
+ * getDb null → no-op (fail-safe). Throw để caller đếm lỗi per-row nếu cần.
+ */
+export async function writeAnomalyMetadata(embeddingId: number, anomaly: Record<string, unknown>): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const metaStr = JSON.stringify({ anomaly });
+  await db.execute(sql`
+    UPDATE ai_image_embeddings
+    SET metadata = (COALESCE(metadata::jsonb, '{}'::jsonb) || ${metaStr}::jsonb)::json
+    WHERE id = ${embeddingId}
+  `);
 }
 
 // ─── Profile CRUD ────────────────────────────────────────────────────────────
