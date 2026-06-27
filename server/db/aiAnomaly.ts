@@ -222,6 +222,93 @@ export async function writeAnomalyMetadata(embeddingId: number, anomaly: Record<
   `);
 }
 
+// ─── Scope enumeration for auto-rebuild scheduler ─────────────────────────────
+
+export type AnomalyScopeKind = "machine" | "product";
+
+export interface OkScopeCount {
+  /** "machine" → machineId set, productModelId null. "product" → productModelId set, machineId null. */
+  kind: AnomalyScopeKind;
+  machineId: number | null;
+  productModelId: number | null;
+  /** OK-labelled embedding count for the model code (the rebuild trigger signal). */
+  okCount: number;
+}
+
+/**
+ * Liệt kê các scope (machine HOẶC product) có ≥ minOk vector OK trong ai_image_embeddings
+ * cho modelCode đã cho. JOIN product_inspections để chỉ đếm overallResult='OK'.
+ *
+ * Dùng cho scheduler auto-rebuild: chỉ những scope đủ mẫu OK mới được xét rebuild.
+ * getDb null → [] (fail-safe). NULL scope-id bị loại (cần id cụ thể để build bank theo scope).
+ */
+export async function enumerateOkScopes(params: {
+  kind: AnomalyScopeKind;
+  modelCode: string;
+  minOk: number;
+}): Promise<OkScopeCount[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const minOk = Math.max(1, Math.floor(params.minOk));
+  const col = params.kind === "machine" ? sql`e."machineId"` : sql`e."productModelId"`;
+
+  const result = await db.execute(sql`
+    SELECT ${col} AS scope_id, count(*) AS ok_count
+    FROM ai_image_embeddings e
+    JOIN product_inspections pi ON pi."id" = e."inspectionId"
+    WHERE e."modelCode" = ${params.modelCode}
+      AND pi."overallResult" = 'OK'
+      AND ${col} IS NOT NULL
+    GROUP BY ${col}
+    HAVING count(*) >= ${minOk}
+    ORDER BY count(*) DESC
+  `);
+
+  const rows = ((result as { rows?: unknown[] }).rows ?? (result as unknown[])) as Array<{
+    scope_id: number | string | null;
+    ok_count: number | string;
+  }>;
+
+  const out: OkScopeCount[] = [];
+  for (const r of rows) {
+    if (r.scope_id == null) continue;
+    const id = Number(r.scope_id);
+    out.push({
+      kind: params.kind,
+      machineId: params.kind === "machine" ? id : null,
+      productModelId: params.kind === "product" ? id : null,
+      okCount: Number(r.ok_count),
+    });
+  }
+  return out;
+}
+
+export interface ProfileSnapshot {
+  /** Số vector bank đã build (proxy cho sample-count đã dùng lần build trước). */
+  bankSize: number;
+  /** Thời điểm build lần cuối. */
+  builtAt: Date | null;
+  /** distStats.bootstrap===true → bank đang ở chế độ bootstrap/low-confidence. */
+  bootstrap: boolean;
+}
+
+/**
+ * Đọc snapshot profile (bankSize / builtAt / cờ bootstrap) cho 1 scope anomaly.
+ * Trả null khi chưa có profile (→ scheduler hiểu là "chưa có bank, cần build").
+ * getDb null → null (fail-safe).
+ */
+export async function getProfileSnapshot(scope: AnomalyScope): Promise<ProfileSnapshot | null> {
+  const profile = await getProfile(scope);
+  if (!profile) return null;
+  const distStats = profile.distStats as (AiAnomalyProfile["distStats"] & { bootstrap?: boolean }) | null;
+  return {
+    bankSize: Number(profile.bankSize ?? 0),
+    builtAt: profile.builtAt ?? null,
+    bootstrap: !!distStats?.bootstrap,
+  };
+}
+
 // ─── Profile CRUD ────────────────────────────────────────────────────────────
 
 export interface ProfileInput {

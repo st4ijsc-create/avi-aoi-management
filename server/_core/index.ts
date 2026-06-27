@@ -4480,6 +4480,16 @@ async function startServer() {
     console.error("[ExecReportScheduler] init failed:", (err as any)?.message || err);
   }
 
+  // B3 — Anomaly bank auto-rebuild (PatchCore memory banks per scope from stored OK
+  // DINOv2 vectors). Disabled by default; opt in via ANOMALY_BANK_AUTO_REBUILD_ENABLED=true.
+  // Safe no-op when OFF; a bad scope never aborts the run.
+  try {
+    const { startAnomalyBankScheduler } = await import("../services/aiAnomalyBankScheduler");
+    startAnomalyBankScheduler();
+  } catch (err) {
+    console.error("[anomalyBankScheduler] init failed:", (err as any)?.message || err);
+  }
+
   // P2 WS2.3 — Orchestration rules engine (subscribes to the event bus).
   // Disabled by default; opt in via ORCHESTRATION_ENABLED=true. Notify/audit only.
   try {
@@ -4592,6 +4602,9 @@ async function startServer() {
     shutdownScheduledReports();
     import("../services/reportScheduler")
       .then((m) => m.stopExecutiveReportScheduler())
+      .catch(() => {});
+    import("../services/aiAnomalyBankScheduler")
+      .then((m) => m.stopAnomalyBankScheduler())
       .catch(() => {});
     shutdownScheduledBackups();
     shutdownRuntimeSecurity();
