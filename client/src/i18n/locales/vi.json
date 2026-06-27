@@ -7402,7 +7402,10 @@
       "topDefects": "Top lỗi nhiều nhất hôm nay là gì?",
       "lowYield": "Trạm nào có FPY thấp nhất?",
       "pdm": "Máy nào có nguy cơ hỏng cao nhất?"
-    }
+    },
+    "machineContextChip": "Đang hỏi về: Máy {{code}}",
+    "clearMachineContext": "Bỏ bối cảnh máy",
+    "machineScopePrefix": "[Bối cảnh: Máy {{code}}]"
   },
   "aiGuided": {
     "sectionTitle": "Tác vụ kỹ thuật có hướng dẫn",
@@ -8393,5 +8396,28 @@
     "toastEnabled": "Đã bật quy tắc",
     "toastDisabled": "Đã tắt quy tắc",
     "toastResolved": "Đã giải quyết sự kiện"
+  },
+  "machineScan": {
+    "scanButton": "Quét máy",
+    "title": "Quét máy để hỏi AI",
+    "description": "Quét mã QR trên máy để mở trợ lý đã gắn đúng máy đó. Bạn cũng có thể nhập mã hoặc chọn từ danh sách.",
+    "scanning": "Đang quét...",
+    "tapToScan": "Chạm để bật camera",
+    "manualPlaceholder": "Nhập mã máy (vd: AVI-001)",
+    "pickerPlaceholder": "Tìm máy theo mã hoặc tên...",
+    "go": "Mở",
+    "nfcButton": "Chạm NFC",
+    "nfcWaiting": "Đang chờ chạm thẻ NFC...",
+    "statusQuestion": "Tình trạng máy {{code}}?",
+    "errorNoDetector": "Trình duyệt không hỗ trợ quét QR. Vui lòng nhập mã máy.",
+    "errorNoCamera": "Không tìm thấy camera. Vui lòng nhập mã máy.",
+    "errorPermission": "Camera bị từ chối. Hãy cấp quyền camera hoặc nhập mã máy.",
+    "errorCamera": "Không thể quét. Vui lòng nhập mã máy bên dưới.",
+    "errorNoCode": "Không đọc được mã máy. Vui lòng thử lại hoặc nhập tay.",
+    "errorNfc": "Không đọc được thẻ NFC. Vui lòng thử lại."
+  },
+  "voice": {
+    "speak": "Nói",
+    "stop": "Dừng nói"
   }
 }

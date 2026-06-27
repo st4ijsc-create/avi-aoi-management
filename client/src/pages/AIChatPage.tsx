@@ -23,10 +23,13 @@ import {
   StopCircle,
   Zap,
   Lightbulb,
+  Cpu,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAIStream } from "@/hooks/useAIStream";
+import MachineQuickScan from "@/components/MachineQuickScan";
 
 // Localized "suggested prompts" shown in the empty state for discoverability.
 const SUGGESTED_PROMPTS: { emoji: string; key: string; fallback: string }[] = [
@@ -43,6 +46,11 @@ export default function AIChatPage() {
   const [inputMessage, setInputMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const prefillSentRef = useRef(false);
+
+  // Machine-context scoping (from ?machine=<code>, e.g. after a QR/NFC scan).
+  // When set, questions are seeded with the machine so the assistant answers
+  // about that specific machine. The user can clear the chip at any time.
+  const [machineCode, setMachineCode] = useState<string | null>(null);
 
   // Streaming hook
   const { streamingText, isStreaming, error: streamError, startStream, stopStream } = useAIStream();
@@ -61,6 +69,16 @@ export default function AIChatPage() {
 
   // Available tools
   const { data: toolsData } = trpc.aiChat.tools.useQuery();
+
+  // Machine list — used to resolve the ?machine=<code> param to a display name.
+  const { data: machinesData } = trpc.machine.list.useQuery(undefined, {
+    enabled: machineCode !== null,
+  });
+  const machineContext = machineCode
+    ? (machinesData ?? []).find(
+        (m: any) => String(m.code).toLowerCase() === machineCode.toLowerCase(),
+      ) ?? null
+    : null;
 
   // Mutations
   const createConv = trpc.aiChat.createConversation.useMutation({
@@ -108,33 +126,45 @@ export default function AIChatPage() {
     }
   }, [streamError]);
 
-  // Deep-link prefill: /ai-chat?q=... (e.g. from MachineAISummary "Hỏi AI").
-  // Send once when the page mounts with a query param.
+  // Deep-link prefill: /ai-chat?q=...&machine=<code> (e.g. from a QR/NFC scan via
+  // MachineQuickScan, or MachineAISummary "Hỏi AI"). Read ?machine= to scope the
+  // conversation, then send ?q= once. Both are honoured together.
   useEffect(() => {
     if (prefillSentRef.current) return;
     const params = new URLSearchParams(search);
+    const machine = params.get("machine");
+    if (machine && machine.trim()) {
+      setMachineCode(machine.trim());
+    }
     const q = params.get("q");
     if (q && q.trim()) {
       prefillSentRef.current = true;
       // eslint-disable-next-line @typescript-eslint/no-use-before-define
-      void handleSend(q);
+      void handleSend(q, machine?.trim() || undefined);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
-  const handleSend = async (override?: string) => {
+  const handleSend = async (override?: string, machineOverride?: string) => {
     const source = typeof override === "string" ? override : inputMessage;
     if (!source.trim()) return;
-    const userMsg = source;
+    // Seed machine context: prefer an explicit override (deep-link), else the
+    // active chip. We prepend a short scope line so the local model answers about
+    // that machine. The chip the user sees stays the displayed message.
+    const scopeCode = machineOverride ?? machineCode ?? undefined;
+    const displayMsg = source;
+    const userMsg = scopeCode
+      ? `${t("aiChat.machineScopePrefix", "[Bối cảnh: Máy {{code}}]", { code: scopeCode })} ${source}`
+      : source;
     setInputMessage("");
-    setOptimisticUserMsg(userMsg);
+    setOptimisticUserMsg(displayMsg);
 
     let convId = selectedConvId;
 
     // Create conversation if none selected
     if (!convId) {
       try {
-        const conv = await createConv.mutateAsync({ title: userMsg.slice(0, 50) });
+        const conv = await createConv.mutateAsync({ title: displayMsg.slice(0, 50) });
         convId = conv.id;
       } catch {
         setOptimisticUserMsg(null);
@@ -249,6 +279,35 @@ export default function AIChatPage() {
 
         {/* Main Chat Area */}
         <div className="flex-1 flex flex-col">
+          {/* Machine-context chip (from ?machine= / QR-NFC scan) — clearable */}
+          {machineCode && (
+            <div className="border-b bg-primary/5 px-4 py-2">
+              <div className="max-w-3xl mx-auto flex items-center gap-2">
+                <Badge
+                  variant="secondary"
+                  className="flex items-center gap-1.5 py-1 pl-2 pr-1 text-xs"
+                >
+                  <Cpu className="h-3.5 w-3.5 text-primary" />
+                  <span className="font-medium">
+                    {t("aiChat.machineContextChip", "Đang hỏi về: Máy {{code}}", {
+                      code: machineContext?.code ?? machineCode,
+                    })}
+                  </span>
+                  {machineContext?.name && (
+                    <span className="text-muted-foreground">· {machineContext.name}</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setMachineCode(null)}
+                    aria-label={t("aiChat.clearMachineContext", "Bỏ bối cảnh máy")}
+                    className="ml-0.5 rounded-full p-0.5 hover:bg-muted"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              </div>
+            </div>
+          )}
           {selectedConvId ? (
             <>
               {/* Messages */}
@@ -259,6 +318,9 @@ export default function AIChatPage() {
                       <div className="text-center text-muted-foreground mb-6">
                         <Bot className="h-12 w-12 mx-auto mb-3 opacity-30" />
                         <p className="text-sm">{t("aiChat.startPrompt", "Hãy đặt câu hỏi về chất lượng sản xuất, phân tích lỗi, hoặc hiệu suất mô hình AI...")}</p>
+                      </div>
+                      <div className="mb-5 flex justify-center">
+                        <MachineQuickScan size="lg" variant="default" className="min-h-[44px]" />
                       </div>
                       <div className="mb-5">
                         <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
@@ -406,6 +468,11 @@ export default function AIChatPage() {
                   <p className="text-xs text-muted-foreground">
                     {t("aiChat.whatYouCanAsk", "Bạn có thể hỏi về KPI, lỗi, hiệu suất máy — hoặc dùng các tác vụ kỹ thuật có hướng dẫn bên dưới.")}
                   </p>
+                </div>
+
+                {/* Scan-a-machine entry — minimum-effort shop-floor scoping */}
+                <div className="mb-6 flex justify-center">
+                  <MachineQuickScan size="lg" variant="default" className="min-h-[44px]" />
                 </div>
 
                 {/* Suggested prompts */}

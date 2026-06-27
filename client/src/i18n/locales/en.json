@@ -7379,7 +7379,10 @@
       "topDefects": "What are today's top defects?",
       "lowYield": "Which station has the lowest FPY?",
       "pdm": "Which machine has the highest failure risk?"
-    }
+    },
+    "machineContextChip": "Asking about: Machine {{code}}",
+    "clearMachineContext": "Clear machine context",
+    "machineScopePrefix": "[Context: Machine {{code}}]"
   },
   "aiGuided": {
     "sectionTitle": "Guided engineering tasks",
@@ -8370,5 +8373,28 @@
     "toastEnabled": "Rule enabled",
     "toastDisabled": "Rule disabled",
     "toastResolved": "Event resolved"
+  },
+  "machineScan": {
+    "scanButton": "Scan machine",
+    "title": "Scan a machine to ask AI",
+    "description": "Scan the QR code on a machine to open the assistant already scoped to it. You can also type a code or pick from the list.",
+    "scanning": "Scanning...",
+    "tapToScan": "Tap to enable camera",
+    "manualPlaceholder": "Enter machine code (e.g. AVI-001)",
+    "pickerPlaceholder": "Search machines by code or name...",
+    "go": "Open",
+    "nfcButton": "Tap NFC",
+    "nfcWaiting": "Waiting for NFC tag...",
+    "statusQuestion": "Status of machine {{code}}?",
+    "errorNoDetector": "This browser cannot scan QR codes. Please enter the machine code.",
+    "errorNoCamera": "No camera found. Please enter the machine code.",
+    "errorPermission": "Camera denied. Grant camera access or enter the machine code.",
+    "errorCamera": "Could not scan. Please enter the machine code below.",
+    "errorNoCode": "Could not read a machine code. Try again or type it manually.",
+    "errorNfc": "Could not read the NFC tag. Please try again."
+  },
+  "voice": {
+    "speak": "Speak",
+    "stop": "Stop"
   }
 }

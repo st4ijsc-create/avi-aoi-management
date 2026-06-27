@@ -1459,16 +1459,20 @@ export function AILocalChatBubble() {
                   {agentBusy ? <Loader2 className="size-3.5 animate-spin" /> : <ListChecks className="size-3.5" />}
                 </Button>
               )}
-              {/* Voice button */}
+              {/* Voice button — large touch target + labeled for hands-free/gloves use */}
               <Button
                 size="icon"
-                variant={isListening ? "destructive" : "ghost"}
-                className="shrink-0 h-8 w-8 rounded-lg"
+                variant={isListening ? "destructive" : "secondary"}
+                className={cn(
+                  "shrink-0 h-10 w-10 min-h-[40px] min-w-[40px] rounded-lg",
+                  isListening && "animate-pulse",
+                )}
                 onClick={toggleVoice}
                 disabled={!isReady || isStreaming}
-                title={isListening ? "Dừng ghi âm" : "Nhập bằng giọng nói"}
+                title={isListening ? t("voice.stop", "Dừng nói") : t("voice.speak", "Nói")}
+                aria-label={isListening ? t("voice.stop", "Dừng nói") : t("voice.speak", "Nói")}
               >
-                {isListening ? <MicOff className="size-3.5" /> : <Mic className="size-3.5" />}
+                {isListening ? <MicOff className="size-4" /> : <Mic className="size-4" />}
               </Button>
               <Button
                 onClick={() => handleAsk()}

@@ -7353,7 +7353,10 @@
       "topDefects": "今天最多的缺陷是什么？",
       "lowYield": "哪个工位 FPY 最低？",
       "pdm": "哪台设备故障风险最高？"
-    }
+    },
+    "machineContextChip": "正在询问：设备 {{code}}",
+    "clearMachineContext": "清除设备上下文",
+    "machineScopePrefix": "[上下文：设备 {{code}}]"
   },
   "aiGuided": {
     "sectionTitle": "引导式工程任务",
@@ -8344,5 +8347,28 @@
     "toastEnabled": "已启用规则",
     "toastDisabled": "已停用规则",
     "toastResolved": "已解决事件"
+  },
+  "machineScan": {
+    "scanButton": "扫描设备",
+    "title": "扫描设备向 AI 提问",
+    "description": "扫描设备上的二维码即可打开已绑定该设备的助手。也可以输入编码或从列表中选择。",
+    "scanning": "扫描中...",
+    "tapToScan": "点击开启摄像头",
+    "manualPlaceholder": "输入设备编码（如 AVI-001）",
+    "pickerPlaceholder": "按编码或名称搜索设备...",
+    "go": "打开",
+    "nfcButton": "触碰 NFC",
+    "nfcWaiting": "等待 NFC 标签...",
+    "statusQuestion": "设备 {{code}} 的状态如何？",
+    "errorNoDetector": "此浏览器不支持扫描二维码，请输入设备编码。",
+    "errorNoCamera": "未找到摄像头，请输入设备编码。",
+    "errorPermission": "摄像头被拒绝。请授予摄像头权限或输入设备编码。",
+    "errorCamera": "无法扫描，请在下方输入设备编码。",
+    "errorNoCode": "未能读取设备编码，请重试或手动输入。",
+    "errorNfc": "无法读取 NFC 标签，请重试。"
+  },
+  "voice": {
+    "speak": "说话",
+    "stop": "停止"
   }
 }
