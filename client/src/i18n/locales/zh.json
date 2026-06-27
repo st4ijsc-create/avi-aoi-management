@@ -1,4 +1,33 @@
 {
+  "aiInbox": {
+    "title": "待办收件箱",
+    "subtitle": "AI 会把所有需要您处理的事项推送到这里——一键处理。",
+    "empty": "暂无需要处理的事项 🎉",
+    "emptyHint": "当 AI 有建议、警报或推荐时，会显示在这里。",
+    "expiresLabel": "剩余时间",
+    "askPrefix": "请解释并告诉我如何处理",
+    "severity": {
+      "critical": "紧急",
+      "warning": "警告",
+      "info": "信息"
+    },
+    "type": {
+      "proposal": "建议",
+      "insight": "推荐",
+      "alert": "异常"
+    },
+    "actions": {
+      "approve": "批准",
+      "dismiss": "忽略",
+      "ask": "询问 AI",
+      "view": "查看"
+    },
+    "toast": {
+      "approved": "已批准并执行。",
+      "dismissed": "已忽略。",
+      "failed": "无法完成操作。"
+    }
+  },
   "copilot": {
     "confirmTitle": "确认写入操作",
     "field": "字段",

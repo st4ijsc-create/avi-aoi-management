@@ -29,6 +29,7 @@ import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { Cpu, LogOut, PanelLeft, Key, User, Monitor, ChevronRight } from "lucide-react";
 import { NotificationCenter } from "./NotificationCenter";
+import { AIActionInboxLauncher } from "./AIActionInbox";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { ThemeToggle } from "./ThemeToggle";
 import { CSSProperties, ReactNode, useEffect, useRef, useState } from "react";
@@ -411,6 +412,7 @@ function DashboardLayoutContent({
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <ThemeToggle />
             <LanguageSwitcher />
+            <AIActionInboxLauncher />
             <NotificationCenter />
           </div>
         </div>

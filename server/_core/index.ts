@@ -4508,6 +4508,15 @@ async function startServer() {
     console.error("[AIWatcher] init failed:", (err as any)?.message || err);
   }
 
+  // AI Auto-Proposer — drafts safe write-actions (NG-burst → adjust threshold) for the
+  // responsible users' inbox. PROPOSE-only (HITL); opt in via AI_AUTO_PROPOSE_ENABLED=true.
+  try {
+    const { startAutoProposer } = await import("../services/aiAutoProposer");
+    startAutoProposer();
+  } catch (err) {
+    console.error("[aiAutoProposer] init failed:", (err as any)?.message || err);
+  }
+
   // P3 — Robotics framework (Fanuc/Mitsubishi/Delta/Techman + sim). Importing the
   // module registers the vendor drivers. Disabled by default; opt in via
   // ROBOT_GATEWAY_ENABLED=true. Motion control is dry-run unless ROBOT_CONTROL_ENABLED=true.
@@ -4652,6 +4661,9 @@ async function startServer() {
     // P4 WS4.2 — dừng AI orchestration watcher (no-op nếu chưa chạy)
     import("../services/orchestration/aiWatcher")
       .then((m) => m.stopAiWatcher())
+      .catch(() => {});
+    import("../services/aiAutoProposer")
+      .then((m) => m.stopAutoProposer())
       .catch(() => {});
     server.close(() => {
       logger.info("Server closed");

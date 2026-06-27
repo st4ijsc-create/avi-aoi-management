@@ -1,4 +1,33 @@
 {
+  "aiInbox": {
+    "title": "Việc cần xử lý",
+    "subtitle": "AI đưa đến đây mọi việc cần bạn xử lý — chạm một lần để xử lý.",
+    "empty": "Không có việc nào cần bạn xử lý 🎉",
+    "emptyHint": "Khi AI có đề xuất, cảnh báo hay khuyến nghị, chúng sẽ hiện ở đây.",
+    "expiresLabel": "Thời gian còn lại",
+    "askPrefix": "giải thích và hướng dẫn xử lý giúp tôi",
+    "severity": {
+      "critical": "Khẩn cấp",
+      "warning": "Cảnh báo",
+      "info": "Thông tin"
+    },
+    "type": {
+      "proposal": "Đề xuất",
+      "insight": "Khuyến nghị",
+      "alert": "Bất thường"
+    },
+    "actions": {
+      "approve": "Duyệt",
+      "dismiss": "Bỏ qua",
+      "ask": "Hỏi AI",
+      "view": "Xem"
+    },
+    "toast": {
+      "approved": "Đã duyệt và thực thi.",
+      "dismissed": "Đã bỏ qua.",
+      "failed": "Không thể thực hiện."
+    }
+  },
   "copilot": {
     "confirmTitle": "Xác nhận thao tác ghi",
     "field": "Trường",

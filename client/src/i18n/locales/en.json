@@ -1,4 +1,33 @@
 {
+  "aiInbox": {
+    "title": "Action Inbox",
+    "subtitle": "The AI pushes everything that needs you here — handle each in one tap.",
+    "empty": "Nothing needs your attention 🎉",
+    "emptyHint": "When the AI has a proposal, alert or recommendation, it shows up here.",
+    "expiresLabel": "Time remaining",
+    "askPrefix": "explain this and tell me how to handle it",
+    "severity": {
+      "critical": "Critical",
+      "warning": "Warning",
+      "info": "Info"
+    },
+    "type": {
+      "proposal": "Proposal",
+      "insight": "Recommendation",
+      "alert": "Anomaly"
+    },
+    "actions": {
+      "approve": "Approve",
+      "dismiss": "Dismiss",
+      "ask": "Ask AI",
+      "view": "View"
+    },
+    "toast": {
+      "approved": "Approved and executed.",
+      "dismissed": "Dismissed.",
+      "failed": "Could not complete the action."
+    }
+  },
   "copilot": {
     "confirmTitle": "Confirm write action",
     "field": "Field",
