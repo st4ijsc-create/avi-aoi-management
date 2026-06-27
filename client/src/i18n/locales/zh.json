@@ -28,6 +28,27 @@
       "failed": "无法完成操作。"
     }
   },
+  "today": {
+    "title": "今日",
+    "empty": "一切正常 ✓",
+    "emptyHint": "当有需要关注的事项时，AI 将在此处显示。",
+    "dismiss": "隐藏",
+    "askPrefix": "请说明并指导我处理设备",
+    "yield": "良率",
+    "ngRate": "NG 率",
+    "ngCount": "NG 数",
+    "oee": "OEE",
+    "throughput": "产量",
+    "topDefect": "首要缺陷",
+    "openProposals": "{{count}} 项待批准提案",
+    "pdmRiskCount": "{{count}} 项 PdM 风险",
+    "severity": {
+      "critical": "紧急",
+      "warning": "警告",
+      "info": "信息",
+      "ok": "稳定"
+    }
+  },
   "copilot": {
     "confirmTitle": "确认写入操作",
     "field": "字段",

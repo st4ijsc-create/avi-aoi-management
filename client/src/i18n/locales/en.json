@@ -28,6 +28,27 @@
       "failed": "Could not complete the action."
     }
   },
+  "today": {
+    "title": "Today",
+    "empty": "All clear ✓",
+    "emptyHint": "When something needs attention, the AI will surface it right here.",
+    "dismiss": "Hide",
+    "askPrefix": "Explain and guide me on machine",
+    "yield": "Yield",
+    "ngRate": "NG rate",
+    "ngCount": "NG count",
+    "oee": "OEE",
+    "throughput": "Throughput",
+    "topDefect": "Top defect",
+    "openProposals": "{{count}} proposal(s) to approve",
+    "pdmRiskCount": "{{count}} PdM risk(s)",
+    "severity": {
+      "critical": "Critical",
+      "warning": "Warning",
+      "info": "Info",
+      "ok": "Stable"
+    }
+  },
   "copilot": {
     "confirmTitle": "Confirm write action",
     "field": "Field",

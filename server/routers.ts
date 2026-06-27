@@ -114,6 +114,7 @@ import { commandLogRouter } from "./routers/commandLogRouter"; // G2.2a: command
 import { robotRouter } from "./routers/robotRouter"; // Phase 3: robot registry/telemetry/jobs (control via internal dispatcher)
 import { aiInsightRouter } from "./routers/aiInsightRouter"; // Phase 4: AI orchestration insights (advisory, read + ack)
 import { aiInboxRouter } from "./routers/aiInboxRouter"; // AI Action Inbox: push + 1-tap approve/dismiss/ask
+import { aiTodayRouter } from "./routers/aiTodayRouter"; // "Today" briefing: role-aware zero-click login summary
 import { kbVectorRouter } from "./routers/kbVectorRouter"; // Phase 4: KB pgvector store (ingest + search)
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
@@ -346,6 +347,7 @@ export const appRouter = router({
   robot: robotRouter,
   aiInsight: aiInsightRouter,
   aiInbox: aiInboxRouter,
+  aiToday: aiTodayRouter,
   kbVector: kbVectorRouter,
 
   // Process & SPC

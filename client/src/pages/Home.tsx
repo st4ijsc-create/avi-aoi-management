@@ -21,6 +21,7 @@ import {
   Brain
 } from "lucide-react";
 import { Link } from "wouter";
+import { TodayBriefing } from "@/components/TodayBriefing";
 
 export default function Home() {
   const { t } = useTranslation();
@@ -135,6 +136,13 @@ export default function Home() {
           </div>
         </div>
       </header>
+
+      {/* Today Briefing — role-aware, zero-click summary (only when logged in) */}
+      {isAuthenticated && (
+        <div className="container pt-6">
+          <TodayBriefing />
+        </div>
+      )}
 
       {/* Hero Section */}
       <section className="relative overflow-hidden py-20 lg:py-32">

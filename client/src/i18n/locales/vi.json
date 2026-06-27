@@ -28,6 +28,27 @@
       "failed": "Không thể thực hiện."
     }
   },
+  "today": {
+    "title": "Hôm nay",
+    "empty": "Mọi thứ ổn định ✓",
+    "emptyHint": "Khi có việc cần chú ý, AI sẽ hiển thị ngay tại đây.",
+    "dismiss": "Ẩn",
+    "askPrefix": "Giải thích và hướng dẫn xử lý máy",
+    "yield": "Yield",
+    "ngRate": "Tỷ lệ NG",
+    "ngCount": "Số NG",
+    "oee": "OEE",
+    "throughput": "Sản lượng",
+    "topDefect": "Lỗi hàng đầu",
+    "openProposals": "{{count}} đề xuất chờ duyệt",
+    "pdmRiskCount": "{{count}} rủi ro PdM",
+    "severity": {
+      "critical": "Khẩn cấp",
+      "warning": "Cảnh báo",
+      "info": "Thông tin",
+      "ok": "Ổn định"
+    }
+  },
   "copilot": {
     "confirmTitle": "Xác nhận thao tác ghi",
     "field": "Trường",
