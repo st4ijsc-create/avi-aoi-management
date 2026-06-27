@@ -59,6 +59,7 @@ import { pdfReportRouter } from "./routers/pdfReportRouter";
 import { dataComparisonRouter } from "./routers/dataComparisonRouter";
 import { powerpointRouter } from "./routers/powerpointRouter";
 import { reportBuilderRouter } from "./routers/reportBuilderRouter";
+import { executiveReportRouter } from "./routers/executiveReportRouter"; // Phase B4.3: automated AI executive reports
 import { enhancedAuditRouter } from "./routers/enhancedAuditRouter";
 import { paretoAnalysisRouter } from "./routers/paretoAnalysisRouter";
 import { qualityGateTemplateRouter } from "./routers/qualityGateTemplateRouter";
@@ -386,6 +387,7 @@ export const appRouter = router({
   dataComparison: dataComparisonRouter,
   powerpoint: powerpointRouter,
   reportBuilder: reportBuilderRouter,
+  executiveReport: executiveReportRouter,
   enhancedAudit: enhancedAuditRouter,
   paretoAnalysis: paretoAnalysisRouter,
   qualityGateTemplate: qualityGateTemplateRouter,

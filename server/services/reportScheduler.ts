@@ -283,3 +283,101 @@ export function shutdownScheduledReports() {
   activeCronJobs.clear();
   console.log("[ReportScheduler] All scheduled reports stopped");
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// Phase B4.3 — Automated Executive Reports (AI exec summary, shift/day/week)
+//
+// Additive + flag-gated default OFF. Safe no-op when EXEC_REPORT_ENABLED is not
+// "true". Each scheduled period generates an AI executive summary from REAL KPIs
+// (deep model via Model Router task:"report"), persists it into ai_insights, and
+// optionally emits a notification. Mirrors aiBatchRcaScheduler wiring style.
+//
+// Flags (.env):
+//   EXEC_REPORT_ENABLED   = false            (master switch, default OFF)
+//   EXEC_REPORT_SCHEDULE  = "shift,day,week" (which periods to run)
+//   EXEC_REPORT_LANG      = vi               (vi | en)
+//   EXEC_REPORT_TZ        = Asia/Ho_Chi_Minh
+//   EXEC_REPORT_SHIFT_CRON / _DAY_CRON / _WEEK_CRON  (override cron per period)
+// ════════════════════════════════════════════════════════════════════════════
+
+import type { ReportPeriod, ReportLang } from "./aiExecutiveReport";
+
+const EXEC_REPORT_ENABLED = String(process.env.EXEC_REPORT_ENABLED ?? "false").toLowerCase() === "true";
+const EXEC_REPORT_TZ = process.env.EXEC_REPORT_TZ || "Asia/Ho_Chi_Minh";
+
+// Default cron per period: shift = every 8h, day = 06:00 daily, week = 07:00 Monday.
+const EXEC_CRON: Record<ReportPeriod, string> = {
+  shift: process.env.EXEC_REPORT_SHIFT_CRON || "0 0 6,14,22 * * *",
+  day: process.env.EXEC_REPORT_DAY_CRON || "0 5 6 * * *",
+  week: process.env.EXEC_REPORT_WEEK_CRON || "0 15 7 * * 1",
+};
+
+const execReportJobs = new Map<ReportPeriod, ScheduledTask>();
+
+function enabledExecPeriods(): ReportPeriod[] {
+  const raw = (process.env.EXEC_REPORT_SCHEDULE || "shift,day,week")
+    .split(",")
+    .map((p) => p.trim().toLowerCase())
+    .filter((p): p is ReportPeriod => p === "shift" || p === "day" || p === "week");
+  return raw.length ? Array.from(new Set(raw)) : ["day"];
+}
+
+/** Run one executive report for a period: generate → persist → optional notify. Never throws. */
+export async function runExecutiveReport(period: ReportPeriod): Promise<void> {
+  try {
+    const { runExecutiveReportNow } = await import("./aiExecutiveReport");
+    const lang = (process.env.EXEC_REPORT_LANG as ReportLang) || "vi";
+    const { summary, insightId } = await runExecutiveReportNow(period, lang);
+    console.log(
+      `[ExecReportScheduler] ${period} report generated (id=${insightId ?? "n/a"}, by=${summary.generatedBy}` +
+        `, warnings=${summary.kpis.dataWarnings.length})`,
+    );
+  } catch (err) {
+    console.error(`[ExecReportScheduler] ${period} run error:`, (err as any)?.message || err);
+  }
+}
+
+/** Register cron jobs for the configured executive-report periods. No-op when flag OFF. */
+export function startExecutiveReportScheduler(): void {
+  if (!EXEC_REPORT_ENABLED) {
+    console.log("[ExecReportScheduler] disabled (set EXEC_REPORT_ENABLED=true to enable)");
+    return;
+  }
+  if (execReportJobs.size > 0) return; // already started
+  for (const period of enabledExecPeriods()) {
+    const expr = EXEC_CRON[period];
+    try {
+      const task = cron.schedule(
+        expr,
+        () => {
+          runExecutiveReport(period).catch((e) => console.error("[ExecReportScheduler] cron error:", e));
+        },
+        { timezone: EXEC_REPORT_TZ },
+      );
+      execReportJobs.set(period, task);
+      console.log(`[ExecReportScheduler] scheduled ${period} '${expr}' (${EXEC_REPORT_TZ})`);
+    } catch (err) {
+      console.error(`[ExecReportScheduler] failed to schedule ${period}:`, (err as any)?.message || err);
+    }
+  }
+}
+
+/** Stop all executive-report cron jobs. */
+export function stopExecutiveReportScheduler(): void {
+  execReportJobs.forEach((task, period) => {
+    task.stop();
+    console.log(`[ExecReportScheduler] stopped ${period}`);
+  });
+  execReportJobs.clear();
+}
+
+/** Status for dashboards / health. */
+export function getExecutiveReportSchedulerStatus() {
+  return {
+    enabled: EXEC_REPORT_ENABLED,
+    timezone: EXEC_REPORT_TZ,
+    periods: enabledExecPeriods(),
+    crons: EXEC_CRON,
+    running: execReportJobs.size > 0,
+  };
+}

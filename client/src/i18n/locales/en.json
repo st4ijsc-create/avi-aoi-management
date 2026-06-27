@@ -7190,6 +7190,10 @@
         "title": "AI Reports",
         "desc": "Automated daily quality summaries, root cause analysis, and executive reports"
       },
+      "managementInsight": {
+        "title": "Management Insight",
+        "desc": "Manager view: natural-language Q&A over factory data, auto executive summary, and active AI alerts"
+      },
       "performance": {
         "title": "Model Performance",
         "desc": "Track AI model accuracy, inference stats, and version history across deployments"
@@ -7233,6 +7237,51 @@
     },
     "processData": "Process Data",
     "manageSettings": "AI Settings"
+  },
+  "mgmtInsight": {
+    "title": "Management Insight",
+    "subtitle": "Factory-data Q&A + executive summary + AI alerts (advisory only)",
+    "advisory": "Advisory / read-only",
+    "qa": {
+      "title": "Factory Data Q&A",
+      "desc": "Ask in natural language about OEE, NG defects, maintenance, forecasts…",
+      "placeholder": "Type your question…",
+      "ask": "Ask",
+      "toolsUsed": "Data tools used:",
+      "empty": "Pick a suggested question or type your own to start.",
+      "examples": {
+        "q1": "OEE for line 2 this week vs last week?",
+        "q2": "Top 5 NG defects this week?",
+        "q3": "Which machine needs maintenance soon?"
+      }
+    },
+    "exec": {
+      "title": "Auto Executive Summary",
+      "desc": "Latest auto executive report — KPIs, highlights, risks & recommendations",
+      "generate": "Generate now",
+      "unavailable": "Cannot generate the executive report right now.",
+      "adminOnly": "Only administrators can generate a report. Showing the latest report (read-only).",
+      "empty": "No executive report yet — click Generate now.",
+      "highlights": "Highlights",
+      "risks": "Risks / Watch items",
+      "recommendations": "Recommendations",
+      "generatedAt": "Generated at:",
+      "showHistory": "View previous reports",
+      "hideHistory": "Hide report history",
+      "noHistory": "No previous reports yet.",
+      "period": {
+        "shift": "Shift",
+        "day": "Day",
+        "week": "Week"
+      }
+    },
+    "alerts": {
+      "title": "Active AI Alerts / Insights",
+      "desc": "Recent advisory insights from the AI watcher (read-only)",
+      "count": "items",
+      "empty": "No active AI alerts.",
+      "recommendation": "Recommendation:"
+    }
   },
   "aiChat": {
     "welcomeTitle": "AI Assistant",

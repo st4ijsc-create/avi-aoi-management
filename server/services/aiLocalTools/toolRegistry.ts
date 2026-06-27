@@ -33,7 +33,15 @@ export type ToolResultType =
   | "palletizer_status"
   | "ot_telemetry"
   | "line_insight"
-  | "correlation_insight";
+  | "correlation_insight"
+  // ── Phase B4 — Management/Analytics read tools (additive) ──
+  | "analytics_oee"
+  | "analytics_pareto"
+  | "analytics_heatmap"
+  | "analytics_yield"
+  | "analytics_spc"
+  | "analytics_pdm_forecast"
+  | "analytics_forecast";
 
 export interface ToolResult<T = unknown> {
   type: ToolResultType;

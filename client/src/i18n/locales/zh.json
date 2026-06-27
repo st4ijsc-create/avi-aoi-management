@@ -7164,6 +7164,10 @@
         "title": "AI报告",
         "desc": "自动化每日质量摘要、根本原因分析和管理报告"
       },
+      "managementInsight": {
+        "title": "管理洞察",
+        "desc": "管理者视图：对工厂数据进行自然语言问答、自动生成管理摘要以及活跃的 AI 警报"
+      },
       "performance": {
         "title": "模型性能",
         "desc": "跟踪AI模型准确率、推理统计和版本历史"
@@ -7207,6 +7211,51 @@
     },
     "processData": "数据处理",
     "manageSettings": "AI设置"
+  },
+  "mgmtInsight": {
+    "title": "管理洞察",
+    "subtitle": "工厂数据问答 + 管理摘要 + AI 警报（仅供参考）",
+    "advisory": "仅供参考 / 只读",
+    "qa": {
+      "title": "工厂数据问答",
+      "desc": "用自然语言询问 OEE、NG 缺陷、维护、预测等…",
+      "placeholder": "输入您的问题…",
+      "ask": "提问",
+      "toolsUsed": "已使用的数据工具：",
+      "empty": "选择一个推荐问题或输入您自己的问题开始。",
+      "examples": {
+        "q1": "二号产线本周与上周的 OEE 对比？",
+        "q2": "本周前 5 大 NG 缺陷？",
+        "q3": "哪台机器即将需要维护？"
+      }
+    },
+    "exec": {
+      "title": "自动管理摘要",
+      "desc": "最新的自动管理报告 — KPI、亮点、风险与建议",
+      "generate": "立即生成",
+      "unavailable": "目前无法生成管理报告。",
+      "adminOnly": "只有管理员可以生成报告。显示最新报告（只读）。",
+      "empty": "尚无管理报告 — 点击立即生成。",
+      "highlights": "亮点",
+      "risks": "风险 / 需关注项",
+      "recommendations": "建议",
+      "generatedAt": "生成时间：",
+      "showHistory": "查看历史报告",
+      "hideHistory": "隐藏报告历史",
+      "noHistory": "暂无历史报告。",
+      "period": {
+        "shift": "班次",
+        "day": "日",
+        "week": "周"
+      }
+    },
+    "alerts": {
+      "title": "活跃的 AI 警报 / 洞察",
+      "desc": "来自 AI 监控的近期参考性洞察（只读）",
+      "count": "项",
+      "empty": "没有活跃的 AI 警报。",
+      "recommendation": "建议："
+    }
   },
   "aiChat": {
     "welcomeTitle": "AI助手",

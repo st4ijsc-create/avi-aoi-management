@@ -27,6 +27,7 @@ import {
   Book,
   FlaskConical,
   Gauge,
+  Lightbulb,
 } from "lucide-react";
 
 const aiFeatures = [
@@ -35,6 +36,7 @@ const aiFeatures = [
   { key: "inspectionAnalytics", icon: Sparkles, href: "/ai-inspection-analytics", color: "text-cyan-600", bg: "bg-cyan-600/10", category: "analysis" },
   { key: "performance", icon: Activity, href: "/ai-performance", color: "text-red-500", bg: "bg-red-500/10", category: "analysis" },
   { key: "reports", icon: FileText, href: "/ai-reports", color: "text-yellow-500", bg: "bg-yellow-500/10", category: "analysis" },
+  { key: "managementInsight", icon: Lightbulb, href: "/management-insight", color: "text-amber-500", bg: "bg-amber-500/10", category: "analysis" },
   // Inspection AI
   { key: "chat", icon: MessageSquare, href: "/ai-chat", color: "text-blue-500", bg: "bg-blue-500/10", category: "inspection" },
   { key: "qualityGate", icon: ShieldCheck, href: "/ai-quality-gate", color: "text-green-500", bg: "bg-green-500/10", category: "inspection" },

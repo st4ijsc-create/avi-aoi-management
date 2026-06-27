@@ -4471,6 +4471,15 @@ async function startServer() {
     console.error("[Retention] init failed:", (err as any)?.message || err);
   }
 
+  // B4.3 — Automated executive reports (AI exec summary, shift/day/week).
+  // Disabled by default; opt in via EXEC_REPORT_ENABLED=true. Safe no-op when OFF.
+  try {
+    const { startExecutiveReportScheduler } = await import("../services/reportScheduler");
+    startExecutiveReportScheduler();
+  } catch (err) {
+    console.error("[ExecReportScheduler] init failed:", (err as any)?.message || err);
+  }
+
   // P2 WS2.3 — Orchestration rules engine (subscribes to the event bus).
   // Disabled by default; opt in via ORCHESTRATION_ENABLED=true. Notify/audit only.
   try {
@@ -4581,6 +4590,9 @@ async function startServer() {
     isShuttingDown = true;
     logger.info(`${signal} received, shutting down gracefully...`);
     shutdownScheduledReports();
+    import("../services/reportScheduler")
+      .then((m) => m.stopExecutiveReportScheduler())
+      .catch(() => {});
     shutdownScheduledBackups();
     shutdownRuntimeSecurity();
     cacheWarmingService.stop();

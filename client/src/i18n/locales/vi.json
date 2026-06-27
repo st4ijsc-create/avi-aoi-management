@@ -7213,6 +7213,10 @@
         "title": "Báo Cáo AI",
         "desc": "Tóm tắt chất lượng hàng ngày, phân tích nguyên nhân gốc và báo cáo quản lý"
       },
+      "managementInsight": {
+        "title": "Insight Quản Lý",
+        "desc": "Góc nhìn quản lý: hỏi đáp ngôn ngữ tự nhiên trên dữ liệu nhà máy, tóm tắt điều hành tự động và cảnh báo AI đang hoạt động"
+      },
       "performance": {
         "title": "Hiệu Năng Mô Hình",
         "desc": "Theo dõi độ chính xác, thống kê suy luận và lịch sử phiên bản"
@@ -7256,6 +7260,51 @@
     },
     "processData": "Xử Lý Dữ Liệu",
     "manageSettings": "Cài Đặt AI"
+  },
+  "mgmtInsight": {
+    "title": "Insight Quản lý",
+    "subtitle": "Hỏi đáp dữ liệu nhà máy + tóm tắt điều hành + cảnh báo AI (chỉ tư vấn)",
+    "advisory": "Chỉ tư vấn / chỉ đọc",
+    "qa": {
+      "title": "Hỏi đáp dữ liệu nhà máy",
+      "desc": "Đặt câu hỏi bằng ngôn ngữ tự nhiên về OEE, lỗi NG, bảo trì, dự báo…",
+      "placeholder": "Nhập câu hỏi của bạn…",
+      "ask": "Hỏi",
+      "toolsUsed": "Công cụ dữ liệu đã dùng:",
+      "empty": "Chọn một câu hỏi gợi ý hoặc nhập câu hỏi của bạn để bắt đầu.",
+      "examples": {
+        "q1": "OEE dây chuyền 2 tuần này so tuần trước?",
+        "q2": "Top 5 lỗi NG tuần này?",
+        "q3": "Máy nào sắp cần bảo trì?"
+      }
+    },
+    "exec": {
+      "title": "Tóm tắt điều hành tự động",
+      "desc": "Báo cáo điều hành tự động gần nhất — KPI, điểm nổi bật, rủi ro & khuyến nghị",
+      "generate": "Tạo ngay",
+      "unavailable": "Chưa thể tạo báo cáo điều hành lúc này.",
+      "adminOnly": "Chỉ quản trị viên mới có thể tạo báo cáo. Hiển thị báo cáo gần nhất (chỉ đọc).",
+      "empty": "Chưa có báo cáo điều hành — bấm Tạo ngay.",
+      "highlights": "Điểm nổi bật",
+      "risks": "Rủi ro / Cần chú ý",
+      "recommendations": "Khuyến nghị",
+      "generatedAt": "Tạo lúc:",
+      "showHistory": "Xem báo cáo trước đó",
+      "hideHistory": "Ẩn lịch sử báo cáo",
+      "noHistory": "Chưa có báo cáo nào trước đó.",
+      "period": {
+        "shift": "Ca",
+        "day": "Ngày",
+        "week": "Tuần"
+      }
+    },
+    "alerts": {
+      "title": "Cảnh báo / Insight AI đang hoạt động",
+      "desc": "Insight tư vấn gần đây từ bộ giám sát AI (chỉ đọc)",
+      "count": "mục",
+      "empty": "Không có cảnh báo AI nào đang hoạt động.",
+      "recommendation": "Khuyến nghị:"
+    }
   },
   "aiChat": {
     "welcomeTitle": "Trợ Lý AI",

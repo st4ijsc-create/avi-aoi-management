@@ -109,6 +109,46 @@ const MODEL_RANKING_INTENT = /\b(mẫu\s*sản\s*phẩm|sản\s*phẩm\s*nào|mo
 // Optional machine-code extraction for OEE (e.g. "AOI-01", "M-12").
 const MACHINE_CODE_REGEX = /\b([A-Z]{2,5}-?\d{1,4})\b/;
 
+// ─── Phase B4 — Management/Analytics intents (vi+en) ─────────────────────────
+// OEE with an explicit period/compare wording → the analytics OEE tool (period
+// compare) instead of the legacy snapshot get_oee.
+const OEE_PERIOD_COMPARE_INTENT =
+  /\boee\b[\s\S]{0,40}\b(tuần\s*này|tháng\s*này|so\s*với|so\s*sánh|kỳ\s*trước|this\s*week|this\s*month|compare|vs)\b/i;
+// Defect Pareto / top-N NG.
+const DEFECT_PARETO_INTENT =
+  /\b(pareto|top\s*\d*\s*lỗi|top\s*\d*\s*ng|lỗi\s*nhiều\s*nhất|loại\s*lỗi|80\s*\/\s*20|top\s*defect|máy\s*lỗi\s*nhiều)\b/i;
+// Defect heatmap summary.
+const DEFECT_HEATMAP_INTENT =
+  /\b(heatmap|bản\s*đồ\s*nhiệt|điểm\s*nóng\s*lỗi|vị\s*trí\s*lỗi|hotspot|defect\s*heatmap)\b/i;
+// Yield/FPY query (without forecast wording → query; with → forecast below).
+const YIELD_INTENT = /\b(yield|fpy|tỉ\s*lệ\s*đạt|tỷ\s*lệ\s*đạt|first\s*pass|tỉ\s*lệ\s*pass)\b/i;
+// SPC out-of-control.
+const SPC_INTENT =
+  /\b(spc|out\s*of\s*control|vượt\s*kiểm\s*soát|ngoài\s*tầm\s*kiểm\s*soát|control\s*chart|biểu\s*đồ\s*kiểm\s*soát)\b/i;
+// Predictive maintenance / failure risk.
+const PDM_INTENT =
+  /\b(dự\s*báo\s*hỏng|rủi\s*ro\s*hỏng|bảo\s*trì\s*dự\s*đoán|predictive\s*maintenance|\bpdm\b|máy\s*sắp\s*hỏng|failure\s*risk|sức\s*khỏe\s*máy|machine\s*health)\b/i;
+// Generic time-series forecast (yield/throughput).
+const FORECAST_SERIES_INTENT =
+  /\b(dự\s*báo|dự\s*đoán|forecast|predict)\b[\s\S]{0,20}\b(yield|sản\s*lượng|throughput|năng\s*suất|fpy)\b/i;
+
+/** Try an analytics tool by name: extract args, zod-validate, return decision or null. */
+function tryAnalyticsTool(
+  toolName: string,
+  reason: string,
+  question: string,
+  context?: ToolContext,
+): ToolDecision | null {
+  const tool = getTool(toolName);
+  if (!tool) return null;
+  const args = extractArgsForTool(toolName, question, context);
+  const parsed = tool.parameters.safeParse(args);
+  if (parsed.success) {
+    return { tool: toolName, args: parsed.data as Record<string, unknown>, reason };
+  }
+  return null;
+}
+
 // ─── Sprint F6 — line-monitoring intents ─────────────────────────────────────
 // A process-metric trend ("torque máy SCR-01 7 ngày", "lượng keo", "cycle time").
 const PROCESS_TREND_INTENT =
@@ -303,6 +343,46 @@ function extractArgsForTool(
       if (code) args.machineCode = code;
       return args;
     }
+    // ─── Phase B4 — Management/Analytics READ tools ───────────────────────────
+    case "analytics_query_oee": {
+      const period = MONTH_COMPARE_INTENT.test(question)
+        ? "month"
+        : WEEK_COMPARE_INTENT.test(question)
+          ? "week"
+          : "week";
+      const code = question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedMachineCode;
+      const args: Record<string, unknown> = { period, compareToPrior: true };
+      if (code) args.machineCode = code;
+      return args;
+    }
+    case "analytics_defect_pareto": {
+      const days = question.match(DAYS_REGEX) ? Math.max(1, Math.min(90, parseInt(question.match(DAYS_REGEX)![1]!, 10))) : 7;
+      // "theo máy" / "by machine" → group by machine, else by defect type.
+      const byMachine = /\b(theo\s*máy|by\s*machine|máy\s*lỗi|máy\s*gây\s*lỗi)\b/i.test(question);
+      return { groupBy: byMachine ? "machine" : "defectType", days, topN: 5 };
+    }
+    case "analytics_defect_heatmap_summary": {
+      const days = question.match(DAYS_REGEX) ? Math.max(1, Math.min(90, parseInt(question.match(DAYS_REGEX)![1]!, 10))) : 7;
+      return { days, topN: 5 };
+    }
+    case "analytics_query_yield": {
+      const days = question.match(DAYS_REGEX) ? Math.max(1, Math.min(180, parseInt(question.match(DAYS_REGEX)![1]!, 10))) : 14;
+      const interval = MONTH_COMPARE_INTENT.test(question) ? "month" : WEEK_COMPARE_INTENT.test(question) ? "week" : "day";
+      return { days, interval };
+    }
+    case "analytics_spc_status": {
+      const days = question.match(DAYS_REGEX) ? Math.max(1, Math.min(90, parseInt(question.match(DAYS_REGEX)![1]!, 10))) : 14;
+      return { days, sigma: 3 };
+    }
+    case "analytics_pdm_forecast": {
+      const code = question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedMachineCode;
+      return code ? { machineCode: code } : {};
+    }
+    case "analytics_forecast_series": {
+      const days = question.match(DAYS_REGEX) ? Math.max(3, Math.min(180, parseInt(question.match(DAYS_REGEX)![1]!, 10))) : 30;
+      const metric = /\b(throughput|sản\s*lượng|năng\s*suất)\b/i.test(question) ? "throughput" : "yield";
+      return { metric, days, horizon: 7, algorithm: "ewma" };
+    }
     case "get_today_stats":
     default:
       return {};
@@ -318,6 +398,38 @@ function extractArgsForTool(
 export function classifyToolIntent(question: string, context?: ToolContext): ToolDecision {
   if (!question || question.trim().length < 2) {
     return { tool: null, args: {}, reason: "EMPTY" };
+  }
+
+  // ─── Phase B4 analytics short-circuits (HIGHEST priority) ─────────────────
+  // Run before the OEE/period-compare/factory shortcuts so the parameterized,
+  // RBAC-gated analytics tools win for management/analysis questions.
+  if (PDM_INTENT.test(question)) {
+    const d = tryAnalyticsTool("analytics_pdm_forecast", "PDM_FORECAST_SHORTCUT", question, context);
+    if (d) return d;
+  }
+  if (FORECAST_SERIES_INTENT.test(question)) {
+    const d = tryAnalyticsTool("analytics_forecast_series", "FORECAST_SERIES_SHORTCUT", question, context);
+    if (d) return d;
+  }
+  if (DEFECT_HEATMAP_INTENT.test(question)) {
+    const d = tryAnalyticsTool("analytics_defect_heatmap_summary", "DEFECT_HEATMAP_SHORTCUT", question, context);
+    if (d) return d;
+  }
+  if (DEFECT_PARETO_INTENT.test(question)) {
+    const d = tryAnalyticsTool("analytics_defect_pareto", "DEFECT_PARETO_SHORTCUT", question, context);
+    if (d) return d;
+  }
+  if (SPC_INTENT.test(question)) {
+    const d = tryAnalyticsTool("analytics_spc_status", "SPC_STATUS_SHORTCUT", question, context);
+    if (d) return d;
+  }
+  if (OEE_PERIOD_COMPARE_INTENT.test(question)) {
+    const d = tryAnalyticsTool("analytics_query_oee", "OEE_COMPARE_SHORTCUT", question, context);
+    if (d) return d;
+  }
+  if (YIELD_INTENT.test(question)) {
+    const d = tryAnalyticsTool("analytics_query_yield", "YIELD_QUERY_SHORTCUT", question, context);
+    if (d) return d;
   }
 
   // High-priority short-circuits BEFORE generic trigger matching, because
