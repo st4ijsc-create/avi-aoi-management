@@ -22,12 +22,18 @@
  *   AOI_EMBEDDING_CONCURRENCY   số inspection xử lý song song (mặc định 2, CPU-bound)
  *   AOI_EMBEDDING_RESULT_FILTER "NG" (mặc định) | "ALL" — lọc measurement result để embed
  *   AOI_EMBEDDING_MAX_POINTS    trần số điểm/inspection mỗi lần (mặc định 500)
+ *
+ * B3 — sau khi embed, MỘT bước phụ flag-gated (ANOMALY_DETECTION_ENABLED, default OFF):
+ *   • chấm anomaly score (DINOv2 + PatchCore) → lưu vào ai_image_embeddings.metadata,
+ *   • CỔNG leo VL (shouldEscalateToVision): chỉ ảnh NG/nghi ngờ (2–10%) mới đưa qua
+ *     Qwen3-VL để mô tả inline — sau khi crop ROI (autoDetectRoi). Fire-and-forget,
+ *     idempotent (bỏ qua nếu metadata.anomaly đã có), KHÔNG bao giờ chặn embed/commit.
  */
 
 import path from "path";
 import fs from "fs";
 import JSZip from "jszip";
-import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import { getAiModelByCode } from "../db/ai";
 import { measurementResults, productInspections, aiImageEmbeddings } from "../../drizzle/schema";
@@ -209,7 +215,7 @@ export async function runAoiInspectionEmbedding(
       const emb = await extractEmbedding(modelId, buf);
       // storeEmbedding now inserts via raw SQL omitting the pgvector embedding_vec column,
       // so it is safe on the no-pgvector DB (and sets embedding_vec on pgvector DBs for dim 1024).
-      await storeEmbedding({
+      const embeddingId = await storeEmbedding({
         measurementResultId: r.id,
         inspectionId: job.inspectionId,
         imageUrl: r.imageUrl!,
@@ -221,6 +227,21 @@ export async function runAoiInspectionEmbedding(
         productModelId: insp?.productModelId ?? undefined,
       });
       ok++;
+
+      // B3 — anomaly score + VL escalation gate (flag-gated, fire-and-forget).
+      // Không await để không thêm độ trễ cho vòng embed; mọi lỗi nuốt bên trong.
+      if (isAnomalyDetectionEnabled() && embeddingId != null) {
+        void runAnomalyAndEscalation({
+          embeddingId,
+          buffer: buf,
+          classification: r.result ?? null,
+          machineId: insp?.machineId ?? null,
+          productModelId: insp?.productModelId ?? null,
+          modelId,
+        }).catch((e) =>
+          console.warn(`[aoiEmbed] anomaly step mr#${r.id} failed:`, (e as Error)?.message ?? e),
+        );
+      }
     } catch (e) {
       skip++;
       console.warn(`[aoiEmbed] mr#${r.id} failed:`, (e as Error)?.message ?? e);
@@ -230,4 +251,122 @@ export async function runAoiInspectionEmbedding(
     console.log(`[aoiEmbed] inspection ${job.inspectionId}: embedded ${ok}, skipped ${skip} (model=${MODEL_CODE}, filter=${RESULT_FILTER}).`);
   }
   return { embedded: ok, skipped: skip };
+}
+
+// ─── B3 — anomaly score + VL escalation (post-embed, flag-gated) ────────────────
+
+/** Cờ master B3 (ANOMALY_DETECTION_ENABLED, default OFF) — re-export qua service. */
+function isAnomalyDetectionEnabled(): boolean {
+  // Đọc lười để tôn trọng env tại runtime (đồng bộ với aiAnomalyDetection.isAnomalyDetectionEnabled).
+  return (process.env.ANOMALY_DETECTION_ENABLED ?? "false").toLowerCase() === "true";
+}
+
+export interface AnomalyEscalationParams {
+  embeddingId: number;
+  buffer: Buffer;
+  classification: string | null;
+  machineId: number | null;
+  productModelId: number | null;
+  modelId: number | null;
+}
+
+/**
+ * B3 — chấm anomaly score cho ảnh vừa embed, lưu vào ai_image_embeddings.metadata,
+ * rồi CỔNG leo VL (shouldEscalateToVision): chỉ ảnh NG/nghi ngờ mới mô tả inline qua
+ * Qwen3-VL (sau khi crop ROI). Mọi bước best-effort, không bao giờ ném.
+ *
+ * Idempotent: nếu metadata.anomaly đã tồn tại cho dòng này → bỏ qua (tránh chấm lại
+ * khi re-run). VL chỉ chạy khi sidecar khả dụng; concurrency=1 do sidecar tự serial.
+ */
+export async function runAnomalyAndEscalation(params: AnomalyEscalationParams): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  // Idempotency: bỏ qua nếu đã có metadata.anomaly.
+  try {
+    const [existing] = await db
+      .select({ metadata: aiImageEmbeddings.metadata })
+      .from(aiImageEmbeddings)
+      .where(eq(aiImageEmbeddings.id, params.embeddingId))
+      .limit(1);
+    if (existing?.metadata && (existing.metadata as Record<string, unknown>).anomaly != null) {
+      return;
+    }
+  } catch {
+    // đọc lỗi → vẫn thử chấm (best-effort).
+  }
+
+  const { scoreImage, shouldEscalateToVision } = await import("./aiAnomalyDetection");
+  const result = await scoreImage({
+    buffer: params.buffer,
+    productModelId: params.productModelId,
+    machineId: params.machineId,
+    modelId: params.modelId,
+  });
+
+  // CỔNG leo VL (§B8ter): chỉ NG/nghi ngờ → VL. Đo lường qua meter trong gate.
+  const decision = shouldEscalateToVision(result.score, params.classification, {
+    profileThreshold: result.threshold,
+    enabled: true, // đã gated bởi isAnomalyDetectionEnabled ở call-site.
+  });
+
+  // Mô tả VL inline (ROI-crop trước) CHỈ khi cổng cho phép + sidecar khả dụng.
+  let visionDescription: string | null = null;
+  let visionRoiCropped = false;
+  if (decision.escalate) {
+    try {
+      const { isVisionSidecarAvailable, describeImageViaSidecar } = await import("./llamaVisionSidecar");
+      if (isVisionSidecarAvailable()) {
+        const { cropToRoiForVision } = await import("./aiAdvancedVision");
+        const roi = await cropToRoiForVision(params.buffer);
+        visionRoiCropped = roi.cropped;
+        const r = await describeImageViaSidecar({
+          image: roi.buffer,
+          prompt:
+            "You are an AOI quality engineer. Briefly describe any visible defect in this inspection image (1-3 sentences). If none, say 'No defect detected'.",
+          maxTokens: 256,
+          temperature: 0.2,
+        });
+        visionDescription = (r.text ?? "").trim().slice(0, 1000) || null;
+      }
+    } catch (e) {
+      // Sidecar/describe lỗi → giữ score, bỏ mô tả (degrade trung thực).
+      console.warn(`[aoiEmbed] VL escalation emb#${params.embeddingId} failed:`, (e as Error)?.message ?? e);
+    }
+  }
+
+  // Lưu kết quả vào metadata (merge JSON, best-effort). Dùng jsonb concat để không
+  // mất các khóa metadata khác đã có.
+  const anomalyMeta = {
+    anomaly: {
+      score: Number(result.score.toFixed(6)),
+      threshold: result.threshold,
+      isAnomaly: result.isAnomaly,
+      source: result.source,
+      degraded: result.degraded,
+      bankSize: result.bankSize,
+      k: result.k,
+      reason: result.reason ?? null,
+      escalation: {
+        escalated: decision.escalate,
+        reason: decision.reason,
+        suspectThreshold: decision.suspectThreshold,
+        roiCropped: visionRoiCropped,
+      },
+      visionDescription,
+      scoredAt: new Date().toISOString(),
+    },
+  };
+
+  try {
+    const metaStr = JSON.stringify(anomalyMeta);
+    // COALESCE: nếu metadata NULL → '{}'. jsonb '||' merge giữ khóa cũ, ghi đè "anomaly".
+    await db.execute(sql`
+      UPDATE ai_image_embeddings
+      SET metadata = (COALESCE(metadata::jsonb, '{}'::jsonb) || ${metaStr}::jsonb)::json
+      WHERE id = ${params.embeddingId}
+    `);
+  } catch (e) {
+    console.warn(`[aoiEmbed] persist anomaly meta emb#${params.embeddingId} failed:`, (e as Error)?.message ?? e);
+  }
 }

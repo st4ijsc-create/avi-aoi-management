@@ -13,6 +13,8 @@ import * as cron from "node-cron";
 import { sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { generateRCAInsights } from "./aiInsightsService";
+// B2.4 — auto-ingest hook (flag-gated RAG_AUTO_INGEST_ENABLED, default OFF).
+import { ingestKnowledgeRecordAsync } from "./aiLocalKnowledgeService";
 
 const DEFAULT_CRON = process.env.AI_BATCH_RCA_CRON || "0 2 * * *"; // 02:00 daily
 const TIMEZONE = process.env.AI_BATCH_RCA_TZ || "Asia/Ho_Chi_Minh";
@@ -154,6 +156,22 @@ export async function runBatchRCAOnce(): Promise<{ machinesProcessed: number; su
            'COMPLETED', ${SYSTEM_USER_ID}, 'SYSTEM_BATCH', ${0}, NOW())
       `);
       succeeded++;
+
+      // B2.4 — fire-and-forget: feed this RCA back into the KB so future
+      // retrieval/RCA can cite past incidents. No-op unless
+      // RAG_AUTO_INGEST_ENABLED=true; idempotent (dedupes by sourceId); never
+      // throws / never blocks the scheduler.
+      ingestKnowledgeRecordAsync({
+        sourceId: `rca:${m.code}:${until.toISOString().slice(0, 10)}`,
+        title: `RCA — ${m.code} (${until.toISOString().slice(0, 10)})`,
+        sourceType: "incident",
+        text:
+          `Machine ${m.code} defect analysis. NG=${ngCount}/${totalInspections}.\n` +
+          `Summary: ${aiInsights.summary}\n` +
+          `Root causes: ${aiInsights.rootCauses.map((c) => `${c.cause} (${Math.round(c.probability * 100)}%)`).join("; ")}\n` +
+          `Recommendations: ${aiInsights.recommendations.join("; ")}`,
+        keywords: ["rca", "defect", m.code.toLowerCase()],
+      });
     } catch (err) {
       console.error(`[aiBatchRcaScheduler] Machine ${m.code} (#${m.id}) failed:`, err);
       failed++;

@@ -60,6 +60,8 @@ import {
   scoreImage,
   extractHandcraftedFeatures,
   anomalyModelCode,
+  shouldEscalateToVision,
+  getVisionEscalationMeter,
 } from "./aiAnomalyDetection";
 import { l2normalize } from "./aiImageEmbedding";
 import sharp from "sharp";
@@ -254,5 +256,49 @@ describe("anomalyModelCode scope separation", () => {
     expect(anomalyModelCode("onnx", 7)).toBe("anomaly:onnx:7");
     expect(anomalyModelCode("text-of-image", null)).toBe("anomaly:text-of-image");
     expect(anomalyModelCode("heuristic", null)).toBe("anomaly:heuristic");
+  });
+});
+
+// ── B3.2 / B8ter — VL escalation gate (the 2-10% gate enforcement) ────────────
+
+describe("shouldEscalateToVision gate", () => {
+  it("disabled flag → never escalates", () => {
+    const d = shouldEscalateToVision(99, "NG", { enabled: false, profileThreshold: 0.1 });
+    expect(d.escalate).toBe(false);
+    expect(d.reason).toBe("disabled");
+  });
+
+  it("OK image below threshold → does NOT escalate (the 90-98% common case)", () => {
+    const d = shouldEscalateToVision(0.05, "OK", { enabled: true, profileThreshold: 0.5, ignoreRateLimit: true });
+    expect(d.escalate).toBe(false);
+    expect(d.reason).toBe("below_threshold");
+  });
+
+  it("suspect anomaly above threshold → escalates", () => {
+    const d = shouldEscalateToVision(0.9, "OK", { enabled: true, profileThreshold: 0.5, ignoreRateLimit: true });
+    expect(d.escalate).toBe(true);
+    expect(d.reason).toBe("anomaly_suspect");
+  });
+
+  it("NG classification → escalates even with low score / no threshold", () => {
+    const d = shouldEscalateToVision(0, "NG", { enabled: true, profileThreshold: null, ignoreRateLimit: true });
+    expect(d.escalate).toBe(true);
+    expect(d.reason).toBe("ng_classified");
+  });
+
+  it("no threshold + OK → no_threshold, no escalate", () => {
+    const d = shouldEscalateToVision(0.9, "OK", { enabled: true, profileThreshold: null, ignoreRateLimit: true });
+    expect(d.escalate).toBe(false);
+    expect(d.reason).toBe("no_threshold");
+  });
+
+  it("meter counts seen vs escalated (gate is observable)", () => {
+    const before = getVisionEscalationMeter().totalSeen;
+    shouldEscalateToVision(0.05, "OK", { enabled: true, profileThreshold: 0.5, ignoreRateLimit: true });
+    shouldEscalateToVision(0.9, "OK", { enabled: true, profileThreshold: 0.5, ignoreRateLimit: true });
+    const m = getVisionEscalationMeter();
+    expect(m.totalSeen).toBeGreaterThanOrEqual(before + 2);
+    expect(m.escalationRate).toBeGreaterThanOrEqual(0);
+    expect(m.escalationRate).toBeLessThanOrEqual(1);
   });
 });

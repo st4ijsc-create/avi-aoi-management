@@ -458,6 +458,71 @@ export async function autoDetectRoi(image: Buffer): Promise<RoiBox> {
   };
 }
 
+/**
+ * B3.3 — Crop an image to its detected ROI before sending to a VL model.
+ *
+ * Ảnh AOI thường lớn, vùng quan tâm (linh kiện/mối hàn) chỉ chiếm một phần →
+ * `autoDetectRoi` (edge-density bounding box) cắt ROI để VL nhận ảnh nhỏ hơn:
+ *   • nhanh hơn (ít pixel/token),
+ *   • chính xác hơn (loại nền/khoảng trống gây nhiễu).
+ *
+ * Degrade trung thực: nếu ROI suy biến (cả ảnh, edgeDensity 0, hoặc nhỏ hơn
+ * `minAreaRatio` của ảnh → nghi ngờ phát hiện sai) → trả NGUYÊN ảnh gốc, cờ
+ * `cropped:false`. Không bao giờ ném ra (best-effort tiền-xử-lý).
+ */
+export async function cropToRoiForVision(
+  image: Buffer,
+  opts: { padRatio?: number; minAreaRatio?: number } = {},
+): Promise<{ buffer: Buffer; cropped: boolean; roi: RoiBox | null }> {
+  try {
+    const meta = await sharp(image).metadata();
+    const fullW = meta.width ?? 0;
+    const fullH = meta.height ?? 0;
+    if (!fullW || !fullH) return { buffer: image, cropped: false, roi: null };
+
+    // autoDetectRoi chạy trên ảnh đã downscale (toGrayRaw → MAX_DIM, fit "inside",
+    // GIỮ tỉ lệ khung hình). Tọa độ ROI nằm trong không gian downscale đó → suy hệ
+    // số scale về ảnh GỐC. Vì fit "inside" giữ tỉ lệ, sx ≈ sy → dùng một hệ số chung.
+    const roi = await autoDetectRoi(image);
+    if (roi.edgeDensity <= 0) return { buffer: image, cropped: false, roi };
+
+    // Kích thước không gian downscale (cùng công thức "inside" của toGrayRaw).
+    const overMax = fullW > MAX_DIM || fullH > MAX_DIM;
+    const fitScale = overMax ? MAX_DIM / Math.max(fullW, fullH) : 1;
+    const dsW = Math.max(1, Math.round(fullW * fitScale));
+    const dsH = Math.max(1, Math.round(fullH * fitScale));
+    const sx = fullW / dsW;
+    const sy = fullH / dsH;
+
+    let left = Math.round(roi.x * sx);
+    let top = Math.round(roi.y * sy);
+    let cw = Math.round(roi.width * sx);
+    let ch = Math.round(roi.height * sy);
+
+    // Clamp về biên ảnh gốc.
+    left = Math.max(0, Math.min(left, fullW - 1));
+    top = Math.max(0, Math.min(top, fullH - 1));
+    cw = Math.max(1, Math.min(cw, fullW - left));
+    ch = Math.max(1, Math.min(ch, fullH - top));
+
+    const areaRatio = (cw * ch) / (fullW * fullH);
+    const minAreaRatio = opts.minAreaRatio ?? 0.02;
+    // ROI ~ cả ảnh (>95%) hoặc quá nhỏ (<minAreaRatio, nghi sai) → dùng ảnh gốc.
+    if (areaRatio >= 0.95 || areaRatio < minAreaRatio) {
+      return { buffer: image, cropped: false, roi };
+    }
+
+    const cropped = await sharp(image)
+      .extract({ left, top, width: cw, height: ch })
+      .jpeg({ quality: 90 })
+      .toBuffer();
+    return { buffer: cropped, cropped: true, roi };
+  } catch {
+    // Bất kỳ lỗi sharp/decode → ảnh gốc (degrade trung thực).
+    return { buffer: image, cropped: false, roi: null };
+  }
+}
+
 // ─── F. Augment Image ────────────────────────────────────────
 
 export type AugmentTransform =

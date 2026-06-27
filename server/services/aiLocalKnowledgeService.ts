@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { tryExecuteTool, type ToolResult, type ToolExecContext, type PendingActionDTO, type ClientActionDirective } from "./aiLocalTools";
+import { rerank, isRerankerEnabled, type RerankCandidate } from "./aiReranker";
 
 export type KbIntent =
   | "how_to"
@@ -1303,7 +1305,34 @@ export async function retrieveKnowledge(
     perSourceCount.set(sp, used + 1);
     deduped.push(r);
   }
-  const topSlice = deduped.slice(0, Math.max(1, Math.min(10, topK)));
+  const finalK = Math.max(1, Math.min(10, topK));
+
+  // B2.2 — Reranker stage (flag-gated, fail-safe). When RAG_RERANKER_ENABLED is
+  // on: take a wider candidate pool (cosine top-N), rerank by query relevance,
+  // and reorder before the final topK slice. When off (default) this whole block
+  // is skipped and `topSlice` is exactly the legacy cosine top-K — behavior is
+  // unchanged. rerank() never throws (degrades to original order on any error).
+  let topSlice: typeof deduped;
+  if (isRerankerEnabled() && deduped.length > 1) {
+    const poolSize = Math.max(finalK, Number(process.env.RAG_RERANKER_POOL ?? 20));
+    const pool = deduped.slice(0, poolSize);
+    const candidates: RerankCandidate[] = pool.map((r) => ({
+      id: r.emb.id,
+      title: r.emb.title,
+      text: r.chunk ? r.chunk.text : "",
+      score: r.score,
+    }));
+    const reranked = await rerank(question, candidates, finalK);
+    const byId = new Map(pool.map((r) => [r.emb.id, r]));
+    const reordered = reranked
+      .map((rr) => byId.get(rr.candidate.id))
+      .filter((r): r is (typeof pool)[number] => Boolean(r));
+    // Guard: if the rerank somehow returned nothing usable, fall back to cosine.
+    topSlice = reordered.length > 0 ? reordered : deduped.slice(0, finalK);
+  } else {
+    topSlice = deduped.slice(0, finalK);
+  }
+
   const ranked = topSlice.filter((r, idx) => idx === 0 || r.score >= MIN_CITATION_SCORE);
 
   const citations: KbCitation[] = ranked.map((r) => ({
@@ -1735,4 +1764,143 @@ export function warmUpOllamaModels(): void {
       }),
     }).catch(() => {});
   }, 2000);
+}
+
+// ─── B2.4 — Auto-ingest of RCA / ai_insight records ─────────────────────────
+//
+// Given a new RCA / insight text, chunk → embed (same mxbai 1024-d space) →
+// append to knowledge/chunks.jsonl + embeddings.jsonl so future retrieval
+// includes it (a self-enriching loop). FLAG-GATED (RAG_AUTO_INGEST_ENABLED,
+// default OFF) and IDEMPOTENT: dedupes by a deterministic id derived from
+// `sourceId`. Designed as a fire-and-forget hook — never throws to the caller.
+//
+// Vector-space consistency: embeds `title\ntext` via embedQuestionGguf (the same
+// GGUF mxbai model + L2 normalization the corpus was built with) and writes rows
+// with the SAME schema as generate-embeddings.mjs so the new vectors live in the
+// same space and are picked up by ensureDataLoaded on next (re)load.
+
+export function isAutoIngestEnabled(): boolean {
+  return (process.env.RAG_AUTO_INGEST_ENABLED ?? "false").toLowerCase() === "true";
+}
+
+export interface IngestRecord {
+  /** Stable source identifier (e.g. `rca:123`, `insight:abc`). Used for dedupe. */
+  sourceId: string;
+  title: string;
+  text: string;
+  /** Defaults to "incident". */
+  sourceType?: string;
+  /** Defaults to `ingest/<sourceType>/<sourceId>`. */
+  sourcePath?: string;
+  keywords?: string[];
+}
+
+function ingestChunkId(sourceId: string): string {
+  // Deterministic id namespace so re-ingesting the same record is a no-op.
+  return `ingest:${sourceId.replace(/\s+/g, "_")}`;
+}
+
+// In-process guard so a burst of identical hooks within one run doesn't race the
+// file-existence dedupe (the on-disk check still covers cross-process dedupe).
+const ingestedThisProcess = new Set<string>();
+
+/**
+ * Idempotently append a single RCA/insight record to the file-based KB.
+ * Returns true if a new chunk+embedding was written, false if skipped
+ * (already present, flag off, empty text, or embed failed). Never throws.
+ */
+export async function ingestKnowledgeRecord(rec: IngestRecord): Promise<boolean> {
+  try {
+    if (!isAutoIngestEnabled()) return false;
+    const sourceId = (rec.sourceId ?? "").trim();
+    const text = (rec.text ?? "").trim();
+    const title = (rec.title ?? "").trim() || sourceId;
+    if (!sourceId || !text) return false;
+
+    const id = ingestChunkId(sourceId);
+    if (ingestedThisProcess.has(id)) return false;
+
+    // On-disk dedupe: scan existing chunk ids (cheap line scan). If present, skip.
+    if (fs.existsSync(CHUNKS_FILE)) {
+      const existing = fs.readFileSync(CHUNKS_FILE, "utf8");
+      // Match the id as a JSON field to avoid false positives on substrings.
+      if (existing.includes(`"id":"${id}"`)) {
+        ingestedThisProcess.add(id);
+        return false;
+      }
+    }
+
+    // Embed `title\ntext` (corpus convention). embedQuestionGguf L2-normalizes
+    // and dimension-guards (returns null on mismatch) → consistent vectors.
+    const embedInput = `${title}\n${text}`;
+    const vector = await embedQuestionGguf(embedInput);
+    if (!vector) {
+      console.warn(`[aiLocalKnowledge] auto-ingest: embedding unavailable for ${id}, skipping`);
+      return false;
+    }
+
+    const sourceType = rec.sourceType ?? "incident";
+    const sourcePath = rec.sourcePath ?? `ingest/${sourceType}/${sourceId}`;
+    const hash = createHash("sha256").update(embedInput, "utf8").digest("hex");
+
+    const chunkRow = {
+      id,
+      hash,
+      sourceType,
+      sourcePath,
+      title,
+      text,
+      keywords: rec.keywords ?? [],
+    };
+    const embRow = {
+      id,
+      hash,
+      sourceType,
+      sourcePath,
+      title,
+      keywords: rec.keywords ?? [],
+      textLength: text.length,
+      embeddingDim: vector.length,
+      embedding: vector,
+    };
+
+    // Append (newline-terminated) to both files.
+    fs.appendFileSync(CHUNKS_FILE, JSON.stringify(chunkRow) + "\n", "utf8");
+    fs.appendFileSync(EMBEDDINGS_FILE, JSON.stringify(embRow) + "\n", "utf8");
+    ingestedThisProcess.add(id);
+
+    // Patch the in-memory cache so retrieval sees the new chunk immediately
+    // (without a full reload). Safe: same shapes as ensureDataLoaded builds.
+    if (dataCache) {
+      dataCache.chunksById.set(id, {
+        id,
+        sourceType,
+        sourcePath,
+        title,
+        text,
+        keywords: rec.keywords ?? [],
+      });
+      dataCache.embeddings.push({
+        id,
+        sourceType,
+        sourcePath,
+        title,
+        keywords: rec.keywords ?? [],
+        textLength: text.length,
+        embeddingDim: vector.length,
+        embedding: vector,
+      });
+    }
+
+    console.log(`[aiLocalKnowledge] auto-ingested KB record ${id} (${sourcePath})`);
+    return true;
+  } catch (err) {
+    console.warn("[aiLocalKnowledge] auto-ingest failed (non-fatal):", err);
+    return false;
+  }
+}
+
+/** Fire-and-forget wrapper for hook sites — never awaited, never throws. */
+export function ingestKnowledgeRecordAsync(rec: IngestRecord): void {
+  void ingestKnowledgeRecord(rec).catch(() => {});
 }

@@ -548,3 +548,155 @@ export async function getAnomalyStats(scope: { productModelId?: number | null; m
     machineId: scope.machineId ?? null,
   });
 }
+
+// ─── B3.2 / B8ter — VL escalation gate ─────────────────────────────────────────
+//
+// SIZING (§B8ter): tải = 20.000 ảnh/ca 8h ≈ 0,69 ảnh/s. DINOv2 embed/anomaly
+// (~150ms) chạy 100% ảnh là rẻ (~10–20% công suất). Qwen3-VL (~1,23s/ảnh) NẾU
+// chạy mọi ảnh ≈ 50s công việc/60s → NGHẼN. Vì vậy chỉ ảnh NG/nghi ngờ
+// (anomaly-flagged hoặc đã NG, thường 2–10%) mới leo lên VL.
+//
+// `shouldEscalateToVision` là CỔNG đó: một hàm thuần, rõ ràng, để mọi call-site
+// dùng chung quy tắc + đo lường. Ngưỡng nghi ngờ cấu hình qua env (mặc định = bội
+// số của threshold profile, hoặc tuyệt đối).
+
+/** Ngưỡng "nghi ngờ" tương đối: score > threshold × hệ số này → leo VL. Mặc định 1.0
+ *  (tức bất kỳ ảnh nào isAnomaly). Đặt <1 để nới (bắt thêm "borderline"), >1 để siết. */
+const VL_SUSPECT_THRESHOLD_RATIO = Math.max(
+  0.1,
+  Math.min(Number(process.env.ANOMALY_VL_SUSPECT_RATIO ?? 1.0), 10),
+);
+/** Ngưỡng tuyệt đối tùy chọn: nếu set (>0) → score > giá trị này cũng leo VL (bỏ qua ratio).
+ *  Để rỗng/<=0 → chỉ dùng ratio so với threshold profile. */
+const VL_SUSPECT_ABS = Number(process.env.ANOMALY_VL_SUSPECT_ABS ?? 0);
+/** Trần tỉ lệ leo VL theo phút (back-pressure cứng) — bảo vệ sidecar khỏi burst NG
+ *  bất thường (vd >20% NG) làm VL nghẽn. 0 = tắt trần. Mặc định 6/phút (an toàn cho
+ *  ~10% của tải cao điểm). */
+const VL_ESCALATION_MAX_PER_MIN = Math.max(0, Number(process.env.ANOMALY_VL_MAX_PER_MIN ?? 6));
+
+export interface VisionEscalationDecision {
+  escalate: boolean;
+  /** Lý do (machine-readable): "ng_classified" | "anomaly_suspect" | "below_threshold" |
+   *  "no_threshold" | "rate_limited" | "disabled". */
+  reason: string;
+  /** Ngưỡng nghi ngờ hiệu lực đã so (null khi không có threshold profile). */
+  suspectThreshold: number | null;
+}
+
+/** Bộ đếm leo VL (in-memory, reset theo cửa sổ phút) — để operator thấy cổng đang chặn. */
+interface EscalationMeter {
+  windowStartMs: number;
+  inWindow: number;
+  totalSeen: number;
+  totalEscalated: number;
+  totalRateLimited: number;
+}
+const _vlMeter: EscalationMeter = {
+  windowStartMs: Date.now(),
+  inWindow: 0,
+  totalSeen: 0,
+  totalEscalated: 0,
+  totalRateLimited: 0,
+};
+
+function _rollWindow(now: number): void {
+  if (now - _vlMeter.windowStartMs >= 60_000) {
+    _vlMeter.windowStartMs = now;
+    _vlMeter.inWindow = 0;
+  }
+}
+
+/**
+ * CỔNG LEO TẦNG (B3.2 + B8ter): quyết định một ảnh có nên leo lên Qwen3-VL không.
+ *
+ * Quy tắc (rẻ→đắt; tầng rẻ lọc, tầng đắt chỉ xử lý phần khó):
+ *   1. classification === "NG"               → escalate (đã chắc lỗi, cần mô tả).
+ *   2. score > suspectThreshold              → escalate (anomaly nghi ngờ).
+ *   3. còn lại                               → KHÔNG escalate (đại đa số ảnh OK).
+ *
+ * suspectThreshold = ANOMALY_VL_SUSPECT_ABS (nếu >0) HOẶC profileThreshold × ratio.
+ * Khi không có threshold profile → chỉ leo theo classification NG.
+ *
+ * KHÔNG side-effect ngoài việc cập nhật meter (đo lường). Trần VL_ESCALATION_MAX_PER_MIN
+ * áp dụng để chặn burst (back-pressure cứng) — vượt trần → reason "rate_limited".
+ *
+ * `opts.enabled=false` (mặc định theo ANOMALY_DETECTION_ENABLED) → luôn trả escalate:false.
+ */
+export function shouldEscalateToVision(
+  score: number,
+  classification: string | null | undefined,
+  opts: {
+    profileThreshold?: number | null;
+    enabled?: boolean;
+    /** Bỏ qua trần rate-limit (vd test / admin). */
+    ignoreRateLimit?: boolean;
+  } = {},
+): VisionEscalationDecision {
+  const enabled = opts.enabled ?? isAnomalyDetectionEnabled();
+  if (!enabled) {
+    return { escalate: false, reason: "disabled", suspectThreshold: null };
+  }
+
+  _vlMeter.totalSeen++;
+  const now = Date.now();
+  _rollWindow(now);
+
+  const isNg = (classification ?? "").toUpperCase() === "NG";
+
+  // suspectThreshold hiệu lực.
+  let suspectThreshold: number | null = null;
+  if (VL_SUSPECT_ABS > 0) {
+    suspectThreshold = VL_SUSPECT_ABS;
+  } else if (opts.profileThreshold != null && opts.profileThreshold > 0) {
+    suspectThreshold = opts.profileThreshold * VL_SUSPECT_THRESHOLD_RATIO;
+  }
+
+  const suspect = suspectThreshold != null && score > suspectThreshold;
+  const wantEscalate = isNg || suspect;
+
+  if (!wantEscalate) {
+    return {
+      escalate: false,
+      reason: suspectThreshold == null ? "no_threshold" : "below_threshold",
+      suspectThreshold,
+    };
+  }
+
+  // Trần rate-limit (back-pressure): bảo vệ sidecar khỏi burst NG.
+  if (!opts.ignoreRateLimit && VL_ESCALATION_MAX_PER_MIN > 0 && _vlMeter.inWindow >= VL_ESCALATION_MAX_PER_MIN) {
+    _vlMeter.totalRateLimited++;
+    return { escalate: false, reason: "rate_limited", suspectThreshold };
+  }
+
+  _vlMeter.inWindow++;
+  _vlMeter.totalEscalated++;
+  return {
+    escalate: true,
+    reason: isNg ? "ng_classified" : "anomaly_suspect",
+    suspectThreshold,
+  };
+}
+
+/** Snapshot bộ đếm cổng VL (cho operator/UI/metrics) — tỉ lệ leo thực vs ảnh đã xét. */
+export function getVisionEscalationMeter(): {
+  totalSeen: number;
+  totalEscalated: number;
+  totalRateLimited: number;
+  escalationRate: number;
+  inCurrentWindow: number;
+  maxPerMinute: number;
+} {
+  return {
+    totalSeen: _vlMeter.totalSeen,
+    totalEscalated: _vlMeter.totalEscalated,
+    totalRateLimited: _vlMeter.totalRateLimited,
+    escalationRate: _vlMeter.totalSeen > 0 ? _vlMeter.totalEscalated / _vlMeter.totalSeen : 0,
+    inCurrentWindow: _vlMeter.inWindow,
+    maxPerMinute: VL_ESCALATION_MAX_PER_MIN,
+  };
+}
+
+/** Cờ master B3 (ANOMALY_DETECTION_ENABLED, mặc định OFF). Khi OFF → không scoring/leo VL. */
+export function isAnomalyDetectionEnabled(): boolean {
+  return (process.env.ANOMALY_DETECTION_ENABLED ?? "false").toLowerCase() === "true";
+}

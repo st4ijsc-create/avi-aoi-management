@@ -1,0 +1,90 @@
+{
+  "description": "Phase B2.5 — RAG golden eval set. Each item: a representative factory/operator question plus expectation signals. recall@5 is scored as a HIT when at least one of the top-5 retrieved chunks satisfies the expectation: its sourcePath contains any string in expectSourceContains (case-insensitive), OR its chunk text contains any keyword in expectKeywords. Keep questions grounded in the existing KB so the set stays meaningful as the corpus evolves.",
+  "scoring": { "k": 5, "hitRule": "sourcePathContains OR textContainsKeyword" },
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Làm sao tạo lệnh sản xuất mới?",
+      "lang": "vi",
+      "expectSourceContains": ["order", "production", "lenh-san-xuat", "manufacturing"],
+      "expectKeywords": ["lệnh sản xuất", "production order", "tạo lệnh"]
+    },
+    {
+      "id": "q2",
+      "question": "Cấu hình ngưỡng NG cho máy AOI ở đâu?",
+      "lang": "vi",
+      "expectSourceContains": ["machine", "threshold", "aoi", "workstation", "config"],
+      "expectKeywords": ["ngưỡng", "threshold", "NG", "AOI"]
+    },
+    {
+      "id": "q3",
+      "question": "What SPC rules are supported (Nelson / Western Electric)?",
+      "lang": "en",
+      "expectSourceContains": ["spc", "statistical", "control"],
+      "expectKeywords": ["Nelson", "Western Electric", "SPC", "control chart", "rule"]
+    },
+    {
+      "id": "q4",
+      "question": "How does root cause analysis work in this system?",
+      "lang": "en",
+      "expectSourceContains": ["rca", "root", "cause", "analysis", "insight"],
+      "expectKeywords": ["root cause", "RCA", "pareto", "top factor"]
+    },
+    {
+      "id": "q5",
+      "question": "Cách phân quyền người dùng và vai trò?",
+      "lang": "vi",
+      "expectSourceContains": ["permission", "role", "user", "auth", "phan-quyen"],
+      "expectKeywords": ["phân quyền", "vai trò", "role", "permission"]
+    },
+    {
+      "id": "q6",
+      "question": "Solder bridge defect — likely causes and corrective actions?",
+      "lang": "en",
+      "expectSourceContains": ["defect", "solder", "rca", "incident", "quality"],
+      "expectKeywords": ["solder", "bridge", "cause", "stencil", "paste"]
+    },
+    {
+      "id": "q7",
+      "question": "Làm sao xem báo cáo năng suất (OEE) theo máy?",
+      "lang": "vi",
+      "expectSourceContains": ["oee", "report", "dashboard", "production", "analytics"],
+      "expectKeywords": ["OEE", "năng suất", "báo cáo", "hiệu suất"]
+    },
+    {
+      "id": "q8",
+      "question": "Which API endpoint returns inspection results for a lot?",
+      "lang": "en",
+      "expectSourceContains": ["router", "inspection", "api", "lot"],
+      "expectKeywords": ["/api/", "inspection", "lot", "endpoint", "router"]
+    },
+    {
+      "id": "q9",
+      "question": "Hệ thống lưu ảnh AOI và embedding ở đâu?",
+      "lang": "vi",
+      "expectSourceContains": ["image", "embedding", "aoi", "vector", "knowledge"],
+      "expectKeywords": ["ảnh", "image", "embedding", "vector", "DINOv2"]
+    },
+    {
+      "id": "q10",
+      "question": "How to configure measurement points for a product model?",
+      "lang": "en",
+      "expectSourceContains": ["measurement", "product", "model", "points"],
+      "expectKeywords": ["measurement point", "product model", "tolerance", "spec"]
+    },
+    {
+      "id": "q11",
+      "question": "Misalignment / component shift trên máy gắn linh kiện do nguyên nhân gì?",
+      "lang": "vi",
+      "expectSourceContains": ["defect", "rca", "placement", "incident", "quality"],
+      "expectKeywords": ["lệch", "misalignment", "placement", "calibration", "nguyên nhân"]
+    },
+    {
+      "id": "q12",
+      "question": "What does the AI watcher / orchestration do?",
+      "lang": "en",
+      "expectSourceContains": ["watcher", "orchestration", "ai", "insight"],
+      "expectKeywords": ["watcher", "orchestration", "insight", "hypothesis", "advisory"]
+    }
+  ]
+}

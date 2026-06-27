@@ -24,7 +24,8 @@
     "kb:sync": "node scripts/ai-kb/extract-codebase-knowledge.mjs && node scripts/ai-kb/build-knowledge-chunks.mjs && node scripts/ai-kb/embed-incremental.mjs && node scripts/ai-kb/build-semantic-graph.mjs",
     "kb:graph": "node scripts/ai-kb/build-semantic-graph.mjs",
     "kb:phase1": "node scripts/ai-kb/run-phase1.mjs",
-    "kb:test": "node scripts/ai-kb/test-phase2-api.mjs"
+    "kb:test": "node scripts/ai-kb/test-phase2-api.mjs",
+    "kb:eval": "node scripts/ai-kb/eval-rag.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1019.0",
