@@ -106,6 +106,24 @@ interface PipelineOptions {
   framework?: string;
   gateEpsilon: number;
   createdBy?: number;
+  /**
+   * B5.2 PROMOTION GATE — set true ONLY for an AUTOMATED (cron/self-learning)
+   * retrain. In that context, swapping the production model is additionally
+   * gated by env AI_AUTO_PROMOTE_ENABLED (default OFF): even a gate-PASS version
+   * is left as READY for human/canary promotion, never silently activated.
+   * Human-initiated pipelines (tRPC startPipeline) leave this false and keep the
+   * existing behavior (gate PASS ⇒ activate), because that IS the explicit human go.
+   */
+  autoContext?: boolean;
+}
+
+/**
+ * Whether an AUTOMATED retrain is allowed to swap the production (ACTIVE) model.
+ * Default OFF — automated promotion requires BOTH the eval quality gate to PASS
+ * AND this canary/promotion flag to be explicitly enabled. Fail-safe.
+ */
+function autoPromoteEnabled(): boolean {
+  return String(process.env.AI_AUTO_PROMOTE_ENABLED ?? "false").toLowerCase() === "true";
 }
 
 /**
@@ -218,12 +236,20 @@ export async function runTrainingPipeline(jobId: number, options: PipelineOption
     await db.updateTrainingJob(jobId, { validationMetrics, progress: 90 });
 
     // ── Stage 5: Create model_versions with REAL metrics ──
-    const versionStatus = compare.gate.pass ? "ACTIVE" : "READY";
+    // PROMOTION GATE: a version is activated iff the eval quality gate passes AND
+    // — when this is an AUTOMATED retrain — the AI_AUTO_PROMOTE_ENABLED flag is on.
+    // Automated retrains otherwise land as READY for human/canary promotion, so no
+    // production model is ever swapped silently.
+    const promotionAllowed = compare.gate.pass && (!options.autoContext || autoPromoteEnabled());
+    const versionStatus = promotionAllowed ? "ACTIVE" : "READY";
+    const gateNote = compare.gate.pass && options.autoContext && !autoPromoteEnabled()
+      ? " (auto-promote OFF → left READY for human/canary promotion)"
+      : "";
     const created = await createModelVersion({
       modelId: job.modelId,
       version: job.targetVersion,
       filePath: candidatePath,
-      changeLog: `Tier-1 ${options.strategy} training (job ${jobId}). Gate: ${compare.gate.pass ? "PASS" : "FAIL"} — ${compare.gate.reason}`,
+      changeLog: `Tier-1 ${options.strategy} training (job ${jobId}). Gate: ${compare.gate.pass ? "PASS" : "FAIL"} — ${compare.gate.reason}${gateNote}`,
       metrics: {
         accuracy: compare.candidate.accuracy,
         precision: compare.candidate.precision,
@@ -239,8 +265,8 @@ export async function runTrainingPipeline(jobId: number, options: PipelineOption
       evalReport: compare as unknown,
     } as any);
 
-    // ── Stage 6: Activate iff the quality gate passed ──
-    if (compare.gate.pass && created) {
+    // ── Stage 6: Activate iff the promotion gate allows it (see Stage 5) ──
+    if (promotionAllowed && created) {
       await activateModelVersion(job.modelId, created.id, job.targetVersion);
       evictSessionCache(job.modelId);
     }

@@ -19,6 +19,8 @@ import { buildDataset } from "../services/aiDatasetBuilder";
 import { evaluateModelVersion, compareBeforeAfter, evaluateQualityGate } from "../services/aiEvalHarness";
 import { scanInferenceForUncertainty, scanCommitteeDisagreement } from "../services/aiActiveLearningAuto";
 import { createTrainingJob, checkAutoRetrainTrigger } from "../services/aiTrainingPipeline";
+import { listModelCards, generateModelCard, seedPortfolioCards } from "../services/aiModelCard";
+import { checkConfidenceDrift, getDriftMetrics } from "../services/aiDriftMonitor";
 
 export const aiEvalRouter = router({
   // ─── Dataset materialization ────────────────────────────────
@@ -119,6 +121,38 @@ export const aiEvalRouter = router({
   autoRetrainCheck: protectedProcedure
     .input(z.object({ modelId: z.number() }))
     .query(({ input }) => checkAutoRetrainTrigger(input.modelId)),
+
+  // ─── B5.4 Governance: list model cards (Qwen3 portfolio + registered) ─
+  modelCards: protectedProcedure.query(() => listModelCards()),
+
+  // ─── B5.4: (re)generate + persist a card for one registered model ─────
+  generateModelCard: adminProcedure
+    .input(z.object({ modelId: z.number() }))
+    .mutation(async ({ input }) => {
+      const card = await generateModelCard(input.modelId);
+      if (!card) throw new TRPCError({ code: "NOT_FOUND", message: `Model ${input.modelId} not found` });
+      return card;
+    }),
+
+  // ─── B5.4: seed/refresh the Qwen3 portfolio cards (idempotent) ────────
+  seedPortfolioCards: adminProcedure.mutation(() => seedPortfolioCards()),
+
+  // ─── B5.2 Drift: confidence-distribution drift check (advisory-only) ──
+  driftCheck: protectedProcedure
+    .input(z.object({
+      modelId: z.number(),
+      modelVersion: z.string().optional(),
+      // default true: persist an advisory model_drift_alerts row on drift.
+      emitAlert: z.boolean().optional(),
+    }))
+    .mutation(({ input }) => checkConfidenceDrift({
+      modelId: input.modelId,
+      modelVersion: input.modelVersion,
+      emitAlert: input.emitAlert,
+    })),
+
+  // ─── B5.2 Drift: in-memory detection counters (telemetry) ─────────────
+  driftMetrics: protectedProcedure.query(() => getDriftMetrics()),
 
   // ─── Kick off a full Tier-1 training pipeline ───────────────
   startPipeline: adminProcedure

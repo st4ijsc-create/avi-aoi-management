@@ -21,6 +21,7 @@ import { aiModels } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { scanInferenceForUncertainty } from "./aiActiveLearningAuto";
 import { checkAutoRetrainTrigger } from "./aiTrainingPipeline";
+import { checkConfidenceDrift, isDriftMonitorEnabled } from "./aiDriftMonitor";
 
 const ENABLED = String(process.env.AI_SELF_LEARNING_ENABLED ?? "false").toLowerCase() === "true";
 const CRON = process.env.AI_SELF_LEARNING_CRON || "0 3 * * *";
@@ -32,14 +33,14 @@ const AUTORETRAIN = String(process.env.AI_SELF_LEARNING_AUTORETRAIN ?? "false").
 
 let job: cron.ScheduledTask | null = null;
 let lastRunAt: Date | null = null;
-let lastRunStats: { models: number; enqueued: number; retrainFlagged: number; durationMs: number } | null = null;
+let lastRunStats: { models: number; enqueued: number; retrainFlagged: number; driftFlagged: number; durationMs: number } | null = null;
 
 export async function runSelfLearningScanOnce() {
   const start = Date.now();
   const db = await getDb();
   if (!db) {
     console.warn("[aiSelfLearningScheduler] db unavailable, skipping");
-    return { models: 0, enqueued: 0, retrainFlagged: 0, durationMs: 0 };
+    return { models: 0, enqueued: 0, retrainFlagged: 0, driftFlagged: 0, durationMs: 0 };
   }
 
   const models = await db.select({ id: aiModels.id }).from(aiModels).where(eq(aiModels.status, "ACTIVE"));
@@ -47,6 +48,7 @@ export async function runSelfLearningScanOnce() {
 
   let enqueued = 0;
   let retrainFlagged = 0;
+  let driftFlagged = 0;
 
   for (const m of models) {
     try {
@@ -57,6 +59,17 @@ export async function runSelfLearningScanOnce() {
         maxItems: MAX_ITEMS,
       });
       enqueued += res.enqueued;
+
+      // B5.2 — advisory confidence-drift check. Self-gating: a safe no-op unless
+      // AI_DRIFT_MONITOR_ENABLED is on. Emits a model_drift_alerts row on drift;
+      // NEVER swaps/retrains a model.
+      if (isDriftMonitorEnabled()) {
+        const drift = await checkConfidenceDrift({ modelId: m.id });
+        if (drift.drift) {
+          driftFlagged++;
+          console.log(`[aiSelfLearningScheduler] model ${m.id} confidence drift (${drift.severity}): ${drift.reasons.join("; ")}`);
+        }
+      }
 
       if (AUTORETRAIN) {
         const trigger = await checkAutoRetrainTrigger(m.id);
@@ -74,7 +87,7 @@ export async function runSelfLearningScanOnce() {
 
   const durationMs = Date.now() - start;
   lastRunAt = new Date();
-  lastRunStats = { models: models.length, enqueued, retrainFlagged, durationMs };
+  lastRunStats = { models: models.length, enqueued, retrainFlagged, driftFlagged, durationMs };
   console.log(`[aiSelfLearningScheduler] done in ${durationMs}ms — ${enqueued} enqueued across ${models.length} models`);
   return lastRunStats;
 }

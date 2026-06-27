@@ -483,6 +483,25 @@ export function validateGgufFile(filePath: string): { sizeBytes: number } {
 }
 
 /**
+ * B6.2 — Best-effort check that a GGUF model basename (or filename) resolves to a real file
+ * on disk inside GGUF_MODELS_DIR / uploads. Used by the Model Router as a FAIL-SAFE before
+ * routing the hardest tasks to an optional Thinking model: if the file is absent we must fall
+ * back to the default deep model rather than attempt a load that throws. NEVER throws — returns
+ * false on any error or if the input is empty.
+ */
+export function ggufModelFileExists(modelIdOrFile?: string): boolean {
+  const v = (modelIdOrFile || "").trim();
+  if (!v) return false;
+  try {
+    const file = /\.gguf$/i.test(v) ? v : `${v}.gguf`;
+    resolveModelPath(file); // throws if not found
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Load a GGUF model into memory and create a context/session
  */
 export async function loadGgufModel(config: GgufModelConfig): Promise<string> {
@@ -1467,6 +1486,69 @@ function assertEmbeddingDim(dim: number, resolvedId: string): void {
         `or adjust GGUF_EMBED_DIM. ` +
         `[VI] Sai số chiều embedding (${dim}≠${GGUF_EMBED_DIM}) — cấu hình GGUF_EMBED_MODEL trỏ tới mxbai.`,
     );
+  }
+}
+
+// ─── Thinking / reasoning model output handling (B6.2) ─────────
+
+/**
+ * B6.2 — Strip a "Thinking" model's chain-of-thought block from its final answer.
+ *
+ * Qwen3-*-Thinking models emit their reasoning inside `<think>...</think>` before the
+ * user-facing answer. We must NEVER leak that raw reasoning into the product UI, so the
+ * caller passes generated text through this helper to separate the two parts.
+ *
+ * Behaviour:
+ *  - Removes every `<think>…</think>` pair (case-insensitive, multi-line, multiple blocks).
+ *  - Tolerates an UNCLOSED `<think>` (output truncated by maxTokens): everything from the
+ *    opening tag to end-of-string is treated as reasoning and dropped.
+ *  - Tolerates a stray leading `</think>` with no opening tag (some chat templates pre-open
+ *    the think block) by dropping everything up to and including that first `</think>`.
+ *  - Fail-safe: any unexpected input returns the original text rather than throwing, and if
+ *    stripping would leave an EMPTY answer we keep the original (better a noisy answer than none).
+ *
+ * Returns both the cleaned `answer` and the extracted `thinking` (joined, for optional
+ * audit/telemetry) so a caller can log reasoning separately without exposing it.
+ */
+export function stripThinking(text: string): { answer: string; thinking: string } {
+  if (typeof text !== "string" || text.length === 0) {
+    return { answer: text ?? "", thinking: "" };
+  }
+  try {
+    const thoughts: string[] = [];
+
+    // 1) Stray leading "</think>" without a matching "<think>" → everything before it is reasoning.
+    let work = text;
+    const firstOpen = work.search(/<think>/i);
+    const firstClose = work.search(/<\/think>/i);
+    if (firstClose !== -1 && (firstOpen === -1 || firstClose < firstOpen)) {
+      thoughts.push(work.slice(0, firstClose));
+      work = work.slice(firstClose + "</think>".length);
+    }
+
+    // 2) Remove all well-formed <think>…</think> pairs.
+    work = work.replace(/<think>([\s\S]*?)<\/think>/gi, (_m, inner) => {
+      thoughts.push(String(inner));
+      return "";
+    });
+
+    // 3) Unclosed trailing <think> (truncated by maxTokens) → drop to end.
+    const danglingOpen = work.search(/<think>/i);
+    if (danglingOpen !== -1) {
+      thoughts.push(work.slice(danglingOpen + "<think>".length));
+      work = work.slice(0, danglingOpen);
+    }
+
+    const answer = work.trim();
+    const thinking = thoughts.join("\n").trim();
+    // Fail-safe: never return an empty answer if the original had content.
+    if (!answer && text.trim()) {
+      return { answer: text.trim(), thinking };
+    }
+    return { answer, thinking };
+  } catch {
+    // Never let reasoning-stripping break a generation result.
+    return { answer: text, thinking: "" };
   }
 }
 

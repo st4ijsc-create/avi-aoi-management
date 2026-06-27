@@ -16,7 +16,18 @@
  * Khi tải 3B + nâng GPU (A1bis): set GGUF_FAST_MODEL → Tier 1 kích hoạt thật.
  *
  * Tham khảo thiết kế: docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md (§A4–A5).
+ *
+ * B6.2 — Thinking/reasoning tier (flag-gated, OFF by default; see doc 04 §A3/§B6). When BOTH
+ * AI_THINKING_TIER_ENABLED is on AND GGUF_THINKING_MODEL points to a real GGUF file, the HARDEST
+ * reasoning tasks (difficulty "hard" AND task ∈ {rca, report}) are routed to the Thinking model
+ * (Qwen3-30B-A3B-Thinking) instead of the default Instruct deep model. Same size as the deep model
+ * → cannot be hot simultaneously; the engine loads it on demand and LRU-evicts. When the flag is
+ * off, the model is unset, or the file is missing → byte-identical to today (deep = GGUF_DEFAULT_MODEL).
  */
+
+// Lightweight, side-effect-free import: only a fs existence check is used here. The engine's
+// module top-level does NOT load any model, so importing it keeps route() pure/synchronous.
+import { ggufModelFileExists } from "./aiGgufEngine";
 
 export type TaskKind =
   | "chat"
@@ -60,6 +71,12 @@ export interface RouteDecision {
    * Lưu ý: nếu model đã nóng sẵn, context được dùng chung — hint chỉ có hiệu lực ở lần nạp đầu.
    */
   contextSize?: number;
+  /**
+   * B6.2 — true when the decision routed to the Thinking model (GGUF_THINKING_MODEL). The caller
+   * MUST pass the model output through aiGgufEngine.stripThinking() so raw `<think>…</think>`
+   * reasoning never leaks into user-facing text. false/absent → ordinary model, no stripping needed.
+   */
+  thinking?: boolean;
   reason: string;
 }
 
@@ -85,6 +102,61 @@ function fastModelId(): string | undefined {
 function defaultModelId(): string | undefined {
   const v = (process.env.GGUF_DEFAULT_MODEL || "").trim();
   return v.length ? stripGguf(v) : undefined;
+}
+
+// ─── B6.2 — Thinking / reasoning tier resolution ───────────────
+/** Master switch (opt-in). Default OFF so even with a model set, the tier stays inert. */
+function thinkingTierEnabled(): boolean {
+  const v = (process.env.AI_THINKING_TIER_ENABLED || "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+/** Basename of the Thinking model (GGUF_THINKING_MODEL) if configured; undefined if unset. */
+function thinkingModelId(): string | undefined {
+  const v = (process.env.GGUF_THINKING_MODEL || "").trim();
+  return v.length ? stripGguf(v) : undefined;
+}
+
+/**
+ * Which tasks may escalate to the Thinking model. Conservative: ONLY deep RCA/report — these
+ * are the long-chain reasoning jobs the Thinking variant helps most, and they tolerate the extra
+ * latency + cold-load + token budget. "planning"-style requests surface as rca/report here
+ * (the router has no separate "planning" TaskKind; isWrite drafts go through Tier 4 with the deep
+ * model and stay there, NOT the thinking model, to keep HITL latency predictable).
+ */
+const THINKING_TASKS: ReadonlySet<TaskKind> = new Set<TaskKind>(["rca", "report"]);
+
+/**
+ * Resolve the deep-tier model for a HARD task. Returns the Thinking model basename ONLY when
+ * ALL of: master flag on · GGUF_THINKING_MODEL set · the file exists on disk · task qualifies.
+ * Otherwise returns the default deep model (byte-identical to legacy behaviour). Fail-safe:
+ * a missing model file logs once and falls back — it NEVER throws and NEVER routes to a model
+ * that cannot be loaded.
+ */
+function deepModelFor(task: TaskKind, difficulty: Difficulty): { id: string | undefined; thinking: boolean } {
+  const fallback = { id: defaultModelId(), thinking: false };
+  if (difficulty !== "hard") return fallback;
+  if (!THINKING_TASKS.has(task)) return fallback;
+  if (!thinkingTierEnabled()) return fallback;
+  const tid = thinkingModelId();
+  if (!tid) return fallback;
+  if (!ggufModelFileExists(tid)) {
+    warnThinkingFileMissing(tid);
+    return fallback;
+  }
+  return { id: tid, thinking: true };
+}
+
+// Log a missing thinking-model file at most once per filename to avoid log spam.
+const warnedMissingThinking = new Set<string>();
+function warnThinkingFileMissing(tid: string): void {
+  if (warnedMissingThinking.has(tid)) return;
+  warnedMissingThinking.add(tid);
+  console.warn(
+    `[aiModelRouter] AI_THINKING_TIER_ENABLED is on but GGUF_THINKING_MODEL "${tid}.gguf" was not ` +
+      `found in GGUF_MODELS_DIR — falling back to the default deep model (GGUF_DEFAULT_MODEL). ` +
+      `Download the Thinking GGUF or unset the flag. See docs/ECOSYSTEM/PHASE_B_AI_BRAIN_RUNBOOK.md.`,
+  );
 }
 
 // ─── Difficulty classifier (Tier-0, heuristic, no LLM) ─────────
@@ -180,8 +252,18 @@ export function route(input: RouteInput): RouteDecision {
     case "medium":
       return decide(2, defaultModelId(), false, 1024, 0.5, wantJson, "medium → Tier 2 reasoning (7B)", 4096);
     case "hard":
-    default:
-      return decide(2, defaultModelId(), false, 1536, 0.3, wantJson, "hard → Tier 2 reasoning (7B) + RAG/retry", 8192);
+    default: {
+      // B6.2 — hardest reasoning may escalate to the Thinking model (rca/report only, flag-gated,
+      // file-checked). When it does, give it a larger token budget (reasoning + answer) since the
+      // `<think>` block consumes tokens before the final answer; the caller strips it afterwards.
+      const deep = deepModelFor(input.task, difficulty);
+      if (deep.thinking) {
+        return decide(2, deep.id, false, 4096, 0.6, wantJson,
+          `hard ${input.task} → Tier 2 Thinking model (GGUF_THINKING_MODEL); strip <think> before display`,
+          8192, true);
+      }
+      return decide(2, deep.id, false, 1536, 0.3, wantJson, "hard → Tier 2 reasoning (7B) + RAG/retry", 8192);
+    }
   }
 }
 
@@ -194,8 +276,9 @@ function decide(
   jsonMode: boolean,
   reason: string,
   contextSize?: number,
+  thinking?: boolean,
 ): RouteDecision {
-  const d: RouteDecision = { tier, modelId, requiresHitl, maxTokens, temperature, jsonMode, contextSize, reason };
+  const d: RouteDecision = { tier, modelId, requiresHitl, maxTokens, temperature, jsonMode, contextSize, thinking, reason };
   recordDecision(d);
   return d;
 }
