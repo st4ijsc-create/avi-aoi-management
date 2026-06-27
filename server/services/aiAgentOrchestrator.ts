@@ -42,8 +42,12 @@ function maxWritesPerSession(): number {
   return Math.max(1, Number(process.env.AGENT_MAX_WRITES_PER_SESSION ?? 3) || 3);
 }
 
-/** Roles permitted to run agentic multi-step automation. */
-const AGENTIC_ROLES = new Set(["manager", "it_admin", "admin"]);
+/** Roles permitted to run agentic multi-step automation.
+ *  B1 go-live 2026-06-27: added the engineering roles supervisor + maintenance
+ *  (technician) per user decision — they run multi-step sessions; every write step
+ *  still goes through HITL propose→confirm gated by per-tool RBAC. (manager/it_admin
+ *  are legacy labels not in roleEnum; kept harmless.) */
+const AGENTIC_ROLES = new Set(["manager", "it_admin", "admin", "supervisor", "maintenance"]);
 
 /** Session TTL (mirrors the pending-action 5' but generous for a multi-step flow). */
 const SESSION_TTL_MS = 30 * 60 * 1000;

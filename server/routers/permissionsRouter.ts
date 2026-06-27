@@ -148,6 +148,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     // Settings
     { category: 'settings', moduleName: 'settings_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_alerts', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    // B1 go-live 2026-06-27: engineering agentic-write (update_product_quality_target).
+    { category: 'settings', moduleName: 'settings_products', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_shifts', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     // Production
     { category: 'production', moduleName: 'production_orders', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
@@ -228,6 +230,9 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, any[]> = {
     { category: 'mqtt', moduleName: 'mqtt_monitoring', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_view', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
     { category: 'settings', moduleName: 'settings_machines', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+    // B1 go-live 2026-06-27: engineering agentic-write (adjust/configure/create NG threshold + product target).
+    { category: 'settings', moduleName: 'settings_alerts', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
+    { category: 'settings', moduleName: 'settings_products', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: false },
     { category: 'machine_monitoring', moduleName: 'machine_status', canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
     { category: 'machine_monitoring', moduleName: 'machine_alerts', canView: true, canCreate: false, canEdit: true, canDelete: false, canExport: false },
     { category: 'machine_monitoring', moduleName: 'machine_downtime', canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
