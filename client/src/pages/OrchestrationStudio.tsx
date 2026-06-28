@@ -53,6 +53,8 @@ import {
   XCircle,
   Gauge,
   RefreshCw,
+  Sparkles,
+  Wand2,
 } from "lucide-react";
 import {
   type StudioStep,
@@ -681,7 +683,7 @@ function TwinView({ sim, machines, t }: { sim: SimResult; machines: EquipmentRow
 // ════════════════════════════════════════════════════════════════════════════
 
 export default function OrchestrationStudio() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { hasPermission } = usePermissions();
   const canControl = hasPermission("machine_control", "canCreate");
 
@@ -689,8 +691,16 @@ export default function OrchestrationStudio() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sim, setSim] = useState<SimResult | null>(null);
 
+  // ── E5: AI advisor state ──
+  const [aiGoal, setAiGoal] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiRationale, setAiRationale] = useState<string | null>(null);
+  const [optimizePreview, setOptimizePreview] = useState<{ def: StudioDef; diff: string[]; rationale: string } | null>(null);
+
   const statusQ = trpc.orchestration.status.useQuery();
   const foeEnabled = statusQ.data?.enabled ?? false;
+  const aiStatusQ = trpc.aiOrchestration.status.useQuery();
+  const aiEnabled = aiStatusQ.data?.enabled ?? false;
 
   const equipmentQ = trpc.equipment.listEquipment.useQuery({ limit: 500 });
   const machines = (equipmentQ.data ?? []) as unknown as EquipmentRow[];
@@ -775,6 +785,78 @@ export default function OrchestrationStudio() {
   const runDeploy = () => deployM.mutate({ definition: serializeDef(def) as Record<string, unknown> });
   const runStart = () => startRunM.mutate({ workflowRef: def.ref, params: {} });
 
+  // ── E5: AI advisor — propose / optimize (HITL: AI only proposes; human deploys) ──
+  const i18nLang = (((i18n.language || "vi").slice(0, 2)) as "vi" | "en" | "zh");
+
+  const aiSuggest = async () => {
+    setAiBusy(true);
+    setAiRationale(null);
+    try {
+      const res = await utils.aiOrchestration.suggestWorkflow.fetch({
+        goal: aiGoal.trim() || undefined,
+        lang: i18nLang,
+      });
+      if (!res.available) {
+        toast.error(res.message ?? t("studio.aiUnavailable", "Trợ lý AI chưa khả dụng"));
+        return;
+      }
+      if (res.workflow) {
+        // Load the AI proposal into the editor — the human STILL reviews + deploys manually.
+        setDef(cloneDef(res.workflow as unknown as StudioDef));
+        setSelectedId(null);
+        setAiRationale(res.rationale || null);
+        setSim((res.simulation as unknown as SimResult) ?? null);
+        if (res.valid) toast.success(t("studio.aiProposed", "AI đã đề xuất quy trình — hãy xem lại trước khi triển khai"));
+        else toast.warning(res.message ?? t("studio.aiInvalid", "AI chưa tạo được quy trình hợp lệ"));
+      } else {
+        toast.error(res.message ?? t("studio.aiInvalid", "AI chưa tạo được quy trình hợp lệ"));
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const aiOptimize = async () => {
+    setAiBusy(true);
+    try {
+      const res = await utils.aiOrchestration.optimizeWorkflow.fetch({
+        workflow: serializeDef(def) as Record<string, unknown>,
+        goal: aiGoal.trim() || undefined,
+        lang: i18nLang,
+      });
+      if (!res.available) {
+        toast.error(res.message ?? t("studio.aiUnavailable", "Trợ lý AI chưa khả dụng"));
+        return;
+      }
+      if (res.workflow) {
+        setSim((res.simulation as unknown as SimResult) ?? null);
+        setOptimizePreview({
+          def: cloneDef(res.workflow as unknown as StudioDef),
+          diff: res.diff ?? [],
+          rationale: res.rationale || "",
+        });
+        if (!res.valid) toast.warning(res.message ?? t("studio.aiInvalid", "AI chưa tạo được quy trình hợp lệ"));
+      } else {
+        toast.error(res.message ?? t("studio.aiInvalid", "AI chưa tạo được quy trình hợp lệ"));
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const acceptOptimized = () => {
+    if (!optimizePreview) return;
+    setDef(cloneDef(optimizePreview.def));
+    setSelectedId(null);
+    setAiRationale(optimizePreview.rationale || null);
+    setOptimizePreview(null);
+    toast.success(t("studio.aiOptimizeApplied", "Đã áp dụng bản tối ưu của AI"));
+  };
+
   return (
     <DashboardLayout>
       <div className="flex flex-col gap-4 p-4 md:p-6">
@@ -807,6 +889,90 @@ export default function OrchestrationStudio() {
             <span>{t("studio.foeOff", "FOE chưa bật (FOE_ENABLED) — vẫn soạn & mô phỏng được, nhưng deploy/chạy bị tắt.")}</span>
           </div>
         )}
+
+        {/* E5 — AI advisor (propose / optimize). HITL: AI only proposes; the human deploys. */}
+        <Card className="border-violet-500/30 bg-violet-500/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Sparkles className="h-4 w-4 text-violet-600" />
+              {t("studio.aiTitle", "Trợ lý AI điều phối")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-col gap-2 md:flex-row md:items-end">
+              <div className="flex-1 space-y-1.5">
+                <Label className="text-xs">{t("studio.aiGoal", "Mục tiêu / vấn đề (cho AI)")}</Label>
+                <Input
+                  value={aiGoal}
+                  onChange={(e) => setAiGoal(e.target.value)}
+                  placeholder={t("studio.aiGoalPlaceholder", "VD: AOI báo NG → robot gắp loại → băng tải chuyển; thêm cổng duyệt trước khi dừng line")}
+                  disabled={!aiEnabled || aiBusy}
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="border-violet-500/40"
+                  onClick={() => void aiSuggest()}
+                  disabled={!aiEnabled || aiBusy}
+                  title={!aiEnabled ? t("studio.aiOff", "Bật AI_ORCHESTRATION_ADVISOR_ENABLED để dùng") : undefined}
+                >
+                  <Sparkles className="mr-1.5 h-4 w-4" /> {t("studio.aiSuggest", "🤖 AI gợi ý quy trình")}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="border-violet-500/40"
+                  onClick={() => void aiOptimize()}
+                  disabled={!aiEnabled || aiBusy || def.steps.length === 0}
+                  title={!aiEnabled ? t("studio.aiOff", "Bật AI_ORCHESTRATION_ADVISOR_ENABLED để dùng") : undefined}
+                >
+                  <Wand2 className="mr-1.5 h-4 w-4" /> {t("studio.aiOptimize", "🤖 AI tối ưu")}
+                </Button>
+              </div>
+            </div>
+
+            {!aiStatusQ.isLoading && !aiEnabled && (
+              <p className="text-xs text-muted-foreground">
+                {t("studio.aiDisabledHint", "Trợ lý AI đang TẮT (AI_ORCHESTRATION_ADVISOR_ENABLED). AI chỉ ĐỀ XUẤT — con người luôn xem lại & triển khai thủ công.")}
+              </p>
+            )}
+
+            {aiRationale && (
+              <div className="rounded-md border border-violet-500/30 bg-card p-2 text-xs">
+                <span className="font-semibold text-violet-700">{t("studio.aiRationale", "Lý giải của AI")}: </span>
+                {aiRationale}
+              </div>
+            )}
+
+            {/* Optimize preview — accept (replace editor) or discard. */}
+            {optimizePreview && (
+              <div className="space-y-2 rounded-md border border-violet-500/40 bg-card p-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-violet-700">
+                  <Wand2 className="h-4 w-4" /> {t("studio.aiOptimizePreview", "Bản tối ưu do AI đề xuất")}
+                </div>
+                {optimizePreview.rationale && (
+                  <p className="text-xs text-muted-foreground">{optimizePreview.rationale}</p>
+                )}
+                {optimizePreview.diff.length > 0 && (
+                  <ul className="ml-4 list-disc text-xs">
+                    {optimizePreview.diff.map((d, i) => <li key={i}>{d}</li>)}
+                  </ul>
+                )}
+                <div className="flex gap-2">
+                  <Button size="sm" className="bg-violet-600 hover:bg-violet-700" onClick={acceptOptimized}>
+                    {t("studio.aiAccept", "Áp dụng vào trình soạn")}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setOptimizePreview(null)}>
+                    {t("studio.aiDiscard", "Bỏ qua")}
+                  </Button>
+                </div>
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              {t("studio.aiHitlNote", "HITL: AI chỉ đề xuất quy trình + mô phỏng trên bản sao số. Việc lưu (deploy) & chạy luôn do con người thực hiện thủ công.")}
+            </p>
+          </CardContent>
+        </Card>
 
         {/* TOP — workflow meta + params */}
         <Card>

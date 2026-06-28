@@ -319,3 +319,10 @@ export const orchestrationRunStepStatusEnum = pgEnum("orchestrationrunstepstatus
   "skipped",
   "compensated",
 ]);
+
+// === Phase E4 — Factory Control Plane: EDGE CONTROL RUNTIME ===
+// Connectivity/health state of a registered edge control runtime.
+//   online   — heartbeat within the freshness window.
+//   offline  — no heartbeat past the stale threshold (set by the central checker).
+//   degraded — the node is up but self-reports impaired (buffering offline / partial).
+export const edgeNodeStatusEnum = pgEnum("edgenodestatusenum", ["online", "offline", "degraded"]);

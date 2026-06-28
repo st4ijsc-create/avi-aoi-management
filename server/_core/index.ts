@@ -4467,6 +4467,16 @@ async function startServer() {
     console.error("[EdgeStale] init failed:", (err as any)?.message || err);
   }
 
+  // E4 — Edge control runtime: central-side node heartbeat checker (marks edge nodes
+  // online→offline when their heartbeat goes stale). Flag-gated no-op: when
+  // EDGE_RUNTIME_ENABLED is off the scheduler starts no timer. Additive + fail-safe.
+  try {
+    const { startEdgeNodeHealthChecker } = await import("../services/edge/edgeNodeHealthScheduler");
+    startEdgeNodeHealthChecker();
+  } catch (err) {
+    console.error("[EdgeNodeHealth] init failed:", (err as any)?.message || err);
+  }
+
   // QW3 — Materialized view refresh (machine_status_latest, hourly_yield_cache).
   // Disabled by default; opt in via MATVIEW_REFRESH_ENABLED=true after 0111.
   try {

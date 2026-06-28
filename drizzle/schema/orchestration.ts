@@ -53,6 +53,12 @@ export const orchestrationRuns = pgTable("orchestration_runs", {
   contextJson: jsonb("contextJson").$type<Record<string, unknown>>(),
   /** The step the run is currently AT (a hitl_gate / held step, when paused). */
   currentStepId: varchar("currentStepId", { length: 128 }),
+  /**
+   * Phase E4 — OPTIONAL: the edge node a run is DELEGATED to (null = central).
+   * Additive nullable column (migration 0128). When set, an edge runtime hosts the
+   * FOE execution near the line and SYNCS step results back to central.
+   */
+  edgeNodeId: integer("edgeNodeId"),
   startedBy: integer("startedBy"),
   startedAt: timestamp("startedAt"),
   finishedAt: timestamp("finishedAt"),

@@ -438,6 +438,42 @@ export function createV1Router(): Router {
     }),
   );
 
+  // ── Edge control runtime (E4) — a headless edge node syncs run results back. ──
+  // Authenticated via a scoped API key with the "edge:sync" scope. Idempotent
+  // (reconcile upserts on runId+stepId). Flag-gated by EDGE_RUNTIME_ENABLED (off →
+  // a structured `disabled` envelope). HONEST: coordination only; safety stays on PLC.
+  r.post(
+    "/edge/sync",
+    requireScope(API_SCOPES.EDGE_SYNC),
+    wrap(async (req, res) => {
+      const { syncRunResult } = await import("../../services/edge/edgeCoordinator");
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      if (!body.runId || typeof body.runId !== "number") {
+        throw new ApiHttpError(400, "bad_request", "Body field `runId` (number) is required.");
+      }
+      // The node identity comes from the body but the API key is the real auth.
+      const payload = {
+        edgeNodeCode: typeof body.edgeNodeCode === "string" ? body.edgeNodeCode : (req.apiPrincipal?.name ?? "edge"),
+        runId: body.runId,
+        status: typeof body.status === "string" ? body.status : "running",
+        error: (body.error as string | null) ?? null,
+        currentStepId: (body.currentStepId as string | null) ?? null,
+        contextJson: (body.contextJson as Record<string, unknown> | null) ?? null,
+        startedAt: (body.startedAt as string | null) ?? null,
+        finishedAt: (body.finishedAt as string | null) ?? null,
+        steps: Array.isArray(body.steps) ? (body.steps as never[]) : [],
+      };
+      const result = await syncRunResult(payload as never);
+      if (!result.enabled) {
+        return sendError(res, 503, "edge_disabled", "Edge runtime is disabled (EDGE_RUNTIME_ENABLED).", { phase: "E4" });
+      }
+      if (!result.ok) {
+        throw new ApiHttpError(400, "edge_sync_failed", result.message ?? "Edge sync failed.");
+      }
+      sendOk(res, result.data, 202);
+    }),
+  );
+
   // GET /openapi.json — the published contract (no auth; describes only).
   r.get(
     "/openapi.json",

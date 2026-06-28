@@ -30,3 +30,4 @@ export * from "./aiInsight";
 export * from "./kb";
 export * from "./masterdata";
 export * from "./orchestration";
+export * from "./edge";
