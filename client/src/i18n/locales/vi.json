@@ -7575,6 +7575,8 @@
     "samples": "{{n}} mẫu",
     "degraded": "Chưa đủ mẫu — hãy duyệt thận trọng.",
     "applyBtn": "✅ Áp dụng",
+    "needsReview": "Dữ liệu đo lệch xa giới hạn — có thể sai đơn vị/cấu hình điểm đo. Cần kỹ sư xem lại trước khi áp dụng.",
+    "reviewFirst": "Cần xem lại trước",
     "applied": "Đã áp dụng ngưỡng mới",
     "applyFailed": "Áp dụng thất bại",
     "applyComment": "Áp dụng đề xuất ngưỡng từ AI",

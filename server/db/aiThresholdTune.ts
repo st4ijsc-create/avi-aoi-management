@@ -114,21 +114,32 @@ export async function enumeratePointTuneScopes(params: {
   if (!db) return [];
   const minN = Math.max(1, Math.floor(params.minSamples));
 
-  // Count measurement_samples (the SAME source the advisor / suggestThresholds reads),
-  // so the cron's "enough new data" signal is consistent with the recommendation it will compute.
+  // Count recent values from BOTH sources the advisor uses — measurement_results
+  // (real production, PRIMARY) + measurement_samples (SPC, FALLBACK) — so the cron's
+  // "enough new data" signal is consistent with what recommendForMeasurementPoint reads.
+  const d = Math.max(1, Math.floor(params.days));
   const result = await db.execute(sql`
-    SELECT d."id" AS point_id,
-           d."productModelId" AS product_id,
-           d."machineId" AS machine_id,
-           count(*) AS sample_count
-    FROM measurement_point_defs d
-    JOIN measurement_samples s ON s."pointDefId" = d."id"
-    WHERE ${sinceClauseSamples(params.days)}
-      AND d."lowerLimit" IS NOT NULL
-      AND d."upperLimit" IS NOT NULL
-    GROUP BY d."id", d."productModelId", d."machineId"
-    HAVING count(*) >= ${minN}
-    ORDER BY count(*) DESC
+    SELECT q.point_id, q.product_id, q.machine_id, q.sample_count
+    FROM (
+      SELECT d."id" AS point_id,
+             d."productModelId" AS product_id,
+             d."machineId" AS machine_id,
+             (
+               (SELECT count(*) FROM measurement_results mr
+                  JOIN product_inspections pi ON pi."id" = mr."inspectionId"
+                 WHERE mr."pointDefId" = d."id"
+                   AND mr."measuredValue" IS NOT NULL
+                   AND pi."inspectionTime" >= NOW() - (${d} || ' days')::interval)
+             + (SELECT count(*) FROM measurement_samples s
+                 WHERE s."pointDefId" = d."id"
+                   AND s."sampledAt" >= NOW() - (${d} || ' days')::interval)
+             ) AS sample_count
+      FROM measurement_point_defs d
+      WHERE d."lowerLimit" IS NOT NULL
+        AND d."upperLimit" IS NOT NULL
+    ) q
+    WHERE q.sample_count >= ${minN}
+    ORDER BY q.sample_count DESC
   `);
 
   const rows = ((result as { rows?: unknown[] }).rows ?? (result as unknown[])) as Array<{

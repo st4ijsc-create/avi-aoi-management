@@ -17,7 +17,7 @@
  * we reuse it for the measurement-point path rather than re-implementing it.
  */
 
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { getDb } from "../db/connection";
 import * as productDb from "../db/product";
 import { suggestThresholds } from "../utils/thresholdSuggestion";
@@ -56,6 +56,10 @@ export interface PointRecommendation {
   confidence: number; // 0..1
   basis: string;
   degraded: boolean;
+  /** True when the measured data is grossly inconsistent with the configured limits
+   *  (likely wrong unit/config) → the recommendation is unreliable; flag for a human
+   *  to review instead of auto-tuning. */
+  needsReview?: boolean;
   note?: string;
 }
 
@@ -254,6 +258,60 @@ async function getNgThresholdRow(id: number) {
  * Recommend LSL/USL/target for a measurement point from recent samples.
  * Reuses suggestThresholds. Honest-degrade when sampleSize < minSamples().
  */
+/**
+ * Read recent measured values for a point.
+ *   PRIMARY  = measurement_results.measuredValue (real production inspection data)
+ *   FALLBACK = measurement_samples.value         (SPC sample table)
+ * When windowDays is omitted, takes the latest `windowSize` values regardless of age
+ * (on-demand advisor — works even when the freshest data is older than a window).
+ * Fail-safe: any error → fall back to samples; never throws.
+ */
+async function getPointValues(
+  pointDefId: number,
+  opts: { windowDays?: number; windowSize: number },
+): Promise<{ values: number[]; source: "results" | "samples" | "none" }> {
+  const since = opts.windowDays ? new Date(Date.now() - opts.windowDays * 24 * 60 * 60 * 1000) : undefined;
+  const db = await getDb();
+  if (db) {
+    try {
+      const where = since
+        ? and(
+            eq(measurementResults.pointDefId, pointDefId),
+            isNotNull(measurementResults.measuredValue),
+            gte(productInspections.inspectionTime, since),
+          )
+        : and(eq(measurementResults.pointDefId, pointDefId), isNotNull(measurementResults.measuredValue));
+      const rows = await db
+        .select({ v: measurementResults.measuredValue })
+        .from(measurementResults)
+        .innerJoin(productInspections, eq(productInspections.id, measurementResults.inspectionId))
+        .where(where)
+        .orderBy(desc(productInspections.inspectionTime))
+        .limit(opts.windowSize);
+      const values: number[] = [];
+      for (const r of rows) {
+        const v = toNum((r as any).v);
+        if (v !== null) values.push(v);
+      }
+      if (values.length > 0) return { values, source: "results" };
+    } catch (err) {
+      console.warn("[aiThresholdAdvisor] measured-values read failed, falling back to samples:", (err as Error)?.message ?? err);
+    }
+  }
+  // Fallback: measurement_samples (SPC).
+  try {
+    const rows = await productDb.listMeasurementSamples({ pointDefId, windowSize: opts.windowSize, fromTs: since });
+    const values: number[] = [];
+    for (const r of rows) {
+      const v = toNum((r as any).value);
+      if (v !== null) values.push(v);
+    }
+    return { values, source: values.length > 0 ? "samples" : "none" };
+  } catch {
+    return { values: [], source: "none" };
+  }
+}
+
 export async function recommendForMeasurementPoint(input: {
   measurementPointId: number;
   productModelId?: number;
@@ -293,17 +351,10 @@ export async function recommendForMeasurementPoint(input: {
     }
 
     const days = input.windowDays ?? 30;
-    const since = input.windowDays ? new Date(Date.now() - days * 24 * 60 * 60 * 1000) : undefined;
-    const rows = await productDb.listMeasurementSamples({
-      pointDefId: input.measurementPointId,
+    const { values, source } = await getPointValues(input.measurementPointId, {
+      windowDays: input.windowDays,
       windowSize: input.windowSize ?? 5000,
-      fromTs: since,
     });
-    const values: number[] = [];
-    for (const r of rows) {
-      const v = toNum((r as any).value);
-      if (v !== null) values.push(v);
-    }
 
     const currentLsl = toNum((def as any).lowerLimit);
     const currentUsl = toNum((def as any).upperLimit);
@@ -321,8 +372,26 @@ export async function recommendForMeasurementPoint(input: {
     const sampleSize = sug.n;
     const degraded = sampleSize < minN;
 
+    // Sanity guard: if the measured data is grossly inconsistent with the configured
+    // limits — process mean outside limits (strongly negative Cpk), or the suggested
+    // range is an absurd multiple of the current one, or the suggested target lands far
+    // outside the current band — the measuredValue likely doesn't share this point's
+    // limit semantics (wrong unit/config). Flag for human review + drop confidence so the
+    // auto-tune cron skips it (no nonsensical proposal).
+    let needsReview = false;
+    if (!degraded && currentLsl !== null && currentUsl !== null && currentUsl > currentLsl) {
+      const curWidth = currentUsl - currentLsl;
+      const recWidth = sug.suggestedUsl - sug.suggestedLsl;
+      needsReview =
+        (sug.currentCpk !== null && sug.currentCpk < -0.5) ||
+        recWidth > 8 * curWidth ||
+        sug.suggestedTarget > currentUsl + curWidth ||
+        sug.suggestedTarget < currentLsl - curWidth;
+    }
+
+    const srcLabel = source === "results" ? "kết quả đo" : source === "samples" ? "mẫu SPC" : "không có dữ liệu";
     const basisParts: string[] = [];
-    basisParts.push(`${sampleSize} mẫu${input.windowDays ? `/${days} ngày` : ""}`);
+    basisParts.push(`${sampleSize} ${srcLabel}${input.windowDays ? `/${days} ngày` : ""}`);
     basisParts.push("p0.135–p99.865 + ±3σ");
     basisParts.push(`shrinkage ${values.length < minN ? "0.5" : "0.2"}`);
     if (degraded) basisParts.push(`chưa đủ mẫu (cần ≥${minN})`);
@@ -346,12 +415,15 @@ export async function recommendForMeasurementPoint(input: {
         projectedCpk: round2(sug.cpk),
       },
       sampleSize,
-      confidence: round2(sug.confidence),
+      confidence: round2(needsReview ? Math.min(sug.confidence, 0.3) : sug.confidence),
       basis: basisParts.join(", "),
       degraded,
-      note: degraded
-        ? `Chỉ có ${sampleSize} mẫu (khuyến nghị ≥${minN}). Đề xuất thiên về giới hạn hiện tại — hãy duyệt thận trọng.`
-        : undefined,
+      needsReview,
+      note: needsReview
+        ? `⚠️ Dữ liệu đo lệch xa giới hạn hiện tại (Cpk hiện tại ${sug.currentCpk?.toFixed(2) ?? "?"}). Có thể sai đơn vị/cấu hình điểm đo — cần kỹ sư xem lại trước khi áp dụng.`
+        : degraded
+          ? `Chỉ có ${sampleSize} mẫu (khuyến nghị ≥${minN}). Đề xuất thiên về giới hạn hiện tại — hãy duyệt thận trọng.`
+          : undefined,
     };
   } catch (err) {
     console.warn("[aiThresholdAdvisor] recommendForMeasurementPoint failed:", err);

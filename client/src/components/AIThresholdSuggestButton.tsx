@@ -98,6 +98,7 @@ export default function AIThresholdSuggestButton({
   const disabled = data?.disabled === true;
   const notFound = data && data.ok === false;
   const degraded = data?.degraded === true;
+  const needsReview = (data as any)?.needsReview === true;
 
   // ── Apply: measurement point → request + approve(apply:true) ──────────────────
   const applyPoint = async () => {
@@ -259,8 +260,16 @@ export default function AIThresholdSuggestButton({
                 <p className="mt-1 leading-snug text-muted-foreground break-words">{data.basis || "—"}</p>
               </div>
 
+              {/* Needs-review note (data inconsistent with limits → block apply) */}
+              {needsReview && (
+                <div className="flex items-start gap-2 rounded-md border border-red-300 bg-red-50 p-2.5 text-xs text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>{data?.note ?? t("thresholdAdvisor.needsReview", "Dữ liệu lệch xa giới hạn — cần kỹ sư xem lại trước khi áp dụng.")}</span>
+                </div>
+              )}
+
               {/* Degraded note */}
-              {degraded && (
+              {degraded && !needsReview && (
                 <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>{data.note ?? t("thresholdAdvisor.degraded", "Chưa đủ mẫu — hãy duyệt thận trọng.")}</span>
@@ -274,9 +283,9 @@ export default function AIThresholdSuggestButton({
                   {t("thresholdAdvisor.applied", "Đã áp dụng ngưỡng mới")}
                 </div>
               ) : (
-                <Button className="w-full gap-1.5" disabled={applying} onClick={onApply}>
+                <Button className="w-full gap-1.5" disabled={applying || needsReview} onClick={onApply}>
                   {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  {t("thresholdAdvisor.applyBtn", "✅ Áp dụng")}
+                  {needsReview ? t("thresholdAdvisor.reviewFirst", "Cần xem lại trước") : t("thresholdAdvisor.applyBtn", "✅ Áp dụng")}
                 </Button>
               )}
             </div>

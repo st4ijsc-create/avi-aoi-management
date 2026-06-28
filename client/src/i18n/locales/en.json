@@ -7552,6 +7552,8 @@
     "samples": "{{n}} samples",
     "degraded": "Not enough samples — approve with caution.",
     "applyBtn": "✅ Apply",
+    "needsReview": "Measured data is far outside the limits — possibly wrong unit/config for this point. An engineer must review before applying.",
+    "reviewFirst": "Review needed first",
     "applied": "New threshold applied",
     "applyFailed": "Apply failed",
     "applyComment": "Apply AI threshold recommendation",

@@ -95,6 +95,7 @@ export interface TuneDecision {
     | "disabled"
     | "advisor_failed"
     | "degraded"
+    | "needs_review"
     | "sub_min_samples"
     | "already_good"
     | "immaterial"
@@ -112,6 +113,9 @@ export interface TuneDecision {
 export function decidePointTune(rec: PointRecommendation, cfg: TuneConfig): TuneDecision {
   if (!rec.ok || rec.disabled) return { propose: false, reason: "disabled" };
   if (rec.degraded) return { propose: false, reason: "degraded" };
+  // Data grossly inconsistent with the limits (wrong unit/config) → never auto-propose; a
+  // human must review the point first. The advisor sets this when the recommendation is unreliable.
+  if (rec.needsReview) return { propose: false, reason: "needs_review" };
   if (rec.sampleSize < cfg.minSamples) return { propose: false, reason: "sub_min_samples" };
 
   const current = rec.current.cpk;

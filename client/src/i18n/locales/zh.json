@@ -7526,6 +7526,8 @@
     "samples": "{{n}} 个样本",
     "degraded": "样本不足 — 请谨慎批准。",
     "applyBtn": "✅ 应用",
+    "needsReview": "测量数据远超限值——该测点单位/配置可能有误。需工程师审核后再应用。",
+    "reviewFirst": "需先审核",
     "applied": "已应用新阈值",
     "applyFailed": "应用失败",
     "applyComment": "应用 AI 阈值建议",
