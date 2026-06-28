@@ -501,11 +501,206 @@ export async function getExecutiveSummaries(opts?: {
   }));
 }
 
+// ─── Push notification to managers (in-app + optional email) ───
+
+/** Liên kết tới trang UI hiển thị báo cáo điều hành đã lưu. */
+const EXEC_REPORT_LINK = "/management-insight";
+
+interface NotifyRecipient {
+  id: number;
+  email: string | null;
+}
+
+/** Parse một CSV env an toàn → mảng chuỗi đã trim, bỏ rỗng. */
+function csvEnv(name: string): string[] {
+  return (process.env[name] || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Giải quyết danh sách người nhận: users có role thuộc tập cấu hình
+ * (mặc định admin, supervisor — env EXEC_REPORT_NOTIFY_ROLES csv) hợp với
+ * EXEC_REPORT_NOTIFY_USER_IDS (csv id) — đã dedup theo id. Không ném.
+ */
+export async function resolveExecReportRecipients(): Promise<NotifyRecipient[]> {
+  const roles = new Set(
+    (csvEnv("EXEC_REPORT_NOTIFY_ROLES").length ? csvEnv("EXEC_REPORT_NOTIFY_ROLES") : ["admin", "supervisor"]).map((r) =>
+      r.toLowerCase(),
+    ),
+  );
+  const explicitIds = new Set(csvEnv("EXEC_REPORT_NOTIFY_USER_IDS").map((s) => Number(s)).filter((n) => Number.isFinite(n)));
+
+  const byId = new Map<number, NotifyRecipient>();
+  try {
+    const { getAllUsers } = await import("../db/auth");
+    const users = (await getAllUsers()) as Array<{ id: number; role?: string | null; email?: string | null; isActive?: boolean | null }>;
+    for (const u of users || []) {
+      if (!u || typeof u.id !== "number") continue;
+      const matchesRole = roles.has(String(u.role || "").toLowerCase());
+      const matchesId = explicitIds.has(u.id);
+      if (!matchesRole && !matchesId) continue;
+      if (u.isActive === false) continue;
+      byId.set(u.id, { id: u.id, email: u.email ?? null });
+    }
+  } catch (err) {
+    console.error("[aiExecutiveReport] resolve recipients failed:", (err as any)?.message || err);
+  }
+  return Array.from(byId.values());
+}
+
+/** Tóm tắt một câu cho body thông báo: highlight đầu, hoặc risk đầu. */
+function notifyBody(s: ExecutiveSummaryStructured): string {
+  const first = s.highlights[0] || s.risks[0] || s.recommendations[0] || "";
+  return String(first).slice(0, 280);
+}
+
+/** Render email HTML đơn giản (headline + KPI table + highlights/risks/recommendations). */
+function renderExecReportEmailHtml(s: ExecutiveSummaryStructured): string {
+  const esc = (v: string) =>
+    String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const vi = s.lang === "vi";
+  const L = (a: string, b: string) => (vi ? a : b);
+  const link = `${process.env.VITE_FRONTEND_FORGE_API_URL || "http://localhost:3000"}${EXEC_REPORT_LINK}`;
+  const section = (title: string, items: string[]) =>
+    items.length
+      ? `<h3 style="color:#2563eb;margin:18px 0 6px;">${esc(title)}</h3><ul style="margin:0;padding-left:20px;">${items
+          .map((i) => `<li style="margin:4px 0;">${esc(i)}</li>`)
+          .join("")}</ul>`
+      : "";
+  const kpiRows = s.kpiTable
+    .map(
+      (k) =>
+        `<tr><td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;color:#374151;">${esc(k.label)}</td>` +
+        `<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;">${esc(k.value)}</td></tr>`,
+    )
+    .join("");
+  return `
+    <div style="font-family:Arial,sans-serif;max-width:700px;margin:auto;color:#1f2937;">
+      <div style="background:#2563eb;color:#fff;padding:18px 22px;border-radius:8px 8px 0 0;">
+        <h2 style="margin:0;font-size:18px;">${esc(s.headline || L("Báo cáo điều hành", "Executive report"))}</h2>
+      </div>
+      <div style="background:#f8fafc;padding:20px 22px;border-radius:0 0 8px 8px;">
+        <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:6px;overflow:hidden;">${kpiRows}</table>
+        ${section(L("Điểm nổi bật", "Highlights"), s.highlights)}
+        ${section(L("Rủi ro", "Risks"), s.risks)}
+        ${section(L("Khuyến nghị", "Recommendations"), s.recommendations)}
+        <p style="margin-top:20px;">
+          <a href="${esc(link)}" style="display:inline-block;background:#2563eb;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600;">
+            ${esc(L("Xem báo cáo đầy đủ", "View full report"))}
+          </a>
+        </p>
+        <p style="font-size:11px;color:#9ca3af;margin-top:18px;">
+          ${esc(L("Báo cáo tự động từ AVI/AOI Management System", "Automated report from AVI/AOI Management System"))}
+        </p>
+      </div>
+    </div>`.trim();
+}
+
+/** Render bản text thuần (fallback cho email client không hiển thị HTML). */
+function renderExecReportEmailText(s: ExecutiveSummaryStructured): string {
+  const vi = s.lang === "vi";
+  const L = (a: string, b: string) => (vi ? a : b);
+  const lines: string[] = [s.headline, ""];
+  lines.push(...s.kpiTable.map((k) => `${k.label}: ${k.value}`));
+  const block = (title: string, items: string[]) => {
+    if (!items.length) return;
+    lines.push("", title);
+    lines.push(...items.map((i) => `- ${i}`));
+  };
+  block(L("Điểm nổi bật", "Highlights"), s.highlights);
+  block(L("Rủi ro", "Risks"), s.risks);
+  block(L("Khuyến nghị", "Recommendations"), s.recommendations);
+  return lines.join("\n");
+}
+
+/**
+ * PUSH báo cáo điều hành tới các quản lý: thông báo in-app (luôn) + email (tuỳ chọn).
+ *
+ *  - Người nhận: resolveExecReportRecipients() (role-based + explicit ids, dedup).
+ *  - In-app: sendReportNotification cho từng người (title = headline, body = highlight/risk đầu,
+ *    link tới /management-insight). No-op an toàn nếu không có người nhận.
+ *  - Email: chỉ khi EXEC_REPORT_EMAIL_ENABLED=true VÀ SMTP đã cấu hình (SMTP_HOST/USER/PASS|PASSWORD).
+ *    Bỏ qua im lặng nếu tắt/thiếu SMTP/không có email người nhận.
+ *  - FAIL-SAFE: mọi lỗi gửi được bắt + log theo từng người nhận; KHÔNG bao giờ ném
+ *    (không được làm hỏng việc tạo báo cáo / scheduler).
+ *
+ * @returns thống kê gửi (để test/log) — không ném.
+ */
+export async function notifyExecutiveSummary(
+  summary: ExecutiveSummaryStructured,
+  insightId?: number | null,
+): Promise<{ recipients: number; inAppSent: number; emailsSent: number }> {
+  const stats = { recipients: 0, inAppSent: 0, emailsSent: 0 };
+  try {
+    const recipients = await resolveExecReportRecipients();
+    stats.recipients = recipients.length;
+    if (recipients.length === 0) return stats; // safe no-op
+
+    const title = (summary.headline || (summary.lang === "vi" ? "Báo cáo điều hành" : "Executive report")).slice(0, 200);
+    const message = notifyBody(summary);
+
+    // ── In-app (always on when notify enabled) ──
+    let notif: typeof import("./notificationService") | null = null;
+    try {
+      notif = await import("./notificationService");
+    } catch (err) {
+      console.error("[aiExecutiveReport] notificationService unavailable:", (err as any)?.message || err);
+    }
+    if (notif) {
+      for (const r of recipients) {
+        try {
+          await notif.sendReportNotification(r.id, {
+            title,
+            message,
+            reportId: insightId ?? undefined,
+            actionUrl: EXEC_REPORT_LINK,
+          });
+          stats.inAppSent++;
+        } catch (err) {
+          console.error(`[aiExecutiveReport] in-app notify failed for user ${r.id}:`, (err as any)?.message || err);
+        }
+      }
+    }
+
+    // ── Email (optional) ──
+    const emailEnabled = (process.env.EXEC_REPORT_EMAIL_ENABLED || "").toLowerCase() === "true";
+    const smtpConfigured = !!(process.env.SMTP_HOST && process.env.SMTP_USER && (process.env.SMTP_PASS || process.env.SMTP_PASSWORD));
+    if (emailEnabled && smtpConfigured) {
+      const emails = recipients.map((r) => r.email).filter((e): e is string => !!e && e.includes("@"));
+      if (emails.length > 0) {
+        try {
+          const { sendEmail } = await import("../_core/email");
+          const subject = `[AVI/AOI] ${title}`.slice(0, 200);
+          const html = renderExecReportEmailHtml(summary);
+          const text = renderExecReportEmailText(summary);
+          for (const email of emails) {
+            try {
+              const res = await sendEmail({ to: email, subject, html, text });
+              if (res?.success) stats.emailsSent++;
+            } catch (err) {
+              console.error(`[aiExecutiveReport] email failed for ${email}:`, (err as any)?.message || err);
+            }
+          }
+        } catch (err) {
+          console.error("[aiExecutiveReport] email module unavailable:", (err as any)?.message || err);
+        }
+      }
+    }
+  } catch (err) {
+    // Lá chắn cuối — push KHÔNG BAO GIỜ làm hỏng việc tạo báo cáo.
+    console.error("[aiExecutiveReport] notifyExecutiveSummary failed:", (err as any)?.message || err);
+  }
+  return stats;
+}
+
 // ─── Manual trigger (admin/test, on-demand) ────────────────────
 
 /**
  * Sinh + lưu một báo cáo điều hành ngay (không chờ cron). Dùng cho admin/UI/test.
  * Trả về summary và id đã lưu (id=null nếu DB không sẵn sàng). Không ném.
+ * Sau khi lưu, PUSH thông báo tới quản lý nếu EXEC_REPORT_NOTIFY_ENABLED (mặc định bật).
  */
 export async function runExecutiveReportNow(
   period: ReportPeriod = "day",
@@ -513,5 +708,11 @@ export async function runExecutiveReportNow(
 ): Promise<{ summary: ExecutiveSummaryStructured; insightId: number | null }> {
   const summary = await generateExecutiveSummary(period, lang);
   const insightId = await persistExecutiveSummary(summary);
+
+  // PUSH (in-app + optional email). Default ON; fail-safe (never throws).
+  const notifyEnabled = (process.env.EXEC_REPORT_NOTIFY_ENABLED || "true").toLowerCase() !== "false";
+  if (notifyEnabled) {
+    await notifyExecutiveSummary(summary, insightId);
+  }
   return { summary, insightId };
 }
