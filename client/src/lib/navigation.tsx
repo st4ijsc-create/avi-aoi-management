@@ -852,6 +852,14 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "interlock",
       },
       {
+        href: "/orchestration-studio",
+        label: "nav.orchestrationStudio",
+        icon: <Workflow className="h-4 w-4" />,
+        description: "nav.orchestrationStudioDesc",
+        requiredPermission: "machine_control",
+        permissionCategory: "machine_control",
+      },
+      {
         href: "/command-audit",
         label: "nav.commandAudit",
         icon: <ScrollText className="h-4 w-4" />,

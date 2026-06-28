@@ -21,7 +21,7 @@ import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
-import { orchestrationWorkflows, orchestrationRuns } from "../../drizzle/schema";
+import { orchestrationWorkflows, orchestrationRuns, machines } from "../../drizzle/schema";
 import {
   deployWorkflow,
   startRun,
@@ -31,7 +31,11 @@ import {
   foeEnabled,
   type FoeUser,
 } from "../services/orchestration/foe/foeEngine";
-import type { WorkflowDefinition } from "../services/orchestration/foe/workflowModel";
+import {
+  simulateWorkflow,
+  type SimulationResult,
+} from "../services/orchestration/foe/foeSimulator";
+import { validateWorkflow, type WorkflowDefinition } from "../services/orchestration/foe/workflowModel";
 
 function toFoeUser(user: { id: number; role: string; name?: string | null }): FoeUser {
   return { id: user.id, role: String(user.role), name: user.name ?? null };
@@ -145,6 +149,73 @@ export const orchestrationRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       return resumeRun(input.runId, { approved: input.approved, note: input.note }, toFoeUser(ctx.user));
+    }),
+
+  /**
+   * E3a — DIGITAL-TWIN SIMULATE: predict a workflow's execution WITHOUT any dispatch.
+   * Read-only (no control) → machine_monitoring/canView. PURE + fail-safe; NOT flag-gated
+   * (simulation is always safe). Supply an inline `workflow` OR a `workflowRef` to load a
+   * stored definition. Resolves referenced machine rows so the twin can map command verbs
+   * to PackML transitions; assumed telemetry/params feed the condition evaluator.
+   */
+  simulate: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(
+      z.object({
+        workflow: z.record(z.string(), z.unknown()).optional(),
+        workflowRef: z.string().min(1).max(128).optional(),
+        params: z.record(z.string(), z.unknown()).default({}),
+        assumedTelemetry: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
+        commandDurations: z.record(z.string(), z.number()).optional(),
+        defaultCommandMs: z.number().int().min(0).optional(),
+        gateMs: z.number().int().min(0).optional(),
+      }),
+    )
+    .query(async ({ input }): Promise<SimulationResult> => {
+      const d = await db();
+
+      // Resolve the definition: inline `workflow` wins, else load by `workflowRef`.
+      let def: WorkflowDefinition | undefined;
+      if (input.workflow) {
+        def = input.workflow as unknown as WorkflowDefinition;
+      } else if (input.workflowRef) {
+        const [wf] = await d
+          .select()
+          .from(orchestrationWorkflows)
+          .where(eq(orchestrationWorkflows.ref, input.workflowRef))
+          .limit(1);
+        if (!wf) throw new TRPCError({ code: "NOT_FOUND", message: `Workflow "${input.workflowRef}" not found` });
+        def = wf.definitionJson as WorkflowDefinition;
+      } else {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Provide either `workflow` or `workflowRef`." });
+      }
+
+      // Load referenced machine rows (machineType + capabilities) for capability resolution.
+      const refIds = new Set(validateWorkflow(def, null).referencedMachineIds);
+      const machineRows: Array<{ id: number; machineType: string; capabilities?: unknown }> = [];
+      if (refIds.size > 0) {
+        const rows = await d.select().from(machines);
+        for (const m of rows) {
+          if (refIds.has(m.id)) {
+            machineRows.push({ id: m.id, machineType: m.machineType, capabilities: m.capabilities });
+          }
+        }
+      }
+
+      // PURE prediction — no dispatch, no control. Normalize the telemetry key types.
+      const assumedTelemetry: Record<number, Record<string, unknown>> | undefined = input.assumedTelemetry
+        ? Object.fromEntries(
+            Object.entries(input.assumedTelemetry).map(([k, v]) => [Number(k), v as Record<string, unknown>]),
+          )
+        : undefined;
+
+      return simulateWorkflow(def, input.params, {
+        machines: machineRows,
+        assumedTelemetry,
+        commandDurations: input.commandDurations,
+        defaultCommandMs: input.defaultCommandMs,
+        gateMs: input.gateMs,
+      });
     }),
 
   /** Abort an in-flight run (terminal). */

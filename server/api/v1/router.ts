@@ -336,6 +336,80 @@ export function createV1Router(): Router {
     }),
   );
 
+  // POST /orchestration/simulate — DIGITAL-TWIN (E3a): predict a workflow WITHOUT dispatch.
+  // Read-only (no control) → orchestration:read. PURE + fail-safe; NOT flag-gated.
+  // Body: { workflow?, workflowRef?, params?, assumedTelemetry?, commandDurations?, defaultCommandMs?, gateMs? }.
+  r.post(
+    "/orchestration/simulate",
+    requireScope(API_SCOPES.ORCHESTRATION_READ),
+    wrap(async (req, res) => {
+      const body = (req.body ?? {}) as {
+        workflow?: unknown;
+        workflowRef?: string;
+        params?: Record<string, unknown>;
+        assumedTelemetry?: Record<string, Record<string, unknown>>;
+        commandDurations?: Record<string, number>;
+        defaultCommandMs?: number;
+        gateMs?: number;
+      };
+      const { simulateWorkflow } = await import("../../services/orchestration/foe/foeSimulator");
+      const { validateWorkflow } = await import("../../services/orchestration/foe/workflowModel");
+
+      // Resolve the definition: inline `workflow` wins, else load by `workflowRef`.
+      let def: import("../../services/orchestration/foe/workflowModel").WorkflowDefinition;
+      if (body.workflow && typeof body.workflow === "object") {
+        def = body.workflow as never;
+      } else if (typeof body.workflowRef === "string" && body.workflowRef) {
+        const { getDb } = await import("../../db/connection");
+        const { orchestrationWorkflows } = await import("../../../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const d = await getDb();
+        if (!d) throw new ApiHttpError(500, "db_unavailable", "Database not connected.");
+        const [wf] = await d
+          .select()
+          .from(orchestrationWorkflows)
+          .where(eq(orchestrationWorkflows.ref, body.workflowRef))
+          .limit(1);
+        if (!wf) throw new ApiHttpError(404, "not_found", `Workflow "${body.workflowRef}" not found.`);
+        def = wf.definitionJson as never;
+      } else {
+        throw new ApiHttpError(400, "bad_request", "Provide either `workflow` or `workflowRef`.");
+      }
+
+      // Load referenced machine rows for capability resolution (PURE simulator input).
+      const refIds = new Set(validateWorkflow(def, null).referencedMachineIds);
+      const machineRows: Array<{ id: number; machineType: string; capabilities?: unknown }> = [];
+      if (refIds.size > 0) {
+        const { getDb } = await import("../../db/connection");
+        const { machines } = await import("../../../drizzle/schema");
+        const d = await getDb();
+        if (d) {
+          const rows = await d.select().from(machines);
+          for (const m of rows) {
+            if (refIds.has(m.id)) {
+              machineRows.push({ id: m.id, machineType: m.machineType, capabilities: m.capabilities });
+            }
+          }
+        }
+      }
+
+      const assumedTelemetry = body.assumedTelemetry
+        ? Object.fromEntries(
+            Object.entries(body.assumedTelemetry).map(([k, v]) => [Number(k), v as Record<string, unknown>]),
+          )
+        : undefined;
+
+      const result = simulateWorkflow(def, body.params ?? {}, {
+        machines: machineRows,
+        assumedTelemetry,
+        commandDurations: body.commandDurations,
+        defaultCommandMs: body.defaultCommandMs,
+        gateMs: body.gateMs,
+      });
+      sendOk(res, result);
+    }),
+  );
+
   // GET /orchestration/runs/:id — run status + per-step audit.
   r.get(
     "/orchestration/runs/:id",
