@@ -9,6 +9,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { FakeDb, makeEq, makeAnd, makeDesc, resetSeq } from "./__otFakeDb";
 import {
   suppliers, materials, materialClasses, customers, skills, userCertifications, tools,
+  unitsOfMeasure, unitConversions, plantCalendars, calendarDays,
+  warehouses, storageLocations, inventoryBalances,
 } from "../../drizzle/schema";
 
 const fake = new FakeDb();
@@ -118,11 +120,101 @@ describe("tools CRUD", () => {
   });
 });
 
+describe("units of measure + conversions", () => {
+  it("creates a UoM and a conversion (numeric stored as string)", async () => {
+    const { id } = await caller.uom.create({ code: "kg", name: "Kilogram", dimension: "mass", isBase: true, isActive: true });
+    expect(id).toBeGreaterThan(0);
+    const got = await caller.uom.get({ id });
+    expect(got).toMatchObject({ code: "kg", dimension: "mass", isBase: true });
+
+    const list = await caller.uom.list({ activeOnly: true });
+    expect(list.map((r: any) => r.code)).toContain("kg");
+
+    const conv = await caller.uom.createConversion({ fromUomCode: "kg", toUomCode: "g", factor: 1000 });
+    expect(conv.id).toBeGreaterThan(0);
+    const convs = await caller.uom.listConversions();
+    expect(convs).toHaveLength(1);
+    expect(String(convs[0].factor)).toBe("1000");
+
+    const updc = await caller.uom.updateConversion({ id: conv.id, factor: 1000.5 });
+    expect(String(updc!.factor)).toBe("1000.5");
+    await caller.uom.deleteConversion({ id: conv.id });
+    expect(await caller.uom.listConversions()).toHaveLength(0);
+  });
+});
+
+describe("plant calendar + days", () => {
+  it("creates a calendar and tags days by type", async () => {
+    const { id } = await caller.calendar.create({ code: "PLANT-A", name: "Plant A 2026", factoryCode: "F1", isActive: true });
+    expect(id).toBeGreaterThan(0);
+    await caller.calendar.createDay({ calendarId: id, date: "2026-01-01", dayType: "holiday" });
+    await caller.calendar.createDay({ calendarId: id, date: "2026-01-02", dayType: "working" });
+    const days = await caller.calendar.listDays({ calendarId: id });
+    expect(days).toHaveLength(2);
+    expect(days.map((d: any) => d.dayType)).toContain("holiday");
+
+    const upd = await caller.calendar.updateDay({ id: days[0].id, dayType: "planned_downtime" });
+    expect(upd).toMatchObject({ dayType: "planned_downtime" });
+    await caller.calendar.deleteDay({ id: days[0].id });
+    expect(await caller.calendar.listDays({ calendarId: id })).toHaveLength(1);
+  });
+});
+
+describe("inventory: warehouses + locations + balances", () => {
+  it("creates a warehouse, location and inventory balance", async () => {
+    const wh = await caller.inventory.createWarehouse({ code: "WH-RAW", name: "Raw store", type: "raw", isActive: true });
+    expect(wh.id).toBeGreaterThan(0);
+    const whList = await caller.inventory.listWarehouses({ activeOnly: true });
+    expect(whList.map((r: any) => r.code)).toContain("WH-RAW");
+
+    const loc = await caller.inventory.createLocation({ warehouseId: wh.id, code: "A-01", kind: "bin", isActive: true });
+    const locs = await caller.inventory.listLocations({ warehouseId: wh.id });
+    expect(locs.map((l: any) => l.code)).toContain("A-01");
+
+    const bal = await caller.inventory.upsertBalance({ materialCode: "C0402", warehouseCode: "WH-RAW", quantityOnHand: 1500, uomCode: "pcs" });
+    expect(bal.id).toBeGreaterThan(0);
+    const bals = await caller.inventory.listBalances({ materialCode: "C0402" });
+    expect(bals).toHaveLength(1);
+    expect(String(bals[0].quantityOnHand)).toBe("1500");
+
+    const updb = await caller.inventory.updateBalance({ id: bal.id, quantityOnHand: 1200 });
+    expect(String(updb!.quantityOnHand)).toBe("1200");
+
+    await caller.inventory.deleteLocation({ id: loc.id });
+    await caller.inventory.deleteBalance({ id: bal.id });
+    expect(await caller.inventory.listBalances({ materialCode: "C0402" })).toHaveLength(0);
+  });
+});
+
+describe("unique constraints (schema tables wired)", () => {
+  it("rejects duplicate codes via the unique keysets", async () => {
+    // Wire the FakeDb unique keysets to the REAL drizzle table objects to prove
+    // the router writes to the expected tables (and the masters carry unique codes).
+    fake.setUnique(unitsOfMeasure, [["code"]]);
+    fake.setUnique(plantCalendars, [["code"]]);
+    fake.setUnique(warehouses, [["code"]]);
+    fake.setUnique(unitConversions, [["fromUomCode", "toUomCode"]]);
+    fake.setUnique(calendarDays, [["calendarId", "date"]]);
+    fake.setUnique(storageLocations, [["warehouseId", "code"]]);
+    fake.setUnique(inventoryBalances, [["materialCode", "warehouseCode", "locationCode", "lotCode"]]);
+
+    await caller.uom.create({ code: "L", name: "Litre", dimension: "volume" });
+    await expect(caller.uom.create({ code: "L", name: "Litre dup" })).rejects.toThrow(/duplicate key/);
+
+    const cal = await caller.calendar.create({ code: "DUP-CAL", name: "Cal" });
+    await caller.calendar.createDay({ calendarId: cal.id, date: "2026-03-01", dayType: "working" });
+    await expect(caller.calendar.createDay({ calendarId: cal.id, date: "2026-03-01" })).rejects.toThrow(/duplicate key/);
+  });
+});
+
 describe("RBAC gate", () => {
   it("blocks writes when permission denied (FORBIDDEN)", async () => {
     perm.allow = false;
     await expect(caller.suppliers.create({ code: "X", name: "Y" })).rejects.toThrow(/FORBIDDEN|masterdata/);
     await expect(caller.tools.delete({ id: 1 })).rejects.toThrow(/FORBIDDEN|masterdata/);
+    await expect(caller.uom.create({ code: "m", name: "Metre" })).rejects.toThrow(/FORBIDDEN|masterdata/);
+    await expect(caller.calendar.create({ code: "C", name: "C" })).rejects.toThrow(/FORBIDDEN|masterdata/);
+    await expect(caller.inventory.createWarehouse({ code: "W", name: "W" })).rejects.toThrow(/FORBIDDEN|masterdata/);
   });
 });
 
@@ -132,5 +224,10 @@ describe("fail-safe when DB offline", () => {
     expect(await caller.suppliers.list()).toEqual([]);
     expect(await caller.suppliers.get({ id: 1 })).toBeNull();
     await expect(caller.suppliers.create({ code: "Z", name: "Z" })).rejects.toThrow(/Database not available/);
+    // new sub-routers degrade identically
+    expect(await caller.uom.list()).toEqual([]);
+    expect(await caller.calendar.listDays({ calendarId: 1 })).toEqual([]);
+    expect(await caller.inventory.listBalances()).toEqual([]);
+    await expect(caller.inventory.upsertBalance({ materialCode: "M", warehouseCode: "W", quantityOnHand: 1 })).rejects.toThrow(/Database not available/);
   });
 });

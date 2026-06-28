@@ -17,6 +17,10 @@ import {
   toolTypeEnum,
   toolStatusEnum,
   certificationLevelEnum,
+  uomDimensionEnum,
+  calendarDayTypeEnum,
+  warehouseTypeEnum,
+  storageLocationKindEnum,
 } from "./enums";
 
 // =============================================================
@@ -230,3 +234,182 @@ export const tools = pgTable("tools", {
 
 export type Tool = typeof tools.$inferSelect;
 export type InsertTool = typeof tools.$inferInsert;
+
+// =============================================================
+// Units of Measure + conversions (Doc 07 §③ "nice-to-have")
+// =============================================================
+/**
+ * Units of Measure — đơn vị đo. dimension groups units that can convert among
+ * each other (length/mass/…); isBase marks the canonical base unit of a
+ * dimension (e.g. metre for length). Relates to materials.unit / inventory by code.
+ */
+export const unitsOfMeasure = pgTable("units_of_measure", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 32 }).notNull().unique(),
+  name: varchar("name", { length: 128 }).notNull(),
+  dimension: uomDimensionEnum("dimension").default("count").notNull(),
+  isBase: boolean("isBase").default(false).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_uom_code").on(table.code),
+  index("idx_uom_dimension").on(table.dimension),
+  index("idx_uom_active").on(table.isActive),
+]);
+
+export type UnitOfMeasure = typeof unitsOfMeasure.$inferSelect;
+export type InsertUnitOfMeasure = typeof unitsOfMeasure.$inferInsert;
+
+/**
+ * Unit Conversions — quy đổi đơn vị. value_to = value_from * factor + offset.
+ * offset covers affine scales (e.g. °C → °F = x*1.8 + 32). Relates to
+ * units_of_measure by code (no DB FK to stay additive). Unique per (from,to).
+ */
+export const unitConversions = pgTable("unit_conversions", {
+  id: serial("id").primaryKey(),
+  fromUomCode: varchar("fromUomCode", { length: 32 }).notNull(), // FK by code -> units_of_measure.code
+  toUomCode: varchar("toUomCode", { length: 32 }).notNull(),     // FK by code -> units_of_measure.code
+  factor: decimal("factor", { precision: 24, scale: 12 }).notNull(),
+  offset: decimal("offset", { precision: 24, scale: 12 }).default("0").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_uomconv_from").on(table.fromUomCode),
+  index("idx_uomconv_to").on(table.toUomCode),
+  uniqueIndex("uq_uomconv_from_to").on(table.fromUomCode, table.toUomCode),
+]);
+
+export type UnitConversion = typeof unitConversions.$inferSelect;
+export type InsertUnitConversion = typeof unitConversions.$inferInsert;
+
+// =============================================================
+// Plant / Shift Calendar (working-day / holiday)
+// =============================================================
+/**
+ * Plant Calendars — lịch nhà máy. A named working-day/holiday calendar scoped to
+ * a factory (factoryCode by code). Feeds takt-time / OEE-availability / APS.
+ */
+export const plantCalendars = pgTable("plant_calendars", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 64 }).notNull().unique(),
+  name: varchar("name", { length: 256 }).notNull(),
+  factoryCode: varchar("factoryCode", { length: 50 }),
+  timezone: varchar("timezone", { length: 64 }).default("Asia/Ho_Chi_Minh").notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_plantcal_code").on(table.code),
+  index("idx_plantcal_factory").on(table.factoryCode),
+  index("idx_plantcal_active").on(table.isActive),
+]);
+
+export type PlantCalendar = typeof plantCalendars.$inferSelect;
+export type InsertPlantCalendar = typeof plantCalendars.$inferInsert;
+
+/**
+ * Calendar Days — ngày trong lịch. dayType marks a date as working / holiday /
+ * planned_downtime. calendarId -> plant_calendars.id (relate by id; no DB FK to
+ * stay additive). Unique per (calendar, date).
+ */
+export const calendarDays = pgTable("calendar_days", {
+  id: serial("id").primaryKey(),
+  calendarId: integer("calendarId").notNull(), // FK -> plant_calendars.id
+  date: varchar("date", { length: 10 }).notNull(), // ISO date YYYY-MM-DD
+  dayType: calendarDayTypeEnum("dayType").default("working").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_caldays_calendar").on(table.calendarId),
+  index("idx_caldays_date").on(table.date),
+  index("idx_caldays_type").on(table.dayType),
+  uniqueIndex("uq_caldays_calendar_date").on(table.calendarId, table.date),
+]);
+
+export type CalendarDay = typeof calendarDays.$inferSelect;
+export type InsertCalendarDay = typeof calendarDays.$inferInsert;
+
+// =============================================================
+// Warehouse / Inventory master
+// =============================================================
+/**
+ * Warehouses — kho. type classifies the stock kind (raw/wip/fg/spare/other),
+ * scoped to a factory by code. General inventory master beyond the existing
+ * sparePartsInventory / feederMaterials denormalized tables.
+ */
+export const warehouses = pgTable("warehouses", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 64 }).notNull().unique(),
+  name: varchar("name", { length: 256 }).notNull(),
+  factoryCode: varchar("factoryCode", { length: 50 }),
+  type: warehouseTypeEnum("type").default("other").notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_warehouses_code").on(table.code),
+  index("idx_warehouses_factory").on(table.factoryCode),
+  index("idx_warehouses_type").on(table.type),
+  index("idx_warehouses_active").on(table.isActive),
+]);
+
+export type Warehouse = typeof warehouses.$inferSelect;
+export type InsertWarehouse = typeof warehouses.$inferInsert;
+
+/**
+ * Storage Locations — vị trí lưu trữ (bin/shelf/zone) trong 1 kho.
+ * warehouseId -> warehouses.id (relate by id; no DB FK to stay additive).
+ * Unique per (warehouse, code).
+ */
+export const storageLocations = pgTable("storage_locations", {
+  id: serial("id").primaryKey(),
+  warehouseId: integer("warehouseId").notNull(), // FK -> warehouses.id
+  code: varchar("code", { length: 64 }).notNull(),
+  name: varchar("name", { length: 256 }),
+  kind: storageLocationKindEnum("kind").default("bin").notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_stgloc_warehouse").on(table.warehouseId),
+  index("idx_stgloc_code").on(table.code),
+  index("idx_stgloc_kind").on(table.kind),
+  uniqueIndex("uq_stgloc_warehouse_code").on(table.warehouseId, table.code),
+]);
+
+export type StorageLocation = typeof storageLocations.$inferSelect;
+export type InsertStorageLocation = typeof storageLocations.$inferInsert;
+
+/**
+ * Inventory Balances — tồn kho. quantityOnHand of a material at a warehouse
+ * (optionally a location + lot), in uomCode. Relates to materials/warehouses/
+ * storage_locations BY CODE (additive). Unique per (material,warehouse,location,lot).
+ */
+export const inventoryBalances = pgTable("inventory_balances", {
+  id: serial("id").primaryKey(),
+  materialCode: varchar("materialCode", { length: 64 }).notNull(),   // FK by code -> materials.code
+  warehouseCode: varchar("warehouseCode", { length: 64 }).notNull(), // FK by code -> warehouses.code
+  locationCode: varchar("locationCode", { length: 64 }),             // FK by code -> storage_locations.code
+  lotCode: varchar("lotCode", { length: 64 }),
+  quantityOnHand: decimal("quantityOnHand", { precision: 24, scale: 6 }).default("0").notNull(),
+  uomCode: varchar("uomCode", { length: 32 }).default("pcs").notNull(), // FK by code -> units_of_measure.code
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_invbal_material").on(table.materialCode),
+  index("idx_invbal_warehouse").on(table.warehouseCode),
+  index("idx_invbal_location").on(table.locationCode),
+  index("idx_invbal_lot").on(table.lotCode),
+  uniqueIndex("uq_invbal_mat_wh_loc_lot").on(table.materialCode, table.warehouseCode, table.locationCode, table.lotCode),
+]);
+
+export type InventoryBalance = typeof inventoryBalances.$inferSelect;
+export type InsertInventoryBalance = typeof inventoryBalances.$inferInsert;

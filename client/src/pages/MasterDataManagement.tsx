@@ -29,7 +29,13 @@ import {
 import { Database, Plus, Pencil, Trash2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
-type Field = { key: string; label: string; type?: "text" | "number" | "bool"; required?: boolean };
+type Field = {
+  key: string;
+  label: string;
+  type?: "text" | "number" | "bool" | "select";
+  required?: boolean;
+  options?: { value: string; label: string }[]; // for type "select"
+};
 
 export default function MasterDataManagement() {
   const { t } = useTranslation();
@@ -66,12 +72,18 @@ export default function MasterDataManagement() {
             <TabsTrigger value="customers">{t("masterData.tabs.customers")}</TabsTrigger>
             <TabsTrigger value="skills">{t("masterData.tabs.skills")}</TabsTrigger>
             <TabsTrigger value="tools">{t("masterData.tabs.tools")}</TabsTrigger>
+            <TabsTrigger value="uom">{t("masterData.tabs.uom")}</TabsTrigger>
+            <TabsTrigger value="calendar">{t("masterData.tabs.calendar")}</TabsTrigger>
+            <TabsTrigger value="inventory">{t("masterData.tabs.inventory")}</TabsTrigger>
           </TabsList>
           <TabsContent value="suppliers"><SuppliersPanel /></TabsContent>
           <TabsContent value="materials"><MaterialsPanel /></TabsContent>
           <TabsContent value="customers"><CustomersPanel /></TabsContent>
           <TabsContent value="skills"><SkillsPanel /></TabsContent>
           <TabsContent value="tools"><ToolsPanel /></TabsContent>
+          <TabsContent value="uom"><UomPanel /></TabsContent>
+          <TabsContent value="calendar"><CalendarPanel /></TabsContent>
+          <TabsContent value="inventory"><InventoryPanel /></TabsContent>
         </Tabs>
       </div>
     </DashboardLayout>
@@ -121,6 +133,17 @@ function EntityDialog({
                   checked={!!vals[f.key]}
                   onCheckedChange={(c) => setVals((v) => ({ ...v, [f.key]: c }))}
                 />
+              ) : f.type === "select" ? (
+                <select
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                  value={vals[f.key] ?? ""}
+                  onChange={(e) => setVals((v) => ({ ...v, [f.key]: e.target.value || undefined }))}
+                >
+                  <option value="">--</option>
+                  {(f.options ?? []).map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
               ) : (
                 <Input
                   type={f.type === "number" ? "number" : "text"}
@@ -476,5 +499,391 @@ function ToolsPanel() {
         </TableBody>
       </Table>
     </CardContent></Card>
+  );
+}
+
+// ─── Units of Measure (+ conversions) ────────────────────────────────────────
+function UomPanel() {
+  const { t } = useTranslation();
+  const { hasPermission } = usePermissions();
+  const canCreate = hasPermission("masterdata", "canCreate");
+  const canEdit = hasPermission("masterdata", "canEdit");
+  const canDelete = hasPermission("masterdata", "canDelete");
+  const list = trpc.masterData.uom.list.useQuery({});
+  const convList = trpc.masterData.uom.listConversions.useQuery();
+  const utils = trpc.useUtils();
+  const refresh = () => utils.masterData.uom.list.invalidate();
+  const refreshConv = () => utils.masterData.uom.listConversions.invalidate();
+  const create = trpc.masterData.uom.create.useMutation({ onSuccess: () => { toast.success(t("masterData.saved")); refresh(); } });
+  const update = trpc.masterData.uom.update.useMutation({ onSuccess: () => { toast.success(t("masterData.saved")); refresh(); } });
+  const del = trpc.masterData.uom.delete.useMutation({ onSuccess: () => { toast.success(t("masterData.deleted")); refresh(); } });
+  const createConv = trpc.masterData.uom.createConversion.useMutation({ onSuccess: () => { toast.success(t("masterData.saved")); refreshConv(); } });
+  const delConv = trpc.masterData.uom.deleteConversion.useMutation({ onSuccess: () => { toast.success(t("masterData.deleted")); refreshConv(); } });
+
+  const dimensions = ["length", "mass", "volume", "time", "temperature", "count", "percent", "other"];
+  const fields: Field[] = [
+    { key: "code", label: t("masterData.code"), required: true },
+    { key: "name", label: t("masterData.name"), required: true },
+    { key: "dimension", label: t("masterData.dimension"), type: "select", options: dimensions.map((d) => ({ value: d, label: t(`masterData.dimensions.${d}`) })) },
+    { key: "isBase", label: t("masterData.isBase"), type: "bool" },
+    { key: "isActive", label: t("masterData.active"), type: "bool" },
+  ];
+  const convFields: Field[] = [
+    { key: "fromUomCode", label: t("masterData.fromUom"), required: true },
+    { key: "toUomCode", label: t("masterData.toUom"), required: true },
+    { key: "factor", label: t("masterData.factor"), type: "number", required: true },
+    { key: "offset", label: t("masterData.offset"), type: "number" },
+    { key: "notes", label: t("masterData.notes") },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <Card><CardContent className="space-y-3 pt-4">
+        {canCreate && (
+          <EntityDialog
+            title={t("masterData.newUom")} fields={fields} initial={{ isActive: true, dimension: "count" }}
+            onSubmit={async (v) => { await create.mutateAsync(v as any); }}
+            trigger={<Button><Plus className="mr-1 h-4 w-4" /> {t("masterData.newUom")}</Button>}
+          />
+        )}
+        <Table>
+          <TableHeader><TableRow>
+            <TableHead>{t("masterData.code")}</TableHead><TableHead>{t("masterData.name")}</TableHead>
+            <TableHead>{t("masterData.dimension")}</TableHead><TableHead>{t("masterData.isBase")}</TableHead>
+            <TableHead>{t("masterData.active")}</TableHead><TableHead></TableHead>
+          </TableRow></TableHeader>
+          <TableBody>
+            {(list.data ?? []).map((r: any) => (
+              <TableRow key={r.id}>
+                <TableCell className="font-mono">{r.code}</TableCell>
+                <TableCell>{r.name}</TableCell>
+                <TableCell>{r.dimension}</TableCell>
+                <TableCell>{r.isBase ? "✓" : "-"}</TableCell>
+                <TableCell><ActiveBadge active={r.isActive} /></TableCell>
+                <TableCell className="text-right space-x-1">
+                  {canEdit && (
+                    <EntityDialog
+                      title={t("masterData.editUom")} fields={fields} initial={r}
+                      onSubmit={async (v) => { await update.mutateAsync({ ...v, id: r.id } as any); }}
+                      trigger={<Button size="sm" variant="ghost"><Pencil className="h-4 w-4" /></Button>}
+                    />
+                  )}
+                  {canDelete && <Button size="sm" variant="ghost" onClick={() => del.mutate({ id: r.id })}><Trash2 className="h-4 w-4" /></Button>}
+                </TableCell>
+              </TableRow>
+            ))}
+            {list.data?.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">{t("masterData.empty")}</TableCell></TableRow>}
+          </TableBody>
+        </Table>
+      </CardContent></Card>
+
+      <Card><CardContent className="space-y-3 pt-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">{t("masterData.conversions")}</h3>
+          {canCreate && (
+            <EntityDialog
+              title={t("masterData.newConversion")} fields={convFields} initial={{ offset: 0 }}
+              onSubmit={async (v) => { await createConv.mutateAsync(v as any); }}
+              trigger={<Button size="sm" variant="outline"><Plus className="mr-1 h-4 w-4" /> {t("masterData.newConversion")}</Button>}
+            />
+          )}
+        </div>
+        <Table>
+          <TableHeader><TableRow>
+            <TableHead>{t("masterData.fromUom")}</TableHead><TableHead>{t("masterData.toUom")}</TableHead>
+            <TableHead>{t("masterData.factor")}</TableHead><TableHead>{t("masterData.offset")}</TableHead><TableHead></TableHead>
+          </TableRow></TableHeader>
+          <TableBody>
+            {(convList.data ?? []).map((r: any) => (
+              <TableRow key={r.id}>
+                <TableCell className="font-mono">{r.fromUomCode}</TableCell>
+                <TableCell className="font-mono">{r.toUomCode}</TableCell>
+                <TableCell>{r.factor}</TableCell>
+                <TableCell>{r.offset}</TableCell>
+                <TableCell className="text-right">
+                  {canDelete && <Button size="sm" variant="ghost" onClick={() => delConv.mutate({ id: r.id })}><Trash2 className="h-4 w-4" /></Button>}
+                </TableCell>
+              </TableRow>
+            ))}
+            {convList.data?.length === 0 && <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">{t("masterData.empty")}</TableCell></TableRow>}
+          </TableBody>
+        </Table>
+      </CardContent></Card>
+    </div>
+  );
+}
+
+// ─── Plant / Shift Calendar (+ days) ─────────────────────────────────────────
+function CalendarPanel() {
+  const { t } = useTranslation();
+  const { hasPermission } = usePermissions();
+  const canCreate = hasPermission("masterdata", "canCreate");
+  const canEdit = hasPermission("masterdata", "canEdit");
+  const canDelete = hasPermission("masterdata", "canDelete");
+  const list = trpc.masterData.calendar.list.useQuery({});
+  const [selected, setSelected] = useState<number | undefined>(undefined);
+  const days = trpc.masterData.calendar.listDays.useQuery({ calendarId: selected! }, { enabled: selected != null });
+  const utils = trpc.useUtils();
+  const refresh = () => utils.masterData.calendar.list.invalidate();
+  const refreshDays = () => utils.masterData.calendar.listDays.invalidate();
+  const create = trpc.masterData.calendar.create.useMutation({ onSuccess: () => { toast.success(t("masterData.saved")); refresh(); } });
+  const update = trpc.masterData.calendar.update.useMutation({ onSuccess: () => { toast.success(t("masterData.saved")); refresh(); } });
+  const del = trpc.masterData.calendar.delete.useMutation({ onSuccess: () => { toast.success(t("masterData.deleted")); refresh(); } });
+  const createDay = trpc.masterData.calendar.createDay.useMutation({ onSuccess: () => { toast.success(t("masterData.saved")); refreshDays(); } });
+  const delDay = trpc.masterData.calendar.deleteDay.useMutation({ onSuccess: () => { toast.success(t("masterData.deleted")); refreshDays(); } });
+
+  const dayTypes = ["working", "holiday", "planned_downtime"];
+  const fields: Field[] = [
+    { key: "code", label: t("masterData.code"), required: true },
+    { key: "name", label: t("masterData.name"), required: true },
+    { key: "factoryCode", label: t("masterData.factoryCode") },
+    { key: "timezone", label: t("masterData.timezone") },
+    { key: "isActive", label: t("masterData.active"), type: "bool" },
+  ];
+  const dayFields: Field[] = [
+    { key: "date", label: t("masterData.date"), required: true },
+    { key: "dayType", label: t("masterData.dayType"), type: "select", options: dayTypes.map((d) => ({ value: d, label: t(`masterData.dayTypes.${d}`) })) },
+    { key: "notes", label: t("masterData.notes") },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <Card><CardContent className="space-y-3 pt-4">
+        {canCreate && (
+          <EntityDialog
+            title={t("masterData.newCalendar")} fields={fields} initial={{ isActive: true, timezone: "Asia/Ho_Chi_Minh" }}
+            onSubmit={async (v) => { await create.mutateAsync(v as any); }}
+            trigger={<Button><Plus className="mr-1 h-4 w-4" /> {t("masterData.newCalendar")}</Button>}
+          />
+        )}
+        <Table>
+          <TableHeader><TableRow>
+            <TableHead>{t("masterData.code")}</TableHead><TableHead>{t("masterData.name")}</TableHead>
+            <TableHead>{t("masterData.factoryCode")}</TableHead><TableHead>{t("masterData.timezone")}</TableHead>
+            <TableHead>{t("masterData.active")}</TableHead><TableHead></TableHead>
+          </TableRow></TableHeader>
+          <TableBody>
+            {(list.data ?? []).map((r: any) => (
+              <TableRow key={r.id} className={selected === r.id ? "bg-muted/50" : ""}>
+                <TableCell className="font-mono cursor-pointer" onClick={() => setSelected(r.id)}>{r.code}</TableCell>
+                <TableCell className="cursor-pointer" onClick={() => setSelected(r.id)}>{r.name}</TableCell>
+                <TableCell>{r.factoryCode ?? "-"}</TableCell>
+                <TableCell>{r.timezone}</TableCell>
+                <TableCell><ActiveBadge active={r.isActive} /></TableCell>
+                <TableCell className="text-right space-x-1">
+                  {canEdit && (
+                    <EntityDialog
+                      title={t("masterData.editCalendar")} fields={fields} initial={r}
+                      onSubmit={async (v) => { await update.mutateAsync({ ...v, id: r.id } as any); }}
+                      trigger={<Button size="sm" variant="ghost"><Pencil className="h-4 w-4" /></Button>}
+                    />
+                  )}
+                  {canDelete && <Button size="sm" variant="ghost" onClick={() => del.mutate({ id: r.id })}><Trash2 className="h-4 w-4" /></Button>}
+                </TableCell>
+              </TableRow>
+            ))}
+            {list.data?.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">{t("masterData.empty")}</TableCell></TableRow>}
+          </TableBody>
+        </Table>
+      </CardContent></Card>
+
+      <Card><CardContent className="space-y-3 pt-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">{t("masterData.calendarDays")}{selected == null ? ` — ${t("masterData.selectCalendar")}` : ""}</h3>
+          {canCreate && selected != null && (
+            <EntityDialog
+              title={t("masterData.newDay")} fields={dayFields} initial={{ dayType: "working" }}
+              onSubmit={async (v) => { await createDay.mutateAsync({ ...v, calendarId: selected } as any); }}
+              trigger={<Button size="sm" variant="outline"><Plus className="mr-1 h-4 w-4" /> {t("masterData.newDay")}</Button>}
+            />
+          )}
+        </div>
+        {selected != null && (
+          <Table>
+            <TableHeader><TableRow>
+              <TableHead>{t("masterData.date")}</TableHead><TableHead>{t("masterData.dayType")}</TableHead>
+              <TableHead>{t("masterData.notes")}</TableHead><TableHead></TableHead>
+            </TableRow></TableHeader>
+            <TableBody>
+              {(days.data ?? []).map((r: any) => (
+                <TableRow key={r.id}>
+                  <TableCell className="font-mono">{r.date}</TableCell>
+                  <TableCell><Badge variant="secondary">{t(`masterData.dayTypes.${r.dayType}`)}</Badge></TableCell>
+                  <TableCell>{r.notes ?? "-"}</TableCell>
+                  <TableCell className="text-right">
+                    {canDelete && <Button size="sm" variant="ghost" onClick={() => delDay.mutate({ id: r.id })}><Trash2 className="h-4 w-4" /></Button>}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {days.data?.length === 0 && <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground">{t("masterData.empty")}</TableCell></TableRow>}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent></Card>
+    </div>
+  );
+}
+
+// ─── Warehouse / Inventory ───────────────────────────────────────────────────
+function InventoryPanel() {
+  const { t } = useTranslation();
+  const { hasPermission } = usePermissions();
+  const canCreate = hasPermission("masterdata", "canCreate");
+  const canEdit = hasPermission("masterdata", "canEdit");
+  const canDelete = hasPermission("masterdata", "canDelete");
+  const utils = trpc.useUtils();
+
+  const warehouses = trpc.masterData.inventory.listWarehouses.useQuery({});
+  const [selectedWh, setSelectedWh] = useState<number | undefined>(undefined);
+  const locations = trpc.masterData.inventory.listLocations.useQuery({ warehouseId: selectedWh! }, { enabled: selectedWh != null });
+  const balances = trpc.masterData.inventory.listBalances.useQuery({});
+
+  const refreshWh = () => utils.masterData.inventory.listWarehouses.invalidate();
+  const refreshLoc = () => utils.masterData.inventory.listLocations.invalidate();
+  const refreshBal = () => utils.masterData.inventory.listBalances.invalidate();
+  const createWh = trpc.masterData.inventory.createWarehouse.useMutation({ onSuccess: () => { toast.success(t("masterData.saved")); refreshWh(); } });
+  const updateWh = trpc.masterData.inventory.updateWarehouse.useMutation({ onSuccess: () => { toast.success(t("masterData.saved")); refreshWh(); } });
+  const delWh = trpc.masterData.inventory.deleteWarehouse.useMutation({ onSuccess: () => { toast.success(t("masterData.deleted")); refreshWh(); } });
+  const createLoc = trpc.masterData.inventory.createLocation.useMutation({ onSuccess: () => { toast.success(t("masterData.saved")); refreshLoc(); } });
+  const delLoc = trpc.masterData.inventory.deleteLocation.useMutation({ onSuccess: () => { toast.success(t("masterData.deleted")); refreshLoc(); } });
+  const upsertBal = trpc.masterData.inventory.upsertBalance.useMutation({ onSuccess: () => { toast.success(t("masterData.saved")); refreshBal(); } });
+  const delBal = trpc.masterData.inventory.deleteBalance.useMutation({ onSuccess: () => { toast.success(t("masterData.deleted")); refreshBal(); } });
+
+  const whTypes = ["raw", "wip", "fg", "spare", "other"];
+  const locKinds = ["bin", "shelf", "zone"];
+  const whFields: Field[] = [
+    { key: "code", label: t("masterData.code"), required: true },
+    { key: "name", label: t("masterData.name"), required: true },
+    { key: "factoryCode", label: t("masterData.factoryCode") },
+    { key: "type", label: t("masterData.type"), type: "select", options: whTypes.map((d) => ({ value: d, label: t(`masterData.warehouseTypes.${d}`) })) },
+    { key: "isActive", label: t("masterData.active"), type: "bool" },
+  ];
+  const locFields: Field[] = [
+    { key: "code", label: t("masterData.code"), required: true },
+    { key: "name", label: t("masterData.name") },
+    { key: "kind", label: t("masterData.kind"), type: "select", options: locKinds.map((d) => ({ value: d, label: t(`masterData.locationKinds.${d}`) })) },
+    { key: "isActive", label: t("masterData.active"), type: "bool" },
+  ];
+  const balFields: Field[] = [
+    { key: "materialCode", label: t("masterData.materialCode"), required: true },
+    { key: "warehouseCode", label: t("masterData.warehouseCode"), required: true },
+    { key: "locationCode", label: t("masterData.locationCode") },
+    { key: "lotCode", label: t("masterData.lotCode") },
+    { key: "quantityOnHand", label: t("masterData.quantityOnHand"), type: "number", required: true },
+    { key: "uomCode", label: t("masterData.unit") },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <Card><CardContent className="space-y-3 pt-4">
+        {canCreate && (
+          <EntityDialog
+            title={t("masterData.newWarehouse")} fields={whFields} initial={{ isActive: true, type: "other" }}
+            onSubmit={async (v) => { await createWh.mutateAsync(v as any); }}
+            trigger={<Button><Plus className="mr-1 h-4 w-4" /> {t("masterData.newWarehouse")}</Button>}
+          />
+        )}
+        <Table>
+          <TableHeader><TableRow>
+            <TableHead>{t("masterData.code")}</TableHead><TableHead>{t("masterData.name")}</TableHead>
+            <TableHead>{t("masterData.type")}</TableHead><TableHead>{t("masterData.factoryCode")}</TableHead>
+            <TableHead>{t("masterData.active")}</TableHead><TableHead></TableHead>
+          </TableRow></TableHeader>
+          <TableBody>
+            {(warehouses.data ?? []).map((r: any) => (
+              <TableRow key={r.id} className={selectedWh === r.id ? "bg-muted/50" : ""}>
+                <TableCell className="font-mono cursor-pointer" onClick={() => setSelectedWh(r.id)}>{r.code}</TableCell>
+                <TableCell className="cursor-pointer" onClick={() => setSelectedWh(r.id)}>{r.name}</TableCell>
+                <TableCell><Badge variant="secondary">{t(`masterData.warehouseTypes.${r.type}`)}</Badge></TableCell>
+                <TableCell>{r.factoryCode ?? "-"}</TableCell>
+                <TableCell><ActiveBadge active={r.isActive} /></TableCell>
+                <TableCell className="text-right space-x-1">
+                  {canEdit && (
+                    <EntityDialog
+                      title={t("masterData.editWarehouse")} fields={whFields} initial={r}
+                      onSubmit={async (v) => { await updateWh.mutateAsync({ ...v, id: r.id } as any); }}
+                      trigger={<Button size="sm" variant="ghost"><Pencil className="h-4 w-4" /></Button>}
+                    />
+                  )}
+                  {canDelete && <Button size="sm" variant="ghost" onClick={() => delWh.mutate({ id: r.id })}><Trash2 className="h-4 w-4" /></Button>}
+                </TableCell>
+              </TableRow>
+            ))}
+            {warehouses.data?.length === 0 && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">{t("masterData.empty")}</TableCell></TableRow>}
+          </TableBody>
+        </Table>
+      </CardContent></Card>
+
+      <Card><CardContent className="space-y-3 pt-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">{t("masterData.storageLocations")}{selectedWh == null ? ` — ${t("masterData.selectWarehouse")}` : ""}</h3>
+          {canCreate && selectedWh != null && (
+            <EntityDialog
+              title={t("masterData.newLocation")} fields={locFields} initial={{ isActive: true, kind: "bin" }}
+              onSubmit={async (v) => { await createLoc.mutateAsync({ ...v, warehouseId: selectedWh } as any); }}
+              trigger={<Button size="sm" variant="outline"><Plus className="mr-1 h-4 w-4" /> {t("masterData.newLocation")}</Button>}
+            />
+          )}
+        </div>
+        {selectedWh != null && (
+          <Table>
+            <TableHeader><TableRow>
+              <TableHead>{t("masterData.code")}</TableHead><TableHead>{t("masterData.name")}</TableHead>
+              <TableHead>{t("masterData.kind")}</TableHead><TableHead>{t("masterData.active")}</TableHead><TableHead></TableHead>
+            </TableRow></TableHeader>
+            <TableBody>
+              {(locations.data ?? []).map((r: any) => (
+                <TableRow key={r.id}>
+                  <TableCell className="font-mono">{r.code}</TableCell>
+                  <TableCell>{r.name ?? "-"}</TableCell>
+                  <TableCell>{t(`masterData.locationKinds.${r.kind}`)}</TableCell>
+                  <TableCell><ActiveBadge active={r.isActive} /></TableCell>
+                  <TableCell className="text-right">
+                    {canDelete && <Button size="sm" variant="ghost" onClick={() => delLoc.mutate({ id: r.id })}><Trash2 className="h-4 w-4" /></Button>}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {locations.data?.length === 0 && <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">{t("masterData.empty")}</TableCell></TableRow>}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent></Card>
+
+      <Card><CardContent className="space-y-3 pt-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">{t("masterData.inventoryBalances")}</h3>
+          {canCreate && (
+            <EntityDialog
+              title={t("masterData.newBalance")} fields={balFields} initial={{ uomCode: "pcs", quantityOnHand: 0 }}
+              onSubmit={async (v) => { await upsertBal.mutateAsync(v as any); }}
+              trigger={<Button size="sm" variant="outline"><Plus className="mr-1 h-4 w-4" /> {t("masterData.newBalance")}</Button>}
+            />
+          )}
+        </div>
+        <Table>
+          <TableHeader><TableRow>
+            <TableHead>{t("masterData.materialCode")}</TableHead><TableHead>{t("masterData.warehouseCode")}</TableHead>
+            <TableHead>{t("masterData.locationCode")}</TableHead><TableHead>{t("masterData.lotCode")}</TableHead>
+            <TableHead>{t("masterData.quantityOnHand")}</TableHead><TableHead>{t("masterData.unit")}</TableHead><TableHead></TableHead>
+          </TableRow></TableHeader>
+          <TableBody>
+            {(balances.data ?? []).map((r: any) => (
+              <TableRow key={r.id}>
+                <TableCell className="font-mono">{r.materialCode}</TableCell>
+                <TableCell className="font-mono">{r.warehouseCode}</TableCell>
+                <TableCell>{r.locationCode ?? "-"}</TableCell>
+                <TableCell>{r.lotCode ?? "-"}</TableCell>
+                <TableCell>{r.quantityOnHand}</TableCell>
+                <TableCell>{r.uomCode}</TableCell>
+                <TableCell className="text-right">
+                  {canDelete && <Button size="sm" variant="ghost" onClick={() => delBal.mutate({ id: r.id })}><Trash2 className="h-4 w-4" /></Button>}
+                </TableCell>
+              </TableRow>
+            ))}
+            {balances.data?.length === 0 && <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">{t("masterData.empty")}</TableCell></TableRow>}
+          </TableBody>
+        </Table>
+      </CardContent></Card>
+    </div>
   );
 }

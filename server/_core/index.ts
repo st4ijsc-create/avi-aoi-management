@@ -4537,6 +4537,16 @@ async function startServer() {
     console.error("[Robot] init failed:", (err as any)?.message || err);
   }
 
+  // VDA 5050 — AGV/AMR fleet connectivity framework (MQTT). Importing the module
+  // registers the `vda5050` robot driver. Disabled by default; opt in via
+  // VDA5050_ENABLED=true. AGV commands are HITL + dry-run unless ROBOT_CONTROL_ENABLED=true.
+  try {
+    const { startVda5050 } = await import("../services/vda5050");
+    await startVda5050();
+  } catch (err) {
+    console.error("[VDA5050] init failed:", (err as any)?.message || err);
+  }
+
   // G1 — Edge Gateway OPC-UA/Modbus ingest (scaffold).
   // Disabled by default; opt in via OPCUA_GATEWAY_ENABLED=true + OPCUA_ENDPOINT_URL.
   try {
@@ -4683,6 +4693,10 @@ async function startServer() {
     // P3 — dừng robotics framework (no-op nếu chưa chạy)
     import("../services/robot")
       .then((m) => m.stopRobots())
+      .catch(() => {});
+    // VDA 5050 — dừng AGV adapter manager (no-op nếu chưa chạy)
+    import("../services/vda5050")
+      .then((m) => m.stopVda5050())
       .catch(() => {});
     // P4 WS4.2 — dừng AI orchestration watcher (no-op nếu chưa chạy)
     import("../services/orchestration/aiWatcher")

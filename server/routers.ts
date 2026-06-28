@@ -118,6 +118,8 @@ import { masterDataRouter } from "./routers/masterDataRouter"; // P1c: MES maste
 import { machineRecipeRouter } from "./routers/machineRecipeRouter"; // G2.2a: recipe versioning + deploy (catalog/ledger only, no device push)
 import { commandLogRouter } from "./routers/commandLogRouter"; // G2.2a: command audit log (READ-ONLY)
 import { robotRouter } from "./routers/robotRouter"; // Phase 3: robot registry/telemetry/jobs (control via internal dispatcher)
+import { secsGemRouter } from "./routers/secsGemRouter"; // P3a: SECS/GEM framework (SECS_GEM_ENABLED)
+import { vda5050Router } from "./routers/vda5050Router"; // P3b: VDA 5050 AGV/AMR framework (VDA5050_ENABLED)
 import { aiInsightRouter } from "./routers/aiInsightRouter"; // Phase 4: AI orchestration insights (advisory, read + ack)
 import { aiInboxRouter } from "./routers/aiInboxRouter"; // AI Action Inbox: push + 1-tap approve/dismiss/ask
 import { aiTodayRouter } from "./routers/aiTodayRouter"; // "Today" briefing: role-aware zero-click login summary
@@ -353,6 +355,8 @@ export const appRouter = router({
   machineRecipe: machineRecipeRouter,
   commandLog: commandLogRouter,
   robot: robotRouter,
+  secsGem: secsGemRouter,
+  vda5050: vda5050Router,
   aiInsight: aiInsightRouter,
   aiInbox: aiInboxRouter,
   aiToday: aiTodayRouter,

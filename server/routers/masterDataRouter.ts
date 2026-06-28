@@ -29,6 +29,13 @@ import {
   skills, InsertSkill,
   userCertifications, InsertUserCertification,
   tools, InsertTool,
+  unitsOfMeasure, InsertUnitOfMeasure,
+  unitConversions, InsertUnitConversion,
+  plantCalendars, InsertPlantCalendar,
+  calendarDays, InsertCalendarDay,
+  warehouses, InsertWarehouse,
+  storageLocations, InsertStorageLocation,
+  inventoryBalances, InsertInventoryBalance,
 } from "../../drizzle/schema";
 
 const MODULE = "masterdata";
@@ -429,10 +436,318 @@ const toolsRouter = router({
     .mutation(({ input }) => deleteOne(tools, input.id)),
 });
 
+// ─── Units of Measure (+conversions) ────────────────────────────────────────
+const uomDimension = z.enum(["length", "mass", "volume", "time", "temperature", "count", "percent", "other"]);
+const uomRouter = router({
+  list: protectedProcedure
+    .use(requirePermission(MODULE, "canView"))
+    .input(z.object({ activeOnly: z.boolean().optional() }).optional())
+    .query(({ input }) => listAll(unitsOfMeasure, input?.activeOnly)),
+  get: protectedProcedure
+    .use(requirePermission(MODULE, "canView"))
+    .input(idInput)
+    .query(({ input }) => getOne(unitsOfMeasure, input.id)),
+  create: protectedProcedure
+    .use(requirePermission(MODULE, "canCreate"))
+    .input(z.object({
+      code: z.string().min(1).max(32),
+      name: z.string().min(1).max(128),
+      dimension: uomDimension.optional(),
+      isBase: z.boolean().optional(),
+      isActive: z.boolean().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => ({ id: await insertOne(unitsOfMeasure, input as InsertUnitOfMeasure) })),
+  update: protectedProcedure
+    .use(requirePermission(MODULE, "canEdit"))
+    .input(idInput.extend({
+      name: z.string().min(1).max(128).optional(),
+      dimension: uomDimension.optional(),
+      isBase: z.boolean().optional(),
+      isActive: z.boolean().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(({ input }) => {
+      const { id, ...rest } = input;
+      return updateOne(unitsOfMeasure, id, clean(rest));
+    }),
+  delete: protectedProcedure
+    .use(requirePermission(MODULE, "canDelete"))
+    .input(idInput)
+    .mutation(({ input }) => deleteOne(unitsOfMeasure, input.id)),
+
+  // Conversions (from × factor + offset = to)
+  listConversions: protectedProcedure
+    .use(requirePermission(MODULE, "canView"))
+    .query(() => listAll(unitConversions)),
+  createConversion: protectedProcedure
+    .use(requirePermission(MODULE, "canCreate"))
+    .input(z.object({
+      fromUomCode: z.string().min(1).max(32),
+      toUomCode: z.string().min(1).max(32),
+      factor: z.number(),
+      offset: z.number().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { factor, offset, ...rest } = input;
+      const id = await insertOne(unitConversions, {
+        ...rest,
+        factor: String(factor),
+        ...(offset != null ? { offset: String(offset) } : {}),
+      } as InsertUnitConversion);
+      return { id };
+    }),
+  updateConversion: protectedProcedure
+    .use(requirePermission(MODULE, "canEdit"))
+    .input(idInput.extend({
+      factor: z.number().optional(),
+      offset: z.number().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(({ input }) => {
+      const { id, factor, offset, ...rest } = input;
+      return updateOne(unitConversions, id, clean({
+        ...rest,
+        ...(factor != null ? { factor: String(factor) } : {}),
+        ...(offset != null ? { offset: String(offset) } : {}),
+      }));
+    }),
+  deleteConversion: protectedProcedure
+    .use(requirePermission(MODULE, "canDelete"))
+    .input(idInput)
+    .mutation(({ input }) => deleteOne(unitConversions, input.id)),
+});
+
+// ─── Plant / Shift Calendar (+days) ─────────────────────────────────────────
+const calendarDayType = z.enum(["working", "holiday", "planned_downtime"]);
+const calendarRouter = router({
+  list: protectedProcedure
+    .use(requirePermission(MODULE, "canView"))
+    .input(z.object({ activeOnly: z.boolean().optional() }).optional())
+    .query(({ input }) => listAll(plantCalendars, input?.activeOnly)),
+  get: protectedProcedure
+    .use(requirePermission(MODULE, "canView"))
+    .input(idInput)
+    .query(({ input }) => getOne(plantCalendars, input.id)),
+  create: protectedProcedure
+    .use(requirePermission(MODULE, "canCreate"))
+    .input(z.object({
+      code: z.string().min(1).max(64),
+      name: z.string().min(1).max(256),
+      factoryCode: z.string().max(50).optional(),
+      timezone: z.string().max(64).optional(),
+      isActive: z.boolean().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => ({ id: await insertOne(plantCalendars, input as InsertPlantCalendar) })),
+  update: protectedProcedure
+    .use(requirePermission(MODULE, "canEdit"))
+    .input(idInput.extend({
+      name: z.string().min(1).max(256).optional(),
+      factoryCode: z.string().max(50).optional(),
+      timezone: z.string().max(64).optional(),
+      isActive: z.boolean().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(({ input }) => {
+      const { id, ...rest } = input;
+      return updateOne(plantCalendars, id, clean(rest));
+    }),
+  delete: protectedProcedure
+    .use(requirePermission(MODULE, "canDelete"))
+    .input(idInput)
+    .mutation(({ input }) => deleteOne(plantCalendars, input.id)),
+
+  // Calendar days (working / holiday / planned_downtime)
+  listDays: protectedProcedure
+    .use(requirePermission(MODULE, "canView"))
+    .input(z.object({ calendarId: z.number().int().positive().optional() }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const q = db.select().from(calendarDays);
+      return (input?.calendarId != null
+        ? q.where(eq(calendarDays.calendarId, input.calendarId))
+        : q).orderBy(asc(calendarDays.date));
+    }),
+  createDay: protectedProcedure
+    .use(requirePermission(MODULE, "canCreate"))
+    .input(z.object({
+      calendarId: z.number().int().positive(),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      dayType: calendarDayType.optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => ({ id: await insertOne(calendarDays, input as InsertCalendarDay) })),
+  updateDay: protectedProcedure
+    .use(requirePermission(MODULE, "canEdit"))
+    .input(idInput.extend({
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      dayType: calendarDayType.optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(({ input }) => {
+      const { id, ...rest } = input;
+      return updateOne(calendarDays, id, clean(rest));
+    }),
+  deleteDay: protectedProcedure
+    .use(requirePermission(MODULE, "canDelete"))
+    .input(idInput)
+    .mutation(({ input }) => deleteOne(calendarDays, input.id)),
+});
+
+// ─── Inventory: Warehouses + Storage locations + Balances ───────────────────
+const warehouseType = z.enum(["raw", "wip", "fg", "spare", "other"]);
+const storageLocationKind = z.enum(["bin", "shelf", "zone"]);
+const inventoryRouter = router({
+  // Warehouses
+  listWarehouses: protectedProcedure
+    .use(requirePermission(MODULE, "canView"))
+    .input(z.object({ activeOnly: z.boolean().optional() }).optional())
+    .query(({ input }) => listAll(warehouses, input?.activeOnly)),
+  getWarehouse: protectedProcedure
+    .use(requirePermission(MODULE, "canView"))
+    .input(idInput)
+    .query(({ input }) => getOne(warehouses, input.id)),
+  createWarehouse: protectedProcedure
+    .use(requirePermission(MODULE, "canCreate"))
+    .input(z.object({
+      code: z.string().min(1).max(64),
+      name: z.string().min(1).max(256),
+      factoryCode: z.string().max(50).optional(),
+      type: warehouseType.optional(),
+      isActive: z.boolean().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => ({ id: await insertOne(warehouses, input as InsertWarehouse) })),
+  updateWarehouse: protectedProcedure
+    .use(requirePermission(MODULE, "canEdit"))
+    .input(idInput.extend({
+      name: z.string().min(1).max(256).optional(),
+      factoryCode: z.string().max(50).optional(),
+      type: warehouseType.optional(),
+      isActive: z.boolean().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(({ input }) => {
+      const { id, ...rest } = input;
+      return updateOne(warehouses, id, clean(rest));
+    }),
+  deleteWarehouse: protectedProcedure
+    .use(requirePermission(MODULE, "canDelete"))
+    .input(idInput)
+    .mutation(({ input }) => deleteOne(warehouses, input.id)),
+
+  // Storage locations
+  listLocations: protectedProcedure
+    .use(requirePermission(MODULE, "canView"))
+    .input(z.object({ warehouseId: z.number().int().positive().optional() }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const q = db.select().from(storageLocations);
+      return (input?.warehouseId != null
+        ? q.where(eq(storageLocations.warehouseId, input.warehouseId))
+        : q).orderBy(asc(storageLocations.id));
+    }),
+  createLocation: protectedProcedure
+    .use(requirePermission(MODULE, "canCreate"))
+    .input(z.object({
+      warehouseId: z.number().int().positive(),
+      code: z.string().min(1).max(64),
+      name: z.string().max(256).optional(),
+      kind: storageLocationKind.optional(),
+      isActive: z.boolean().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => ({ id: await insertOne(storageLocations, input as InsertStorageLocation) })),
+  updateLocation: protectedProcedure
+    .use(requirePermission(MODULE, "canEdit"))
+    .input(idInput.extend({
+      code: z.string().min(1).max(64).optional(),
+      name: z.string().max(256).optional(),
+      kind: storageLocationKind.optional(),
+      isActive: z.boolean().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(({ input }) => {
+      const { id, ...rest } = input;
+      return updateOne(storageLocations, id, clean(rest));
+    }),
+  deleteLocation: protectedProcedure
+    .use(requirePermission(MODULE, "canDelete"))
+    .input(idInput)
+    .mutation(({ input }) => deleteOne(storageLocations, input.id)),
+
+  // Inventory balances
+  listBalances: protectedProcedure
+    .use(requirePermission(MODULE, "canView"))
+    .input(z.object({
+      materialCode: z.string().max(64).optional(),
+      warehouseCode: z.string().max(64).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const conds = [];
+      if (input?.materialCode != null) conds.push(eq(inventoryBalances.materialCode, input.materialCode));
+      if (input?.warehouseCode != null) conds.push(eq(inventoryBalances.warehouseCode, input.warehouseCode));
+      const q = db.select().from(inventoryBalances);
+      return (conds.length ? q.where(and(...conds)) : q).orderBy(desc(inventoryBalances.updatedAt));
+    }),
+  getBalance: protectedProcedure
+    .use(requirePermission(MODULE, "canView"))
+    .input(idInput)
+    .query(({ input }) => getOne(inventoryBalances, input.id)),
+  upsertBalance: protectedProcedure
+    .use(requirePermission(MODULE, "canCreate"))
+    .input(z.object({
+      materialCode: z.string().min(1).max(64),
+      warehouseCode: z.string().min(1).max(64),
+      locationCode: z.string().max(64).optional(),
+      lotCode: z.string().max(64).optional(),
+      quantityOnHand: z.number(),
+      uomCode: z.string().max(32).optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { quantityOnHand, ...rest } = input;
+      const id = await insertOne(inventoryBalances, {
+        ...rest,
+        quantityOnHand: String(quantityOnHand),
+      } as InsertInventoryBalance);
+      return { id };
+    }),
+  updateBalance: protectedProcedure
+    .use(requirePermission(MODULE, "canEdit"))
+    .input(idInput.extend({
+      quantityOnHand: z.number().optional(),
+      uomCode: z.string().max(32).optional(),
+      locationCode: z.string().max(64).optional(),
+      lotCode: z.string().max(64).optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(({ input }) => {
+      const { id, quantityOnHand, ...rest } = input;
+      return updateOne(inventoryBalances, id, clean({
+        ...rest,
+        ...(quantityOnHand != null ? { quantityOnHand: String(quantityOnHand) } : {}),
+      }));
+    }),
+  deleteBalance: protectedProcedure
+    .use(requirePermission(MODULE, "canDelete"))
+    .input(idInput)
+    .mutation(({ input }) => deleteOne(inventoryBalances, input.id)),
+});
+
 export const masterDataRouter = router({
   suppliers: suppliersRouter,
   materials: materialsRouter,
   customers: customersRouter,
   skills: skillsRouter,
   tools: toolsRouter,
+  uom: uomRouter,
+  calendar: calendarRouter,
+  inventory: inventoryRouter,
 });

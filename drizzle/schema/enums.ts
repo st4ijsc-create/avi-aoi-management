@@ -277,3 +277,13 @@ export const toolTypeEnum = pgEnum("tooltypeenum", ["nozzle", "stencil", "squeeg
 export const toolStatusEnum = pgEnum("toolstatusenum", ["available", "in_use", "maintenance", "worn", "retired"]);
 // Operator certification level for a skill (drives future qualification gating).
 export const certificationLevelEnum = pgEnum("certificationlevelenum", ["trainee", "qualified", "expert", "trainer"]);
+
+// === Doc 07 §③ — MASTER DATA EXTRAS (UoM / Plant Calendar / Warehouse-Inventory) ===
+// Physical dimension a unit-of-measure belongs to (for safe conversions).
+export const uomDimensionEnum = pgEnum("uomdimensionenum", ["length", "mass", "volume", "time", "temperature", "count", "percent", "other"]);
+// Day classification in a plant/shift calendar (drives takt / OEE-availability / APS).
+export const calendarDayTypeEnum = pgEnum("calendardaytypeenum", ["working", "holiday", "planned_downtime"]);
+// Warehouse kind (raw / work-in-progress / finished-goods / spare / other).
+export const warehouseTypeEnum = pgEnum("warehousetypeenum", ["raw", "wip", "fg", "spare", "other"]);
+// Storage-location granularity within a warehouse.
+export const storageLocationKindEnum = pgEnum("storagelocationkindenum", ["bin", "shelf", "zone"]);
