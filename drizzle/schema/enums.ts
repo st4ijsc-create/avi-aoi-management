@@ -287,3 +287,35 @@ export const calendarDayTypeEnum = pgEnum("calendardaytypeenum", ["working", "ho
 export const warehouseTypeEnum = pgEnum("warehousetypeenum", ["raw", "wip", "fg", "spare", "other"]);
 // Storage-location granularity within a warehouse.
 export const storageLocationKindEnum = pgEnum("storagelocationkindenum", ["bin", "shelf", "zone"]);
+
+// === Phase E2 — Factory Control Plane: Factory Orchestration Engine (FOE) ===
+// Lifecycle of a deployed orchestration workflow definition.
+export const orchestrationWorkflowStatusEnum = pgEnum("orchestrationworkflowstatusenum", [
+  "draft",
+  "active",
+  "archived",
+]);
+// Lifecycle of one workflow RUN. queued → running; held (precondition/interlock) or
+// awaiting_confirm (a hitl_gate) pause it; compensating runs saga undo; terminal =
+// completed | failed | aborted.
+export const orchestrationRunStatusEnum = pgEnum("orchestrationrunstatusenum", [
+  "queued",
+  "running",
+  "held",
+  "awaiting_confirm",
+  "completed",
+  "failed",
+  "aborted",
+  "compensating",
+]);
+// Lifecycle of one RUN STEP (per node in the step tree).
+export const orchestrationRunStepStatusEnum = pgEnum("orchestrationrunstepstatusenum", [
+  "pending",
+  "running",
+  "awaiting_confirm",
+  "held",
+  "completed",
+  "failed",
+  "skipped",
+  "compensated",
+]);

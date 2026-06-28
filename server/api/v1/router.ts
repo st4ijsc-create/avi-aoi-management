@@ -287,13 +287,82 @@ export function createV1Router(): Router {
     }),
   );
 
-  // ── Orchestration stubs (E2) — published now so the contract is fixed. ──
-  const notImplemented = (res: Response) =>
-    sendError(res, 501, "not_implemented", "Orchestration is coming in Phase E2.", { phase: "E2" });
+  // ── Orchestration (E2) — Factory Orchestration Engine via the build-own FOE. ──
+  // Control still routes through the E0 equipmentRegistry → existing HITL/dry-run
+  // dispatcher. Flag-gated by FOE_ENABLED (off → a structured `disabled` envelope).
 
-  r.post("/orchestration/workflows", requireScope(API_SCOPES.ORCHESTRATION_WRITE), wrap((_req, res) => notImplemented(res)));
-  r.post("/orchestration/runs", requireScope(API_SCOPES.ORCHESTRATION_WRITE), wrap((_req, res) => notImplemented(res)));
-  r.get("/orchestration/runs/:id", requireScope(API_SCOPES.ORCHESTRATION_READ), wrap((_req, res) => notImplemented(res)));
+  // POST /orchestration/workflows — deploy (validate + persist) a workflow definition.
+  r.post(
+    "/orchestration/workflows",
+    requireScope(API_SCOPES.ORCHESTRATION_WRITE),
+    wrap(async (req, res) => {
+      const { deployWorkflow } = await import("../../services/orchestration/foe/foeEngine");
+      const def = (req.body ?? {}) as never;
+      const principal = req.apiPrincipal?.name ?? "api-key";
+      const result = await deployWorkflow(def, { id: 0, role: "api", name: principal });
+      if (!result.enabled) {
+        return sendError(res, 503, "foe_disabled", "Orchestration engine is disabled (FOE_ENABLED).", { phase: "E2" });
+      }
+      if (!result.ok) {
+        throw new ApiHttpError(400, "invalid_workflow", result.message ?? "Workflow validation failed.", {
+          errors: result.errors ?? [],
+        });
+      }
+      sendOk(res, { workflowId: result.workflowId, ref: result.ref, version: result.version }, 201);
+    }),
+  );
+
+  // POST /orchestration/runs — start a run of a deployed workflow { workflowRef, params }.
+  r.post(
+    "/orchestration/runs",
+    requireScope(API_SCOPES.ORCHESTRATION_WRITE),
+    wrap(async (req, res) => {
+      const { startRun } = await import("../../services/orchestration/foe/foeEngine");
+      const body = (req.body ?? {}) as { workflowRef?: string; params?: Record<string, unknown> };
+      if (!body.workflowRef || typeof body.workflowRef !== "string") {
+        throw new ApiHttpError(400, "bad_request", "Body field `workflowRef` is required.");
+      }
+      const principal = req.apiPrincipal?.name ?? "api-key";
+      const result = await startRun(body.workflowRef, body.params ?? {}, { id: 0, role: "api", name: principal });
+      if (!result.enabled) {
+        return sendError(res, 503, "foe_disabled", "Orchestration engine is disabled (FOE_ENABLED).", { phase: "E2" });
+      }
+      void emit("orchestration.run.finished", {
+        runId: result.runId,
+        workflowRef: body.workflowRef,
+        status: result.status,
+      });
+      sendOk(res, { runId: result.runId, status: result.status, accepted: result.ok }, 202);
+    }),
+  );
+
+  // GET /orchestration/runs/:id — run status + per-step audit.
+  r.get(
+    "/orchestration/runs/:id",
+    requireScope(API_SCOPES.ORCHESTRATION_READ),
+    wrap(async (req, res) => {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        throw new ApiHttpError(400, "bad_request", "Invalid run id.");
+      }
+      const { getRun } = await import("../../services/orchestration/foe/foeEngine");
+      const view = await getRun(id);
+      if (!view) throw new ApiHttpError(404, "not_found", `Run ${id} not found.`);
+      sendOk(res, {
+        run: {
+          id: view.run.id,
+          workflowId: view.run.workflowId,
+          workflowRef: view.run.workflowRef,
+          status: view.run.status,
+          currentStepId: view.run.currentStepId,
+          startedAt: view.run.startedAt,
+          finishedAt: view.run.finishedAt,
+          error: view.run.error,
+        },
+        steps: view.steps,
+      });
+    }),
+  );
 
   // GET /openapi.json — the published contract (no auth; describes only).
   r.get(
