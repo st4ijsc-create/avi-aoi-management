@@ -4490,6 +4490,16 @@ async function startServer() {
     console.error("[anomalyBankScheduler] init failed:", (err as any)?.message || err);
   }
 
+  // Threshold auto-tune — proposes (HITL) tuned NG / measurement-point limits once
+  // enough new data shows the current value is suboptimal. Disabled by default; opt
+  // in via AI_THRESHOLD_AUTOTUNE_ENABLED=true. Safe no-op when OFF; never auto-applies.
+  try {
+    const { startThresholdTuneScheduler } = await import("../services/aiThresholdTuneScheduler");
+    startThresholdTuneScheduler();
+  } catch (err) {
+    console.error("[aiThresholdTuneScheduler] init failed:", (err as any)?.message || err);
+  }
+
   // P2 WS2.3 — Orchestration rules engine (subscribes to the event bus).
   // Disabled by default; opt in via ORCHESTRATION_ENABLED=true. Notify/audit only.
   try {
@@ -4614,6 +4624,9 @@ async function startServer() {
       .catch(() => {});
     import("../services/aiAnomalyBankScheduler")
       .then((m) => m.stopAnomalyBankScheduler())
+      .catch(() => {});
+    import("../services/aiThresholdTuneScheduler")
+      .then((m) => m.stopThresholdTuneScheduler())
       .catch(() => {});
     shutdownScheduledBackups();
     shutdownRuntimeSecurity();
