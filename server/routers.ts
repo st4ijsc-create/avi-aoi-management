@@ -119,6 +119,7 @@ import { equipmentRouter } from "./routers/equipmentRouter"; // E0: unified equi
 import { orchestrationRouter } from "./routers/orchestrationRouter"; // E2: Factory Orchestration Engine (FOE_ENABLED)
 import { aiOrchestrationRouter } from "./routers/aiOrchestrationRouter"; // E5: AI-assisted orchestration advisor (AI_ORCHESTRATION_ADVISOR_ENABLED; advisory, HITL)
 import { edgeRuntimeRouter } from "./routers/edgeRuntimeRouter"; // E4: edge control runtime coordinator (EDGE_RUNTIME_ENABLED)
+import { apiKeyRouter } from "./routers/apiKeyRouter"; // Control plane: scoped API-key admin CRUD (create-show-once + sha256 hash reuse)
 import { machineRecipeRouter } from "./routers/machineRecipeRouter"; // G2.2a: recipe versioning + deploy (catalog/ledger only, no device push)
 import { commandLogRouter } from "./routers/commandLogRouter"; // G2.2a: command audit log (READ-ONLY)
 import { robotRouter } from "./routers/robotRouter"; // Phase 3: robot registry/telemetry/jobs (control via internal dispatcher)
@@ -360,6 +361,7 @@ export const appRouter = router({
   orchestration: orchestrationRouter,
   aiOrchestration: aiOrchestrationRouter,
   edgeRuntime: edgeRuntimeRouter,
+  apiKey: apiKeyRouter,
   machineRecipe: machineRecipeRouter,
   commandLog: commandLogRouter,
   robot: robotRouter,

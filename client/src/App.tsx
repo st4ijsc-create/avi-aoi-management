@@ -108,6 +108,8 @@ const InterlockRuleManagement = React.lazy(() => import("./pages/InterlockRuleMa
 const BomManagement = React.lazy(() => import("./pages/BomManagement")); // G2.4: BOM + Feeder + component genealogy (data/telemetry/trace)
 const MasterDataManagement = React.lazy(() => import("./pages/MasterDataManagement")); // Doc 07 §③: MES/MOM master data (supplier/material/customer/skill/tool)
 const OrchestrationStudio = React.lazy(() => import("./pages/OrchestrationStudio")); // E3b: visual orchestration studio (author → simulate → deploy/run)
+const ApiKeysPage = React.lazy(() => import("./pages/ApiKeysPage")); // Control plane: scoped API-key admin CRUD (create-show-once)
+const EdgeNodesPage = React.lazy(() => import("./pages/EdgeNodesPage")); // E4: edge node registry management
 import AOIPackages from "./pages/AOIPackages";
 import MqttBulletin from "./pages/MqttBulletin";
 import CorrelationAnalysis from "./pages/CorrelationAnalysis";
@@ -175,6 +177,8 @@ function Router() {
       <Route path="/recipes"><RouteGuard navHref="/recipes"><RecipeManagement /></RouteGuard></Route>
       <Route path="/interlock-rules"><RouteGuard navHref="/interlock-rules"><InterlockRuleManagement /></RouteGuard></Route>
       <Route path="/orchestration-studio"><RouteGuard navHref="/orchestration-studio"><AIPageWrapper><OrchestrationStudio /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/edge-nodes"><RouteGuard navHref="/edge-nodes"><AIPageWrapper><EdgeNodesPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/api-keys"><RouteGuard navHref="/api-keys"><AIPageWrapper><ApiKeysPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/bom-management" component={BomManagement} />
       <Route path="/master-data" component={MasterDataManagement} />
       <Route path="/history" component={History} />

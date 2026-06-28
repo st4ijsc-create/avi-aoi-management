@@ -55,7 +55,15 @@ import {
   RefreshCw,
   Sparkles,
   Wand2,
+  Copy,
 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import {
   type StudioStep,
   type StudioDef,
@@ -734,6 +742,20 @@ export default function OrchestrationStudio() {
     onError: (e) => toast.error(e.message),
   });
 
+  // ── Saved-workflow delete / duplicate ──
+  const [deleteWf, setDeleteWf] = useState<{ id: number; ref: string } | null>(null);
+  const [dupWf, setDupWf] = useState<{ id: number; ref: string; name: string } | null>(null);
+  const [dupNewRef, setDupNewRef] = useState("");
+
+  const deleteWfM = trpc.orchestration.deleteWorkflow.useMutation({
+    onSuccess: () => { toast.success(t("studio.wfDeleted", "Đã xoá quy trình")); setDeleteWf(null); void workflowsQ.refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const duplicateWfM = trpc.orchestration.duplicateWorkflow.useMutation({
+    onSuccess: () => { toast.success(t("studio.wfDuplicated", "Đã nhân bản quy trình")); setDupWf(null); setDupNewRef(""); void workflowsQ.refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+
   const selectedStep = selectedId ? findStep(def.steps, selectedId) : null;
 
   const mutate = (fn: (d: StudioDef) => void) => {
@@ -1071,9 +1093,31 @@ export default function OrchestrationStudio() {
                     <div className="truncate font-medium">{String(w.name ?? w.ref)}</div>
                     <div className="truncate font-mono text-[10px] text-muted-foreground">{String(w.ref)} · v{String(w.version ?? 1)}</div>
                   </div>
-                  <Button size="sm" variant="outline" onClick={() => loadWorkflow(w as { definitionJson?: unknown })}>
-                    {t("studio.load", "Nạp")}
-                  </Button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button size="sm" variant="outline" onClick={() => loadWorkflow(w as { definitionJson?: unknown })}>
+                      {t("studio.load", "Nạp")}
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      disabled={!canControl}
+                      title={t("studio.duplicate", "Nhân bản")}
+                      onClick={() => { setDupWf({ id: Number(w.id), ref: String(w.ref), name: String(w.name ?? w.ref) }); setDupNewRef(`${String(w.ref)}-copy`); }}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-destructive"
+                      disabled={!canControl}
+                      title={t("common.delete", "Xóa")}
+                      onClick={() => setDeleteWf({ id: Number(w.id), ref: String(w.ref) })}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </div>
               ))}
             </CardContent>
@@ -1110,6 +1154,47 @@ export default function OrchestrationStudio() {
           {t("studio.futureNote", "Phiên bản v1 dùng cây bước lồng nhau. Nâng cấp tương lai: chỉnh sửa dạng đồ thị (react-flow).")}
         </p>
       </div>
+
+      {/* Duplicate workflow dialog */}
+      <Dialog open={dupWf != null} onOpenChange={(o) => { if (!o) { setDupWf(null); setDupNewRef(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("studio.duplicateTitle", "Nhân bản quy trình")}</DialogTitle>
+            <DialogDescription>{t("studio.duplicateDesc", "Tạo một bản sao với mã (ref) mới. Bản sao không kèm lượt chạy nào.")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label className="text-xs">{t("studio.duplicateNewRef", "Mã quy trình mới (ref) *")}</Label>
+            <Input value={dupNewRef} onChange={(e) => setDupNewRef(e.target.value)} className="font-mono" placeholder="line-a-startup-copy" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDupWf(null); setDupNewRef(""); }}>{t("common.cancel", "Huỷ")}</Button>
+            <Button
+              disabled={!dupNewRef.trim() || duplicateWfM.isPending}
+              onClick={() => dupWf && duplicateWfM.mutate({ id: dupWf.id, newRef: dupNewRef.trim() })}
+            >
+              {t("studio.duplicate", "Nhân bản")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete workflow confirm */}
+      <AlertDialog open={deleteWf != null} onOpenChange={(o) => !o && setDeleteWf(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("studio.deleteWfTitle", "Xoá quy trình?")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("studio.deleteWfDesc", "Quy trình \"{{ref}}\" cùng lịch sử lượt chạy đã kết thúc sẽ bị xoá. Nếu còn lượt chạy đang hoạt động, thao tác sẽ bị từ chối.", { ref: deleteWf?.ref })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel", "Huỷ")}</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={() => deleteWf && deleteWfM.mutate({ id: deleteWf.id })}>
+              {t("common.delete", "Xóa")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 }

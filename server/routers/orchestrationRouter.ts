@@ -16,12 +16,12 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 import { z } from "zod";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
-import { orchestrationWorkflows, orchestrationRuns, machines } from "../../drizzle/schema";
+import { orchestrationWorkflows, orchestrationRuns, orchestrationRunSteps, machines } from "../../drizzle/schema";
 import {
   deployWorkflow,
   startRun,
@@ -224,5 +224,108 @@ export const orchestrationRouter = router({
     .input(z.object({ runId: z.number().int().positive(), reason: z.string().max(1000).optional() }))
     .mutation(async ({ input, ctx }) => {
       return abortRun(input.runId, toFoeUser(ctx.user), input.reason);
+    }),
+
+  /**
+   * DELETE a workflow (by id OR ref).
+   *
+   * CASCADE-SAFETY (documented): deleting a workflow that still has NON-TERMINAL runs
+   * (queued/running/held/awaiting_confirm) is REFUSED — those runs would be orphaned;
+   * the caller must abort/finish them first. When only terminal runs remain, the run
+   * history (orchestration_runs + orchestration_run_steps) is cascaded/cleaned so no
+   * dangling FK rows are left behind, then the workflow row is removed.
+   * RBAC: machine_control / canDelete.
+   */
+  deleteWorkflow: protectedProcedure
+    .use(requirePermission("machine_control", "canDelete"))
+    .input(
+      z
+        .object({
+          id: z.number().int().positive().optional(),
+          ref: z.string().min(1).max(128).optional(),
+        })
+        .refine((v) => v.id != null || v.ref != null, { message: "Provide either `id` or `ref`." }),
+    )
+    .mutation(async ({ input }) => {
+      const d = await db();
+      const [wf] = await d
+        .select()
+        .from(orchestrationWorkflows)
+        .where(input.id != null ? eq(orchestrationWorkflows.id, input.id) : eq(orchestrationWorkflows.ref, input.ref!))
+        .limit(1);
+      if (!wf) throw new TRPCError({ code: "NOT_FOUND", message: "Workflow not found" });
+
+      const runs = await d.select().from(orchestrationRuns).where(eq(orchestrationRuns.workflowId, wf.id));
+      const active = runs.filter((r) => !["completed", "failed", "aborted"].includes(r.status));
+      if (active.length > 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Workflow "${wf.ref}" has ${active.length} active run(s). Abort or finish them before deleting.`,
+        });
+      }
+
+      // Cascade-clean terminal run history (steps → runs) then delete the workflow.
+      const runIds = runs.map((r) => r.id);
+      if (runIds.length > 0) {
+        await d.delete(orchestrationRunSteps).where(inArray(orchestrationRunSteps.runId, runIds));
+        await d.delete(orchestrationRuns).where(eq(orchestrationRuns.workflowId, wf.id));
+      }
+      await d.delete(orchestrationWorkflows).where(eq(orchestrationWorkflows.id, wf.id));
+      return { ok: true, id: wf.id, ref: wf.ref, removedRuns: runIds.length };
+    }),
+
+  /**
+   * DUPLICATE a workflow (by id OR ref) under a NEW unique ref. Copies the definition
+   * (re-stamping its `ref`), resets version to 1, and creates a fresh row with NO runs.
+   * RBAC: machine_control / canCreate.
+   */
+  duplicateWorkflow: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z
+        .object({
+          id: z.number().int().positive().optional(),
+          ref: z.string().min(1).max(128).optional(),
+          newRef: z.string().min(1).max(128),
+          newName: z.string().min(1).max(255).optional(),
+        })
+        .refine((v) => v.id != null || v.ref != null, { message: "Provide either `id` or `ref`." }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const d = await db();
+      const [src] = await d
+        .select()
+        .from(orchestrationWorkflows)
+        .where(input.id != null ? eq(orchestrationWorkflows.id, input.id) : eq(orchestrationWorkflows.ref, input.ref!))
+        .limit(1);
+      if (!src) throw new TRPCError({ code: "NOT_FOUND", message: "Source workflow not found" });
+
+      const newRef = input.newRef.trim();
+      const [clash] = await d
+        .select()
+        .from(orchestrationWorkflows)
+        .where(eq(orchestrationWorkflows.ref, newRef))
+        .limit(1);
+      if (clash) throw new TRPCError({ code: "CONFLICT", message: `A workflow with ref "${newRef}" already exists.` });
+
+      // Re-stamp the definition's own ref so the stored JSON stays consistent.
+      const def = {
+        ...(src.definitionJson as unknown as Record<string, unknown>),
+        ref: newRef,
+      } as typeof src.definitionJson;
+      const newName = input.newName?.trim() || `${src.name} (copy)`;
+      const [row] = await d
+        .insert(orchestrationWorkflows)
+        .values({
+          ref: newRef,
+          name: newName,
+          version: 1,
+          description: src.description,
+          definitionJson: def,
+          status: "active",
+          createdBy: ctx.user?.id ?? null,
+        })
+        .returning();
+      return { ok: true, id: row.id, ref: row.ref };
     }),
 });

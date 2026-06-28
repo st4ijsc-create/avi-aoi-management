@@ -29,6 +29,7 @@ import {
   assignRun,
   syncRunResult,
   listRunsForNode,
+  deleteNode,
   edgeRuntimeEnabled,
 } from "../services/edge/edgeCoordinator";
 
@@ -92,6 +93,15 @@ export const edgeRuntimeRouter = router({
       }),
     )
     .mutation(async ({ input }) => heartbeat(input)),
+
+  /**
+   * Deregister (delete) an edge node. Flag-gated; guarded against deleting a node that
+   * still has non-terminal runs delegated to it. RBAC: machine_control / canDelete.
+   */
+  deleteNode: protectedProcedure
+    .use(requirePermission("machine_control", "canDelete"))
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input }) => deleteNode(input.id)),
 
   /** Delegate a workflow RUN to an edge node. Flag-gated. */
   assignRun: protectedProcedure

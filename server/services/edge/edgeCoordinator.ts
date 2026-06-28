@@ -258,6 +258,53 @@ export async function markStaleNodesOffline(thresholdMin = 2): Promise<string[]>
   }
 }
 
+/**
+ * Deregister (delete) an edge node by id. Flag-gated. SAFE-GUARD: refuses to delete a
+ * node that still has NON-TERMINAL runs delegated to it (those runs would be orphaned);
+ * the caller must first reassign/abort them. Terminal-only history does not block.
+ * Fail-safe: a DB error returns a structured failure, never throws to the transport.
+ */
+export async function deleteNode(id: number): Promise<EdgeResult<{ id: number }>> {
+  if (!edgeRuntimeEnabled()) {
+    return { ok: false, enabled: false, message: "Edge runtime is disabled (set EDGE_RUNTIME_ENABLED=true)." };
+  }
+  if (!Number.isInteger(id) || id <= 0) {
+    return { ok: false, enabled: true, message: "A valid node id is required." };
+  }
+  try {
+    const d = await db();
+    const [node] = await d.select().from(edgeNodes).where(eq(edgeNodes.id, id)).limit(1);
+    if (!node) return { ok: false, enabled: true, message: `Edge node ${id} not found.` };
+
+    // Guard: any non-terminal run still delegated here would be orphaned.
+    const assigned = await d
+      .select()
+      .from(orchestrationRuns)
+      .where(eq(orchestrationRuns.edgeNodeId, id));
+    const active = assigned.filter(
+      (r) => !["completed", "failed", "aborted"].includes(r.status),
+    );
+    if (active.length > 0) {
+      return {
+        ok: false,
+        enabled: true,
+        message: `Node "${node.code}" still has ${active.length} active run(s) delegated to it. Reassign or abort them first.`,
+      };
+    }
+    // Detach terminal-run history from the node (keep the runs, null the FK) then delete.
+    if (assigned.length > 0) {
+      await d
+        .update(orchestrationRuns)
+        .set({ edgeNodeId: null, updatedAt: new Date() })
+        .where(eq(orchestrationRuns.edgeNodeId, id));
+    }
+    await d.delete(edgeNodes).where(eq(edgeNodes.id, id));
+    return { ok: true, enabled: true, data: { id } };
+  } catch (err) {
+    return { ok: false, enabled: true, message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 // ════════════════════════════════════════════════════════════════════════════════
 // RUN ASSIGNMENT
 // ════════════════════════════════════════════════════════════════════════════════
