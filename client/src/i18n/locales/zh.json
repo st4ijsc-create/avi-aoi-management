@@ -8348,6 +8348,37 @@
     "toastDisabled": "已停用规则",
     "toastResolved": "已解决事件"
   },
+  "quickIssue": {
+    "button": "报告异常",
+    "title": "报告异常",
+    "description": "简要描述问题（或语音输入）。AI 会自动判断类别与严重等级并路由到安灯系统。",
+    "placeholder": "出了什么问题？（例如：设备卡料、缺胶、NG 缺陷……）",
+    "voiceStart": "语音",
+    "voiceStop": "停止",
+    "voiceUnsupported": "此浏览器不支持语音识别。",
+    "voiceError": "无法识别语音，请重试。",
+    "machineChip": "设备：{{code}}",
+    "submit": "发送报告",
+    "submitting": "发送中……",
+    "callForHelp": "立即呼叫支援",
+    "routedToast": "已报告：{{reason}} · {{state}}级 — 正在路由",
+    "routedDegraded": "已报告（安全默认）：{{reason}} · {{state}}级 — AI 暂未分类",
+    "error": "无法发送报告，请重试。",
+    "reason": {
+      "quality": "质量",
+      "material": "物料",
+      "maintenance": "维护",
+      "safety": "安全",
+      "setup": "设置",
+      "other": "其他"
+    },
+    "state": {
+      "green": "绿",
+      "yellow": "黄",
+      "red": "红",
+      "call": "呼叫"
+    }
+  },
   "machineScan": {
     "scanButton": "扫描设备",
     "title": "扫描设备向 AI 提问",

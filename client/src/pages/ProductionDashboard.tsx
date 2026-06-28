@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import ReportExportButton, { type ReportExportConfig } from "@/components/ReportExportButton";
 import MachineAISummary from "@/components/MachineAISummary";
+import QuickIssueReport from "@/components/QuickIssueReport";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
@@ -688,6 +689,9 @@ export default function ProductionDashboard() {
             <Link2 className="h-3 w-3 mr-1" />
             {t("productionDashboard.copyLink", "Copy link")}
           </Button>
+
+          {/* Operator 1-tap issue report → AI-classified → routed to Andon. */}
+          <QuickIssueReport size="sm" className="h-8 text-xs shrink-0" />
 
           <ReportExportButton getConfig={getExportConfig} />
         </div>

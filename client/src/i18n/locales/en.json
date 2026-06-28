@@ -8374,6 +8374,37 @@
     "toastDisabled": "Rule disabled",
     "toastResolved": "Event resolved"
   },
+  "quickIssue": {
+    "button": "Report issue",
+    "title": "Report an issue",
+    "description": "Briefly describe the problem (or speak). The AI picks the category and severity, then routes it to Andon.",
+    "placeholder": "What's wrong? (e.g. machine jam, out of glue, NG defect...)",
+    "voiceStart": "Speak",
+    "voiceStop": "Stop",
+    "voiceUnsupported": "This browser does not support speech recognition.",
+    "voiceError": "Could not recognize speech. Please try again.",
+    "machineChip": "Machine: {{code}}",
+    "submit": "Send report",
+    "submitting": "Sending...",
+    "callForHelp": "Call for help now",
+    "routedToast": "Reported: {{reason}} · {{state}} level — routing",
+    "routedDegraded": "Reported (safe default): {{reason}} · {{state}} level — AI could not classify",
+    "error": "Could not send the report. Please try again.",
+    "reason": {
+      "quality": "Quality",
+      "material": "Material",
+      "maintenance": "Maintenance",
+      "safety": "Safety",
+      "setup": "Setup",
+      "other": "Other"
+    },
+    "state": {
+      "green": "Green",
+      "yellow": "Yellow",
+      "red": "Red",
+      "call": "Call"
+    }
+  },
   "machineScan": {
     "scanButton": "Scan machine",
     "title": "Scan a machine to ask AI",

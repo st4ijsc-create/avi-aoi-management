@@ -8397,6 +8397,37 @@
     "toastDisabled": "Đã tắt quy tắc",
     "toastResolved": "Đã giải quyết sự kiện"
   },
+  "quickIssue": {
+    "button": "Báo sự cố",
+    "title": "Báo sự cố",
+    "description": "Mô tả ngắn vấn đề (hoặc nói). AI sẽ tự chọn loại và mức cảnh báo rồi gửi tới Andon.",
+    "placeholder": "Vấn đề là gì? (vd: máy kẹt, hết keo, lỗi NG...)",
+    "voiceStart": "Nói",
+    "voiceStop": "Dừng",
+    "voiceUnsupported": "Trình duyệt không hỗ trợ nhận dạng giọng nói.",
+    "voiceError": "Không nhận diện được giọng nói. Vui lòng thử lại.",
+    "machineChip": "Máy: {{code}}",
+    "submit": "Gửi báo cáo",
+    "submitting": "Đang gửi...",
+    "callForHelp": "Gọi hỗ trợ ngay",
+    "routedToast": "Đã báo: {{reason}} · mức {{state}} — đang định tuyến",
+    "routedDegraded": "Đã báo (mặc định an toàn): {{reason}} · mức {{state}} — AI tạm chưa phân loại",
+    "error": "Không gửi được báo cáo. Vui lòng thử lại.",
+    "reason": {
+      "quality": "Chất lượng",
+      "material": "Vật tư",
+      "maintenance": "Bảo trì",
+      "safety": "An toàn",
+      "setup": "Cài đặt",
+      "other": "Khác"
+    },
+    "state": {
+      "green": "Xanh",
+      "yellow": "Vàng",
+      "red": "Đỏ",
+      "call": "Gọi hỗ trợ"
+    }
+  },
   "machineScan": {
     "scanButton": "Quét máy",
     "title": "Quét máy để hỏi AI",

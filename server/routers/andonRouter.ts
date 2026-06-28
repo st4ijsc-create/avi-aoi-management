@@ -16,6 +16,8 @@ import { requirePermission } from "../_core/accessControl";
 import { getDb as getDbRaw } from "../db";
 import { andonEvents } from "../../drizzle/schema";
 import { raiseAndon, acknowledgeAndon, resolveAndon } from "../services/andon/andonService";
+import { classifyIssue } from "../services/aiIssueClassifier";
+import { getMachineByCode } from "../db/hierarchy";
 
 async function getDb() {
   const db = await getDbRaw();
@@ -52,6 +54,71 @@ export const andonRouter = router({
         },
         { id: ctx.user.id, name: ctx.user.name ?? null },
       );
+    }),
+
+  /**
+   * quickReport — operator "1-tap issue report" (báo sự cố).
+   *
+   * Minimum effort: the operator submits a short free-text (or voice-dictated)
+   * description; the FAST AI model picks reason + state via classifyIssue() so
+   * the operator never has to choose a category/severity. The classified Andon
+   * is then raised through the SAME raiseAndon service path as `raise`.
+   *
+   * Same RBAC as raise (andon/canCreate). raisedBySystem:false (a human raised
+   * it). Fail-safe end-to-end: a classifier failure still raises an Andon with a
+   * safe default (reason "other"). An empty description is allowed → a bare
+   * call-for-help. `degraded` tells the client the AI fell back to a default.
+   */
+  quickReport: protectedProcedure
+    .use(requirePermission("andon", "canCreate"))
+    .input(z.object({
+      machineId: z.number().int().positive().optional(),
+      machineCode: z.string().min(1).max(100).optional(),
+      stationId: z.number().int().positive().optional(),
+      lineId: z.number().int().positive().optional(),
+      description: z.string().max(2000).optional(),
+      lang: z.enum(["vi", "en", "zh"]).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      // Resolve machineId from a scanned/typed machine code when an id wasn't passed.
+      let machineId = input.machineId;
+      let machineCode = input.machineCode?.trim() || undefined;
+      if (machineId == null && machineCode) {
+        const m = await getMachineByCode(machineCode);
+        if (m) {
+          machineId = m.id;
+          machineCode = m.code;
+        }
+      }
+
+      // FAST-model classification (never throws — returns a safe default if degraded).
+      const classified = await classifyIssue({
+        description: input.description,
+        machineCode,
+        lang: input.lang ?? "vi",
+      });
+
+      const event = await raiseAndon(
+        {
+          state: classified.state,
+          reason: classified.reason,
+          title: classified.title,
+          message: input.description?.trim() || classified.title,
+          machineId: machineId ?? null,
+          stationId: input.stationId ?? null,
+          lineId: input.lineId ?? null,
+          raisedBySystem: false,
+        },
+        { id: ctx.user.id, name: ctx.user.name ?? null },
+      );
+
+      return {
+        andonId: event.id,
+        reason: classified.reason,
+        state: classified.state,
+        title: classified.title,
+        degraded: classified.degraded,
+      };
     }),
 
   acknowledge: protectedProcedure
