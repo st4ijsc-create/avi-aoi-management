@@ -102,6 +102,7 @@ import { aiAdvancedVisionRouter } from "./routers/aiAdvancedVisionRouter";
 import { aiSpecialistAgentRouter } from "./routers/aiSpecialistAgentRouter";
 import { aiLocalKbRouter } from "./routers/aiLocalKbRouter";
 import { aiCopilotRouter } from "./routers/aiCopilotRouter"; // GĐ2: HITL write-action confirm/cancel
+import { aiRcaCopilotRouter } from "./routers/aiRcaCopilotRouter"; // Technician Copilot ③: RCA diagnose + 1-tap fix
 import { aiAgentRouter } from "./routers/aiAgentRouter"; // GĐ3b: multi-step agentic orchestrator (on top of HITL)
 import { aiCalibrationRouter } from "./routers/aiCalibrationRouter"; // B2: confidence calibration (ECE + reliability)
 import { aiAnomalyRouter } from "./routers/aiAnomalyRouter"; // B3: unsupervised anomaly detection (PatchCore-style)
@@ -477,6 +478,7 @@ export const appRouter = router({
   aiLocalKb: aiLocalKbRouter,
   // AI Copilot — GĐ2 HITL write-action confirm/cancel/get
   aiCopilot: aiCopilotRouter,
+  aiRcaCopilot: aiRcaCopilotRouter,
   // AI Agent — GĐ3b multi-step agentic orchestrator (on top of HITL)
   aiAgent: aiAgentRouter,
   // AI Confidence Calibration — ECE / reliability diagram (B2)
