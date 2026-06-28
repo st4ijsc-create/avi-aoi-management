@@ -710,12 +710,20 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "settings_factory",
         permissionCategory: "settings",
       },
-      { 
-        href: "/datasettings", 
-        label: "nav.dataSettingsPage", 
+      {
+        href: "/datasettings",
+        label: "nav.dataSettingsPage",
         icon: <Database className="h-4 w-4" />,
         description: "nav.dataSettingsPageDesc",
         requiredPermission: "settings_factory",
+        permissionCategory: "settings",
+      },
+      {
+        href: "/master-data",
+        label: "nav.masterData",
+        icon: <Tags className="h-4 w-4" />,
+        description: "nav.masterDataDesc",
+        requiredPermission: "masterdata",
         permissionCategory: "settings",
       },
     ],

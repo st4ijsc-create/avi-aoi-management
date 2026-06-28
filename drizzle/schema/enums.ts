@@ -265,3 +265,15 @@ export const interlockEventStatusEnum = pgEnum("interlockeventstatusenum", [
   "resolved",
   "failed",
 ]);
+
+// === Doc 07 §③ — MES/MOM MASTER DATA (Supplier/Material/Customer/Skill/Tool) ===
+// Kind of supplier (vendor master classification).
+export const supplierTypeEnum = pgEnum("suppliertypeenum", ["component", "raw_material", "service", "equipment", "subcontractor", "other"]);
+// Supplier qualification/approval state.
+export const supplierApprovalStatusEnum = pgEnum("supplierapprovalstatusenum", ["pending", "approved", "conditional", "rejected", "suspended"]);
+// Tool / fixture / consumable kind.
+export const toolTypeEnum = pgEnum("tooltypeenum", ["nozzle", "stencil", "squeegee", "lens", "jig", "fixture", "other"]);
+// Tool operational status.
+export const toolStatusEnum = pgEnum("toolstatusenum", ["available", "in_use", "maintenance", "worn", "retired"]);
+// Operator certification level for a skill (drives future qualification gating).
+export const certificationLevelEnum = pgEnum("certificationlevelenum", ["trainee", "qualified", "expert", "trainer"]);

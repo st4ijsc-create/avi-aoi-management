@@ -4555,6 +4555,15 @@ async function startServer() {
     console.error("[OT] init failed:", (err as any)?.message || err);
   }
 
+  // MTConnect ingestion — poll MTConnect Agents (CNC / machine tools) → telemetry.
+  // Additive + parallel to OT framework. No-op unless MTCONNECT_ENABLED=true.
+  try {
+    const { startMtconnectPoller } = await import("../services/mtconnect/mtconnectPoller");
+    await startMtconnectPoller();
+  } catch (err) {
+    console.error("[MTConnect] init failed:", (err as any)?.message || err);
+  }
+
   // F5a — Interlock engine (ALERT-ONLY). No-op unless INTERLOCK_ENGINE_ENABLED=true.
   // SAFETY: this engine raises Andon + records interlock_events ONLY; it has NO
   // path to commandDispatcher / driver.writeTags (auto block/stop → 'skipped').
@@ -4646,6 +4655,10 @@ async function startServer() {
     // F1.1 — dừng OT framework (no-op nếu chưa chạy)
     import("../services/ot")
       .then((m) => m.stopOt())
+      .catch(() => {});
+    // MTConnect — dừng poller (no-op nếu chưa chạy)
+    import("../services/mtconnect/mtconnectPoller")
+      .then((m) => m.stopMtconnectPoller())
       .catch(() => {});
     // F5a — dừng interlock engine (no-op nếu chưa chạy)
     import("../services/interlock")

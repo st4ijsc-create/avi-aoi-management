@@ -104,6 +104,7 @@ const CommandAuditLog = React.lazy(() => import("./pages/CommandAuditLog")); // 
 const RecipeManagement = React.lazy(() => import("./pages/RecipeManagement")); // G2.2b: recipe catalog + deploy ledger (CONFIG/VIEW)
 const InterlockRuleManagement = React.lazy(() => import("./pages/InterlockRuleManagement")); // G2.2b: interlock rule admin (CONFIG/VIEW)
 const BomManagement = React.lazy(() => import("./pages/BomManagement")); // G2.4: BOM + Feeder + component genealogy (data/telemetry/trace)
+const MasterDataManagement = React.lazy(() => import("./pages/MasterDataManagement")); // Doc 07 §③: MES/MOM master data (supplier/material/customer/skill/tool)
 import AOIPackages from "./pages/AOIPackages";
 import MqttBulletin from "./pages/MqttBulletin";
 import CorrelationAnalysis from "./pages/CorrelationAnalysis";
@@ -171,6 +172,7 @@ function Router() {
       <Route path="/recipes" component={RecipeManagement} />
       <Route path="/interlock-rules" component={InterlockRuleManagement} />
       <Route path="/bom-management" component={BomManagement} />
+      <Route path="/master-data" component={MasterDataManagement} />
       <Route path="/history" component={History} />
       <Route path="/inspection/:id" component={InspectionDetail} />
       <Route path="/layout" component={Layout} />
