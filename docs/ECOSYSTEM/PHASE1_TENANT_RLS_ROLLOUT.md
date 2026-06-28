@@ -118,3 +118,76 @@ role (admin → bypass, scoped user → codes); `runWithTenantScope` is a no-op
 (no transaction) when the flag is OFF and opens a transaction + sets the GUCs
 when ON; and the `0122` migration SQL shape (RLS enabled + fail-open helper for
 each master-data table, hot tables left commented).
+
+---
+
+## Phase 1 WS4 EXTEND ② — HOT time-series tables via factory-join helpers (2026-06)
+
+`drizzle/0125_tenant_rls_hot_tables.sql` (auto-applied top-level migration)
+promotes the three commented SKELETONS from `0122` into **real, fail-open**
+policies. These tables have **no** denormalized tenant column, so the factory is
+resolved through the hierarchy by `STABLE` `SECURITY DEFINER` helper functions.
+
+### Verified join columns (against `drizzle/schema/{oee,process,mes,hierarchy}.ts`, 2026-06-28)
+| Table | Key column | Resolver | Join path → `factories.code` |
+|---|---|---|---|
+| `oee_metrics` | `machineCode` (varchar, UNIQUE on `machines.code`) | `app_factory_of_machine_code(text)` | machines→stations→production_lines→workshops→factories |
+| `process_results` | `lineCode` (varchar, nullable) | `app_factory_of_line_code(text)` | production_lines(`code`)→workshops→factories |
+| `wip_tracking` | `lineId` (int, nullable) | `app_factory_of_line_id(int)` | production_lines(`id`)→workshops→factories |
+
+Hierarchy hops: `machines.stationId→stations.id`, `stations.lineId→production_lines.id`,
+`production_lines.workshopId→workshops.id`, `workshops.factoryId→factories.id`.
+The factory code column is `factories.code` (UNIQUE).
+
+**Caveat:** `production_lines.code` is **not** globally unique (only `idx_lines_code`,
+no UNIQUE constraint). `app_factory_of_line_code` uses `LIMIT 1`; line codes that
+collide across factories can't be disambiguated from `lineCode` alone (documented
+in the SQL). `machineCode` and `lineId` resolve to exactly one factory.
+
+### Policies + fail-open composition (reused from 0122)
+Each policy composes the **same** inert-by-default helper with a resolver, e.g.
+`USING ( app_tenant_allows( app_factory_of_machine_code("machineCode"), NULL ) )`,
+and a matching `FOR ALL` + `WITH CHECK` (same shape as `0122`). `app_tenant_allows`
+checks the GUCs **first**, so:
+- **Flag OFF / GUC unset / table owner / unscoped query → TRUE (allow-all).** No
+  lockout. This is the fail-open guarantee.
+- **Resolver returns NULL** (orphan row / NULL key / broken link) → with the flag
+  ON, a scoped non-bypass user does **not** see that row (intended: a row we can't
+  attribute to the user's factory is hidden). Admin/`bypass` and the flag-OFF
+  default still see everything. There is **no global lockout** — turning the flag
+  off restores full visibility instantly.
+
+### Why `SECURITY DEFINER`
+The resolver must read the hierarchy tables even from a scoped, RLS-restricted
+role (and even if RLS is later added to hierarchy tables); it returns only a
+factory **code**, never row data. `search_path` is pinned to `public, pg_temp`.
+
+### Performance
+Resolvers are `STABLE` → evaluated at most once per distinct argument per
+statement (not per row). Every join key is already indexed (`idx_machines_code`,
+`idx_machines_station`, `idx_lines_code`, `idx_lines_workshop`,
+`idx_workshops_factory`, PKs) — no missing supporting index.
+
+### Idempotent + guarded
+`CREATE OR REPLACE FUNCTION` for the helper + resolvers; `ENABLE RLS` is a no-op
+if already on; policies are `DROP ... IF EXISTS` then re-created; the policy block
+is wrapped in a `DO` guard that skips if `app_tenant_allows` is missing.
+
+### Adoption caveat (same as 0122)
+Enforcement on these tables only takes effect when the call site wraps the query
+in `runWithTenantScope` **and** `TENANT_RLS_ENABLED=true`. Until then the
+migration is fully inert (fail-open).
+
+### Verification step
+1. **Fail-open with the flag OFF** (`TENANT_RLS_ENABLED` unset): a non-admin
+   scoped to one factory still sees **all** `oee_metrics` / `process_results` /
+   `wip_tracking` rows (the `app.tenant_rls_active` GUC is never set). Proves no
+   breakage.
+2. **Flag ON, scoped user** (query routed through `runWithTenantScope`): a user
+   scoped to factory `F01` sees **only** rows whose resolved factory is `F01`
+   (e.g. OEE rows for machines in `F01`'s lines). Rows whose factory can't be
+   resolved are hidden from the scoped user.
+3. **Admin / bypass** (`app.tenant_bypass='on'`): sees **all** rows regardless of
+   factory — admin bypasses the policy.
+4. **Rollback:** set `TENANT_RLS_ENABLED=false` (instant, no data loss) or run the
+   per-table rollback block at the bottom of `0125_tenant_rls_hot_tables.sql`.

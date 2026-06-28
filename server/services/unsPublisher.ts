@@ -20,8 +20,19 @@
 
 import mqtt, { type MqttClient } from "mqtt";
 import { readFileSync } from "fs";
+import { and, eq } from "drizzle-orm";
 import { normalize, isUnsBridgeEnabled } from "./unsBridge";
 import { SparkplugNode, type MetricSample, type MetricDef } from "./uns/sparkplugNode";
+import {
+  SparkplugCommandHandler,
+  isSparkplugCommandEnabled,
+  parseCommandTopic,
+  type MachineTarget,
+} from "./uns/sparkplugCommand";
+import type { SparkplugMetric } from "./uns/sparkplugEncoder";
+import { dispatch } from "./ot/commandDispatcher";
+import { getDb } from "../db/connection";
+import { machines, deviceAdapters } from "../../drizzle/schema";
 
 const UNS_BROKER_URL = process.env.UNS_BROKER_URL || "mqtt://localhost:1884";
 const UNS_BROKER_USERNAME = process.env.UNS_BROKER_USERNAME || "";
@@ -32,6 +43,13 @@ let connected = false;
 
 // --- Sparkplug-B state (F3a) ---
 let sparkplugNode: SparkplugNode | null = null;
+
+// --- F4 HITL: inbound NCMD/DCMD command handler (flag SPARKPLUG_COMMAND_ENABLED,
+// default OFF). Owns NO MQTT client — it is GIVEN this publisher's client via the
+// injected deps below. Wired once in client.on("connect"); a scoped message handler
+// (commandMessageHandler) routes only NCMD/DCMD topics to it (drops everything else).
+let sparkplugCommandHandler: SparkplugCommandHandler | null = null;
+let commandMessageHandler: ((topic: string, payload: Buffer) => void) | null = null;
 
 // F3b — set metric name đã được DBIRTH cho từng device (để trigger re-DBIRTH khi gặp
 // metric mới chưa từng birth — theo spec Sparkplug). In-memory, đời broker.
@@ -55,6 +73,156 @@ function sparkplugGroupId(): string {
 /** edge_node_id Sparkplug. */
 function sparkplugEdgeNodeId(): string {
   return process.env.UNS_SPARKPLUG_EDGE_NODE_ID || "avi-aoi-ot";
+}
+
+/** Default commandType label recorded on the commandLog for an inbound DCMD write. */
+const SPARKPLUG_DCMD_COMMAND_TYPE = process.env.SPARKPLUG_DCMD_COMMAND_TYPE || "sparkplug_dcmd";
+
+/**
+ * F4 HITL — resolveTarget: map a Sparkplug (group,node,device) → a platform OT
+ * target {machineId, adapterId}, or null when unknown (the handler then DROPS the
+ * command — never guessed).
+ *
+ * MAPPING ASSUMPTION (mirrors the PUBLISH side): the publish bridge (aoiBridge.ts)
+ * emits DDATA with `deviceId = "Station{stationId}"` (the ISA-95 cell). So an inbound
+ * DCMD device is `Station{N}` where N = machines.stationId. We resolve:
+ *   1. parse N from the "Station{N}" deviceId,
+ *   2. machines WHERE stationId = N AND isActive  → machineId,
+ *   3. an ENABLED deviceAdapters WHERE machineId = machine.id → adapterId.
+ * The adapter's own writable-tag allowlist + OT_CONTROL_ENABLED gate (inside dispatch)
+ * are what actually authorize/deny a write — this only locates the target row.
+ *
+ * group/node are not used for the lookup (single edge node per publisher); they are
+ * accepted to match the injected-dep signature and could scope the query later.
+ */
+export async function resolveSparkplugTarget(
+  _groupId: string,
+  _edgeNodeId: string,
+  deviceId: string | undefined,
+): Promise<MachineTarget | null> {
+  if (!deviceId) return null;
+  const m = /^Station(\d+)$/i.exec(deviceId);
+  if (!m) return null;
+  const stationId = Number(m[1]);
+  if (!Number.isInteger(stationId)) return null;
+
+  try {
+    const db = await getDb();
+    if (!db) return null;
+    const machineRows = await db
+      .select({ id: machines.id })
+      .from(machines)
+      .where(and(eq(machines.stationId, stationId), eq(machines.isActive, true)))
+      .limit(1);
+    const machine = machineRows[0];
+    if (!machine) return null;
+
+    const adapterRows = await db
+      .select({ id: deviceAdapters.id })
+      .from(deviceAdapters)
+      .where(and(eq(deviceAdapters.machineId, machine.id), eq(deviceAdapters.isEnabled, true)))
+      .limit(1);
+    const adapter = adapterRows[0];
+    if (!adapter) return null;
+
+    return { machineId: machine.id, adapterId: adapter.id };
+  } catch (err) {
+    console.error("[UNS] Sparkplug resolveTarget failed:", (err as Error)?.message || err);
+    return null;
+  }
+}
+
+/**
+ * F4 HITL — metricToWrite: map one decoded DCMD metric (name + value) → the
+ * dispatcher write-intent {tagKey, value, commandType}, or null to IGNORE.
+ *
+ * The Sparkplug metric NAME is used directly as the dispatcher tagKey: dispatch()
+ * resolves tagKey → deviceTags within the target adapter and ENFORCES the
+ * tag.writable allowlist, so an arbitrary inbound name that is not a writable tag is
+ * rejected there (never executed). We ignore the well-known Rebirth metric (handled
+ * separately) and any nameless/aliased-only metric.
+ */
+export function sparkplugMetricToWrite(
+  metric: SparkplugMetric,
+): { tagKey: string; value: unknown; commandType: string } | null {
+  const name = typeof metric.name === "string" ? metric.name.trim() : "";
+  if (!name) return null;
+  if (name === "Node Control/Rebirth") return null;
+  return { tagKey: name, value: metric.value, commandType: SPARKPLUG_DCMD_COMMAND_TYPE };
+}
+
+/** System user id recorded as requestedBy/confirmedBy on the dispatch (env override). */
+function sparkplugSystemUserId(): number {
+  const n = Number(process.env.SPARKPLUG_COMMAND_SYSTEM_USER_ID);
+  return Number.isInteger(n) && n > 0 ? n : 0;
+}
+
+/**
+ * F4 HITL — instantiate + start the inbound NCMD/DCMD handler on THIS publisher's
+ * MQTT client. Idempotent (no-op when already started). The handler itself is
+ * flag-gated (SPARKPLUG_COMMAND_ENABLED) — start() is a no-op + returns false when
+ * the flag is off, so the publisher stays publish-only by default.
+ *
+ * Wiring of the injected deps:
+ *  - subscribe: client.subscribe(filters) + a SCOPED client.on("message") that only
+ *    forwards NCMD/DCMD topics (parseCommandTopic !== null) to the handler. Other
+ *    topics are ignored here, so this never double-handles the publish path (the
+ *    publisher does not otherwise subscribe to any topic — it is publish-only).
+ *  - onRebirth: rebuild the BIRTH certificates via SparkplugNode.buildRebirth() and
+ *    publish each {topic,buffer}. The ONE safe auto-action (re-publish telemetry).
+ *  - resolveTarget / metricToWrite: the platform mapping defined above.
+ *  - dispatch: the EXISTING commandDispatcher (HITL trigger, OT_CONTROL_ENABLED gate).
+ */
+function startCommandHandler(): void {
+  if (sparkplugCommandHandler) return;
+  const c = client;
+  const node = sparkplugNode;
+  if (!c || !node) return;
+  const groupId = sparkplugGroupId();
+  const edgeNodeId = sparkplugEdgeNodeId();
+
+  sparkplugCommandHandler = new SparkplugCommandHandler({
+    subscribe: (topicFilters, onMessage) => {
+      try {
+        c.subscribe(topicFilters, { qos: 0 }, (err) => {
+          if (err) console.error("[UNS] Sparkplug command subscribe failed:", err.message);
+        });
+      } catch (err) {
+        console.error("[UNS] Sparkplug command subscribe threw:", (err as Error)?.message || err);
+      }
+      // Scoped message handler: forward ONLY NCMD/DCMD topics. Never throws.
+      commandMessageHandler = (topic: string, payload: Buffer) => {
+        try {
+          if (!parseCommandTopic(topic)) return; // not a command topic → ignore (publish path untouched)
+          onMessage(topic, payload);
+        } catch (err) {
+          console.error("[UNS] Sparkplug command message handler error (dropped):", (err as Error)?.message || err);
+        }
+      };
+      c.on("message", commandMessageHandler);
+    },
+    dispatch,
+    onRebirth: () => {
+      // Re-publish BIRTH certificates (NBIRTH + DBIRTH for birthed devices). The
+      // publisher does not retain the per-device metric defs here, so DBIRTH carries
+      // the node birth only — devices lazily re-DBIRTH on their next DDATA (F3b).
+      birthedMetricsByDevice.clear();
+      const msgs = node.buildRebirth(groupId, edgeNodeId, []);
+      for (const m of msgs) {
+        c.publish(m.topic, m.buffer, { qos: 0, retain: false });
+      }
+      console.log(`[UNS] Sparkplug Rebirth published (${msgs.length} certificate(s))`);
+    },
+    resolveTarget: resolveSparkplugTarget,
+    metricToWrite: sparkplugMetricToWrite,
+    systemUserId: sparkplugSystemUserId(),
+  });
+
+  const started = sparkplugCommandHandler.start(groupId, edgeNodeId);
+  if (!started) {
+    // Flag off (defensive — caller already checks): drop the unused handler.
+    sparkplugCommandHandler = null;
+  }
 }
 
 /**
@@ -126,6 +294,16 @@ export function initUnsPublisher(): void {
         console.log(`[UNS] Sparkplug NBIRTH published: ${nbirth.topic}`);
       } catch (err) {
         console.error("[UNS] Sparkplug NBIRTH publish failed:", (err as Error)?.message || err);
+      }
+    }
+    // F4 HITL — inbound NCMD/DCMD (flag SPARKPLUG_COMMAND_ENABLED, default OFF).
+    // Started AFTER the birth publish so a Rebirth re-publishes a valid certificate.
+    // Fully fail-safe: never throws into the MQTT connect handler.
+    if (isSparkplugEnabled() && isSparkplugCommandEnabled() && sparkplugNode && client) {
+      try {
+        startCommandHandler();
+      } catch (err) {
+        console.error("[UNS] Sparkplug command handler start failed:", (err as Error)?.message || err);
       }
     }
   });
@@ -289,6 +467,16 @@ export async function publishNdeathGraceful(timeoutMs = 1500): Promise<void> {
  */
 export async function shutdownUnsPublisher(): Promise<void> {
   if (!client) return;
+  // F4 HITL — detach the scoped command message listener before closing.
+  if (commandMessageHandler) {
+    try {
+      client.removeListener("message", commandMessageHandler);
+    } catch (err) {
+      console.error("[UNS] Sparkplug command listener teardown failed:", (err as Error)?.message || err);
+    }
+    commandMessageHandler = null;
+  }
+  sparkplugCommandHandler = null;
   await new Promise<void>((resolve) => {
     client!.end(false, {}, () => resolve());
   });
