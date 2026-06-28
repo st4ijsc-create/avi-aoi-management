@@ -256,3 +256,37 @@ export const webhookDeliveryLogs = pgTable("webhook_delivery_logs", {
 
 export type WebhookDeliveryLog = typeof webhookDeliveryLogs.$inferSelect;
 export type InsertWebhookDeliveryLog = typeof webhookDeliveryLogs.$inferInsert;
+
+/**
+ * Phase E1 — Factory Control Plane: SCOPED API KEYS for the Unified Machine API
+ * (/api/v1). A per-client credential authenticated via `Authorization: Bearer
+ * <key>` (or `X-API-Key`), carrying a set of SCOPES (e.g. equipment:read,
+ * equipment:command, ingest:write, orchestration:*) that each endpoint declares.
+ *
+ * Only a SHA-256 hash of the key is stored (never the plaintext). The MASTER_API_KEY
+ * remains a super-key (all scopes) handled in the auth middleware — this table is for
+ * additional, least-privilege external clients.
+ */
+export const apiKeys = pgTable("api_keys", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  // SHA-256 hex of the secret. The plaintext is shown ONCE at creation, never stored.
+  keyHash: varchar("keyHash", { length: 128 }).notNull(),
+  // A short, non-secret prefix (e.g. "ak_3f9c") for display/identification.
+  keyPrefix: varchar("keyPrefix", { length: 32 }),
+  // Granted scopes (e.g. ["equipment:read","ingest:write"]). "*" = all scopes.
+  scopes: json("scopes").$type<string[]>().notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  expiresAt: timestamp("expiresAt"),
+  lastUsedAt: timestamp("lastUsedAt"),
+  createdBy: integer("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => [
+  index("idx_api_keys_hash").on(table.keyHash),
+  index("idx_api_keys_active").on(table.isActive),
+]);
+
+export type ApiKey = typeof apiKeys.$inferSelect;
+export type InsertApiKey = typeof apiKeys.$inferInsert;

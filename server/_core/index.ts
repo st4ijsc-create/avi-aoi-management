@@ -4370,6 +4370,21 @@ async function startServer() {
   registerEdgeDownloadRoute(app);
 
   // License enforcement middleware (must be before tRPC mount)
+  // ============================================================
+  // Phase E1 — Unified Machine API (versioned REST /api/v1).
+  // The single external integration contract over the E0 equipment layer:
+  // scoped API-key auth, OpenAPI docs, HITL-gated commands, webhooks. Additive.
+  // ============================================================
+  try {
+    const { createV1Router } = await import("../api/v1/router");
+    const { installWebhookBridge } = await import("../api/v1/webhookBridge");
+    app.use("/api/v1", createV1Router());
+    installWebhookBridge(); // outbound POST still gated by WEBHOOKS_ENABLED (default off)
+    console.log("[ControlPlane] Unified Machine API mounted at /api/v1");
+  } catch (err) {
+    console.error("[ControlPlane] /api/v1 mount failed:", (err as any)?.message || err);
+  }
+
   app.use("/api/trpc", licenseEnforcementMiddleware());
   // tRPC API
   app.use(
