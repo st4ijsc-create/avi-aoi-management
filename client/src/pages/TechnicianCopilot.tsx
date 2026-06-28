@@ -24,6 +24,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
+import AIThresholdSuggestButton from "@/components/AIThresholdSuggestButton";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -50,6 +51,7 @@ import {
   ListChecks,
   History,
   Sparkles,
+  SlidersHorizontal,
 } from "lucide-react";
 
 // ─── Mirror of server RcaResult shapes (read-only; optional-chained on use) ─────
@@ -395,11 +397,14 @@ export default function TechnicianCopilot() {
           </CardContent>
         </Card>
 
+        {/* ── Threshold Advisor section (LUỒNG ②) ──────────────────────────── */}
+        <ThresholdAdvisorSection />
+
         {/* ── Future sections placeholder ──────────────────────────────────── */}
         <p className="text-center text-xs text-muted-foreground">
           {t(
             "technicianCopilot.futureNote",
-            "Sắp có: Trợ lý đặt ngưỡng/thông số · Trợ lý cài đặt máy mới.",
+            "Sắp có: Trợ lý cài đặt máy mới.",
           )}
         </p>
       </div>
@@ -564,5 +569,128 @@ function HypothesisCard({
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Threshold Advisor section (LUỒNG ②) ────────────────────────────────────────
+// Pick a measurement point OR an NG threshold; the reusable AIThresholdSuggestButton
+// fetches the AI recommendation and handles the HITL apply. Honest-degrade + i18n
+// live inside that component.
+
+function ThresholdAdvisorSection() {
+  const { t } = useTranslation();
+  const [mode, setMode] = useState<"point" | "ng">("point");
+  const [pointId, setPointId] = useState<number | undefined>(undefined);
+  const [ngId, setNgId] = useState<number | undefined>(undefined);
+
+  const pointsQuery = trpc.measurementPoint.list.useQuery(undefined, { staleTime: 60_000, retry: false });
+  const points = (pointsQuery.data ?? []) as Array<{ id: number; code?: string; name?: string }>;
+
+  const ngQuery = trpc.ngRateThreshold.list.useQuery(undefined, { staleTime: 60_000, retry: false });
+  const ngThresholds = (ngQuery.data ?? []) as Array<{ id: number; name?: string }>;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <SlidersHorizontal className="h-5 w-5 text-primary" />
+          {t("technicianCopilot.advisor.title", "Trợ lý đặt ngưỡng / thông số")}
+        </CardTitle>
+        <CardDescription>
+          {t("technicianCopilot.advisor.subtitle", "Chọn điểm đo hoặc ngưỡng NG để AI đề xuất giá trị — bạn chỉ cần duyệt.")}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Mode toggle */}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant={mode === "point" ? "default" : "outline"}
+            className="h-11 px-4 text-base"
+            onClick={() => setMode("point")}
+          >
+            {t("technicianCopilot.advisor.modePoint", "Giới hạn điểm đo (LSL/USL)")}
+          </Button>
+          <Button
+            variant={mode === "ng" ? "default" : "outline"}
+            className="h-11 px-4 text-base"
+            onClick={() => setMode("ng")}
+          >
+            {t("technicianCopilot.advisor.modeNg", "Ngưỡng NG (cảnh báo/nghiêm trọng)")}
+          </Button>
+        </div>
+
+        {mode === "point" ? (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1 space-y-1.5">
+              <label className="text-sm font-medium text-muted-foreground">
+                {t("technicianCopilot.advisor.pointLabel", "Điểm đo")}
+              </label>
+              <Select value={pointId != null ? String(pointId) : ""} onValueChange={(v) => setPointId(v ? Number(v) : undefined)}>
+                <SelectTrigger className="h-12 text-base">
+                  <SelectValue placeholder={t("technicianCopilot.advisor.pointPlaceholder", "Chọn điểm đo...")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {points.map((p) => (
+                    <SelectItem key={p.id} value={String(p.id)} className="text-base">
+                      {p.code ? `${p.code} — ${p.name ?? ""}` : (p.name ?? `#${p.id}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="shrink-0">
+              {pointId != null ? (
+                <AIThresholdSuggestButton
+                  target={{ kind: "point", measurementPointId: pointId }}
+                  size="default"
+                  variant="default"
+                  onApplied={() => pointsQuery.refetch()}
+                />
+              ) : (
+                <Button size="default" disabled variant="default" className="gap-1">
+                  <Sparkles className="h-4 w-4" />
+                  {t("thresholdAdvisor.suggestBtn", "🤖 AI đề xuất")}
+                </Button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1 space-y-1.5">
+              <label className="text-sm font-medium text-muted-foreground">
+                {t("technicianCopilot.advisor.ngLabel", "Ngưỡng NG")}
+              </label>
+              <Select value={ngId != null ? String(ngId) : ""} onValueChange={(v) => setNgId(v ? Number(v) : undefined)}>
+                <SelectTrigger className="h-12 text-base">
+                  <SelectValue placeholder={t("technicianCopilot.advisor.ngPlaceholder", "Chọn ngưỡng NG...")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {ngThresholds.map((n) => (
+                    <SelectItem key={n.id} value={String(n.id)} className="text-base">
+                      {n.name ?? `#${n.id}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="shrink-0">
+              {ngId != null ? (
+                <AIThresholdSuggestButton
+                  target={{ kind: "ng", ngThresholdId: ngId }}
+                  size="default"
+                  variant="default"
+                  onApplied={() => ngQuery.refetch()}
+                />
+              ) : (
+                <Button size="default" disabled variant="default" className="gap-1">
+                  <Sparkles className="h-4 w-4" />
+                  {t("thresholdAdvisor.suggestBtn", "🤖 AI đề xuất")}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

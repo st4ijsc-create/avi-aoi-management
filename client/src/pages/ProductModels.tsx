@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useSetCopilotContext } from "@/contexts/AiCopilotContext";
 import DashboardLayout from "@/components/DashboardLayout";
+import AIThresholdSuggestButton from "@/components/AIThresholdSuggestButton";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -2744,6 +2745,18 @@ export default function ProductModels() {
                                 <ValidationMessage error={pointValidation.getFieldError("upperLimit")} />
                               </div>
                             </div>
+                            {/* AI Threshold Advisor — only for a persisted point in edit mode */}
+                            {isEditMode && selectedPointIndex !== null && measurementPoints[selectedPointIndex]?.id ? (
+                              <div className="flex items-center justify-between rounded-md border border-dashed bg-muted/30 px-3 py-2">
+                                <span className="text-xs text-muted-foreground">
+                                  {t("thresholdAdvisor.pointHint", "Để AI tính LSL/USL/mục tiêu từ dữ liệu đo gần đây")}
+                                </span>
+                                <AIThresholdSuggestButton
+                                  target={{ kind: "point", measurementPointId: measurementPoints[selectedPointIndex]!.id! }}
+                                  onApplied={() => refetchPoints()}
+                                />
+                              </div>
+                            ) : null}
                             <div className="space-y-2">
                               <Label htmlFor="pointNominalValue">{t("products.nominalValue")}</Label>
                               <Input

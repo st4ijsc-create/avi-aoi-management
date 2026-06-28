@@ -3541,6 +3541,7 @@
     }
   },
   "mqttNgRateThreshold": {
+    "aiAdvisorHint": "让 AI 根据近期 NG 数据计算警告/严重阈值",
     "pageTitle": "NG率阈值管理",
     "pageDescription": "配置NG率阈值，当不良率超过阈值时自动发送MQTT警报",
     "filterByStation": "按检测站筛选...",
@@ -7469,6 +7470,16 @@
       "MANUAL": "手动操作",
       "INVESTIGATE": "需要调查"
     },
+    "advisor": {
+      "title": "阈值 / 参数顾问",
+      "subtitle": "选择测量点或 NG 阈值，由 AI 提出建议值 — 您只需批准。",
+      "modePoint": "测量点界限 (LSL/USL)",
+      "modeNg": "NG 阈值 (警告/严重)",
+      "pointLabel": "测量点",
+      "pointPlaceholder": "选择测量点...",
+      "ngLabel": "NG 阈值",
+      "ngPlaceholder": "选择 NG 阈值..."
+    },
     "recent": {
       "title": "近期诊断",
       "empty": "暂无诊断记录。"
@@ -7479,6 +7490,26 @@
       "applied": "已应用",
       "acknowledged": "已标记为处理"
     }
+  },
+  "thresholdAdvisor": {
+    "suggestBtn": "🤖 AI 建议",
+    "title": "阈值建议 (AI)",
+    "loading": "AI 计算中...",
+    "disabled": "阈值顾问尚未启用。",
+    "notFound": "无法计算建议。",
+    "current": "当前",
+    "recommended": "建议",
+    "target": "目标",
+    "warning": "警告",
+    "critical": "严重",
+    "why": "原因",
+    "samples": "{{n}} 个样本",
+    "degraded": "样本不足 — 请谨慎批准。",
+    "applyBtn": "✅ 应用",
+    "applied": "已应用新阈值",
+    "applyFailed": "应用失败",
+    "applyComment": "应用 AI 阈值建议",
+    "pointHint": "让 AI 根据近期测量数据计算 LSL/USL/目标值"
   },
   "qg": {
     "title": "AI质量门",

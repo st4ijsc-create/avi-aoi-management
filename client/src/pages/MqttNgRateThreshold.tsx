@@ -19,6 +19,7 @@ import {
   Target, Gauge, Percent, Send, Radio, Zap
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import AIThresholdSuggestButton from "@/components/AIThresholdSuggestButton";
 
 interface ThresholdFormData {
   stationId: number | null;
@@ -764,6 +765,19 @@ export function MqttNgRateThresholdContent() {
                   </Select>
                 </div>
               </div>
+
+              {/* AI Threshold Advisor — only when editing an existing record (needs an id) */}
+              {editingId ? (
+                <div className="flex items-center justify-between rounded-md border border-dashed bg-muted/30 px-3 py-2">
+                  <span className="text-xs text-muted-foreground">
+                    {t("mqttNgRateThreshold.aiAdvisorHint", "Để AI tính ngưỡng cảnh báo/nghiêm trọng từ dữ liệu NG gần đây")}
+                  </span>
+                  <AIThresholdSuggestButton
+                    target={{ kind: "ng", ngThresholdId: editingId }}
+                    onApplied={() => { refetchThresholds(); setIsCreateDialogOpen(false); resetForm(); }}
+                  />
+                </div>
+              ) : null}
 
               {/* Thresholds */}
               <div className="grid grid-cols-2 gap-4">

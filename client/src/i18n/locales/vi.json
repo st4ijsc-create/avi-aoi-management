@@ -3541,6 +3541,7 @@
     }
   },
   "mqttNgRateThreshold": {
+    "aiAdvisorHint": "Để AI tính ngưỡng cảnh báo/nghiêm trọng từ dữ liệu NG gần đây",
     "pageTitle": "Ngưỡng NG Rate - Cảnh Báo Tự Động",
     "pageDescription": "Tự động gửi MQTT khi tỉ lệ NG theo điểm đo trong ngày vượt ngưỡng cài đặt",
     "filterByStation": "Lọc theo trạm",
@@ -7518,6 +7519,16 @@
       "MANUAL": "Việc tay",
       "INVESTIGATE": "Cần điều tra"
     },
+    "advisor": {
+      "title": "Trợ lý đặt ngưỡng / thông số",
+      "subtitle": "Chọn điểm đo hoặc ngưỡng NG để AI đề xuất giá trị — bạn chỉ cần duyệt.",
+      "modePoint": "Giới hạn điểm đo (LSL/USL)",
+      "modeNg": "Ngưỡng NG (cảnh báo/nghiêm trọng)",
+      "pointLabel": "Điểm đo",
+      "pointPlaceholder": "Chọn điểm đo...",
+      "ngLabel": "Ngưỡng NG",
+      "ngPlaceholder": "Chọn ngưỡng NG..."
+    },
     "recent": {
       "title": "Chẩn đoán gần đây",
       "empty": "Chưa có chẩn đoán nào."
@@ -7528,6 +7539,26 @@
       "applied": "Đã áp dụng",
       "acknowledged": "Đã đánh dấu xử lý"
     }
+  },
+  "thresholdAdvisor": {
+    "suggestBtn": "🤖 AI đề xuất",
+    "title": "Đề xuất ngưỡng (AI)",
+    "loading": "AI đang tính toán...",
+    "disabled": "Trợ lý đặt ngưỡng chưa bật.",
+    "notFound": "Không tính được đề xuất.",
+    "current": "Hiện tại",
+    "recommended": "Đề xuất",
+    "target": "Mục tiêu",
+    "warning": "Cảnh báo",
+    "critical": "Nghiêm trọng",
+    "why": "Vì sao",
+    "samples": "{{n}} mẫu",
+    "degraded": "Chưa đủ mẫu — hãy duyệt thận trọng.",
+    "applyBtn": "✅ Áp dụng",
+    "applied": "Đã áp dụng ngưỡng mới",
+    "applyFailed": "Áp dụng thất bại",
+    "applyComment": "Áp dụng đề xuất ngưỡng từ AI",
+    "pointHint": "Để AI tính LSL/USL/mục tiêu từ dữ liệu đo gần đây"
   },
   "qg": {
     "title": "Cổng Chất Lượng AI",

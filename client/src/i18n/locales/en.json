@@ -3518,6 +3518,7 @@
     }
   },
   "mqttNgRateThreshold": {
+    "aiAdvisorHint": "Let AI compute the warning/critical thresholds from recent NG data",
     "pageTitle": "NG Rate Threshold - Auto Alert",
     "pageDescription": "Automatically send MQTT alerts when daily NG rate per measurement point exceeds threshold",
     "filterByStation": "Filter by station",
@@ -7495,6 +7496,16 @@
       "MANUAL": "Manual task",
       "INVESTIGATE": "Needs investigation"
     },
+    "advisor": {
+      "title": "Threshold / Param Advisor",
+      "subtitle": "Pick a measurement point or NG threshold and let AI propose values — you just approve.",
+      "modePoint": "Measurement-point limits (LSL/USL)",
+      "modeNg": "NG threshold (warning/critical)",
+      "pointLabel": "Measurement point",
+      "pointPlaceholder": "Select a point...",
+      "ngLabel": "NG threshold",
+      "ngPlaceholder": "Select an NG threshold..."
+    },
     "recent": {
       "title": "Recent diagnoses",
       "empty": "No diagnoses yet."
@@ -7505,6 +7516,26 @@
       "applied": "Applied",
       "acknowledged": "Marked as handled"
     }
+  },
+  "thresholdAdvisor": {
+    "suggestBtn": "🤖 AI suggest",
+    "title": "Threshold suggestion (AI)",
+    "loading": "AI is computing...",
+    "disabled": "Threshold advisor is not enabled.",
+    "notFound": "Could not compute a recommendation.",
+    "current": "Current",
+    "recommended": "Recommended",
+    "target": "Target",
+    "warning": "Warning",
+    "critical": "Critical",
+    "why": "Why",
+    "samples": "{{n}} samples",
+    "degraded": "Not enough samples — approve with caution.",
+    "applyBtn": "✅ Apply",
+    "applied": "New threshold applied",
+    "applyFailed": "Apply failed",
+    "applyComment": "Apply AI threshold recommendation",
+    "pointHint": "Let AI compute LSL/USL/target from recent measurement data"
   },
   "qg": {
     "title": "AI Quality Gate",
