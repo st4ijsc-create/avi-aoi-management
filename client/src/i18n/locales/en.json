@@ -8646,6 +8646,34 @@
     "errorNoCode": "Could not read a machine code. Try again or type it manually.",
     "errorNfc": "Could not read the NFC tag. Please try again."
   },
+  "routeGuard": {
+    "deniedTitle": "Access denied",
+    "deniedMessage": "You don't have permission to access this page. Please contact an administrator if you think this is a mistake.",
+    "backToHome": "Back to home"
+  },
+  "advancedSection": {
+    "title": "Advanced",
+    "showHint": "Click to show advanced options",
+    "hideHint": "Click to hide"
+  },
+  "tour": {
+    "title": "Welcome!",
+    "subtitle": "Here are a few places to get started quickly for your role.",
+    "start": "Get started",
+    "tips": {
+      "scan": "Scan a machine to begin",
+      "report": "Report an issue fast",
+      "askAI": "Ask the AI when you need help",
+      "inbox": "Check your action inbox",
+      "copilot": "Open the RCA Copilot to fix issues",
+      "alerts": "Track machine alerts",
+      "qualityHome": "Open the quality inspection workspace",
+      "spc": "Run SPC analysis",
+      "reports": "View reports",
+      "insight": "Ask & exec summary",
+      "dashboard": "Production dashboard"
+    }
+  },
   "voice": {
     "speak": "Speak",
     "stop": "Stop"

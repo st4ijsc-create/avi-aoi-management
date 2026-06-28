@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { AdvancedSection } from "@/components/AdvancedSection";
 import {
   ComposedChart, Line, Scatter, Bar, BarChart, XAxis, YAxis, CartesianGrid,
   Tooltip, ReferenceLine, ReferenceArea, ResponsiveContainer, Legend, Cell,
@@ -566,6 +567,10 @@ export default function SPCAnalysis() {
               </Card>
             </div>
 
+            {/* Progressive disclosure: group the advanced/optional analyses under a
+                single "Nâng cao" section (collapsed by default; preference persisted).
+                Basic users see a simpler surface; nothing is removed. */}
+            <AdvancedSection storageKey="spc-analysis" className="mt-2">
             {/* Collapsible: CPK Trend */}
             <CollapsibleSection title={t('spc.cpkTrend')}>
               {cpkTrendData?.data?.length ? (
@@ -630,6 +635,7 @@ export default function SPCAnalysis() {
                 </div>
               ) : <p className="text-sm text-muted-foreground py-4">{t('spc.noAnalysisData')}</p>}
             </CollapsibleSection>
+            </AdvancedSection>
           </>
         )}
       </div>

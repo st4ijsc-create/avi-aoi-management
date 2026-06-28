@@ -8,6 +8,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { navItems } from "@/lib/navigation";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { AdvancedSection } from "@/components/AdvancedSection";
 
 import { SMTPConfig } from "@/components/SMTPConfig";
 import { CacheStatsDashboard } from "@/components/CacheStatsDashboard";
@@ -392,6 +393,9 @@ export default function AdminSettings() {
                       <CardDescription>{t("admin.dataSeedingDesc")}</CardDescription>
                     </CardHeader>
                     <CardContent>
+                      {/* Progressive disclosure: seeding tools are advanced/destructive —
+                          collapsed by default (preference persisted). Nothing removed. */}
+                      <AdvancedSection storageKey="admin-data-seeding">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <Card className="border-dashed">
                           <CardHeader>
@@ -424,6 +428,7 @@ export default function AdminSettings() {
                           </CardContent>
                         </Card>
                       </div>
+                      </AdvancedSection>
                     </CardContent>
                   </Card>
                 </TabsContent>

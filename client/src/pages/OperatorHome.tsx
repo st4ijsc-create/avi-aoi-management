@@ -27,6 +27,7 @@ import { TodayBriefing } from "@/components/TodayBriefing";
 import MachineQuickScan from "@/components/MachineQuickScan";
 import QuickIssueReport from "@/components/QuickIssueReport";
 import { AIActionInbox } from "@/components/AIActionInbox";
+import { FirstRunTour } from "@/components/FirstRunTour";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import {
@@ -162,6 +163,9 @@ export default function OperatorHome() {
 
       {/* Controlled inbox dialog (1-tap approve) */}
       <AIActionInbox open={inboxOpen} onOpenChange={setInboxOpen} />
+
+      {/* First-run coach — shown once per user on their landing */}
+      <FirstRunTour />
     </DashboardLayout>
   );
 }

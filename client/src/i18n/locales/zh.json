@@ -8620,6 +8620,34 @@
     "errorNoCode": "未能读取设备编码，请重试或手动输入。",
     "errorNfc": "无法读取 NFC 标签，请重试。"
   },
+  "routeGuard": {
+    "deniedTitle": "无访问权限",
+    "deniedMessage": "您没有访问此页面的权限。如果您认为这是误判，请联系管理员。",
+    "backToHome": "返回主页"
+  },
+  "advancedSection": {
+    "title": "高级",
+    "showHint": "点击显示高级选项",
+    "hideHint": "点击隐藏"
+  },
+  "tour": {
+    "title": "欢迎！",
+    "subtitle": "以下是适合您角色的几个快速入门入口。",
+    "start": "开始",
+    "tips": {
+      "scan": "扫描设备以开始",
+      "report": "快速上报问题",
+      "askAI": "需要帮助时询问 AI",
+      "inbox": "查看待处理事项",
+      "copilot": "打开 RCA 助手以排除故障",
+      "alerts": "跟踪设备告警",
+      "qualityHome": "打开质量检验工作区",
+      "spc": "运行 SPC 分析",
+      "reports": "查看报告",
+      "insight": "问答与管理摘要",
+      "dashboard": "生产看板"
+    }
+  },
   "voice": {
     "speak": "说话",
     "stop": "停止"

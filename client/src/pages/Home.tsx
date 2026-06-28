@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 import { TodayBriefing } from "@/components/TodayBriefing";
+import { FirstRunTour } from "@/components/FirstRunTour";
 import { isFloorRole, landingPathForRole } from "@/lib/roleLanding";
 
 export default function Home() {
@@ -90,6 +91,8 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* First-run coach — shown once per user (renders nothing when logged out) */}
+      <FirstRunTour />
       {/* Header */}
       <header className="border-b border-border/50 bg-card/50 backdrop-blur-xl sticky top-0 z-50">
         <div className="container flex h-16 items-center justify-between">

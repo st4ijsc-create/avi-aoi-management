@@ -9,6 +9,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { AiCopilotProvider } from "./contexts/AiCopilotContext";
 import { AILocalChatBubble } from "./components/AILocalChatBubble";
 import { ConnectionBanner } from "./components/ConnectionBanner";
+import { RouteGuard } from "./components/RouteGuard";
 import { useKioskMode } from "./hooks/useKioskMode";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
@@ -168,10 +169,10 @@ function Router() {
       <Route path="/login" component={Login} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/andon" component={AndonBoard} />
-      <Route path="/device-adapters" component={DeviceAdapterManagement} />
-      <Route path="/command-audit" component={CommandAuditLog} />
-      <Route path="/recipes" component={RecipeManagement} />
-      <Route path="/interlock-rules" component={InterlockRuleManagement} />
+      <Route path="/device-adapters"><RouteGuard navHref="/device-adapters"><DeviceAdapterManagement /></RouteGuard></Route>
+      <Route path="/command-audit"><RouteGuard navHref="/command-audit"><CommandAuditLog /></RouteGuard></Route>
+      <Route path="/recipes"><RouteGuard navHref="/recipes"><RecipeManagement /></RouteGuard></Route>
+      <Route path="/interlock-rules"><RouteGuard navHref="/interlock-rules"><InterlockRuleManagement /></RouteGuard></Route>
       <Route path="/bom-management" component={BomManagement} />
       <Route path="/master-data" component={MasterDataManagement} />
       <Route path="/history" component={History} />
@@ -183,7 +184,7 @@ function Router() {
       <Route path="/admin" component={RedirectToAdminSetting} />
       <Route path="/analytics" component={RedirectToCategoryAnalytics} />
       <Route path="/ai-analytics" component={RedirectToAIInspectionAnalytics} />
-      <Route path="/dashboard-center" component={DashboardCenter} />
+      <Route path="/dashboard-center"><RouteGuard navHref="/dashboard-center"><DashboardCenter /></RouteGuard></Route>
       <Route path="/api-docs" component={ApiDocs} />
       <Route path="/products" component={ProductModels} />
       <Route path="/corporate-layout" component={CorporateLayout} />
@@ -191,7 +192,7 @@ function Router() {
       <Route path="/corporate-management" component={CorporateManagement} />
       <Route path="/reports" component={Reports} />
       <Route path="/alerts" component={Alerts} />
-      <Route path="/users" component={Users} />
+      <Route path="/users"><RouteGuard navHref="/users"><Users /></RouteGuard></Route>
       <Route path="/product-mapping" component={ProductMachineMapping} />
       <Route path="/production-orders" component={ProductionOrders} />
       <Route path="/machine-status" component={MachineStatusMonitor} />
@@ -207,7 +208,7 @@ function Router() {
       <Route path="/mqtt-profiles" component={MqttProfileManagement} />
       <Route path="/mqtt-topics" component={MqttTopicsMessages} />
       <Route path="/custom-dashboard" component={CustomDashboard} />
-      <Route path="/system-config" component={SystemConfiguration} />
+      <Route path="/system-config"><RouteGuard requireRole={["admin"]}><SystemConfiguration /></RouteGuard></Route>
       <Route path="/import-export" component={ImportExport} />
       <Route path="/user-assignments" component={UserAssignments} />
       <Route path="/scheduled-reports" component={ScheduledReports} />
@@ -218,7 +219,7 @@ function Router() {
       <Route path="/user-guide" component={UserGuide} />
       <Route path="/about-system" component={AboutSystem} />
       <Route path="/dashboard-templates" component={DashboardTemplates} />
-      <Route path="/backup-restore" component={BackupRestore} />
+      <Route path="/backup-restore"><RouteGuard navHref="/backup-restore"><BackupRestore /></RouteGuard></Route>
       <Route path="/template-marketplace" component={TemplateMarketplace} />
       <Route path="/oee-dashboard" component={OEEDashboard} />
       <Route path="/mqtt-replay" component={MQTTReplay} />
@@ -255,7 +256,7 @@ function Router() {
       <Route path="/ai-monitoring"><AIPageWrapper><ModelMonitoringPage /></AIPageWrapper></Route>
       <Route path="/ai-models"><AIPageWrapper><AIModelManagementPage /></AIPageWrapper></Route>
       <Route path="/model-versions"><AIPageWrapper><ModelVersionsPage /></AIPageWrapper></Route>
-      <Route path="/ai-settings"><AIPageWrapper><AISettingsPage /></AIPageWrapper></Route>
+      <Route path="/ai-settings"><RouteGuard navHref="/ai-settings"><AIPageWrapper><AISettingsPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/ai-data-processing"><AIPageWrapper><AIDataProcessingPage /></AIPageWrapper></Route>
       <Route path="/ai-inspection-analytics"><AIPageWrapper><AIInspectionAnalyticsPage /></AIPageWrapper></Route>
       <Route path="/ai-advanced-vision-lab"><AIPageWrapper><AdvancedVisionLabPage /></AIPageWrapper></Route>
@@ -274,8 +275,8 @@ function Router() {
       <Route path="/spc-advanced"><Redirect to="/spc-analysis" /></Route>
       <Route path="/correlation-analysis" component={CorrelationAnalysis} />
       <Route path="/quality-gates" component={QualityGates} />
-      <Route path="/role-builder" component={RoleBuilder} />
-      <Route path="/enhanced-audit" component={EnhancedAuditLogs} />
+      <Route path="/role-builder"><RouteGuard navHref="/role-builder"><RoleBuilder /></RouteGuard></Route>
+      <Route path="/enhanced-audit"><RouteGuard navHref="/enhanced-audit"><EnhancedAuditLogs /></RouteGuard></Route>
       <Route path="/pdf-reports" component={PdfReports} />
       <Route path="/data-comparison" component={DataComparison} />
       <Route path="/report-builder" component={ReportBuilder} />
@@ -286,11 +287,11 @@ function Router() {
       <Route path="/production-scheduling" component={ProductionScheduling} />
       <Route path="/machine-registration" component={MachineRegistration} />
       <Route path="/machine-onboarding" component={MachineOnboardingWizard} />
-      <Route path="/license" component={LicenseManagement} />
+      <Route path="/license"><RouteGuard navHref="/license"><LicenseManagement /></RouteGuard></Route>
       <Route path="/mqtt-ng-rate" component={MqttNgRateThreshold} />
-      <Route path="/monitoring-setting" component={MonitoringSettings} />
-      <Route path="/analytics-setting" component={AnalyticsSettings} />
-      <Route path="/admin-setting" component={AdminSettings} />
+      <Route path="/monitoring-setting"><RouteGuard requireRole={["admin"]}><MonitoringSettings /></RouteGuard></Route>
+      <Route path="/analytics-setting"><RouteGuard requireRole={["admin"]}><AnalyticsSettings /></RouteGuard></Route>
+      <Route path="/admin-setting"><RouteGuard navHref="/admin-setting"><AdminSettings /></RouteGuard></Route>
       <Route path="/production-dashboard" component={ProductionDashboard} />
       <Route path="/station-analysis/:id" component={StationAnalysis} />
       <Route path="/404" component={NotFound} />

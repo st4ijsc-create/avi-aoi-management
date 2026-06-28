@@ -8669,6 +8669,34 @@
     "errorNoCode": "Không đọc được mã máy. Vui lòng thử lại hoặc nhập tay.",
     "errorNfc": "Không đọc được thẻ NFC. Vui lòng thử lại."
   },
+  "routeGuard": {
+    "deniedTitle": "Không có quyền truy cập",
+    "deniedMessage": "Bạn không có quyền truy cập trang này. Vui lòng liên hệ quản trị viên nếu bạn cho rằng đây là nhầm lẫn.",
+    "backToHome": "Về trang chính"
+  },
+  "advancedSection": {
+    "title": "Nâng cao",
+    "showHint": "Nhấn để hiện tùy chọn nâng cao",
+    "hideHint": "Nhấn để ẩn"
+  },
+  "tour": {
+    "title": "Chào mừng bạn!",
+    "subtitle": "Đây là vài chỗ để bắt đầu nhanh nhất cho công việc của bạn.",
+    "start": "Bắt đầu",
+    "tips": {
+      "scan": "Quét máy để bắt đầu",
+      "report": "Báo sự cố nhanh",
+      "askAI": "Hỏi AI khi cần trợ giúp",
+      "inbox": "Xem việc cần xử lý",
+      "copilot": "Mở RCA Copilot để khắc phục sự cố",
+      "alerts": "Theo dõi cảnh báo máy",
+      "qualityHome": "Mở không gian kiểm tra chất lượng",
+      "spc": "Phân tích SPC",
+      "reports": "Xem báo cáo",
+      "insight": "Hỏi đáp & tóm tắt điều hành",
+      "dashboard": "Bảng điều khiển sản xuất"
+    }
+  },
   "voice": {
     "speak": "Nói",
     "stop": "Dừng nói"
