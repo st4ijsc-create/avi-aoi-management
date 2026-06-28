@@ -712,12 +712,30 @@ const inventoryRouter = router({
       notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
       const { quantityOnHand, ...rest } = input;
-      const id = await insertOne(inventoryBalances, {
-        ...rest,
-        quantityOnHand: String(quantityOnHand),
-      } as InsertInventoryBalance);
-      return { id };
+      // TRUE upsert on the unique (materialCode,warehouseCode,locationCode,lotCode)
+      // index — INSERT-only would throw on the duplicate-key conflict.
+      const [row] = await db
+        .insert(inventoryBalances)
+        .values({ ...rest, quantityOnHand: String(quantityOnHand) } as InsertInventoryBalance)
+        .onConflictDoUpdate({
+          target: [
+            inventoryBalances.materialCode,
+            inventoryBalances.warehouseCode,
+            inventoryBalances.locationCode,
+            inventoryBalances.lotCode,
+          ],
+          set: {
+            quantityOnHand: String(quantityOnHand),
+            ...(rest.uomCode != null ? { uomCode: rest.uomCode } : {}),
+            ...(rest.notes != null ? { notes: rest.notes } : {}),
+            updatedAt: new Date(),
+          },
+        })
+        .returning({ id: inventoryBalances.id });
+      return { id: row.id };
     }),
   updateBalance: protectedProcedure
     .use(requirePermission(MODULE, "canEdit"))
