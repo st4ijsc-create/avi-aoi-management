@@ -1,4 +1,13 @@
 {
+  "operator": {
+    "title": "Operator screen",
+    "subtitle": "Tap a button to start",
+    "scanMachine": "Scan machine",
+    "reportIssue": "Report issue",
+    "lineStatus": "Line status",
+    "askAI": "Ask AI",
+    "actionInbox": "Action inbox"
+  },
   "aiInbox": {
     "title": "Action Inbox",
     "subtitle": "The AI pushes everything that needs you here — handle each in one tap.",
@@ -3900,6 +3909,8 @@
     "aiAssistantGroupDesc": "Chat with the AI assistant",
     "aiAssistant": "AI Assistant",
     "aiAssistantDesc": "Ask, analyze and get AI-assisted actions",
+    "operatorHome": "Operator screen",
+    "operatorHomeDesc": "Big-button floor screen: scan machine, report issue, line status",
     "aiAnalyticsGroup": "AI Analytics",
     "aiAnalyticsGroupDesc": "AI model performance and management",
     "aiHub": "AI Hub",

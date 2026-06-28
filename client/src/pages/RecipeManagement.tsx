@@ -17,6 +17,8 @@ import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import DashboardLayout from "@/components/DashboardLayout";
+import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -150,10 +152,15 @@ export default function RecipeManagement() {
   const deployments = deploymentsQuery.data ?? [];
 
   if (!canView) {
-    return <div className="p-6 text-muted-foreground">{t("recipes.noViewPermission")}</div>;
+    return (
+      <DashboardLayout title={t("recipes.title")} navItems={navItems} currentPath="/recipes">
+        <div className="p-6 text-muted-foreground">{t("recipes.noViewPermission")}</div>
+      </DashboardLayout>
+    );
   }
 
   return (
+    <DashboardLayout title={t("recipes.title")} navItems={navItems} currentPath="/recipes">
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -412,5 +419,6 @@ export default function RecipeManagement() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </DashboardLayout>
   );
 }

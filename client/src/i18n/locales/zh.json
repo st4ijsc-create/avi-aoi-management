@@ -1,4 +1,13 @@
 {
+  "operator": {
+    "title": "操作员界面",
+    "subtitle": "点击按钮开始",
+    "scanMachine": "扫描设备",
+    "reportIssue": "报告异常",
+    "lineStatus": "产线状态",
+    "askAI": "询问 AI",
+    "actionInbox": "待办收件箱"
+  },
   "aiInbox": {
     "title": "待办收件箱",
     "subtitle": "AI 会把所有需要您处理的事项推送到这里——一键处理。",
@@ -3893,6 +3902,8 @@
     "aiAssistantGroupDesc": "与 AI 助手对话",
     "aiAssistant": "AI 助手",
     "aiAssistantDesc": "使用 AI 进行问答、分析和操作辅助",
+    "operatorHome": "操作员界面",
+    "operatorHomeDesc": "大按钮车间界面：扫描设备、报告异常、产线状态",
     "aiAnalyticsGroup": "AI 分析",
     "aiAnalyticsGroupDesc": "AI 模型性能与管理",
     "aiHub": "AI 中心",

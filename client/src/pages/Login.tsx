@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { Loader2, LogIn, ExternalLink, Factory, Shield, ShieldCheck, ArrowLeft, Chrome, Github, Globe } from "lucide-react";
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
+import { landingPathForRole } from "@/lib/roleLanding";
 
 export default function Login() {
   const { t } = useTranslation();
@@ -60,9 +61,11 @@ export default function Login() {
       }
 
       toast.success(t('auth.loginSuccess'));
-      // Wait a bit for cookie to be set, then reload
+      // Wait a bit for cookie to be set, then reload into the role-aware landing.
+      const dest =
+        'user' in result ? landingPathForRole(result.user?.role) : "/";
       setTimeout(() => {
-        window.location.href = "/";
+        window.location.href = resolveDestination(dest);
       }, 500);
     } catch (error: any) {
       console.error("Login error:", error);
@@ -98,7 +101,8 @@ export default function Login() {
       }
 
       toast.success(t('auth.loginSuccess'));
-      window.location.href = "/";
+      const dest = landingPathForRole(data?.user?.role);
+      window.location.href = resolveDestination(dest);
     } catch (error) {
       console.error("2FA verification error:", error);
       toast.error(t('auth.verificationFailedRetry'));
@@ -121,6 +125,15 @@ export default function Login() {
       return nextValue;
     }
     return "/";
+  };
+
+  // An explicit ?next=/some/path (e.g. a deep link the user was sent to before
+  // login) always wins; otherwise we honor the role-aware landing destination.
+  const resolveDestination = (roleDest: string) => {
+    if (typeof window === "undefined") return roleDest;
+    const nextValue = new URLSearchParams(window.location.search).get("next");
+    if (nextValue && nextValue.startsWith("/")) return nextValue;
+    return roleDest;
   };
 
   type ExternalProvider = "google" | "microsoft" | "github";

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 import { TodayBriefing } from "@/components/TodayBriefing";
+import { isFloorRole, landingPathForRole } from "@/lib/roleLanding";
 
 export default function Home() {
   const { t } = useTranslation();
@@ -35,6 +36,17 @@ export default function Home() {
       setLocation("/setup");
     }
   }, [setupCheck, isAuthenticated, setLocation]);
+
+  // Nudge shop-floor roles (operator / maintenance) off the marketing Home onto
+  // their dedicated landing. Home stays reachable via explicit nav with ?stay=1
+  // so this redirect never traps a user who deliberately navigated here.
+  useEffect(() => {
+    if (loading || !isAuthenticated) return;
+    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("stay")) return;
+    if (isFloorRole(user?.role)) {
+      setLocation(landingPathForRole(user?.role), { replace: true });
+    }
+  }, [loading, isAuthenticated, user?.role, setLocation]);
 
   const features = [
     {

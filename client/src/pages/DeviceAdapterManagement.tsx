@@ -12,6 +12,8 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import DashboardLayout from "@/components/DashboardLayout";
+import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -172,6 +174,7 @@ export default function DeviceAdapterManagement() {
   const tags = tagsQuery.data ?? [];
 
   return (
+    <DashboardLayout title="Device Adapter (OT)" navItems={navItems} currentPath="/device-adapters">
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -417,5 +420,6 @@ export default function DeviceAdapterManagement() {
         </SheetContent>
       </Sheet>
     </div>
+    </DashboardLayout>
   );
 }

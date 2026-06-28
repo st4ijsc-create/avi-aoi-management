@@ -12,6 +12,8 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import DashboardLayout from "@/components/DashboardLayout";
+import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -32,6 +34,7 @@ export default function BomManagement() {
 
   if (!canView) {
     return (
+      <DashboardLayout title="BOM & Feeder (MES)" navItems={navItems} currentPath="/bom-management">
       <div className="p-6">
         <Card>
           <CardContent className="py-10 text-center text-muted-foreground">
@@ -40,10 +43,12 @@ export default function BomManagement() {
           </CardContent>
         </Card>
       </div>
+      </DashboardLayout>
     );
   }
 
   return (
+    <DashboardLayout title="BOM & Feeder (MES)" navItems={navItems} currentPath="/bom-management">
     <div className="p-6 space-y-4">
       <div className="flex items-center gap-2">
         <Boxes className="h-6 w-6" />
@@ -61,6 +66,7 @@ export default function BomManagement() {
         <TabsContent value="trace"><TracePanel /></TabsContent>
       </Tabs>
     </div>
+    </DashboardLayout>
   );
 }
 

@@ -8,6 +8,8 @@
 import { useEffect, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { getSharedSocket } from "@/lib/socketManager";
+import DashboardLayout from "@/components/DashboardLayout";
+import { navItems } from "@/lib/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +62,7 @@ export default function AndonBoard() {
   );
 
   return (
+    <DashboardLayout title="Andon Board" navItems={navItems} currentPath="/andon">
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Andon Board</h1>
@@ -113,6 +116,7 @@ export default function AndonBoard() {
         </CardContent>
       </Card>
     </div>
+    </DashboardLayout>
   );
 }
 

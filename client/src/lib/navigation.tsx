@@ -156,6 +156,16 @@ export const navGroups: NavGroup[] = [
     description: "nav.aiAssistantGroupDesc",
     defaultOpen: false,
     items: [
+      // Simplified big-button floor shell — the operator's default landing.
+      // No requiredPermission → visible to every authenticated role (operator /
+      // maintenance / admin / …); the page itself is read-open and each action
+      // (scan, report, inbox) enforces its own RBAC.
+      {
+        href: "/operator",
+        label: "nav.operatorHome",
+        icon: <LayoutGrid className="h-4 w-4" />,
+        description: "nav.operatorHomeDesc",
+      },
       {
         href: "/ai-chat",
         label: "nav.aiAssistant",

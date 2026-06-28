@@ -21,6 +21,8 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import DashboardLayout from "@/components/DashboardLayout";
+import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -218,10 +220,15 @@ export default function InterlockRuleManagement() {
   const events = eventsQuery.data ?? [];
 
   if (!canView) {
-    return <div className="p-6 text-muted-foreground">{t("interlockRules.noViewPermission")}</div>;
+    return (
+      <DashboardLayout title={t("interlockRules.title")} navItems={navItems} currentPath="/interlock-rules">
+        <div className="p-6 text-muted-foreground">{t("interlockRules.noViewPermission")}</div>
+      </DashboardLayout>
+    );
   }
 
   return (
+    <DashboardLayout title={t("interlockRules.title")} navItems={navItems} currentPath="/interlock-rules">
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -546,5 +553,6 @@ export default function InterlockRuleManagement() {
         </DialogContent>
       </Dialog>
     </div>
+    </DashboardLayout>
   );
 }

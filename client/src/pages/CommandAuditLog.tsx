@@ -7,6 +7,8 @@
  */
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import DashboardLayout from "@/components/DashboardLayout";
+import { navItems } from "@/lib/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -63,6 +65,7 @@ export default function CommandAuditLog() {
   const rows = query.data ?? [];
 
   return (
+    <DashboardLayout title="Command Audit Log" navItems={navItems} currentPath="/command-audit">
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -161,5 +164,6 @@ export default function CommandAuditLog() {
         </CardContent>
       </Card>
     </div>
+    </DashboardLayout>
   );
 }

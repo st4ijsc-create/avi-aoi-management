@@ -1,4 +1,13 @@
 {
+  "operator": {
+    "title": "Màn hình vận hành",
+    "subtitle": "Chạm một nút để bắt đầu",
+    "scanMachine": "Quét máy",
+    "reportIssue": "Báo sự cố",
+    "lineStatus": "Trạng thái dây chuyền",
+    "askAI": "Hỏi AI",
+    "actionInbox": "Việc cần xử lý"
+  },
   "aiInbox": {
     "title": "Việc cần xử lý",
     "subtitle": "AI đưa đến đây mọi việc cần bạn xử lý — chạm một lần để xử lý.",
@@ -3923,6 +3932,8 @@
     "aiAssistantGroupDesc": "Trò chuyện với trợ lý AI",
     "aiAssistant": "Trợ lý AI",
     "aiAssistantDesc": "Hỏi đáp, phân tích và hỗ trợ thao tác bằng AI",
+    "operatorHome": "Màn hình vận hành",
+    "operatorHomeDesc": "Màn hình nút lớn cho công nhân: quét máy, báo sự cố, trạng thái dây chuyền",
     "aiAnalyticsGroup": "Phân tích AI",
     "aiAnalyticsGroupDesc": "Hiệu suất và quản lý mô hình AI",
     "aiHub": "Trung tâm AI",
