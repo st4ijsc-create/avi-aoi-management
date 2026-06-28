@@ -115,6 +115,7 @@ import { deviceAdapterRouter } from "./routers/deviceAdapterRouter"; // G2.2a: O
 import { visionAdapterRouter } from "./routers/visionAdapterRouter"; // P1a: vendor-agnostic vision/inspection adapter ingest (VISION_ADAPTERS_ENABLED)
 import { mtconnectRouter } from "./routers/mtconnectRouter"; // P1b: MTConnect (CNC) test/status
 import { masterDataRouter } from "./routers/masterDataRouter"; // P1c: MES master data (suppliers/materials/customers/skills/tools)
+import { equipmentRouter } from "./routers/equipmentRouter"; // E0: unified equipment capability model + PackML (read-only)
 import { machineRecipeRouter } from "./routers/machineRecipeRouter"; // G2.2a: recipe versioning + deploy (catalog/ledger only, no device push)
 import { commandLogRouter } from "./routers/commandLogRouter"; // G2.2a: command audit log (READ-ONLY)
 import { robotRouter } from "./routers/robotRouter"; // Phase 3: robot registry/telemetry/jobs (control via internal dispatcher)
@@ -352,6 +353,7 @@ export const appRouter = router({
   deviceAdapter: deviceAdapterRouter,
   visionAdapter: visionAdapterRouter,
   mtconnect: mtconnectRouter,
+  equipment: equipmentRouter,
   machineRecipe: machineRecipeRouter,
   commandLog: commandLogRouter,
   robot: robotRouter,
