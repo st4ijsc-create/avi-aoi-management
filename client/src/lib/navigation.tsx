@@ -429,6 +429,16 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
       },
+      // Maintenance work-order management (CRUD + CLOSE→MTTR). Gated by the same
+      // machine_monitoring grant the RCA write-tool uses to create work-orders.
+      {
+        href: "/work-orders",
+        label: "nav.workOrders",
+        icon: <Wrench className="h-4 w-4" />,
+        description: "nav.workOrdersDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+      },
     ],
   },
 
@@ -619,6 +629,15 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "reports_view",
         permissionCategory: "reports",
       },
+      // Threshold suggestion approval review queue (manager workflow).
+      {
+        href: "/threshold-approvals",
+        label: "nav.thresholdApprovals",
+        icon: <ClipboardCheck className="h-4 w-4" />,
+        description: "nav.thresholdApprovalsDesc",
+        requiredPermission: "settings_alerts",
+        permissionCategory: "analytics",
+      },
     ],
   },
 
@@ -795,6 +814,16 @@ export const navGroups: NavGroup[] = [
         label: "nav.aiReports",
         icon: <FileBarChart className="h-4 w-4" />,
         description: "nav.aiReportsDesc",
+        requiredPermission: "analytics_ai_performance",
+        permissionCategory: "analytics",
+      },
+      // Anomaly memory bank management (PatchCore) — rebuild/delete per scope.
+      // Admin ops; the page itself gates write actions on admin.
+      {
+        href: "/anomaly-banks",
+        label: "nav.anomalyBanks",
+        icon: <Database className="h-4 w-4" />,
+        description: "nav.anomalyBanksDesc",
         requiredPermission: "analytics_ai_performance",
         permissionCategory: "analytics",
       },

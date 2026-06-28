@@ -107,6 +107,9 @@ const RecipeManagement = React.lazy(() => import("./pages/RecipeManagement")); /
 const InterlockRuleManagement = React.lazy(() => import("./pages/InterlockRuleManagement")); // G2.2b: interlock rule admin (CONFIG/VIEW)
 const BomManagement = React.lazy(() => import("./pages/BomManagement")); // G2.4: BOM + Feeder + component genealogy (data/telemetry/trace)
 const MasterDataManagement = React.lazy(() => import("./pages/MasterDataManagement")); // Doc 07 §③: MES/MOM master data (supplier/material/customer/skill/tool)
+const WorkOrdersPage = React.lazy(() => import("./pages/WorkOrdersPage")); // Maintenance work-order CRUD + CLOSE→MTTR (machine_monitoring)
+const ThresholdApprovalsPage = React.lazy(() => import("./pages/ThresholdApprovalsPage")); // Threshold approval review queue (approve/reject/withdraw)
+const AnomalyBankPage = React.lazy(() => import("./pages/AnomalyBankPage")); // Anomaly memory bank management (rebuild/delete per scope, admin)
 const OrchestrationStudio = React.lazy(() => import("./pages/OrchestrationStudio")); // E3b: visual orchestration studio (author → simulate → deploy/run)
 const ApiKeysPage = React.lazy(() => import("./pages/ApiKeysPage")); // Control plane: scoped API-key admin CRUD (create-show-once)
 const EdgeNodesPage = React.lazy(() => import("./pages/EdgeNodesPage")); // E4: edge node registry management
@@ -181,6 +184,9 @@ function Router() {
       <Route path="/api-keys"><RouteGuard navHref="/api-keys"><AIPageWrapper><ApiKeysPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/bom-management" component={BomManagement} />
       <Route path="/master-data" component={MasterDataManagement} />
+      <Route path="/work-orders"><RouteGuard navHref="/work-orders"><WorkOrdersPage /></RouteGuard></Route>
+      <Route path="/threshold-approvals"><RouteGuard navHref="/threshold-approvals"><ThresholdApprovalsPage /></RouteGuard></Route>
+      <Route path="/anomaly-banks"><RouteGuard navHref="/anomaly-banks"><AnomalyBankPage /></RouteGuard></Route>
       <Route path="/history" component={History} />
       <Route path="/inspection/:id" component={InspectionDetail} />
       <Route path="/layout" component={Layout} />

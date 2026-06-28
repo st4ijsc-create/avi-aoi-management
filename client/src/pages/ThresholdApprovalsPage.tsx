@@ -1,0 +1,302 @@
+/**
+ * Threshold Approvals — manager review queue.
+ *
+ * The `thresholdApproval` router already had request/approve/reject/withdraw/
+ * list/getById, but only request+auto-approve was wired (AIThresholdSuggestButton).
+ * This page is the missing review queue: list pending + history, open an item to
+ * see current vs proposed LSL/USL/nominal + the AI suggestion basis (incl. Cpk if
+ * present), and Approve (optionally apply) / Reject (with comment) / Withdraw.
+ *
+ * RBAC: gated on `settings_alerts` (the analytics/quality manager grant). The
+ * server router additionally enforces "only the requester can withdraw".
+ * SAFETY: only edits measurement-point spec limits on approve+apply (no machine write).
+ */
+import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { trpc } from "@/lib/trpc";
+import { usePermissions } from "@/_core/hooks/usePermissions";
+import DashboardLayout from "@/components/DashboardLayout";
+import { navItems } from "@/lib/navigation";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SlidersHorizontal, AlertTriangle, CheckCircle2, XCircle, Undo2 } from "lucide-react";
+import { toast } from "sonner";
+
+type Approval = {
+  id: number;
+  pointDefId: number;
+  requestedBy: number;
+  suggestion: Record<string, any> | null;
+  currentLsl: string | null;
+  currentUsl: string | null;
+  currentNominal: string | null;
+  proposedLsl: string | null;
+  proposedUsl: string | null;
+  proposedNominal: string | null;
+  status: string;
+  comment: string | null;
+  decidedBy: number | null;
+  decidedAt: string | Date | null;
+  decidedComment: string | null;
+  createdAt: string | Date | null;
+};
+
+const PENDING = "requested";
+
+function statusVariant(s: string): "default" | "secondary" | "destructive" | "outline" {
+  if (s === "applied" || s === "approved") return "secondary";
+  if (s === "rejected") return "destructive";
+  if (s === "withdrawn") return "outline";
+  return "default"; // requested
+}
+
+function num(v: string | null): string {
+  if (v == null) return "—";
+  const n = Number(v);
+  return Number.isFinite(n) ? String(n) : v;
+}
+
+export default function ThresholdApprovalsPage() {
+  const { t } = useTranslation();
+  const { hasPermission } = usePermissions();
+  const canView = hasPermission("settings_alerts", "canView");
+  const canDecide = hasPermission("settings_alerts", "canEdit");
+
+  const meQ = trpc.auth.me.useQuery();
+  const myId = (meQ.data as any)?.id as number | undefined;
+
+  const utils = trpc.useUtils();
+  const [tab, setTab] = useState<"pending" | "history">("pending");
+  const [detail, setDetail] = useState<Approval | null>(null);
+
+  const pendingQ = trpc.thresholdApproval.list.useQuery({ status: PENDING, limit: 200 }, { enabled: canView });
+  const historyQ = trpc.thresholdApproval.list.useQuery({ limit: 200 }, { enabled: canView });
+
+  const invalidate = () => {
+    void utils.thresholdApproval.list.invalidate();
+  };
+
+  const approveM = trpc.thresholdApproval.approve.useMutation({
+    onSuccess: () => { toast.success(t("thresholdApprovals.approved")); setDetail(null); invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const rejectM = trpc.thresholdApproval.reject.useMutation({
+    onSuccess: () => { toast.success(t("thresholdApprovals.rejected")); setDetail(null); invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const withdrawM = trpc.thresholdApproval.withdraw.useMutation({
+    onSuccess: () => { toast.success(t("thresholdApprovals.withdrawn")); setDetail(null); invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  if (!canView) {
+    return (
+      <DashboardLayout title={t("thresholdApprovals.title")} navItems={navItems} currentPath="/threshold-approvals">
+        <div className="p-6">
+          <Card><CardContent className="py-10 text-center text-muted-foreground">
+            <AlertTriangle className="mx-auto mb-2 h-6 w-6" />
+            {t("thresholdApprovals.noPermission")}
+          </CardContent></Card>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  const renderTable = (q: typeof pendingQ, rows: Approval[]) => (
+    <Card>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t("thresholdApprovals.col.id")}</TableHead>
+              <TableHead>{t("thresholdApprovals.col.point")}</TableHead>
+              <TableHead>{t("thresholdApprovals.col.current")}</TableHead>
+              <TableHead>{t("thresholdApprovals.col.proposed")}</TableHead>
+              <TableHead>{t("thresholdApprovals.col.status")}</TableHead>
+              <TableHead className="text-right">{t("thresholdApprovals.col.actions")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {q.isLoading && (
+              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">{t("thresholdApprovals.loading")}</TableCell></TableRow>
+            )}
+            {!q.isLoading && rows.length === 0 && (
+              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">{t("thresholdApprovals.empty")}</TableCell></TableRow>
+            )}
+            {rows.map((r) => (
+              <TableRow key={r.id}>
+                <TableCell className="font-mono text-xs">#{r.id}</TableCell>
+                <TableCell>MP-{r.pointDefId}</TableCell>
+                <TableCell className="text-xs">[{num(r.currentLsl)}, {num(r.currentUsl)}]</TableCell>
+                <TableCell className="text-xs">[{num(r.proposedLsl)}, {num(r.proposedUsl)}]</TableCell>
+                <TableCell><Badge variant={statusVariant(r.status)}>{t(`thresholdApprovals.statusEnum.${r.status}`)}</Badge></TableCell>
+                <TableCell className="text-right">
+                  <Button size="sm" variant="ghost" onClick={() => setDetail(r)}>{t("thresholdApprovals.review")}</Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+
+  return (
+    <DashboardLayout title={t("thresholdApprovals.title")} navItems={navItems} currentPath="/threshold-approvals">
+      <div className="p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <SlidersHorizontal className="h-6 w-6" />
+          <h1 className="text-2xl font-semibold">{t("thresholdApprovals.title")}</h1>
+          <Badge variant="outline">{t("thresholdApprovals.queueBadge")}</Badge>
+        </div>
+
+        <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
+          <TabsList>
+            <TabsTrigger value="pending">
+              {t("thresholdApprovals.tabPending")}
+              {pendingQ.data && (pendingQ.data as Approval[]).length > 0 && (
+                <Badge className="ml-2" variant="default">{(pendingQ.data as Approval[]).length}</Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="history">{t("thresholdApprovals.tabHistory")}</TabsTrigger>
+          </TabsList>
+          <TabsContent value="pending">{renderTable(pendingQ, (pendingQ.data ?? []) as Approval[])}</TabsContent>
+          <TabsContent value="history">{renderTable(historyQ, (historyQ.data ?? []) as Approval[])}</TabsContent>
+        </Tabs>
+      </div>
+
+      {detail && (
+        <ReviewDialog
+          item={detail}
+          canDecide={canDecide}
+          isRequester={myId != null && myId === detail.requestedBy}
+          onClose={() => setDetail(null)}
+          onApprove={(apply, comment) => approveM.mutate({ id: detail.id, apply, comment })}
+          onReject={(comment) => rejectM.mutate({ id: detail.id, comment })}
+          onWithdraw={(comment) => withdrawM.mutate({ id: detail.id, comment })}
+          busy={approveM.isPending || rejectM.isPending || withdrawM.isPending}
+        />
+      )}
+    </DashboardLayout>
+  );
+}
+
+function ReviewDialog({
+  item, canDecide, isRequester, onClose, onApprove, onReject, onWithdraw, busy,
+}: {
+  item: Approval;
+  canDecide: boolean;
+  isRequester: boolean;
+  onClose: () => void;
+  onApprove: (apply: boolean, comment: string | undefined) => void;
+  onReject: (comment: string) => void;
+  onWithdraw: (comment: string | undefined) => void;
+  busy: boolean;
+}) {
+  const { t } = useTranslation();
+  const [apply, setApply] = useState(true);
+  const [comment, setComment] = useState("");
+  const isPending = item.status === PENDING;
+
+  // Pull a Cpk / basis out of the suggestion JSON if present (best-effort, honest).
+  const s = item.suggestion ?? {};
+  const cpk = s.cpk ?? s.Cpk ?? s.proposedCpk ?? null;
+  const basis = s.basis ?? s.reason ?? s.rationale ?? null;
+
+  const submitReject = () => {
+    if (comment.trim().length === 0) { toast.error(t("thresholdApprovals.commentRequired")); return; }
+    onReject(comment.trim());
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{t("thresholdApprovals.reviewTitle", { id: item.id })}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 py-2 text-sm">
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">MP-{item.pointDefId}</span>
+            <Badge variant={statusVariant(item.status)}>{t(`thresholdApprovals.statusEnum.${item.status}`)}</Badge>
+          </div>
+
+          {/* current vs proposed */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-md border p-3">
+              <div className="text-xs font-medium text-muted-foreground mb-1">{t("thresholdApprovals.current")}</div>
+              <div>LSL: <b>{num(item.currentLsl)}</b></div>
+              <div>USL: <b>{num(item.currentUsl)}</b></div>
+              <div>{t("thresholdApprovals.nominal")}: <b>{num(item.currentNominal)}</b></div>
+            </div>
+            <div className="rounded-md border p-3 bg-muted/30">
+              <div className="text-xs font-medium text-muted-foreground mb-1">{t("thresholdApprovals.proposed")}</div>
+              <div>LSL: <b>{num(item.proposedLsl)}</b></div>
+              <div>USL: <b>{num(item.proposedUsl)}</b></div>
+              <div>{t("thresholdApprovals.nominal")}: <b>{num(item.proposedNominal)}</b></div>
+            </div>
+          </div>
+
+          {/* AI basis */}
+          {(cpk != null || basis != null) && (
+            <div className="rounded-md border p-3">
+              <div className="text-xs font-medium text-muted-foreground mb-1">{t("thresholdApprovals.aiBasis")}</div>
+              {cpk != null && <div>Cpk: <b>{typeof cpk === "number" ? cpk.toFixed(3) : String(cpk)}</b></div>}
+              {basis != null && <p className="text-muted-foreground whitespace-pre-wrap">{String(basis)}</p>}
+            </div>
+          )}
+          {item.comment && (
+            <div className="text-xs text-muted-foreground">{t("thresholdApprovals.requesterComment")}: {item.comment}</div>
+          )}
+          {!isPending && item.decidedComment && (
+            <div className="text-xs text-muted-foreground">{t("thresholdApprovals.decisionComment")}: {item.decidedComment}</div>
+          )}
+
+          {isPending && (
+            <>
+              <div className="grid gap-1">
+                <Label>{t("thresholdApprovals.comment")}</Label>
+                <Textarea value={comment} onChange={(e) => setComment(e.target.value)} />
+              </div>
+              {canDecide && (
+                <div className="flex items-center gap-2">
+                  <Switch checked={apply} onCheckedChange={setApply} id="apply" />
+                  <Label htmlFor="apply" className="cursor-pointer">{t("thresholdApprovals.applyToggle")}</Label>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <DialogFooter className="flex-wrap gap-2">
+          <Button variant="outline" onClick={onClose}>{t("thresholdApprovals.close")}</Button>
+          {isPending && isRequester && (
+            <Button variant="secondary" disabled={busy} onClick={() => onWithdraw(comment.trim() || undefined)}>
+              <Undo2 className="h-4 w-4 mr-1" /> {t("thresholdApprovals.withdraw")}
+            </Button>
+          )}
+          {isPending && canDecide && (
+            <>
+              <Button variant="destructive" disabled={busy} onClick={submitReject}>
+                <XCircle className="h-4 w-4 mr-1" /> {t("thresholdApprovals.reject")}
+              </Button>
+              <Button disabled={busy} onClick={() => onApprove(apply, comment.trim() || undefined)}>
+                <CheckCircle2 className="h-4 w-4 mr-1" /> {t("thresholdApprovals.approve")}
+              </Button>
+            </>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

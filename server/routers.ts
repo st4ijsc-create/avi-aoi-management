@@ -48,6 +48,7 @@ import { drillDownRouter, annotationRouter, annotationTemplateRouter, annotation
 import { rootCauseRouter, predictiveAlertRouter } from "./routers/aiRouters";
 import { predictiveMaintenanceRouter } from "./routers/predictiveMaintenanceRouter";
 import { mesControlTowerRouter } from "./routers/mesControlTowerRouter";
+import { maintenanceRouter } from "./routers/maintenanceRouter"; // Work-order CRUD + close→MTTR (machine_monitoring RBAC)
 import { digitalTwinRouter } from "./routers/digitalTwinRouter";
 import { realtimeReportRouter } from "./routers/realtimeReportRouter";
 import { machineContractRouter } from "./routers/machineContractRouter";
@@ -343,6 +344,7 @@ export const appRouter = router({
   predictiveAlert: predictiveAlertRouter,
   predictiveMaintenance: predictiveMaintenanceRouter,
   mesControlTower: mesControlTowerRouter,
+  maintenance: maintenanceRouter,
   digitalTwin: digitalTwinRouter,
   realtimeReport: realtimeReportRouter,
   machineContract: machineContractRouter,
