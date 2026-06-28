@@ -34,13 +34,19 @@ export interface PointTuneScope {
   pointDefId: number;
   productModelId: number | null;
   machineId: number | null;
-  /** Recent measurement_results count for this point (the "enough new data" signal). */
+  /** Recent measurement_samples count for this point (the "enough new data" signal). */
   sampleCount: number;
 }
 
 function sinceClause(days: number): SQL {
   const d = Math.max(1, Math.floor(days));
   return sql`pi."inspectionTime" >= NOW() - (${d} || ' days')::interval`;
+}
+
+/** Window clause for measurement_samples (the source suggestThresholds/advisor reads). */
+function sinceClauseSamples(days: number): SQL {
+  const d = Math.max(1, Math.floor(days));
+  return sql`s."sampledAt" >= NOW() - (${d} || ' days')::interval`;
 }
 
 /**
@@ -108,15 +114,16 @@ export async function enumeratePointTuneScopes(params: {
   if (!db) return [];
   const minN = Math.max(1, Math.floor(params.minSamples));
 
+  // Count measurement_samples (the SAME source the advisor / suggestThresholds reads),
+  // so the cron's "enough new data" signal is consistent with the recommendation it will compute.
   const result = await db.execute(sql`
     SELECT d."id" AS point_id,
            d."productModelId" AS product_id,
            d."machineId" AS machine_id,
            count(*) AS sample_count
     FROM measurement_point_defs d
-    JOIN measurement_results mr ON mr."pointDefId" = d."id"
-    JOIN product_inspections pi ON pi."id" = mr."inspectionId"
-    WHERE ${sinceClause(params.days)}
+    JOIN measurement_samples s ON s."pointDefId" = d."id"
+    WHERE ${sinceClauseSamples(params.days)}
       AND d."lowerLimit" IS NOT NULL
       AND d."upperLimit" IS NOT NULL
     GROUP BY d."id", d."productModelId", d."machineId"
