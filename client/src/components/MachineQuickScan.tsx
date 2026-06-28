@@ -6,13 +6,20 @@
  *   that machine ( /ai-chat?machine=<code> ). Hands-free friendly; pairs with
  *   the chat's existing voice input.
  *
- * No new npm dependency:
- *   - QR/barcode read via the native BarcodeDetector API over a getUserMedia
- *     camera stream (Chromium). Both QR and common 1D formats requested.
+ * Works on EVERY browser via a two-tier camera decoder:
+ *   - TIER 1 (fast, native): the BarcodeDetector API over a getUserMedia camera
+ *     stream — used when it exists AND advertises qr_code support (Chromium /
+ *     Android Chrome / Edge). Both QR and common 1D formats requested.
+ *   - TIER 2 (fallback): @zxing/browser's BrowserMultiFormatReader on the same
+ *     single <video> element — used on Safari / Firefox / desktop where
+ *     BarcodeDetector is missing or lacks qr_code. zxing owns the device and
+ *     prefers the environment/back camera.
+ *   Exactly one tier runs at a time (picked per capability) — never both.
  *   - Optional Web NFC via NDEFReader (Android Chrome only).
- *   - Everything is feature-detected. When BarcodeDetector / camera / NFC are
- *     unavailable or denied, we fall back to a manual code input + a machine
- *     picker (from the existing trpc.machine.list query) so the flow always works.
+ *   - Everything is feature-detected. When no camera / NFC is available or
+ *     permission is denied — or a decoder fails to init — we fall back to a
+ *     manual code input + a machine picker (from the existing trpc.machine.list
+ *     query) so the flow always works.
  *
  * The QR payload may be the raw machine code OR a URL that embeds the code
  * (e.g. https://host/ai-chat?machine=AVI-001  or  .../machine/AVI-001) — both
@@ -22,6 +29,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
+import {
+  BrowserMultiFormatReader,
+  type IScannerControls,
+} from "@zxing/browser";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -93,9 +104,11 @@ export default function MachineQuickScan({
 
   // Camera / scanning state
   const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const rafRef = useRef<number | null>(null);
+  const streamRef = useRef<MediaStream | null>(null); // TIER 1 (BarcodeDetector) stream
+  const rafRef = useRef<number | null>(null); // TIER 1 decode loop
   const detectorRef = useRef<BarcodeDetector | null>(null);
+  const zxingControlsRef = useRef<IScannerControls | null>(null); // TIER 2 (zxing) controls
+  const zxingReaderRef = useRef<BrowserMultiFormatReader | null>(null);
   const nfcAbortRef = useRef<AbortController | null>(null);
   const resolvedRef = useRef(false);
 
@@ -105,7 +118,11 @@ export default function MachineQuickScan({
   const [pickerQuery, setPickerQuery] = useState("");
   const [nfcActive, setNfcActive] = useState(false);
 
-  const hasBarcodeDetector = typeof window !== "undefined" && "BarcodeDetector" in window;
+  // Capability: a camera is needed for either decoder tier. The choice between
+  // the native BarcodeDetector (tier 1) and @zxing/browser (tier 2) is resolved
+  // asynchronously at scan-start (we must await getSupportedFormats()).
+  const hasCamera =
+    typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
   const hasNfc = typeof window !== "undefined" && "NDEFReader" in window;
 
   // Machine list — powers the picker AND code resolution (no getByCode query exists).
@@ -133,8 +150,9 @@ export default function MachineQuickScan({
     [machineList, navigate, t],
   );
 
-  // ─── Camera teardown ──────────────────────────────────────────────────────────
+  // ─── Camera teardown (stops BOTH tiers + releases tracks) ─────────────────────
   const stopCamera = useCallback(() => {
+    // TIER 1: cancel the RAF decode loop + stop the getUserMedia stream.
     if (rafRef.current != null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -143,77 +161,63 @@ export default function MachineQuickScan({
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
+    // TIER 2: zxing owns its own stream — stop() ends the loop AND releases it.
+    if (zxingControlsRef.current) {
+      try {
+        zxingControlsRef.current.stop();
+      } catch {
+        /* ignore */
+      }
+      zxingControlsRef.current = null;
+    }
     if (videoRef.current) videoRef.current.srcObject = null;
     setScanning(false);
   }, []);
 
-  // ─── Camera + BarcodeDetector loop ────────────────────────────────────────────
-  const startCamera = useCallback(async () => {
-    setErrorKey(null);
-    if (!hasBarcodeDetector) {
-      setErrorKey("machineScan.errorNoDetector");
-      return;
-    }
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setErrorKey("machineScan.errorNoCamera");
-      return;
-    }
+  // ─── Capability tier: native BarcodeDetector w/ qr_code support? ───────────────
+  // Returns the format list to use, or null when the native API is unusable
+  // (missing, or no qr_code) → caller falls back to the zxing tier.
+  const resolveNativeFormats = useCallback(async (): Promise<string[] | null> => {
+    if (typeof window === "undefined" || !("BarcodeDetector" in window)) return null;
     try {
-      // Build the detector (request QR + common 1D; ignore unsupported formats).
-      if (!detectorRef.current) {
-        let formats: string[] | undefined;
-        try {
-          const supported = await BarcodeDetector.getSupportedFormats();
-          formats = [
-            "qr_code",
-            "code_128",
-            "code_39",
-            "ean_13",
-            "data_matrix",
-          ].filter((f) => supported.includes(f));
-        } catch {
-          formats = undefined;
-        }
-        detectorRef.current = new BarcodeDetector(
-          formats && formats.length > 0 ? { formats } : undefined,
-        );
-      }
+      const supported = await BarcodeDetector.getSupportedFormats();
+      if (!supported.includes("qr_code")) return null; // tier 2 instead
+      return ["qr_code", "code_128", "code_39", "ean_13", "data_matrix"].filter(
+        (f) => supported.includes(f),
+      );
+    } catch {
+      return null;
+    }
+  }, []);
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
-        audio: false,
-      });
-      streamRef.current = stream;
-      const video = videoRef.current;
-      if (!video) {
-        stream.getTracks().forEach((tk) => tk.stop());
-        return;
+  // ─── TIER 2: @zxing/browser continuous decode on the shared <video> ───────────
+  const startZxing = useCallback(async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    try {
+      if (!zxingReaderRef.current) {
+        // BrowserMultiFormatReader covers QR + common 1D, matching tier 1.
+        zxingReaderRef.current = new BrowserMultiFormatReader();
       }
-      video.srcObject = stream;
-      await video.play().catch(() => {});
-      setScanning(true);
-
-      const tick = async () => {
-        const det = detectorRef.current;
-        const v = videoRef.current;
-        if (!det || !v || v.readyState < 2) {
-          rafRef.current = requestAnimationFrame(tick);
-          return;
-        }
-        try {
-          const codes = await det.detect(v);
-          const hit = codes.find((c) => c.rawValue && c.rawValue.trim());
-          if (hit) {
+      // deviceId undefined → zxing picks a device, preferring the environment
+      // (back) camera when available, and manages the stream on `video`.
+      const controls = await zxingReaderRef.current.decodeFromVideoDevice(
+        undefined,
+        video,
+        (result, _err, ctrl) => {
+          if (resolvedRef.current) return;
+          const text = result?.getText()?.trim();
+          if (text) {
+            ctrl.stop();
+            zxingControlsRef.current = null;
             stopCamera();
-            resolveAndGo(hit.rawValue);
-            return;
+            resolveAndGo(text);
           }
-        } catch {
-          // transient decode error — keep scanning
-        }
-        rafRef.current = requestAnimationFrame(tick);
-      };
-      rafRef.current = requestAnimationFrame(tick);
+          // decode errors are reported every frame while searching — ignore them.
+        },
+      );
+      zxingControlsRef.current = controls;
+      setScanning(true);
     } catch (err) {
       const name = (err as DOMException)?.name;
       if (name === "NotAllowedError" || name === "SecurityError") {
@@ -225,7 +229,84 @@ export default function MachineQuickScan({
       }
       stopCamera();
     }
-  }, [hasBarcodeDetector, resolveAndGo, stopCamera]);
+  }, [resolveAndGo, stopCamera]);
+
+  // ─── TIER 1: native BarcodeDetector over a getUserMedia stream + RAF loop ─────
+  const startBarcodeDetector = useCallback(
+    async (formats: string[]) => {
+      try {
+        if (!detectorRef.current) {
+          detectorRef.current = new BarcodeDetector(
+            formats.length > 0 ? { formats } : undefined,
+          );
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false,
+        });
+        streamRef.current = stream;
+        const video = videoRef.current;
+        if (!video) {
+          stream.getTracks().forEach((tk) => tk.stop());
+          streamRef.current = null;
+          return;
+        }
+        video.srcObject = stream;
+        await video.play().catch(() => {});
+        setScanning(true);
+
+        const tick = async () => {
+          const det = detectorRef.current;
+          const v = videoRef.current;
+          if (!det || !v || v.readyState < 2) {
+            rafRef.current = requestAnimationFrame(tick);
+            return;
+          }
+          try {
+            const codes = await det.detect(v);
+            const hit = codes.find((c) => c.rawValue && c.rawValue.trim());
+            if (hit) {
+              stopCamera();
+              resolveAndGo(hit.rawValue);
+              return;
+            }
+          } catch {
+            // transient decode error — keep scanning
+          }
+          rafRef.current = requestAnimationFrame(tick);
+        };
+        rafRef.current = requestAnimationFrame(tick);
+      } catch (err) {
+        const name = (err as DOMException)?.name;
+        if (name === "NotAllowedError" || name === "SecurityError") {
+          setErrorKey("machineScan.errorPermission");
+        } else if (name === "NotFoundError" || name === "OverconstrainedError") {
+          setErrorKey("machineScan.errorNoCamera");
+        } else {
+          setErrorKey("machineScan.errorCamera");
+        }
+        stopCamera();
+      }
+    },
+    [resolveAndGo, stopCamera],
+  );
+
+  // ─── Camera entry point: pick a tier, then start exactly one ──────────────────
+  const startCamera = useCallback(async () => {
+    setErrorKey(null);
+    if (!hasCamera) {
+      setErrorKey("machineScan.errorNoCamera");
+      return;
+    }
+    // Make sure no prior tier is still running before (re)starting.
+    stopCamera();
+    const nativeFormats = await resolveNativeFormats();
+    if (nativeFormats) {
+      await startBarcodeDetector(nativeFormats);
+    } else {
+      await startZxing();
+    }
+  }, [hasCamera, resolveNativeFormats, startBarcodeDetector, startZxing, stopCamera]);
 
   // ─── Optional Web NFC ─────────────────────────────────────────────────────────
   const startNfc = useCallback(async () => {
@@ -279,8 +360,9 @@ export default function MachineQuickScan({
       setErrorKey(null);
       setManualCode("");
       setPickerQuery("");
-      // Auto-start the camera when the API is available; otherwise show fallback.
-      if (hasBarcodeDetector) void startCamera();
+      // Auto-start the camera when one is available; otherwise show fallback.
+      // startCamera() resolves the decoder tier (native vs zxing) internally.
+      if (hasCamera) void startCamera();
     } else {
       stopCamera();
       stopNfc();
@@ -301,7 +383,7 @@ export default function MachineQuickScan({
       .slice(0, 50);
   }, [machineList, pickerQuery]);
 
-  const showCameraFallback = !hasBarcodeDetector || errorKey != null;
+  const showCameraFallback = !hasCamera || errorKey != null;
 
   return (
     <>
@@ -335,8 +417,9 @@ export default function MachineQuickScan({
             </DialogDescription>
           </DialogHeader>
 
-          {/* Camera viewport (only when BarcodeDetector is available) */}
-          {hasBarcodeDetector && (
+          {/* Camera viewport (shown whenever a camera is available — the decoder
+              tier, native BarcodeDetector or zxing, is chosen at scan-start). */}
+          {hasCamera && (
             <div className="relative rounded-lg overflow-hidden bg-black aspect-video">
               <video
                 ref={videoRef}
