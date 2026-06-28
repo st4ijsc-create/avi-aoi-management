@@ -3898,6 +3898,8 @@
     "aiHubDesc": "AI 功能中心仪表板",
     "aiChat": "AI 对话",
     "aiChatDesc": "AI 驱动的数据查询助手",
+    "technicianCopilot": "技术副驾",
+    "technicianCopilotDesc": "AI 诊断缺陷根因 — 一键批准修复",
     "aiQualityGate": "质量门",
     "aiQualityGateDesc": "自动化质量通过/失败决策",
     "aiActiveLearning": "主动学习",
@@ -7245,6 +7247,10 @@
         "title": "管理洞察",
         "desc": "管理者视图：对工厂数据进行自然语言问答、自动生成管理摘要以及活跃的 AI 警报"
       },
+      "technicianCopilot": {
+        "title": "技术副驾",
+        "desc": "AI 诊断缺陷根因并提出修复方案 — 技术人员一键批准"
+      },
       "performance": {
         "title": "模型性能",
         "desc": "跟踪AI模型准确率、推理统计和版本历史"
@@ -7410,6 +7416,7 @@
     "sectionTitle": "各设备 AI 信号",
     "sectionHint": "故障风险 · 异常 · 建议",
     "askAI": "问 AI",
+    "diagnose": "诊断",
     "askQuestion": "设备 {{machine}} 有哪些 AI 信号？总结故障风险和异常。",
     "loading": "加载中...",
     "noSignal": "暂无 AI 信号",
@@ -7424,6 +7431,54 @@
     "pdmValue": "{{risk}}%",
     "pdmValueDays": "{{risk}}% · ~{{days}} 天",
     "latestInsight": "最新建议"
+  },
+  "technicianCopilot": {
+    "title": "技术副驾",
+    "subtitle": "AI 诊断缺陷根因 — 您只需一键批准",
+    "machineUnspecified": "设备",
+    "askQuestion": "设备 {{machine}} 的缺陷原因可能是\"{{cause}}\"。请帮我深入分析。",
+    "futureNote": "即将推出：阈值/参数顾问 · 新设备配置顾问。",
+    "rca": {
+      "title": "根因分析 (RCA)",
+      "subtitle": "选择设备（如知道缺陷类型也可填写），让 AI 分析。",
+      "machineLabel": "设备",
+      "machinePlaceholder": "选择设备...",
+      "defectLabel": "缺陷类型（可选）",
+      "defectPlaceholder": "例如：连锡、元件偏移...",
+      "diagnoseBtn": "🔍 诊断",
+      "analyzing": "AI 正在分析...",
+      "analyzingHint": "正在收集证据并对原因排序。",
+      "disabled": "RCA 副驾尚未启用",
+      "disabledHint": "该功能已关闭。请联系管理员启用。",
+      "needsHuman": "数据不足，无法确定诊断 — 需要人工查看",
+      "needsHumanHint": "请补充数据或直接到设备现场检查。"
+    },
+    "card": {
+      "rank": "原因 #{{n}}",
+      "confidence": "置信度",
+      "evidence": "证据",
+      "recommendedFix": "建议修复",
+      "applyBtn": "✅ 同意应用",
+      "ackBtn": "标记为已处理",
+      "askBtn": "问 AI",
+      "nextBtn": "不对 → 查看 #{{n}}",
+      "doneBanner": "已处理完成。"
+    },
+    "fixKind": {
+      "WRITE": "配置写入",
+      "MANUAL": "手动操作",
+      "INVESTIGATE": "需要调查"
+    },
+    "recent": {
+      "title": "近期诊断",
+      "empty": "暂无诊断记录。"
+    },
+    "toast": {
+      "diagnoseFailed": "诊断失败",
+      "applyFailed": "无法应用",
+      "applied": "已应用",
+      "acknowledged": "已标记为处理"
+    }
   },
   "qg": {
     "title": "AI质量门",

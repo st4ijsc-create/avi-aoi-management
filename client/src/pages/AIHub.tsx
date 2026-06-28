@@ -28,6 +28,7 @@ import {
   FlaskConical,
   Gauge,
   Lightbulb,
+  Wrench,
 } from "lucide-react";
 
 const aiFeatures = [
@@ -37,6 +38,7 @@ const aiFeatures = [
   { key: "performance", icon: Activity, href: "/ai-performance", color: "text-red-500", bg: "bg-red-500/10", category: "analysis" },
   { key: "reports", icon: FileText, href: "/ai-reports", color: "text-yellow-500", bg: "bg-yellow-500/10", category: "analysis" },
   { key: "managementInsight", icon: Lightbulb, href: "/management-insight", color: "text-amber-500", bg: "bg-amber-500/10", category: "analysis" },
+  { key: "technicianCopilot", icon: Wrench, href: "/technician-copilot", color: "text-rose-500", bg: "bg-rose-500/10", category: "analysis" },
   // Inspection AI
   { key: "chat", icon: MessageSquare, href: "/ai-chat", color: "text-blue-500", bg: "bg-blue-500/10", category: "inspection" },
   { key: "qualityGate", icon: ShieldCheck, href: "/ai-quality-gate", color: "text-green-500", bg: "bg-green-500/10", category: "inspection" },

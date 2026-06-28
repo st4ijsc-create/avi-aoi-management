@@ -3928,6 +3928,8 @@
     "aiHubDesc": "Bảng điều khiển trung tâm tính năng AI",
     "aiChat": "AI Chat",
     "aiChatDesc": "Trợ lý chat AI cho truy vấn dữ liệu",
+    "technicianCopilot": "Trợ lý Kỹ thuật",
+    "technicianCopilotDesc": "AI chẩn đoán nguyên nhân lỗi — duyệt cách sửa một chạm",
     "aiQualityGate": "Cổng Chất Lượng",
     "aiQualityGateDesc": "Quyết định pass/fail chất lượng tự động",
     "aiActiveLearning": "Học Tích Cực",
@@ -7294,6 +7296,10 @@
         "title": "Insight Quản Lý",
         "desc": "Góc nhìn quản lý: hỏi đáp ngôn ngữ tự nhiên trên dữ liệu nhà máy, tóm tắt điều hành tự động và cảnh báo AI đang hoạt động"
       },
+      "technicianCopilot": {
+        "title": "Trợ lý Kỹ thuật",
+        "desc": "AI chẩn đoán nguyên nhân lỗi và đề xuất cách sửa — kỹ thuật duyệt một chạm"
+      },
       "performance": {
         "title": "Hiệu Năng Mô Hình",
         "desc": "Theo dõi độ chính xác, thống kê suy luận và lịch sử phiên bản"
@@ -7459,6 +7465,7 @@
     "sectionTitle": "Tín hiệu AI theo máy",
     "sectionHint": "Rủi ro hỏng hóc · bất thường · khuyến nghị",
     "askAI": "Hỏi AI",
+    "diagnose": "Chẩn đoán",
     "askQuestion": "Máy {{machine}} đang có tín hiệu AI gì? Tóm tắt rủi ro hỏng hóc và bất thường.",
     "loading": "Đang tải...",
     "noSignal": "Chưa có tín hiệu AI",
@@ -7473,6 +7480,54 @@
     "pdmValue": "{{risk}}%",
     "pdmValueDays": "{{risk}}% · ~{{days}} ngày",
     "latestInsight": "Khuyến nghị mới nhất"
+  },
+  "technicianCopilot": {
+    "title": "Trợ lý Kỹ thuật",
+    "subtitle": "AI chẩn đoán nguyên nhân lỗi — bạn chỉ cần duyệt một chạm",
+    "machineUnspecified": "máy",
+    "askQuestion": "Nguyên nhân lỗi có thể là \"{{cause}}\" trên máy {{machine}}. Phân tích sâu giúp tôi.",
+    "futureNote": "Sắp có: Trợ lý đặt ngưỡng/thông số · Trợ lý cài đặt máy mới.",
+    "rca": {
+      "title": "Chẩn đoán nguyên nhân lỗi (RCA)",
+      "subtitle": "Chọn máy (và loại lỗi nếu biết) rồi để AI phân tích.",
+      "machineLabel": "Máy",
+      "machinePlaceholder": "Chọn máy...",
+      "defectLabel": "Loại lỗi (tuỳ chọn)",
+      "defectPlaceholder": "VD: chân chì, lệch linh kiện...",
+      "diagnoseBtn": "🔍 Chẩn đoán",
+      "analyzing": "AI đang phân tích...",
+      "analyzingHint": "Thu thập bằng chứng và xếp hạng nguyên nhân.",
+      "disabled": "RCA Copilot chưa bật",
+      "disabledHint": "Tính năng đang tắt. Liên hệ quản trị để bật.",
+      "needsHuman": "Chưa đủ dữ liệu để chẩn đoán chắc chắn — cần người xem",
+      "needsHumanHint": "Hãy bổ sung dữ liệu hoặc kiểm tra trực tiếp tại máy."
+    },
+    "card": {
+      "rank": "Nguyên nhân #{{n}}",
+      "confidence": "Độ tin cậy",
+      "evidence": "Bằng chứng",
+      "recommendedFix": "Đề xuất sửa",
+      "applyBtn": "✅ Đồng ý áp dụng",
+      "ackBtn": "Đánh dấu đã xử lý",
+      "askBtn": "Hỏi AI",
+      "nextBtn": "Không đúng → xem #{{n}}",
+      "doneBanner": "Đã xử lý xong."
+    },
+    "fixKind": {
+      "WRITE": "Ghi cấu hình",
+      "MANUAL": "Việc tay",
+      "INVESTIGATE": "Cần điều tra"
+    },
+    "recent": {
+      "title": "Chẩn đoán gần đây",
+      "empty": "Chưa có chẩn đoán nào."
+    },
+    "toast": {
+      "diagnoseFailed": "Chẩn đoán thất bại",
+      "applyFailed": "Không thể áp dụng",
+      "applied": "Đã áp dụng",
+      "acknowledged": "Đã đánh dấu xử lý"
+    }
   },
   "qg": {
     "title": "Cổng Chất Lượng AI",

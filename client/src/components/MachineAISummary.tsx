@@ -24,7 +24,7 @@ import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import { Activity, ShieldAlert, Lightbulb, MessageCircle, Bot } from "lucide-react";
+import { Activity, ShieldAlert, Lightbulb, MessageCircle, Bot, Search } from "lucide-react";
 
 type Tone = "green" | "amber" | "red" | "muted";
 
@@ -149,6 +149,11 @@ export default function MachineAISummary({
     navigate(`/ai-chat?q=${encodeURIComponent(question)}`);
   };
 
+  // Deep-link to the RCA Copilot for THIS machine (auto-runs the diagnosis).
+  const diagnose = () => {
+    navigate(`/technician-copilot?machineId=${machineId}`);
+  };
+
   return (
     <div
       className={cn(
@@ -165,15 +170,26 @@ export default function MachineAISummary({
             {t("machineAI.title", "Tín hiệu AI")}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={askAI}
-          className="flex items-center gap-1 text-xs font-medium text-primary hover:underline shrink-0"
-          title={t("machineAI.askAI", "Hỏi AI")}
-        >
-          <MessageCircle className="h-3.5 w-3.5" />
-          {t("machineAI.askAI", "Hỏi AI")}
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={diagnose}
+            className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            title={t("machineAI.diagnose", "Chẩn đoán")}
+          >
+            <Search className="h-3.5 w-3.5" />
+            {t("machineAI.diagnose", "Chẩn đoán")}
+          </button>
+          <button
+            type="button"
+            onClick={askAI}
+            className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            title={t("machineAI.askAI", "Hỏi AI")}
+          >
+            <MessageCircle className="h-3.5 w-3.5" />
+            {t("machineAI.askAI", "Hỏi AI")}
+          </button>
+        </div>
       </div>
 
       {loading ? (

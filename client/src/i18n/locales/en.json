@@ -3905,6 +3905,8 @@
     "aiHubDesc": "Central AI feature dashboard",
     "aiChat": "AI Chat",
     "aiChatDesc": "AI-powered chat assistant for data queries",
+    "technicianCopilot": "Technician Copilot",
+    "technicianCopilotDesc": "AI diagnoses defect root cause — approve the fix in one tap",
     "aiQualityGate": "Quality Gate",
     "aiQualityGateDesc": "Automated pass/fail quality decisions",
     "aiActiveLearning": "Active Learning",
@@ -7271,6 +7273,10 @@
         "title": "Management Insight",
         "desc": "Manager view: natural-language Q&A over factory data, auto executive summary, and active AI alerts"
       },
+      "technicianCopilot": {
+        "title": "Technician Copilot",
+        "desc": "AI diagnoses defect root cause and proposes a fix — technicians approve in one tap"
+      },
       "performance": {
         "title": "Model Performance",
         "desc": "Track AI model accuracy, inference stats, and version history across deployments"
@@ -7436,6 +7442,7 @@
     "sectionTitle": "Per-machine AI signals",
     "sectionHint": "Failure risk · anomaly · recommendation",
     "askAI": "Ask AI",
+    "diagnose": "Diagnose",
     "askQuestion": "What AI signals does machine {{machine}} have? Summarize failure risk and anomalies.",
     "loading": "Loading...",
     "noSignal": "No AI signal yet",
@@ -7450,6 +7457,54 @@
     "pdmValue": "{{risk}}%",
     "pdmValueDays": "{{risk}}% · ~{{days}} days",
     "latestInsight": "Latest recommendation"
+  },
+  "technicianCopilot": {
+    "title": "Technician Copilot",
+    "subtitle": "AI diagnoses defect root cause — you just approve in one tap",
+    "machineUnspecified": "machine",
+    "askQuestion": "The defect cause may be \"{{cause}}\" on machine {{machine}}. Help me analyze it deeper.",
+    "futureNote": "Coming soon: Threshold/parameter advisor · New-machine setup advisor.",
+    "rca": {
+      "title": "Root Cause Analysis (RCA)",
+      "subtitle": "Pick a machine (and defect type if known), then let the AI analyze.",
+      "machineLabel": "Machine",
+      "machinePlaceholder": "Select a machine...",
+      "defectLabel": "Defect type (optional)",
+      "defectPlaceholder": "e.g. solder bridge, component shift...",
+      "diagnoseBtn": "🔍 Diagnose",
+      "analyzing": "AI is analyzing...",
+      "analyzingHint": "Gathering evidence and ranking causes.",
+      "disabled": "RCA Copilot is not enabled",
+      "disabledHint": "The feature is off. Contact an admin to enable it.",
+      "needsHuman": "Not enough data to diagnose with confidence — needs a human",
+      "needsHumanHint": "Add more data or inspect the machine directly."
+    },
+    "card": {
+      "rank": "Cause #{{n}}",
+      "confidence": "Confidence",
+      "evidence": "Evidence",
+      "recommendedFix": "Recommended fix",
+      "applyBtn": "✅ Approve & apply",
+      "ackBtn": "Mark as handled",
+      "askBtn": "Ask AI",
+      "nextBtn": "Not right → see #{{n}}",
+      "doneBanner": "Done."
+    },
+    "fixKind": {
+      "WRITE": "Config write",
+      "MANUAL": "Manual task",
+      "INVESTIGATE": "Needs investigation"
+    },
+    "recent": {
+      "title": "Recent diagnoses",
+      "empty": "No diagnoses yet."
+    },
+    "toast": {
+      "diagnoseFailed": "Diagnosis failed",
+      "applyFailed": "Could not apply",
+      "applied": "Applied",
+      "acknowledged": "Marked as handled"
+    }
   },
   "qg": {
     "title": "AI Quality Gate",

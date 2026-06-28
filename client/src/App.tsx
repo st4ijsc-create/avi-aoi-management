@@ -94,6 +94,7 @@ const AIGgufModelsPage = React.lazy(() => import("./pages/AIGgufModelsPage"));
 const AIBrainDashboard = React.lazy(() => import("./pages/AIBrainDashboard"));
 const ManagementInsight = React.lazy(() => import("./pages/ManagementInsight")); // B4.5: manager-facing insight (NL Q&A + exec summary + AI alerts)
 const AILocalKnowledgeBasePage = React.lazy(() => import("./pages/AILocalKnowledgeBasePage"));
+const TechnicianCopilot = React.lazy(() => import("./pages/TechnicianCopilot")); // LUỒNG ③: RCA Copilot — one-tap fix approval
 import TestAnnotationPage from "./pages/TestAnnotationPage";
 const MaskAnnotationPage = React.lazy(() => import("./pages/MaskAnnotationPage"));
 const AndonBoard = React.lazy(() => import("./pages/AndonBoard")); // F5a: Andon board (ALERT-ONLY)
@@ -258,6 +259,7 @@ function Router() {
       <Route path="/ai-brain"><AIPageWrapper><AIBrainDashboard /></AIPageWrapper></Route>
       <Route path="/management-insight"><AIPageWrapper><ManagementInsight /></AIPageWrapper></Route>
       <Route path="/ai-local-kb"><AIPageWrapper><AILocalKnowledgeBasePage /></AIPageWrapper></Route>
+      <Route path="/technician-copilot"><AIPageWrapper><TechnicianCopilot /></AIPageWrapper></Route>
       <Route path="/test-annotation" component={TestAnnotationPage} />
       <Route path="/mask-annotation"><AIPageWrapper><MaskAnnotationPage /></AIPageWrapper></Route>
       <Route path="/aoi-packages" component={AOIPackages} />

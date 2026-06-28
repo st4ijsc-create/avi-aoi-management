@@ -483,6 +483,16 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "analytics_ai_performance",
         permissionCategory: "analytics",
       },
+      // RCA Copilot (LUỒNG ③) — technician-facing one-tap fix approval.
+      // Scoped to machine access (maintenance/supervisor) + admin bypass.
+      {
+        href: "/technician-copilot",
+        label: "nav.technicianCopilot",
+        icon: <Wrench className="h-4 w-4" />,
+        description: "nav.technicianCopilotDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+      },
       // -- Quality & Learning --
       {
         href: "/ai-quality-gate",
