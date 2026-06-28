@@ -5,8 +5,7 @@
  * to the surface most useful to them on login:
  *   - operator           → /operator            (the big-button floor shell)
  *   - maintenance        → /technician-copilot   (RCA copilot)
- *   - quality_inspector  → /history              (closest inspection surface;
- *                          TODO P1: build a dedicated /quality-home)
+ *   - quality_inspector  → /quality-home          (the inspection workspace)
  *   - supervisor/manager → /management-insight    (exec NL Q&A + alerts)
  *   - admin/it_admin     → /dashboard             (full ops dashboard)
  *   - viewer/user/other  → /                      (Home)
@@ -25,9 +24,7 @@ export function landingPathForRole(role?: string | null): string {
     case "maintenance":
       return "/technician-copilot";
     case "quality_inspector":
-      // TODO (P1): dedicated /quality-home. For now route QC to history (the
-      // closest existing inspection-review surface).
-      return "/history";
+      return "/quality-home";
     case "supervisor":
     case "manager":
       return "/management-insight";
