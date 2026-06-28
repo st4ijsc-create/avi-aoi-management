@@ -688,6 +688,15 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "analytics_ai_performance",
         permissionCategory: "analytics",
       },
+      // Causal knowledge-graph editor — machine↔defect↔cause↔action used by RCA.
+      {
+        href: "/causal-graph",
+        label: "nav.causalGraph",
+        icon: <Workflow className="h-4 w-4" />,
+        description: "nav.causalGraphDesc",
+        requiredPermission: "analytics_root_cause",
+        permissionCategory: "analytics",
+      },
     ],
   },
 

@@ -70,6 +70,7 @@ import AnnotationComparisonPage from "./pages/AnnotationComparisonPage";
 import DefectHeatmapPage from "./pages/DefectHeatmapPage";
 import DefectPredictionPage from "./pages/DefectPredictionPage";
 import RootCauseAnalysisPage from "./pages/RootCauseAnalysisPage";
+const CausalGraphEditorPage = React.lazy(() => import("./pages/CausalGraphEditorPage")); // Causal knowledge-graph admin editor (validated atomic write)
 import PredictiveAlertsPage from "./pages/PredictiveAlertsPage";
 import DashboardMarketplace from "./pages/DashboardMarketplace";
 import HistoryExportScheduling from "./pages/HistoryExportScheduling";
@@ -250,6 +251,7 @@ function Router() {
       <Route path="/defect-heatmap" component={DefectHeatmapPage} />
       <Route path="/defect-prediction" component={DefectPredictionPage} />
       <Route path="/root-cause-analysis" component={RootCauseAnalysisPage} />
+      <Route path="/causal-graph"><RouteGuard navHref="/causal-graph"><AIPageWrapper><CausalGraphEditorPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/predictive-alerts" component={PredictiveAlertsPage} />
       <Route path="/dashboard-marketplace" component={DashboardMarketplace} />
       <Route path="/history-export-scheduling" component={HistoryExportScheduling} />

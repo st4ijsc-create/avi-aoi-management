@@ -10,6 +10,18 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { usePermissions } from "@/_core/hooks/usePermissions";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { format, subDays } from "date-fns";
 import { vi } from "date-fns/locale";
@@ -28,7 +40,9 @@ import {
   Loader2,
   History,
   Target,
-  Zap
+  Zap,
+  Pencil,
+  Trash2
 } from "lucide-react";
 import { 
   BarChart, 
@@ -51,6 +65,9 @@ type AnalysisType = "DEFECT_ANALYSIS" | "YIELD_ANALYSIS" | "QUALITY_ANALYSIS" | 
 
 export function RootCauseAnalysisPageContent() {
   const { t } = useTranslation();
+  const { hasPermission } = usePermissions();
+  const canEdit = hasPermission("analytics_root_cause", "canEdit");
+  const canDelete = hasPermission("analytics_root_cause", "canDelete");
   const [analysisType, setAnalysisType] = useState<AnalysisType>("DEFECT_ANALYSIS");
   const [machineId, setMachineId] = useState<number | undefined>();
   const [productModelId, setProductModelId] = useState<number | undefined>();
@@ -71,12 +88,66 @@ export function RootCauseAnalysisPageContent() {
     { enabled: !!selectedAnalysis }
   );
 
+  const utils = trpc.useUtils();
+
   // Mutation
   const analyzeMutation = trpc.rootCause.analyze.useMutation({
     onSuccess: (data) => {
       setSelectedAnalysis(data.id);
     },
   });
+
+  // ── Edit / delete state + mutations ──
+  const [editOpen, setEditOpen] = useState(false);
+  const [editStatus, setEditStatus] = useState<"COMPLETED" | "IN_PROGRESS" | "FAILED">("COMPLETED");
+  const [editConfirmedCause, setEditConfirmedCause] = useState("");
+  const [editCorrectiveAction, setEditCorrectiveAction] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  const invalidate = () => {
+    void utils.rootCause.list.invalidate();
+    if (selectedAnalysis) void utils.rootCause.get.invalidate({ id: selectedAnalysis });
+  };
+
+  const updateMutation = trpc.rootCause.update.useMutation({
+    onSuccess: () => {
+      setEditOpen(false);
+      invalidate();
+      toast.success(t("reports.analysisUpdated", "Đã cập nhật phân tích"));
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deleteMutation = trpc.rootCause.delete.useMutation({
+    onSuccess: () => {
+      setDeleteOpen(false);
+      setSelectedAnalysis(null);
+      invalidate();
+      toast.success(t("reports.analysisDeleted", "Đã xoá phân tích"));
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const openEdit = () => {
+    const review: any = (analysisDetail?.aiInsights as any)?.review ?? {};
+    setEditStatus((analysisDetail?.status as any) ?? "COMPLETED");
+    setEditConfirmedCause(review.confirmedCause ?? "");
+    setEditCorrectiveAction(review.correctiveAction ?? "");
+    setEditNotes(review.notes ?? "");
+    setEditOpen(true);
+  };
+
+  const submitEdit = () => {
+    if (!selectedAnalysis) return;
+    updateMutation.mutate({
+      id: selectedAnalysis,
+      status: editStatus,
+      confirmedCause: editConfirmedCause,
+      correctiveAction: editCorrectiveAction,
+      notes: editNotes,
+    });
+  };
 
   const handleAnalyze = () => {
     analyzeMutation.mutate({
@@ -300,10 +371,28 @@ export function RootCauseAnalysisPageContent() {
           {/* Analysis Results */}
           <Card className="lg:col-span-2">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5" />
-                {t('reports.analysisResults')}
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5" />
+                  {t('reports.analysisResults')}
+                </CardTitle>
+                {analysisDetail && (
+                  <div className="flex items-center gap-2">
+                    {canEdit && (
+                      <Button variant="outline" size="sm" onClick={openEdit}>
+                        <Pencil className="mr-1 h-4 w-4" />
+                        {t('reports.editAnalysis', 'Sửa')}
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button variant="outline" size="sm" onClick={() => setDeleteOpen(true)}>
+                        <Trash2 className="mr-1 h-4 w-4 text-destructive" />
+                        {t('reports.deleteAnalysis', 'Xoá')}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               {analysisDetail ? (
@@ -447,6 +536,67 @@ export function RootCauseAnalysisPageContent() {
           </Card>
         </div>
       </div>
+
+      {/* Edit dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('reports.editAnalysis', 'Sửa kết quả phân tích')}</DialogTitle>
+            <DialogDescription>{t('reports.rootCauseAnalysisDesc')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label>{t('reports.analysisStatus', 'Trạng thái')}</Label>
+              <Select value={editStatus} onValueChange={(v) => setEditStatus(v as any)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="COMPLETED">COMPLETED</SelectItem>
+                  <SelectItem value="IN_PROGRESS">IN_PROGRESS</SelectItem>
+                  <SelectItem value="FAILED">FAILED</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>{t('reports.confirmedCause', 'Nguyên nhân đã xác nhận')}</Label>
+              <Input value={editConfirmedCause} onChange={(e) => setEditConfirmedCause(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label>{t('reports.correctiveAction', 'Hành động khắc phục')}</Label>
+              <Input value={editCorrectiveAction} onChange={(e) => setEditCorrectiveAction(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label>{t('reports.reviewNotes', 'Ghi chú')}</Label>
+              <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={3} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>{t('common.cancel', 'Huỷ')}</Button>
+            <Button onClick={submitEdit} disabled={updateMutation.isPending}>
+              {t('common.save', 'Lưu')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirm */}
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('reports.deleteAnalysis', 'Xoá phân tích')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('reports.deleteAnalysisConfirm', 'Bạn có chắc muốn xoá kết quả phân tích này?')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel', 'Huỷ')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => selectedAnalysis && deleteMutation.mutate({ id: selectedAnalysis })}
+            >
+              {t('common.delete', 'Xoá')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

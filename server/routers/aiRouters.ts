@@ -1,4 +1,5 @@
 import { protectedProcedure, router } from "../_core/trpc";
+import { requirePermission } from "../_core/accessControl";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
@@ -265,6 +266,79 @@ export const rootCauseRouter = router({
         processingTime: row.processingTime,
         createdAt: row.createdAt,
       };
+    }),
+
+  // Update an analysis record — review/triage fields only.
+  // status is a real column; confirmedCause/correctiveAction/notes are persisted
+  // inside the existing aiInsights JSON column under a `review` sub-object (the
+  // table has no dedicated columns and is owned by a migration-only wave).
+  // RBAC: analytics_root_cause/canEdit. Fail-safe.
+  update: protectedProcedure
+    .use(requirePermission("analytics_root_cause", "canEdit"))
+    .input(z.object({
+      id: z.number(),
+      status: z.enum(['COMPLETED', 'IN_PROGRESS', 'FAILED']).optional(),
+      confirmedCause: z.string().max(2000).optional(),
+      correctiveAction: z.string().max(2000).optional(),
+      notes: z.string().max(4000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+
+      const existingResult = await db.execute(
+        sql`SELECT id, aiInsights FROM root_cause_analysis WHERE id = ${input.id}`
+      ) as any;
+      if (!existingResult.rows?.length) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Analysis not found' });
+      }
+
+      const existingRow = existingResult.rows[0];
+      const aiInsights = typeof existingRow.aiInsights === 'string'
+        ? JSON.parse(existingRow.aiInsights)
+        : (existingRow.aiInsights ?? {});
+
+      // Merge review fields into a dedicated, non-destructive sub-object.
+      const prevReview = (aiInsights && typeof aiInsights === 'object' && aiInsights.review) || {};
+      const review: Record<string, unknown> = { ...prevReview };
+      if (input.confirmedCause !== undefined) review.confirmedCause = input.confirmedCause;
+      if (input.correctiveAction !== undefined) review.correctiveAction = input.correctiveAction;
+      if (input.notes !== undefined) review.notes = input.notes;
+      review.reviewedBy = ctx.user.id;
+      review.reviewedByName = ctx.user.name || 'Unknown';
+      review.reviewedAt = new Date().toISOString();
+      const nextInsights = { ...(aiInsights ?? {}), review };
+
+      if (input.status !== undefined) {
+        await db.execute(
+          sql`UPDATE root_cause_analysis SET status = ${input.status}, aiInsights = ${JSON.stringify(nextInsights)} WHERE id = ${input.id}`
+        );
+      } else {
+        await db.execute(
+          sql`UPDATE root_cause_analysis SET aiInsights = ${JSON.stringify(nextInsights)} WHERE id = ${input.id}`
+        );
+      }
+
+      return { success: true, id: input.id, review };
+    }),
+
+  // Delete an analysis record. RBAC: analytics_root_cause/canDelete. Fail-safe.
+  delete: protectedProcedure
+    .use(requirePermission("analytics_root_cause", "canDelete"))
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database not available' });
+
+      const existingResult = await db.execute(
+        sql`SELECT id FROM root_cause_analysis WHERE id = ${input.id}`
+      ) as any;
+      if (!existingResult.rows?.length) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Analysis not found' });
+      }
+
+      await db.execute(sql`DELETE FROM root_cause_analysis WHERE id = ${input.id}`);
+      return { success: true, id: input.id, deleted: true };
     }),
 });
 

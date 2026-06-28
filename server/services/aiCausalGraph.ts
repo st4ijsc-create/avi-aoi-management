@@ -103,6 +103,259 @@ export function loadCausalGraph(forceReload = false): LoadedGraph {
   }
 }
 
+// ─── Write path (validate + atomic save + CRUD helpers) ─────────────────────────
+
+/**
+ * The full editable graph shape (matches knowledge/causal-graph.json). Metadata
+ * fields (version/description/generatedAt/nodeTypes/edgeTypes) are preserved on
+ * save when present, but only nodes[]/edges[] are validated/required.
+ */
+export interface EditableCausalGraph {
+  version?: number;
+  generatedAt?: string;
+  description?: string;
+  nodeTypes?: string[];
+  edgeTypes?: string[];
+  nodes: CausalNode[];
+  edges: CausalEdge[];
+}
+
+const NODE_TYPES: readonly CausalNodeType[] = ["machine", "defect", "cause", "action"];
+const EDGE_TYPES: readonly CausalEdgeType[] = [
+  "machine_exhibits",
+  "defect_caused_by",
+  "cause_resolved_by",
+  "cause_prevented_by",
+];
+
+export class CausalGraphValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CausalGraphValidationError";
+  }
+}
+
+/**
+ * Validate the shape + referential integrity of a graph. Throws
+ * CausalGraphValidationError on the FIRST problem found. Rules:
+ *  - nodes[] / edges[] are arrays
+ *  - every node has a non-empty string id + valid type + string label
+ *  - node ids are unique
+ *  - aliases (if present) is a string[]
+ *  - every edge has a valid type, from/to reference EXISTING node ids,
+ *    and weight (if present) is a finite number in [0,1]
+ */
+export function validateCausalGraph(graph: EditableCausalGraph): void {
+  if (!graph || typeof graph !== "object") {
+    throw new CausalGraphValidationError("Graph must be an object");
+  }
+  if (!Array.isArray(graph.nodes)) {
+    throw new CausalGraphValidationError("Graph.nodes must be an array");
+  }
+  if (!Array.isArray(graph.edges)) {
+    throw new CausalGraphValidationError("Graph.edges must be an array");
+  }
+
+  const ids = new Set<string>();
+  for (const n of graph.nodes) {
+    if (!n || typeof n.id !== "string" || n.id.trim() === "") {
+      throw new CausalGraphValidationError("Each node must have a non-empty string id");
+    }
+    if (ids.has(n.id)) {
+      throw new CausalGraphValidationError(`Duplicate node id: "${n.id}"`);
+    }
+    ids.add(n.id);
+    if (!NODE_TYPES.includes(n.type)) {
+      throw new CausalGraphValidationError(
+        `Node "${n.id}" has invalid type "${n.type}"`,
+      );
+    }
+    if (typeof n.label !== "string" || n.label.trim() === "") {
+      throw new CausalGraphValidationError(`Node "${n.id}" must have a non-empty label`);
+    }
+    if (n.aliases !== undefined) {
+      if (!Array.isArray(n.aliases) || n.aliases.some((a) => typeof a !== "string")) {
+        throw new CausalGraphValidationError(`Node "${n.id}" aliases must be a string[]`);
+      }
+    }
+  }
+
+  for (const e of graph.edges) {
+    if (!e || typeof e !== "object") {
+      throw new CausalGraphValidationError("Each edge must be an object");
+    }
+    if (!EDGE_TYPES.includes(e.type)) {
+      throw new CausalGraphValidationError(`Edge has invalid type "${e.type}"`);
+    }
+    if (typeof e.from !== "string" || !ids.has(e.from)) {
+      throw new CausalGraphValidationError(
+        `Edge references missing 'from' node id: "${e.from}"`,
+      );
+    }
+    if (typeof e.to !== "string" || !ids.has(e.to)) {
+      throw new CausalGraphValidationError(
+        `Edge references missing 'to' node id: "${e.to}"`,
+      );
+    }
+    if (e.weight !== undefined) {
+      if (typeof e.weight !== "number" || !Number.isFinite(e.weight) || e.weight < 0 || e.weight > 1) {
+        throw new CausalGraphValidationError(
+          `Edge ${e.from}→${e.to} weight must be a number in [0,1]`,
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Atomically persist a graph to knowledge/causal-graph.json. FAIL-SAFE:
+ *  1. Validate first — on any validation error we REJECT and never touch the file.
+ *  2. Write to a temp file in the same directory, then atomically rename over the
+ *     target so a crash mid-write can never leave a corrupt JSON the RCA engine
+ *     reads.
+ *  3. Invalidate the in-memory cache so subsequent loads see the new graph.
+ *
+ * Returns the saved (normalized) graph.
+ */
+export function saveCausalGraph(graph: EditableCausalGraph): EditableCausalGraph {
+  validateCausalGraph(graph);
+
+  const out: EditableCausalGraph = {
+    version: graph.version ?? 1,
+    generatedAt: new Date().toISOString(),
+    description: graph.description,
+    nodeTypes: graph.nodeTypes ?? [...NODE_TYPES],
+    edgeTypes: graph.edgeTypes ?? [...EDGE_TYPES],
+    nodes: graph.nodes.map((n) => ({
+      id: n.id,
+      type: n.type,
+      label: n.label,
+      ...(n.aliases && n.aliases.length ? { aliases: n.aliases } : {}),
+    })),
+    edges: graph.edges.map((e) => ({
+      from: e.from,
+      to: e.to,
+      type: e.type,
+      ...(e.weight !== undefined ? { weight: e.weight } : {}),
+    })),
+  };
+
+  const dir = path.dirname(GRAPH_FILE);
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = path.join(dir, `.causal-graph.${process.pid}.${Date.now()}.tmp`);
+  fs.writeFileSync(tmp, JSON.stringify(out, null, 2), "utf8");
+  fs.renameSync(tmp, GRAPH_FILE); // atomic on same filesystem
+
+  // Invalidate cache so reads reflect the new graph.
+  cache = null;
+  return out;
+}
+
+/** Read the current graph as an EditableCausalGraph (forces a fresh load). */
+export function getEditableGraph(): EditableCausalGraph {
+  const g = loadCausalGraph(true);
+  return { version: 1, nodes: g.nodes, edges: g.edges };
+}
+
+// ── Node CRUD helpers (operate on loaded graph, validate, save) ──────────────────
+
+export function addCausalNode(node: CausalNode): EditableCausalGraph {
+  const g = getEditableGraph();
+  if (g.nodes.some((n) => n.id === node.id)) {
+    throw new CausalGraphValidationError(`Node id already exists: "${node.id}"`);
+  }
+  g.nodes.push(node);
+  return saveCausalGraph(g);
+}
+
+export function updateCausalNode(id: string, patch: Partial<Omit<CausalNode, "id">> & { newId?: string }): EditableCausalGraph {
+  const g = getEditableGraph();
+  const node = g.nodes.find((n) => n.id === id);
+  if (!node) throw new CausalGraphValidationError(`Node not found: "${id}"`);
+
+  const newId = patch.newId && patch.newId !== id ? patch.newId : id;
+  if (newId !== id && g.nodes.some((n) => n.id === newId)) {
+    throw new CausalGraphValidationError(`Node id already exists: "${newId}"`);
+  }
+  if (patch.type !== undefined) node.type = patch.type;
+  if (patch.label !== undefined) node.label = patch.label;
+  if (patch.aliases !== undefined) node.aliases = patch.aliases;
+  if (newId !== id) {
+    node.id = newId;
+    // Re-point any edges referencing the old id.
+    for (const e of g.edges) {
+      if (e.from === id) e.from = newId;
+      if (e.to === id) e.to = newId;
+    }
+  }
+  return saveCausalGraph(g);
+}
+
+export function removeCausalNode(id: string): EditableCausalGraph {
+  const g = getEditableGraph();
+  if (!g.nodes.some((n) => n.id === id)) {
+    throw new CausalGraphValidationError(`Node not found: "${id}"`);
+  }
+  g.nodes = g.nodes.filter((n) => n.id !== id);
+  // Cascade-remove edges touching the node so referential integrity holds.
+  g.edges = g.edges.filter((e) => e.from !== id && e.to !== id);
+  return saveCausalGraph(g);
+}
+
+// ── Edge CRUD helpers ────────────────────────────────────────────────────────────
+
+function edgeKey(e: { from: string; to: string; type: string }): string {
+  return `${e.from}|${e.to}|${e.type}`;
+}
+
+export function addCausalEdge(edge: CausalEdge): EditableCausalGraph {
+  const g = getEditableGraph();
+  if (g.edges.some((e) => edgeKey(e) === edgeKey(edge))) {
+    throw new CausalGraphValidationError(
+      `Edge already exists: ${edge.from}→${edge.to} (${edge.type})`,
+    );
+  }
+  g.edges.push(edge);
+  return saveCausalGraph(g);
+}
+
+export function updateCausalEdge(
+  match: { from: string; to: string; type: CausalEdgeType },
+  patch: Partial<CausalEdge>,
+): EditableCausalGraph {
+  const g = getEditableGraph();
+  const idx = g.edges.findIndex((e) => edgeKey(e) === edgeKey(match));
+  if (idx < 0) {
+    throw new CausalGraphValidationError(
+      `Edge not found: ${match.from}→${match.to} (${match.type})`,
+    );
+  }
+  const merged: CausalEdge = { ...g.edges[idx], ...patch };
+  // Guard against collapsing onto another existing edge.
+  if (
+    edgeKey(merged) !== edgeKey(match) &&
+    g.edges.some((e, i) => i !== idx && edgeKey(e) === edgeKey(merged))
+  ) {
+    throw new CausalGraphValidationError(
+      `Edge already exists: ${merged.from}→${merged.to} (${merged.type})`,
+    );
+  }
+  g.edges[idx] = merged;
+  return saveCausalGraph(g);
+}
+
+export function removeCausalEdge(match: { from: string; to: string; type: CausalEdgeType }): EditableCausalGraph {
+  const g = getEditableGraph();
+  const before = g.edges.length;
+  g.edges = g.edges.filter((e) => edgeKey(e) !== edgeKey(match));
+  if (g.edges.length === before) {
+    throw new CausalGraphValidationError(
+      `Edge not found: ${match.from}→${match.to} (${match.type})`,
+    );
+  }
+  return saveCausalGraph(g);
+}
+
 // ─── Matching helpers ────────────────────────────────────────────────────────────
 
 function norm(s: string): string {

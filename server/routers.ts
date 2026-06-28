@@ -46,6 +46,7 @@ import { notificationRouter } from "./routers/notificationRouters";
 import { dashboardWidgetRouter } from "./routers/dashboardWidgetRouters";
 import { drillDownRouter, annotationRouter, annotationTemplateRouter, annotationHistoryRouter } from "./routers/annotationRouters";
 import { rootCauseRouter, predictiveAlertRouter } from "./routers/aiRouters";
+import { causalGraphRouter } from "./routers/causalGraphRouter"; // Causal knowledge-graph admin CRUD (validated + atomic write to knowledge/causal-graph.json)
 import { predictiveMaintenanceRouter } from "./routers/predictiveMaintenanceRouter";
 import { mesControlTowerRouter } from "./routers/mesControlTowerRouter";
 import { maintenanceRouter } from "./routers/maintenanceRouter"; // Work-order CRUD + close→MTTR (machine_monitoring RBAC)
@@ -341,6 +342,7 @@ export const appRouter = router({
 
   // AI & Predictive
   rootCause: rootCauseRouter,
+  causalGraph: causalGraphRouter,
   predictiveAlert: predictiveAlertRouter,
   predictiveMaintenance: predictiveMaintenanceRouter,
   mesControlTower: mesControlTowerRouter,
