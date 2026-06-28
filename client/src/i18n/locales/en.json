@@ -6652,6 +6652,26 @@
       "waitingHeartbeat": "Waiting for the machine to pull the package and send a heartbeat...",
       "refresh": "Refresh",
       "unknown": "Unknown"
+    },
+    "aiSetup": {
+      "title": "🤖 AI pre-fill configuration",
+      "loading": "Finding a similar machine...",
+      "unavailable": "AI suggestions not available yet — using defaults, enter manually.",
+      "noTemplate": "No similar machine found — using defaults, enter manually.",
+      "basedOn": "Based on similar machine:",
+      "countPoints": "{{n}} measurement points",
+      "countThresholds": "{{total}} thresholds ({{data}} from data, {{copied}} copied)",
+      "countNg": "{{n}} NG thresholds",
+      "modelLabel": "Model: {{model}}",
+      "viewDetails": "View details",
+      "noPoints": "Template machine has no measurement points.",
+      "srcData": "from data",
+      "srcCopied": "copied",
+      "srcDefault": "default",
+      "useAndContinue": "✅ Use & continue",
+      "skip": "Skip, enter manually",
+      "appliedSummary": "Applied AI suggestion: {{points}} measurement points, {{ng}} NG thresholds. Review each step.",
+      "recommendedModelHint": "AI recommends model: {{model}}"
     }
   },
   "machineRegistration": {

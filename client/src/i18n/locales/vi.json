@@ -6675,6 +6675,26 @@
       "waitingHeartbeat": "Đang chờ máy tải gói và gửi heartbeat...",
       "refresh": "Làm mới",
       "unknown": "Chưa rõ"
+    },
+    "aiSetup": {
+      "title": "🤖 AI điền sẵn cấu hình",
+      "loading": "Đang tìm máy tương tự...",
+      "unavailable": "AI gợi ý chưa khả dụng — dùng mặc định, nhập thủ công.",
+      "noTemplate": "Không tìm thấy máy tương tự — dùng giá trị mặc định, nhập thủ công.",
+      "basedOn": "Dựa trên máy tương tự:",
+      "countPoints": "{{n}} điểm đo",
+      "countThresholds": "{{total}} ngưỡng ({{data}} từ dữ liệu, {{copied}} copy)",
+      "countNg": "{{n}} ngưỡng NG",
+      "modelLabel": "Model: {{model}}",
+      "viewDetails": "Xem chi tiết",
+      "noPoints": "Máy mẫu chưa có điểm đo.",
+      "srcData": "từ dữ liệu",
+      "srcCopied": "copy",
+      "srcDefault": "mặc định",
+      "useAndContinue": "✅ Dùng & tiếp tục",
+      "skip": "Bỏ qua, nhập tay",
+      "appliedSummary": "Đã áp dụng gợi ý AI: {{points}} điểm đo, {{ng}} ngưỡng NG. Hãy duyệt từng bước.",
+      "recommendedModelHint": "AI đề xuất model: {{model}}"
     }
   },
   "machineRegistration": {

@@ -84,6 +84,12 @@ export default function Step4DeployModel({ state, update, onNext, onBack }: Step
         </div>
       </div>
 
+      {state.recommendedModelCode && (
+        <p className="text-xs text-muted-foreground">
+          {t("onboarding.aiSetup.recommendedModelHint", { model: state.recommendedModelCode })}
+        </p>
+      )}
+
       {!state.deploymentId ? (
         <Button onClick={handleDeploy} disabled={deployMutation.isPending || !state.modelId}>
           {deployMutation.isPending

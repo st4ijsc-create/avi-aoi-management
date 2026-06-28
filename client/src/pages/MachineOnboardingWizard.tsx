@@ -17,6 +17,7 @@ import Step2TestConnection from "@/components/onboarding/Step2TestConnection";
 import Step3AssignStation from "@/components/onboarding/Step3AssignStation";
 import Step4DeployModel from "@/components/onboarding/Step4DeployModel";
 import Step5Verify from "@/components/onboarding/Step5Verify";
+import AISetupSuggestion from "@/components/onboarding/AISetupSuggestion";
 import { initialWizardState, type WizardState } from "@/components/onboarding/types";
 
 export function MachineOnboardingWizardContent() {
@@ -67,6 +68,10 @@ export function MachineOnboardingWizardContent() {
           </div>
         ))}
       </div>
+
+      {/* LUỒNG ① — AI Setup Advisor: pre-fill from the most similar machine.
+          Shown on Step 1 (machine type chosen) and Step 4 (product chosen). */}
+      {(step === 0 || step === 3) && <AISetupSuggestion {...stepProps} />}
 
       <Card>
         <CardHeader>

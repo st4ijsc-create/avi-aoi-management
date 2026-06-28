@@ -6645,6 +6645,26 @@
       "waitingHeartbeat": "等待设备拉取安装包并发送心跳...",
       "refresh": "刷新",
       "unknown": "未知"
+    },
+    "aiSetup": {
+      "title": "🤖 AI 预填配置",
+      "loading": "正在查找相似设备...",
+      "unavailable": "AI 建议暂不可用 — 使用默认值，请手动输入。",
+      "noTemplate": "未找到相似设备 — 使用默认值，请手动输入。",
+      "basedOn": "基于相似设备：",
+      "countPoints": "{{n}} 个测量点",
+      "countThresholds": "{{total}} 个阈值（{{data}} 个来自数据，{{copied}} 个复制）",
+      "countNg": "{{n}} 个 NG 阈值",
+      "modelLabel": "模型：{{model}}",
+      "viewDetails": "查看详情",
+      "noPoints": "模板设备没有测量点。",
+      "srcData": "来自数据",
+      "srcCopied": "复制",
+      "srcDefault": "默认",
+      "useAndContinue": "✅ 使用并继续",
+      "skip": "跳过，手动输入",
+      "appliedSummary": "已应用 AI 建议：{{points}} 个测量点，{{ng}} 个 NG 阈值。请逐步审核。",
+      "recommendedModelHint": "AI 推荐模型：{{model}}"
     }
   },
   "machineRegistration": {

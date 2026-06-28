@@ -104,6 +104,7 @@ import { aiLocalKbRouter } from "./routers/aiLocalKbRouter";
 import { aiCopilotRouter } from "./routers/aiCopilotRouter"; // GĐ2: HITL write-action confirm/cancel
 import { aiRcaCopilotRouter } from "./routers/aiRcaCopilotRouter"; // Technician Copilot ③: RCA diagnose + 1-tap fix
 import { aiThresholdAdvisorRouter } from "./routers/aiThresholdAdvisorRouter"; // Technician Copilot ②: Threshold/Param Advisor (recommend + HITL apply)
+import { aiSetupAdvisorRouter } from "./routers/aiSetupAdvisorRouter"; // Technician Copilot ①: Setup Advisor (pre-fill new-machine config from similar template)
 import { aiAgentRouter } from "./routers/aiAgentRouter"; // GĐ3b: multi-step agentic orchestrator (on top of HITL)
 import { aiCalibrationRouter } from "./routers/aiCalibrationRouter"; // B2: confidence calibration (ECE + reliability)
 import { aiAnomalyRouter } from "./routers/aiAnomalyRouter"; // B3: unsupervised anomaly detection (PatchCore-style)
@@ -482,6 +483,8 @@ export const appRouter = router({
   aiRcaCopilot: aiRcaCopilotRouter,
   // AI Threshold/Param Advisor — LUỒNG ②: recommend LSL/USL/target + NG warning/critical, HITL apply
   aiThresholdAdvisor: aiThresholdAdvisorRouter,
+  // AI Setup Advisor — LUỒNG ①: pre-fill a new machine's config from the most similar template (advisory only)
+  aiSetupAdvisor: aiSetupAdvisorRouter,
   // AI Agent — GĐ3b multi-step agentic orchestrator (on top of HITL)
   aiAgent: aiAgentRouter,
   // AI Confidence Calibration — ECE / reliability diagram (B2)
