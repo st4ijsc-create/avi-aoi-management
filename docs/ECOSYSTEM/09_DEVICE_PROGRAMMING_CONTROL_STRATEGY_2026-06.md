@@ -243,11 +243,13 @@ Route mới đề xuất: `/engineering` (workspace), `/engineering/:projectId`.
 - **Còn lại:** editor Blockly/graph cho ladder (UI), compile thật qua matiec/PLCopen-XML, chạy trên OpenPLC host thật.
 - **Chấp nhận:** ✅ tsc xanh; ✅ 10 test (boolEval AND/NOT/OR/XOR/unknown/malformed; ST balance; LD transpile; **LD one-scan tính Y0=X0·!X1, Y1=Y0+X2 đúng cả 2 ca**).
 
-### Phase D6 — Streaming realtime feedback (đóng G6) 🔲
-- [ ] OPC-UA monitoredItem subscription + fast-scan symbol đang watch; namespace Socket.IO `engineering:`.
-- [ ] Scope chart + watch table realtime; tách khỏi đường lưu TimescaleDB.
-- [ ] Flag `DPC_STREAMING_ENABLED`.
-- **Chấp nhận:** Online Monitor cập nhật <200ms với symbol đã chọn; polling DB không đổi.
+### Phase D6 — Streaming realtime feedback (đóng G6) ✅ ĐÃ XONG (framework)
+- [x] `server/services/programming/engineeringStream.ts` — `EngineeringStreamManager` (watch-session, fast-scan interval ~100–200ms, clamp tối thiểu 100ms, fail-safe, `unref`), `streamingEnabled()` (flag `DPC_STREAMING_ENABLED` OFF), source+sink **inject được** (unit-testable).
+- [x] Socket.IO: room `engineering:{machineId}` (`engineering:subscribe/unsubscribe` trong `socket.ts`) + helper `emitEngineeringSamples` — **EPHEMERAL, KHÔNG ghi TimescaleDB** (đường telemetry 5s giữ nguyên).
+- [x] **READ-ONLY** (chỉ đọc symbol; không ghi thiết bị). force() vẫn tách + gated `DPC_ONLINE_FORCE_ENABLED`.
+- [x] `defaultSampleSource` trung thực: không có thiết bị → trả `[]`, **không** bịa giá trị. Source low-latency thật (OPC-UA monitoredItem / MC fast-scan) cần HW.
+- **Còn lại:** source thật (OPC-UA subscription/MC fast-scan) + UI scope/watch realtime (gắn vào CodeEditor/Symbols).
+- **Chấp nhận:** ✅ tsc xanh; ✅ 6 test (flag-off no-op, tick-emit, clamp 100ms, stop/replace, source-error survive, flag read).
 
 ### Phase D7 — AI Engineering Copilot + hardening 🔲
 - [ ] Copilot: giải thích/đề xuất chương trình quy trình, sinh skeleton ST/BASIC, **chỉ gợi ý** (HITL ký, không deploy, không sinh logic safety) — tái dùng `aiOrchestrationAdvisor` purity pattern.
@@ -318,5 +320,6 @@ Quy ước thực thi: mỗi phase tự chứa, flag OFF, tsc xanh, test kèm, v
 | 2026-06-29 | **D2** | `bc08bd0` | Zmotion BASIC adapter: validate/compile/motion-simulate THẬT + ZmcLink deploy/upload framework trung thực (gated, không giả deployed). 8 test, tsc xanh. Cần HW cho frame ZMC + watch. |
 | 2026-06-29 | **D3** | `d6b8607` | Mitsubishi engineering adapter: MELSEC device/recipe validate+compile+simulate THẬT; deploy framework trung thực (param-push/GX Works chưa wire→failed rõ). 8 test, tsc xanh. |
 | 2026-06-29 | **D4** | `33e95bc` | Robot Techman job-list adapter: teach-point/job validate+compile+simulate THẬT; TMSCT deploy framework trung thực. 8 test, tsc xanh. |
-| 2026-06-29 | **D5** | _(đang commit)_ | Native IEC 61131-3: ST + Ladder adapters; boolEval an toàn; **LD one-scan eval THẬT**; LD→ST transpile→OpenPLC; deploy chỉ runtime mở (gated). 10 test, tsc xanh. |
+| 2026-06-29 | **D5** | `1714c73` | Native IEC 61131-3: ST + Ladder adapters; boolEval an toàn; **LD one-scan eval THẬT**; LD→ST transpile→OpenPLC; deploy chỉ runtime mở (gated). 10 test, tsc xanh. |
+| 2026-06-29 | **D6** | _(đang commit)_ | Engineering stream: EngineeringStreamManager (watch-session, flag DPC_STREAMING_ENABLED) + socket room `engineering:` + emit helper (ephemeral, không ghi DB). 6 test, tsc xanh. |
 | | … | | |

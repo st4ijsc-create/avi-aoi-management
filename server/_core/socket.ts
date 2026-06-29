@@ -143,6 +143,16 @@ export function initializeSocket(server: HttpServer): Server {
       if (data.lineId) socket.leave(`line:${data.lineId}`);
     });
 
+    // Doc 09 / D6 — Engineering Online-Monitor room. A workspace client joins
+    // `engineering:{machineId}` to receive high-rate symbol-watch samples (separate from
+    // the DB-persisted telemetry stream). Gated by DPC_STREAMING_ENABLED on the producer.
+    socket.on("engineering:subscribe", (data: { machineId: number }) => {
+      if (data?.machineId) socket.join(`engineering:${data.machineId}`);
+    });
+    socket.on("engineering:unsubscribe", (data: { machineId: number }) => {
+      if (data?.machineId) socket.leave(`engineering:${data.machineId}`);
+    });
+
     socket.on("disconnect", () => {
       console.log(`[Socket.io] Client disconnected: ${socket.id}`);
       
@@ -666,6 +676,20 @@ export function emitInspectionAlert(alert: InspectionAlert): void {
   io.to(`machine:${alert.machineId}`).emit("inspection:alert", alert);
 
   console.log(`[Socket.io] Emitted ${alert.type} alert for machine ${alert.machineCode}`);
+}
+
+/**
+ * Doc 09 / D6 — emit a batch of engineering symbol-watch samples to the
+ * `engineering:{machineId}` room (Online Monitor / scope). High-rate + EPHEMERAL:
+ * NOT persisted to TimescaleDB (that path stays the 5s telemetry ingest). Producer is
+ * gated by DPC_STREAMING_ENABLED; this is a thin transport with no gate of its own.
+ */
+export function emitEngineeringSamples(
+  machineId: number,
+  samples: Array<{ symbol: string; value: number | string | boolean | null; ts: number }>,
+): void {
+  if (!io) return; // no socket server (e.g. tests / headless) → silently no-op
+  io.to(`engineering:${machineId}`).emit("engineering:samples", { machineId, samples });
 }
 
 // Emit dashboard stats update
