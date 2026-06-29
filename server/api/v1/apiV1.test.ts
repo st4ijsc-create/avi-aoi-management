@@ -204,16 +204,21 @@ describe("/api/v1 ingest", () => {
   });
 });
 
-describe("/api/v1 orchestration stubs", () => {
-  it("POST workflows → 501", async () => {
+describe("/api/v1 orchestration (E2 — FOE-gated, no longer 501 stubs)", () => {
+  // E2 (commit b580849) filled the former 501 stubs with the build-own FOE behind
+  // FOE_ENABLED. With the flag off (the default in tests) deploy/start return a
+  // structured `foe_disabled` 503 — control still never reaches a device.
+  it("POST workflows → 503 foe_disabled when FOE is off", async () => {
     const res = await call("/api/v1/orchestration/workflows", { key: "MASTER", method: "POST", body: "{}" });
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(503);
     const body = await res.json();
-    expect(body.error.code).toBe("not_implemented");
+    expect(body.error.code).toBe("foe_disabled");
   });
-  it("GET runs/:id → 501", async () => {
+  it("GET runs/:id → 400 for a non-numeric id", async () => {
     const res = await call("/api/v1/orchestration/runs/abc", { key: "MASTER" });
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe("bad_request");
   });
 });
 

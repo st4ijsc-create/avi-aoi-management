@@ -90,18 +90,51 @@ export class FakeDb {
     return {
       values(vals: Row | Row[]) {
         const arr = Array.isArray(vals) ? vals : [vals];
-        const inserted = arr.map((v) => {
-          const row: Row = { id: seq++, createdAt: new Date(), updatedAt: new Date(), ...v };
-          self.checkUnique(table, row);
-          self.rows(table).push(row);
-          return { ...row };
-        });
-        return {
-          returning() { return Promise.resolve(inserted); },
-          then(resolve: any, reject: any) { return Promise.resolve(inserted).then(resolve, reject); },
+        // Insertion is DEFERRED to returning()/then() so an optional onConflictDoUpdate()
+        // can change the semantics from "throw on conflict" to "update the existing row".
+        let conflictSet: Row | null = null;
+        let done: Row[] | null = null;
+        const finalize = () => {
+          if (done) return done;
+          done = arr.map((v) => {
+            const base: Row = { createdAt: new Date(), updatedAt: new Date(), ...v };
+            const existing = self.findConflict(table, base);
+            if (existing) {
+              if (conflictSet) {
+                // onConflictDoUpdate → patch the existing row, do NOT insert a new one.
+                Object.assign(existing, conflictSet, { updatedAt: new Date() });
+                return { ...existing };
+              }
+              self.checkUnique(table, base); // no handler → throw 23505 as before
+            }
+            const row: Row = { id: seq++, ...base };
+            self.rows(table).push(row);
+            return { ...row };
+          });
+          return done;
         };
+        const builder: any = {
+          onConflictDoUpdate(cfg: { target?: any; set?: Row }) {
+            conflictSet = cfg?.set ?? {};
+            return builder;
+          },
+          returning() { return Promise.resolve(finalize()); },
+          then(resolve: any, reject: any) { return Promise.resolve(finalize()).then(resolve, reject); },
+        };
+        return builder;
       },
     };
+  }
+
+  /** First existing row that collides with `row` on any registered unique keyset, or null. */
+  private findConflict(table: any, row: Row): Row | null {
+    const keysets = this.uniqueKeys.get(keyOf(table));
+    if (!keysets) return null;
+    for (const keys of keysets) {
+      const hit = this.rows(table).find((r) => keys.every((k) => r[k] === row[k]));
+      if (hit) return hit;
+    }
+    return null;
   }
 
   private checkUnique(table: any, row: Row) {
