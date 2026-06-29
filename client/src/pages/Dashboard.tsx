@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/DashboardLayout";
+import { DashboardTemplatePrompt } from "@/components/DashboardTemplatePrompt";
 import { DashboardAIWidget } from "@/components/DashboardAIWidget";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -1047,11 +1048,13 @@ export default function Dashboard() {
   }, [dailyStats]);
 
   return (
-    <DashboardLayout 
-      title={t("dashboard.title")} 
+    <DashboardLayout
+      title={t("dashboard.title")}
       navItems={navItems}
       currentPath="/dashboard"
     >
+      {/* U11 — first-visit nudge to start from a role-aligned dashboard template */}
+      <DashboardTemplatePrompt />
       <div className="space-y-4 sm:space-y-6">
         {/* Header with filters and auto-refresh controls */}
         <div className="flex flex-col gap-3 sm:gap-4">

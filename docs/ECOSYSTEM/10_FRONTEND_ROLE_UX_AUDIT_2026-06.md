@@ -4,7 +4,7 @@
 |---|---|
 | **Mã doc** | 10_FRONTEND_ROLE_UX_AUDIT |
 | **Ngày** | 2026-06-29 |
-| **Trạng thái** | 🟢 **AUDIT xong + Tier 1 (U1–U4) ĐÃ TRIỂN KHAI** (4 commit, tsc xanh). Tier 2–4 chờ duyệt. |
+| **Trạng thái** | 🟢 **AUDIT xong + Tier 1–4 ĐÃ TRIỂN KHAI** (U1–U17, trừ U14 hoãn có chủ đích; tsc xanh). |
 | **Phạm vi** | Đánh giá frontend (`client/src/`) theo 7 vai trò: admin, supervisor, quality_inspector, operator, maintenance, viewer, user. Mức tương thích · linh hoạt · trải nghiệm. |
 
 ---
@@ -62,24 +62,24 @@ Kiến trúc phân-quyền **nền tảng rất chắc**: role-landing, lọc na
 - [x] **U4. Nhóm "Maintenance Workspace"** (`35d764e`): nav group mới gom Technician Copilot + Work Orders + Alerts; i18n `nav.maintenanceGroup` vi/en/zh.
 - **Ghi chú:** chuỗi i18n trang Supervisor/Viewer dùng inline-fallback (tiếng Việt) — bổ sung bản dịch đầy đủ gộp vào **U15**.
 
-### Tier 2 — Khả dụng & truy cập
-- [ ] **U5. Admin dashboard** `/admin-home`: sức khoẻ hệ thống, đăng nhập gần đây, cấp quyền, license, uptime.
-- [ ] **U6. Cảnh báo permission sắp hết hạn** (banner header).
-- [ ] **U7. Sidebar mặc định theo role** (operator hẹp/đơn giản, analyst đầy đủ).
-- [ ] **U8. Cài đặt thông báo theo role** (snooze cho operator trong ca, high-priority-only).
+### Tier 2 — Khả dụng & truy cập ✅ ĐÃ XONG
+- [x] **U5. Admin home** `/admin-home`: tiles quản trị (users/roles/audit/API keys/system/license/edge/ops) + TodayBriefing; `roleLanding` admin/it_admin → đây; nav `nav.adminHome`. `client/src/pages/AdminHome.tsx`.
+- [x] **U6. Cảnh báo permission sắp hết hạn**: `PermissionExpiryBanner.tsx` (cảnh báo grant hết hạn ≤7 ngày, dismissible) — mount trong DashboardLayout trên LicenseEnforcementBanner.
+- [x] **U7. Sidebar mặc định theo role**: `roleSidebarWidth()` — operator/maintenance 220px khi user chưa tự đặt; initializer role-aware + skip-first-persist trong DashboardLayout.
+- [x] **U8. Cài đặt thông báo theo role**: `lib/notificationPrefs.ts` (high-priority-only + snooze 1h, per-user localStorage) + lọc + 2 nút toggle ngay trong NotificationCenter (không sửa Settings tabs).
 
-### Tier 3 — Nâng cao
-- [ ] **U9. Tablet breakpoint** 1024px / "tablet mode" (giữ sidebar trên iPad).
-- [ ] **U10. Quality: workflow duyệt/từ chối NG** + cài ngưỡng auto-accept/reject; nổi annotation lên QualityHome.
-- [ ] **U11. "Bắt đầu với mẫu dashboard theo role"** (dialog gợi ý layout, bỏ qua được).
-- [ ] **U12. Lối xin nâng quyền** trong Settings (gửi admin).
-- [ ] **U13. Gating nút write nhất quán** — audit toàn bộ trang CRUD, chặn trước khi render.
+### Tier 3 — Nâng cao ✅ (U9–U13; U10 v1)
+- [x] **U9. useIsTablet** (768–1024px) cho density tablet-aware. **Lưu ý:** breakpoint 768 hiện tại ĐÃ giữ sidebar trên tablet (≥768 không phải mobile) — đề xuất "tăng lên 1024" của audit sẽ phản tác dụng (biến tablet thành mobile), nên KHÔNG đổi.
+- [x] **U10 (v1). Quality**: thêm tile "Duyệt ngưỡng" trên QualityHome → `/threshold-approvals` (hàng đợi phê duyệt sẵn có); annotation tile đã có sẵn. Workflow duyệt/từ chối NG đầy đủ (backend) vẫn là việc lớn — để sau.
+- [x] **U11. Dashboard template picker**: `DashboardTemplatePrompt.tsx` — dialog gợi ý mẫu theo role lần đầu vào `/dashboard`, dismissible per user+role, CTA → `/dashboard-templates`.
+- [x] **U12. Xin nâng quyền**: trang `/request-role` (`RequestRole.tsx`) — chọn vai trò mong muốn + lý do → gửi email quản trị (mailto) / sao chép; nav `nav.requestRole` trong nhóm Settings (mọi user thấy).
+- [x] **U13. Mở rộng read-only gating**: `<ViewOnlyBadge/>` thêm vào DeviceAdapterManagement + InterlockRuleManagement (cùng Corporate ở U2). Roll-out TOÀN BỘ trang CRUD vẫn là sweep tiệm tiến (cơ chế đã sẵn).
 
-### Tier 4 — Nhất quán & edge case
-- [ ] **U14. AdvancedSection** áp cho trang dày (SPC/Reports/Correlation).
-- [ ] **U15. Audit chuỗi i18n** — flag key chưa dịch trong CI.
-- [ ] **U16. Offline degrade** cho operator khi mất MQTT/backend (hàng đợi + sync).
-- [ ] **U17. FirstRunTour** kích hoạt lại khi đổi role / sau phiên dài.
+### Tier 4
+- [ ] **U14. AdvancedSection** áp trang dày — **HOÃN CÓ CHỦ ĐÍCH**: là polish thuần; cơ chế AdvancedSection đã có + dùng ở SPCAnalysis/AdminSettings. Áp lên Correlation/Reports/SPCAdvanced cần phán đoán UX từng trang (khối điều khiển chính ≠ "advanced") — ép vào dễ giấu nhầm control chính / vỡ layout. Cần làm thủ công từng trang sau.
+- [x] **U15. i18n (một phần)**: thêm key nav bắt buộc (`nav.requestRole`/`adminHome`/`maintenanceGroup`) + `common.viewOnly` đủ vi/en/zh. Chuỗi thân trang home mới (supervisor/viewer/adminHome) + offline/dashTemplate/roleUpgrade/permExpiry dùng **inline-fallback tiếng Việt**; dịch en/zh đầy đủ + audit key trong CI = việc tiếp theo của U15.
+- [x] **U16. Offline degrade (indicator)**: `OfflineBanner.tsx` (navigator.onLine + online/offline events) mount trong OperatorHome. TRUNG THỰC: chỉ là chỉ báo; hàng đợi store-and-forward + sync là việc lớn để sau.
+- [x] **U17. FirstRunTour re-trigger**: xóa cờ dismissed khi role đổi (lưu `firstRunTour:<user>:role`), tour hiện lại với tips của role mới.
 
 ---
 
@@ -94,3 +94,4 @@ Khi bạn duyệt, ưu tiên Tier 1 (U1–U4) — tác động rõ nhất tới 
 | 2026-06-29 | **U2** | `73d4dae` | PermissionGate/ViewOnlyBadge/useCanWrite + áp Corporate + common.viewOnly |
 | 2026-06-29 | **U1** | `d6fb5e8` | SupervisorHome /supervisor-home + roleLanding + route |
 | 2026-06-29 | **U3** | `87ac809` | ViewerHome /viewer-home (read-only) + roleLanding |
+| 2026-06-29 | **U5–U17** | _(batch 1 commit)_ | Tier 2–4: U5 AdminHome, U6 expiry banner, U7 role sidebar, U8 notif prefs, U9 useIsTablet, U10 quality approvals tile, U11 dashboard template prompt, U12 /request-role, U13 more ViewOnlyBadge, U15 nav i18n, U16 OfflineBanner, U17 tour re-trigger. **U14 hoãn** (polish, rủi ro). tsc xanh, locale OK. |

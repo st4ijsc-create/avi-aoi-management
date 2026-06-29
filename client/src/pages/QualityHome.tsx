@@ -173,6 +173,14 @@ export default function QualityHome() {
       accent: "border-rose-500/30 text-rose-600 dark:text-rose-400",
       onClick: () => navigate("/mask-annotation"),
     },
+    // Doc 10 U10 — surface the review/approval queue (auto-accept/reject thresholds) for QC.
+    {
+      icon: ClipboardCheck,
+      label: t("quality.tools.approvals", "Duyệt ngưỡng"),
+      description: t("quality.tools.approvalsDesc", "Hàng đợi phê duyệt ngưỡng NG"),
+      accent: "border-teal-500/30 text-teal-600 dark:text-teal-400",
+      onClick: () => navigate("/threshold-approvals"),
+    },
   ];
 
   return (

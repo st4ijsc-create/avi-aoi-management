@@ -22,6 +22,7 @@ import { trpc } from "@/lib/trpc";
 import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
+import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -234,6 +235,7 @@ export default function InterlockRuleManagement() {
         <div className="flex items-center gap-2">
           <ShieldAlert className="h-6 w-6 text-rose-600" />
           <h1 className="text-2xl font-bold">{t("interlockRules.title")}</h1>
+          <ViewOnlyBadge module="interlock" />
         </div>
         {canCreate && (
           <Button onClick={openCreate}><Plus className="h-4 w-4 mr-1" /> {t("interlockRules.newRule")}</Button>

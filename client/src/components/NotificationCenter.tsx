@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { useSocket, InspectionAlert } from "@/hooks/useSocket";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { loadNotifPrefs, saveNotifPrefs, filterAlertsByPrefs, type NotificationPrefs } from "@/lib/notificationPrefs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -47,7 +49,19 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
     onAlert: handleAlert,
   });
 
-  const unreadCount = alerts.length;
+  // U8 — per-user notification prefs (high-priority-only / snooze). Presentation filter only.
+  const { user } = useAuth();
+  const userKey = String((user as any)?.id ?? (user as any)?.openId ?? "anon");
+  const [prefs, setPrefs] = useState<NotificationPrefs>(() => loadNotifPrefs(userKey));
+  const updatePrefs = (patch: Partial<NotificationPrefs>) => {
+    setPrefs((prev) => {
+      const next = { ...prev, ...patch };
+      saveNotifPrefs(userKey, next);
+      return next;
+    });
+  };
+  const visibleAlerts = useMemo(() => filterAlertsByPrefs(alerts, prefs), [alerts, prefs]);
+  const unreadCount = visibleAlerts.length;
 
   const getAlertIcon = (type: InspectionAlert["type"]) => {
     switch (type) {
@@ -115,17 +129,40 @@ export function NotificationCenter({ factoryId, workshopId, machineId }: Notific
               ? t('notifications.connectedRealtime')
               : t('notifications.reconnecting')}
           </SheetDescription>
+          {/* U8 — quick prefs: high-priority-only + snooze (presentation filter) */}
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            <Button
+              variant={prefs.highPriorityOnly ? "default" : "outline"}
+              size="sm"
+              className="h-7"
+              onClick={() => updatePrefs({ highPriorityOnly: !prefs.highPriorityOnly })}
+            >
+              {t('notifications.highPriorityOnly', 'Chỉ ưu tiên cao')}
+            </Button>
+            <Button
+              variant={prefs.snoozeUntil > Date.now() ? "default" : "outline"}
+              size="sm"
+              className="h-7"
+              onClick={() =>
+                updatePrefs({ snoozeUntil: prefs.snoozeUntil > Date.now() ? 0 : Date.now() + 60 * 60 * 1000 })
+              }
+            >
+              {prefs.snoozeUntil > Date.now()
+                ? t('notifications.snoozed', 'Đang tạm tắt')
+                : t('notifications.snooze1h', 'Tạm tắt 1 giờ')}
+            </Button>
+          </div>
         </SheetHeader>
 
         <ScrollArea className="h-[calc(100vh-150px)] mt-4">
-          {alerts.length === 0 ? (
+          {visibleAlerts.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
               <Bell className="h-12 w-12 mb-2 opacity-20" />
               <p>{t('notifications.noNew')}</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {alerts.map((alert, index) => (
+              {visibleAlerts.map((alert, index) => (
                 <div
                   key={`${alert.timestamp}-${index}`}
                   className="flex items-start gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"

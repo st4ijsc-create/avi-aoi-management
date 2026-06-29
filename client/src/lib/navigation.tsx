@@ -73,6 +73,7 @@
   Plug,
   FlaskConical,
   ShieldAlert,
+  ShieldQuestion,
   Zap,
 } from "lucide-react";
 import { ReactNode } from "react";
@@ -1125,12 +1126,20 @@ export const navGroups: NavGroup[] = [
     defaultOpen: false,
     permissionCategory: "settings",
     items: [
-      { 
-        href: "/settings", 
-        label: "nav.generalSettings", 
+      {
+        href: "/settings",
+        label: "nav.generalSettings",
         icon: <Settings className="h-4 w-4" />,
         description: "nav.generalSettingsDesc",
         requiredPermission: "settings_view",
+        permissionCategory: "settings",
+      },
+      // Doc 10 U12 — any user can ask an admin for elevated access (no permission gate).
+      {
+        href: "/request-role",
+        label: "nav.requestRole",
+        icon: <ShieldQuestion className="h-4 w-4" />,
+        description: "nav.requestRoleDesc",
         permissionCategory: "settings",
       },
     ],
@@ -1146,6 +1155,14 @@ export const navGroups: NavGroup[] = [
     requiredRole: 'admin',
     permissionCategory: "admin",
     items: [
+      {
+        href: "/admin-home",
+        label: "nav.adminHome",
+        icon: <Activity className="h-4 w-4" />,
+        description: "nav.adminHomeDesc",
+        requiredRole: 'admin',
+        permissionCategory: "admin",
+      },
       {
         href: "/users",
         label: "nav.usersPage",

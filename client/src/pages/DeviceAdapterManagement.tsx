@@ -13,6 +13,7 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
+import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -180,6 +181,7 @@ export default function DeviceAdapterManagement() {
         <div className="flex items-center gap-2">
           <Plug className="h-6 w-6 text-rose-600" />
           <h1 className="text-2xl font-bold">Device Adapter (OT)</h1>
+          <ViewOnlyBadge module="machine_control" />
         </div>
         {canCreate && (
           <Button onClick={openCreateAdapter}>

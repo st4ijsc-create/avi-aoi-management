@@ -115,6 +115,8 @@ const OrchestrationStudio = React.lazy(() => import("./pages/OrchestrationStudio
 const EngineeringWorkspace = React.lazy(() => import("./pages/EngineeringWorkspace")); // Doc 09 D1: Unified Engineering Workspace (author/build/simulate/deploy device programs)
 const SupervisorHome = React.lazy(() => import("./pages/SupervisorHome")); // Doc 10 U1: supervisor/manager briefing landing
 const ViewerHome = React.lazy(() => import("./pages/ViewerHome")); // Doc 10 U3: viewer/user read-only landing
+const AdminHome = React.lazy(() => import("./pages/AdminHome")); // Doc 10 U5: admin governance briefing landing
+const RequestRole = React.lazy(() => import("./pages/RequestRole")); // Doc 10 U12: request a higher role
 const RfTestCellSim = React.lazy(() => import("./pages/RfTestCellSim")); // Realtime digital-twin playback of an RF shielded test cell (feeder XYZ + robot + RF tester)
 const FactoryLiveMap3D = React.lazy(() => import("./pages/FactoryLiveMap3D")); // L4 plant view: 3D factory floor, machines coloured by live status, drill-down
 const FactoryFloorEditor = React.lazy(() => import("./pages/FactoryFloorEditor")); // 2D drag editor: set real floor-plan coords (layoutPositionX/Y) the 3D view reads
@@ -205,6 +207,7 @@ function Router() {
       <Route path="/layout" component={Layout} />
       <Route path="/layout/:id" component={Layout} />
       <Route path="/settings" component={Settings} />
+      <Route path="/request-role"><RequestRole /></Route>
       <Route path="/datasettings" component={DataSettings} />
       <Route path="/admin" component={RedirectToAdminSetting} />
       <Route path="/analytics" component={RedirectToCategoryAnalytics} />
@@ -295,6 +298,7 @@ function Router() {
       <Route path="/quality-home"><AIPageWrapper><QualityHome /></AIPageWrapper></Route>
       <Route path="/supervisor-home"><AIPageWrapper><SupervisorHome /></AIPageWrapper></Route>
       <Route path="/viewer-home"><AIPageWrapper><ViewerHome /></AIPageWrapper></Route>
+      <Route path="/admin-home"><RouteGuard requireRole={["admin"]}><AdminHome /></RouteGuard></Route>
       <Route path="/test-annotation" component={TestAnnotationPage} />
       <Route path="/mask-annotation"><AIPageWrapper><MaskAnnotationPage /></AIPageWrapper></Route>
       <Route path="/aoi-packages" component={AOIPackages} />

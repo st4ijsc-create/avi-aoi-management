@@ -124,8 +124,21 @@ export function FirstRunTour() {
 
   useEffect(() => {
     if (!userKey) return;
+    // U10/doc 10 U17: re-trigger the tour when the user's ROLE changes (new role → new
+    // tips), by clearing the per-user dismissed flag the first time we see a different role.
+    try {
+      const roleKey = STORAGE_PREFIX + userKey + ":role";
+      const prevRole = window.localStorage.getItem(roleKey);
+      const curRole = role ?? "";
+      if (prevRole !== null && prevRole !== curRole) {
+        window.localStorage.removeItem(STORAGE_PREFIX + userKey); // un-dismiss for the new role
+      }
+      window.localStorage.setItem(roleKey, curRole);
+    } catch {
+      /* best-effort */
+    }
     if (!dismissed(userKey)) setOpen(true);
-  }, [userKey]);
+  }, [userKey, role]);
 
   const close = () => {
     if (userKey) markDismissed(userKey);

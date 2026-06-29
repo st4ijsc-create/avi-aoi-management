@@ -7,7 +7,7 @@
  *   - maintenance        → /technician-copilot   (RCA copilot)
  *   - quality_inspector  → /quality-home          (the inspection workspace)
  *   - supervisor/manager → /supervisor-home       (briefing: rollup + escalation, U1)
- *   - admin/it_admin     → /dashboard             (full ops dashboard)
+ *   - admin/it_admin     → /admin-home             (governance briefing, U5)
  *   - viewer/user        → /viewer-home           (read-only briefing, U3)
  *   - other/unknown      → /                      (Home)
  *
@@ -31,7 +31,7 @@ export function landingPathForRole(role?: string | null): string {
       return "/supervisor-home";
     case "admin":
     case "it_admin":
-      return "/dashboard";
+      return "/admin-home";
     case "viewer":
     case "user":
       return "/viewer-home";

@@ -1,6 +1,7 @@
 import * as React from "react";
 
 const MOBILE_BREAKPOINT = 768;
+const TABLET_BREAKPOINT = 1024;
 
 export function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState<boolean | undefined>(
@@ -18,4 +19,30 @@ export function useIsMobile() {
   }, []);
 
   return !!isMobile;
+}
+
+/**
+ * Doc 10 / U9 — true for the tablet band (768px ≤ width < 1024px). NOTE: the app already
+ * keeps the persistent sidebar on tablets (useIsMobile only collapses below 768px), so the
+ * audit's "iPad gets mobile nav" concern does not apply at ≥768px. This hook lets a
+ * component opt into tablet-aware DENSITY (e.g. fewer grid columns) without changing the
+ * mobile/sidebar behaviour.
+ */
+export function useIsTablet() {
+  const [isTablet, setIsTablet] = React.useState<boolean>(false);
+
+  React.useEffect(() => {
+    const mql = window.matchMedia(
+      `(min-width: ${MOBILE_BREAKPOINT}px) and (max-width: ${TABLET_BREAKPOINT - 1}px)`,
+    );
+    const onChange = () => {
+      const w = window.innerWidth;
+      setIsTablet(w >= MOBILE_BREAKPOINT && w < TABLET_BREAKPOINT);
+    };
+    mql.addEventListener("change", onChange);
+    onChange();
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+
+  return isTablet;
 }

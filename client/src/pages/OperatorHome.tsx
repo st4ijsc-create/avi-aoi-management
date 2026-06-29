@@ -24,6 +24,7 @@ import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { TodayBriefing } from "@/components/TodayBriefing";
+import { OfflineBanner } from "@/components/OfflineBanner";
 import MachineQuickScan from "@/components/MachineQuickScan";
 import QuickIssueReport from "@/components/QuickIssueReport";
 import { AIActionInbox } from "@/components/AIActionInbox";
@@ -104,6 +105,9 @@ export default function OperatorHome() {
             </p>
           </div>
         </div>
+
+        {/* U16 — offline indicator (sets expectations when connectivity drops) */}
+        <OfflineBanner />
 
         {/* Role-aware "Today" summary (zero-click) */}
         <TodayBriefing />

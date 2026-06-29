@@ -40,6 +40,8 @@ import { navGroups, NavGroup, NavItem, hasAccessToGroup, getFilteredNavGroups } 
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useLicenseModules } from "@/hooks/useLicenseModules";
 import { LicenseEnforcementBanner } from "./LicenseEnforcementBanner";
+import { PermissionExpiryBanner } from "./PermissionExpiryBanner";
+import { roleSidebarWidth } from "@/hooks/useRoleSidebarDefault";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 import { useSpcAlertToast } from "@/hooks/useSpcAlertToast";
@@ -63,14 +65,20 @@ export default function DashboardLayout({
   navItems = [],
   currentPath,
 }: DashboardLayoutProps) {
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-    return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
-  });
   const { loading, user } = useAuth();
   const { t } = useTranslation();
+  // U7: when no width is saved, seed a role-appropriate default (floor roles → narrower).
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (saved) return parseInt(saved, 10);
+    return roleSidebarWidth(user?.role) ?? DEFAULT_WIDTH;
+  });
 
+  // Persist only AFTER the first mount so the role default isn't immediately overwritten
+  // before the user makes a choice.
+  const firstPersist = useRef(true);
   useEffect(() => {
+    if (firstPersist.current) { firstPersist.current = false; return; }
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
   }, [sidebarWidth]);
 
@@ -416,6 +424,7 @@ function DashboardLayoutContent({
             <NotificationCenter />
           </div>
         </div>
+        <PermissionExpiryBanner />
         <LicenseEnforcementBanner />
         <main className="flex-1 p-3 sm:p-4 md:p-6 overflow-auto">{children}</main>
       </SidebarInset>
