@@ -236,7 +236,12 @@ Mỗi workstream ghi rõ **mục tiêu · việc · file chạm · nghiệm thu 
 ### P3 nâng cao — confirm write tại chỗ ✅ (2026-06-29)
 - `client/src/components/ConfirmActionCard.tsx` (mới, dùng chung): bubble bỏ ~150 dòng trùng; `/ai-chat` giờ render thẻ HITL + gọi `aiCopilot.confirmAction/cancelAction` tại chỗ (không tự thực thi). Typecheck sạch, không cần i18n key mới.
 
-### Còn lại (tùy chọn)
-- Thêm model Qwen3-Reranker-0.6B (mode `gguf`) để precision cao hơn (file chưa có; không tải).
-- husky pre-push cảnh báo KB stale (hiện dựa vào cron `KB_AUTOSYNC_ENABLED` + `npm run kb:sync` thủ công).
-- GraphRAG multi-hop (semantic-graph.json đã có; chưa wire vào retrieval).
+### Hạng mục tùy chọn — ĐÃ LÀM ✅ (2026-06-29)
+- **Reranker mode `gguf`**: `aiReranker.ts` đã wire + harden — guard magic-header, fallback gguf→llm→identity (không throw), log backend, `getRerankerStatus()`, khối `.env.example`. Default vẫn `llm` (Qwen3-4B). **Còn lại duy nhất**: đặt file `Qwen3-Reranker-0.6B-*.gguf` vào `GGUF_MODELS_DIR` rồi set `RAG_RERANKER_MODE=gguf` + `GGUF_RERANKER_MODEL=...` → tự kích hoạt (chưa tải file).
+- **GraphRAG multi-hop**: `server/services/aiSemanticGraph.ts` + expansion 1-hop trong `retrieveKnowledge`, flag `KB_GRAPHRAG_ENABLED` (default OFF). Inject neighbor của top-seed vào pool trước rerank, điểm `seed*sim*decay` (không vượt cosine hit thật).
+- **Pre-push cảnh báo KB stale**: `scripts/ai-kb/check-kb-stale.mjs` (warn-only, exit 0) + `install-git-hooks.mjs` (ghi `.git/hooks/pre-push`, tôn trọng `core.hooksPath`, idempotent — dùng thay husky vì husky lỗi ERESOLVE). npm: `kb:stale-check`, `hooks:install`. Corpus re-sync lần cuối **2186 chunk**, stale-check = "up to date".
+
+### Còn lại (thực sự)
+- Tải/đặt file model reranker để bật mode `gguf` (tùy chọn precision).
+- Bật cờ runtime khi muốn: `KB_GRAPHRAG_ENABLED=true`, `KB_AUTOSYNC_ENABLED=true`.
+- Merge/push branch `ai-assistant-knowledge-remediation`.
