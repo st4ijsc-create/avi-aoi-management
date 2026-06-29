@@ -190,10 +190,11 @@ describe("StubProgrammingAdapter", () => {
 });
 
 describe("programmingRegistry", () => {
-  it("stub is implemented; zmotion is not yet", () => {
+  it("stub implemented; a future kind (gcode) is not yet", () => {
     expect(programmingRegistry.isImplemented("stub")).toBe(true);
-    expect(programmingRegistry.isImplemented("zmotion-basic")).toBe(false);
-    expect(() => programmingRegistry.getAdapter("zmotion-basic")).toThrow(/not yet implemented/);
+    // D2 made zmotion-basic real; gcode (D2 backlog) / iec61131 (D5) are still pending.
+    expect(programmingRegistry.isImplemented("gcode")).toBe(false);
+    expect(() => programmingRegistry.getAdapter("gcode")).toThrow(/not yet implemented/);
   });
 
   it("unknown kind throws", () => {

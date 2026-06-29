@@ -214,12 +214,12 @@ Route mới đề xuất: `/engineering` (workspace), `/engineering/:projectId`.
 - **Ghi chú thiết kế:** monaco **hoãn có chủ đích** (tránh rủi ro bundler/offline) — `CodeEditor` là ranh giới component để thay monaco sau mà không đụng page. RBAC tái dùng `machine_control`/`machine_monitoring` (không tạo module mới để khỏi khoá quyền — admin chạy ngay).
 - **Chấp nhận:** ✅ tsc EXIT=0; ✅ locale vi/en/zh parse OK; flow tạo project→soạn→validate→build→simulate→(deploy SIMULATED) chạy trên router D0, chưa cần HW.
 
-### Phase D2 — Zmotion adapter (nhóm A, controller mở) 🔲  ⟵ *ưu tiên 1*
-- [ ] `server/services/programming/zmotion/` — kết nối ZMC (Ethernet/PCIe SDK), BASIC + motion.
-- [ ] validate (parse BASIC), compile, **download/upload** chương trình, `watch()` realtime, jog motion.
-- [ ] Editor BASIC (Monaco) + motion-sequence block; Online Monitor cho trục/IO.
-- [ ] Driver telemetry Zmotion vào `EquipmentAdapter` (đăng ký kind mới).
-- **Chấp nhận:** trên **ZMC sim/emulator**: soạn→build→sim→(deploy staged khi bật flag)→watch trục. Ghi rõ field-map cần validate HW thật.
+### Phase D2 — Zmotion adapter (nhóm A, controller mở) ✅ ĐÃ XONG (emulator)  ⟵ *ưu tiên 1*
+- [x] `server/services/programming/zmotion/zmotionBasicAdapter.ts` — `ProgrammingAdapter` kind `zmotion-basic`, đăng ký vào `programmingRegistry`.
+- [x] **THẬT (chạy không cần HW):** validate (lexer Zmotion-BASIC + block-balance + kiểm tra motion-op), compile (output `zmc://build/<checksum>` + meta moves/ops), simulate (timeline motion từ MOVE/MOVEABS…).
+- [x] **FRAMEWORK trung thực (cần validate HW):** `ZmcLink` (TCP probe ZMC Ethernet) cho deploy/upload — gated; **không** giả "deployed": không endpoint→failed, unreachable→failed, reachable nhưng frame chưa validate→failed có lý do rõ. Caps `canDownload/canUpload/canOnlineMonitor/canForce`.
+- **Còn lại (kéo sang sau khi có HW/SDK):** frame file-transfer ZMC thật, `watch()` realtime (gắn D6), editor motion-sequence block, telemetry Zmotion vào `EquipmentAdapter`, jog.
+- **Chấp nhận:** ✅ tsc xanh; ✅ 8 test (validate/compile/simulate/deploy-guard/registry). Workspace dùng kind `zmotion-basic`: soạn→validate→build→simulate chạy; deploy gated (flag OFF). Field-map ZMC cần HW thật (đã ghi).
 
 ### Phase D3 — Mitsubishi engineering + toolchain wrap (nhóm B) 🔲  ⟵ *ưu tiên 2*
 - [ ] Tag/device table (X/Y/M/D) editor + recipe/param program trên driver MC đã có.
@@ -310,5 +310,6 @@ Quy ước thực thi: mỗi phase tự chứa, flag OFF, tsc xanh, test kèm, v
 | 2026-06-29 | — | — | Tạo doc 09 (DRAFT, chờ duyệt) |
 | 2026-06-29 | — | — | Người dùng DUYỆT toàn bộ D0–D7; phần cứng/SDK cài sau (cuốn chiếu, emulator trước) |
 | 2026-06-29 | **D0** | `7aef0a3` | Programming foundation: ProgrammingAdapter+registry+stub, schema+migration 0130, programmingService (deploy gate), programmingRouter wired. tsc xanh, 14/14 test. Flags OFF, migration chưa chạy. |
-| 2026-06-29 | **D1** | _(đang commit)_ | Unified Engineering Workspace /engineering + CodeEditor (monaco-swappable) + route/nav/i18n. tsc xanh, locale OK. monaco hoãn (component boundary sẵn). |
+| 2026-06-29 | **D1** | `85b64f5` | Unified Engineering Workspace /engineering + CodeEditor (monaco-swappable) + route/nav/i18n. tsc xanh, locale OK. monaco hoãn (component boundary sẵn). |
+| 2026-06-29 | **D2** | _(đang commit)_ | Zmotion BASIC adapter: validate/compile/motion-simulate THẬT + ZmcLink deploy/upload framework trung thực (gated, không giả deployed). 8 test, tsc xanh. Cần HW cho frame ZMC + watch. |
 | | … | | |

@@ -22,6 +22,8 @@
  * ════════════════════════════════════════════════════════════════════════════
  */
 
+import { ZmotionBasicAdapter } from "./zmotion/zmotionBasicAdapter";
+
 /** Target classes the DPC tier can address (1:1 onto programmingKindEnum). */
 export type ProgrammingKind =
   | "stub"
@@ -238,7 +240,8 @@ const adapterCache = new Map<ProgrammingKind, ProgrammingAdapter>();
 
 function build(kind: ProgrammingKind): ProgrammingAdapter {
   if (kind === "stub") return new StubProgrammingAdapter();
-  // D2+ register their real adapters here.
+  if (kind === "zmotion-basic") return new ZmotionBasicAdapter();
+  // D3+ register their real adapters here.
   throw new Error(`Programming adapter "${kind}" is not yet implemented (lands in a later DPC phase).`);
 }
 
