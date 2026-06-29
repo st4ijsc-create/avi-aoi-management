@@ -213,11 +213,21 @@ interface KbDataBundle {
   chunksById: Map<string, KbChunk>;
   embeddings: KbEmbeddingRecord[];
   loadedAt: number;
+  // W0.3 (doc 11) — embedding-model provenance read from embeddings-meta.json so
+  // we can detect a query/corpus embed-model mismatch (not just a length mismatch).
+  // null when the meta file is missing or lacks the field (→ never false-alarm).
+  corpusEmbedModel: string | null;
+  // W0.2 (doc 11) — when the corpus was built (ISO from meta.generatedAt); null if absent.
+  kbBuiltAt: string | null;
 }
 
 const KNOWLEDGE_DIR = path.join(process.cwd(), "knowledge");
 const CHUNKS_FILE = path.join(KNOWLEDGE_DIR, "chunks.jsonl");
 const EMBEDDINGS_FILE = path.join(KNOWLEDGE_DIR, "embeddings.jsonl");
+// W0.3 (doc 11) — provenance sidecar written by the embed pipeline. Holds the
+// `model` the corpus was embedded with + `generatedAt`. Optional: missing file
+// degrades gracefully (corpusEmbedModel = null → guard stays quiet).
+const EMBEDDINGS_META_FILE = path.join(KNOWLEDGE_DIR, "embeddings-meta.json");
 
 const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434").replace(/\/$/, "");
 const OLLAMA_EMBED_MODEL = process.env.OLLAMA_EMBED_MODEL ?? "mxbai-embed-large";
@@ -243,6 +253,41 @@ const KB_EMBED_DIM = (() => {
   const n = parseInt(process.env.GGUF_EMBED_DIM || "1024", 10);
   return Number.isFinite(n) && n > 0 ? n : 1024;
 })();
+
+// W0.3 (doc 11) — normalize an embed-model identifier for IDENTITY comparison
+// (corpus vs query). Length-only guards miss the dangerous case where a deploy
+// swaps GGUF_EMBED_MODEL for a SAME-DIMENSION but DIFFERENT model → retrieval
+// silently returns garbage. We compare by basename, lowercased, stripping the
+// common "-f16"/quant suffixes and the ".gguf" extension so cosmetically
+// different spellings of the same model still match.
+function normalizeEmbedModelId(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let s = path.basename(String(raw).trim());
+  s = s.replace(/\.gguf$/i, "");
+  s = s.toLowerCase();
+  // Strip common precision/quant suffixes that differ between build-time and
+  // runtime spellings of the SAME model (e.g. "-f16", "-q8_0", ".f16").
+  s = s.replace(/[._-](f16|f32|bf16|q\d(_[\dkms]+)*|int8|int4)$/i, "");
+  s = s.replace(/[._-]+$/g, "");
+  return s || null;
+}
+
+// W0.3 (doc 11) — has the corpus/query embed-model mismatch warning already
+// fired? Keep the log to ONCE-per-process so it stays loud but not spammy.
+let embedModelMismatchWarned = false;
+
+/**
+ * W0.3 (doc 11) — does the corpus embed-model match the query embed-model?
+ * Returns true when the corpus model is UNKNOWN/null (no meta → don't false-alarm)
+ * or when both normalize equal. Returns false ONLY when both are known AND differ.
+ */
+function computeEmbedModelMatches(corpusEmbedModel: string | null): boolean {
+  const corpus = normalizeEmbedModelId(corpusEmbedModel);
+  if (!corpus) return true; // unknown corpus model → cannot assert a mismatch
+  const query = normalizeEmbedModelId(GGUF_EMBED_MODEL_ID);
+  if (!query) return true; // unknown query model → don't false-alarm either
+  return corpus === query;
+}
 
 const ANSWER_CACHE_TTL_MS = Number(process.env.KB_QA_CACHE_TTL_MS ?? 10 * 60 * 1000);
 
@@ -484,11 +529,46 @@ function ensureDataLoaded(forceReload = false): KbDataBundle {
   const chunksById = new Map<string, KbChunk>();
   for (const c of chunks) chunksById.set(c.id, c);
 
+  // W0.3/W0.2 (doc 11) — read the embed provenance sidecar. Best-effort: a
+  // missing/malformed meta file must NOT break KB loading; it just leaves the
+  // model-identity guard quiet (corpusEmbedModel = null) and staleness unknown.
+  let corpusEmbedModel: string | null = null;
+  let kbBuiltAt: string | null = null;
+  try {
+    if (fs.existsSync(EMBEDDINGS_META_FILE)) {
+      const meta = JSON.parse(fs.readFileSync(EMBEDDINGS_META_FILE, "utf8")) as {
+        model?: unknown;
+        generatedAt?: unknown;
+      };
+      if (typeof meta.model === "string" && meta.model.trim()) corpusEmbedModel = meta.model.trim();
+      if (typeof meta.generatedAt === "string" && meta.generatedAt.trim()) {
+        kbBuiltAt = meta.generatedAt.trim();
+      }
+    }
+  } catch {
+    // Leave provenance null on any parse error — degrade quietly.
+  }
+
   dataCache = {
     chunksById,
     embeddings,
     loadedAt: Date.now(),
+    corpusEmbedModel,
+    kbBuiltAt,
   };
+
+  // W0.3 (doc 11) — fire a single LOUD warning if the corpus was embedded with a
+  // different model than the one the query path will use. Retrieval similarity
+  // is only meaningful when both vectors live in the SAME model's space.
+  if (!computeEmbedModelMatches(corpusEmbedModel) && !embedModelMismatchWarned) {
+    embedModelMismatchWarned = true;
+    console.warn(
+      `[aiLocalKnowledge] ⚠️ EMBED-MODEL MISMATCH — corpus embedded with "${corpusEmbedModel}" ` +
+        `but query embed model is "${GGUF_EMBED_MODEL_ID}" (GGUF_EMBED_MODEL). Semantic retrieval ` +
+        `would be CORRUPT → falling back to keyword-only retrieval. Re-embed the corpus with the ` +
+        `current model OR point GGUF_EMBED_MODEL back at the corpus model. (W0.3, doc 11)`,
+    );
+  }
 
   return dataCache;
 }
@@ -1164,15 +1244,57 @@ export async function* generateWithOllamaStream(
   }
 }
 
-export function getKbHealth(): {
+// W0.2 (doc 11) — honest health shape. Keeps every legacy field (ready/chunks/
+// embeddings/loadedAt/paths) for backward-compat and ADDS capability + provenance
+// signals so the client can stop showing a misleading "Sẵn sàng":
+//   llmReady          — a GGUF TEXT model actually resolves+validates on disk
+//                       (else answers silently degrade to extractive)
+//   embedModel        — model the corpus was embedded with (from meta)
+//   queryEmbedModel   — model the query path uses (GGUF_EMBED_MODEL)
+//   embedModelMatches — false ONLY when both known AND differ (retrieval corrupt)
+//   kbBuiltAt         — when the corpus was built (ISO) · staleDays — whole days old
+export interface KbHealth {
   ready: boolean;
   chunks: number;
   embeddings: number;
   loadedAt?: string;
   paths: { chunks: string; embeddings: string };
-} {
+  // W0.2/W0.3 (doc 11) additions:
+  llmReady: boolean;
+  embedModel: string | null;
+  queryEmbedModel: string;
+  embedModelMatches: boolean;
+  kbBuiltAt: string | null;
+  chunkCount: number;
+  staleDays: number | null;
+}
+
+// W0.2 (doc 11) — best-effort "is a text LLM loadable?" check. Never throws;
+// degrades to false so health stays conservative rather than crashing.
+async function probeLlmReady(): Promise<boolean> {
+  try {
+    const { isGgufModelLoadable } = await import("./aiGgufEngine");
+    return await isGgufModelLoadable();
+  } catch {
+    return false;
+  }
+}
+
+function wholeDaysSince(iso: string | null): number | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / (24 * 60 * 60 * 1000)));
+}
+
+export async function getKbHealth(): Promise<KbHealth> {
+  const queryEmbedModel = GGUF_EMBED_MODEL_ID;
   try {
     const data = ensureDataLoaded();
+    // Sub-checks are individually guarded → a failing one degrades to a
+    // conservative value (llmReady:false) instead of failing the whole health.
+    const llmReady = await probeLlmReady();
+    const embedModelMatches = computeEmbedModelMatches(data.corpusEmbedModel);
     return {
       ready: true,
       chunks: data.chunksById.size,
@@ -1182,6 +1304,13 @@ export function getKbHealth(): {
         chunks: CHUNKS_FILE,
         embeddings: EMBEDDINGS_FILE,
       },
+      llmReady,
+      embedModel: data.corpusEmbedModel,
+      queryEmbedModel,
+      embedModelMatches,
+      kbBuiltAt: data.kbBuiltAt,
+      chunkCount: data.chunksById.size,
+      staleDays: wholeDaysSince(data.kbBuiltAt),
     };
   } catch {
     return {
@@ -1192,12 +1321,20 @@ export function getKbHealth(): {
         chunks: CHUNKS_FILE,
         embeddings: EMBEDDINGS_FILE,
       },
+      llmReady: false,
+      embedModel: null,
+      queryEmbedModel,
+      embedModelMatches: true,
+      kbBuiltAt: null,
+      chunkCount: 0,
+      staleDays: null,
     };
   }
 }
 
-export function reloadKbArtifacts(): ReturnType<typeof getKbHealth> {
+export function reloadKbArtifacts(): Promise<KbHealth> {
   dataCache = null;
+  embedModelMismatchWarned = false; // W0.3 — allow the mismatch warning to re-fire after a rebuild.
   return getKbHealth();
 }
 
@@ -1248,7 +1385,12 @@ export async function retrieveKnowledge(
   // C3a — features hinted by the current route (light boost only).
   const routeFeatures = context?.route ? routeToFeatureHints(context.route) : [];
 
-  const qVec = await embedQuestion(question);
+  // W0.3 (doc 11) — when the corpus embed-model differs from the query embed-model
+  // (locked decision Q5: WARN + fall back, never hard-block), skip vector retrieval
+  // entirely. A same-dimension/different-model vector would pass the length guard
+  // but produce a CORRUPT cosine similarity, so keyword-only retrieval is safer.
+  const embedModelMatches = computeEmbedModelMatches(data.corpusEmbedModel);
+  const qVec = embedModelMatches ? await embedQuestion(question) : null;
 
   const scored = data.embeddings.map((emb) => {
     const chunk = data.chunksById.get(emb.id);

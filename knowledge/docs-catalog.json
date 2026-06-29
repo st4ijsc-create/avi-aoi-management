@@ -54,6 +54,12 @@
     "headings": 9
   },
   {
+    "file": "docs/AI_LOCAL_KB_PDCA_REPORT.md",
+    "title": "BÁO CÁO CẢI TIẾN P-D-C-A",
+    "length": 50063,
+    "headings": 11
+  },
+  {
     "file": "docs/AI_LOCAL_KNOWLEDGE_BASE_CONCEPT.md",
     "title": "AI Local System Knowledge Base — Concept & Implementation Plan",
     "length": 15887,
@@ -146,7 +152,7 @@
   {
     "file": "docs/DEPLOYMENT_GUIDE.md",
     "title": "Hướng Dẫn Triển Khai Hệ Thống MES AVI/AOI",
-    "length": 10573,
+    "length": 12276,
     "headings": 13
   },
   {
@@ -154,6 +160,114 @@
     "title": "Hướng dẫn Test End-to-End với Thiết bị Thật",
     "length": 7422,
     "headings": 10
+  },
+  {
+    "file": "docs/ECOSYSTEM/01_SYSTEM_BASELINE_AUDIT_2026-06.md",
+    "title": "HỒ SƠ GỐC – AUDIT TOÀN HỆ THỐNG (BASELINE)",
+    "length": 39075,
+    "headings": 7
+  },
+  {
+    "file": "docs/ECOSYSTEM/02_ST4I_ECOSYSTEM_MASTERPLAN_2026-06.md",
+    "title": "KẾ HOẠCH TỔNG THỂ – HỆ SINH THÁI NHÀ MÁY THÔNG MINH ST4I",
+    "length": 21625,
+    "headings": 9
+  },
+  {
+    "file": "docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md",
+    "title": "THIẾT KẾ \"BỘ NÃO AI CỤC BỘ\" & KẾ HOẠCH NÂNG CẤP — ST4I Smart Factory",
+    "length": 25397,
+    "headings": 19
+  },
+  {
+    "file": "docs/ECOSYSTEM/04_AI_BRAIN_NEXTGEN_DESIGN_AND_UPGRADE_2026-06.md",
+    "title": "THIẾT KẾ \"BỘ NÃO AI NHÀ MÁY\" THẾ HỆ MỚI & KẾ HOẠCH NÂNG CẤP TOÀN DIỆN",
+    "length": 25023,
+    "headings": 18
+  },
+  {
+    "file": "docs/ECOSYSTEM/05_AI_MINIMAL_EFFORT_UX_IDEAS_2026-06.md",
+    "title": "Ý TƯỞNG: AI hỗ trợ tối đa — Kỹ thuật · Nhân viên · Quản lý, với \"ít thao tác nhất\"",
+    "length": 5631,
+    "headings": 6
+  },
+  {
+    "file": "docs/ECOSYSTEM/06_TECHNICIAN_COPILOT_DESIGN_2026-06.md",
+    "title": "THIẾT KẾ \"TECHNICIAN COPILOT\" — AI hỗ trợ triệt để: Cài máy · Đặt ngưỡng/thông số · Tìm nguyên nhân lỗi",
+    "length": 10794,
+    "headings": 18
+  },
+  {
+    "file": "docs/ECOSYSTEM/07_ECOSYSTEM_READINESS_AUDIT_2026-06.md",
+    "title": "BÁO CÁO RÀ SOÁT & ĐÁNH GIÁ MỨC ĐỘ SẴN SÀNG \"HỆ SINH THÁI NHÀ MÁY THÔNG MINH\"",
+    "length": 15447,
+    "headings": 6
+  },
+  {
+    "file": "docs/ECOSYSTEM/08_FACTORY_CONTROL_PLANE_STRATEGY_2026-06.md",
+    "title": "CHIẾN LƯỢC \"CONTROL PLANE\" NHÀ MÁY — Lập trình & Điều khiển máy phức tạp đa-loại trong một hệ sinh thái",
+    "length": 13885,
+    "headings": 7
+  },
+  {
+    "file": "docs/ECOSYSTEM/09_DEVICE_PROGRAMMING_CONTROL_STRATEGY_2026-06.md",
+    "title": "09 — Device Programming & Control (DPC) Strategy",
+    "length": 29876,
+    "headings": 12
+  },
+  {
+    "file": "docs/ECOSYSTEM/10_FRONTEND_ROLE_UX_AUDIT_2026-06.md",
+    "title": "10 — Frontend Role & UX Audit (theo cấp độ người dùng)",
+    "length": 10162,
+    "headings": 6
+  },
+  {
+    "file": "docs/ECOSYSTEM/11_AI_ASSISTANT_KNOWLEDGE_REMEDIATION_2026-06.md",
+    "title": "11 — Trợ lý thông minh: Audit + Kế hoạch \"Hệ thống có gì, AI biết cái đó\"",
+    "length": 13991,
+    "headings": 8
+  },
+  {
+    "file": "docs/ECOSYSTEM/ADAPTER_SDK.md",
+    "title": "Adapter SDK & Unified Machine API (`/api/v1`) — Integration Guide",
+    "length": 13804,
+    "headings": 7
+  },
+  {
+    "file": "docs/ECOSYSTEM/PHASE1_TENANT_RLS_ROLLOUT.md",
+    "title": "Phase 1 WS1.2/WS4 — Tenant RLS rollout (safe-by-default)",
+    "length": 11312,
+    "headings": 7
+  },
+  {
+    "file": "docs/ECOSYSTEM/PHASE2_OT_ENABLEMENT.md",
+    "title": "Phase 2 — OT device enablement runbook (WS2.1)",
+    "length": 2399,
+    "headings": 3
+  },
+  {
+    "file": "docs/ECOSYSTEM/PHASE3_ROBOTICS.md",
+    "title": "Phase 3 — Robotics framework",
+    "length": 2595,
+    "headings": 5
+  },
+  {
+    "file": "docs/ECOSYSTEM/PHASE4_AI_GOVERNANCE.md",
+    "title": "Phase 4 WS4.3 — AI governance",
+    "length": 2192,
+    "headings": 5
+  },
+  {
+    "file": "docs/ECOSYSTEM/PHASE5_FEDERATION_MARKETPLACE.md",
+    "title": "Phase 5 — Federation, AR & Marketplace (design + status)",
+    "length": 2889,
+    "headings": 4
+  },
+  {
+    "file": "docs/ECOSYSTEM/PHASE_B_AI_BRAIN_RUNBOOK.md",
+    "title": "PHASE B — AI BRAIN OPERATIONAL RUNBOOK",
+    "length": 18743,
+    "headings": 8
   },
   {
     "file": "docs/examples/CSharp_API_Examples.md",
@@ -190,12 +304,6 @@
     "title": "Fix: submitInspection không lưu measurement khi pointId chưa tồn tại",
     "length": 11175,
     "headings": 10
-  },
-  {
-    "file": "docs/I18N_AUDIT_REPORT.md",
-    "title": "i18n Audit Report — Hardcoded Strings",
-    "length": 80138,
-    "headings": 32
   },
   {
     "file": "docs/IMPLEMENTATION_CHECKLIST.md",
@@ -270,12 +378,6 @@
     "headings": 7
   },
   {
-    "file": "docs/SYSTEM_AUDIT_REPORT.md",
-    "title": "AVI-AOI Management System — System Audit Report",
-    "length": 18529,
-    "headings": 6
-  },
-  {
     "file": "docs/SYSTEM_EVALUATION_REPORT.md",
     "title": "Báo Cáo Đánh Giá Hệ Thống MES AVI/AOI",
     "length": 9806,
@@ -294,10 +396,142 @@
     "headings": 16
   },
   {
+    "file": "docs/upgrade-2026/00-OVERVIEW.md",
+    "title": "Kế hoạch nâng cấp hệ sinh thái 4.0 — 2026",
+    "length": 3576,
+    "headings": 7
+  },
+  {
+    "file": "docs/upgrade-2026/AI-ANALYSIS-EVALUATION-2026.md",
+    "title": "Đánh giá lại toàn bộ module \"AI Analysis / Phân tích dữ liệu + hình ảnh bằng AI\" — 2026",
+    "length": 16985,
+    "headings": 6
+  },
+  {
+    "file": "docs/upgrade-2026/AI-COPILOT-GD1-PLAN.md",
+    "title": "Kế hoạch kỹ thuật chi tiết — GĐ1 Quick Wins (AI Copilot 2026)",
+    "length": 22886,
+    "headings": 8
+  },
+  {
+    "file": "docs/upgrade-2026/AI-COPILOT-GD2-PLAN.md",
+    "title": "Kế hoạch chi tiết GĐ2 — Nền an toàn cho write-action (AI Copilot)",
+    "length": 8300,
+    "headings": 12
+  },
+  {
+    "file": "docs/upgrade-2026/AI-COPILOT-GD3-PLAN.md",
+    "title": "Kế hoạch chi tiết GĐ3 — Agentic Execution + Playbook (AI Copilot)",
+    "length": 8399,
+    "headings": 10
+  },
+  {
+    "file": "docs/upgrade-2026/AI-COPILOT-PLAN-2026.md",
+    "title": "Kế hoạch nâng cấp AI Copilot cho nhân viên nhà máy — 2026",
+    "length": 15796,
+    "headings": 8
+  },
+  {
+    "file": "docs/upgrade-2026/BRANCH-A-local-gguf.md",
+    "title": "Nhánh A — Chuyển toàn bộ AI sang Local GGUF (kế hoạch chi tiết)",
+    "length": 4917,
+    "headings": 5
+  },
+  {
+    "file": "docs/upgrade-2026/BRANCH-B-professional-parity.md",
+    "title": "Nhánh B — Ngang tầm hệ thống AI phân tích chuyên nghiệp (kế hoạch chi tiết)",
+    "length": 12567,
+    "headings": 6
+  },
+  {
+    "file": "docs/upgrade-2026/HUONG-DAN-tao-model-segmentation.md",
+    "title": "Hướng dẫn tạo model Segmentation cho `/mask-annotation`",
+    "length": 4255,
+    "headings": 5
+  },
+  {
+    "file": "docs/upgrade-2026/RUNBOOK-tier3.md",
+    "title": "RUNBOOK — Vận hành AI 4.0 (Local GGUF + Tier 3) cho đội",
+    "length": 6172,
+    "headings": 9
+  },
+  {
+    "file": "docs/upgrade-2026/SMART-FACTORY-4.0-MASTER-PLAN.md",
+    "title": "Kế hoạch tổng thể — Nâng cấp thành Hệ thống Quản lý Nhà máy Thông minh 4.0 (AI Local)",
+    "length": 21745,
+    "headings": 6
+  },
+  {
+    "file": "docs/upgrade-2026/SMART-FACTORY-PHASE2-MASTER-PLAN.md",
+    "title": "Kế hoạch tổng thể — GIAI ĐOẠN 2 Nhà máy Thông minh 4.0",
+    "length": 12352,
+    "headings": 6
+  },
+  {
+    "file": "docs/upgrade-2026/SPC-ANALYSIS-AUDIT-UPGRADE-2026.md",
+    "title": "Audit & Kế hoạch nâng cấp `/spc-analysis` — 1 màn hình SPC chuyên nghiệp (2026)",
+    "length": 22586,
+    "headings": 7
+  },
+  {
+    "file": "docs/upgrade-2026/WS-G1-gguf-engine-core.md",
+    "title": "WS-G1 — Sửa lõi GGUF engine",
+    "length": 4335,
+    "headings": 10
+  },
+  {
+    "file": "docs/upgrade-2026/WS-G2-vision-local.md",
+    "title": "WS-G2 — Vision local thật",
+    "length": 6454,
+    "headings": 11
+  },
+  {
+    "file": "docs/upgrade-2026/WS-G3-replace-cloud-llm.md",
+    "title": "WS-G3 — Thay điểm gọi cloud LLM bằng GGUF local",
+    "length": 3996,
+    "headings": 8
+  },
+  {
+    "file": "docs/upgrade-2026/WS-G4-remove-ollama.md",
+    "title": "WS-G4 — Gỡ phụ thuộc Ollama",
+    "length": 4288,
+    "headings": 9
+  },
+  {
+    "file": "docs/upgrade-2026/WS1-ai-self-learning.md",
+    "title": "WS-1 — Khép vòng AI tự học (Training Pipeline + Active Learning)",
+    "length": 12457,
+    "headings": 11
+  },
+  {
+    "file": "docs/upgrade-2026/WS2-edge-deployment.md",
+    "title": "WS-2 — Edge Deployment đầu-cuối + Wizard cài đặt máy mới",
+    "length": 9762,
+    "headings": 12
+  },
+  {
+    "file": "docs/upgrade-2026/WS3-vector-search.md",
+    "title": "WS-3 — Vector Search ảnh NG tương tự",
+    "length": 9247,
+    "headings": 13
+  },
+  {
+    "file": "docs/upgrade-2026/WS4-predictive-maintenance.md",
+    "title": "WS-4 — Predictive Maintenance + Auto-scheduling",
+    "length": 11459,
+    "headings": 12
+  },
+  {
     "file": "docs/UPGRADE_IMPROVEMENT_PLAN.md",
     "title": "AVI-AOI Management System — Upgrade & Improvement Plan",
     "length": 20000,
     "headings": 10
+  },
+  {
+    "file": "docs/UPGRADE_REPORT_AI_FEATURES.md",
+    "title": "Báo Cáo Nâng Cấp: /ai-image-search & /ai-data-processing",
+    "length": 13610,
+    "headings": 7
   },
   {
     "file": "docs/USER_GUIDE.md",
@@ -340,6 +574,12 @@
     "title": "Machine API — Tích hợp máy kiểm tra AOI",
     "length": 17825,
     "headings": 14
+  },
+  {
+    "file": "apidocs/measurement-geometry-and-fiducials.md",
+    "title": "Measurement Geometry & Fiducial Marks — P1 API Reference",
+    "length": 8228,
+    "headings": 4
   },
   {
     "file": "apidocs/PRODUCT_API.md",

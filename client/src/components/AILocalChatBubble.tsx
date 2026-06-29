@@ -470,6 +470,23 @@ export function AILocalChatBubble() {
     startPlaybookMutation.isPending;
 
   const isReady = health?.ready || false;
+  // W0.2/W0.3 (doc 11) — honest, non-misleading status. `ready` only proves the
+  // KB files loaded; the badge must also reflect whether the LLM is loadable and
+  // whether the query embed-model matches the corpus. Input stays gated on
+  // `ready` (users can still ask in extractive mode), but the badge tells the truth.
+  //   green  "Sẵn sàng"        — ready + LLM loadable + embed model matches
+  //   red    "Lệch model..."   — embed model mismatch (retrieval may be inaccurate)
+  //   amber  "Chế độ trích dẫn"— ready but LLM not loadable → extractive answers
+  //   amber  "Đang tải..."     — not ready yet
+  const embedMismatch = health?.embedModelMatches === false;
+  const llmReady = health?.llmReady === true;
+  const healthStatus: "loading" | "ready" | "extractive" | "embed_mismatch" = embedMismatch
+    ? "embed_mismatch"
+    : !isReady
+      ? "loading"
+      : llmReady
+        ? "ready"
+        : "extractive";
   // Role-filtered example prompts (operators no longer see admin tasks). The
   // localized label IS the question we send to the assistant.
   const quickQuestions = (QUICK_QUESTIONS_BY_ROLE[userRole] ?? QUICK_QUESTIONS_BY_ROLE.worker).map(
@@ -1061,17 +1078,44 @@ export function AILocalChatBubble() {
               <div className="min-w-0">
                 <p className="text-sm font-semibold leading-none">Trợ lý thông minh</p>
                 <div className="flex items-center gap-1.5 mt-0.5">
+                  {/* W0.2/W0.3 (doc 11) — honest status badge (green/amber/red). */}
                   {healthLoading ? (
                     <Loader2 className="size-3 animate-spin text-muted-foreground" />
-                  ) : isReady ? (
+                  ) : healthStatus === "ready" ? (
                     <>
                       <span className="inline-block size-1.5 rounded-full bg-green-500 animate-pulse" />
-                      <span className="text-xs text-green-600">Sẵn sàng</span>
+                      <span className="text-xs text-green-600">{t("aiHealth.ready", "Sẵn sàng")}</span>
                     </>
+                  ) : healthStatus === "embed_mismatch" ? (
+                    <span
+                      className="flex items-center gap-1.5"
+                      title={t(
+                        "aiHealth.embedMismatchTip",
+                        "Model embedding truy vấn khác model đã build kho tri thức — kết quả tìm kiếm có thể không chính xác.",
+                      )}
+                    >
+                      <span className="inline-block size-1.5 rounded-full bg-red-500" />
+                      <span className="text-xs text-red-600">
+                        {t("aiHealth.embedMismatch", "Lệch model embedding")}
+                      </span>
+                    </span>
+                  ) : healthStatus === "extractive" ? (
+                    <span
+                      className="flex items-center gap-1.5"
+                      title={t(
+                        "aiHealth.extractiveTip",
+                        "LLM chưa nạp — đang trả lời bằng trích dẫn tài liệu.",
+                      )}
+                    >
+                      <span className="inline-block size-1.5 rounded-full bg-amber-500" />
+                      <span className="text-xs text-amber-600">
+                        {t("aiHealth.extractiveMode", "Chế độ trích dẫn")}
+                      </span>
+                    </span>
                   ) : (
                     <>
                       <span className="inline-block size-1.5 rounded-full bg-amber-500" />
-                      <span className="text-xs text-amber-600">Đang tải...</span>
+                      <span className="text-xs text-amber-600">{t("aiHealth.loading", "Đang tải...")}</span>
                     </>
                   )}
                   {/* Persona fixed: trợ lý chi tiết cho mọi người dùng */}
@@ -1263,6 +1307,18 @@ export function AILocalChatBubble() {
                                 )
                               )}
                             </>
+                          )}
+
+                          {/* W0.2 (doc 11) — honest "extractive mode" note: the LLM
+                              was not used for this answer (chunk-stitch fallback).
+                              Non-alarming inline row, matches the metadata-row style. */}
+                          {!msg.streaming && msg.result?.provider === "extractive" && (
+                            <p className="text-[11px] text-amber-600 dark:text-amber-400 leading-snug">
+                              {t(
+                                "aiHealth.extractiveAnswerNote",
+                                "⚠️ Trả lời ở chế độ trích dẫn (chưa dùng LLM)",
+                              )}
+                            </p>
                           )}
 
                           {/* Metadata row */}

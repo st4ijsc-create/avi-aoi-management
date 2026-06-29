@@ -1,3 +1,6 @@
+// W1.2-fix — load repo-root .env BEFORE reading process.env (KB_GRAPH_* tuning).
+// dotenv (a project dependency) does NOT overwrite already-set process.env keys.
+import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 

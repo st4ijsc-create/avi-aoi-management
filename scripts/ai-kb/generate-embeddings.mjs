@@ -1,3 +1,8 @@
+// W1.2-fix — load repo-root .env BEFORE reading process.env, so the GGUF embedding
+// model (GGUF_EMBED_MODEL / GGUF_MODELS_DIR) is read from project config instead of
+// silently falling back to the mxbai default — which would corrupt the corpus by
+// mixing embedding spaces. dotenv does NOT overwrite already-set process.env keys.
+import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -15,6 +20,19 @@ const MAX_TEXT_CHARS = Number(process.env.KB_EMBED_MAX_TEXT_CHARS ?? 3000);
 // WS-G4 — default to in-process GGUF embeddings (no Ollama daemon). Set
 // USE_LEGACY_OLLAMA=true to use the legacy Ollama HTTP path (rollback).
 const USE_LEGACY_OLLAMA = (process.env.USE_LEGACY_OLLAMA ?? "false").toLowerCase() === "true";
+
+// W1.2-fix — resolve the embed model name we are ABOUT to use and print it loudly,
+// so a wrong/mixed model is obvious in the logs (this is what just corrupted the
+// corpus). For GGUF, the filename comes from GGUF_EMBED_MODEL (default mxbai).
+const RESOLVED_EMBED_MODEL = USE_LEGACY_OLLAMA
+  ? OLLAMA_EMBED_MODEL
+  : (process.env.GGUF_EMBED_MODEL ?? "mxbai-embed-large-v1-f16.gguf");
+const RESOLVED_MODELS_DIR = USE_LEGACY_OLLAMA
+  ? OLLAMA_BASE_URL
+  : (process.env.GGUF_MODELS_DIR ?? path.join(ROOT, "uploads", "gguf-models"));
+console.log(
+  `[kb] embed model = ${RESOLVED_EMBED_MODEL} (engine=${USE_LEGACY_OLLAMA ? "ollama" : "gguf"}, dir=${RESOLVED_MODELS_DIR})`,
+);
 
 function parseJsonl(file) {
   if (!fs.existsSync(file)) return [];

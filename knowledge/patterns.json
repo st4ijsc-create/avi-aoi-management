@@ -1,9 +1,13 @@
 {
-  "protectedProcedureCount": 758,
-  "publicProcedureCount": 55,
-  "zodObjectCount": 975,
-  "totalSourceFiles": 633,
-  "totalRouterFiles": 79,
-  "totalServiceFiles": 46,
-  "totalDocsFiles": 63
+  "protectedProcedureCount": 1216,
+  "publicProcedureCount": 69,
+  "zodObjectCount": 1425,
+  "totalSourceFiles": 1216,
+  "totalRouterFiles": 149,
+  "totalServiceFiles": 322,
+  "totalDocsFiles": 103,
+  "totalRoutes": 144,
+  "totalNavGroups": 18,
+  "totalSchemaTables": 237,
+  "totalModules": 12
 }

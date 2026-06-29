@@ -206,6 +206,27 @@ export type ToolResultPayload =
       note?: string;
     };
 
+/** A render-friendly row shape carried by newer tools' `data.rows`. */
+interface GenericRow {
+  label: string;
+  value: string;
+}
+
+/**
+ * Extract a render-friendly `rows: Array<{label,value}>` from an arbitrary tool
+ * `data` payload (server-only types like Phase P2 read tools include it). Returns
+ * null when the shape isn't present so the caller falls back to textSummary.
+ */
+function extractGenericRows(data: unknown): GenericRow[] | null {
+  if (!data || typeof data !== "object") return null;
+  const rows = (data as { rows?: unknown }).rows;
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const ok = rows.every(
+    (r) => r && typeof r === "object" && typeof (r as any).label === "string" && typeof (r as any).value === "string",
+  );
+  return ok ? (rows as GenericRow[]) : null;
+}
+
 // Tool result types that have a dedicated card body below. Any other type
 // (server-only types) falls back to textSummary.
 const KNOWN_CARD_TYPES = new Set<string>([
@@ -297,13 +318,19 @@ export function AIToolResultCard({ toolResult }: Props) {
           <InsightTextBody textSummary={toolResult.textSummary} />
         )}
 
-      {/* Generic fallback: render textSummary for any type without a dedicated
-          card body. */}
+      {/* Generic fallback: for any type without a dedicated card body, render a
+          render-friendly `data.rows` (array of {label,value}) as a titled list
+          when present; otherwise fall back to textSummary. Newer tools (e.g.
+          Phase P2 work_order_list / alert_list / spec_limits / recipe_list)
+          include a `rows` shape so they display cleanly without bespoke cards. */}
       {!KNOWN_CARD_TYPES.has(toolResult.type) &&
         toolResult.note !== "DB_UNAVAILABLE" &&
-        toolResult.note !== "NOT_FOUND" && (
+        toolResult.note !== "NOT_FOUND" &&
+        (extractGenericRows(toolResult.data as unknown) ? (
+          <GenericRowsBody rows={extractGenericRows(toolResult.data as unknown)!} textSummary={toolResult.textSummary} />
+        ) : (
           <div className="whitespace-pre-line text-foreground/90">{toolResult.textSummary}</div>
-        )}
+        ))}
     </div>
   );
 }
@@ -732,6 +759,24 @@ function InsightTextBody({ textSummary }: { textSummary: string }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ---- generic fallback: titled label/value list (Phase P2 read tools etc.) ----
+function GenericRowsBody({ rows, textSummary }: { rows: GenericRow[]; textSummary: string }) {
+  return (
+    <div className="space-y-1 max-h-56 overflow-y-auto">
+      {rows.slice(0, 20).map((r, i) => (
+        <div key={i} className="flex items-start justify-between gap-2 text-[11px]">
+          <span className="font-mono text-muted-foreground truncate shrink-0 max-w-[45%]">{r.label}</span>
+          <span className="text-right text-foreground/90 break-words">{r.value}</span>
+        </div>
+      ))}
+      {rows.length > 20 && (
+        <div className="text-[10px] text-muted-foreground italic">… +{rows.length - 20} dòng nữa</div>
+      )}
+      {rows.length === 0 && <div className="whitespace-pre-line text-foreground/90">{textSummary}</div>}
     </div>
   );
 }

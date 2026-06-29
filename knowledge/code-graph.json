@@ -1,5 +1,17 @@
 [
   {
+    "from": "server/aiABTesting.canary.test.ts",
+    "to": "../server/db/aiAdvanced"
+  },
+  {
+    "from": "server/aiABTesting.canary.test.ts",
+    "to": "../server/services/aiInferenceEngine"
+  },
+  {
+    "from": "server/aiABTesting.canary.test.ts",
+    "to": "../server/services/aiABTesting"
+  },
+  {
     "from": "server/aiInspectionAnalytics.test.ts",
     "to": "../server/services/aiInspectionAnalytics"
   },
@@ -12,12 +24,96 @@
     "to": "../server/db/connection"
   },
   {
+    "from": "server/aiQualityGateCanary.test.ts",
+    "to": "../server/db/connection"
+  },
+  {
+    "from": "server/aiQualityGateCanary.test.ts",
+    "to": "../server/services/aiInferenceEngine"
+  },
+  {
+    "from": "server/aiQualityGateCanary.test.ts",
+    "to": "../drizzle/schema"
+  },
+  {
+    "from": "server/aiQualityGateCanary.test.ts",
+    "to": "../server/services/aiQualityGate"
+  },
+  {
     "from": "server/aiReportGenerator.test.ts",
     "to": "../server/services/aiReportGenerator"
   },
   {
     "from": "server/alert.test.ts",
     "to": "./db"
+  },
+  {
+    "from": "server/api/v1/apiV1.test.ts",
+    "to": "./router"
+  },
+  {
+    "from": "server/api/v1/auth.ts",
+    "to": "../../db"
+  },
+  {
+    "from": "server/api/v1/auth.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/api/v1/auth.ts",
+    "to": "../../_core/masterKey"
+  },
+  {
+    "from": "server/api/v1/auth.ts",
+    "to": "../../db"
+  },
+  {
+    "from": "server/api/v1/auth.ts",
+    "to": "./envelope"
+  },
+  {
+    "from": "server/api/v1/auth.ts",
+    "to": "./scopes"
+  },
+  {
+    "from": "server/api/v1/openapi.ts",
+    "to": "./scopes"
+  },
+  {
+    "from": "server/api/v1/openapi.ts",
+    "to": "./webhookBridge"
+  },
+  {
+    "from": "server/api/v1/router.ts",
+    "to": "./scopes"
+  },
+  {
+    "from": "server/api/v1/router.ts",
+    "to": "./auth"
+  },
+  {
+    "from": "server/api/v1/router.ts",
+    "to": "./envelope"
+  },
+  {
+    "from": "server/api/v1/router.ts",
+    "to": "./openapi"
+  },
+  {
+    "from": "server/api/v1/router.ts",
+    "to": "./webhookBridge"
+  },
+  {
+    "from": "server/api/v1/router.ts",
+    "to": "../../services/equipment/capabilityModel"
+  },
+  {
+    "from": "server/api/v1/router.ts",
+    "to": "../../services/equipment/equipmentAdapter"
+  },
+  {
+    "from": "server/api/v1/webhookBridge.ts",
+    "to": "../../_core/eventBus"
   },
   {
     "from": "server/api.test.ts",
@@ -52,6 +148,22 @@
     "to": "./services/cacheService"
   },
   {
+    "from": "server/componentInstallationService.g2_4.test.ts",
+    "to": "./utils/genealogyChain"
+  },
+  {
+    "from": "server/componentInstallationService.g2_4.test.ts",
+    "to": "./services/componentInstallationService"
+  },
+  {
+    "from": "server/componentInstallationService.g2_4.test.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/contracts/machineDataContract.test.ts",
+    "to": "./machineDataContract"
+  },
+  {
     "from": "server/correctResult.test.ts",
     "to": "./routers"
   },
@@ -76,6 +188,22 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/db/aiAnomaly.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/aiAnomaly.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/aiSegmentation.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/aiSegmentation.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
     "from": "server/db/aiSpecialist.security.test.ts",
     "to": "../db/connection"
   },
@@ -92,6 +220,10 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/db/aiThresholdTune.ts",
+    "to": "./connection"
+  },
+  {
     "from": "server/db/alerts.ts",
     "to": "./connection"
   },
@@ -110,6 +242,18 @@
   {
     "from": "server/db/auth.ts",
     "to": "../_core/env"
+  },
+  {
+    "from": "server/db/bom.g2_4.test.ts",
+    "to": "./bom"
+  },
+  {
+    "from": "server/db/bom.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/bom.ts",
+    "to": "../../drizzle/schema"
   },
   {
     "from": "server/db/connection.ts",
@@ -122,6 +266,14 @@
   {
     "from": "server/db/dashboard.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/energy.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/energy.ts",
+    "to": "../../drizzle/schema/g3"
   },
   {
     "from": "server/db/hierarchy.ts",
@@ -212,6 +364,18 @@
     "to": "./aiSpecialist"
   },
   {
+    "from": "server/db/index.ts",
+    "to": "./processResult"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./bom"
+  },
+  {
+    "from": "server/db/index.ts",
+    "to": "./energy"
+  },
+  {
     "from": "server/db/inspection.ts",
     "to": "./connection"
   },
@@ -248,11 +412,31 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/db/lineBalance.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/lineBalance.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
     "from": "server/db/machine.ts",
     "to": "./connection"
   },
   {
     "from": "server/db/machine.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/machineRecipe.test.ts",
+    "to": "./machineRecipe"
+  },
+  {
+    "from": "server/db/machineRecipe.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/machineRecipe.ts",
     "to": "../../drizzle/schema"
   },
   {
@@ -264,12 +448,32 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/db/otTelemetry.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/otTelemetry.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/processResult.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/processResult.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
     "from": "server/db/product.ts",
     "to": "./connection"
   },
   {
     "from": "server/db/product.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/product.ts",
+    "to": "../../drizzle/schema/inspection"
   },
   {
     "from": "server/db/production.ts",
@@ -306,6 +510,78 @@
   {
     "from": "server/db/system.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/timescale.ts",
+    "to": "../../drizzle/schema/g3"
+  },
+  {
+    "from": "server/db/twin.ts",
+    "to": "./connection"
+  },
+  {
+    "from": "server/db/twin.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/db/__tests__/tenantContext.test.ts",
+    "to": "../../_core/accessControl"
+  },
+  {
+    "from": "server/db/__tests__/tenantContext.test.ts",
+    "to": "../tenantContext"
+  },
+  {
+    "from": "server/edgeDeployment.test.ts",
+    "to": "../server/db/aiAdvanced"
+  },
+  {
+    "from": "server/edgeDeployment.test.ts",
+    "to": "../server/db/hierarchy"
+  },
+  {
+    "from": "server/edgeDeployment.test.ts",
+    "to": "../server/db/connection"
+  },
+  {
+    "from": "server/edgeDeployment.test.ts",
+    "to": "../server/storage"
+  },
+  {
+    "from": "server/edgeDeployment.test.ts",
+    "to": "../server/services/aiEdgeEnhanced"
+  },
+  {
+    "from": "server/edgeDownloadProxy.test.ts",
+    "to": "../server/db"
+  },
+  {
+    "from": "server/edgeDownloadProxy.test.ts",
+    "to": "../server/db/aiAdvanced"
+  },
+  {
+    "from": "server/edgeDownloadProxy.test.ts",
+    "to": "../server/storage"
+  },
+  {
+    "from": "server/edgeDownloadProxy.test.ts",
+    "to": "../server/routes/edgeDownload"
+  },
+  {
+    "from": "server/edgeMachineApi.test.ts",
+    "to": "./routers"
+  },
+  {
+    "from": "server/edgeMachineApi.test.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/edgeMachineApi.test.ts",
+    "to": "./db/aiAdvanced"
+  },
+  {
+    "from": "server/edgeMachineApi.test.ts",
+    "to": "./_core/context"
   },
   {
     "from": "server/emptystate-errorboundary-seed.test.ts",
@@ -376,6 +652,14 @@
     "to": "./db"
   },
   {
+    "from": "server/machineTypeEnum.f2.test.ts",
+    "to": "../drizzle/schema/enums"
+  },
+  {
+    "from": "server/machineTypeEnum.f2.test.ts",
+    "to": "./constants/machineTypes"
+  },
+  {
     "from": "server/manualMapping.test.ts",
     "to": "./db"
   },
@@ -401,6 +685,26 @@
   },
   {
     "from": "server/ngTrend.filter.test.ts",
+    "to": "./db"
+  },
+  {
+    "from": "server/openapi/externalApiSpec.test.ts",
+    "to": "./externalApiSpec"
+  },
+  {
+    "from": "server/processResultService.f2.test.ts",
+    "to": "./constants/machineTypes"
+  },
+  {
+    "from": "server/processResultService.f2.test.ts",
+    "to": "./utils/genealogyChain"
+  },
+  {
+    "from": "server/processResultService.f2.test.ts",
+    "to": "./services/processResultService"
+  },
+  {
+    "from": "server/processResultService.f2.test.ts",
     "to": "./db"
   },
   {
@@ -464,6 +768,38 @@
     "to": "../services/aiEdgeDeployment"
   },
   {
+    "from": "server/routers/aiAdvancedVisionRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiAdvancedVisionRouter.ts",
+    "to": "../services/aiAdvancedVision"
+  },
+  {
+    "from": "server/routers/aiAdvancedVisionRouter.ts",
+    "to": "../services/aiExplainability"
+  },
+  {
+    "from": "server/routers/aiAdvancedVisionRouter.ts",
+    "to": "../utils/safeImagePath"
+  },
+  {
+    "from": "server/routers/aiAgentRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiAgentRouter.ts",
+    "to": "../services/aiAgentOrchestrator"
+  },
+  {
+    "from": "server/routers/aiAgentRouter.ts",
+    "to": "../services/aiPlaybookEngine"
+  },
+  {
+    "from": "server/routers/aiAgentRouter.ts",
+    "to": "../services/aiLocalTools"
+  },
+  {
     "from": "server/routers/aiAnalysisHubRouter.ts",
     "to": "../_core/trpc"
   },
@@ -488,6 +824,38 @@
     "to": "../utils/safeImagePath"
   },
   {
+    "from": "server/routers/aiAnomalyRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiAnomalyRouter.ts",
+    "to": "../services/aiAnomalyDetection"
+  },
+  {
+    "from": "server/routers/aiAnomalyRouter.ts",
+    "to": "../db/aiAnomaly"
+  },
+  {
+    "from": "server/routers/aiAnomalyRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/aiCalibrationRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiCalibrationRouter.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/aiCalibrationRouter.ts",
+    "to": "../services/aiCalibration"
+  },
+  {
+    "from": "server/routers/aiCalibrationRouter.ts",
+    "to": "../db"
+  },
+  {
     "from": "server/routers/aiChatRouter.ts",
     "to": "../_core/trpc"
   },
@@ -504,12 +872,44 @@
     "to": "../../drizzle/schema/ai"
   },
   {
-    "from": "server/routers/aiEdgeEnhancedRouter.ts",
+    "from": "server/routers/aiCopilotRouter.ts",
     "to": "../_core/trpc"
   },
   {
-    "from": "server/routers/aiEdgeEnhancedRouter.ts",
-    "to": "../services/aiEdgeEnhanced"
+    "from": "server/routers/aiCopilotRouter.ts",
+    "to": "../services/aiCopilotActions"
+  },
+  {
+    "from": "server/routers/aiCopilotRouter.ts",
+    "to": "../services/aiLocalTools"
+  },
+  {
+    "from": "server/routers/aiEvalRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiEvalRouter.ts",
+    "to": "../services/aiDatasetBuilder"
+  },
+  {
+    "from": "server/routers/aiEvalRouter.ts",
+    "to": "../services/aiEvalHarness"
+  },
+  {
+    "from": "server/routers/aiEvalRouter.ts",
+    "to": "../services/aiActiveLearningAuto"
+  },
+  {
+    "from": "server/routers/aiEvalRouter.ts",
+    "to": "../services/aiTrainingPipeline"
+  },
+  {
+    "from": "server/routers/aiEvalRouter.ts",
+    "to": "../services/aiModelCard"
+  },
+  {
+    "from": "server/routers/aiEvalRouter.ts",
+    "to": "../services/aiDriftMonitor"
   },
   {
     "from": "server/routers/aiFeedbackRouter.ts",
@@ -545,7 +945,31 @@
   },
   {
     "from": "server/routers/aiImageSearchRouter.ts",
+    "to": "../utils/safeImagePath"
+  },
+  {
+    "from": "server/routers/aiImageSearchRouter.ts",
     "to": "../services/aiImageEmbedding"
+  },
+  {
+    "from": "server/routers/aiInboxRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiInboxRouter.ts",
+    "to": "../services/aiActionInbox"
+  },
+  {
+    "from": "server/routers/aiInsightRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiInsightRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/aiInsightRouter.ts",
+    "to": "../../drizzle/schema"
   },
   {
     "from": "server/routers/aiInspectionAnalyticsRouter.ts",
@@ -554,6 +978,18 @@
   {
     "from": "server/routers/aiInspectionAnalyticsRouter.ts",
     "to": "../services/aiInspectionAnalytics"
+  },
+  {
+    "from": "server/routers/aiInspectionAnalyticsRouter.ts",
+    "to": "../services/cacheService"
+  },
+  {
+    "from": "server/routers/aiLocalKbRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiLocalKbRouter.ts",
+    "to": "../logger"
   },
   {
     "from": "server/routers/aiLocalTrainingRouter.ts",
@@ -592,6 +1028,34 @@
     "to": "../services/aiInferenceEngine"
   },
   {
+    "from": "server/routers/aiOrchestrationRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiOrchestrationRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/aiOrchestrationRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/aiOrchestrationRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/aiOrchestrationRouter.ts",
+    "to": "../services/orchestration/aiOrchestrationAdvisor"
+  },
+  {
+    "from": "server/routers/aiOrchestrationRouter.ts",
+    "to": "../services/orchestration/foe/workflowModel"
+  },
+  {
+    "from": "server/routers/aiOrchestrationRouter.ts",
+    "to": "../services/aiCausalGraph"
+  },
+  {
     "from": "server/routers/aiQualityGateRouter.ts",
     "to": "../_core/trpc"
   },
@@ -612,6 +1076,26 @@
     "to": "../services/aiQualityGate"
   },
   {
+    "from": "server/routers/aiQualityGateRouter.ts",
+    "to": "../services/aiABTesting"
+  },
+  {
+    "from": "server/routers/aiRcaCopilotRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiRcaCopilotRouter.ts",
+    "to": "../services/aiRcaCopilot"
+  },
+  {
+    "from": "server/routers/aiRcaCopilotRouter.ts",
+    "to": "../services/aiLocalTools"
+  },
+  {
+    "from": "server/routers/aiRcaCopilotRouter.ts",
+    "to": "../services/aiCopilotActions"
+  },
+  {
     "from": "server/routers/aiReportRouter.ts",
     "to": "../_core/trpc"
   },
@@ -625,6 +1109,10 @@
   },
   {
     "from": "server/routers/aiRouters.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/aiRouters.ts",
     "to": "../db"
   },
   {
@@ -634,6 +1122,26 @@
   {
     "from": "server/routers/aiRouters.ts",
     "to": "../services/aiInsightsService"
+  },
+  {
+    "from": "server/routers/aiSegmentationRouter.test.ts",
+    "to": "./aiSegmentationRouter"
+  },
+  {
+    "from": "server/routers/aiSegmentationRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiSegmentationRouter.ts",
+    "to": "../db/aiSegmentation"
+  },
+  {
+    "from": "server/routers/aiSegmentationRouter.ts",
+    "to": "../services/aiMetrology"
+  },
+  {
+    "from": "server/routers/aiSegmentationRouter.ts",
+    "to": "../services/aiDatasetBuilder"
   },
   {
     "from": "server/routers/aiSettingsRouter.ts",
@@ -650,6 +1158,22 @@
   {
     "from": "server/routers/aiSettingsRouter.ts",
     "to": "../../drizzle/schema/ai"
+  },
+  {
+    "from": "server/routers/aiSettingsRouter.ts",
+    "to": "../services/aiImageEmbedding"
+  },
+  {
+    "from": "server/routers/aiSetupAdvisorRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiSetupAdvisorRouter.ts",
+    "to": "../constants/machineTypes"
+  },
+  {
+    "from": "server/routers/aiSetupAdvisorRouter.ts",
+    "to": "../services/aiSetupAdvisor"
   },
   {
     "from": "server/routers/aiSmartAlertRoutingRouter.ts",
@@ -672,6 +1196,26 @@
     "to": "../db/aiSpecialist"
   },
   {
+    "from": "server/routers/aiThresholdAdvisorRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiThresholdAdvisorRouter.ts",
+    "to": "../services/aiThresholdAdvisor"
+  },
+  {
+    "from": "server/routers/aiThresholdAdvisorRouter.ts",
+    "to": "../services/aiCopilotActions"
+  },
+  {
+    "from": "server/routers/aiThresholdAdvisorRouter.ts",
+    "to": "../services/aiLocalTools/toolRegistry"
+  },
+  {
+    "from": "server/routers/aiThresholdAdvisorRouter.ts",
+    "to": "../services/aiLocalTools"
+  },
+  {
     "from": "server/routers/aiTimeSeriesRouter.ts",
     "to": "../_core/trpc"
   },
@@ -686,6 +1230,14 @@
   {
     "from": "server/routers/aiTimeSeriesRouter.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/aiTodayRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/aiTodayRouter.ts",
+    "to": "../services/aiTodayBriefing"
   },
   {
     "from": "server/routers/aiVisionLanguageRouter.ts",
@@ -710,6 +1262,34 @@
   {
     "from": "server/routers/alertRouters.ts",
     "to": "../db"
+  },
+  {
+    "from": "server/routers/andonRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/andonRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/andonRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/andonRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/andonRouter.ts",
+    "to": "../services/andon/andonService"
+  },
+  {
+    "from": "server/routers/andonRouter.ts",
+    "to": "../services/aiIssueClassifier"
+  },
+  {
+    "from": "server/routers/andonRouter.ts",
+    "to": "../db/hierarchy"
   },
   {
     "from": "server/routers/annotationComparisonRouter.ts",
@@ -760,6 +1340,42 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/routers/apiKeyRouter.test.ts",
+    "to": "./__otFakeDb"
+  },
+  {
+    "from": "server/routers/apiKeyRouter.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/apiKeyRouter.test.ts",
+    "to": "./apiKeyRouter"
+  },
+  {
+    "from": "server/routers/apiKeyRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/apiKeyRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/apiKeyRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/apiKeyRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/apiKeyRouter.ts",
+    "to": "../api/v1/auth"
+  },
+  {
+    "from": "server/routers/apiKeyRouter.ts",
+    "to": "../api/v1/scopes"
+  },
+  {
     "from": "server/routers/auditRouter.ts",
     "to": "../_core/trpc"
   },
@@ -781,6 +1397,70 @@
   },
   {
     "from": "server/routers/backupRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/backupRouter.ts",
+    "to": "../services/backupService"
+  },
+  {
+    "from": "server/routers/backupRouter.ts",
+    "to": "../services/backupReplicationService"
+  },
+  {
+    "from": "server/routers/bomRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/bomRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/bomRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/bomRouter.ts",
+    "to": "../services/componentInstallationService"
+  },
+  {
+    "from": "server/routers/causalGraphRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/causalGraphRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/causalGraphRouter.ts",
+    "to": "../services/aiCausalGraph"
+  },
+  {
+    "from": "server/routers/commandLogRouter.test.ts",
+    "to": "./__otFakeDb"
+  },
+  {
+    "from": "server/routers/commandLogRouter.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/commandLogRouter.test.ts",
+    "to": "./commandLogRouter"
+  },
+  {
+    "from": "server/routers/commandLogRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/commandLogRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/commandLogRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/commandLogRouter.ts",
     "to": "../../drizzle/schema"
   },
   {
@@ -844,6 +1524,10 @@
     "to": "../functions/cachedStatistics"
   },
   {
+    "from": "server/routers/dataRouters.ts",
+    "to": "../constants/machineTypes"
+  },
+  {
     "from": "server/routers/defectHeatmapRouter.ts",
     "to": "../_core/trpc"
   },
@@ -854,6 +1538,158 @@
   {
     "from": "server/routers/defectHeatmapRouter.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/deviceAdapterRouter.test.ts",
+    "to": "./__otFakeDb"
+  },
+  {
+    "from": "server/routers/deviceAdapterRouter.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/deviceAdapterRouter.test.ts",
+    "to": "./deviceAdapterRouter"
+  },
+  {
+    "from": "server/routers/deviceAdapterRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/deviceAdapterRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/deviceAdapterRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/deviceAdapterRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/deviceAdapterRouter.ts",
+    "to": "../services/ot/driverRegistry"
+  },
+  {
+    "from": "server/routers/deviceAdapterRouter.ts",
+    "to": "../services/ot/otDriver"
+  },
+  {
+    "from": "server/routers/digitalTwinRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/digitalTwinRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/digitalTwinRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/digitalTwinRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/digitalTwinRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/digitalTwinRouter.ts",
+    "to": "../services/digitalTwinService"
+  },
+  {
+    "from": "server/routers/digitalTwinRouter.ts",
+    "to": "../db/twin"
+  },
+  {
+    "from": "server/routers/digitalTwinRouter.ts",
+    "to": "../db/lineBalance"
+  },
+  {
+    "from": "server/routers/digitalTwinRouter.ts",
+    "to": "../db/layout"
+  },
+  {
+    "from": "server/routers/digitalTwinRouter.ts",
+    "to": "../services/aiTimeSeriesEngine"
+  },
+  {
+    "from": "server/routers/digitalTwinRouter.twin-g27.test.ts",
+    "to": "./digitalTwinRouter"
+  },
+  {
+    "from": "server/routers/edgeDeploymentRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/edgeDeploymentRouter.ts",
+    "to": "../db/aiAdvanced"
+  },
+  {
+    "from": "server/routers/edgeDeploymentRouter.ts",
+    "to": "../db/hierarchy"
+  },
+  {
+    "from": "server/routers/edgeDeploymentRouter.ts",
+    "to": "../services/aiEdgeEnhanced"
+  },
+  {
+    "from": "server/routers/edgeDeploymentRouter.ts",
+    "to": "../services/mqttService"
+  },
+  {
+    "from": "server/routers/edgeDeploymentRouter.ts",
+    "to": "../_core/socket"
+  },
+  {
+    "from": "server/routers/edgeRuntimeDelete.test.ts",
+    "to": "./__otFakeDb"
+  },
+  {
+    "from": "server/routers/edgeRuntimeDelete.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/edgeRuntimeDelete.test.ts",
+    "to": "./edgeRuntimeRouter"
+  },
+  {
+    "from": "server/routers/edgeRuntimeRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/edgeRuntimeRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/edgeRuntimeRouter.ts",
+    "to": "../services/edge/edgeCoordinator"
+  },
+  {
+    "from": "server/routers/energyRouter.test.ts",
+    "to": "./energyRouter"
+  },
+  {
+    "from": "server/routers/energyRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/energyRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/energyRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/energyRouter.ts",
+    "to": "../db/timescale"
+  },
+  {
+    "from": "server/routers/energyRouter.ts",
+    "to": "../services/energyAnalyticsService"
   },
   {
     "from": "server/routers/enhancedAuditRouter.ts",
@@ -876,6 +1712,58 @@
     "to": "../services/auditTrailService"
   },
   {
+    "from": "server/routers/equipmentRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/equipmentRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/equipmentRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/equipmentRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/equipmentRouter.ts",
+    "to": "../services/equipment/capabilityModel"
+  },
+  {
+    "from": "server/routers/equipmentRouter.ts",
+    "to": "../services/equipment/equipmentAdapter"
+  },
+  {
+    "from": "server/routers/equipmentRouter.ts",
+    "to": "../services/equipment/packml"
+  },
+  {
+    "from": "server/routers/executiveReportRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/executiveReportRouter.ts",
+    "to": "../services/aiExecutiveReport"
+  },
+  {
+    "from": "server/routers/executiveReportRouter.ts",
+    "to": "../services/reportScheduler"
+  },
+  {
+    "from": "server/routers/genealogyRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/genealogyRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/genealogyRouter.ts",
+    "to": "../utils/genealogyChain"
+  },
+  {
     "from": "server/routers/hierarchyRouters.ts",
     "to": "../_core/trpc"
   },
@@ -890,6 +1778,10 @@
   {
     "from": "server/routers/hierarchyRouters.ts",
     "to": "../storage"
+  },
+  {
+    "from": "server/routers/hierarchyRouters.ts",
+    "to": "../constants/machineTypes"
   },
   {
     "from": "server/routers/hierarchyTreeRouter.ts",
@@ -910,6 +1802,54 @@
   {
     "from": "server/routers/inspectionRouters.ts",
     "to": "../_core/llm"
+  },
+  {
+    "from": "server/routers/inspectionVariantRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/inspectionVariantRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/inspectionVariantRouter.ts",
+    "to": "../utils/inspectionVariant"
+  },
+  {
+    "from": "server/routers/interlockRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/interlockRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/interlockRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/interlockRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/interlockRouter.ts",
+    "to": "../services/interlock/ruleEvaluator"
+  },
+  {
+    "from": "server/routers/ipcAcceptanceRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/ipcAcceptanceRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/ipcAcceptanceRouter.ts",
+    "to": "../utils/ipcAcceptance"
+  },
+  {
+    "from": "server/routers/kbVectorRouter.ts",
+    "to": "../_core/trpc"
   },
   {
     "from": "server/routers/layoutRouters.ts",
@@ -973,7 +1913,159 @@
   },
   {
     "from": "server/routers/machineApiRouters.ts",
+    "to": "../db/aiAdvanced"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../services/aiEdgeEnhanced"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
     "to": "./_shared"
+  },
+  {
+    "from": "server/routers/machineApiRouters.ts",
+    "to": "../lib/measurementGeometry"
+  },
+  {
+    "from": "server/routers/machineContractRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/machineContractRouter.ts",
+    "to": "../contracts/machineDataContract"
+  },
+  {
+    "from": "server/routers/machineRecipeRouter.test.ts",
+    "to": "./__otFakeDb"
+  },
+  {
+    "from": "server/routers/machineRecipeRouter.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/machineRecipeRouter.test.ts",
+    "to": "./machineRecipeRouter"
+  },
+  {
+    "from": "server/routers/machineRecipeRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/machineRecipeRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/machineRecipeRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/machineRecipeRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/machineRecipeRouter.ts",
+    "to": "../db/machineRecipe"
+  },
+  {
+    "from": "server/routers/maintenanceRouter.test.ts",
+    "to": "./__otFakeDb"
+  },
+  {
+    "from": "server/routers/maintenanceRouter.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/maintenanceRouter.test.ts",
+    "to": "./maintenanceRouter"
+  },
+  {
+    "from": "server/routers/maintenanceRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/maintenanceRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/maintenanceRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/maintenanceRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/masterDataRouter.test.ts",
+    "to": "./__otFakeDb"
+  },
+  {
+    "from": "server/routers/masterDataRouter.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/masterDataRouter.test.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/masterDataRouter.test.ts",
+    "to": "./masterDataRouter"
+  },
+  {
+    "from": "server/routers/masterDataRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/masterDataRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/masterDataRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/masterDataRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/mesControlTowerRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/mesControlTowerRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/mesControlTowerRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/monteCarloFlowRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/monteCarloFlowRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/monteCarloFlowRouter.ts",
+    "to": "../utils/monteCarloFlow"
+  },
+  {
+    "from": "server/routers/monteCarloFlowRouter.ts",
+    "to": "../utils/stationTriangulation"
+  },
+  {
+    "from": "server/routers/mpVariantSubformRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/mpVariantSubformRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/mpVariantSubformRouter.ts",
+    "to": "../utils/mpVariantSubform"
   },
   {
     "from": "server/routers/mqttBulletinRouter.ts",
@@ -1048,6 +2140,14 @@
     "to": "../storage"
   },
   {
+    "from": "server/routers/mtconnectRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/mtconnectRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
     "from": "server/routers/ngRateThresholdRouter.ts",
     "to": "../_core/trpc"
   },
@@ -1074,6 +2174,34 @@
   {
     "from": "server/routers/notificationRouters.ts",
     "to": "./_shared"
+  },
+  {
+    "from": "server/routers/orchestrationRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/orchestrationRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/orchestrationRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/orchestrationRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/orchestrationRouter.ts",
+    "to": "../services/orchestration/foe/foeEngine"
+  },
+  {
+    "from": "server/routers/orchestrationRouter.ts",
+    "to": "../services/orchestration/foe/foeSimulator"
+  },
+  {
+    "from": "server/routers/orchestrationRouter.ts",
+    "to": "../services/orchestration/foe/workflowModel"
   },
   {
     "from": "server/routers/paretoAnalysisRouter.ts",
@@ -1104,6 +2232,22 @@
     "to": "../services/pdfTemplateService"
   },
   {
+    "from": "server/routers/permissions.energy.test.ts",
+    "to": "./permissionsRouter"
+  },
+  {
+    "from": "server/routers/permissions.interlock.test.ts",
+    "to": "./permissionsRouter"
+  },
+  {
+    "from": "server/routers/permissions.machineControl.test.ts",
+    "to": "./permissionsRouter"
+  },
+  {
+    "from": "server/routers/permissions.mesBom.test.ts",
+    "to": "./permissionsRouter"
+  },
+  {
     "from": "server/routers/permissionsRouter.ts",
     "to": "../_core/trpc"
   },
@@ -1142,6 +2286,38 @@
   {
     "from": "server/routers/powerpointRouter.ts",
     "to": "../services/powerpointService"
+  },
+  {
+    "from": "server/routers/predictiveMaintenanceRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/predictiveMaintenanceRouter.ts",
+    "to": "./_shared"
+  },
+  {
+    "from": "server/routers/predictiveMaintenanceRouter.ts",
+    "to": "../services/predictiveMaintenanceService"
+  },
+  {
+    "from": "server/routers/predictiveMaintenanceRouter.ts",
+    "to": "../db/hierarchy"
+  },
+  {
+    "from": "server/routers/processResultRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/processResultRouter.ts",
+    "to": "../services/processResultService"
+  },
+  {
+    "from": "server/routers/processResultRouter.ts",
+    "to": "../db/processResult"
+  },
+  {
+    "from": "server/routers/processResultRouter.ts",
+    "to": "../constants/machineTypes"
   },
   {
     "from": "server/routers/processRouter.test.ts",
@@ -1188,6 +2364,18 @@
     "to": "../db"
   },
   {
+    "from": "server/routers/productionSessionRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/productionSessionRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/productionSessionRouter.ts",
+    "to": "../../drizzle/schema/production"
+  },
+  {
     "from": "server/routers/productRouters.ts",
     "to": "../_core/trpc"
   },
@@ -1204,8 +2392,64 @@
     "to": "../storage"
   },
   {
+    "from": "server/routers/productRouters.ts",
+    "to": "../utils/spcRules"
+  },
+  {
+    "from": "server/routers/productRouters.ts",
+    "to": "../utils/spcAlertSink"
+  },
+  {
+    "from": "server/routers/productRouters.ts",
+    "to": "../utils/msaAdvanced"
+  },
+  {
+    "from": "server/routers/productRouters.ts",
+    "to": "../utils/instrumentGate"
+  },
+  {
+    "from": "server/routers/productRouters.ts",
+    "to": "../utils/cadParsers"
+  },
+  {
+    "from": "server/routers/productRouters.ts",
+    "to": "../lib/measurementGeometry"
+  },
+  {
+    "from": "server/routers/programmingRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/programmingRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/programmingRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/programmingRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/programmingRouter.ts",
+    "to": "../services/programming/programmingAdapter"
+  },
+  {
+    "from": "server/routers/programmingRouter.ts",
+    "to": "../services/programming/programmingService"
+  },
+  {
+    "from": "server/routers/programmingRouter.ts",
+    "to": "../services/programming/aiProgrammingCopilot"
+  },
+  {
     "from": "server/routers/publicProductApiRouter.ts",
     "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/publicProductApiRouter.ts",
+    "to": "../_core/masterKey"
   },
   {
     "from": "server/routers/publicProductApiRouter.ts",
@@ -1240,6 +2484,26 @@
     "to": "../../drizzle/schema/spc"
   },
   {
+    "from": "server/routers/realtimeReportRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/realtimeReportRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/realtimeReportRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/realtimeReportRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/realtimeReportRouter.ts",
+    "to": "../services/realtimeReportService"
+  },
+  {
     "from": "server/routers/reportBuilderRouter.ts",
     "to": "../_core/trpc"
   },
@@ -1268,6 +2532,38 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/routers/robotRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/robotRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/robotRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/rootCauseEdit.test.ts",
+    "to": "./aiRouters"
+  },
+  {
+    "from": "server/routers/secsGemRouter.ts",
+    "to": "./routers/secsGemRouter"
+  },
+  {
+    "from": "server/routers/secsGemRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/secsGemRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/secsGemRouter.ts",
+    "to": "../services/secsgem"
+  },
+  {
     "from": "server/routers/sessionRouter.ts",
     "to": "../_core/trpc"
   },
@@ -1296,6 +2592,10 @@
     "to": "../db"
   },
   {
+    "from": "server/routers/spcAdvancedRouter.ts",
+    "to": "../utils/spc"
+  },
+  {
     "from": "server/routers/spcAnalysisRouter.test.ts",
     "to": "../db"
   },
@@ -1306,6 +2606,10 @@
   {
     "from": "server/routers/spcAnalysisRouter.ts",
     "to": "../db"
+  },
+  {
+    "from": "server/routers/spcAnalysisRouter.ts",
+    "to": "../utils/spc"
   },
   {
     "from": "server/routers/stationAnalysisRouter.ts",
@@ -1322,6 +2626,18 @@
   {
     "from": "server/routers/stationAnalysisRouter.ts",
     "to": "../utils/spc"
+  },
+  {
+    "from": "server/routers/stationTriangulationRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/stationTriangulationRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/stationTriangulationRouter.ts",
+    "to": "../utils/stationTriangulation"
   },
   {
     "from": "server/routers/statusTemplateRouters.ts",
@@ -1356,6 +2672,46 @@
     "to": "../services/reportScheduler"
   },
   {
+    "from": "server/routers/thresholdApprovalRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/thresholdApprovalRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/thresholdApprovalRouter.ts",
+    "to": "../../drizzle/schema/product"
+  },
+  {
+    "from": "server/routers/thresholdSuggestionRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/thresholdSuggestionRouter.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/routers/thresholdSuggestionRouter.ts",
+    "to": "../utils/thresholdSuggestion"
+  },
+  {
+    "from": "server/routers/traceabilityRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/traceabilityRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/traceabilityRouter.ts",
+    "to": "../db/bom"
+  },
+  {
+    "from": "server/routers/traceabilityRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
     "from": "server/routers/trainingBatchCommentsRouter.ts",
     "to": "../_core/trpc"
   },
@@ -1392,6 +2748,38 @@
     "to": "../db"
   },
   {
+    "from": "server/routers/vda5050Router.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/vda5050Router.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/vda5050Router.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/vda5050Router.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/visionAdapterRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/visionAdapterRouter.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/routers/visionAdapterRouter.ts",
+    "to": "../services/vision"
+  },
+  {
+    "from": "server/routers/visionAdapterRouter.ts",
+    "to": "./machineApiRouters"
+  },
+  {
     "from": "server/routers/webhookRouter.ts",
     "to": "../_core/trpc"
   },
@@ -1402,6 +2790,22 @@
   {
     "from": "server/routers/webhookRouter.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/wipRouter.ts",
+    "to": "../_core/trpc"
+  },
+  {
+    "from": "server/routers/wipRouter.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/routers/wipRouter.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/routers/wipRouter.ts",
+    "to": "../services/dispatchingService"
   },
   {
     "from": "server/routers/_shared.ts",
@@ -1545,6 +2949,10 @@
   },
   {
     "from": "server/routers.ts",
+    "to": "./routers/productionSessionRouter"
+  },
+  {
+    "from": "server/routers.ts",
     "to": "./routers/statusTemplateRouters"
   },
   {
@@ -1577,6 +2985,42 @@
   },
   {
     "from": "server/routers.ts",
+    "to": "./routers/causalGraphRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/predictiveMaintenanceRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/mesControlTowerRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/maintenanceRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/digitalTwinRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/realtimeReportRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/machineContractRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/wipRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/traceabilityRouter"
+  },
+  {
+    "from": "server/routers.ts",
     "to": "./routers/pdfReportRouter"
   },
   {
@@ -1590,6 +3034,10 @@
   {
     "from": "server/routers.ts",
     "to": "./routers/reportBuilderRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/executiveReportRouter"
   },
   {
     "from": "server/routers.ts",
@@ -1618,6 +3066,50 @@
   {
     "from": "server/routers.ts",
     "to": "./routers/stationAnalysisRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/stationTriangulationRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/genealogyRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/processResultRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/bomRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/energyRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/thresholdSuggestionRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/thresholdApprovalRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/monteCarloFlowRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/inspectionVariantRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/mpVariantSubformRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/ipcAcceptanceRouter"
   },
   {
     "from": "server/routers.ts",
@@ -1669,11 +3161,15 @@
   },
   {
     "from": "server/routers.ts",
-    "to": "./routers/aiEdgeEnhancedRouter"
+    "to": "./routers/edgeDeploymentRouter"
   },
   {
     "from": "server/routers.ts",
     "to": "./routers/aiLocalTrainingRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiEvalRouter"
   },
   {
     "from": "server/routers.ts",
@@ -1697,7 +3193,143 @@
   },
   {
     "from": "server/routers.ts",
+    "to": "./routers/aiAdvancedVisionRouter"
+  },
+  {
+    "from": "server/routers.ts",
     "to": "./routers/aiSpecialistAgentRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiLocalKbRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiCopilotRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiRcaCopilotRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiThresholdAdvisorRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiSetupAdvisorRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiAgentRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiCalibrationRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiAnomalyRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiSegmentationRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/andonRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/interlockRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/deviceAdapterRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/visionAdapterRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/mtconnectRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/masterDataRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/equipmentRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/orchestrationRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiOrchestrationRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/edgeRuntimeRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/programmingRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/apiKeyRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/machineRecipeRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/commandLogRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/robotRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/secsGemRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/vda5050Router"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiInsightRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiInboxRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/aiTodayRouter"
+  },
+  {
+    "from": "server/routers.ts",
+    "to": "./routers/kbVectorRouter"
+  },
+  {
+    "from": "server/routes/aiLocalKnowledgeApi.ts",
+    "to": "../_core/sdk"
+  },
+  {
+    "from": "server/routes/aiLocalKnowledgeApi.ts",
+    "to": "../services/aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/routes/aiLocalKnowledgeApi.ts",
+    "to": "../services/aiLocalTools"
   },
   {
     "from": "server/routes/aiStreamingApi.ts",
@@ -1706,6 +3338,10 @@
   {
     "from": "server/routes/aiStreamingApi.ts",
     "to": "../services/aiGgufEngine"
+  },
+  {
+    "from": "server/routes/aiStreamingApi.ts",
+    "to": "../services/aiProviderRouter"
   },
   {
     "from": "server/scheduledReport.test.ts",
@@ -1722,6 +3358,26 @@
   {
     "from": "server/services/aiABTesting.ts",
     "to": "../db/ai"
+  },
+  {
+    "from": "server/services/aiABTesting.ts",
+    "to": "../../drizzle/schema/ai"
+  },
+  {
+    "from": "server/services/aiActionInbox.test.ts",
+    "to": "./aiActionInbox"
+  },
+  {
+    "from": "server/services/aiActionInbox.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiActionInbox.ts",
+    "to": "../db/auth"
+  },
+  {
+    "from": "server/services/aiActionInbox.ts",
+    "to": "../../drizzle/schema"
   },
   {
     "from": "server/services/aiActiveLearning.ts",
@@ -1748,6 +3404,118 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/services/aiActiveLearningAuto.test.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiActiveLearningAuto.test.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiActiveLearningAuto.test.ts",
+    "to": "./aiActiveLearningAuto"
+  },
+  {
+    "from": "server/services/aiActiveLearningAuto.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiActiveLearningAuto.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiActiveLearningAuto.ts",
+    "to": "./aiMetrics"
+  },
+  {
+    "from": "server/services/aiAdvancedVision.ts",
+    "to": "./aiProviderRouter"
+  },
+  {
+    "from": "server/services/aiAdvancedVision.ts",
+    "to": "./imageAlignment"
+  },
+  {
+    "from": "server/services/aiAgentOrchestrator.test.ts",
+    "to": "./aiAgentOrchestrator"
+  },
+  {
+    "from": "server/services/aiAgentOrchestrator.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiAgentOrchestrator.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiAgentOrchestrator.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiAgentOrchestrator.ts",
+    "to": "./aiLocalTools/toolRegistry"
+  },
+  {
+    "from": "server/services/aiAgentOrchestrator.ts",
+    "to": "./aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiAgentOrchestrator.ts",
+    "to": "./aiAgentPlanner"
+  },
+  {
+    "from": "server/services/aiAgentPlanner.test.ts",
+    "to": "./aiLocalTools/toolRegistry"
+  },
+  {
+    "from": "server/services/aiAgentPlanner.test.ts",
+    "to": "./aiAgentPlanner"
+  },
+  {
+    "from": "server/services/aiAgentPlanner.ts",
+    "to": "./aiLocalTools/toolRegistry"
+  },
+  {
+    "from": "server/services/aiAgentPlanner.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiAnomalyBankScheduler.test.ts",
+    "to": "./aiAnomalyBankScheduler"
+  },
+  {
+    "from": "server/services/aiAnomalyBankScheduler.ts",
+    "to": "../db/aiAnomaly"
+  },
+  {
+    "from": "server/services/aiAnomalyBankScheduler.ts",
+    "to": "./aiAnomalyDetection"
+  },
+  {
+    "from": "server/services/aiAnomalyDetection.test.ts",
+    "to": "./aiAnomalyDetection"
+  },
+  {
+    "from": "server/services/aiAnomalyDetection.test.ts",
+    "to": "./aiImageEmbedding"
+  },
+  {
+    "from": "server/services/aiAnomalyDetection.ts",
+    "to": "./aiImageEmbedding"
+  },
+  {
+    "from": "server/services/aiAnomalyDetection.ts",
+    "to": "../db/aiAnomaly"
+  },
+  {
+    "from": "server/services/aiAutoProposer.test.ts",
+    "to": "./aiAutoProposer"
+  },
+  {
+    "from": "server/services/aiAutoProposer.ts",
+    "to": "../_core/eventBus"
+  },
+  {
     "from": "server/services/aiBatchEngine.ts",
     "to": "./aiInferenceEngine"
   },
@@ -1760,6 +3528,26 @@
     "to": "../db/ai"
   },
   {
+    "from": "server/services/aiBatchRcaScheduler.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/aiBatchRcaScheduler.ts",
+    "to": "./aiInsightsService"
+  },
+  {
+    "from": "server/services/aiBatchRcaScheduler.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiCalibration.test.ts",
+    "to": "./aiCalibration"
+  },
+  {
+    "from": "server/services/aiCausalGraph.save.test.ts",
+    "to": "./aiCausalGraph"
+  },
+  {
     "from": "server/services/aiChatAssistant.ts",
     "to": "../db/connection"
   },
@@ -1770,6 +3558,82 @@
   {
     "from": "server/services/aiChatAssistant.ts",
     "to": "../../drizzle/schema/ai"
+  },
+  {
+    "from": "server/services/aiChatAssistant.ws-g3.test.ts",
+    "to": "./aiChatAssistant"
+  },
+  {
+    "from": "server/services/aiCopilotActions.test.ts",
+    "to": "./aiLocalTools/toolRegistry"
+  },
+  {
+    "from": "server/services/aiCopilotActions.test.ts",
+    "to": "./aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiCopilotActions.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiCopilotActions.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiCopilotActions.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/services/aiCopilotActions.ts",
+    "to": "./aiLocalTools/toolRegistry"
+  },
+  {
+    "from": "server/services/aiCopilotActions.ts",
+    "to": "./auditTrailService"
+  },
+  {
+    "from": "server/services/aiDatasetBuilder.seg.test.ts",
+    "to": "./aiDatasetBuilder"
+  },
+  {
+    "from": "server/services/aiDatasetBuilder.test.ts",
+    "to": "./aiDatasetBuilder"
+  },
+  {
+    "from": "server/services/aiDatasetBuilder.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiDatasetBuilder.ts",
+    "to": "../db/ai"
+  },
+  {
+    "from": "server/services/aiDatasetBuilder.ts",
+    "to": "../db/aiAdvanced"
+  },
+  {
+    "from": "server/services/aiDatasetBuilder.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiDatasetBuilder.ts",
+    "to": "../db/aiSegmentation"
+  },
+  {
+    "from": "server/services/aiDatasetBuilder.ts",
+    "to": "./aiMetrics"
+  },
+  {
+    "from": "server/services/aiDriftMonitor.test.ts",
+    "to": "./aiDriftMonitor"
+  },
+  {
+    "from": "server/services/aiDriftMonitor.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiDriftMonitor.ts",
+    "to": "../../drizzle/schema"
   },
   {
     "from": "server/services/aiEdgeDeployment.ts",
@@ -1793,15 +3657,83 @@
   },
   {
     "from": "server/services/aiEdgeEnhanced.ts",
-    "to": "../../drizzle/schema"
-  },
-  {
-    "from": "server/services/aiEdgeEnhanced.ts",
     "to": "../db/aiAdvanced"
   },
   {
     "from": "server/services/aiEdgeEnhanced.ts",
+    "to": "../db/hierarchy"
+  },
+  {
+    "from": "server/services/aiEdgeEnhanced.ts",
     "to": "../storage"
+  },
+  {
+    "from": "server/services/aiEvalHarness.test.ts",
+    "to": "./aiEvalHarness"
+  },
+  {
+    "from": "server/services/aiEvalHarness.test.ts",
+    "to": "./aiDatasetBuilder"
+  },
+  {
+    "from": "server/services/aiEvalHarness.ts",
+    "to": "../db/ai"
+  },
+  {
+    "from": "server/services/aiEvalHarness.ts",
+    "to": "./aiLocalTraining"
+  },
+  {
+    "from": "server/services/aiEvalHarness.ts",
+    "to": "./aiDatasetBuilder"
+  },
+  {
+    "from": "server/services/aiEvalHarness.ts",
+    "to": "./aiMetrics"
+  },
+  {
+    "from": "server/services/aiExecutiveReport.test.ts",
+    "to": "./aiExecutiveReport"
+  },
+  {
+    "from": "server/services/aiExecutiveReport.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiExecutiveReport.ts",
+    "to": "../../drizzle/schema/aiInsight"
+  },
+  {
+    "from": "server/services/aiExecutiveReportNotify.test.ts",
+    "to": "./aiExecutiveReport"
+  },
+  {
+    "from": "server/services/aiExplainability.test.ts",
+    "to": "./aiExplainability"
+  },
+  {
+    "from": "server/services/aiExplainability.ts",
+    "to": "./aiInferenceEngine"
+  },
+  {
+    "from": "server/services/aiGgufEngine.ts",
+    "to": "./ggufConcurrency"
+  },
+  {
+    "from": "server/services/aiGgufEngine.ts",
+    "to": "./aiMetrics"
+  },
+  {
+    "from": "server/services/aiImageEmbedding.test.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiImageEmbedding.test.ts",
+    "to": "./aiVisionLanguage"
+  },
+  {
+    "from": "server/services/aiImageEmbedding.test.ts",
+    "to": "./aiImageEmbedding"
   },
   {
     "from": "server/services/aiImageEmbedding.ts",
@@ -1820,6 +3752,10 @@
     "to": "../../drizzle/schema"
   },
   {
+    "from": "server/services/aiImageEmbedding.ts",
+    "to": "./aiVisionLanguage"
+  },
+  {
     "from": "server/services/aiInferenceEngine.ts",
     "to": "../db/ai"
   },
@@ -1830,6 +3766,10 @@
   {
     "from": "server/services/aiInferenceEngine.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiInsightsService.ts",
+    "to": "./aiProviderRouter"
   },
   {
     "from": "server/services/aiInspectionAnalytics.ts",
@@ -1844,6 +3784,386 @@
     "to": "./cacheService"
   },
   {
+    "from": "server/services/aiInspectionAnalytics.ts",
+    "to": "../_core/socket"
+  },
+  {
+    "from": "server/services/aiInspectionAnalytics.ts",
+    "to": "../utils/spc"
+  },
+  {
+    "from": "server/services/aiIssueClassifier.test.ts",
+    "to": "./aiIssueClassifier"
+  },
+  {
+    "from": "server/services/aiJobQueue.ts",
+    "to": "./aiProviderRouter"
+  },
+  {
+    "from": "server/services/aiLocalKnowledge.gd1.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledge.gguf.test.ts",
+    "to": "./aiLocalKnowledgeService"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./aiLocalTools"
+  },
+  {
+    "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./aiReranker"
+  },
+  {
+    "from": "server/services/aiLocalTools/analyticsTools.test.ts",
+    "to": "./analyticsTools"
+  },
+  {
+    "from": "server/services/aiLocalTools/analyticsTools.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/aiLocalTools/analyticsTools.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiLocalTools/analyticsTools.ts",
+    "to": "../../_core/accessControl"
+  },
+  {
+    "from": "server/services/aiLocalTools/analyticsTools.ts",
+    "to": "../../db/lineBalance"
+  },
+  {
+    "from": "server/services/aiLocalTools/analyticsTools.ts",
+    "to": "../paretoAnalysisService"
+  },
+  {
+    "from": "server/services/aiLocalTools/analyticsTools.ts",
+    "to": "../../db/statistics"
+  },
+  {
+    "from": "server/services/aiLocalTools/analyticsTools.ts",
+    "to": "../../db/statistics"
+  },
+  {
+    "from": "server/services/aiLocalTools/analyticsTools.ts",
+    "to": "../predictiveMaintenanceService"
+  },
+  {
+    "from": "server/services/aiLocalTools/analyticsTools.ts",
+    "to": "../aiTimeSeriesEngine"
+  },
+  {
+    "from": "server/services/aiLocalTools/analyticsTools.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/handlers.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/aiLocalTools/handlers.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiLocalTools/handlers.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/handlersF6.test.ts",
+    "to": "./handlersF6"
+  },
+  {
+    "from": "server/services/aiLocalTools/handlersF6.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/aiLocalTools/handlersF6.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiLocalTools/handlersF6.ts",
+    "to": "../../db/processResult"
+  },
+  {
+    "from": "server/services/aiLocalTools/handlersF6.ts",
+    "to": "../../db/otTelemetry"
+  },
+  {
+    "from": "server/services/aiLocalTools/handlersF6.ts",
+    "to": "../../db/lineBalance"
+  },
+  {
+    "from": "server/services/aiLocalTools/handlersF6.ts",
+    "to": "../aiTimeSeriesEngine"
+  },
+  {
+    "from": "server/services/aiLocalTools/handlersF6.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/index.ts",
+    "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/index.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/index.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/index.ts",
+    "to": "../aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiLocalTools/index.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/index.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/index.ts",
+    "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/index.ts",
+    "to": "../aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiLocalTools/insightHandlersF6.test.ts",
+    "to": "./insightHandlersF6"
+  },
+  {
+    "from": "server/services/aiLocalTools/insightHandlersF6.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/aiLocalTools/insightHandlersF6.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiLocalTools/insightHandlersF6.ts",
+    "to": "../../db/lineBalance"
+  },
+  {
+    "from": "server/services/aiLocalTools/insightHandlersF6.ts",
+    "to": "../aiTimeSeriesEngine"
+  },
+  {
+    "from": "server/services/aiLocalTools/insightHandlersF6.ts",
+    "to": "../../utils/statistics"
+  },
+  {
+    "from": "server/services/aiLocalTools/insightHandlersF6.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/intentClassifier.f6.test.ts",
+    "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/intentClassifier.gd1.test.ts",
+    "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/intentClassifier.gd3.test.ts",
+    "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/intentClassifier.gguf.test.ts",
+    "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/intentClassifier.setspec.test.ts",
+    "to": "./intentClassifier"
+  },
+  {
+    "from": "server/services/aiLocalTools/intentClassifier.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/machineControl.tools.test.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/machineControl.tools.test.ts",
+    "to": "../aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiLocalTools/readToolsP2.test.ts",
+    "to": "./readToolsP2"
+  },
+  {
+    "from": "server/services/aiLocalTools/readToolsP2.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/aiLocalTools/readToolsP2.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiLocalTools/readToolsP2.ts",
+    "to": "../../_core/accessControl"
+  },
+  {
+    "from": "server/services/aiLocalTools/readToolsP2.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/toolRegistry.ts",
+    "to": "../auditTrailService"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/alerts.ts",
+    "to": "../../../db/alerts"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/alerts.ts",
+    "to": "../../../db/ai"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/alerts.ts",
+    "to": "../toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/client.ts",
+    "to": "../toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/engineering.test.ts",
+    "to": "../toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/engineering.test.ts",
+    "to": "../../aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/engineering.ts",
+    "to": "../../../db/connection"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/engineering.ts",
+    "to": "../../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/engineering.ts",
+    "to": "../toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/engineering.ts",
+    "to": "../../auditTrailService"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/interlock.test.ts",
+    "to": "../toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/interlock.ts",
+    "to": "../../../db/connection"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/interlock.ts",
+    "to": "../../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/interlock.ts",
+    "to": "../toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/machineControl.ts",
+    "to": "../../../db/connection"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/machineControl.ts",
+    "to": "../../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/machineControl.ts",
+    "to": "../../../db/machineRecipe"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/machineControl.ts",
+    "to": "../../ot/commandDispatcher"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/machineControl.ts",
+    "to": "../toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/maintenance.test.ts",
+    "to": "../toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/maintenance.test.ts",
+    "to": "../../aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/maintenance.ts",
+    "to": "../../../db/connection"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/maintenance.ts",
+    "to": "../../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/maintenance.ts",
+    "to": "../toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/maintenance.ts",
+    "to": "../../auditTrailService"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/measurementPoint.ts",
+    "to": "../../../db/product"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/measurementPoint.ts",
+    "to": "../toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/measurementPoint.ts",
+    "to": "../../auditTrailService"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/yield.ts",
+    "to": "../../../db/alerts"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/yield.ts",
+    "to": "../toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers/yield.ts",
+    "to": "../../auditTrailService"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers.gd3.test.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers.gd3.test.ts",
+    "to": "../aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers.ts",
+    "to": "../../db/product"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/writeHandlers.ts",
+    "to": "../auditTrailService"
+  },
+  {
     "from": "server/services/aiLocalTraining.ts",
     "to": "../db/connection"
   },
@@ -1858,6 +4178,30 @@
   {
     "from": "server/services/aiLocalTraining.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiLocalTraining.ts",
+    "to": "./aiMetrics"
+  },
+  {
+    "from": "server/services/aiMetrics.test.ts",
+    "to": "./aiMetrics"
+  },
+  {
+    "from": "server/services/aiMetrology.test.ts",
+    "to": "./aiMetrology"
+  },
+  {
+    "from": "server/services/aiModelCard.test.ts",
+    "to": "./aiModelCard"
+  },
+  {
+    "from": "server/services/aiModelCard.ts",
+    "to": "../db/ai"
+  },
+  {
+    "from": "server/services/aiModelRouter.ts",
+    "to": "./aiGgufEngine"
   },
   {
     "from": "server/services/aiModelService.ts",
@@ -1876,6 +4220,62 @@
     "to": "../db/aiAdvanced"
   },
   {
+    "from": "server/services/aiPlaybookEngine.test.ts",
+    "to": "./aiPlaybookEngine"
+  },
+  {
+    "from": "server/services/aiPlaybookEngine.test.ts",
+    "to": "./aiAgentOrchestrator"
+  },
+  {
+    "from": "server/services/aiPlaybookEngine.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiPlaybookEngine.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiPlaybookEngine.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiPlaybookEngine.ts",
+    "to": "./aiLocalTools/toolRegistry"
+  },
+  {
+    "from": "server/services/aiPlaybookEngine.ts",
+    "to": "../_core/accessControl"
+  },
+  {
+    "from": "server/services/aiPlaybookEngine.ts",
+    "to": "./aiAgentOrchestrator"
+  },
+  {
+    "from": "server/services/aiPlaybookEngine.ts",
+    "to": "./aiPlaybookLoader"
+  },
+  {
+    "from": "server/services/aiPlaybookLoader.test.ts",
+    "to": "./aiPlaybookLoader"
+  },
+  {
+    "from": "server/services/aiPlaybookLoader.ts",
+    "to": "./aiLocalTools/toolRegistry"
+  },
+  {
+    "from": "server/services/aiPlaybookLoader.ts",
+    "to": "./aiLocalTools/writeHandlers/client"
+  },
+  {
+    "from": "server/services/aiPlaybookLoader.ts",
+    "to": "../logger"
+  },
+  {
+    "from": "server/services/aiProviderRouter.ts",
+    "to": "./aiGgufEngine"
+  },
+  {
     "from": "server/services/aiQualityGate.ts",
     "to": "../db/connection"
   },
@@ -1892,6 +4292,38 @@
     "to": "../db/ai"
   },
   {
+    "from": "server/services/aiQualityGate.ts",
+    "to": "./aiABTesting"
+  },
+  {
+    "from": "server/services/aiRcaCopilot.test.ts",
+    "to": "./aiRcaCopilot"
+  },
+  {
+    "from": "server/services/aiRcaCopilot.test.ts",
+    "to": "./aiLocalTools/toolRegistry"
+  },
+  {
+    "from": "server/services/aiRcaCopilot.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiRcaCopilot.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiRcaCopilot.ts",
+    "to": "./aiLocalTools/toolRegistry"
+  },
+  {
+    "from": "server/services/aiRcaCopilot.ts",
+    "to": "./aiCopilotActions"
+  },
+  {
+    "from": "server/services/aiReportGenerator.ts",
+    "to": "./aiProviderRouter"
+  },
+  {
     "from": "server/services/aiReportGenerator.ts",
     "to": "../db/connection"
   },
@@ -1902,6 +4334,46 @@
   {
     "from": "server/services/aiReportGenerator.ts",
     "to": "../../drizzle/schema/ai"
+  },
+  {
+    "from": "server/services/aiSegmentation.test.ts",
+    "to": "./aiSegmentation"
+  },
+  {
+    "from": "server/services/aiSegmentation.ts",
+    "to": "./aiMetrology"
+  },
+  {
+    "from": "server/services/aiSelfLearningScheduler.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiSelfLearningScheduler.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiSelfLearningScheduler.ts",
+    "to": "./aiActiveLearningAuto"
+  },
+  {
+    "from": "server/services/aiSelfLearningScheduler.ts",
+    "to": "./aiTrainingPipeline"
+  },
+  {
+    "from": "server/services/aiSelfLearningScheduler.ts",
+    "to": "./aiDriftMonitor"
+  },
+  {
+    "from": "server/services/aiSetupAdvisor.test.ts",
+    "to": "./aiSetupAdvisor"
+  },
+  {
+    "from": "server/services/aiSetupAdvisor.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/aiSetupAdvisor.ts",
+    "to": "../utils/thresholdSuggestion"
   },
   {
     "from": "server/services/aiSmartAlertRouter.ts",
@@ -1920,12 +4392,64 @@
     "to": "./emailService"
   },
   {
+    "from": "server/services/aiSpcCpk.test.ts",
+    "to": "../utils/spc"
+  },
+  {
+    "from": "server/services/aiSpcCpk.test.ts",
+    "to": "./aiInspectionAnalytics"
+  },
+  {
     "from": "server/services/aiSpecialistAgentService.ts",
     "to": "./aiGgufEngine"
   },
   {
+    "from": "server/services/aiThresholdAdvisor.test.ts",
+    "to": "./aiThresholdAdvisor"
+  },
+  {
+    "from": "server/services/aiThresholdAdvisor.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiThresholdAdvisor.ts",
+    "to": "../db/product"
+  },
+  {
+    "from": "server/services/aiThresholdAdvisor.ts",
+    "to": "../utils/thresholdSuggestion"
+  },
+  {
+    "from": "server/services/aiThresholdAdvisor.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiThresholdTuneScheduler.test.ts",
+    "to": "./aiThresholdTuneScheduler"
+  },
+  {
+    "from": "server/services/aiThresholdTuneScheduler.ts",
+    "to": "../db/aiThresholdTune"
+  },
+  {
+    "from": "server/services/aiThresholdTuneScheduler.ts",
+    "to": "./aiThresholdAdvisor"
+  },
+  {
     "from": "server/services/aiTimeSeriesEngine.ts",
     "to": "../utils/statistics"
+  },
+  {
+    "from": "server/services/aiTodayBriefing.test.ts",
+    "to": "./aiTodayBriefing"
+  },
+  {
+    "from": "server/services/aiTodayBriefing.ts",
+    "to": "../db/auth"
+  },
+  {
+    "from": "server/services/aiTrainingPipeline.tier2.test.ts",
+    "to": "./aiTrainingPipeline"
   },
   {
     "from": "server/services/aiTrainingPipeline.ts",
@@ -1937,7 +4461,55 @@
   },
   {
     "from": "server/services/aiTrainingPipeline.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aiTrainingPipeline.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiTrainingPipeline.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiTrainingPipeline.ts",
+    "to": "./aiDatasetBuilder"
+  },
+  {
+    "from": "server/services/aiTrainingPipeline.ts",
+    "to": "./aiLocalTraining"
+  },
+  {
+    "from": "server/services/aiTrainingPipeline.ts",
+    "to": "./aiLocalTraining"
+  },
+  {
+    "from": "server/services/aiTrainingPipeline.ts",
+    "to": "./localSidecarTrainer"
+  },
+  {
+    "from": "server/services/aiTrainingPipeline.ts",
+    "to": "./aiEvalHarness"
+  },
+  {
+    "from": "server/services/aiTrainingPipeline.ts",
+    "to": "./aiInferenceEngine"
+  },
+  {
+    "from": "server/services/aiVisionLanguage.ts",
+    "to": "./aiProviderRouter"
+  },
+  {
+    "from": "server/services/alertEscalationService.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/alertEscalationService.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/alertEscalationService.ts",
+    "to": "../_core/socket"
   },
   {
     "from": "server/services/alertEvaluationService.ts",
@@ -1960,8 +4532,104 @@
     "to": "./mqttService"
   },
   {
+    "from": "server/services/andon/andonService.test.ts",
+    "to": "./andonService"
+  },
+  {
+    "from": "server/services/andon/andonService.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/andon/andonService.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/andon/andonService.ts",
+    "to": "../../_core/socket"
+  },
+  {
+    "from": "server/services/andon/andonService.ts",
+    "to": "../auditTrailService"
+  },
+  {
+    "from": "server/services/andon/index.ts",
+    "to": "./andonService"
+  },
+  {
+    "from": "server/services/aoiImageEmbeddingWorker.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/aoiImageEmbeddingWorker.ts",
+    "to": "../db/ai"
+  },
+  {
+    "from": "server/services/aoiImageEmbeddingWorker.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aoiImageEmbeddingWorker.ts",
+    "to": "./aiImageEmbedding"
+  },
+  {
+    "from": "server/services/aoiImageEmbeddingWorker.ts",
+    "to": "../storage"
+  },
+  {
+    "from": "server/services/apsService.test.ts",
+    "to": "./apsService"
+  },
+  {
+    "from": "server/services/apsService.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/apsService.ts",
+    "to": "./productionSchedulingService"
+  },
+  {
+    "from": "server/services/apsService.ts",
+    "to": "./apsSolver"
+  },
+  {
+    "from": "server/services/apsSolver.integration.test.ts",
+    "to": "./apsSolver"
+  },
+  {
+    "from": "server/services/apsSolver.test.ts",
+    "to": "./apsSolver"
+  },
+  {
+    "from": "server/services/apsSolver.test.ts",
+    "to": "./productionSchedulingService"
+  },
+  {
+    "from": "server/services/apsSolver.ts",
+    "to": "./productionSchedulingService"
+  },
+  {
     "from": "server/services/auditTrailService.ts",
     "to": "../db"
+  },
+  {
+    "from": "server/services/backupReplicationService.test.ts",
+    "to": "./backupReplicationService"
+  },
+  {
+    "from": "server/services/backupReplicationService.ts",
+    "to": "../logger"
+  },
+  {
+    "from": "server/services/backupSchedulerService.test.ts",
+    "to": "./backupSchedulerService"
+  },
+  {
+    "from": "server/services/backupSchedulerService.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/backupSchedulerService.ts",
+    "to": "./backupService"
   },
   {
     "from": "server/services/cacheWarmingService.ts",
@@ -1972,6 +4640,22 @@
     "to": "../db"
   },
   {
+    "from": "server/services/componentInstallationService.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/componentInstallationService.ts",
+    "to": "../utils/genealogyChain"
+  },
+  {
+    "from": "server/services/componentInstallationService.ts",
+    "to": "./andon/andonService"
+  },
+  {
+    "from": "server/services/componentInstallationService.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
     "from": "server/services/dataComparisonService.ts",
     "to": "../db"
   },
@@ -1980,12 +4664,80 @@
     "to": "../db/connection"
   },
   {
+    "from": "server/services/dataRetentionService.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/digitalTwinService.twin-g27.test.ts",
+    "to": "./digitalTwinService"
+  },
+  {
+    "from": "server/services/disasterRecoveryService.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/disasterRecoveryService.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/dispatchingService.test.ts",
+    "to": "./dispatchingService"
+  },
+  {
+    "from": "server/services/distributedCache.ts",
+    "to": "./redisService"
+  },
+  {
     "from": "server/services/downtimeDetectionService.ts",
     "to": "../db"
   },
   {
     "from": "server/services/downtimeDetectionService.ts",
     "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/edge/edge.test.ts",
+    "to": "./edgeCoordinator"
+  },
+  {
+    "from": "server/services/edge/edge.test.ts",
+    "to": "./edgeRuntime"
+  },
+  {
+    "from": "server/services/edge/edgeCoordinator.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/edge/edgeCoordinator.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/edge/edgeNodeHealthScheduler.ts",
+    "to": "./edgeCoordinator"
+  },
+  {
+    "from": "server/services/edge/edgeRuntime.ts",
+    "to": "./edgeCoordinator"
+  },
+  {
+    "from": "server/services/edgeStaleScheduler.ts",
+    "to": "./aiEdgeEnhanced"
+  },
+  {
+    "from": "server/services/energyAnalyticsService.test.ts",
+    "to": "./energyAnalyticsService"
+  },
+  {
+    "from": "server/services/energyAnalyticsService.ts",
+    "to": "../db/energy"
+  },
+  {
+    "from": "server/services/energyAnalyticsService.ts",
+    "to": "../db/timescale"
+  },
+  {
+    "from": "server/services/energyAnalyticsService.ts",
+    "to": "./aiTimeSeriesEngine"
   },
   {
     "from": "server/services/enhancedScheduledReportService.ts",
@@ -2012,6 +4764,54 @@
     "to": "./powerpointService"
   },
   {
+    "from": "server/services/equipment/capabilityModel.ts",
+    "to": "./packml"
+  },
+  {
+    "from": "server/services/equipment/capabilityModel.ts",
+    "to": "../../../drizzle/schema/hierarchy"
+  },
+  {
+    "from": "server/services/equipment/equipment.test.ts",
+    "to": "./packml"
+  },
+  {
+    "from": "server/services/equipment/equipment.test.ts",
+    "to": "./capabilityModel"
+  },
+  {
+    "from": "server/services/equipment/equipment.test.ts",
+    "to": "./equipmentAdapter"
+  },
+  {
+    "from": "server/services/equipment/equipmentAdapter.ts",
+    "to": "./capabilityModel"
+  },
+  {
+    "from": "server/services/equipment/equipmentAdapter.ts",
+    "to": "../ot/driverRegistry"
+  },
+  {
+    "from": "server/services/equipment/equipmentAdapter.ts",
+    "to": "../ot/otDriver"
+  },
+  {
+    "from": "server/services/equipment/equipmentAdapter.ts",
+    "to": "../ot/commandDispatcher"
+  },
+  {
+    "from": "server/services/equipment/equipmentAdapter.ts",
+    "to": "../ot/commandDispatcher"
+  },
+  {
+    "from": "server/services/equipment/equipmentAdapter.ts",
+    "to": "../robot/robotCommandDispatcher"
+  },
+  {
+    "from": "server/services/equipment/equipmentAdapter.ts",
+    "to": "../robot/robotDriver"
+  },
+  {
     "from": "server/services/fcmService.ts",
     "to": "../_core/env"
   },
@@ -2020,12 +4820,104 @@
     "to": "../db"
   },
   {
+    "from": "server/services/ggufConcurrency.test.ts",
+    "to": "./ggufConcurrency"
+  },
+  {
+    "from": "server/services/imageAlignment.test.ts",
+    "to": "./imageAlignment"
+  },
+  {
+    "from": "server/services/interlock/index.ts",
+    "to": "./interlockEngine"
+  },
+  {
+    "from": "server/services/interlock/index.ts",
+    "to": "./ruleEvaluator"
+  },
+  {
+    "from": "server/services/interlock/interlockEngine.test.ts",
+    "to": "./interlockEngine"
+  },
+  {
+    "from": "server/services/interlock/interlockEngine.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/interlock/interlockEngine.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/interlock/interlockEngine.ts",
+    "to": "../andon/andonService"
+  },
+  {
+    "from": "server/services/interlock/interlockEngine.ts",
+    "to": "../ot/commandDispatcher"
+  },
+  {
+    "from": "server/services/interlock/interlockEngine.ts",
+    "to": "./ruleEvaluator"
+  },
+  {
+    "from": "server/services/interlock/ruleEvaluator.test.ts",
+    "to": "./ruleEvaluator"
+  },
+  {
+    "from": "server/services/kb/kbVectorStore.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/kb/kbVectorStore.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/llamaVisionSidecar.ts",
+    "to": "./aiGgufEngine"
+  },
+  {
+    "from": "server/services/llamaVisionSidecar.ts",
+    "to": "./aiGgufEngine"
+  },
+  {
+    "from": "server/services/localSidecarTrainer.test.ts",
+    "to": "./localSidecarTrainer"
+  },
+  {
+    "from": "server/services/localSidecarTrainer.ts",
+    "to": "../db/aiAdvanced"
+  },
+  {
+    "from": "server/services/localSidecarTrainer.ts",
+    "to": "../db/ai"
+  },
+  {
+    "from": "server/services/localSidecarTrainer.ts",
+    "to": "./aiDatasetBuilder"
+  },
+  {
+    "from": "server/services/localSidecarTrainer.ts",
+    "to": "./aiLocalTraining"
+  },
+  {
+    "from": "server/services/materializedViewRefreshService.ts",
+    "to": "../db/connection"
+  },
+  {
     "from": "server/services/mqttBulletinService.ts",
     "to": "../../drizzle/schema"
   },
   {
     "from": "server/services/mqttBulletinService.ts",
     "to": "./mqttService"
+  },
+  {
+    "from": "server/services/mqttService.ts",
+    "to": "./unsPublisher"
+  },
+  {
+    "from": "server/services/mqttService.ts",
+    "to": "./uns/aoiBridge"
   },
   {
     "from": "server/services/mqttService.ts",
@@ -2040,6 +4932,30 @@
     "to": "./mqttService"
   },
   {
+    "from": "server/services/mtconnect/mtconnect.test.ts",
+    "to": "./mtconnectClient"
+  },
+  {
+    "from": "server/services/mtconnect/mtconnect.test.ts",
+    "to": "./mtconnectPoller"
+  },
+  {
+    "from": "server/services/mtconnect/mtconnectPoller.ts",
+    "to": "./mtconnectClient"
+  },
+  {
+    "from": "server/services/mtconnect/mtconnectPoller.ts",
+    "to": "./mtconnectClient"
+  },
+  {
+    "from": "server/services/mtconnect/mtconnectPoller.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/mtconnect/mtconnectPoller.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
     "from": "server/services/ngRateAlertService.ts",
     "to": "../db/connection"
   },
@@ -2052,6 +4968,410 @@
     "to": "../db"
   },
   {
+    "from": "server/services/oeeService.test.ts",
+    "to": "./oeeService"
+  },
+  {
+    "from": "server/services/oeeService.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/oeeService.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/orchestration/aiOrchestrationAdvisor.test.ts",
+    "to": "./aiOrchestrationAdvisor"
+  },
+  {
+    "from": "server/services/orchestration/aiOrchestrationAdvisor.test.ts",
+    "to": "./foe/workflowModel"
+  },
+  {
+    "from": "server/services/orchestration/aiOrchestrationAdvisor.ts",
+    "to": "./foe/workflowModel"
+  },
+  {
+    "from": "server/services/orchestration/aiOrchestrationAdvisor.ts",
+    "to": "./foe/foeSimulator"
+  },
+  {
+    "from": "server/services/orchestration/aiOrchestrationAdvisor.ts",
+    "to": "../equipment/capabilityModel"
+  },
+  {
+    "from": "server/services/orchestration/aiOrchestrationAdvisor.ts",
+    "to": "../aiModelRouter"
+  },
+  {
+    "from": "server/services/orchestration/aiWatcher.ts",
+    "to": "../../_core/eventBus"
+  },
+  {
+    "from": "server/services/orchestration/foe/foe.test.ts",
+    "to": "./workflowModel"
+  },
+  {
+    "from": "server/services/orchestration/foe/foe.test.ts",
+    "to": "./foeEngine"
+  },
+  {
+    "from": "server/services/orchestration/foe/foeEngine.ts",
+    "to": "../../../db/connection"
+  },
+  {
+    "from": "server/services/orchestration/foe/foeEngine.ts",
+    "to": "../../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/orchestration/foe/foeEngine.ts",
+    "to": "./workflowModel"
+  },
+  {
+    "from": "server/services/orchestration/foe/foeEngine.ts",
+    "to": "../../equipment/capabilityModel"
+  },
+  {
+    "from": "server/services/orchestration/foe/foeEngine.ts",
+    "to": "../../equipment/equipmentAdapter"
+  },
+  {
+    "from": "server/services/orchestration/foe/foeEngine.ts",
+    "to": "../../equipment/packml"
+  },
+  {
+    "from": "server/services/orchestration/foe/foeSimulator.test.ts",
+    "to": "./foeSimulator"
+  },
+  {
+    "from": "server/services/orchestration/foe/foeSimulator.test.ts",
+    "to": "./workflowModel"
+  },
+  {
+    "from": "server/services/orchestration/foe/foeSimulator.ts",
+    "to": "./workflowModel"
+  },
+  {
+    "from": "server/services/orchestration/foe/foeSimulator.ts",
+    "to": "../../equipment/capabilityModel"
+  },
+  {
+    "from": "server/services/orchestration/foe/foeSimulator.ts",
+    "to": "../../equipment/packml"
+  },
+  {
+    "from": "server/services/orchestration/foe/workflowModel.ts",
+    "to": "../../equipment/capabilityModel"
+  },
+  {
+    "from": "server/services/orchestration/foe/workflowModel.ts",
+    "to": "../../equipment/packml"
+  },
+  {
+    "from": "server/services/orchestration/rulesEngine.ts",
+    "to": "../../_core/eventBus"
+  },
+  {
+    "from": "server/services/ot/commandDispatcher.interlock.test.ts",
+    "to": "./commandDispatcher"
+  },
+  {
+    "from": "server/services/ot/commandDispatcher.test.ts",
+    "to": "./commandDispatcher"
+  },
+  {
+    "from": "server/services/ot/commandDispatcher.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/ot/commandDispatcher.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/ot/commandDispatcher.ts",
+    "to": "./otManager"
+  },
+  {
+    "from": "server/services/ot/commandDispatcher.ts",
+    "to": "../auditTrailService"
+  },
+  {
+    "from": "server/services/ot/commandDispatcher.ts",
+    "to": "./otDriver"
+  },
+  {
+    "from": "server/services/ot/commandDispatcher.ts",
+    "to": "./drivers/readbackCompare"
+  },
+  {
+    "from": "server/services/ot/deviceAdapter.ts",
+    "to": "./driverRegistry"
+  },
+  {
+    "from": "server/services/ot/deviceAdapter.ts",
+    "to": "./otDriver"
+  },
+  {
+    "from": "server/services/ot/driverRegistry.test.ts",
+    "to": "./driverRegistry"
+  },
+  {
+    "from": "server/services/ot/driverRegistry.test.ts",
+    "to": "./drivers/stubDriver"
+  },
+  {
+    "from": "server/services/ot/driverRegistry.ts",
+    "to": "./otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/eipTag.test.ts",
+    "to": "./eipTag"
+  },
+  {
+    "from": "server/services/ot/drivers/eipTag.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/ethernetIpDriver.test.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/ethernetIpDriver.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/ethernetIpDriver.ts",
+    "to": "./notImplementedDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/ethernetIpDriver.ts",
+    "to": "./eipTag"
+  },
+  {
+    "from": "server/services/ot/drivers/ethernetIpDriver.ts",
+    "to": "./otScale"
+  },
+  {
+    "from": "server/services/ot/drivers/mcAddress.test.ts",
+    "to": "./mcAddress"
+  },
+  {
+    "from": "server/services/ot/drivers/mcAddress.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/mitsubishiMcDriver.test.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/mitsubishiMcDriver.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/mitsubishiMcDriver.ts",
+    "to": "./notImplementedDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/mitsubishiMcDriver.ts",
+    "to": "./mcAddress"
+  },
+  {
+    "from": "server/services/ot/drivers/mitsubishiMcDriver.ts",
+    "to": "./otScale"
+  },
+  {
+    "from": "server/services/ot/drivers/modbusDecode.test.ts",
+    "to": "./modbusDecode"
+  },
+  {
+    "from": "server/services/ot/drivers/modbusDecode.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/modbusDriver.test.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/modbusDriver.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/modbusDriver.ts",
+    "to": "./notImplementedDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/modbusDriver.ts",
+    "to": "./modbusDecode"
+  },
+  {
+    "from": "server/services/ot/drivers/modbusDriver.ts",
+    "to": "./otScale"
+  },
+  {
+    "from": "server/services/ot/drivers/notImplementedDriver.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/opcuaAddress.test.ts",
+    "to": "./opcuaAddress"
+  },
+  {
+    "from": "server/services/ot/drivers/opcuaAddress.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/opcuaDriver.test.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/opcuaDriver.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/opcuaDriver.ts",
+    "to": "./notImplementedDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/opcuaDriver.ts",
+    "to": "./opcuaAddress"
+  },
+  {
+    "from": "server/services/ot/drivers/opcuaDriver.ts",
+    "to": "./otScale"
+  },
+  {
+    "from": "server/services/ot/drivers/otScale.test.ts",
+    "to": "./otScale"
+  },
+  {
+    "from": "server/services/ot/drivers/otScale.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/readbackCompare.test.ts",
+    "to": "./readbackCompare"
+  },
+  {
+    "from": "server/services/ot/drivers/readbackCompare.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/s7Address.test.ts",
+    "to": "./s7Address"
+  },
+  {
+    "from": "server/services/ot/drivers/s7Address.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/s7Driver.test.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/s7Driver.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/s7Driver.ts",
+    "to": "./notImplementedDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/s7Driver.ts",
+    "to": "./s7Address"
+  },
+  {
+    "from": "server/services/ot/drivers/s7Driver.ts",
+    "to": "./otScale"
+  },
+  {
+    "from": "server/services/ot/drivers/stubDriver.test.ts",
+    "to": "./stubDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/stubDriver.test.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/drivers/stubDriver.ts",
+    "to": "../otDriver"
+  },
+  {
+    "from": "server/services/ot/index.ts",
+    "to": "./driverRegistry"
+  },
+  {
+    "from": "server/services/ot/index.ts",
+    "to": "./drivers/stubDriver"
+  },
+  {
+    "from": "server/services/ot/index.ts",
+    "to": "./drivers/opcuaDriver"
+  },
+  {
+    "from": "server/services/ot/index.ts",
+    "to": "./drivers/modbusDriver"
+  },
+  {
+    "from": "server/services/ot/index.ts",
+    "to": "./drivers/s7Driver"
+  },
+  {
+    "from": "server/services/ot/index.ts",
+    "to": "./drivers/mitsubishiMcDriver"
+  },
+  {
+    "from": "server/services/ot/index.ts",
+    "to": "./drivers/ethernetIpDriver"
+  },
+  {
+    "from": "server/services/ot/index.ts",
+    "to": "./otManager"
+  },
+  {
+    "from": "server/services/ot/index.ts",
+    "to": "./deviceAdapter"
+  },
+  {
+    "from": "server/services/ot/index.ts",
+    "to": "./deviceAdapter"
+  },
+  {
+    "from": "server/services/ot/index.ts",
+    "to": "./driverRegistry"
+  },
+  {
+    "from": "server/services/ot/index.ts",
+    "to": "./otDriver"
+  },
+  {
+    "from": "server/services/ot/ingest.test.ts",
+    "to": "./ingest"
+  },
+  {
+    "from": "server/services/ot/ingest.test.ts",
+    "to": "./otDriver"
+  },
+  {
+    "from": "server/services/ot/ingest.ts",
+    "to": "./otDriver"
+  },
+  {
+    "from": "server/services/ot/ingest.ts",
+    "to": "./deviceAdapter"
+  },
+  {
+    "from": "server/services/ot/ingest.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/ot/otManager.ts",
+    "to": "./otDriver"
+  },
+  {
+    "from": "server/services/ot/otManager.ts",
+    "to": "./deviceAdapter"
+  },
+  {
     "from": "server/services/paretoAnalysisService.ts",
     "to": "../db/connection"
   },
@@ -2060,8 +5380,168 @@
     "to": "../db"
   },
   {
+    "from": "server/services/pdmWorkOrderService.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/pdmWorkOrderService.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
     "from": "server/services/powerpointService.ts",
     "to": "./pdfTemplateService"
+  },
+  {
+    "from": "server/services/predictiveMaintenanceService.test.ts",
+    "to": "./predictiveMaintenanceService"
+  },
+  {
+    "from": "server/services/predictiveMaintenanceService.test.ts",
+    "to": "./aiTimeSeriesEngine"
+  },
+  {
+    "from": "server/services/predictiveMaintenanceService.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/predictiveMaintenanceService.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/predictiveMaintenanceService.ts",
+    "to": "./oeeService"
+  },
+  {
+    "from": "server/services/predictiveMaintenanceService.ts",
+    "to": "./aiTimeSeriesEngine"
+  },
+  {
+    "from": "server/services/predictiveMaintenanceService.ts",
+    "to": "../db/machine"
+  },
+  {
+    "from": "server/services/processResultService.ts",
+    "to": "../db"
+  },
+  {
+    "from": "server/services/processResultService.ts",
+    "to": "../utils/genealogyChain"
+  },
+  {
+    "from": "server/services/processResultService.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/processResultService.ts",
+    "to": "../constants/machineTypes"
+  },
+  {
+    "from": "server/services/productionScheduling.ws4.test.ts",
+    "to": "./productionSchedulingService"
+  },
+  {
+    "from": "server/services/programming/aiProgrammingCopilot.test.ts",
+    "to": "./aiProgrammingCopilot"
+  },
+  {
+    "from": "server/services/programming/aiProgrammingCopilot.ts",
+    "to": "./programmingAdapter"
+  },
+  {
+    "from": "server/services/programming/engineeringStream.test.ts",
+    "to": "./engineeringStream"
+  },
+  {
+    "from": "server/services/programming/iec61131/iec61131Adapter.test.ts",
+    "to": "./boolEval"
+  },
+  {
+    "from": "server/services/programming/iec61131/iec61131Adapter.test.ts",
+    "to": "./iec61131Adapter"
+  },
+  {
+    "from": "server/services/programming/iec61131/iec61131Adapter.test.ts",
+    "to": "../programmingAdapter"
+  },
+  {
+    "from": "server/services/programming/iec61131/iec61131Adapter.ts",
+    "to": "./boolEval"
+  },
+  {
+    "from": "server/services/programming/iec61131/iec61131Adapter.ts",
+    "to": "../programmingAdapter"
+  },
+  {
+    "from": "server/services/programming/mitsubishi/mitsubishiEngineeringAdapter.test.ts",
+    "to": "./mitsubishiEngineeringAdapter"
+  },
+  {
+    "from": "server/services/programming/mitsubishi/mitsubishiEngineeringAdapter.test.ts",
+    "to": "../programmingAdapter"
+  },
+  {
+    "from": "server/services/programming/mitsubishi/mitsubishiEngineeringAdapter.ts",
+    "to": "../programmingAdapter"
+  },
+  {
+    "from": "server/services/programming/programming.test.ts",
+    "to": "./programmingAdapter"
+  },
+  {
+    "from": "server/services/programming/programming.test.ts",
+    "to": "./programmingService"
+  },
+  {
+    "from": "server/services/programming/programmingAdapter.ts",
+    "to": "./zmotion/zmotionBasicAdapter"
+  },
+  {
+    "from": "server/services/programming/programmingAdapter.ts",
+    "to": "./mitsubishi/mitsubishiEngineeringAdapter"
+  },
+  {
+    "from": "server/services/programming/programmingAdapter.ts",
+    "to": "./robot/robotTmAdapter"
+  },
+  {
+    "from": "server/services/programming/programmingAdapter.ts",
+    "to": "./iec61131/iec61131Adapter"
+  },
+  {
+    "from": "server/services/programming/programmingService.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/programming/programmingService.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/programming/programmingService.ts",
+    "to": "./programmingAdapter"
+  },
+  {
+    "from": "server/services/programming/robot/robotTmAdapter.test.ts",
+    "to": "./robotTmAdapter"
+  },
+  {
+    "from": "server/services/programming/robot/robotTmAdapter.test.ts",
+    "to": "../programmingAdapter"
+  },
+  {
+    "from": "server/services/programming/robot/robotTmAdapter.ts",
+    "to": "../programmingAdapter"
+  },
+  {
+    "from": "server/services/programming/zmotion/zmotionBasicAdapter.test.ts",
+    "to": "./zmotionBasicAdapter"
+  },
+  {
+    "from": "server/services/programming/zmotion/zmotionBasicAdapter.test.ts",
+    "to": "../programmingAdapter"
+  },
+  {
+    "from": "server/services/programming/zmotion/zmotionBasicAdapter.ts",
+    "to": "../programmingAdapter"
   },
   {
     "from": "server/services/reportGenerator.ts",
@@ -2080,6 +5560,142 @@
     "to": "./reportGenerator"
   },
   {
+    "from": "server/services/reportScheduler.ts",
+    "to": "./aiExecutiveReport"
+  },
+  {
+    "from": "server/services/robot/driverRegistry.ts",
+    "to": "./robotDriver"
+  },
+  {
+    "from": "server/services/robot/drivers/deltaRobotDriver.ts",
+    "to": "./notImplementedRobotDriver"
+  },
+  {
+    "from": "server/services/robot/drivers/deltaRobotDriver.ts",
+    "to": "../robotDriver"
+  },
+  {
+    "from": "server/services/robot/drivers/fanucDriver.ts",
+    "to": "./notImplementedRobotDriver"
+  },
+  {
+    "from": "server/services/robot/drivers/fanucDriver.ts",
+    "to": "../robotDriver"
+  },
+  {
+    "from": "server/services/robot/drivers/mitsubishiRobotDriver.ts",
+    "to": "./notImplementedRobotDriver"
+  },
+  {
+    "from": "server/services/robot/drivers/mitsubishiRobotDriver.ts",
+    "to": "../robotDriver"
+  },
+  {
+    "from": "server/services/robot/drivers/notImplementedRobotDriver.ts",
+    "to": "../robotDriver"
+  },
+  {
+    "from": "server/services/robot/drivers/simRobotDriver.ts",
+    "to": "../robotDriver"
+  },
+  {
+    "from": "server/services/robot/drivers/techmanDriver.ts",
+    "to": "../robotDriver"
+  },
+  {
+    "from": "server/services/robot/index.ts",
+    "to": "./driverRegistry"
+  },
+  {
+    "from": "server/services/robot/index.ts",
+    "to": "./drivers/simRobotDriver"
+  },
+  {
+    "from": "server/services/robot/index.ts",
+    "to": "./drivers/fanucDriver"
+  },
+  {
+    "from": "server/services/robot/index.ts",
+    "to": "./drivers/mitsubishiRobotDriver"
+  },
+  {
+    "from": "server/services/robot/index.ts",
+    "to": "./drivers/deltaRobotDriver"
+  },
+  {
+    "from": "server/services/robot/index.ts",
+    "to": "./drivers/techmanDriver"
+  },
+  {
+    "from": "server/services/robot/index.ts",
+    "to": "./robotManager"
+  },
+  {
+    "from": "server/services/robot/index.ts",
+    "to": "./robotCommandDispatcher"
+  },
+  {
+    "from": "server/services/robot/index.ts",
+    "to": "./driverRegistry"
+  },
+  {
+    "from": "server/services/robot/robotAdapter.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/robot/robotAdapter.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/robot/robotAdapter.ts",
+    "to": "./driverRegistry"
+  },
+  {
+    "from": "server/services/robot/robotAdapter.ts",
+    "to": "./robotDriver"
+  },
+  {
+    "from": "server/services/robot/robotCommandDispatcher.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/robot/robotCommandDispatcher.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/robot/robotCommandDispatcher.ts",
+    "to": "./robotManager"
+  },
+  {
+    "from": "server/services/robot/robotCommandDispatcher.ts",
+    "to": "./robotDriver"
+  },
+  {
+    "from": "server/services/robot/robotIngest.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/robot/robotIngest.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/robot/robotIngest.ts",
+    "to": "./robotAdapter"
+  },
+  {
+    "from": "server/services/robot/robotIngest.ts",
+    "to": "./robotDriver"
+  },
+  {
+    "from": "server/services/robot/robotManager.ts",
+    "to": "./robotDriver"
+  },
+  {
+    "from": "server/services/robot/robotManager.ts",
+    "to": "./robotAdapter"
+  },
+  {
     "from": "server/services/scheduledReportService.ts",
     "to": "../db"
   },
@@ -2090,6 +5706,318 @@
   {
     "from": "server/services/scheduledReportService.ts",
     "to": "../_core/notification"
+  },
+  {
+    "from": "server/services/secsgem/gemModel.ts",
+    "to": "./secsMessages"
+  },
+  {
+    "from": "server/services/secsgem/gemModel.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/secsgem/gemModel.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/secsgem/hsmsClient.ts",
+    "to": "./secsMessages"
+  },
+  {
+    "from": "server/services/secsgem/index.ts",
+    "to": "./secsGemRegistry"
+  },
+  {
+    "from": "server/services/secsgem/index.ts",
+    "to": "./secsMessages"
+  },
+  {
+    "from": "server/services/secsgem/index.ts",
+    "to": "./hsmsClient"
+  },
+  {
+    "from": "server/services/secsgem/index.ts",
+    "to": "./gemModel"
+  },
+  {
+    "from": "server/services/secsgem/index.ts",
+    "to": "./secsGemRegistry"
+  },
+  {
+    "from": "server/services/secsgem/secsgem.test.ts",
+    "to": "./secsMessages"
+  },
+  {
+    "from": "server/services/secsgem/secsgem.test.ts",
+    "to": "./hsmsClient"
+  },
+  {
+    "from": "server/services/secsgem/secsgem.test.ts",
+    "to": "./gemModel"
+  },
+  {
+    "from": "server/services/secsgem/secsgem.test.ts",
+    "to": "./secsGemRegistry"
+  },
+  {
+    "from": "server/services/secsgem/secsGemRegistry.ts",
+    "to": "./hsmsClient"
+  },
+  {
+    "from": "server/services/secsgem/secsGemRegistry.ts",
+    "to": "./gemModel"
+  },
+  {
+    "from": "server/services/uns/aoiBridge.test.ts",
+    "to": "./aoiBridge"
+  },
+  {
+    "from": "server/services/uns/aoiBridge.ts",
+    "to": "../unsBridge"
+  },
+  {
+    "from": "server/services/uns/aoiBridge.ts",
+    "to": "./sparkplugNode"
+  },
+  {
+    "from": "server/services/uns/sparkplugCommand.test.ts",
+    "to": "./sparkplugEncoder"
+  },
+  {
+    "from": "server/services/uns/sparkplugCommand.test.ts",
+    "to": "./sparkplugCommand"
+  },
+  {
+    "from": "server/services/uns/sparkplugCommand.test.ts",
+    "to": "../ot/commandDispatcher"
+  },
+  {
+    "from": "server/services/uns/sparkplugCommand.ts",
+    "to": "./sparkplugEncoder"
+  },
+  {
+    "from": "server/services/uns/sparkplugCommand.ts",
+    "to": "./topicBuilder"
+  },
+  {
+    "from": "server/services/uns/sparkplugCommand.ts",
+    "to": "../ot/commandDispatcher"
+  },
+  {
+    "from": "server/services/uns/sparkplugEncoder.test.ts",
+    "to": "./sparkplugEncoder"
+  },
+  {
+    "from": "server/services/uns/sparkplugEncoder.ts",
+    "to": "../ot/otDriver"
+  },
+  {
+    "from": "server/services/uns/sparkplugNode.test.ts",
+    "to": "./sparkplugNode"
+  },
+  {
+    "from": "server/services/uns/sparkplugNode.test.ts",
+    "to": "./sparkplugEncoder"
+  },
+  {
+    "from": "server/services/uns/sparkplugNode.ts",
+    "to": "./topicBuilder"
+  },
+  {
+    "from": "server/services/uns/sparkplugNode.ts",
+    "to": "./sparkplugEncoder"
+  },
+  {
+    "from": "server/services/uns/sparkplugNode.ts",
+    "to": "./sparkplugState"
+  },
+  {
+    "from": "server/services/uns/sparkplugState.test.ts",
+    "to": "./sparkplugState"
+  },
+  {
+    "from": "server/services/uns/topicBuilder.test.ts",
+    "to": "./topicBuilder"
+  },
+  {
+    "from": "server/services/unsPublisher.ts",
+    "to": "./unsBridge"
+  },
+  {
+    "from": "server/services/unsPublisher.ts",
+    "to": "./uns/sparkplugNode"
+  },
+  {
+    "from": "server/services/unsPublisher.ts",
+    "to": "./uns/sparkplugCommand"
+  },
+  {
+    "from": "server/services/unsPublisher.ts",
+    "to": "./uns/sparkplugEncoder"
+  },
+  {
+    "from": "server/services/unsPublisher.ts",
+    "to": "./ot/commandDispatcher"
+  },
+  {
+    "from": "server/services/unsPublisher.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/services/unsPublisher.ts",
+    "to": "../../drizzle/schema"
+  },
+  {
+    "from": "server/services/unsPublisher.wiring.test.ts",
+    "to": "./unsPublisher"
+  },
+  {
+    "from": "server/services/vda5050/index.ts",
+    "to": "./vda5050Manager"
+  },
+  {
+    "from": "server/services/vda5050/index.ts",
+    "to": "./vda5050Adapter"
+  },
+  {
+    "from": "server/services/vda5050/index.ts",
+    "to": "./vda5050Driver"
+  },
+  {
+    "from": "server/services/vda5050/index.ts",
+    "to": "./vda5050Mapping"
+  },
+  {
+    "from": "server/services/vda5050/index.ts",
+    "to": "./vda5050Messages"
+  },
+  {
+    "from": "server/services/vda5050/vda5050.test.ts",
+    "to": "./vda5050Mapping"
+  },
+  {
+    "from": "server/services/vda5050/vda5050.test.ts",
+    "to": "./vda5050Messages"
+  },
+  {
+    "from": "server/services/vda5050/vda5050.test.ts",
+    "to": "./vda5050Messages"
+  },
+  {
+    "from": "server/services/vda5050/vda5050Adapter.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/vda5050/vda5050Adapter.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/vda5050/vda5050Adapter.ts",
+    "to": "../../../drizzle/schema/robot"
+  },
+  {
+    "from": "server/services/vda5050/vda5050Adapter.ts",
+    "to": "../robot/robotIngest"
+  },
+  {
+    "from": "server/services/vda5050/vda5050Adapter.ts",
+    "to": "../robot/robotAdapter"
+  },
+  {
+    "from": "server/services/vda5050/vda5050Adapter.ts",
+    "to": "./vda5050Messages"
+  },
+  {
+    "from": "server/services/vda5050/vda5050Adapter.ts",
+    "to": "./vda5050Mapping"
+  },
+  {
+    "from": "server/services/vda5050/vda5050Driver.ts",
+    "to": "../robot/robotDriver"
+  },
+  {
+    "from": "server/services/vda5050/vda5050Driver.ts",
+    "to": "./vda5050Messages"
+  },
+  {
+    "from": "server/services/vda5050/vda5050Driver.ts",
+    "to": "./vda5050Mapping"
+  },
+  {
+    "from": "server/services/vda5050/vda5050Manager.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/vda5050/vda5050Manager.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/vda5050/vda5050Manager.ts",
+    "to": "../robot/driverRegistry"
+  },
+  {
+    "from": "server/services/vda5050/vda5050Manager.ts",
+    "to": "./vda5050Driver"
+  },
+  {
+    "from": "server/services/vda5050/vda5050Manager.ts",
+    "to": "./vda5050Adapter"
+  },
+  {
+    "from": "server/services/vda5050/vda5050Mapping.ts",
+    "to": "../robot/robotDriver"
+  },
+  {
+    "from": "server/services/vda5050/vda5050Mapping.ts",
+    "to": "./vda5050Messages"
+  },
+  {
+    "from": "server/services/vda5050/vda5050Mapping.ts",
+    "to": "./vda5050Messages"
+  },
+  {
+    "from": "server/services/vision/adapters/genericJson.ts",
+    "to": "../visionAdapterRegistry"
+  },
+  {
+    "from": "server/services/vision/adapters/kohYoung.ts",
+    "to": "../visionAdapterRegistry"
+  },
+  {
+    "from": "server/services/vision/index.ts",
+    "to": "./visionAdapterRegistry"
+  },
+  {
+    "from": "server/services/vision/index.ts",
+    "to": "./adapters/genericJson"
+  },
+  {
+    "from": "server/services/vision/index.ts",
+    "to": "./adapters/kohYoung"
+  },
+  {
+    "from": "server/services/vision/index.ts",
+    "to": "./visionAdapterRegistry"
+  },
+  {
+    "from": "server/services/vision/index.ts",
+    "to": "./visionAdapterRegistry"
+  },
+  {
+    "from": "server/services/vision/visionAdapter.test.ts",
+    "to": "./visionAdapterRegistry"
+  },
+  {
+    "from": "server/services/vision/visionAdapter.test.ts",
+    "to": "./adapters/genericJson"
+  },
+  {
+    "from": "server/services/vision/visionAdapter.test.ts",
+    "to": "./adapters/kohYoung"
+  },
+  {
+    "from": "server/services/vision/visionAdapter.test.ts",
+    "to": "../../routers/visionAdapterRouter"
   },
   {
     "from": "server/storage.ts",
@@ -2112,8 +6040,44 @@
     "to": "./db"
   },
   {
+    "from": "server/utils/asBuiltReport.ts",
+    "to": "../../drizzle/schema/inspection"
+  },
+  {
+    "from": "server/utils/asBuiltReport.ts",
+    "to": "../../drizzle/schema/product"
+  },
+  {
+    "from": "server/utils/instrumentGate.ts",
+    "to": "../db/connection"
+  },
+  {
+    "from": "server/utils/instrumentGate.ts",
+    "to": "../../drizzle/schema/product"
+  },
+  {
+    "from": "server/utils/lightingRecipePublisher.ts",
+    "to": "../../drizzle/schema/product"
+  },
+  {
+    "from": "server/utils/monteCarloFlow.ts",
+    "to": "./stationTriangulation"
+  },
+  {
+    "from": "server/utils/msaReport.ts",
+    "to": "../../drizzle/schema/product"
+  },
+  {
     "from": "server/utils/safeImagePath.test.ts",
     "to": "./safeImagePath"
+  },
+  {
+    "from": "server/utils/spc.fullAnalysis.test.ts",
+    "to": "./spc"
+  },
+  {
+    "from": "server/utils/spcRules.test.ts",
+    "to": "./spcRules"
   },
   {
     "from": "server/widgetStylePresets.test.ts",
@@ -2185,7 +6149,15 @@
   },
   {
     "from": "server/_core/index.ts",
+    "to": "../constants/machineTypes"
+  },
+  {
+    "from": "server/_core/index.ts",
     "to": "./context"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "./masterKey"
   },
   {
     "from": "server/_core/index.ts",
@@ -2194,6 +6166,10 @@
   {
     "from": "server/_core/index.ts",
     "to": "./socket"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "./uploadValidation"
   },
   {
     "from": "server/_core/index.ts",
@@ -2209,11 +6185,19 @@
   },
   {
     "from": "server/_core/index.ts",
+    "to": "../services/backupSchedulerService"
+  },
+  {
+    "from": "server/_core/index.ts",
     "to": "../services/mqttService"
   },
   {
     "from": "server/_core/index.ts",
     "to": "../services/alertEvaluationService"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../services/alertEscalationService"
   },
   {
     "from": "server/_core/index.ts",
@@ -2245,6 +6229,14 @@
   },
   {
     "from": "server/_core/index.ts",
+    "to": "../routes/aiLocalKnowledgeApi"
+  },
+  {
+    "from": "server/_core/index.ts",
+    "to": "../routes/edgeDownload"
+  },
+  {
+    "from": "server/_core/index.ts",
     "to": "../logger"
   },
   {
@@ -2253,7 +6245,15 @@
   },
   {
     "from": "server/_core/llm.ts",
-    "to": "./env"
+    "to": "../services/aiProviderRouter"
+  },
+  {
+    "from": "server/_core/llm.ts",
+    "to": "../utils/safeImagePath"
+  },
+  {
+    "from": "server/_core/llm.ws-g3.test.ts",
+    "to": "./llm"
   },
   {
     "from": "server/_core/map.ts",
@@ -2296,6 +6296,10 @@
     "to": "./socket"
   },
   {
+    "from": "server/_core/rateLimitConfig.test.ts",
+    "to": "./rateLimitConfig"
+  },
+  {
     "from": "server/_core/sdk.ts",
     "to": "../../drizzle/schema"
   },
@@ -2314,6 +6318,22 @@
   {
     "from": "server/_core/socket.ts",
     "to": "../db"
+  },
+  {
+    "from": "server/_core/socket.ts",
+    "to": "./sdk"
+  },
+  {
+    "from": "server/_core/socket.ts",
+    "to": "./socketRedisAdapter"
+  },
+  {
+    "from": "server/_core/socket.ts",
+    "to": "./eventBus"
+  },
+  {
+    "from": "server/_core/socket.twin.test.ts",
+    "to": "./socket"
   },
   {
     "from": "server/_core/systemRouter.ts",
@@ -2346,6 +6366,26 @@
   {
     "from": "client/src/App.tsx",
     "to": "./contexts/ThemeContext"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./contexts/AiCopilotContext"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./components/AILocalChatBubble"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./components/ConnectionBanner"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./components/RouteGuard"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./hooks/useKioskMode"
   },
   {
     "from": "client/src/App.tsx",
@@ -2433,6 +6473,10 @@
   },
   {
     "from": "client/src/App.tsx",
+    "to": "./pages/ProductionSessionSignOff"
+  },
+  {
+    "from": "client/src/App.tsx",
     "to": "./pages/ProductComparison"
   },
   {
@@ -2501,6 +6545,10 @@
   },
   {
     "from": "client/src/App.tsx",
+    "to": "./pages/AboutSystem"
+  },
+  {
+    "from": "client/src/App.tsx",
     "to": "./pages/DashboardTemplates"
   },
   {
@@ -2526,6 +6574,30 @@
   {
     "from": "client/src/App.tsx",
     "to": "./pages/MachineHealthMonitoring"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/MESControlTower"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/WipLineBalance"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/TraceabilityLineage"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/DigitalTwinDashboard"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/RealtimeReportView"
+  },
+  {
+    "from": "client/src/App.tsx",
+    "to": "./pages/CarbonDashboard"
   },
   {
     "from": "client/src/App.tsx",
@@ -2581,10 +6653,6 @@
   },
   {
     "from": "client/src/App.tsx",
-    "to": "./pages/SPCAdvanced"
-  },
-  {
-    "from": "client/src/App.tsx",
     "to": "./pages/CorrelationAnalysis"
   },
   {
@@ -2637,6 +6705,10 @@
   },
   {
     "from": "client/src/App.tsx",
+    "to": "./pages/MachineOnboardingWizard"
+  },
+  {
+    "from": "client/src/App.tsx",
     "to": "./pages/CorporateManagement"
   },
   {
@@ -2672,8 +6744,20 @@
     "to": "./pages/StationAnalysis"
   },
   {
+    "from": "client/src/components/AILocalChatBubble.tsx",
+    "to": "./AIToolResultCard"
+  },
+  {
+    "from": "client/src/components/AILocalChatBubble.tsx",
+    "to": "./AgentPlanCard"
+  },
+  {
     "from": "client/src/components/BatchImageExport.tsx",
     "to": "./ImageGallery"
+  },
+  {
+    "from": "client/src/components/ConnectionBanner.tsx",
+    "to": "../lib/socketManager"
   },
   {
     "from": "client/src/components/CorporateFactoryStats.tsx",
@@ -2697,6 +6781,10 @@
   },
   {
     "from": "client/src/components/DashboardLayout.tsx",
+    "to": "./AIActionInbox"
+  },
+  {
+    "from": "client/src/components/DashboardLayout.tsx",
     "to": "./LanguageSwitcher"
   },
   {
@@ -2714,6 +6802,10 @@
   {
     "from": "client/src/components/DashboardLayout.tsx",
     "to": "./LicenseEnforcementBanner"
+  },
+  {
+    "from": "client/src/components/DashboardLayout.tsx",
+    "to": "./PermissionExpiryBanner"
   },
   {
     "from": "client/src/components/DashboardLayoutEditor.tsx",
@@ -2742,6 +6834,30 @@
   {
     "from": "client/src/components/LicenseGate.tsx",
     "to": "../../../shared/module-registry"
+  },
+  {
+    "from": "client/src/components/onboarding/AISetupSuggestion.tsx",
+    "to": "./types"
+  },
+  {
+    "from": "client/src/components/onboarding/Step1MachineInfo.tsx",
+    "to": "./types"
+  },
+  {
+    "from": "client/src/components/onboarding/Step2TestConnection.tsx",
+    "to": "./types"
+  },
+  {
+    "from": "client/src/components/onboarding/Step3AssignStation.tsx",
+    "to": "./types"
+  },
+  {
+    "from": "client/src/components/onboarding/Step4DeployModel.tsx",
+    "to": "./types"
+  },
+  {
+    "from": "client/src/components/onboarding/Step5Verify.tsx",
+    "to": "./types"
   },
   {
     "from": "client/src/components/ReportExportButton.tsx",
@@ -2792,6 +6908,10 @@
     "to": "./exportUtils"
   },
   {
+    "from": "client/src/lib/offlineQueue.unit.test.ts",
+    "to": "./offlineQueue"
+  },
+  {
     "from": "client/src/lib/pdfExport.ts",
     "to": "./resolveOklchColors"
   },
@@ -2836,11 +6956,23 @@
     "to": "./enums"
   },
   {
+    "from": "drizzle/schema/andon.ts",
+    "to": "./enums"
+  },
+  {
     "from": "drizzle/schema/auth.ts",
     "to": "./enums"
   },
   {
     "from": "drizzle/schema/dashboard.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/edge.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/g3.ts",
     "to": "./enums"
   },
   {
@@ -2878,6 +7010,10 @@
   {
     "from": "drizzle/schema/index.ts",
     "to": "./production"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./scheduling"
   },
   {
     "from": "drizzle/schema/index.ts",
@@ -2920,11 +7056,67 @@
     "to": "./license"
   },
   {
+    "from": "drizzle/schema/index.ts",
+    "to": "./mes"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./g3"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./ot"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./process"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./andon"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./interlock"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./robot"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./aiInsight"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./kb"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./masterdata"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./orchestration"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./edge"
+  },
+  {
+    "from": "drizzle/schema/index.ts",
+    "to": "./programming"
+  },
+  {
     "from": "drizzle/schema/inspection.ts",
     "to": "./enums"
   },
   {
     "from": "drizzle/schema/integration.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/interlock.ts",
     "to": "./enums"
   },
   {
@@ -2936,6 +7128,14 @@
     "to": "./enums"
   },
   {
+    "from": "drizzle/schema/masterdata.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/mes.ts",
+    "to": "./enums"
+  },
+  {
     "from": "drizzle/schema/mqtt.ts",
     "to": "./enums"
   },
@@ -2944,11 +7144,35 @@
     "to": "./enums"
   },
   {
+    "from": "drizzle/schema/orchestration.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/orchestration.ts",
+    "to": "../../server/services/orchestration/foe/workflowModel"
+  },
+  {
+    "from": "drizzle/schema/ot.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/process.ts",
+    "to": "./enums"
+  },
+  {
     "from": "drizzle/schema/product.ts",
     "to": "./enums"
   },
   {
     "from": "drizzle/schema/production.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/programming.ts",
+    "to": "./enums"
+  },
+  {
+    "from": "drizzle/schema/scheduling.ts",
     "to": "./enums"
   },
   {

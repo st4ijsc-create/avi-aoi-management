@@ -41,7 +41,19 @@ export type ToolResultType =
   | "analytics_yield"
   | "analytics_spc"
   | "analytics_pdm_forecast"
-  | "analytics_forecast";
+  | "analytics_forecast"
+  // ── Phase P2 (group A) — high-priority READ tools (additive) ──
+  | "work_order_list"
+  | "alert_list"
+  | "spec_limits"
+  | "recipe_list"
+  // ── Phase P2 (groups B & C) — additional READ tools (additive) ──
+  | "product_list"
+  | "rca_history"
+  | "user_list"
+  | "api_key_list"
+  | "change_history"
+  | "machine_health";
 
 export interface ToolResult<T = unknown> {
   type: ToolResultType;

@@ -502,6 +502,65 @@ export function ggufModelFileExists(modelIdOrFile?: string): boolean {
 }
 
 /**
+ * W0.2 (doc 11) — honest "is a TEXT LLM actually loadable?" check for health.
+ * Today getKbHealth only proves the KB files parse; the bubble then shows
+ * "Sẵn sàng" even when no GGUF text model can be loaded → answers silently
+ * degrade to extractive. This verifies, cheaply and WITHOUT running inference:
+ *   1. node-llama-cpp can be imported (engine present), AND
+ *   2. a real text GGUF model file resolves on disk + passes the GGUF magic
+ *      header check (validateGgufFile) — preferring GGUF_DEFAULT_MODEL (deep QA
+ *      model), then GGUF_FAST_MODEL, else the first non-embedding .gguf found.
+ * NEVER throws — returns false on any error. We deliberately skip the embedding
+ * model so a config with only an embed model (no QA model) reports llmReady:false.
+ */
+export async function isGgufModelLoadable(): Promise<boolean> {
+  try {
+    if (!(await isGgufAvailable())) return false;
+
+    const embedBase = (process.env.GGUF_EMBED_MODEL || "")
+      .trim()
+      .replace(/\.gguf$/i, "")
+      .toLowerCase();
+
+    // Candidate text models in preference order (deep → fast).
+    const candidates = [process.env.GGUF_DEFAULT_MODEL, process.env.GGUF_FAST_MODEL]
+      .map((v) => (v || "").trim())
+      .filter(Boolean);
+
+    for (const c of candidates) {
+      const file = /\.gguf$/i.test(c) ? c : `${c}.gguf`;
+      try {
+        const resolved = resolveModelPath(file);
+        validateGgufFile(resolved); // magic header + min size; throws if bad
+        return true;
+      } catch {
+        // try next candidate
+      }
+    }
+
+    // No explicit text model configured/valid → look for any non-embedding
+    // .gguf in the models dir and validate it.
+    ensureModelsDir();
+    const files = fs.readdirSync(GGUF_MODELS_DIR).filter((f) => f.endsWith(".gguf"));
+    for (const f of files) {
+      const base = f.replace(/\.gguf$/i, "").toLowerCase();
+      if (embedBase && base === embedBase) continue; // skip the embed model
+      if (/embed/i.test(base)) continue; // heuristic: skip obvious embedders
+      try {
+        validateGgufFile(path.join(GGUF_MODELS_DIR, f));
+        return true;
+      } catch {
+        // try next file
+      }
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Load a GGUF model into memory and create a context/session
  */
 export async function loadGgufModel(config: GgufModelConfig): Promise<string> {

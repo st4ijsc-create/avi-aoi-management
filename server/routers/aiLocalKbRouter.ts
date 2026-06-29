@@ -46,6 +46,15 @@ interface KbHealthResponse {
   chunks: number;
   embeddings?: number;
   error?: string;
+  // W0.2/W0.3 (doc 11) — honest health: capability + embed-provenance signals
+  // surfaced by getKbHealth and passed through unchanged to the client.
+  llmReady?: boolean;
+  embedModel?: string | null;
+  queryEmbedModel?: string;
+  embedModelMatches?: boolean;
+  kbBuiltAt?: string | null;
+  chunkCount?: number;
+  staleDays?: number | null;
 }
 
 interface KbApiResult {
@@ -86,17 +95,21 @@ export const aiLocalKbRouter = router({
   /**
    * Check knowledge base health and readiness
    */
-  health: publicProcedure.query(async () => {
+  health: publicProcedure.query(async (): Promise<KbHealthResponse> => {
     try {
       const result = await fetchKbApi<KbHealthResponse>("/api/ai/local-kb/health", "GET");
       return result;
     } catch (error: any) {
+      // W0.2 (doc 11) — conservative shape on transport failure (mirrors the
+      // KbHealthResponse fields the client reads so the union stays uniform).
       return {
         success: false,
         ready: false,
         chunks: 0,
         embeddings: 0,
         error: error.message,
+        llmReady: false,
+        embedModelMatches: true,
       };
     }
   }),

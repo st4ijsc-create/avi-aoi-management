@@ -26,6 +26,10 @@
  *     embeddingDim, embedding }
  * written in the order of the new chunks.jsonl.
  */
+// W1.2-fix — load repo-root .env BEFORE reading process.env, so the GGUF embedding
+// model is read from project config instead of the mxbai default. dotenv does NOT
+// overwrite already-set process.env keys.
+import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -40,6 +44,21 @@ const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434"
 const OLLAMA_EMBED_MODEL = process.env.OLLAMA_EMBED_MODEL ?? "mxbai-embed-large";
 const MAX_TEXT_CHARS = Number(process.env.KB_EMBED_MAX_TEXT_CHARS ?? 3000);
 const USE_LEGACY_OLLAMA = (process.env.USE_LEGACY_OLLAMA ?? "false").toLowerCase() === "true";
+
+// W1.2-fix — resolve the embed model name we are ABOUT to use (matches the basename
+// convention written into embeddings-meta.json by ggufEmbedModelName(), i.e. WITHOUT
+// the .gguf extension) so the model-switch guard below can compare apples to apples.
+const RESOLVED_EMBED_MODEL = USE_LEGACY_OLLAMA
+  ? OLLAMA_EMBED_MODEL
+  : path.basename(process.env.GGUF_EMBED_MODEL ?? "mxbai-embed-large-v1-f16.gguf", ".gguf");
+const RESOLVED_MODELS_DIR = USE_LEGACY_OLLAMA
+  ? OLLAMA_BASE_URL
+  : (process.env.GGUF_MODELS_DIR ?? path.join(ROOT, "uploads", "gguf-models"));
+// Escape-hatch: allow knowingly switching the corpus embedding model in-place.
+const ALLOW_MODEL_SWITCH = (process.env.KB_EMBED_ALLOW_MODEL_SWITCH ?? "") === "1";
+console.log(
+  `[kb] embed model = ${RESOLVED_EMBED_MODEL} (engine=${USE_LEGACY_OLLAMA ? "ollama" : "gguf"}, dir=${RESOLVED_MODELS_DIR})`,
+);
 
 function parseJsonl(file) {
   if (!fs.existsSync(file)) return [];
@@ -157,6 +176,39 @@ async function run() {
   const oldById = new Map();
   for (const row of oldRows) {
     if (row && typeof row.id === "string") oldById.set(row.id, row);
+  }
+
+  // W1.2-fix — model-switch SAFETY GUARD. Incremental embedding reuses old vectors
+  // and only re-embeds changed/new chunks; if the existing corpus was built with a
+  // DIFFERENT embedding model than the one we're about to use, the reused and the
+  // freshly-embedded vectors live in incompatible spaces → corrupts retrieval. This
+  // is exactly the bug that occurred (mxbai default vs configured Qwen3). Abort loudly
+  // unless KB_EMBED_ALLOW_MODEL_SWITCH=1 is set (which is only safe with a FULL re-embed).
+  if (oldById.size > 0 && fs.existsSync(META_FILE)) {
+    let existingModel = null;
+    try {
+      existingModel = JSON.parse(fs.readFileSync(META_FILE, "utf8"))?.model ?? null;
+    } catch {
+      existingModel = null;
+    }
+    // Compare on basename-without-extension to tolerate "x" vs "x.gguf" spellings.
+    const norm = (m) => (m ? path.basename(String(m), ".gguf") : m);
+    if (existingModel && norm(existingModel) !== norm(RESOLVED_EMBED_MODEL)) {
+      const msg =
+        `\n[kb] ████ EMBED MODEL MISMATCH — incremental aborted ████\n` +
+        `[kb]   existing corpus model : ${existingModel}\n` +
+        `[kb]   model about to be used : ${RESOLVED_EMBED_MODEL}\n` +
+        `[kb] Incrementally mixing embedding models corrupts the vector space.\n` +
+        `[kb] Run a FULL re-embed instead:  npm run kb:embed\n` +
+        `[kb] (or set KB_EMBED_ALLOW_MODEL_SWITCH=1 to override — only safe on a full re-embed).\n`;
+      if (ALLOW_MODEL_SWITCH) {
+        console.warn(msg);
+        console.warn("[kb] KB_EMBED_ALLOW_MODEL_SWITCH=1 set — continuing despite model switch.");
+      } else {
+        console.error(msg);
+        process.exit(1);
+      }
+    }
   }
 
   const startedAt = Date.now();

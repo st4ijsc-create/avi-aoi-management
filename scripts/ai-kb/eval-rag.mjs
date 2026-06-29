@@ -36,6 +36,10 @@
  * sourcePath containing any expectSourceContains entry (case-insensitive) OR a
  * chunk text containing any expectKeywords entry. recall@5 = hits / total.
  */
+// W1.2-fix — load repo-root .env BEFORE reading process.env, so GGUF_EMBED_MODEL /
+// GGUF_MODELS_DIR match the model the corpus was built with (else query vectors land
+// in a different space and recall collapses). dotenv does NOT overwrite set keys.
+import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 

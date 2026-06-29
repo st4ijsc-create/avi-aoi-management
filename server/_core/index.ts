@@ -4537,6 +4537,16 @@ async function startServer() {
     console.error("[aiThresholdTuneScheduler] init failed:", (err as any)?.message || err);
   }
 
+  // doc 11 · W1.2 — KB auto-sync: keep the AI knowledge base fresh by running the
+  // incremental kb:sync pipeline on a nightly cron. Disabled by default; opt in via
+  // KB_AUTOSYNC_ENABLED=true. Safe no-op when OFF; never blocks boot.
+  try {
+    const { startKbSyncScheduler } = await import("../services/kbSyncScheduler");
+    startKbSyncScheduler();
+  } catch (err) {
+    console.error("[kbSyncScheduler] init failed:", (err as any)?.message || err);
+  }
+
   // P2 WS2.3 — Orchestration rules engine (subscribes to the event bus).
   // Disabled by default; opt in via ORCHESTRATION_ENABLED=true. Notify/audit only.
   try {
@@ -4683,6 +4693,9 @@ async function startServer() {
       .catch(() => {});
     import("../services/aiThresholdTuneScheduler")
       .then((m) => m.stopThresholdTuneScheduler())
+      .catch(() => {});
+    import("../services/kbSyncScheduler")
+      .then((m) => m.stopKbSyncScheduler())
       .catch(() => {});
     shutdownScheduledBackups();
     shutdownRuntimeSecurity();
