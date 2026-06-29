@@ -48,7 +48,7 @@ SELECT DISTINCT pi."productModelId",
        '__UNMAPPED__',
        'Unmapped point (backfilled)',
        'Backfilled by migration 0131 for legacy AOI-ZIP rows that were stored with pointDefId = 0.',
-       'VISUAL',
+       'VISUAL'::"measurementtypeenum",
        0, 0
 FROM "measurement_results" mr
 JOIN "product_inspections" pi ON pi."id" = mr."inspectionId"
@@ -69,7 +69,7 @@ SELECT pm."id",
        '__UNMAPPED__',
        'Unmapped point (backfilled, no product model)',
        'Backfilled by migration 0131 for legacy AOI-ZIP rows (pointDefId = 0) whose inspection had no product model.',
-       'VISUAL',
+       'VISUAL'::"measurementtypeenum",
        0, 0
 FROM "product_models" pm
 WHERE pm."code" = '__UNMAPPED__'
