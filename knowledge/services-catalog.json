@@ -760,7 +760,8 @@
     "exportedClasses": [],
     "localImports": [
       "./aiLocalTools",
-      "./aiReranker"
+      "./aiReranker",
+      "./aiSemanticGraph"
     ]
   },
   {
@@ -932,6 +933,48 @@
     "file": "server/services/aiLocalTools/readToolsP2.ts",
     "exportedFunctions": [
       "registerP2ReadTools"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "../../_core/accessControl",
+      "./toolRegistry"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/readToolsP2bc.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./readToolsP2bc"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/readToolsP2bc.ts",
+    "exportedFunctions": [
+      "registerP2bcReadTools"
+    ],
+    "exportedClasses": [],
+    "localImports": [
+      "../../db/connection",
+      "../../../drizzle/schema",
+      "../../_core/accessControl",
+      "./toolRegistry"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/readToolsP2d.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./readToolsP2d"
+    ]
+  },
+  {
+    "file": "server/services/aiLocalTools/readToolsP2d.ts",
+    "exportedFunctions": [
+      "registerP2dReadTools"
     ],
     "exportedClasses": [],
     "localImports": [
@@ -1358,10 +1401,19 @@
     ]
   },
   {
+    "file": "server/services/aiReranker.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiReranker"
+    ]
+  },
+  {
     "file": "server/services/aiReranker.ts",
     "exportedFunctions": [
       "isRerankerEnabled",
       "parseScoreArray",
+      "getRerankerStatus",
       "disposeReranker"
     ],
     "exportedClasses": [],
@@ -1403,6 +1455,24 @@
       "./aiTrainingPipeline",
       "./aiDriftMonitor"
     ]
+  },
+  {
+    "file": "server/services/aiSemanticGraph.test.ts",
+    "exportedFunctions": [],
+    "exportedClasses": [],
+    "localImports": [
+      "./aiSemanticGraph"
+    ]
+  },
+  {
+    "file": "server/services/aiSemanticGraph.ts",
+    "exportedFunctions": [
+      "buildAdjacency",
+      "loadSemanticGraph",
+      "__resetSemanticGraphCache"
+    ],
+    "exportedClasses": [],
+    "localImports": []
   },
   {
     "file": "server/services/aiSetupAdvisor.test.ts",
@@ -2236,6 +2306,17 @@
       "../../db/connection",
       "../../../drizzle/schema"
     ]
+  },
+  {
+    "file": "server/services/kbSyncScheduler.ts",
+    "exportedFunctions": [
+      "runKbSyncNow",
+      "startKbSyncScheduler",
+      "stopKbSyncScheduler",
+      "getKbSyncSchedulerStatus"
+    ],
+    "exportedClasses": [],
+    "localImports": []
   },
   {
     "file": "server/services/llamaVisionSidecar.test.ts",

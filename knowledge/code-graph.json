@@ -3816,6 +3816,10 @@
     "to": "./aiReranker"
   },
   {
+    "from": "server/services/aiLocalKnowledgeService.ts",
+    "to": "./aiSemanticGraph"
+  },
+  {
     "from": "server/services/aiLocalTools/analyticsTools.test.ts",
     "to": "./analyticsTools"
   },
@@ -4013,6 +4017,46 @@
   },
   {
     "from": "server/services/aiLocalTools/readToolsP2.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/readToolsP2bc.test.ts",
+    "to": "./readToolsP2bc"
+  },
+  {
+    "from": "server/services/aiLocalTools/readToolsP2bc.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/aiLocalTools/readToolsP2bc.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiLocalTools/readToolsP2bc.ts",
+    "to": "../../_core/accessControl"
+  },
+  {
+    "from": "server/services/aiLocalTools/readToolsP2bc.ts",
+    "to": "./toolRegistry"
+  },
+  {
+    "from": "server/services/aiLocalTools/readToolsP2d.test.ts",
+    "to": "./readToolsP2d"
+  },
+  {
+    "from": "server/services/aiLocalTools/readToolsP2d.ts",
+    "to": "../../db/connection"
+  },
+  {
+    "from": "server/services/aiLocalTools/readToolsP2d.ts",
+    "to": "../../../drizzle/schema"
+  },
+  {
+    "from": "server/services/aiLocalTools/readToolsP2d.ts",
+    "to": "../../_core/accessControl"
+  },
+  {
+    "from": "server/services/aiLocalTools/readToolsP2d.ts",
     "to": "./toolRegistry"
   },
   {
@@ -4336,6 +4380,10 @@
     "to": "../../drizzle/schema/ai"
   },
   {
+    "from": "server/services/aiReranker.test.ts",
+    "to": "./aiReranker"
+  },
+  {
     "from": "server/services/aiSegmentation.test.ts",
     "to": "./aiSegmentation"
   },
@@ -4362,6 +4410,10 @@
   {
     "from": "server/services/aiSelfLearningScheduler.ts",
     "to": "./aiDriftMonitor"
+  },
+  {
+    "from": "server/services/aiSemanticGraph.test.ts",
+    "to": "./aiSemanticGraph"
   },
   {
     "from": "server/services/aiSetupAdvisor.test.ts",
@@ -6750,6 +6802,10 @@
   {
     "from": "client/src/components/AILocalChatBubble.tsx",
     "to": "./AgentPlanCard"
+  },
+  {
+    "from": "client/src/components/AILocalChatBubble.tsx",
+    "to": "./ConfirmActionCard"
   },
   {
     "from": "client/src/components/BatchImageExport.tsx",

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-29T10:53:05.314Z",
+  "generatedAt": "2026-06-29T13:13:06.148Z",
   "settings": {
     "maxNodes": 1200,
     "topK": 3,
@@ -7,7 +7,7 @@
   },
   "totals": {
     "nodes": 1200,
-    "edges": 2800
+    "edges": 2794
   },
   "nodes": [
     {
@@ -4191,6 +4191,82 @@
       "embeddingDim": 1024
     },
     {
+      "id": "service:server/services/aiLocalTools/readToolsP2bc.test.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiLocalTools/readToolsP2bc.test.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "readtoolsp2bc",
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "ailocaltools",
+        "test",
+        "functions",
+        "classes"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiLocalTools/readToolsP2bc.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiLocalTools/readToolsP2bc.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "ailocaltools",
+        "readtoolsp2bc",
+        "functions",
+        "registerp2bcreadtools",
+        "classes"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiLocalTools/readToolsP2d.test.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiLocalTools/readToolsP2d.test.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "readtoolsp2d",
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "ailocaltools",
+        "test",
+        "functions",
+        "classes"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiLocalTools/readToolsP2d.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiLocalTools/readToolsP2d.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "ailocaltools",
+        "readtoolsp2d",
+        "functions",
+        "registerp2dreadtools",
+        "classes"
+      ],
+      "embeddingDim": 1024
+    },
+    {
       "id": "service:server/services/aiLocalTools/toolRegistry.ts#0",
       "sourceType": "service",
       "sourcePath": "server/services/aiLocalTools/toolRegistry.ts",
@@ -4856,6 +4932,25 @@
       "embeddingDim": 1024
     },
     {
+      "id": "service:server/services/aiReranker.test.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiReranker.test.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "aireranker",
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "test",
+        "functions",
+        "classes",
+        "local"
+      ],
+      "embeddingDim": 1024
+    },
+    {
       "id": "service:server/services/aiReranker.ts#0",
       "sourceType": "service",
       "sourcePath": "server/services/aiReranker.ts",
@@ -4870,7 +4965,7 @@
         "functions",
         "isrerankerenabled",
         "parsescorearray",
-        "disposereranker"
+        "getrerankerstatus"
       ],
       "embeddingDim": 1024
     },
@@ -4928,6 +5023,44 @@
         "runselflearningscanonce",
         "initselflearningscheduler",
         "stopselflearningscheduler"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiSemanticGraph.test.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiSemanticGraph.test.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "aisemanticgraph",
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "test",
+        "functions",
+        "classes",
+        "local"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/aiSemanticGraph.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/aiSemanticGraph.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "aisemanticgraph",
+        "functions",
+        "buildadjacency",
+        "loadsemanticgraph",
+        "__resetsemanticgraphcache"
       ],
       "embeddingDim": 1024
     },
@@ -6220,6 +6353,25 @@
         "iskbpgvectorenabled",
         "ingestkbchunks",
         "searchkb"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "service:server/services/kbSyncScheduler.ts#0",
+      "sourceType": "service",
+      "sourcePath": "server/services/kbSyncScheduler.ts",
+      "title": "Service Summary",
+      "keywords": [
+        "exported",
+        "service",
+        "file",
+        "server",
+        "services",
+        "kbsyncscheduler",
+        "functions",
+        "runkbsyncnow",
+        "startkbsyncscheduler",
+        "stopkbsyncscheduler"
       ],
       "embeddingDim": 1024
     },
@@ -10975,6 +11127,25 @@
       "embeddingDim": 1024
     },
     {
+      "id": "type:server/services/aiSemanticGraph.ts#0",
+      "sourceType": "type",
+      "sourcePath": "server/services/aiSemanticGraph.ts",
+      "title": "Type Summary",
+      "keywords": [
+        "type",
+        "source",
+        "file",
+        "server",
+        "services",
+        "aisemanticgraph",
+        "interfaces",
+        "graphedge",
+        "graphcandidate",
+        "expandoptions"
+      ],
+      "embeddingDim": 1024
+    },
+    {
       "id": "type:server/services/aiSetupAdvisor.ts#0",
       "sourceType": "type",
       "sourcePath": "server/services/aiSetupAdvisor.ts",
@@ -11539,6 +11710,25 @@
         "kbvectorstore",
         "interfaces",
         "kbsearchhit",
+        "aliases",
+        "schemas"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "type:server/services/kbSyncScheduler.ts#0",
+      "sourceType": "type",
+      "sourcePath": "server/services/kbSyncScheduler.ts",
+      "title": "Type Summary",
+      "keywords": [
+        "type",
+        "source",
+        "file",
+        "server",
+        "services",
+        "kbsyncscheduler",
+        "interfaces",
+        "kbsyncrunstats",
         "aliases",
         "schemas"
       ],
@@ -13197,6 +13387,25 @@
       "embeddingDim": 1024
     },
     {
+      "id": "type:client/src/components/ConfirmActionCard.tsx#0",
+      "sourceType": "type",
+      "sourcePath": "client/src/components/ConfirmActionCard.tsx",
+      "title": "Type Summary",
+      "keywords": [
+        "type",
+        "source",
+        "file",
+        "client",
+        "components",
+        "confirmactioncard",
+        "interfaces",
+        "pendingactionchange",
+        "pendingaction",
+        "aliases"
+      ],
+      "embeddingDim": 1024
+    },
+    {
       "id": "type:client/src/components/ConfirmDialog.tsx#0",
       "sourceType": "type",
       "sourcePath": "client/src/components/ConfirmDialog.tsx",
@@ -13763,6 +13972,25 @@
         "aliases",
         "validationrule",
         "schemas"
+      ],
+      "embeddingDim": 1024
+    },
+    {
+      "id": "type:client/src/hooks/useKbChatStream.ts#0",
+      "sourceType": "type",
+      "sourcePath": "client/src/hooks/useKbChatStream.ts",
+      "title": "Type Summary",
+      "keywords": [
+        "type",
+        "source",
+        "file",
+        "client",
+        "hooks",
+        "usekbchatstream",
+        "interfaces",
+        "kbcitation",
+        "kbstructured",
+        "kbconversationturn"
       ],
       "embeddingDim": 1024
     },
@@ -14664,13 +14892,13 @@
         "total",
         "files",
         "count",
-        "1216",
         "source",
+        "1226",
         "router",
         "service",
         "protectedprocedure",
-        "publicprocedure",
-        "object"
+        "1216",
+        "publicprocedure"
       ],
       "embeddingDim": 1024
     },
@@ -22546,234 +22774,6 @@
         "sidecar"
       ],
       "embeddingDim": 1024
-    },
-    {
-      "id": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#4",
-      "sourceType": "doc",
-      "sourcePath": "docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md",
-      "title": "THIẾT KẾ \"BỘ NÃO AI CỤC BỘ\" & KẾ HOẠCH NÂNG CẤP — ST4I Smart Factory (part 5)",
-      "keywords": [
-        "tier",
-        "model",
-        "qwen2",
-        "embedding",
-        "q4_k_m",
-        "onnx",
-        "image",
-        "anomaly",
-        "nhanh",
-        "bf16"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#5",
-      "sourceType": "doc",
-      "sourcePath": "docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md",
-      "title": "THIẾT KẾ \"BỘ NÃO AI CỤC BỘ\" & KẾ HOẠCH NÂNG CẤP — ST4I Smart Factory (part 6)",
-      "keywords": [
-        "tier",
-        "nhanh",
-        "hitl",
-        "qwen2",
-        "model",
-        "tool",
-        "rule",
-        "trung",
-        "thang",
-        "federation"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#6",
-      "sourceType": "doc",
-      "sourcePath": "docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md",
-      "title": "THIẾT KẾ \"BỘ NÃO AI CỤC BỘ\" & KẾ HOẠCH NÂNG CẤP — ST4I Smart Factory (part 7)",
-      "keywords": [
-        "tier",
-        "model",
-        "anomaly",
-        "tool",
-        "intent",
-        "hitl",
-        "trong",
-        "router",
-        "rulesengine",
-        "gbnf"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#7",
-      "sourceType": "doc",
-      "sourcePath": "docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md",
-      "title": "THIẾT KẾ \"BỘ NÃO AI CỤC BỘ\" & KẾ HOẠCH NÂNG CẤP — ST4I Smart Factory (part 8)",
-      "keywords": [
-        "gbnf",
-        "task",
-        "difficulty",
-        "tier",
-        "heuristic",
-        "trivial",
-        "easy",
-        "medium",
-        "hard",
-        "policy"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#8",
-      "sourceType": "doc",
-      "sourcePath": "docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md",
-      "title": "THIẾT KẾ \"BỘ NÃO AI CỤC BỘ\" & KẾ HOẠCH NÂNG CẤP — ST4I Smart Factory (part 9)",
-      "keywords": [
-        "model",
-        "router",
-        "onnx",
-        "governance",
-        "observability",
-        "card",
-        "audit",
-        "drift",
-        "action",
-        "autonomy"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#9",
-      "sourceType": "doc",
-      "sourcePath": "docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md",
-      "title": "THIẾT KẾ \"BỘ NÃO AI CỤC BỘ\" & KẾ HOẠCH NÂNG CẤP — ST4I Smart Factory (part 10)",
-      "keywords": [
-        "nguy",
-        "model",
-        "phase",
-        "pgvector",
-        "file",
-        "image",
-        "dinov2",
-        "knowledge",
-        "quan",
-        "tier"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#10",
-      "sourceType": "doc",
-      "sourcePath": "docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md",
-      "title": "THIẾT KẾ \"BỘ NÃO AI CỤC BỘ\" & KẾ HOẠCH NÂNG CẤP — ST4I Smart Factory (part 11)",
-      "keywords": [
-        "model",
-        "comment",
-        "false",
-        "cloud",
-        "dinov2",
-        "vision",
-        "sidecar",
-        "song",
-        "uploads",
-        "gguf-models"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#11",
-      "sourceType": "doc",
-      "sourcePath": "docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md",
-      "title": "THIẾT KẾ \"BỘ NÃO AI CỤC BỘ\" & KẾ HOẠCH NÂNG CẤP — ST4I Smart Factory (part 12)",
-      "keywords": [
-        "tier",
-        "model",
-        "dinov2-base",
-        "accurate",
-        "aimodelrouter",
-        "router",
-        "fast-tier",
-        "qwen2",
-        "5-3b-instruct-q4_k_m",
-        "gguf"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#12",
-      "sourceType": "doc",
-      "sourcePath": "docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md",
-      "title": "THIẾT KẾ \"BỘ NÃO AI CỤC BỘ\" & KẾ HOẠCH NÂNG CẤP — ST4I Smart Factory (part 13)",
-      "keywords": [
-        "cuda",
-        "song",
-        "vision",
-        "build",
-        "node-llama-cpp",
-        "router",
-        "real-time",
-        "inline",
-        "latency",
-        "text"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#13",
-      "sourceType": "doc",
-      "sourcePath": "docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md",
-      "title": "THIẾT KẾ \"BỘ NÃO AI CỤC BỘ\" & KẾ HOẠCH NÂNG CẤP — ST4I Smart Factory (part 14)",
-      "keywords": [
-        "search",
-        "knowledge",
-        "image",
-        "vector",
-        "graph",
-        "recall",
-        "hitl",
-        "pgvector",
-        "kb_pgvector_enabled",
-        "true"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#14",
-      "sourceType": "doc",
-      "sourcePath": "docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md",
-      "title": "THIẾT KẾ \"BỘ NÃO AI CỤC BỘ\" & KẾ HOẠCH NÂNG CẤP — ST4I Smart Factory (part 15)",
-      "keywords": [
-        "watcher",
-        "hitl",
-        "true",
-        "verify",
-        "sinh",
-        "playbook",
-        "event",
-        "rules",
-        "engine",
-        "orchestration_enabled"
-      ],
-      "embeddingDim": 1024
-    },
-    {
-      "id": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#15",
-      "sourceType": "doc",
-      "sourcePath": "docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md",
-      "title": "THIẾT KẾ \"BỘ NÃO AI CỤC BỘ\" & KẾ HOẠCH NÂNG CẤP — ST4I Smart Factory (part 16)",
-      "keywords": [
-        "drift",
-        "model",
-        "anomaly",
-        "true",
-        "vision",
-        "crop",
-        "tier-1",
-        "batch",
-        "throughput",
-        "dataset"
-      ],
-      "embeddingDim": 1024
     }
   ],
   "edges": [
@@ -25570,7 +25570,7 @@
     {
       "from": "service:server/services/aiLocalKnowledge.gd1.test.ts#0",
       "to": "service:server/services/aiLocalKnowledgeService.ts#0",
-      "similarity": 0.770332
+      "similarity": 0.770725
     },
     {
       "from": "service:server/services/aiLocalKnowledge.gguf.test.ts#0",
@@ -25579,28 +25579,28 @@
     },
     {
       "from": "service:server/services/aiLocalKnowledge.gguf.test.ts#0",
+      "to": "service:server/services/aiLocalKnowledgeService.ts#0",
+      "similarity": 0.782098
+    },
+    {
+      "from": "service:server/services/aiLocalKnowledge.gguf.test.ts#0",
       "to": "type:server/services/aiLocalKnowledgeService.ts#0",
       "similarity": 0.780456
     },
     {
-      "from": "service:server/services/aiLocalKnowledge.gguf.test.ts#0",
-      "to": "service:server/services/aiLocalKnowledgeService.ts#0",
-      "similarity": 0.780023
+      "from": "service:server/services/aiLocalKnowledgeService.ts#0",
+      "to": "type:server/services/aiLocalKnowledgeService.ts#0",
+      "similarity": 0.783879
     },
     {
       "from": "service:server/services/aiLocalKnowledgeService.ts#0",
       "to": "service:server/services/aiLocalKnowledge.gguf.test.ts#0",
-      "similarity": 0.780023
-    },
-    {
-      "from": "service:server/services/aiLocalKnowledgeService.ts#0",
-      "to": "type:server/services/aiLocalKnowledgeService.ts#0",
-      "similarity": 0.773128
+      "similarity": 0.782098
     },
     {
       "from": "service:server/services/aiLocalKnowledgeService.ts#0",
       "to": "service:server/services/aiLocalKnowledge.gd1.test.ts#0",
-      "similarity": 0.770332
+      "similarity": 0.770725
     },
     {
       "from": "service:server/services/aiLocalTools/analyticsTools.test.ts#0",
@@ -25824,18 +25824,28 @@
     },
     {
       "from": "service:server/services/aiLocalTools/readToolsP2.test.ts#0",
+      "to": "service:server/services/aiLocalTools/readToolsP2d.test.ts#0",
+      "similarity": 0.92309
+    },
+    {
+      "from": "service:server/services/aiLocalTools/readToolsP2.test.ts#0",
+      "to": "service:server/services/aiLocalTools/readToolsP2bc.test.ts#0",
+      "similarity": 0.92119
+    },
+    {
+      "from": "service:server/services/aiLocalTools/readToolsP2.test.ts#0",
       "to": "service:server/services/aiLocalTools/readToolsP2.ts#0",
       "similarity": 0.855716
     },
     {
-      "from": "service:server/services/aiLocalTools/readToolsP2.test.ts#0",
-      "to": "service:server/services/aiLocalTools/toolRegistry.ts#0",
-      "similarity": 0.774927
+      "from": "service:server/services/aiLocalTools/readToolsP2.ts#0",
+      "to": "service:server/services/aiLocalTools/readToolsP2d.ts#0",
+      "similarity": 0.970489
     },
     {
-      "from": "service:server/services/aiLocalTools/readToolsP2.test.ts#0",
-      "to": "service:server/services/aiLocalTools/writeHandlers/client.ts#0",
-      "similarity": 0.760607
+      "from": "service:server/services/aiLocalTools/readToolsP2.ts#0",
+      "to": "service:server/services/aiLocalTools/readToolsP2bc.ts#0",
+      "similarity": 0.95972
     },
     {
       "from": "service:server/services/aiLocalTools/readToolsP2.ts#0",
@@ -25843,14 +25853,64 @@
       "similarity": 0.855716
     },
     {
-      "from": "service:server/services/aiLocalTools/readToolsP2.ts#0",
-      "to": "service:server/services/aiLocalTools/handlers.ts#0",
-      "similarity": 0.851584
+      "from": "service:server/services/aiLocalTools/readToolsP2bc.test.ts#0",
+      "to": "service:server/services/aiLocalTools/readToolsP2.test.ts#0",
+      "similarity": 0.92119
     },
     {
-      "from": "service:server/services/aiLocalTools/readToolsP2.ts#0",
-      "to": "service:server/services/aiLocalTools/toolRegistry.ts#0",
-      "similarity": 0.763655
+      "from": "service:server/services/aiLocalTools/readToolsP2bc.test.ts#0",
+      "to": "service:server/services/aiLocalTools/readToolsP2bc.ts#0",
+      "similarity": 0.871915
+    },
+    {
+      "from": "service:server/services/aiLocalTools/readToolsP2bc.test.ts#0",
+      "to": "service:server/services/aiLocalTools/readToolsP2d.test.ts#0",
+      "similarity": 0.867624
+    },
+    {
+      "from": "service:server/services/aiLocalTools/readToolsP2bc.ts#0",
+      "to": "service:server/services/aiLocalTools/readToolsP2.ts#0",
+      "similarity": 0.95972
+    },
+    {
+      "from": "service:server/services/aiLocalTools/readToolsP2bc.ts#0",
+      "to": "service:server/services/aiLocalTools/readToolsP2d.ts#0",
+      "similarity": 0.93829
+    },
+    {
+      "from": "service:server/services/aiLocalTools/readToolsP2bc.ts#0",
+      "to": "service:server/services/aiLocalTools/readToolsP2bc.test.ts#0",
+      "similarity": 0.871915
+    },
+    {
+      "from": "service:server/services/aiLocalTools/readToolsP2d.test.ts#0",
+      "to": "service:server/services/aiLocalTools/readToolsP2.test.ts#0",
+      "similarity": 0.92309
+    },
+    {
+      "from": "service:server/services/aiLocalTools/readToolsP2d.test.ts#0",
+      "to": "service:server/services/aiLocalTools/readToolsP2d.ts#0",
+      "similarity": 0.868943
+    },
+    {
+      "from": "service:server/services/aiLocalTools/readToolsP2d.test.ts#0",
+      "to": "service:server/services/aiLocalTools/readToolsP2bc.test.ts#0",
+      "similarity": 0.867624
+    },
+    {
+      "from": "service:server/services/aiLocalTools/readToolsP2d.ts#0",
+      "to": "service:server/services/aiLocalTools/readToolsP2.ts#0",
+      "similarity": 0.970489
+    },
+    {
+      "from": "service:server/services/aiLocalTools/readToolsP2d.ts#0",
+      "to": "service:server/services/aiLocalTools/readToolsP2bc.ts#0",
+      "similarity": 0.93829
+    },
+    {
+      "from": "service:server/services/aiLocalTools/readToolsP2d.ts#0",
+      "to": "service:server/services/aiLocalTools/readToolsP2d.test.ts#0",
+      "similarity": 0.868943
     },
     {
       "from": "service:server/services/aiLocalTools/toolRegistry.ts#0",
@@ -26263,9 +26323,24 @@
       "similarity": 0.746158
     },
     {
+      "from": "service:server/services/aiReranker.test.ts#0",
+      "to": "service:server/services/aiReranker.ts#0",
+      "similarity": 0.846419
+    },
+    {
+      "from": "service:server/services/aiReranker.test.ts#0",
+      "to": "type:server/services/aiReranker.ts#0",
+      "similarity": 0.820284
+    },
+    {
+      "from": "service:server/services/aiReranker.ts#0",
+      "to": "service:server/services/aiReranker.test.ts#0",
+      "similarity": 0.846419
+    },
+    {
       "from": "service:server/services/aiReranker.ts#0",
       "to": "type:server/services/aiReranker.ts#0",
-      "similarity": 0.761392
+      "similarity": 0.747518
     },
     {
       "from": "service:server/services/aiSegmentation.test.ts#0",
@@ -26301,6 +26376,21 @@
       "from": "service:server/services/aiSelfLearningScheduler.ts#0",
       "to": "service:server/services/aiActiveLearningAuto.test.ts#0",
       "similarity": 0.771174
+    },
+    {
+      "from": "service:server/services/aiSemanticGraph.test.ts#0",
+      "to": "service:server/services/aiSemanticGraph.ts#0",
+      "similarity": 0.853696
+    },
+    {
+      "from": "service:server/services/aiSemanticGraph.test.ts#0",
+      "to": "service:server/services/aiCausalGraph.save.test.ts#0",
+      "similarity": 0.724917
+    },
+    {
+      "from": "service:server/services/aiSemanticGraph.ts#0",
+      "to": "service:server/services/aiSemanticGraph.test.ts#0",
+      "similarity": 0.853696
     },
     {
       "from": "service:server/services/aiSetupAdvisor.test.ts#0",
@@ -26931,6 +27021,11 @@
       "from": "service:server/services/interlock/ruleEvaluator.ts#0",
       "to": "type:server/services/interlock/ruleEvaluator.ts#0",
       "similarity": 0.78723
+    },
+    {
+      "from": "service:server/services/kbSyncScheduler.ts#0",
+      "to": "type:server/services/kbSyncScheduler.ts#0",
+      "similarity": 0.774123
     },
     {
       "from": "service:server/services/llamaVisionSidecar.test.ts#0",
@@ -29314,13 +29409,13 @@
     },
     {
       "from": "type:server/services/aiCopilotActions.ts#0",
-      "to": "service:server/services/aiCopilotActions.ts#0",
-      "similarity": 0.767506
+      "to": "type:client/src/components/ConfirmActionCard.tsx#0",
+      "similarity": 0.768084
     },
     {
       "from": "type:server/services/aiCopilotActions.ts#0",
-      "to": "type:client/src/contexts/AiCopilotContext.tsx#0",
-      "similarity": 0.757158
+      "to": "service:server/services/aiCopilotActions.ts#0",
+      "similarity": 0.767506
     },
     {
       "from": "type:server/services/aiDatasetBuilder.ts#0",
@@ -29494,13 +29589,13 @@
     },
     {
       "from": "type:server/services/aiLocalKnowledgeService.ts#0",
-      "to": "type:drizzle/schema/kb.ts#0",
-      "similarity": 0.786432
+      "to": "type:client/src/hooks/useKbChatStream.ts#0",
+      "similarity": 0.815459
     },
     {
       "from": "type:server/services/aiLocalKnowledgeService.ts#0",
-      "to": "service:server/services/aiLocalKnowledge.gguf.test.ts#0",
-      "similarity": 0.780456
+      "to": "type:drizzle/schema/kb.ts#0",
+      "similarity": 0.786432
     },
     {
       "from": "type:server/services/aiLocalTools/handlers.ts#0",
@@ -29709,8 +29804,13 @@
     },
     {
       "from": "type:server/services/aiReranker.ts#0",
+      "to": "service:server/services/aiReranker.test.ts#0",
+      "similarity": 0.820284
+    },
+    {
+      "from": "type:server/services/aiReranker.ts#0",
       "to": "service:server/services/aiReranker.ts#0",
-      "similarity": 0.761392
+      "similarity": 0.747518
     },
     {
       "from": "type:server/services/aiSegmentation.ts#0",
@@ -29726,6 +29826,16 @@
       "from": "type:server/services/aiSegmentation.ts#0",
       "to": "type:server/routers/aiSegmentationRouter.ts#0",
       "similarity": 0.774497
+    },
+    {
+      "from": "type:server/services/aiSemanticGraph.ts#0",
+      "to": "type:server/services/aiCausalGraph.ts#0",
+      "similarity": 0.728605
+    },
+    {
+      "from": "type:server/services/aiSemanticGraph.ts#0",
+      "to": "type:server/routers/causalGraphRouter.ts#0",
+      "similarity": 0.723994
     },
     {
       "from": "type:server/services/aiSetupAdvisor.ts#0",
@@ -30106,6 +30216,16 @@
       "from": "type:server/services/kb/kbVectorStore.ts#0",
       "to": "type:server/services/aiLocalKnowledgeService.ts#0",
       "similarity": 0.74229
+    },
+    {
+      "from": "type:server/services/kbSyncScheduler.ts#0",
+      "to": "service:server/services/kbSyncScheduler.ts#0",
+      "similarity": 0.774123
+    },
+    {
+      "from": "type:server/services/kbSyncScheduler.ts#0",
+      "to": "type:server/services/aiAnomalyBankScheduler.ts#0",
+      "similarity": 0.720498
     },
     {
       "from": "type:server/services/llamaVisionSidecar.ts#0",
@@ -30913,9 +31033,34 @@
       "similarity": 0.82326
     },
     {
+      "from": "type:client/src/components/AIGuidedActionCards.tsx#0",
+      "to": "type:client/src/components/ConfirmActionCard.tsx#0",
+      "similarity": 0.778654
+    },
+    {
       "from": "type:client/src/components/AIToolResultCard.tsx#0",
       "to": "type:server/services/aiLocalTools/toolRegistry.ts#0",
       "similarity": 0.800164
+    },
+    {
+      "from": "type:client/src/components/ConfirmActionCard.tsx#0",
+      "to": "type:client/src/components/AIGuidedActionCards.tsx#0",
+      "similarity": 0.778654
+    },
+    {
+      "from": "type:client/src/components/ConfirmActionCard.tsx#0",
+      "to": "type:server/services/aiCopilotActions.ts#0",
+      "similarity": 0.768084
+    },
+    {
+      "from": "type:client/src/components/ConfirmActionCard.tsx#0",
+      "to": "type:client/src/components/ConfirmDialog.tsx#0",
+      "similarity": 0.73306
+    },
+    {
+      "from": "type:client/src/components/ConfirmDialog.tsx#0",
+      "to": "type:client/src/components/ConfirmActionCard.tsx#0",
+      "similarity": 0.73306
     },
     {
       "from": "type:client/src/components/DashboardWidgetLibrary.tsx#0",
@@ -31191,6 +31336,21 @@
       "from": "type:client/src/hooks/useFormValidation.ts#0",
       "to": "type:server/_core/uploadValidation.ts#0",
       "similarity": 0.735218
+    },
+    {
+      "from": "type:client/src/hooks/useKbChatStream.ts#0",
+      "to": "type:server/services/aiLocalKnowledgeService.ts#0",
+      "similarity": 0.815459
+    },
+    {
+      "from": "type:client/src/hooks/useKbChatStream.ts#0",
+      "to": "type:server/routers/aiLocalKbRouter.ts#0",
+      "similarity": 0.743075
+    },
+    {
+      "from": "type:client/src/hooks/useKbChatStream.ts#0",
+      "to": "type:drizzle/schema/kb.ts#0",
+      "similarity": 0.723943
     },
     {
       "from": "type:client/src/hooks/useLicenseEnforcement.ts#0",
@@ -31496,6 +31656,11 @@
       "from": "type:drizzle/schema/kb.ts#0",
       "to": "type:server/services/aiLocalKnowledgeService.ts#0",
       "similarity": 0.786432
+    },
+    {
+      "from": "type:drizzle/schema/kb.ts#0",
+      "to": "type:client/src/hooks/useKbChatStream.ts#0",
+      "similarity": 0.723943
     },
     {
       "from": "type:drizzle/schema/layout.ts#0",
@@ -36283,11 +36448,6 @@
       "similarity": 0.736383
     },
     {
-      "from": "doc:docs/ECOSYSTEM/01_SYSTEM_BASELINE_AUDIT_2026-06.md#10",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#6",
-      "similarity": 0.720903
-    },
-    {
       "from": "doc:docs/ECOSYSTEM/01_SYSTEM_BASELINE_AUDIT_2026-06.md#11",
       "to": "doc:docs/ECOSYSTEM/01_SYSTEM_BASELINE_AUDIT_2026-06.md#10",
       "similarity": 0.736383
@@ -36553,24 +36713,19 @@
       "similarity": 0.748714
     },
     {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#0",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#9",
-      "similarity": 0.726623
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#1",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#10",
-      "similarity": 0.809387
-    },
-    {
       "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#1",
       "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#0",
       "similarity": 0.799141
     },
     {
       "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#1",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#9",
-      "similarity": 0.754626
+      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#3",
+      "similarity": 0.737214
+    },
+    {
+      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#1",
+      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#2",
+      "similarity": 0.73257
     },
     {
       "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#2",
@@ -36579,13 +36734,8 @@
     },
     {
       "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#2",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#10",
-      "similarity": 0.794662
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#2",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#12",
-      "similarity": 0.79268
+      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#1",
+      "similarity": 0.73257
     },
     {
       "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#3",
@@ -36594,188 +36744,8 @@
     },
     {
       "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#3",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#12",
-      "similarity": 0.845403
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#3",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#11",
-      "similarity": 0.792747
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#4",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#11",
-      "similarity": 0.808204
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#4",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#7",
-      "similarity": 0.791045
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#4",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#6",
-      "similarity": 0.75854
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#5",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#6",
-      "similarity": 0.85029
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#5",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#7",
-      "similarity": 0.788817
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#5",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#4",
-      "similarity": 0.750653
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#6",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#5",
-      "similarity": 0.85029
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#6",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#7",
-      "similarity": 0.812129
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#6",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#8",
-      "similarity": 0.80023
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#7",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#6",
-      "similarity": 0.812129
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#7",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#4",
-      "similarity": 0.791045
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#7",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#5",
-      "similarity": 0.788817
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#8",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#6",
-      "similarity": 0.80023
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#8",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#9",
-      "similarity": 0.771598
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#8",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#7",
-      "similarity": 0.74228
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#9",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#13",
-      "similarity": 0.885314
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#9",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#8",
-      "similarity": 0.771598
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#9",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#15",
-      "similarity": 0.756962
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#10",
       "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#1",
-      "similarity": 0.809387
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#10",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#2",
-      "similarity": 0.794662
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#10",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#11",
-      "similarity": 0.785683
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#11",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#4",
-      "similarity": 0.808204
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#11",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#3",
-      "similarity": 0.792747
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#11",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#10",
-      "similarity": 0.785683
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#12",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#3",
-      "similarity": 0.845403
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#12",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#2",
-      "similarity": 0.79268
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#12",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#10",
-      "similarity": 0.76427
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#13",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#9",
-      "similarity": 0.885314
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#13",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#8",
-      "similarity": 0.736353
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#14",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#15",
-      "similarity": 0.747921
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#14",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#1",
-      "similarity": 0.729498
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#14",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#9",
-      "similarity": 0.724719
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#15",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#7",
-      "similarity": 0.764859
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#15",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#9",
-      "similarity": 0.756962
-    },
-    {
-      "from": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#15",
-      "to": "doc:docs/ECOSYSTEM/03_AI_LOCAL_BRAIN_DESIGN_AND_UPGRADE_2026-06.md#14",
-      "similarity": 0.747921
+      "similarity": 0.737214
     }
   ]
 }

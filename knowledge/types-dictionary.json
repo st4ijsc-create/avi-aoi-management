@@ -1161,6 +1161,19 @@
     "zodSchemas": []
   },
   {
+    "file": "server/services/aiSemanticGraph.ts",
+    "interfaces": [
+      "GraphEdge",
+      "GraphCandidate",
+      "ExpandOptions",
+      "ExpandResult"
+    ],
+    "aliases": [
+      "GraphAdjacency"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "server/services/aiSetupAdvisor.ts",
     "interfaces": [
       "TemplateMachineLite",
@@ -1525,6 +1538,14 @@
     "file": "server/services/kb/kbVectorStore.ts",
     "interfaces": [
       "KbSearchHit"
+    ],
+    "aliases": [],
+    "zodSchemas": []
+  },
+  {
+    "file": "server/services/kbSyncScheduler.ts",
+    "interfaces": [
+      "KbSyncRunStats"
     ],
     "aliases": [],
     "zodSchemas": []
@@ -2549,6 +2570,17 @@
     "zodSchemas": []
   },
   {
+    "file": "client/src/components/ConfirmActionCard.tsx",
+    "interfaces": [
+      "PendingActionChange",
+      "PendingAction"
+    ],
+    "aliases": [
+      "ActionState"
+    ],
+    "zodSchemas": []
+  },
+  {
     "file": "client/src/components/ConfirmDialog.tsx",
     "interfaces": [],
     "aliases": [
@@ -2812,6 +2844,23 @@
     "aliases": [
       "ValidationRule"
     ],
+    "zodSchemas": []
+  },
+  {
+    "file": "client/src/hooks/useKbChatStream.ts",
+    "interfaces": [
+      "KbCitation",
+      "KbStructured",
+      "KbConversationTurn",
+      "KbPendingActionChange",
+      "KbPendingAction",
+      "KbClientAction",
+      "KbStreamResult",
+      "KbStreamContext",
+      "KbStreamRequest",
+      "KbStreamCallbacks"
+    ],
+    "aliases": [],
     "zodSchemas": []
   },
   {
