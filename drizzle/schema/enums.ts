@@ -326,3 +326,46 @@ export const orchestrationRunStepStatusEnum = pgEnum("orchestrationrunstepstatus
 //   offline  — no heartbeat past the stale threshold (set by the central checker).
 //   degraded — the node is up but self-reports impaired (buffering offline / partial).
 export const edgeNodeStatusEnum = pgEnum("edgenodestatusenum", ["online", "offline", "degraded"]);
+
+// === Doc 09 / Phase D0 — Device Programming & Control (DPC) ===
+// SAFETY (non-negotiable, mirrors the control-plane): build/validate/simulate are
+// always safe (no device I/O). A DEPLOY only reaches a device when DPC_DEPLOY_ENABLED
+// is on AND a human signed off (HITL) — otherwise it is recorded 'simulated'. Logic
+// for E-stop / interlock / SIL motion is NEVER authored or deployed from here; it stays
+// on the certified PLC. Native IEC 61131-3 only targets an OPEN runtime (OpenPLC), never
+// auto-pushed into a closed vendor PLC.
+//
+// The programming "target class" a project/artifact/adapter speaks. Open controllers
+// (Zmotion BASIC, G-code), native IEC 61131-3 (→ open runtime), robot (TMSCT job-list),
+// vendor-closed engineering (Mitsubishi). Additive — new targets append here.
+export const programmingKindEnum = pgEnum("programmingkindenum", [
+  "stub",                    // D0 — safe no-hardware pipeline proof
+  "zmotion-basic",           // D2 — open motion controller (BASIC + motion)
+  "gcode",                   // D2 — CNC / G-code
+  "mitsubishi-engineering",  // D3 — tag/device + recipe (toolchain wrap)
+  "robot-tm",                // D4 — Techman teach/job-list (TMSCT)
+  "iec61131-st",             // D5 — native Structured Text → OpenPLC
+  "iec61131-ld",             // D5 — native Ladder → OpenPLC
+]);
+// Lifecycle of a program ARTIFACT (one immutable source version on a branch).
+export const programArtifactStatusEnum = pgEnum("programartifactstatusenum", [
+  "draft",
+  "validated",
+  "released",
+  "archived",
+]);
+// Outcome of a compile/build.
+export const programBuildStatusEnum = pgEnum("programbuildstatusenum", ["pending", "ok", "failed"]);
+// Which stage a deployment targets (staged deploy → verify → promote to production).
+export const programDeployStageEnum = pgEnum("programdeploystageenum", ["staging", "production"]);
+// Lifecycle/outcome of a program DEPLOYMENT (append-only audit). 'simulated' is the
+// default outcome when DPC_DEPLOY_ENABLED is off — nothing reaches the device.
+export const programDeployStatusEnum = pgEnum("programdeploystatusenum", [
+  "pending",
+  "simulated",
+  "deployed",
+  "verified",
+  "failed",
+  "rolled_back",
+  "rejected",
+]);
