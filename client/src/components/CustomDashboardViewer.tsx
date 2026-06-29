@@ -113,7 +113,7 @@ export default function CustomDashboardViewer() {
               {t('dashboard.createCustomDashboardHint')}
             </p>
           </div>
-          <Link href="/settings?tab=custom-dashboard">
+          <Link href="/custom-dashboard">
             <Button className="gap-2">
               <Plus className="h-4 w-4" />
               {t('dashboard.createNewDashboard')}
@@ -199,7 +199,7 @@ export default function CustomDashboardViewer() {
           </Button>
 
           {/* Link to settings */}
-          <Link href="/settings?tab=custom-dashboard">
+          <Link href="/custom-dashboard">
             <Button variant="outline" size="sm" className="gap-1.5">
               <Settings className="h-4 w-4" />
               <span className="hidden sm:inline">{t('common.manage')}</span>
@@ -234,7 +234,7 @@ export default function CustomDashboardViewer() {
               <p className="font-medium">{t('dashboard.dashboardNoWidgets', { name: selectedDashboard.name })}</p>
               <p className="text-sm text-muted-foreground">{t('dashboard.addWidgetInSettings')}</p>
             </div>
-            <Link href="/settings?tab=custom-dashboard">
+            <Link href="/custom-dashboard">
               <Button variant="outline" size="sm" className="gap-1.5">
                 <Settings className="h-4 w-4" />
                 {t('dashboard.editDashboard')}

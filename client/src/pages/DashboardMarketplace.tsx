@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { trpc } from '@/lib/trpc';
+import { templateToCustomDashboardWidgets } from '@/lib/dashboardTemplateApply';
+import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import {
   Search, Download, Star, Eye, Upload, Grid3X3, LayoutDashboard,
@@ -56,6 +58,20 @@ interface DashboardTemplate {
 }
 
 export default function DashboardMarketplace() {
+  return (
+    <DashboardLayout>
+      <DashboardMarketplaceContent />
+    </DashboardLayout>
+  );
+}
+
+/**
+ * Layout-less marketplace body. Used directly by the DashboardMarketplace page
+ * (wrapped in DashboardLayout) and embedded inside DashboardCenter's
+ * "marketplace" tab (which already provides the layout). This replaces the old
+ * mock EmbeddedDashboardMarketplace so there is a single, real marketplace.
+ */
+export function DashboardMarketplaceContent() {
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -68,11 +84,35 @@ export default function DashboardMarketplace() {
     category: 'custom',
   });
 
+  const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
   const { data: rawTemplates, isLoading, error } = trpc.dashboardWidget.getSharedTemplates.useQuery();
+
+  // Persist the downloaded template as a real user custom dashboard so it shows
+  // up on the main Dashboard "custom" tab and /custom-dashboard.
+  const createDashboardMutation = trpc.dashboardWidget.createCustomDashboard.useMutation();
+
   const applyMutation = trpc.dashboardWidget.applySharedTemplate.useMutation({
-    onSuccess: (_data, variables) => {
+    onSuccess: async (_data, variables) => {
       const tpl = templates.find(t => t.id === variables.id);
-      toast.success(t('dashboard.templateDownloadSuccess', { name: tpl?.name ?? '' }));
+      try {
+        await createDashboardMutation.mutateAsync({
+          name: tpl?.name ?? t('dashboard.customDashboard'),
+          description: tpl?.description || undefined,
+          widgets: templateToCustomDashboardWidgets({ widgets: tpl?.widgets ?? [] }),
+          gridCols: 4,
+          isPublic: false,
+        });
+        utils.dashboardWidget.listCustomDashboards.invalidate();
+      } catch {
+        // Usage count already incremented; surface a soft error below.
+      }
+      toast.success(t('dashboard.templateDownloadSuccess', { name: tpl?.name ?? '' }), {
+        action: {
+          label: t('common.view'),
+          onClick: () => setLocation('/custom-dashboard'),
+        },
+      });
       setSelectedTemplate(null);
     },
     onError: (err) => {
@@ -154,8 +194,7 @@ export default function DashboardMarketplace() {
   };
 
   return (
-    <DashboardLayout>
-      <div className="space-y-6">
+    <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -473,7 +512,6 @@ export default function DashboardMarketplace() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
-    </DashboardLayout>
+    </div>
   );
 }

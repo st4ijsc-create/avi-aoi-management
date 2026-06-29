@@ -9,12 +9,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
-import { 
-  Activity, Shield, User, Clock, Search, Filter, 
+import {
+  Activity, Shield, User, Clock, Search, Filter,
   LogIn, LogOut, Plus, Edit, Trash2, Key, RefreshCw,
   TrendingUp, Users, AlertTriangle, CheckCircle, XCircle,
-  Download
+  Download, ScrollText, History
 } from "lucide-react";
+import { EnhancedAuditLogsContent } from "@/pages/EnhancedAuditLogs";
+import { CommandAuditLogContent } from "@/pages/CommandAuditLog";
 import { toast } from "sonner";
 import { useTranslation } from 'react-i18next';
 import { useState } from "react";
@@ -559,6 +561,13 @@ export function AuditLogContent() {
   );
 }
 
+/**
+ * Unified Audit experience — ONE page, three tabs:
+ *   - Activity (general): inline audit trail (trpc.audit) via AuditLogContent
+ *   - Command: append-only machine-command log (trpc.commandLog) via CommandAuditLogContent
+ *   - Enhanced: change-diff / entity-history timeline (trpc.enhancedAudit) via EnhancedAuditLogsContent
+ * Replaces the previously separate /audit-logs, /command-audit and /enhanced-audit pages.
+ */
 export default function AuditLogs() {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -580,8 +589,41 @@ export default function AuditLogs() {
 
   return (
     <DashboardLayout title={t('audit.title')} currentPath="/audit-logs">
-      <div className="container py-6">
-        <AuditLogContent />
+      <div className="container py-6 space-y-6">
+        <div className="flex items-center gap-2">
+          <Activity className="h-6 w-6 text-primary" />
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">{t('audit.title')}</h1>
+            <p className="text-sm text-muted-foreground">{t('audit.unifiedSubtitle', 'Hoạt động hệ thống, lệnh điều khiển máy và lịch sử thay đổi — một nơi duy nhất')}</p>
+          </div>
+        </div>
+
+        <Tabs defaultValue="activity">
+          <TabsList>
+            <TabsTrigger value="activity" className="gap-2">
+              <Activity className="h-4 w-4" />
+              {t('audit.tabActivity', 'Hoạt động')}
+            </TabsTrigger>
+            <TabsTrigger value="command" className="gap-2">
+              <ScrollText className="h-4 w-4" />
+              {t('audit.tabCommand', 'Lệnh máy')}
+            </TabsTrigger>
+            <TabsTrigger value="enhanced" className="gap-2">
+              <History className="h-4 w-4" />
+              {t('audit.tabEnhanced', 'Nâng cao')}
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="activity" className="mt-4">
+            <AuditLogContent />
+          </TabsContent>
+          <TabsContent value="command" className="mt-4">
+            <CommandAuditLogContent />
+          </TabsContent>
+          <TabsContent value="enhanced" className="mt-4">
+            <EnhancedAuditLogsContent />
+          </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );

@@ -11,8 +11,8 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { TodayBriefing } from "@/components/TodayBriefing";
 import { cn } from "@/lib/utils";
 import {
-  ShieldCheck, Users, KeyRound, FileClock, SlidersHorizontal, Boxes, Cpu,
-  LayoutDashboard, Activity, type LucideIcon,
+  ShieldCheck, Users, KeyRound, FileClock, SlidersHorizontal, Cpu,
+  LayoutDashboard, Activity, Archive, MonitorSmartphone, type LucideIcon,
 } from "lucide-react";
 
 interface Tile { icon: LucideIcon; label: string; description: string; accent: string; to: string }
@@ -43,9 +43,11 @@ export default function AdminHome() {
   const tiles: Tile[] = [
     { icon: Users, label: t("adminHome.tiles.users", "Người dùng"), description: t("adminHome.tiles.usersDesc", "Tài khoản & vai trò"), accent: "border-indigo-500/30 text-indigo-600 dark:text-indigo-400", to: "/users" },
     { icon: ShieldCheck, label: t("adminHome.tiles.roles", "Phân quyền"), description: t("adminHome.tiles.rolesDesc", "Role builder & module"), accent: "border-emerald-500/30 text-emerald-600 dark:text-emerald-400", to: "/role-builder" },
-    { icon: FileClock, label: t("adminHome.tiles.audit", "Nhật ký kiểm toán"), description: t("adminHome.tiles.auditDesc", "Audit log nâng cao"), accent: "border-amber-500/30 text-amber-600 dark:text-amber-400", to: "/enhanced-audit" },
+    { icon: FileClock, label: t("adminHome.tiles.audit", "Nhật ký kiểm toán"), description: t("adminHome.tiles.auditDesc", "Hoạt động · Lệnh · Nâng cao"), accent: "border-amber-500/30 text-amber-600 dark:text-amber-400", to: "/audit-logs" },
+    { icon: MonitorSmartphone, label: t("adminHome.tiles.sessions", "Phiên đăng nhập"), description: t("adminHome.tiles.sessionsDesc", "Thiết bị & phiên hoạt động"), accent: "border-teal-500/30 text-teal-600 dark:text-teal-400", to: "/sessions" },
     { icon: KeyRound, label: t("adminHome.tiles.apiKeys", "API Keys"), description: t("adminHome.tiles.apiKeysDesc", "Khóa truy cập có phạm vi"), accent: "border-rose-500/30 text-rose-600 dark:text-rose-400", to: "/api-keys" },
     { icon: SlidersHorizontal, label: t("adminHome.tiles.system", "Cấu hình hệ thống"), description: t("adminHome.tiles.systemDesc", "Tham số & tích hợp"), accent: "border-slate-500/30 text-slate-600 dark:text-slate-400", to: "/system-config" },
+    { icon: Archive, label: t("adminHome.tiles.backup", "Sao lưu & phục hồi"), description: t("adminHome.tiles.backupDesc", "Backup / restore dữ liệu"), accent: "border-orange-500/30 text-orange-600 dark:text-orange-400", to: "/backup-restore" },
     { icon: ShieldCheck, label: t("adminHome.tiles.license", "Bản quyền"), description: t("adminHome.tiles.licenseDesc", "License & giới hạn"), accent: "border-violet-500/30 text-violet-600 dark:text-violet-400", to: "/license" },
     { icon: Cpu, label: t("adminHome.tiles.edge", "Edge nodes"), description: t("adminHome.tiles.edgeDesc", "Cổng biên & runtime"), accent: "border-cyan-500/30 text-cyan-600 dark:text-cyan-400", to: "/edge-nodes" },
     { icon: LayoutDashboard, label: t("adminHome.tiles.opsDashboard", "Bảng vận hành"), description: t("adminHome.tiles.opsDashboardDesc", "Dashboard đầy đủ"), accent: "border-sky-500/30 text-sky-600 dark:text-sky-400", to: "/dashboard" },

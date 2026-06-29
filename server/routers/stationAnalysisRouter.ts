@@ -610,100 +610,12 @@ export const stationAnalysisRouter = router({
           : y < mean - stddev ? 'B-' as const
           : 'C' as const;
 
-      // ── All 8 Western Electric Rules ──
-      function detectWesternElectricRules(yields: number[], mean: number, stddev: number, ucl: number, lcl: number) {
-        const n = yields.length;
-        const violations: { index: number; rules: number[] }[] = [];
-        const ruleMap = new Map<number, number[]>(); // index → rules
-        const addViolation = (idx: number, rule: number) => {
-          if (!ruleMap.has(idx)) ruleMap.set(idx, []);
-          ruleMap.get(idx)!.push(rule);
-        };
-
-        for (let i = 0; i < n; i++) {
-          const y = yields[i];
-          // Rule 1: 1 point beyond 3σ (outside control limits)
-          if (y > ucl || y < lcl) addViolation(i, 1);
-
-          // Rule 2: 9 consecutive points on same side of center
-          if (i >= 8) {
-            const last9 = yields.slice(i - 8, i + 1);
-            const allAbove = last9.every(v => v > mean);
-            const allBelow = last9.every(v => v < mean);
-            if (allAbove || allBelow) for (let j = i - 8; j <= i; j++) addViolation(j, 2);
-          }
-
-          // Rule 3: 6 consecutive points steadily increasing or decreasing
-          if (i >= 5) {
-            const last6 = yields.slice(i - 5, i + 1);
-            let allInc = true, allDec = true;
-            for (let j = 1; j < last6.length; j++) {
-              if (last6[j] <= last6[j - 1]) allInc = false;
-              if (last6[j] >= last6[j - 1]) allDec = false;
-            }
-            if (allInc || allDec) for (let j = i - 5; j <= i; j++) addViolation(j, 3);
-          }
-
-          // Rule 4: 14 consecutive points alternating up and down
-          if (i >= 13) {
-            const last14 = yields.slice(i - 13, i + 1);
-            let alternating = true;
-            for (let j = 2; j < last14.length; j++) {
-              const dir1 = last14[j - 1] - last14[j - 2];
-              const dir2 = last14[j] - last14[j - 1];
-              if (dir1 * dir2 >= 0) { alternating = false; break; }
-            }
-            if (alternating) for (let j = i - 13; j <= i; j++) addViolation(j, 4);
-          }
-
-          // Rule 5: 2 of 3 consecutive points beyond 2σ on same side
-          if (i >= 2) {
-            const last3 = yields.slice(i - 2, i + 1);
-            const above2s = last3.filter(v => v > mean + 2 * stddev).length;
-            const below2s = last3.filter(v => v < mean - 2 * stddev).length;
-            if (above2s >= 2 || below2s >= 2) for (let j = i - 2; j <= i; j++) addViolation(j, 5);
-          }
-
-          // Rule 6: 4 of 5 consecutive points beyond 1σ on same side
-          if (i >= 4) {
-            const last5 = yields.slice(i - 4, i + 1);
-            const above1s = last5.filter(v => v > mean + stddev).length;
-            const below1s = last5.filter(v => v < mean - stddev).length;
-            if (above1s >= 4 || below1s >= 4) for (let j = i - 4; j <= i; j++) addViolation(j, 6);
-          }
-
-          // Rule 7: 15 consecutive points within 1σ (both sides) — stratification
-          if (i >= 14) {
-            const last15 = yields.slice(i - 14, i + 1);
-            const allInC = last15.every(v => Math.abs(v - mean) <= stddev);
-            if (allInC) for (let j = i - 14; j <= i; j++) addViolation(j, 7);
-          }
-
-          // Rule 8: 8 consecutive points beyond 1σ on BOTH sides (mixture)
-          if (i >= 7) {
-            const last8 = yields.slice(i - 7, i + 1);
-            const allOutC = last8.every(v => Math.abs(v - mean) > stddev);
-            if (allOutC) for (let j = i - 7; j <= i; j++) addViolation(j, 8);
-          }
-        }
-
-        return ruleMap;
-      }
-
+      // ── All 8 SPC rules via the canonical engine (utils/spc.ts) ──
+      // Detection keys off the center line (mean) and sigma estimate, matching the
+      // shared detector's convention (rule 1 = beyond 3σ ≡ outside UCL/LCL here).
       const weViolations = stddev > 0
-        ? detectWesternElectricRules(yields, mean, stddev, ucl, lcl)
+        ? detectAllSpcRules(yields, mean, stddev)
         : new Map<number, number[]>();
-
-      const RULE_NAMES: Record<number, string> = {
-        1: 'Point beyond 3σ',
-        2: '9 consecutive same side',
-        3: '6 consecutive trending',
-        4: '14 alternating up/down',
-        5: '2 of 3 beyond 2σ',
-        6: '4 of 5 beyond 1σ',
-        7: '15 within 1σ (stratification)',
-        8: '8 beyond 1σ both sides (mixture)',
-      };
 
       const enhancedPoints = points.map((p, i) => {
         const rules = weViolations.get(i) || [];
@@ -714,7 +626,7 @@ export const stationAnalysisRouter = router({
           zone: zoneOf(p.yield),
           movingRange: i > 0 ? movingRanges[i - 1] : 0,
           violatedRules: uniqueRules,
-          ruleDescriptions: uniqueRules.map(r => RULE_NAMES[r] || `Rule ${r}`),
+          ruleDescriptions: uniqueRules.map(r => SPC_RULE_NAMES[r] || `Rule ${r}`),
         };
       });
 
@@ -722,7 +634,7 @@ export const stationAnalysisRouter = router({
       const ruleSummary: { rule: number; name: string; count: number }[] = [];
       for (let r = 1; r <= 8; r++) {
         const count = enhancedPoints.filter(p => p.violatedRules.includes(r)).length;
-        if (count > 0) ruleSummary.push({ rule: r, name: RULE_NAMES[r], count });
+        if (count > 0) ruleSummary.push({ rule: r, name: SPC_RULE_NAMES[r], count });
       }
 
       return {

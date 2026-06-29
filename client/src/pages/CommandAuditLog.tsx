@@ -44,7 +44,12 @@ function fmtValue(v: unknown): string {
   return String(v);
 }
 
-export default function CommandAuditLog() {
+/**
+ * Embeddable command-audit content (no DashboardLayout wrapper).
+ * Consumed by the unified Audit page (AuditLogs) "Command" tab and by the
+ * standalone /command-audit route below.
+ */
+export function CommandAuditLogContent() {
   const [machineId, setMachineId] = useState("");
   const [adapterId, setAdapterId] = useState("");
   const [triggerKind, setTriggerKind] = useState<string>(ALL);
@@ -65,7 +70,6 @@ export default function CommandAuditLog() {
   const rows = query.data ?? [];
 
   return (
-    <DashboardLayout title="Command Audit Log" navItems={navItems} currentPath="/command-audit">
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -164,6 +168,13 @@ export default function CommandAuditLog() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function CommandAuditLog() {
+  return (
+    <DashboardLayout title="Command Audit Log" navItems={navItems} currentPath="/command-audit">
+      <CommandAuditLogContent />
     </DashboardLayout>
   );
 }

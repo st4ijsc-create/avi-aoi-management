@@ -6,6 +6,180 @@ import { generateNGVisualReport, generateNGVisualEmailHTML, generateReport, Repo
 // Store active cron jobs
 const activeCronJobs = new Map<number, ScheduledTask>();
 
+// ════════════════════════════════════════════════════════════════════════════
+// Consolidated report-content builder (P1, audit G)
+//
+// Single source of truth that turns a scheduled-report row into the email body
+// (+ optional attachment). Used by BOTH the cron (executeScheduledReport) and the
+// admin sendTest / previewEmail procedures so reportType actually drives content
+// instead of always emitting an NG_VISUAL report.
+//
+//   • DATA WINDOW   ← driven by report.schedule (DAILY=1d, WEEKLY=7d, MONTHLY=30d),
+//                     overridable per-call (sendTest passes a fixed preview window).
+//   • CONTENT       ← driven by report.reportType (the report category):
+//        NG_VISUAL ............... NG visual report (heatmap / top-NG / trend)
+//        DAILY/WEEKLY/MONTHLY_SUMMARY  statistics summary (yield by corp/factory)
+//        OEE_REPORT .............. OEE summary (availability/perf/quality)
+//        MACHINE_HEALTH .......... machine-health summary
+//        CUSTOM .................. NG visual (safe default)
+// ════════════════════════════════════════════════════════════════════════════
+
+export type ScheduledReportType =
+  | "NG_VISUAL"
+  | "DAILY_SUMMARY"
+  | "WEEKLY_SUMMARY"
+  | "MONTHLY_SUMMARY"
+  | "CUSTOM"
+  | "OEE_REPORT"
+  | "MACHINE_HEALTH";
+
+export interface BuiltReportEmail {
+  subject: string;
+  html: string;
+  attachment?: { filename: string; content: Buffer | string; contentType: string };
+}
+
+/** Map a report's schedule cadence to a lookback data window ending now. */
+export function windowForSchedule(
+  schedule: "DAILY" | "WEEKLY" | "MONTHLY" | null | undefined,
+): { startDate: Date; endDate: Date } {
+  const endDate = new Date();
+  const startDate = new Date();
+  switch (schedule) {
+    case "WEEKLY":
+      startDate.setDate(startDate.getDate() - 7);
+      break;
+    case "MONTHLY":
+      startDate.setMonth(startDate.getMonth() - 1);
+      break;
+    case "DAILY":
+    default:
+      startDate.setDate(startDate.getDate() - 1);
+      break;
+  }
+  return { startDate, endDate };
+}
+
+/** Map an enhanced/db reportType + schedule to the legacy statistics frequency. */
+function frequencyForReport(
+  schedule: "DAILY" | "WEEKLY" | "MONTHLY" | null | undefined,
+): "daily" | "weekly" | "monthly" {
+  switch (schedule) {
+    case "WEEKLY":
+      return "weekly";
+    case "MONTHLY":
+      return "monthly";
+    default:
+      return "daily";
+  }
+}
+
+/**
+ * Build the email (subject + html + optional attachment) for a scheduled report,
+ * dispatching on reportType for content and on schedule (or an override) for the
+ * data window. This is the shared path for cron, sendTest and previewEmail.
+ */
+export async function buildScheduledReportEmail(
+  report: {
+    id: number;
+    name: string;
+    reportType: ScheduledReportType;
+    schedule: "DAILY" | "WEEKLY" | "MONTHLY";
+    factoryId?: number | null;
+    workshopId?: number | null;
+    lineId?: number | null;
+    logoUrl?: string | null;
+    primaryColor?: string | null;
+    footerText?: string | null;
+    reportFormat?: "HTML" | "PDF" | "EXCEL" | null;
+  },
+  options?: { window?: { startDate: Date; endDate: Date }; subjectPrefix?: string },
+): Promise<BuiltReportEmail> {
+  const { startDate, endDate } = options?.window ?? windowForSchedule(report.schedule);
+  const factoryId = report.factoryId ?? undefined;
+  const workshopId = report.workshopId ?? undefined;
+  const lineId = report.lineId ?? undefined;
+  const prefix = options?.subjectPrefix ?? "";
+  const dateStr = endDate.toLocaleDateString("vi-VN");
+  const customization: ReportCustomization = {
+    logoUrl: report.logoUrl,
+    primaryColor: report.primaryColor,
+    footerText: report.footerText,
+    reportFormat: report.reportFormat || "HTML",
+  };
+
+  // Lazy import to avoid a hard cycle / pull the singleton only when needed.
+  const frequency = frequencyForReport(report.schedule);
+
+  switch (report.reportType) {
+    case "DAILY_SUMMARY":
+    case "WEEKLY_SUMMARY":
+    case "MONTHLY_SUMMARY": {
+      const { scheduledReportService } = await import("./scheduledReportService");
+      const { content, html } = await scheduledReportService.previewReport({ frequency });
+      return { subject: `${prefix}${report.name} - ${content.title} - ${dateStr}`, html };
+    }
+
+    case "OEE_REPORT": {
+      const { scheduledReportService } = await import("./scheduledReportService");
+      const svcReport = {
+        id: report.id,
+        name: report.name,
+        type: "oee" as const,
+        frequency,
+        recipients: [] as string[],
+        isEnabled: true,
+        createdBy: 0,
+        createdAt: new Date(),
+      };
+      const oee = await scheduledReportService.generateOEEReportContent(svcReport);
+      const html = await scheduledReportService.formatOEEReportHtml(oee);
+      return { subject: `${prefix}${report.name} - ${oee.title} - ${dateStr}`, html };
+    }
+
+    case "MACHINE_HEALTH": {
+      const { scheduledReportService } = await import("./scheduledReportService");
+      const svcReport = {
+        id: report.id,
+        name: report.name,
+        type: "machine_health" as const,
+        frequency,
+        recipients: [] as string[],
+        isEnabled: true,
+        createdBy: 0,
+        createdAt: new Date(),
+      };
+      const health = await scheduledReportService.generateMachineHealthReportContent(svcReport);
+      const html = await scheduledReportService.formatMachineHealthReportHtml(health);
+      return { subject: `${prefix}${report.name} - ${health.title} - ${dateStr}`, html };
+    }
+
+    case "NG_VISUAL":
+    case "CUSTOM":
+    default: {
+      const reportData = await generateNGVisualReport({ startDate, endDate, factoryId, workshopId, lineId });
+      const html = generateNGVisualEmailHTML(reportData, customization);
+      const built: BuiltReportEmail = {
+        subject: `${prefix}${report.name} - ${dateStr}`,
+        html,
+      };
+      if (customization.reportFormat === "PDF" || customization.reportFormat === "EXCEL") {
+        try {
+          const { content, mimeType, extension } = await generateReport(reportData, customization.reportFormat, customization);
+          built.attachment = {
+            filename: `NG_Visual_Report_${endDate.toISOString().split("T")[0]}.${extension}`,
+            content,
+            contentType: mimeType,
+          };
+        } catch (e) {
+          console.error(`[ReportScheduler] attachment generation failed for report ${report.id}:`, (e as any)?.message || e);
+        }
+      }
+      return built;
+    }
+  }
+}
+
 /**
  * Convert schedule configuration to cron expression
  */
@@ -63,53 +237,10 @@ async function executeScheduledReport(reportId: number) {
       return;
     }
 
-    // Calculate date range based on report type
-    const endDate = new Date();
-    let startDate = new Date();
-    
-    switch (report.reportType) {
-      case "NG_VISUAL":
-      case "DAILY_SUMMARY":
-        // Last 24 hours
-        startDate.setDate(startDate.getDate() - 1);
-        break;
-      case "WEEKLY_SUMMARY":
-        // Last 7 days
-        startDate.setDate(startDate.getDate() - 7);
-        break;
-      case "MONTHLY_SUMMARY":
-        // Last 30 days
-        startDate.setDate(startDate.getDate() - 30);
-        break;
-      default:
-        // Default to last 24 hours
-        startDate.setDate(startDate.getDate() - 1);
-    }
-
-    // Get filters from report configuration
-    const factoryId = report.factoryId ?? undefined;
-    const workshopId = report.workshopId ?? undefined;
-    const lineId = report.lineId ?? undefined;
-
-    // Generate report data
-    const reportData = await generateNGVisualReport({
-      startDate,
-      endDate,
-      factoryId,
-      workshopId,
-      lineId,
-    });
-
-    // Get customization from report
-    const customization: ReportCustomization = {
-      logoUrl: (report as any).logoUrl,
-      primaryColor: (report as any).primaryColor,
-      footerText: (report as any).footerText,
-      reportFormat: (report as any).reportFormat || 'HTML',
-    };
-
-    // Generate HTML email (always needed for email body)
-    const emailHTML = generateNGVisualEmailHTML(reportData, customization);
+    // Build the email via the shared, reportType-aware builder. The data window
+    // is derived from report.schedule and the content from report.reportType.
+    const built = await buildScheduledReportEmail(report as any);
+    const emailHTML = built.html;
 
     // Send email to all recipients
     const recipients = report.recipients || [];
@@ -130,37 +261,20 @@ async function executeScheduledReport(reportId: number) {
     const mailOptions: any = {
       from: `${smtpConfig.fromName} <${smtpConfig.fromEmail}>`,
       to: recipients.join(','),
-      subject: `${report.name} - ${new Date().toLocaleDateString("vi-VN")}`,
+      subject: built.subject,
       html: emailHTML,
     };
 
-    // Add attachment if PDF or Excel format
-    if (customization.reportFormat === 'PDF' || customization.reportFormat === 'EXCEL') {
-      try {
-        const { content, mimeType, extension } = await generateReport(
-          reportData,
-          customization.reportFormat,
-          customization
-        );
-        
-        const dateStr = new Date().toISOString().split('T')[0];
-        mailOptions.attachments = [{
-          filename: `NG_Visual_Report_${dateStr}.${extension}`,
-          content: content,
-          contentType: mimeType,
-        }];
-        
-        console.log(`[ReportScheduler] Generated ${customization.reportFormat} attachment for report ${reportId}`);
-      } catch (attachmentError: any) {
-        console.error(`[ReportScheduler] Failed to generate attachment for report ${reportId}:`, attachmentError);
-        // Continue sending email without attachment
-      }
+    // Attach generated file when the builder produced one (PDF / Excel formats)
+    if (built.attachment) {
+      mailOptions.attachments = [built.attachment];
+      console.log(`[ReportScheduler] Attached ${built.attachment.filename} for report ${reportId}`);
     }
 
     // Send email
     await transporter.sendMail(mailOptions);
 
-    console.log(`[ReportScheduler] Report ${reportId} sent successfully to ${recipients.length} recipients (format: ${customization.reportFormat})`);
+    console.log(`[ReportScheduler] Report ${reportId} (type=${report.reportType}) sent to ${recipients.length} recipients`);
     
     // Log success
     await db.createScheduledReportLog({

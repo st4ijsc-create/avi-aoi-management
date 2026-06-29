@@ -7,6 +7,24 @@
  * WS-G3: cloud LLM removed. Order = local GGUF (primary) → keyword offline
  * fallback. The GGUF path performs JSON-based tool selection (intent) then
  * narrates the tool results locally.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * ⚠️ DEPRECATED BACKEND — P1 (doc 11), 2026-06-29.
+ *
+ * `processChat` is the INFERIOR chat backend: 6 hard-coded SQL tools, NO RAG /
+ * knowledge-base retrieval. It is NO LONGER wired into production. The canonical
+ * path is now `aiLocalKnowledgeService` (RAG + tool registry), reached via:
+ *   • streaming → POST /api/ai/local-kb/stream (streamAnswer)
+ *   • non-stream → aiChatRouter.chat → answerQuestion()  ← was processChat
+ *
+ * `processChat` is retained ONLY because aiChatAssistant.ws-g3.test.ts pins its
+ * GGUF-ordering/offline behavior. The only LIVE export consumed by app code is
+ * `getAvailableTools` (UI tool-count footer on /ai-chat).
+ *
+ * WAVE 2 cleanup: once the UI tool footer is sourced from the aiLocalTools
+ * registry, delete `processChat` + its 6 tool impls + the ws-g3 test, and reduce
+ * this file to `getAvailableTools` (or drop it entirely). See report.
+ * ──────────────────────────────────────────────────────────────────────────
  */
 
 import { getDb } from "../db/connection";
@@ -157,6 +175,10 @@ const TOOLS: ChatTool[] = [
  * Process a user chat message with function calling.
  * The LLM decides which tools to call, we execute them,
  * and feed results back to get a final natural language response.
+ *
+ * @deprecated P1 (doc 11) — NO-RAG backend, no longer wired into production.
+ * Use `answerQuestion`/`streamAnswer` from aiLocalKnowledgeService instead.
+ * Kept only for the ws-g3 test; slated for deletion in Wave 2.
  */
 export async function processChat(request: ChatRequest): Promise<ChatResponse> {
   // 1. Local GGUF model (primary). Offline-first: no cloud LLM.

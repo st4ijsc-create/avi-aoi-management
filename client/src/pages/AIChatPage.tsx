@@ -336,12 +336,16 @@ export default function AIChatPage() {
         setOptimisticUserMsg(null);
         setStreamToolResult(null);
       } else {
-        // Stream failed (non-abort) — fall back to the tRPC chat mutation so the
-        // user still gets an answer persisted.
+        // Stream failed (non-abort) — fall back to the tRPC `chat` mutation. P1
+        // (doc 11): that mutation now routes through the SAME RAG/KB backend
+        // (`answerQuestion`) as the stream, so the fallback answer is grounded in
+        // the knowledge base + tools (extractive on LLM failure) — never the old
+        // no-RAG assistant. We pass the prior turns so RAG keeps conversational
+        // context, not just the latest message.
         chatMutation.mutate({
           conversationId: String(convId),
           userMessage: userMsg,
-          messages: [{ role: "user" as const, content: userMsg }],
+          messages: [...existingMessages, { role: "user" as const, content: userMsg }],
           language: "vi",
         });
       }
@@ -364,11 +368,14 @@ export default function AIChatPage() {
         tokensUsed: result.tokensGenerated,
       });
     } else if (!streamError?.includes("AbortError")) {
-      // Streaming failed — fall back to tRPC mutation
+      // Streaming failed — fall back to the tRPC `chat` mutation. P1 (doc 11):
+      // this mutation is now RAG/KB-backed (`answerQuestion`), so even the legacy
+      // bare-LLM stream path degrades to a knowledge-grounded answer, not the old
+      // no-RAG assistant.
       chatMutation.mutate({
         conversationId: String(convId),
         userMessage: userMsg,
-        messages: [{ role: "user" as const, content: userMsg }],
+        messages: [...existingMessages, { role: "user" as const, content: userMsg }],
         language: "vi",
       });
     } else {

@@ -864,23 +864,9 @@ function EmailPreviewDialog({
 
         {data && (
           <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <span className="text-muted-foreground">{t('reports.totalInspections')}:</span>
-                <span className="ml-2 font-medium">{data.reportData.summary.totalInspections.toLocaleString()}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">{t('reports.totalNG')}:</span>
-                <span className="ml-2 font-medium text-red-500">{data.reportData.summary.totalNG.toLocaleString()}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">{t('reports.ngRate')}:</span>
-                <span className="ml-2 font-medium">{Number(data.reportData.summary.ngRate || 0).toFixed(2)}%</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">{t('reports.format')}:</span>
-                <Badge variant="secondary" className="ml-2">{data.customization.reportFormat}</Badge>
-              </div>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">{t('reports.reportType')}:</span>
+              <Badge variant="secondary">{data.reportType}</Badge>
             </div>
           </div>
         )}

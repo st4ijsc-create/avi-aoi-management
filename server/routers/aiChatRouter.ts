@@ -7,10 +7,35 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
-import { processChat, getAvailableTools } from "../services/aiChatAssistant";
+// P1 (doc 11) — unify on the RAG/KB backend. The non-stream `chat` mutation now
+// routes through `answerQuestion` (the SAME pipeline `streamAnswer` uses: tool →
+// RAG retrieval → LLM → extractive fallback), NOT the inferior no-RAG
+// `aiChatAssistant.processChat`. `getAvailableTools` still surfaces the tool
+// catalogue for the UI footer (read-only metadata).
+import { answerQuestion, type UserRole } from "../services/aiLocalKnowledgeService";
+import type { ToolExecContext, ToolLang } from "../services/aiLocalTools";
+import { getAvailableTools } from "../services/aiChatAssistant";
 import { getDb } from "../db/connection";
 import { aiChatConversations, aiChatMessages } from "../../drizzle/schema/ai";
 import { eq, and, desc, sql } from "drizzle-orm";
+
+// P1 (doc 11) — map the APP role → AI UserRole (tone/scope only; NEVER a
+// permission grant — RBAC for write-tools uses the real ctx.user inside
+// ToolExecContext). Mirrors client/src/lib/aiRole.ts; duplicated here because
+// that module is client-side.
+const APP_ROLE_TO_AI_ROLE: Record<string, UserRole> = {
+  admin: "it_admin",
+  supervisor: "manager",
+  quality_inspector: "engineer",
+  maintenance: "engineer",
+  operator: "worker",
+  viewer: "worker",
+  user: "worker",
+};
+function mapAppRoleToAiRole(appRole?: string | null): UserRole {
+  if (!appRole) return "worker";
+  return APP_ROLE_TO_AI_ROLE[appRole.toLowerCase().trim()] ?? "worker";
+}
 
 export const aiChatRouter = router({
   // ─── Conversation CRUD ─────────────────────────────────────
@@ -182,7 +207,55 @@ export const aiChatRouter = router({
       allowedTools: z.array(z.string()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const result = await processChat(input);
+      // P1 (doc 11) — route through the RAG/KB backend (same pipeline as the
+      // streaming endpoint). This is the non-stream answer + the FE stream-error
+      // fallback path, so both now get full KB retrieval + tool grounding +
+      // extractive fallback instead of the old no-RAG assistant.
+      //
+      // History: the FE sends prior turns in `input.messages`; map them to the
+      // KB service's {role:"user"|"assistant"} shape (drop system/tool turns).
+      const history = input.messages
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
+        .slice(-12);
+
+      const userRole = mapAppRoleToAiRole(ctx.user.role as string);
+
+      // GĐ2 — exec context for write-tool RBAC uses the REAL authenticated user,
+      // never the tone role. lang follows the question script, defaulting to the
+      // FE-supplied language.
+      const lang: ToolLang = /[一-鿿]/.test(input.userMessage)
+        ? "zh"
+        : /[À-ỹ]/.test(input.userMessage)
+          ? "vi"
+          : (input.language ?? "vi");
+      const execCtx: ToolExecContext = {
+        user: { id: ctx.user.id, role: String(ctx.user.role), name: ctx.user.name ?? null },
+        lang,
+      };
+
+      const kb = await answerQuestion(
+        input.userMessage,
+        5,
+        history,
+        userRole,
+        undefined,
+        execCtx,
+      );
+
+      // Shape a backward-compatible response: callers (and the old UI) read
+      // `.reply`; we also surface the RAG extras so a non-stream caller is not
+      // strictly worse than the stream.
+      const result = {
+        reply: kb.answer,
+        toolsUsed: kb.toolName ? [kb.toolName] : [],
+        tokensUsed: 0,
+        provider: kb.provider,
+        citations: kb.citations,
+        followUpSuggestions: kb.followUpSuggestions ?? [],
+        structured: kb.structured,
+        pendingAction: kb.pendingAction ?? null,
+      };
 
       // Persist messages to DB
       const db = await getDb();
@@ -206,9 +279,7 @@ export const aiChatRouter = router({
           await db.insert(aiChatMessages).values({
             conversationId: convIdNum,
             role: "assistant",
-            content: result.reply ?? (result as any).content ?? "",
-            toolCalls: (result as any).toolCalls,
-            tokensUsed: (result as any).usage?.total_tokens,
+            content: result.reply,
           });
           // Update conversation stats
           await db.update(aiChatConversations)
