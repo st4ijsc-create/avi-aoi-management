@@ -71,6 +71,7 @@ describe("getNGTrendByDay with filters", () => {
       productModelId: testProductModelId,
       serialNumber: `SN_TREND_${timestamp}`,
       overallResult: "NG",
+      originalResult: "NG", // NOT NULL in the current schema (test was stale)
       inspectionTime: new Date(),
     });
 

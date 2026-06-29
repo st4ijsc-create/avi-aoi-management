@@ -15,5 +15,8 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["server/**/*.test.ts", "server/**/*.spec.ts"],
+    // Loads .env + forces DATABASE_URL to an ISOLATED test DB (see vitest.setup.ts).
+    // Provision once: `node scripts/setup-test-db.mjs`.
+    setupFiles: ["./vitest.setup.ts"],
   },
 });
