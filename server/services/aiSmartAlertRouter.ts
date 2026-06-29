@@ -210,6 +210,124 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
   };
 }
 
+// ─── Quality-Gate Breach → Unified Alert (FU-2) ──────────────────────────────
+//
+// Reusable entry point so a quality-gate breach raises ONE first-class, routed,
+// persisted alert through the SAME unified path P0-E uses (routeAlert →
+// predictive_alerts + in-app notify + email for HIGH/CRITICAL), plus a webhook
+// fan-out so external subscribers see gate breaches too.
+//
+// The qualityGateEvaluator already guarantees one-open-event + a re-arm cooldown
+// per gate, so it calls this at most once per breach. routeAlert's own Redis
+// consolidation window is a second safety net against storms.
+
+/** Normalized quality-gate breach payload (transport-agnostic). */
+export interface QualityGateAlertInput {
+  /** gate.action: 'stop' | 'pause' | 'alert' — drives severity mapping */
+  action: string;
+  gateId: number;
+  gateName: string;
+  gateType: string;
+  machineId: number;
+  lineId?: number | null;
+  productModelId?: number | null;
+  factoryId?: number | null;
+  triggerValue: number;
+  threshold: number;
+  comparisonOperator?: string;
+  eventId?: number | null;
+  inspectionId?: number | null;
+}
+
+/**
+ * Map a quality-gate action to the unified severity scale. Mirrors P0-E
+ * conventions: stop = hard halt (CRITICAL), pause = operator hold (HIGH),
+ * everything else (alert/unknown) = MEDIUM.
+ */
+function gateActionToSeverity(action: string): SmartAlertEvent["severity"] {
+  switch (action) {
+    case "stop":
+      return "CRITICAL";
+    case "pause":
+      return "HIGH";
+    default:
+      return "MEDIUM";
+  }
+}
+
+/**
+ * Raise a quality-gate breach as a first-class, routed + persisted alert.
+ * Returns the routing result (or null on failure). Best-effort webhook fan-out
+ * is fired alongside routeAlert; neither path throws to the caller — callers
+ * (the evaluator) treat this as fire-and-forget.
+ */
+export async function raiseQualityGateAlert(
+  input: QualityGateAlertInput,
+): Promise<RoutingResult | null> {
+  const severity = gateActionToSeverity(input.action);
+  const message =
+    `Quality gate "${input.gateName}" breached: ${input.gateType}=` +
+    `${input.triggerValue} ${input.comparisonOperator ?? ""} ${input.threshold} ` +
+    `→ action=${input.action}` +
+    (input.eventId != null ? ` (event #${input.eventId})` : "");
+
+  const event: SmartAlertEvent = {
+    type: "QUALITY_DEGRADATION",
+    machineId: input.machineId,
+    factoryId: input.factoryId ?? undefined,
+    productModelId: input.productModelId ?? undefined,
+    severity,
+    message,
+    data: {
+      source: "quality_gate",
+      gateId: input.gateId,
+      gateName: input.gateName,
+      gateType: input.gateType,
+      action: input.action,
+      currentValue: input.triggerValue,
+      threshold: input.threshold,
+      lineId: input.lineId ?? null,
+      eventId: input.eventId ?? null,
+      inspectionId: input.inspectionId ?? null,
+    },
+  };
+
+  // Webhook fan-out (best-effort, lazy import to avoid an import cycle with the
+  // router layer). HIGH/CRITICAL also email via routeAlert's sendSmartNotification.
+  void import("../routers/webhookRouter")
+    .then(({ sendWebhookEvent }) =>
+      sendWebhookEvent("alert.triggered", {
+        source: "quality_gate",
+        gateId: input.gateId,
+        gateName: input.gateName,
+        gateType: input.gateType,
+        action: input.action,
+        severity,
+        machineId: input.machineId,
+        currentValue: input.triggerValue,
+        threshold: input.threshold,
+        message,
+        eventId: input.eventId ?? null,
+      }),
+    )
+    .catch((err) =>
+      console.error(
+        "[SmartAlert] quality-gate webhook failed:",
+        (err as Error)?.message ?? err,
+      ),
+    );
+
+  try {
+    return await routeAlert(event);
+  } catch (err) {
+    console.error(
+      "[SmartAlert] raiseQualityGateAlert routeAlert failed:",
+      (err as Error)?.message ?? err,
+    );
+    return null;
+  }
+}
+
 // ─── Target Determination ────────────────────────────────────────────────────
 
 async function determineTargets(db: any, event: SmartAlertEvent): Promise<RouteTarget[]> {

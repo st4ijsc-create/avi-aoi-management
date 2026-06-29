@@ -184,6 +184,15 @@ async function evaluateSingleGate(
 
   // ── Realtime + alert path ─────────────────────────────────────────────────
   emitGateEvent(gate, evalResult, ctx, event?.id);
+
+  // ── Unified alert pipeline (FU-2) ─────────────────────────────────────────
+  // Raise ONE first-class, routed + persisted alert through the same path P0-E
+  // uses (predictive_alerts + in-app notify + email per severity + webhook), so
+  // the breach surfaces in Ops Console / Alert Center — not just a socket blip.
+  // Fire-and-forget: a dispatch failure must never fail the gate-event creation
+  // or the inspection ingest. De-dupe is already guaranteed above (one open
+  // event + re-arm cooldown), so this fires at most once per breach.
+  raiseGateAlert(gate, evalResult, ctx, event?.id);
 }
 
 /**
@@ -305,10 +314,10 @@ function round4(n: number): number {
  * so dashboards and the alert pipeline already subscribed to those see it without
  * a new transport.
  *
- * TODO(P0-E alert bus): when the unified Alert Bus / dispatcher lands, also push a
- * first-class alert here (e.g. alertDispatch.raise({ source: 'quality_gate', ... }))
- * with notifyRoles routing. For now we emit via the SPC violation channel + event
- * bus, which the current notification/escalation services already consume.
+ * NOTE: a first-class routed + persisted alert is now raised separately via
+ * raiseGateAlert() (FU-2) through the unified alert pipeline
+ * (aiSmartAlertRouter.raiseQualityGateAlert). This function remains SIGNAL-ONLY
+ * for realtime dashboards (SPC socket channel + internal event bus).
  */
 function emitGateEvent(
   gate: QualityGate,
@@ -370,6 +379,50 @@ function emitGateEvent(
   } catch (err) {
     console.error(
       "[QualityGate] emitGateEvent failed:",
+      (err as Error)?.message ?? err,
+    );
+  }
+}
+
+/**
+ * FU-2: raise a first-class, routed + persisted alert for this breach through
+ * the unified alert pipeline. Fire-and-forget — lazily imports the smart-alert
+ * router (avoids an import cycle at module load) and swallows all failures so a
+ * dispatch problem can never fail the gate-event creation or inspection ingest.
+ */
+function raiseGateAlert(
+  gate: QualityGate,
+  result: { currentValue: number; windowSize: number },
+  ctx: GateEvaluationContext,
+  eventId?: number,
+): void {
+  try {
+    void import("./aiSmartAlertRouter")
+      .then(({ raiseQualityGateAlert }) =>
+        raiseQualityGateAlert({
+          action: gate.action,
+          gateId: gate.id,
+          gateName: gate.name,
+          gateType: gate.gateType,
+          machineId: ctx.machineId,
+          lineId: ctx.lineId ?? null,
+          productModelId: ctx.productModelId ?? null,
+          triggerValue: round4(result.currentValue),
+          threshold: Number(gate.threshold),
+          comparisonOperator: gate.comparisonOperator,
+          eventId: eventId ?? null,
+          inspectionId: ctx.inspectionId,
+        }),
+      )
+      .catch((err) =>
+        console.error(
+          "[QualityGate] raiseQualityGateAlert failed:",
+          (err as Error)?.message ?? err,
+        ),
+      );
+  } catch (err) {
+    console.error(
+      "[QualityGate] raiseGateAlert failed:",
       (err as Error)?.message ?? err,
     );
   }

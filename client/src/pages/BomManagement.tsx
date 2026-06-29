@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Boxes, Plus, Trash2, GitMerge, AlertTriangle } from "lucide-react";
+import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 import { toast } from "sonner";
 
 export default function BomManagement() {
@@ -54,6 +55,7 @@ export default function BomManagement() {
         <Boxes className="h-6 w-6" />
         <h1 className="text-2xl font-semibold">BOM &amp; Feeder (MES)</h1>
         <Badge variant="outline">G2.4</Badge>
+        <ViewOnlyBadge module="mes_bom" />
       </div>
       <Tabs defaultValue="bom">
         <TabsList>

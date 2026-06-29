@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/accordion';
 import { toast } from 'sonner';
 import { Plus, Copy, Trash2, Shield, Users, Send, Eye, Edit, FileDown, FilePlus, X } from 'lucide-react';
+import { PermissionGate, ViewOnlyBadge } from '@/components/PermissionGate';
 
 const ACTION_LABELS: Record<string, { labelKey: string; icon: React.ReactNode }> = {
   canView: { labelKey: 'roles.view', icon: <Eye className="h-3 w-3" /> },
@@ -290,6 +291,7 @@ export function RoleBuilderContent() {
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Shield className="h-6 w-6" />
               {t('roles.customRoleManagement')}
+              <ViewOnlyBadge module="admin_users" />
             </h1>
             <p className="text-muted-foreground mt-1">
               {t('roles.roleManagementDescription')}
@@ -299,10 +301,12 @@ export function RoleBuilderContent() {
             {/* Create Role Dialog */}
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
               <DialogTrigger asChild>
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  {t('roles.createNewRole')}
-                </Button>
+                <PermissionGate module="admin_users" action="canCreate">
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    {t('roles.createNewRole')}
+                  </Button>
+                </PermissionGate>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
@@ -341,10 +345,12 @@ export function RoleBuilderContent() {
             {/* Duplicate Role Dialog */}
             <Dialog open={duplicateOpen} onOpenChange={setDuplicateOpen}>
               <DialogTrigger asChild>
-                <Button variant="outline">
-                  <Copy className="h-4 w-4 mr-2" />
-                  {t('roles.duplicateRole')}
-                </Button>
+                <PermissionGate module="admin_users" action="canCreate">
+                  <Button variant="outline">
+                    <Copy className="h-4 w-4 mr-2" />
+                    {t('roles.duplicateRole')}
+                  </Button>
+                </PermissionGate>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
@@ -493,18 +499,20 @@ export function RoleBuilderContent() {
                       <Send className="h-3.5 w-3.5" />
                     </Button>
                     {!role.isSystem && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-destructive hover:text-destructive"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteRole(role.id);
-                        }}
-                        title={t('roles.deleteRole')}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      <PermissionGate module="admin_users" action="canDelete">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive hover:text-destructive"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteRole(role.id);
+                          }}
+                          title={t('roles.deleteRole')}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </PermissionGate>
                     )}
                   </div>
                 </div>

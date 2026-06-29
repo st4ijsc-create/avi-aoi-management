@@ -18,6 +18,7 @@ import {
   Clock, Activity, Wifi, WifiOff, RefreshCw, History, Settings
 } from "lucide-react";
 import { useTranslation } from 'react-i18next';
+import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 
 const RULE_TYPE_KEYS = [
   { value: 'LATENCY_THRESHOLD', labelKey: 'mqtt.alertRulesPage.types.latencyThreshold', unit: 'ms', descKey: 'mqtt.alertRulesPage.types.latencyThresholdDesc' },
@@ -196,6 +197,7 @@ export default function MqttAlertRules() {
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <AlertTriangle className="w-6 h-6 text-yellow-400" />
               MQTT Alert Rules
+              <ViewOnlyBadge module="mqtt_alerts" />
             </h1>
             <p className="text-muted-foreground">{t('mqtt.alertRulesPage.description')}</p>
           </div>
@@ -211,12 +213,14 @@ export default function MqttAlertRules() {
                 resetForm();
               }
             }}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="w-4 h-4 mr-2" />
-                  {t('mqtt.alertRulesPage.createRule')}
-                </Button>
-              </DialogTrigger>
+              <PermissionGate module="mqtt_alerts" action="canCreate">
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="w-4 h-4 mr-2" />
+                    {t('mqtt.alertRulesPage.createRule')}
+                  </Button>
+                </DialogTrigger>
+              </PermissionGate>
               <DialogContent className="max-w-2xl">
                 <DialogHeader>
                   <DialogTitle>{editingRule ? t('mqtt.alertRulesPage.editRule') : t('mqtt.alertRulesPage.createNewRule')}</DialogTitle>
@@ -394,14 +398,16 @@ export default function MqttAlertRules() {
                       <span className="font-medium">{alert.ruleName}</span>
                       <p className="text-sm text-muted-foreground">{alert.message}</p>
                     </div>
-                    <Button 
-                      size="sm" 
-                      variant="outline"
-                      onClick={() => resolveMutation.mutate({ id: alert.id })}
-                    >
-                      <CheckCircle className="w-4 h-4 mr-1" />
-                      Resolve
-                    </Button>
+                    <PermissionGate module="mqtt_alerts" action="canEdit">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => resolveMutation.mutate({ id: alert.id })}
+                      >
+                        <CheckCircle className="w-4 h-4 mr-1" />
+                        Resolve
+                      </Button>
+                    </PermissionGate>
                   </div>
                 ))}
               </div>
@@ -475,24 +481,30 @@ export default function MqttAlertRules() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Switch 
-                            checked={rule.isEnabled}
-                            onCheckedChange={(v) => toggleMutation.mutate({ id: rule.id, isEnabled: v })}
-                          />
+                          <PermissionGate module="mqtt_alerts" action="canEdit">
+                            <Switch
+                              checked={rule.isEnabled}
+                              onCheckedChange={(v) => toggleMutation.mutate({ id: rule.id, isEnabled: v })}
+                            />
+                          </PermissionGate>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button size="sm" variant="ghost" onClick={() => handleEdit(rule)}>
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button 
-                              size="sm" 
-                              variant="ghost" 
-                              className="text-red-400 hover:text-red-300"
-                              onClick={() => deleteMutation.mutate({ id: rule.id })}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
+                            <PermissionGate module="mqtt_alerts" action="canEdit">
+                              <Button size="sm" variant="ghost" onClick={() => handleEdit(rule)}>
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                            </PermissionGate>
+                            <PermissionGate module="mqtt_alerts" action="canDelete">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-red-400 hover:text-red-300"
+                                onClick={() => deleteMutation.mutate({ id: rule.id })}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </PermissionGate>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -558,13 +570,15 @@ export default function MqttAlertRules() {
                         </TableCell>
                         <TableCell className="text-right">
                           {!alert.isResolved && (
-                            <Button 
-                              size="sm" 
-                              variant="outline"
-                              onClick={() => resolveMutation.mutate({ id: alert.id })}
-                            >
-                              Resolve
-                            </Button>
+                            <PermissionGate module="mqtt_alerts" action="canEdit">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => resolveMutation.mutate({ id: alert.id })}
+                              >
+                                Resolve
+                              </Button>
+                            </PermissionGate>
                           )}
                         </TableCell>
                       </TableRow>

@@ -487,17 +487,21 @@ export default function ProductionOrders() {
                         <TableCell>{getStatusBadge(order.status)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="icon" aria-label={t('production.editOrder')} onClick={() => handleEdit(order)}>
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={t('production.deleteOrder')}
-                              onClick={() => setDeleteTarget({ id: order.id, code: order.orderCode })}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
+                            <PermissionGate module="production_orders" action="canEdit">
+                              <Button variant="ghost" size="icon" aria-label={t('production.editOrder')} onClick={() => handleEdit(order)}>
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                            </PermissionGate>
+                            <PermissionGate module="production_orders" action="canDelete">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label={t('production.deleteOrder')}
+                                onClick={() => setDeleteTarget({ id: order.id, code: order.orderCode })}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </PermissionGate>
                           </div>
                         </TableCell>
                       </TableRow>

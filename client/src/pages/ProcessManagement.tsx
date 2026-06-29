@@ -36,6 +36,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 
 const PROCESS_TYPES = [
   { value: 'SMT', label: 'SMT (Surface Mount)', color: 'bg-blue-500' },
@@ -147,6 +148,7 @@ function SortableProcessItem({
         )}
       </div>
       <div className="flex items-center gap-2">
+        <PermissionGate module="settings_factory" action="canEdit">
         <Button
           variant="ghost"
           size="icon"
@@ -154,6 +156,8 @@ function SortableProcessItem({
         >
           <Edit className="h-4 w-4" />
         </Button>
+        </PermissionGate>
+        <PermissionGate module="settings_factory" action="canDelete">
         <Button
           variant="ghost"
           size="icon"
@@ -162,6 +166,7 @@ function SortableProcessItem({
         >
           <Trash2 className="h-4 w-4" />
         </Button>
+        </PermissionGate>
       </div>
     </div>
   );
@@ -319,18 +324,21 @@ export function ProcessManagementContent() {
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Workflow className="h-6 w-6" />
             {t('process.title')}
+            <ViewOnlyBadge module="settings_factory" />
           </h1>
           <p className="text-muted-foreground">
             {t('process.subtitle')}
           </p>
         </div>
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+          <PermissionGate module="settings_factory" action="canCreate">
           <DialogTrigger asChild>
             <Button>
               <Plus className="h-4 w-4 mr-2" />
               {t('process.addProcess')}
             </Button>
           </DialogTrigger>
+          </PermissionGate>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>{t('process.createTitle')}</DialogTitle>

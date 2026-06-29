@@ -44,6 +44,7 @@ import { useFormValidation, ValidationPatterns } from "@/hooks/useFormValidation
 
 import { ValidationMessage } from "@/components/ValidationMessage";
 import { DeleteConfirmDialog } from "@/components/ConfirmDialog";
+import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 
 type AlertSetting = { 
   id: number; 
@@ -193,6 +194,7 @@ export default function Settings() {
             <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
               <SettingsIcon className="h-6 w-6 text-primary" />
               {t("settings.systemSettings")}
+              <ViewOnlyBadge module="settings_view" />
             </h1>
             <p className="text-muted-foreground">{t("settings.systemDescription")}</p>
           </div>
@@ -310,12 +312,14 @@ export default function Settings() {
                     <CardDescription>{t("settings.alertThresholdDesc")}</CardDescription>
                   </div>
                   <Dialog open={alertDialogOpen} onOpenChange={setAlertDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button className="gap-2">
-                        <Plus className="h-4 w-4" />
-                        {t("settings.addAlert")}
-                      </Button>
-                    </DialogTrigger>
+                    <PermissionGate module="settings_view" action="canCreate">
+                      <DialogTrigger asChild>
+                        <Button className="gap-2">
+                          <Plus className="h-4 w-4" />
+                          {t("settings.addAlert")}
+                        </Button>
+                      </DialogTrigger>
+                    </PermissionGate>
                     <DialogContent className="sm:max-w-lg">
                       <DialogHeader>
                         <DialogTitle>{t("settings.createAlert")}</DialogTitle>
@@ -510,13 +514,15 @@ export default function Settings() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Button
-                          variant={alert.isActive ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => updateAlertMutation.mutate({ id: alert.id, isActive: !alert.isActive })}
-                        >
-                          {alert.isActive ? t("settings.alertOn") : t("settings.alertOff")}
-                        </Button>
+                        <PermissionGate module="settings_view" action="canEdit">
+                          <Button
+                            variant={alert.isActive ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => updateAlertMutation.mutate({ id: alert.id, isActive: !alert.isActive })}
+                          >
+                            {alert.isActive ? t("settings.alertOn") : t("settings.alertOff")}
+                          </Button>
+                        </PermissionGate>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon">
@@ -524,23 +530,27 @@ export default function Settings() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => {
-                              setEditingAlert(alert);
-                              setEditAlertDialogOpen(true);
-                            }}>
-                              <Pencil className="h-4 w-4 mr-2" />
-                              {t("settings.edit")}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              className="text-destructive"
-                              onClick={() => {
-                                setAlertToDelete(alert);
-                                setDeleteAlertDialogOpen(true);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              {t("common.delete")}
-                            </DropdownMenuItem>
+                            <PermissionGate module="settings_view" action="canEdit">
+                              <DropdownMenuItem onClick={() => {
+                                setEditingAlert(alert);
+                                setEditAlertDialogOpen(true);
+                              }}>
+                                <Pencil className="h-4 w-4 mr-2" />
+                                {t("settings.edit")}
+                              </DropdownMenuItem>
+                            </PermissionGate>
+                            <PermissionGate module="settings_view" action="canDelete">
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={() => {
+                                  setAlertToDelete(alert);
+                                  setDeleteAlertDialogOpen(true);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                {t("common.delete")}
+                              </DropdownMenuItem>
+                            </PermissionGate>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>

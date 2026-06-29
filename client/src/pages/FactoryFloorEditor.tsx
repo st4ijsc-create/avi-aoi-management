@@ -19,6 +19,7 @@ import { trpc } from "@/lib/trpc";
 import { statusColor } from "@/components/FactoryFloor3D";
 import { toast } from "sonner";
 import { Boxes, Info, Magnet, Save, Move } from "lucide-react";
+import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 
 interface Row {
   id: number; code: string; name: string; machineType: string;
@@ -129,7 +130,7 @@ export default function FactoryFloorEditor() {
       <div className="space-y-4 p-1">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
-            <h1 className="text-xl font-semibold flex items-center gap-2"><Move className="h-5 w-5 text-primary" /> {t("ffe.title", "Sửa mặt bằng nhà máy")}</h1>
+            <h1 className="text-xl font-semibold flex items-center gap-2"><Move className="h-5 w-5 text-primary" /> {t("ffe.title", "Sửa mặt bằng nhà máy")} <ViewOnlyBadge module="machine_control" /></h1>
             <p className="text-sm text-muted-foreground">{t("ffe.subtitle", "Kéo từng máy về đúng vị trí thực trên sàn — toạ độ được lưu và dùng cho bản đồ 3D")}</p>
           </div>
           <div className="flex items-center gap-2">
@@ -226,11 +227,13 @@ export default function FactoryFloorEditor() {
                         onChange={(e) => updX({ footprintD: Number(e.target.value) })} onBlur={saveNow} className="h-8" />
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    {[0, 90, 180, 270].map((deg) => (
-                      <Button key={deg} size="sm" variant="outline" className="h-7 px-2" onClick={() => { updX({ rotationDeg: deg }); if (p) persist(m.id, p, { ...xf, rotationDeg: deg }); }}>{deg}°</Button>
-                    ))}
-                  </div>
+                  <PermissionGate module="machine_control" action="canEdit">
+                    <div className="flex gap-2">
+                      {[0, 90, 180, 270].map((deg) => (
+                        <Button key={deg} size="sm" variant="outline" className="h-7 px-2" onClick={() => { updX({ rotationDeg: deg }); if (p) persist(m.id, p, { ...xf, rotationDeg: deg }); }}>{deg}°</Button>
+                      ))}
+                    </div>
+                  </PermissionGate>
                 </div>
               );
             })()}
