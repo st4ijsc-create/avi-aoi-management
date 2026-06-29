@@ -32,6 +32,11 @@ import {
 import JSZip from "jszip";
 import fs from "fs";
 import path from "path";
+import {
+  resolveOrCreateMeasurementPointDefId,
+  assertValidPointDefId,
+} from "../services/measurementPointResolver";
+import type { PointDefCache } from "./_shared";
 
 // ============================================================
 // Image Cache Configuration
@@ -542,6 +547,23 @@ export const aoiPackageRouter = router({
           // Normalize measurements - support both measurements and points (backward compat)
           const normalizedMeasurements = metaData?.measurements || metaData?.points || [];
 
+          // ── P0-A data-integrity: resolve REAL measurement-point definition ids ──
+          // Resolve the product model (by code) so auto-provisioned point defs are
+          // anchored to it. Caches are shared across all inserts in this commit.
+          const resolvedProductModel = metaData?.productModel
+            ? await db.getProductModelByCode(metaData.productModel.trim())
+            : undefined;
+          const mpResolverProductCache: PointDefCache = new Map();
+          const mpResolverMachineCache: PointDefCache = new Map();
+          const resolvePointDefId = (rawCode: string | undefined) =>
+            resolveOrCreateMeasurementPointDefId(rawCode, {
+              productModelId: resolvedProductModel?.id,
+              machineId: machine.id,
+              productCache: mpResolverProductCache,
+              machineCache: mpResolverMachineCache,
+              autoCreate: true,
+            });
+
           // Insert package image records
           if (normalizedMeasurements.length > 0) {
             const imageRecords = normalizedMeasurements.map((point: any) => ({
@@ -661,66 +683,79 @@ export const aoiPackageRouter = router({
 
                     // Insert any extra AOI measurements beyond existing count
                     if (pointsWithImages.length > existingRecords.length) {
-                      const extraRecords = pointsWithImages.slice(existingRecords.length).map((point, idx) => {
+                      const extraSource = pointsWithImages.slice(existingRecords.length);
+                      const extraRecords = [];
+                      for (let idx = 0; idx < extraSource.length; idx++) {
+                        const point = extraSource[idx];
                         const realIdx = existingRecords.length + idx;
                         const pointCode = (point as any).pointId || (point as any).pointCode || point.code || `Point_${realIdx + 1}`;
                         const pointName = point.name || pointCode;
                         const measuredVal = (point as any).measuredValue !== undefined ? (point as any).measuredValue : point.value;
                         const measuredStr = measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null;
                         const isNumeric = measuredStr !== null && !isNaN(Number(measuredStr)) && measuredStr.trim() !== '';
-                        return {
+                        const pointDefId = await resolvePointDefId(pointCode);
+                        assertValidPointDefId(pointDefId, `AOI commit extra record (pkg=${pkg.packageId}, point=${pointCode})`);
+                        extraRecords.push({
                           inspectionId: linkedInspectionId!,
-                          pointDefId: 0,
+                          pointDefId,
                           measuredValue: isNumeric ? measuredStr : null,
                           measuredValueText: measuredStr,
                           result: (point.result || "NTF") as "OK" | "NG" | "NTF",
                           imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
                           remark: (point as any).remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`,
                           createdAt: inspectionTime,
-                        };
-                      });
+                        });
+                      }
                       await database.insert(measurementResults).values(extraRecords);
                     }
                   } else {
                     // Existing inspection but no measurement records yet — insert all
-                    const measurementRecords = pointsWithImages.map((point, idx) => {
+                    const measurementRecords = [];
+                    for (let idx = 0; idx < pointsWithImages.length; idx++) {
+                      const point = pointsWithImages[idx];
                       const pointCode = (point as any).pointId || (point as any).pointCode || point.code || `Point_${idx + 1}`;
                       const pointName = point.name || pointCode;
                       const measuredVal = (point as any).measuredValue !== undefined ? (point as any).measuredValue : point.value;
                       const measuredStr = measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null;
                       const isNumeric = measuredStr !== null && !isNaN(Number(measuredStr)) && measuredStr.trim() !== '';
-                      return {
+                      const pointDefId = await resolvePointDefId(pointCode);
+                      assertValidPointDefId(pointDefId, `AOI commit existing-inspection record (pkg=${pkg.packageId}, point=${pointCode})`);
+                      measurementRecords.push({
                         inspectionId: linkedInspectionId!,
-                        pointDefId: 0,
+                        pointDefId,
                         measuredValue: isNumeric ? measuredStr : null,
                         measuredValueText: measuredStr,
                         result: (point.result || "NTF") as "OK" | "NG" | "NTF",
                         imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
                         remark: (point as any).remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`,
                         createdAt: inspectionTime,
-                      };
-                    });
+                      });
+                    }
                     await database.insert(measurementResults).values(measurementRecords);
                   }
                 } else {
                   // New inspection — insert all measurement records
-                  const measurementRecords = pointsWithImages.map((point, idx) => {
+                  const measurementRecords = [];
+                  for (let idx = 0; idx < pointsWithImages.length; idx++) {
+                    const point = pointsWithImages[idx];
                     const pointCode = (point as any).pointId || (point as any).pointCode || point.code || `Point_${idx + 1}`;
                     const pointName = point.name || pointCode;
                     const measuredVal = (point as any).measuredValue !== undefined ? (point as any).measuredValue : point.value;
                     const measuredStr = measuredVal !== undefined && measuredVal !== null ? String(measuredVal) : null;
                     const isNumeric = measuredStr !== null && !isNaN(Number(measuredStr)) && measuredStr.trim() !== '';
-                    return {
+                    const pointDefId = await resolvePointDefId(pointCode);
+                    assertValidPointDefId(pointDefId, `AOI commit new-inspection record (pkg=${pkg.packageId}, point=${pointCode})`);
+                    measurementRecords.push({
                       inspectionId: linkedInspectionId!,
-                      pointDefId: 0,
+                      pointDefId,
                       measuredValue: isNumeric ? measuredStr : null,
                       measuredValueText: measuredStr,
                       result: (point.result || "NTF") as "OK" | "NG" | "NTF",
                       imageUrl: `/api/aoi/image/${pkg.packageId}/${point.fileName}`,
                       remark: (point as any).remark || `${pointName}${measuredVal !== undefined ? ` (${measuredVal}${point.unit || ''})` : ''}`,
                       createdAt: inspectionTime,
-                    };
-                  });
+                    });
+                  }
                   await database.insert(measurementResults).values(measurementRecords);
                 }
               }
@@ -800,6 +835,25 @@ export const aoiPackageRouter = router({
             }
           } catch (e) {
             console.warn("[aoiEmbed] enqueue failed:", (e as any)?.message ?? e);
+          }
+
+          // P0-D: realtime quality-gate evaluation. Runs AFTER the inspection +
+          // measurement results are persisted. Fire-and-forget + fully guarded —
+          // a gate evaluation failure must never affect commit success/idempotency
+          // and does NOT touch P0-A's resolver/assert logic above.
+          try {
+            if (linkedInspectionId) {
+              const { evaluateGatesAfterInspection } = await import("../services/qualityGateEvaluator");
+              evaluateGatesAfterInspection({
+                machineId: machine.id,
+                inspectionId: linkedInspectionId,
+                productModelId: resolvedProductModel?.id ?? null,
+              }).catch((e2) => {
+                console.error("[QualityGate] post-commit evaluation failed:", (e2 as any)?.message ?? e2);
+              });
+            }
+          } catch (e) {
+            console.error("[QualityGate] Failed to import qualityGateEvaluator:", (e as any)?.message ?? e);
           }
 
           return {

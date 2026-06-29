@@ -5,9 +5,10 @@ import {
   dailyStatistics,
   predictiveAlerts,
 } from "../../drizzle/schema";
-import { eq, and, gte, sql, inArray, lt } from "drizzle-orm";
+import { eq, and, gte, sql, inArray, lt, isNull } from "drizzle-orm";
 import { sendAlertNotification } from "./notificationService";
 import { sendAlertEmail } from "./emailService";
+import { redisService } from "./redisService";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -48,16 +49,55 @@ interface RoutingResult {
 }
 
 // ─── Cooldown & De-duplication ───────────────────────────────────────────────
+//
+// PERSISTENCE (bug #4): the consolidation/dedup state and the pending-escalation
+// state used to live in process-local Maps, so they were lost on restart and not
+// safe across multiple instances. We now persist:
+//   • consolidation counters → Redis (redisService — which itself falls back to a
+//     shared in-memory cache when REDIS_URL is unset, so behaviour degrades
+//     gracefully on single-instance deployments).
+//   • pending escalation state → the predictive_alerts table directly. Every
+//     routed alert is already INSERTed there with createdAt / acknowledgedAt /
+//     escalationLevel, so the table IS the source of truth — no second store and
+//     no drift. processAutoEscalation() now scans the table instead of a Map.
 
-const recentAlerts = new Map<string, { timestamp: number; count: number }>();
 const CONSOLIDATION_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 const ESCALATION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const CONSOLIDATION_TTL_SECONDS = Math.ceil(CONSOLIDATION_WINDOW_MS / 1000);
 
-// Track pending alerts for auto-escalation
-const pendingAlerts = new Map<
-  number,
-  { createdAt: number; escalationLevel: EscalationLevel; event: SmartAlertEvent }
->();
+// Redis key namespace for consolidation counters.
+const consolidationRedisKey = (consolidationKey: string) =>
+  `smartalert:consolidation:${consolidationKey}`;
+
+interface ConsolidationEntry {
+  timestamp: number;
+  count: number;
+}
+
+async function getConsolidationEntry(consolidationKey: string): Promise<ConsolidationEntry | null> {
+  try {
+    return await redisService.get<ConsolidationEntry>(consolidationRedisKey(consolidationKey));
+  } catch (err) {
+    console.error("[SmartAlert] consolidation read failed:", (err as Error).message);
+    return null;
+  }
+}
+
+async function setConsolidationEntry(consolidationKey: string, entry: ConsolidationEntry): Promise<void> {
+  try {
+    await redisService.set(consolidationRedisKey(consolidationKey), entry, CONSOLIDATION_TTL_SECONDS);
+  } catch (err) {
+    console.error("[SmartAlert] consolidation write failed:", (err as Error).message);
+  }
+}
+
+// Map the integer escalationLevel stored on predictive_alerts (0=none/L1,
+// 1=L2/supervisor, 2=L3/admin) to/from the logical L1/L2/L3 labels used here.
+function escalationLevelToLabel(level: number): EscalationLevel {
+  if (level >= 2) return "L3";
+  if (level === 1) return "L2";
+  return "L1";
+}
 
 // ─── Main Routing Logic ──────────────────────────────────────────────────────
 
@@ -67,28 +107,29 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
     return { alertType: event.type, targets: [], consolidated: false, escalationLevel: "L1" };
   }
 
-  // Step 1: Check consolidation — same root cause?
+  // Step 1: Check consolidation — same root cause? (persisted in Redis)
   const consolidationKey = buildConsolidationKey(event);
-  const existing = recentAlerts.get(consolidationKey);
+  const existing = await getConsolidationEntry(consolidationKey);
   const now = Date.now();
   let consolidated = false;
 
   if (existing && now - existing.timestamp < CONSOLIDATION_WINDOW_MS) {
-    existing.count += 1;
+    const nextCount = existing.count + 1;
+    await setConsolidationEntry(consolidationKey, { timestamp: existing.timestamp, count: nextCount });
     consolidated = true;
     // Don't send duplicate alerts within window, just update count
-    if (existing.count > 3) {
+    if (nextCount > 3) {
       return {
         alertType: event.type,
         targets: [],
         consolidated: true,
         consolidationGroup: consolidationKey,
         escalationLevel: "L1",
-        suggestedAction: `${existing.count} similar alerts consolidated. Root cause investigation recommended.`,
+        suggestedAction: `${nextCount} similar alerts consolidated. Root cause investigation recommended.`,
       };
     }
   } else {
-    recentAlerts.set(consolidationKey, { timestamp: now, count: 1 });
+    await setConsolidationEntry(consolidationKey, { timestamp: now, count: 1 });
   }
 
   // Step 2: Determine targets based on alert type
@@ -155,14 +196,9 @@ export async function routeAlert(event: SmartAlertEvent): Promise<RoutingResult>
     } as any)
     .returning({ id: predictiveAlerts.id });
 
-  // Track for auto-escalation
-  if (alertRecord) {
-    pendingAlerts.set(alertRecord.id, {
-      createdAt: now,
-      escalationLevel: "L1",
-      event,
-    });
-  }
+  // Auto-escalation is now tracked via the predictive_alerts row itself
+  // (status=ACTIVE, acknowledgedAt=null, escalationLevel). processAutoEscalation()
+  // scans the table — nothing to register in process memory.
 
   return {
     alertType: event.type,
@@ -290,46 +326,58 @@ export async function processAutoEscalation(): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
 
-  const now = Date.now();
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - ESCALATION_TIMEOUT_MS);
   let escalatedCount = 0;
 
-  for (const [alertId, pending] of pendingAlerts.entries()) {
-    if (now - pending.createdAt < ESCALATION_TIMEOUT_MS) {
-      continue;
-    }
+  // Source of truth: scan predictive_alerts directly (survives restarts and is
+  // shared across instances). Candidates = still ACTIVE, never acknowledged,
+  // below the top escalation level (3=executive), and either never escalated or
+  // last escalated > timeout ago.
+  const candidates = await db
+    .select()
+    .from(predictiveAlerts)
+    .where(
+      and(
+        eq(predictiveAlerts.status, "ACTIVE"),
+        isNull(predictiveAlerts.acknowledgedAt),
+        sql`${predictiveAlerts.escalationLevel} < 3`,
+        sql`COALESCE(${predictiveAlerts.lastEscalatedAt}, ${predictiveAlerts.createdAt}) <= ${cutoff}`,
+      ),
+    );
 
-    // Check if already acknowledged
-    const [record] = await db
-      .select({ acknowledgedAt: predictiveAlerts.acknowledgedAt })
-      .from(predictiveAlerts)
-      .where(eq(predictiveAlerts.id, alertId))
-      .limit(1);
+  for (const alert of candidates) {
+    const currentLevel = escalationLevelToLabel(alert.escalationLevel ?? 0);
+    const nextLevel = getNextEscalationLevel(currentLevel);
+    if (!nextLevel) continue;
 
-    if (record?.acknowledgedAt) {
-      pendingAlerts.delete(alertId);
-      continue;
-    }
-
-    // Escalate
-    const nextLevel = getNextEscalationLevel(pending.escalationLevel);
-    if (!nextLevel) {
-      pendingAlerts.delete(alertId);
-      continue;
-    }
+    // Reconstruct a minimal event from the persisted row so escalation
+    // notifications carry the original context.
+    const event: SmartAlertEvent = {
+      type: (alert.alertType as AlertType) ?? "PATTERN_ANOMALY",
+      severity: (alert.severity as SmartAlertEvent["severity"]) ?? "MEDIUM",
+      message: alert.description ?? alert.title ?? "Alert escalated",
+      machineId: alert.machineId ?? undefined,
+      factoryId: alert.factoryId ?? undefined,
+      productModelId: alert.productModelId ?? undefined,
+      data: {},
+    };
 
     const escalationTargets = await getEscalationTargets(db, nextLevel);
     for (const target of escalationTargets) {
-      await sendSmartNotification(target, pending.event, true);
+      await sendSmartNotification(target, event, true);
     }
 
-    // Update status to ACKNOWLEDGED to mark escalation happened
+    // Persist escalation: bump level + stamp lastEscalatedAt (resets the timer).
     await db
       .update(predictiveAlerts)
-      .set({ updatedAt: new Date() })
-      .where(eq(predictiveAlerts.id, alertId));
+      .set({
+        escalationLevel: (alert.escalationLevel ?? 0) + 1,
+        lastEscalatedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(predictiveAlerts.id, alert.id));
 
-    pending.escalationLevel = nextLevel;
-    pending.createdAt = now; // Reset timer for next escalation
     escalatedCount++;
   }
 
@@ -421,7 +469,8 @@ export async function acknowledgeAlert(
     })
     .where(eq(predictiveAlerts.id, alertId));
 
-  pendingAlerts.delete(alertId);
+  // Acknowledged rows are skipped by processAutoEscalation() (it filters on
+  // acknowledgedAt IS NULL), so there is no separate pending store to clear.
   return true;
 }
 
@@ -645,11 +694,23 @@ export async function getAlertRoutingStats(days: number = 7) {
     .from(predictiveAlerts)
     .where(gte(predictiveAlerts.createdAt, since));
 
+  // pendingCount = alerts still awaiting acknowledgement (the auto-escalation
+  // backlog). Derived from the table now, not an in-memory Map size.
+  const [pending] = await db
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(predictiveAlerts)
+    .where(
+      and(
+        eq(predictiveAlerts.status, "ACTIVE"),
+        isNull(predictiveAlerts.acknowledgedAt),
+      ),
+    );
+
   return {
     totalAlerts: Number(total?.count ?? 0),
     byType: byType.map((r: any) => ({ type: r.alertType, count: Number(r.count) })),
     avgAckTimeMinutes: Number(ackTime?.avgMinutes ?? 0),
-    pendingCount: pendingAlerts.size,
+    pendingCount: Number(pending?.count ?? 0),
   };
 }
 
@@ -695,18 +756,8 @@ async function sendSmartNotification(
 // ─── Cleanup stale entries ───────────────────────────────────────────────────
 
 export function cleanupStaleAlerts(): void {
-  const now = Date.now();
-  const maxAge = 24 * 60 * 60 * 1000; // 24 hours
-
-  for (const [key, entry] of recentAlerts.entries()) {
-    if (now - entry.timestamp > maxAge) {
-      recentAlerts.delete(key);
-    }
-  }
-
-  for (const [alertId, pending] of pendingAlerts.entries()) {
-    if (now - pending.createdAt > maxAge) {
-      pendingAlerts.delete(alertId);
-    }
-  }
+  // No-op retained for API compatibility (aiSmartAlertRoutingRouter.cleanup).
+  // Consolidation counters now expire automatically via their Redis TTL
+  // (CONSOLIDATION_TTL_SECONDS), and pending-escalation state lives in the
+  // predictive_alerts table — there are no in-memory Maps left to prune.
 }

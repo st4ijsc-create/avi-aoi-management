@@ -1,4 +1,4 @@
-﻿import { protectedProcedure, router } from "../_core/trpc";
+﻿import { protectedProcedure, qualityProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
@@ -59,7 +59,7 @@ export const inspectionRouter = router({
       return { inspection, measurements, machine };
     }),
 
-  confirmNTF: protectedProcedure
+  confirmNTF: qualityProcedure
     .input(z.object({
       id: z.number(),
       reason: z.string().min(1),
@@ -576,7 +576,7 @@ Respond in JSON format:
       return { success: true, count: input.ids.length };
     }),
 
-  correctResult: protectedProcedure
+  correctResult: qualityProcedure
     .input(z.object({
       id: z.number(),
       result: z.enum(["OK", "NG", "NTF"]),

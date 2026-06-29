@@ -3,6 +3,233 @@ import { adminProcedure } from "./_shared";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "../db";
+import { getDb } from "../db/connection";
+import { and, eq, gte, sql } from "drizzle-orm";
+import { alertSettings, dailyStatistics, machines } from "../../drizzle/schema";
+import type { AlertSetting } from "../../drizzle/schema";
+import { notifyOwner } from "../_core/notification";
+import { sendAlertEmail } from "../services/emailService";
+import { sendWebhookEvent } from "./webhookRouter";
+
+// ============================================================================
+// LEGACY ALERT-SETTINGS EVALUATOR (bug #1 fix)
+//
+// alertSettings (yield_rate / ng_count / machine_status / machine_offline) never
+// had an evaluator — only the manual `test` button fired. This shared logic is
+// used both by the scheduler (alertEvaluatorScheduler) and the test mutation.
+// ============================================================================
+
+export interface AlertBreach {
+  breached: boolean;
+  currentValue: number;
+  message: string;
+}
+
+function compare(current: number, threshold: number, op: string | null | undefined): boolean {
+  switch (op) {
+    case "gt": return current > threshold;
+    case "gte": return current >= threshold;
+    case "lt": return current < threshold;
+    case "lte": return current <= threshold;
+    case "eq": return current === threshold;
+    default: return current < threshold; // schema default is "lt"
+  }
+}
+
+function startOfToday(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/**
+ * Compute the current value for an alert setting and whether its threshold is
+ * breached. Pure read — no notifications, no history. Reused by the scheduler
+ * and the manual test endpoint so both agree on what "breached" means.
+ */
+export async function evaluateAlertSetting(alert: AlertSetting): Promise<AlertBreach> {
+  const database = await getDb();
+  if (!database) return { breached: false, currentValue: 0, message: "Database not available" };
+
+  const threshold = Number(alert.threshold);
+  const today = startOfToday();
+
+  // Scope filter shared by the daily-statistics based rules.
+  const scope = [gte(dailyStatistics.date, today)];
+  if (alert.machineId != null) scope.push(eq(dailyStatistics.machineId, alert.machineId));
+  if (alert.factoryId != null) scope.push(eq(dailyStatistics.factoryId, alert.factoryId));
+
+  switch (alert.alertType) {
+    case "yield_rate": {
+      const [row] = await database
+        .select({
+          total: sql<number>`COALESCE(SUM(${dailyStatistics.totalCount}), 0)`,
+          ok: sql<number>`COALESCE(SUM(${dailyStatistics.okCount}), 0)`,
+        })
+        .from(dailyStatistics)
+        .where(and(...scope));
+      const total = Number(row?.total ?? 0);
+      const ok = Number(row?.ok ?? 0);
+      const yieldRate = total > 0 ? (ok / total) * 100 : 100;
+      const breached = total > 0 && compare(yieldRate, threshold, alert.comparisonOperator);
+      return {
+        breached,
+        currentValue: yieldRate,
+        message: `Yield ${yieldRate.toFixed(2)}% ${alert.comparisonOperator ?? "lt"} ngưỡng ${threshold}% (hôm nay, ${total} sản phẩm)`,
+      };
+    }
+
+    case "ng_count": {
+      const [row] = await database
+        .select({ ng: sql<number>`COALESCE(SUM(${dailyStatistics.ngCount}), 0)` })
+        .from(dailyStatistics)
+        .where(and(...scope));
+      const ngCount = Number(row?.ng ?? 0);
+      const breached = compare(ngCount, threshold, alert.comparisonOperator ?? "gte");
+      return {
+        breached,
+        currentValue: ngCount,
+        message: `Số NG ${ngCount} ${alert.comparisonOperator ?? "gte"} ngưỡng ${threshold} (hôm nay)`,
+      };
+    }
+
+    case "machine_status":
+    case "machine_offline": {
+      // Count machines that are offline (and, for machine_offline, stale beyond
+      // the threshold in minutes). Breach when that count crosses the threshold.
+      const machineScope = [eq(machines.isActive, true)];
+      if (alert.machineId != null) machineScope.push(eq(machines.id, alert.machineId));
+
+      const rows = await database
+        .select({
+          id: machines.id,
+          syncMode: machines.syncMode,
+          lastHeartbeat: machines.lastHeartbeat,
+        })
+        .from(machines)
+        .where(and(...machineScope));
+
+      const now = Date.now();
+      const staleMs = (alert.alertType === "machine_offline" ? threshold : 0) * 60 * 1000;
+      const offline = rows.filter((m) => {
+        if (m.syncMode === "offline") return true;
+        if (staleMs > 0 && m.lastHeartbeat) {
+          return now - new Date(m.lastHeartbeat).getTime() >= staleMs;
+        }
+        return false;
+      });
+      const offlineCount = offline.length;
+
+      if (alert.alertType === "machine_offline") {
+        const breached = offlineCount > 0;
+        return {
+          breached,
+          currentValue: offlineCount,
+          message: `${offlineCount} máy offline > ${threshold} phút`,
+        };
+      }
+      // machine_status: breach when offline-machine count crosses threshold.
+      const breached = compare(offlineCount, threshold, alert.comparisonOperator ?? "gte");
+      return {
+        breached,
+        currentValue: offlineCount,
+        message: `${offlineCount} máy không hoạt động ${alert.comparisonOperator ?? "gte"} ngưỡng ${threshold}`,
+      };
+    }
+
+    default:
+      return { breached: false, currentValue: 0, message: `Unknown alert type: ${alert.alertType}` };
+  }
+}
+
+/**
+ * Dispatch the configured channels for a breached alert + write history. Shared
+ * by scheduler and test. `isTest` only changes the message prefix and skips the
+ * cooldown stamp.
+ */
+async function dispatchAlert(alert: AlertSetting, breach: AlertBreach, isTest = false): Promise<void> {
+  const prefix = isTest ? "[TEST] " : "";
+  const title = `${prefix}${alert.name}`;
+  const content = `${prefix}${breach.message}`;
+
+  if (alert.notifyInApp) {
+    try {
+      await notifyOwner({ title, content });
+    } catch (err) {
+      console.error(`[AlertEval] notifyOwner failed for #${alert.id}:`, (err as Error).message);
+    }
+  }
+  if (alert.notifyEmail) {
+    try {
+      await sendAlertEmail({
+        ruleName: alert.name,
+        ruleType: alert.alertType,
+        message: content,
+        currentValue: breach.currentValue,
+        thresholdValue: Number(alert.threshold),
+      });
+    } catch (err) {
+      console.error(`[AlertEval] email failed for #${alert.id}:`, (err as Error).message);
+    }
+  }
+  try {
+    await sendWebhookEvent("alert.triggered", {
+      source: "alert_settings",
+      alertSettingId: alert.id,
+      name: alert.name,
+      alertType: alert.alertType,
+      currentValue: breach.currentValue,
+      threshold: Number(alert.threshold),
+      message: breach.message,
+      isTest,
+    });
+  } catch (err) {
+    console.error(`[AlertEval] webhook failed for #${alert.id}:`, (err as Error).message);
+  }
+
+  await db.createAlertHistory({
+    alertSettingId: alert.id,
+    triggeredValue: String(breach.currentValue.toFixed(2)),
+    message: content,
+    sentEmail: alert.notifyEmail,
+    sentInApp: alert.notifyInApp,
+  });
+}
+
+/**
+ * Scheduler entry point: evaluate every active alert setting, honour each rule's
+ * cooldownMinutes (via lastTriggeredAt), and dispatch on breach. Returns the
+ * number of alerts fired this cycle.
+ */
+export async function evaluateActiveAlertSettings(): Promise<number> {
+  const database = await getDb();
+  if (!database) return 0;
+
+  const active = await database.select().from(alertSettings).where(eq(alertSettings.isActive, true));
+  const now = new Date();
+  let fired = 0;
+
+  for (const alert of active) {
+    try {
+      // Cooldown: skip if last triggered within cooldownMinutes.
+      if (alert.lastTriggeredAt) {
+        const elapsedMin = (now.getTime() - new Date(alert.lastTriggeredAt).getTime()) / 60000;
+        if (elapsedMin < (alert.cooldownMinutes ?? 60)) continue;
+      }
+
+      const breach = await evaluateAlertSetting(alert);
+      if (!breach.breached) continue;
+
+      await dispatchAlert(alert, breach, false);
+      await db.updateAlertSetting(alert.id, { lastTriggeredAt: now });
+      fired++;
+    } catch (err) {
+      console.error(`[AlertEval] error evaluating alert #${alert.id}:`, (err as Error).message);
+    }
+  }
+
+  return fired;
+}
 
 // ============ ALERT ROUTER ============
 export const alertRouter = router({
@@ -136,25 +363,13 @@ export const alertRouter = router({
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Not authorized' });
       }
 
-      // Send test notification to owner
-      const { notifyOwner } = await import('../_core/notification');
-      const success = await notifyOwner({
-        title: `[Đang kiểm tra] ${alert.name}`,
-        content: `Đây là thông báo kiểm tra cho cảnh báo "${alert.name}".\n\nLoại: ${alert.alertType}\nNgưỡng: ${alert.threshold}%`,
-      });
+      // Reuse the shared evaluator so the test reflects the SAME breach logic
+      // the scheduler uses, then dispatch through the same channels (notify +
+      // email + webhook) and log history. isTest=true → prefixed + no cooldown.
+      const breach = await evaluateAlertSetting(alert);
+      await dispatchAlert(alert, breach, true);
 
-      if (success) {
-        // Log to history
-        await db.createAlertHistory({
-          alertSettingId: alert.id,
-          triggeredValue: alert.threshold,
-          message: `[TEST] Kiểm tra cảnh báo "${alert.name}"`,
-          sentEmail: alert.notifyEmail,
-          sentInApp: alert.notifyInApp,
-        });
-      }
-
-      return { success };
+      return { success: true, breached: breach.breached, currentValue: breach.currentValue, message: breach.message };
     }),
 });
 

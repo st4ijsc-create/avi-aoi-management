@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { backupLogs, scheduledBackups } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, lte } from "drizzle-orm";
@@ -15,7 +15,7 @@ import { testReplicationConnectivity } from "../services/backupReplicationServic
 
 export const backupRouter = router({
   // List backup history
-  listBackups: protectedProcedure.query(async ({ ctx }) => {
+  listBackups: adminProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
 
@@ -34,7 +34,7 @@ export const backupRouter = router({
   }),
 
   // Create manual backup via pg_dump
-  createBackup: protectedProcedure
+  createBackup: adminProcedure
     .input(z.object({
       categories: z.array(z.string()).min(1),
       description: z.string().optional(),
@@ -42,10 +42,6 @@ export const backupRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
-
-      if (ctx.user?.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền backup" });
-      }
 
       const databaseUrl = process.env.DATABASE_URL;
       if (!databaseUrl) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DATABASE_URL not configured" });
@@ -112,7 +108,7 @@ export const backupRouter = router({
     }),
 
   // Restore from backup file
-  restoreBackup: protectedProcedure
+  restoreBackup: adminProcedure
     .input(z.object({
       backupId: z.number(),
       categories: z.array(z.string()).optional(),
@@ -120,10 +116,6 @@ export const backupRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
-
-      if (ctx.user?.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền restore" });
-      }
 
       const [backup] = await db.select().from(backupLogs).where(eq(backupLogs.id, input.backupId));
       if (!backup) throw new TRPCError({ code: "NOT_FOUND", message: "Không tìm thấy bản backup" });
@@ -185,20 +177,16 @@ export const backupRouter = router({
     }),
 
   // List actual backup files on disk
-  listFiles: protectedProcedure.query(() => {
+  listFiles: adminProcedure.query(() => {
     return listBackupFiles();
   }),
 
   // Delete backup log
-  deleteBackup: protectedProcedure
+  deleteBackup: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
-
-      if (ctx.user?.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền xóa backup" });
-      }
 
       const [log] = await db.select().from(backupLogs).where(eq(backupLogs.id, input.id));
       if (log?.fileUrl) {
@@ -211,7 +199,7 @@ export const backupRouter = router({
   // ==================== Scheduled Backups ====================
 
   // List scheduled backups
-  listScheduled: protectedProcedure.query(async ({ ctx }) => {
+  listScheduled: adminProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
 
@@ -220,7 +208,7 @@ export const backupRouter = router({
   }),
 
   // Create scheduled backup
-  createScheduled: protectedProcedure
+  createScheduled: adminProcedure
     .input(z.object({
       name: z.string().min(1).max(255),
       description: z.string().optional(),
@@ -235,10 +223,6 @@ export const backupRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
-
-      if (ctx.user?.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền tạo lịch backup" });
-      }
 
       // Calculate next run time
       const now = new Date();
@@ -268,7 +252,7 @@ export const backupRouter = router({
     }),
 
   // Update scheduled backup
-  updateScheduled: protectedProcedure
+  updateScheduled: adminProcedure
     .input(z.object({
       id: z.number(),
       name: z.string().min(1).max(255).optional(),
@@ -286,10 +270,6 @@ export const backupRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
 
-      if (ctx.user?.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền cập nhật lịch backup" });
-      }
-
       const { id, ...updateData } = input;
       await db.update(scheduledBackups)
         .set({ ...updateData, updatedAt: new Date() })
@@ -299,22 +279,18 @@ export const backupRouter = router({
     }),
 
   // Delete scheduled backup
-  deleteScheduled: protectedProcedure
+  deleteScheduled: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
-
-      if (ctx.user?.role !== "admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền xóa lịch backup" });
-      }
 
       await db.delete(scheduledBackups).where(eq(scheduledBackups.id, input.id));
       return { success: true, message: "Đã xóa lịch backup" };
     }),
 
   // Toggle scheduled backup enabled/disabled
-  toggleScheduled: protectedProcedure
+  toggleScheduled: adminProcedure
     .input(z.object({ id: z.number(), isEnabled: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -328,7 +304,7 @@ export const backupRouter = router({
     }),
 
   // Get backup stats
-  getStats: protectedProcedure.query(async ({ ctx }) => {
+  getStats: adminProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
 
@@ -377,10 +353,7 @@ export const backupRouter = router({
   }),
 
   // Test replication connectivity (admin only)
-  testReplication: protectedProcedure.mutation(async ({ ctx }) => {
-    if (ctx.user?.role !== "admin") {
-      throw new TRPCError({ code: "FORBIDDEN", message: "Chỉ admin mới có quyền test replication" });
-    }
+  testReplication: adminProcedure.mutation(async ({ ctx }) => {
     const result = await testReplicationConnectivity();
     return result;
   }),

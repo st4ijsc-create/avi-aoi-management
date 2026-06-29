@@ -4,25 +4,15 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import { 
-  Building2, 
-  Factory, 
-  TrendingUp, 
-  TrendingDown,
+  Building2,
+  Factory,
+  TrendingUp,
   BarChart3,
   PieChart as PieChartIcon,
-  Globe,
-  Users,
   Activity,
-  Target,
-  Award,
-  AlertTriangle,
-  CheckCircle2,
-  ArrowUpRight,
-  ArrowDownRight,
   Calendar,
   FileDown,
   Loader2
@@ -61,8 +51,21 @@ export default function CorporateDashboard() {
   const { data: lines } = trpc.line.list.useQuery();
   const { data: machinesList } = trpc.machine.list.useQuery();
   const { data: dailyStats, isLoading: loadingDaily } = trpc.dashboard.getDailyStats.useQuery({ days: 180 });
+  // Real OEE source: live per-machine OEE computed from MQTT (same source as OEEDashboard).
+  // Returns [] when no live OEE has been reported — we surface that honestly as "N/A".
+  const { data: allOEE } = trpc.mqttClient.getAllOEE.useQuery();
 
   const isLoading = loadingStats || loadingYield || loadingDaily;
+
+  // Real corporate-wide average OEE: mean of live per-machine OEE values.
+  // null when there is no live OEE data (honest "no data" rather than a fabricated number).
+  const realAvgOEE = useMemo<number | null>(() => {
+    if (!allOEE || allOEE.length === 0) return null;
+    const valid = allOEE.filter(m => typeof m.oee === 'number' && !Number.isNaN(m.oee));
+    if (valid.length === 0) return null;
+    const sum = valid.reduce((acc, m) => acc + m.oee, 0);
+    return Math.round((sum / valid.length) * 100) / 100;
+  }, [allOEE]);
 
   // Derive corporateOverview from real data
   const corporateOverview = useMemo(() => {
@@ -73,11 +76,10 @@ export default function CorporateDashboard() {
       totalFactories: factories?.length ?? 0,
       totalLines: lines?.length ?? 0,
       totalMachines: machinesList?.length ?? 0,
-      totalEmployees: (machinesList?.length ?? 0) * 4, // estimated ~4 employees per machine
       avgYield: Math.round(avgYield * 100) / 100,
-      avgOEE: Math.round(avgYield * 0.85 * 100) / 100,
+      avgOEE: realAvgOEE,
     };
-  }, [dashboardStats, yieldByCorp, yieldByFactory, factories, lines, machinesList]);
+  }, [dashboardStats, yieldByCorp, yieldByFactory, factories, lines, machinesList, realAvgOEE]);
 
   // Derive corporationData from yieldRateByCorporate
   const corporationData = useMemo(() => {
@@ -96,8 +98,9 @@ export default function CorporateDashboard() {
         companies: factoriesPerCorp[c.corporateCode] || 1,
         factories: factoriesPerCorp[c.corporateCode] || 1,
         yield: yieldVal,
-        oee: Math.round(yieldVal * 0.85 * 100) / 100,
-        trend: 0, // no historical comparison available
+        // NOTE: per-corporate OEE and trend are intentionally omitted — there is no
+        // real per-corporate OEE/historical data source. Showing yield×0.85 or trend=0
+        // would be fabricated. Corporate-wide avg OEE (live) is shown in the KPI cards.
       };
     });
   }, [yieldByCorp, yieldByFactory]);
@@ -123,7 +126,7 @@ export default function CorporateDashboard() {
         return {
           month: `T${monthNum}`,
           yield: yieldVal,
-          oee: Math.round(yieldVal * 0.85 * 100) / 100,
+          // OEE omitted: no real historical OEE source — only live OEE exists (no monthly history)
           output: v.output,
         };
       });
@@ -175,7 +178,7 @@ export default function CorporateDashboard() {
         </div>
 
         {/* KPI Overview Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
           <Card className="glass-card">
             <CardContent className="p-4">
               <div className="flex flex-col">
@@ -216,14 +219,6 @@ export default function CorporateDashboard() {
               </div>
             </CardContent>
           </Card>
-          <Card className="glass-card">
-            <CardContent className="p-4">
-              <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground">{t('corporate.employees')}</span>
-                <span className="text-2xl font-bold">{corporateOverview.totalEmployees.toLocaleString()}</span>
-              </div>
-            </CardContent>
-          </Card>
           <Card className="glass-card bg-success/10">
             <CardContent className="p-4">
               <div className="flex flex-col">
@@ -236,7 +231,13 @@ export default function CorporateDashboard() {
             <CardContent className="p-4">
               <div className="flex flex-col">
                 <span className="text-xs text-muted-foreground">{t('corporate.avgOEE')}</span>
-                <span className="text-2xl font-bold text-primary">{corporateOverview.avgOEE}%</span>
+                {corporateOverview.avgOEE !== null ? (
+                  <span className="text-2xl font-bold text-primary">{corporateOverview.avgOEE}%</span>
+                ) : (
+                  <span className="text-sm font-medium text-muted-foreground" title={t('corporate.noOeeDataSource')}>
+                    {t('corporate.noData')}
+                  </span>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -290,14 +291,6 @@ export default function CorporateDashboard() {
                             <p className="font-bold text-success">{corp.yield}%</p>
                             <p className="text-xs text-muted-foreground">Yield</p>
                           </div>
-                          <div className="text-right">
-                            <p className="font-bold text-primary">{corp.oee}%</p>
-                            <p className="text-xs text-muted-foreground">OEE</p>
-                          </div>
-                          <Badge variant={corp.trend > 0 ? "default" : "destructive"} className="flex items-center gap-1">
-                            {corp.trend > 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                            {Math.abs(corp.trend)}%
-                          </Badge>
                         </div>
                       </div>
                     ))}
@@ -329,7 +322,6 @@ export default function CorporateDashboard() {
                         />
                         <Legend />
                         <Line type="monotone" dataKey="yield" name="Yield %" stroke="#10b981" strokeWidth={2} dot={{ fill: '#10b981' }} />
-                        <Line type="monotone" dataKey="oee" name="OEE %" stroke="#3b82f6" strokeWidth={2} dot={{ fill: '#3b82f6' }} />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
@@ -370,7 +362,7 @@ export default function CorporateDashboard() {
 
           {/* Comparison Tab */}
           <TabsContent value="comparison" className="space-y-6 mt-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-6">
               {/* Yield Distribution */}
               <Card className="glass-card">
                 <CardHeader>
@@ -393,40 +385,6 @@ export default function CorporateDashboard() {
                           dataKey="yield"
                           nameKey="name"
                           label={({ name, yield: y }) => `${name}: ${y}%`}
-                        >
-                          {corporationData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <RechartsTooltip />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* OEE Distribution */}
-              <Card className="glass-card">
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <PieChartIcon className="h-4 w-4 text-primary" />
-                    {t('corporate.oeeDistribution')}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={corporationData}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={60}
-                          outerRadius={100}
-                          paddingAngle={5}
-                          dataKey="oee"
-                          nameKey="name"
-                          label={({ name, oee }) => `${name}: ${oee}%`}
                         >
                           {corporationData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -464,7 +422,6 @@ export default function CorporateDashboard() {
                       />
                       <Legend />
                       <Bar dataKey="yield" name="Yield %" fill="#10b981" radius={[0, 4, 4, 0]} />
-                      <Bar dataKey="oee" name="OEE %" fill="#3b82f6" radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>

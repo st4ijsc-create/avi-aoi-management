@@ -4,7 +4,7 @@
  */
 
 import { z } from "zod";
-import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import { router, protectedProcedure, qualityProcedure } from "../_core/trpc";
 import { getDb } from "../db/connection";
 import { sql, eq, desc } from "drizzle-orm";
 import { getBuiltinTemplates, getBuiltinTemplate } from "../services/qualityGateTemplateService";
@@ -45,7 +45,7 @@ export const qualityGateTemplateRouter = router({
   /**
    * Create custom template
    */
-  createCustom: protectedProcedure
+  createCustom: qualityProcedure
     .input(z.object({
       name: z.string().min(1).max(255),
       description: z.string().optional(),
@@ -84,7 +84,7 @@ export const qualityGateTemplateRouter = router({
   /**
    * Update custom template
    */
-  updateCustom: protectedProcedure
+  updateCustom: qualityProcedure
     .input(z.object({
       id: z.number(),
       name: z.string().min(1).max(255).optional(),
@@ -129,7 +129,7 @@ export const qualityGateTemplateRouter = router({
   /**
    * Delete custom template
    */
-  deleteCustom: protectedProcedure
+  deleteCustom: qualityProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -145,7 +145,7 @@ export const qualityGateTemplateRouter = router({
   /**
    * Apply template to a production line (creates quality gates)
    */
-  applyToLine: protectedProcedure
+  applyToLine: qualityProcedure
     .input(z.object({
       templateId: z.string(),   // built-in ID or "custom:N"
       lineId: z.number(),

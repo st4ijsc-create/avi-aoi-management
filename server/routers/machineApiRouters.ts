@@ -27,6 +27,10 @@ import {
   expandArrayGeometry,
   type MeasurementGeometry,
 } from "../lib/measurementGeometry";
+import {
+  resolveOrCreateMeasurementPointDefId,
+  assertValidPointDefId,
+} from "../services/measurementPointResolver";
 
 const measurementTypeValueList = [
   "DIMENSION",
@@ -224,13 +228,25 @@ export const machineApiRouter = router({
           }
         }
 
-        // Even if point definition not found, still save measurement with pointDefId = 0
-        // This allows data to be captured even if point is not pre-configured
+        // P0-A data-integrity: never persist pointDefId = 0. If no definition was
+        // pre-configured, auto-provision a real one via the shared resolver so the
+        // measurement stays visible to SPC/capability/heatmap analytics.
         const pointCode = measurement.pointId || measurement.pointCode || 'UNKNOWN';
-        if (!pointDef) {
+        let resolvedPointDefId: number;
+        if (pointDef?.id) {
+          resolvedPointDefId = pointDef.id;
+        } else {
           missingPointCodes.push(pointCode);
-          console.warn(`[submitInspection] Point definition not found for: ${pointCode} (machine: ${machine.code}, product: ${resolvedProductModelCode || 'N/A'})`);
+          console.warn(`[submitInspection] Point definition not found for: ${pointCode} (machine: ${machine.code}, product: ${resolvedProductModelCode || 'N/A'}) — auto-provisioning`);
+          resolvedPointDefId = await resolveOrCreateMeasurementPointDefId(usedCode ?? pointCode, {
+            productModelId: productModelRecord?.id,
+            machineId: machine.id,
+            productCache: productPointCache,
+            machineCache: machinePointCache,
+            autoCreate: true,
+          });
         }
+        assertValidPointDefId(resolvedPointDefId, `submitInspection (machine=${machine.code}, point=${pointCode})`);
 
         // Route measuredValue to the correct DB column based on type
         const rawValue = measurement.measuredValue;
@@ -283,7 +299,7 @@ export const machineApiRouter = router({
 
         measurementResults.push({
           inspectionId,
-          pointDefId: pointDef?.id || 0,
+          pointDefId: resolvedPointDefId,
           measuredValue: numericValue,
           measuredValueText: textValue,
           valueZ: toOptionalDecimal(measurement.valueZ),
@@ -448,6 +464,23 @@ export const machineApiRouter = router({
         });
       } catch (ngRateErr) {
         console.error('[NgRateAlert] Failed to import ngRateAlertService:', ngRateErr);
+      }
+
+      // P0-D: realtime quality-gate evaluation. Runs AFTER results are persisted.
+      // Fire-and-forget + fully guarded — a gate evaluation failure must never
+      // fail the inspection insert. Does NOT touch P0-A's resolver/assert logic.
+      try {
+        const { evaluateGatesAfterInspection } = await import('../services/qualityGateEvaluator');
+        evaluateGatesAfterInspection({
+          machineId: machine.id,
+          inspectionId,
+          productModelId: productModelRecord?.id ?? null,
+          stationId: machine.stationId ?? null,
+        }).catch(err => {
+          console.error('[QualityGate] post-inspection evaluation failed:', err);
+        });
+      } catch (gateErr) {
+        console.error('[QualityGate] Failed to import qualityGateEvaluator:', gateErr);
       }
 
       return { success: true, inspectionId };

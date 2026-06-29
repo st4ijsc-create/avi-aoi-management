@@ -1,7 +1,7 @@
-import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { establishSession, LoginError, verifyCredentials } from "./_core/authService";
 import { systemRouter } from "./_core/systemRouter";
-import { sdk } from "./_core/sdk";
 import { isManusOAuthEnabled, listEnabledExternalProviders } from "./_core/oauthProviders";
 import { publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
@@ -161,28 +161,29 @@ export const appRouter = router({
         password: z.string().min(1),
       }))
       .mutation(async ({ input, ctx }) => {
-        const bcrypt = await import('bcryptjs');
-
-        const user = await db.getUserByUsername(input.username);
-        if (!user) {
-          throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Tên đăng nhập hoặc mật khẩu không đúng' });
-        }
-
-        if (!user.isActive) {
-          throw new TRPCError({ code: 'FORBIDDEN', message: 'Tài khoản đã bị vô hiệu hóa' });
-        }
-
-        if (!user.passwordHash) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Tài khoản này không hỗ trợ đăng nhập bằng mật khẩu' });
-        }
-
-        const isValid = await bcrypt.compare(input.password, user.passwordHash);
-        if (!isValid) {
-          throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Tên đăng nhập hoặc mật khẩu không đúng' });
+        // Single source of truth for brute-force lockout + login audit logging
+        // (audit A bug #1). verifyCredentials throws LoginError with the right
+        // semantics; we map it to the matching tRPC error code.
+        let user;
+        try {
+          user = await verifyCredentials(input.username, input.password, ctx.req);
+        } catch (err) {
+          if (err instanceof LoginError) {
+            const codeMap: Record<LoginError["code"], TRPCError["code"]> = {
+              INVALID_CREDENTIALS: "UNAUTHORIZED",
+              ACCOUNT_DISABLED: "FORBIDDEN",
+              PASSWORD_UNSUPPORTED: "BAD_REQUEST",
+              ACCOUNT_LOCKED: "TOO_MANY_REQUESTS",
+            };
+            throw new TRPCError({ code: codeMap[err.code], message: err.message });
+          }
+          throw err;
         }
 
         const twoFAStatus = await db.get2FAStatus(user.id);
         if (twoFAStatus?.twoFactorEnabled) {
+          // Password verified + lockout reset; defer session creation until the
+          // 2FA step completes (POST /api/auth/verify-2fa).
           return {
             requires2FA: true,
             userId: user.id,
@@ -190,18 +191,7 @@ export const appRouter = router({
           };
         }
 
-        await db.upsertUser({
-          openId: user.openId,
-          lastSignedIn: new Date(),
-        });
-
-        const sessionToken = await sdk.createSessionToken(user.openId, {
-          name: user.name || "",
-          expiresInMs: ONE_YEAR_MS,
-        });
-
-        const cookieOptions = getSessionCookieOptions(ctx.req);
-        ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+        await establishSession(user, ctx.req, ctx.res, { method: "password" });
 
         return {
           success: true,

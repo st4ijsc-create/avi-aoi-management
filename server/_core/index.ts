@@ -24,6 +24,7 @@ import { initializeScheduledBackups, shutdownScheduledBackups } from "../service
 import { initMqttBroker, shutdownMqttBroker, publishFactoryAlertUpdate } from "../services/mqttService";
 import { startAlertEvaluationJob, stopAlertEvaluationJob } from "../services/alertEvaluationService";
 import { startEscalationScheduler, stopEscalationScheduler } from "../services/alertEscalationService";
+import { startAlertEvaluatorScheduler, stopAlertEvaluatorScheduler } from "../services/alertEvaluatorScheduler";
 import { initSummaryScheduler, stopSummaryScheduler } from "../services/mqttSummaryScheduler";
 import { initBulletinScheduler, stopBulletinScheduler } from "../services/mqttBulletinService";
 import { cacheWarmingService } from "../services/cacheWarmingService";
@@ -4462,6 +4463,16 @@ async function startServer() {
   // Alert escalation engine — always-on, runs every 60s
   startEscalationScheduler(60_000);
 
+  // P0-E — Alert evaluation scheduler: evaluates legacy alertSettings rules,
+  // runs smart-alert defect-spike / yield-drop detectors, and auto-escalation.
+  // Interval via ALERT_EVALUATOR_INTERVAL_MINUTES (default 2); disable with
+  // ALERT_EVALUATOR_ENABLED=false. Guarded against double-start internally.
+  try {
+    startAlertEvaluatorScheduler();
+  } catch (err) {
+    console.error("[AlertEvaluator] init failed:", (err as any)?.message || err);
+  }
+
   // WS-4 — Predictive maintenance cycle (statistical risk + RUL -> alerts).
   // Disabled by default; opt in via PREDICTIVE_MAINTENANCE_ENABLED=true.
   try {
@@ -4701,6 +4712,7 @@ async function startServer() {
     shutdownRuntimeSecurity();
     cacheWarmingService.stop();
     stopEscalationScheduler();
+    stopAlertEvaluatorScheduler();
     if (process.env.MQTT_ENABLED === 'true') {
       // F3b — shutdownMqttBroker() đã lo graceful NDEATH (+DDEATH) best-effort TRƯỚC
       // khi đóng UNS publisher (xem mqttService.shutdownMqttBroker). NBIRTH-on-connect

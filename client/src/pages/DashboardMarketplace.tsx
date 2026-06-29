@@ -45,7 +45,7 @@ interface DashboardTemplate {
   category: string;
   author: string;
   authorId: number;
-  rating: number;
+  rating: number | null;
   reviewCount: number;
   downloadCount: number;
   widgets: string[];
@@ -88,7 +88,7 @@ export default function DashboardMarketplace() {
       category: 'general',
       author: 'System',
       authorId: t.createdBy,
-      rating: 4.5,
+      rating: null, // Chưa có nguồn dữ liệu rating (review system chưa triển khai) — không bịa số
       reviewCount: 0,
       downloadCount: t.usageCount ?? 0,
       widgets: Array.isArray(t.widgets) ? t.widgets : [],
@@ -111,7 +111,7 @@ export default function DashboardMarketplace() {
       case 'popular':
         return b.downloadCount - a.downloadCount;
       case 'rating':
-        return b.rating - a.rating;
+        return (b.rating ?? 0) - (a.rating ?? 0);
       case 'newest':
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       default:
@@ -135,7 +135,11 @@ export default function DashboardMarketplace() {
     setPublishForm({ name: '', description: '', category: 'custom' });
   };
 
-  const renderStars = (rating: number) => {
+  const renderStars = (rating: number | null) => {
+    // Không bịa rating: khi chưa có nguồn dữ liệu đánh giá, hiển thị trạng thái trung thực
+    if (rating == null) {
+      return <span className="text-xs text-muted-foreground">{t('dashboard.noRating')}</span>;
+    }
     return (
       <div className="flex items-center gap-0.5">
         {[1, 2, 3, 4, 5].map((star) => (
@@ -346,10 +350,20 @@ export default function DashboardMarketplace() {
                   <div className="grid grid-cols-3 gap-4">
                     <Card className="p-4 text-center">
                       <div className="flex items-center justify-center gap-1 mb-1">
-                        <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                        <span className="font-bold">{selectedTemplate.rating}</span>
+                        {selectedTemplate.rating == null ? (
+                          <span className="font-bold text-muted-foreground">—</span>
+                        ) : (
+                          <>
+                            <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                            <span className="font-bold">{selectedTemplate.rating.toFixed(1)}</span>
+                          </>
+                        )}
                       </div>
-                      <p className="text-xs text-muted-foreground">{selectedTemplate.reviewCount} {t('dashboard.reviews')}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {selectedTemplate.rating == null
+                          ? t('dashboard.noRating')
+                          : `${selectedTemplate.reviewCount} ${t('dashboard.reviews')}`}
+                      </p>
                     </Card>
                     <Card className="p-4 text-center">
                       <div className="flex items-center justify-center gap-1 mb-1">

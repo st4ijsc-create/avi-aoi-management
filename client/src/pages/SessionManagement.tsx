@@ -77,9 +77,9 @@ export default function SessionManagement() {
   };
 
   const handleRevokeAllSessions = () => {
-    // Note: server preserves a session only if `currentSessionId` is provided.
-    // The session list does not yet expose an `isCurrent` flag, so we revoke all.
-    revokeAllMutation.mutate({});
+    // The server resolves the caller's current session from the session cookie
+    // and always preserves it, revoking only the OTHER sessions.
+    revokeAllMutation.mutate();
     setShowRevokeAllDialog(false);
   };
 
