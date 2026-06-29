@@ -33,7 +33,6 @@ import {
   MicOff,
   Trash2,
   ChevronRight,
-  Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -45,6 +44,13 @@ import {
   type AgentSessionStatus,
   type AgentStepResultView,
 } from "./AgentPlanCard";
+// P3/W3.1 (doc 11) — shared HITL write confirm card (extracted from this file so
+// /ai-chat can render the SAME inline confirm/cancel card). The card + helpers +
+// PendingAction types now live in ConfirmActionCard.tsx.
+import {
+  ConfirmActionCard,
+  type PendingAction,
+} from "./ConfirmActionCard";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -150,28 +156,8 @@ interface ChatMessage {
   actionMessage?: string | null;
 }
 
-// GĐ2 — pending write-action proposed by the AI Copilot (HITL confirm).
-interface PendingActionChange {
-  field: string;
-  oldValue: unknown;
-  newValue: unknown;
-  displayName?: string;
-}
-interface PendingAction {
-  actionId: string;
-  token: string;
-  tool: string;
-  summary: string;
-  preview: {
-    entityType: string;
-    entityId?: number;
-    entityName?: string;
-    changes: PendingActionChange[];
-    warnings: string[];
-    humanSummary: string;
-  };
-  expiresAt: string;
-}
+// GĐ2 — pending write-action types (PendingAction / PendingActionChange) moved
+// to ./ConfirmActionCard and imported above (P3/W3.1, doc 11).
 
 // G2.3c — agentic multi-step session state (FE flow control only). The plan +
 // step outcomes come from aiAgent.* router; this component NEVER executes a tool
@@ -255,161 +241,6 @@ function buildConversationHistory(messages: ChatMessage[]): ConversationTurn[] {
     .filter((m) => !m.streaming)
     .slice(-10) // last 5 turns
     .map((m) => ({ role: m.type === "user" ? "user" : "assistant", content: m.content }));
-}
-
-// ─── Reusable HITL write confirm card ─────────────────────────────────────────
-// Shared by the inline chat pending_action AND the agentic write step. Pure
-// presentation + Confirm/Cancel buttons; the parent owns the mutation.
-// Render a primitive value for the before/after cells (handles null/undefined).
-function formatActionValue(v: unknown): string {
-  if (v === null || v === undefined || v === "") return "—";
-  if (typeof v === "boolean") return v ? "✓" : "✗";
-  return String(v);
-}
-
-// Live TTL countdown — recomputes "mm:ss" remaining until expiresAt every second.
-function useTtlCountdown(expiresAt: string, active: boolean) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [active, expiresAt]);
-  const msLeft = Math.max(0, new Date(expiresAt).getTime() - now);
-  const totalSec = Math.floor(msLeft / 1000);
-  const mm = Math.floor(totalSec / 60);
-  const ss = totalSec % 60;
-  return {
-    expired: msLeft <= 0,
-    label: `${mm}:${ss.toString().padStart(2, "0")}`,
-    urgent: msLeft > 0 && msLeft <= 60_000, // < 1 min remaining
-  };
-}
-
-function ConfirmActionCard({
-  action,
-  state,
-  message,
-  busy,
-  onConfirm,
-  onCancel,
-  t,
-}: {
-  action: PendingAction;
-  state: ChatMessage["actionState"];
-  message?: string | null;
-  busy: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-  t: (key: string, fallback: string) => string;
-}) {
-  const ttl = useTtlCountdown(action.expiresAt, state === "pending");
-  // Prefer the richer human-readable summary when present.
-  const summaryLine = action.preview.humanSummary || action.summary;
-
-  return (
-    <div className="rounded-lg border-2 border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-2.5 text-[13px]">
-      {/* Header + live TTL countdown */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 font-semibold text-amber-800 dark:text-amber-300 text-[13px]">
-          <AlertCircle className="size-4 shrink-0" />
-          {t("copilot.confirmTitle", "Xác nhận thao tác ghi")}
-        </div>
-        {state === "pending" && (
-          <span
-            className={cn(
-              "flex items-center gap-1 shrink-0 rounded-full border px-2 py-0.5 text-[12px] font-mono font-semibold tabular-nums",
-              ttl.urgent
-                ? "border-red-300 bg-red-100 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
-                : "border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
-            )}
-            title={t("copilot.expiresLabel", "Thời gian còn lại")}
-          >
-            <Clock className="size-3.5" />
-            {ttl.expired ? "0:00" : ttl.label}
-          </span>
-        )}
-      </div>
-
-      {/* Bold large plain-language summary line first */}
-      <p className="text-[14px] font-bold leading-snug text-foreground">{summaryLine}</p>
-
-      {/* Color-coded before → after (old gray, new green) */}
-      {action.preview.changes.length > 0 && (
-        <div className="space-y-1.5">
-          {action.preview.changes.map((c, i) => (
-            <div
-              key={i}
-              className="flex flex-wrap items-center gap-1.5 rounded-md bg-background/70 border border-border/50 px-2 py-1.5 text-[13px]"
-            >
-              <span className="font-medium text-foreground">{c.displayName ?? c.field}:</span>
-              <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground line-through decoration-muted-foreground/50">
-                {formatActionValue(c.oldValue)}
-              </span>
-              <span className="text-muted-foreground" aria-hidden>
-                {t("copilot.arrow", "→")}
-              </span>
-              <span className="rounded bg-green-100 px-1.5 py-0.5 font-semibold text-green-800 dark:bg-green-950/50 dark:text-green-300">
-                {formatActionValue(c.newValue)}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Warnings with icon + plain language */}
-      {action.preview.warnings.length > 0 && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1.5 dark:border-red-900/50 dark:bg-red-950/30">
-          <div className="mb-0.5 flex items-center gap-1.5 text-[12px] font-semibold text-red-700 dark:text-red-400">
-            <AlertCircle className="size-3.5 shrink-0" />
-            {t("copilot.warningsTitle", "Lưu ý quan trọng")}
-          </div>
-          <ul className="space-y-0.5 text-[13px] text-red-700 dark:text-red-300">
-            {action.preview.warnings.map((w, i) => (
-              <li key={i} className="flex items-start gap-1.5">
-                <span aria-hidden className="mt-px shrink-0">⚠️</span>
-                <span className="leading-snug">{w}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Larger Confirm / Cancel buttons (min 44px height) */}
-      {state === "pending" ? (
-        <div className="flex items-center gap-2 pt-0.5">
-          <Button
-            className="h-11 min-h-[44px] flex-1 text-[14px] font-semibold"
-            disabled={busy || ttl.expired}
-            onClick={onConfirm}
-          >
-            {busy ? <Loader2 className="size-4 animate-spin mr-1.5" /> : null}
-            {t("copilot.confirm", "Xác nhận")}
-          </Button>
-          <Button
-            variant="outline"
-            className="h-11 min-h-[44px] flex-1 text-[14px]"
-            disabled={busy}
-            onClick={onCancel}
-          >
-            {t("copilot.cancel", "Hủy")}
-          </Button>
-        </div>
-      ) : (
-        <div
-          className={cn(
-            "text-[13px] font-medium",
-            state === "executed" ? "text-green-600 dark:text-green-400" : "text-muted-foreground",
-          )}
-        >
-          {state === "executed" && t("copilot.executed", "Đã thực thi.")}
-          {state === "cancelled" && t("copilot.cancelled", "Đã hủy.")}
-          {state === "denied" && (message ?? t("copilot.denied", "Không có quyền."))}
-          {state === "expired" && t("copilot.expired", "Đã hết hạn.")}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────

@@ -14,6 +14,8 @@ import "./analyticsTools";
 import "./readToolsP2";
 // Phase P2 (groups B & C) — products/BOM, RCA history, users, api-keys, audit, machine health.
 import "./readToolsP2bc";
+// Phase P2 (group D) — anomalies, genealogy trace, energy/ENPI, routing.
+import "./readToolsP2d";
 import { classifyToolIntent, classifyToolIntentLLM, type ToolContext } from "./intentClassifier";
 import { getTool, isWriteTool, isClientTool, listTools, type ClientActionDirective, type Tool, type ToolExecContext } from "./toolRegistry";
 import type { ToolResult } from "./toolRegistry";

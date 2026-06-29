@@ -469,6 +469,45 @@ function extractArgsForTool(
       if (code) args.machineCode = code;
       return args;
     }
+    // ─── Phase P2 (group D) — anomalies, genealogy, energy, routing ───────────
+    case "list_anomalies": {
+      const code = question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedMachineCode;
+      const args: Record<string, unknown> = { limit: 15 };
+      if (code) args.machineCode = code;
+      const sev = question.match(/\b(LOW|MEDIUM|HIGH|CRITICAL)\b/i)?.[1];
+      if (sev) args.severity = sev.toUpperCase();
+      return args;
+    }
+    case "trace_genealogy": {
+      const args: Record<string, unknown> = { limit: 20 };
+      const serial = question.match(SERIAL_REGEX)?.[1] ?? context?.selectedLot;
+      // "lô <code>" / "lot <code>" → lotId (use the ORDER_CODE regex family).
+      const lot =
+        question.match(/\b(?:lô|lot)\s*[:#-]?\s*([A-Z0-9][A-Z0-9_-]{2,79})\b/i)?.[1];
+      if (serial && /\b(?:serial|sn|s\/n)\b/i.test(question)) args.serialNumber = serial;
+      else if (lot) args.lotId = lot;
+      else if (serial) args.serialNumber = serial;
+      return args;
+    }
+    case "get_energy_metrics": {
+      const code = question.match(MACHINE_CODE_REGEX)?.[1] ?? context?.selectedMachineCode;
+      const m = question.match(DAYS_REGEX);
+      const sinceDays = m ? Math.max(1, Math.min(365, parseInt(m[1]!, 10))) : 7;
+      const args: Record<string, unknown> = { sinceDays, limit: 20 };
+      if (code) args.machineCode = code;
+      return args;
+    }
+    case "get_routing": {
+      const args: Record<string, unknown> = { limit: 20 };
+      const lineCode = question.match(LINE_CODE_REGEX)?.[1];
+      if (lineCode) args.lineCode = lineCode;
+      // "quy trình của <product>" / "routing of <product>" → productCode.
+      const prod =
+        question.match(/\b(?:sản\s*phẩm|product)\s+([A-Za-z0-9][A-Za-z0-9._-]{1,99})\b/i)?.[1] ??
+        context?.selectedProductCode;
+      if (!lineCode && prod) args.productCode = prod;
+      return args;
+    }
     case "get_today_stats":
     default:
       return {};

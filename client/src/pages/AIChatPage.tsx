@@ -8,6 +8,13 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { mapAppRoleToAiRole } from "@/lib/aiRole";
 import { useAiCopilotContext } from "@/contexts/AiCopilotContext";
 import { AIToolResultCard, type ToolResultPayload } from "@/components/AIToolResultCard";
+// P3/W3.1 (doc 11) — shared HITL write confirm card, reused from the bubble so
+// /ai-chat can confirm/cancel a proposed WRITE INLINE (no longer "open the bubble").
+import {
+  ConfirmActionCard,
+  type PendingAction,
+  type ActionState,
+} from "@/components/ConfirmActionCard";
 import {
   useKbChatStream,
   type KbCitation,
@@ -37,7 +44,6 @@ import {
   X,
   BookOpen,
   ChevronRight,
-  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -94,6 +100,13 @@ export default function AIChatPage() {
     { toolResult: ToolResultPayload; toolName: string | null } | null
   >(null);
   const [showSources, setShowSources] = useState(false);
+
+  // P3/W3.1 (doc 11) — inline HITL confirm state for the latest turn's pending
+  // write (mirrors the bubble's per-message actionState/actionMessage). The
+  // proposed action itself lives in lastExtras.pendingAction; these track its
+  // lifecycle (pending → executed/cancelled/denied/expired) + backend message.
+  const [actionState, setActionState] = useState<ActionState>("pending");
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   // Machine-context scoping (from ?machine=<code>, e.g. after a QR/NFC scan).
   // When set, questions are seeded with the machine so the assistant answers
@@ -164,6 +177,12 @@ export default function AIChatPage() {
       toast.error(err.message);
     },
   });
+
+  // P3/W3.1 (doc 11) — HITL write-action confirm/cancel (SAME mutations the
+  // bubble uses). The card only fires these on the user's explicit click; a
+  // pending write is NEVER auto-executed.
+  const confirmActionMutation = trpc.aiCopilot.confirmAction.useMutation();
+  const cancelActionMutation = trpc.aiCopilot.cancelAction.useMutation();
 
   // Save streamed messages to DB
   const saveStreamedMsg = trpc.aiChat.saveStreamedMessage.useMutation({
@@ -253,6 +272,9 @@ export default function AIChatPage() {
       setLastExtras(null);
       setStreamToolResult(null);
       setShowSources(false);
+      // P3/W3.1 (doc 11) — reset the inline confirm lifecycle for the new turn.
+      setActionState("pending");
+      setActionMessage(null);
 
       const kbResult = await startKbStream(
         {
@@ -354,6 +376,47 @@ export default function AIChatPage() {
     }
   };
 
+  // ── P3/W3.1 (doc 11) — inline confirm / cancel of the proposed write ─────────
+  // Mirrors AILocalChatBubble.handleConfirmAction / handleCancelAction: pass
+  // { actionId, token, lang } to confirm and { actionId } to cancel, then update
+  // the lifecycle state from res.status / res.ok and toast the result. Only ever
+  // fired by the user's Confirm/Cancel click — never auto-executed.
+  const handleConfirmAction = useCallback(async () => {
+    const pa = lastExtras?.pendingAction;
+    if (!pa || actionState !== "pending") return;
+    try {
+      const res = await confirmActionMutation.mutateAsync({
+        actionId: pa.actionId,
+        token: pa.token,
+        lang: (i18n.language as "vi" | "en" | "zh") ?? "vi",
+      });
+      const next: ActionState =
+        res.status === "executed" ? "executed"
+        : res.status === "denied" ? "denied"
+        : res.status === "expired" ? "expired"
+        : "pending";
+      setActionState(next);
+      setActionMessage(res.message ?? null);
+      if (res.ok) toast.success(res.message ?? t("copilot.executed", "Đã thực thi."));
+      else toast.error(res.message ?? t("copilot.failed", "Không thể thực thi."));
+    } catch {
+      toast.error(t("copilot.failed", "Không thể thực thi."));
+    }
+  }, [lastExtras, actionState, confirmActionMutation, i18n.language, t]);
+
+  const handleCancelAction = useCallback(async () => {
+    const pa = lastExtras?.pendingAction;
+    if (!pa || actionState !== "pending") return;
+    try {
+      const res = await cancelActionMutation.mutateAsync({ actionId: pa.actionId });
+      setActionState("cancelled");
+      setActionMessage(res.message ?? null);
+      toast.success(t("copilot.cancelled", "Đã hủy."));
+    } catch {
+      toast.error(t("copilot.failed", "Không thể hủy."));
+    }
+  }, [lastExtras, actionState, cancelActionMutation, t]);
+
   const isBusy = effIsStreaming || chatMutation.isPending;
   const messages = conversation?.messages ?? [];
   // P3/W3.1 (doc 11) — index of the last assistant message (extras render here).
@@ -378,18 +441,19 @@ export default function AIChatPage() {
         {/* Tool result card (reused from the bubble) */}
         {extras.toolResult && <AIToolResultCard toolResult={extras.toolResult} />}
 
-        {/* Pending write-action — surfaced but NEVER executed here. Direct the
-            user to the bubble to confirm. We never auto-execute a write. */}
+        {/* P3/W3.1 (doc 11) — proposed write-action: confirmed/cancelled INLINE
+            via the shared card (same component + mutations the bubble uses). The
+            write is NEVER auto-executed — it fires only on the user's click. */}
         {extras.pendingAction && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-            <AlertCircle className="h-3.5 w-3.5 mt-px shrink-0" />
-            <span>
-              {t(
-                "aiChat.pendingActionNotice",
-                "Thao tác ghi cần xác nhận — mở Trợ lý bong bóng để xác nhận.",
-              )}
-            </span>
-          </div>
+          <ConfirmActionCard
+            action={extras.pendingAction as PendingAction}
+            state={actionState}
+            message={actionMessage}
+            busy={confirmActionMutation.isPending || cancelActionMutation.isPending}
+            onConfirm={handleConfirmAction}
+            onCancel={handleCancelAction}
+            t={t}
+          />
         )}
 
         {/* Structured navigation / steps / recommendations */}

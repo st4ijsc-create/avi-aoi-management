@@ -53,7 +53,12 @@ export type ToolResultType =
   | "user_list"
   | "api_key_list"
   | "change_history"
-  | "machine_health";
+  | "machine_health"
+  // ── Phase P2 (group D) — anomalies, genealogy, energy, routing (additive) ──
+  | "anomaly_list"
+  | "genealogy_trace"
+  | "energy_metrics"
+  | "routing_steps";
 
 export interface ToolResult<T = unknown> {
   type: ToolResultType;

@@ -230,8 +230,13 @@ Mỗi workstream ghi rõ **mục tiêu · việc · file chạm · nghiệm thu 
 - **Eval harness**: `scripts/ai-kb/eval-rag.mjs` — bảng recall@5 theo domain + tổng, cổng CI `--ci` (sàn tổng 0.80 / domain 0.60, `KB_EVAL_MIN`/`KB_EVAL_DOMAIN_MIN`), xuất `knowledge/rag-eval-results.json`.
 - **Kết quả baseline (cosine)**: **recall@5 = 151/151 = 1.000**, mọi domain 100% (kể cả device-programming/edge/andon/master-data/anomaly/energy + self-description). Chứng minh độ phủ "AI biết hệ thống". (recall@5 đo phủ truy hồi, không phải top-1 precision — reranker production lo phần xếp hạng.)
 
-### Còn lại (đợt sau)
-- **P2 nhóm D (tùy chọn)**: anomaly-list, routings/genealogy, energy/ENPI read tool.
-- **P3 nâng cao (tùy chọn)**: trích `ConfirmActionCard` thành component dùng chung để `/ai-chat` xác nhận write tại chỗ (hiện chỉ điều hướng sang bubble).
-- **P4**: eval golden-set theo domain + cổng CI; reranker (Qwen3-Reranker-0.6B)/GraphRAG.
-- Tùy chọn: husky pre-push cảnh báo KB stale (hiện dựa vào cron `KB_AUTOSYNC_ENABLED` + `npm run kb:sync` thủ công).
+### P2 nhóm D — read tool mở rộng ✅ (2026-06-29)
+- `server/services/aiLocalTools/readToolsP2d.ts`: 4 read tool — `list_anomalies` (predictive_alerts, lọc loại anomaly), `trace_genealogy` (genealogy_chain, theo serial/lot), `get_energy_metrics` (energy_readings + enpi_metrics), `get_routing` (processes + line_process_assignments). RBAC fail-safe; adapt đúng schema (không có bảng anomaly-results riêng → dùng predictive_alerts). Test: **140/140 pass** (+11 mới).
+
+### P3 nâng cao — confirm write tại chỗ ✅ (2026-06-29)
+- `client/src/components/ConfirmActionCard.tsx` (mới, dùng chung): bubble bỏ ~150 dòng trùng; `/ai-chat` giờ render thẻ HITL + gọi `aiCopilot.confirmAction/cancelAction` tại chỗ (không tự thực thi). Typecheck sạch, không cần i18n key mới.
+
+### Còn lại (tùy chọn)
+- Thêm model Qwen3-Reranker-0.6B (mode `gguf`) để precision cao hơn (file chưa có; không tải).
+- husky pre-push cảnh báo KB stale (hiện dựa vào cron `KB_AUTOSYNC_ENABLED` + `npm run kb:sync` thủ công).
+- GraphRAG multi-hop (semantic-graph.json đã có; chưa wire vào retrieval).
