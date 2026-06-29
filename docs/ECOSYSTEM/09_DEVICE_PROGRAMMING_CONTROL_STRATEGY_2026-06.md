@@ -228,11 +228,12 @@ Route mới đề xuất: `/engineering` (workspace), `/engineering/:projectId`.
 - **Còn lại (cần HW/toolchain):** wire param-push qua commandDispatcher, GX Works CLI wrap, Online Monitor MC fast-scan (D6), upload. Ladder native → D5 (OpenPLC).
 - **Chấp nhận:** ✅ tsc xanh; ✅ 8 test. Workspace kind `mitsubishi-engineering`: soạn recipe→validate→build→simulate. Tài liệu ghi rõ phần cần GX Works/HW.
 
-### Phase D4 — Robot programming (Techman thật + teach/jog) 🔲  ⟵ *ưu tiên 3*
-- [ ] Teach/Jog panel + point table + job-list builder → TMSCT (mở rộng techmanDriver hiện có).
-- [ ] `ProgrammingAdapter` robot: validate job-list, simulate trên twin, deploy (HITL/dry-run).
-- [ ] Khung mở rộng Fanuc/MELFA/Delta từ scaffold (chưa wire HW).
-- **Chấp nhận:** trên robot sim: teach point→build job→simulate→(deploy gated). Techman HW khi có.
+### Phase D4 — Robot programming (Techman job-list + teach) ✅ ĐÃ XONG (emulator)  ⟵ *ưu tiên 3*
+- [x] `server/services/programming/robot/robotTmAdapter.ts` — kind `robot-tm`, đăng ký registry.
+- [x] **THẬT:** validate job-list (POINT defs + verbs MOVE/MOVEL/HOME/PICK/PLACE/GRIP/RELEASE/WAIT; kiểm tra point tham chiếu đã định nghĩa); compile → job descriptor `tm://job/<checksum>` + steps/points; simulate → timeline motion + dwell (WAIT theo `t=`).
+- [x] **FRAMEWORK trung thực:** deploy chưa wire → `failed` rõ (đường thật: TMSCT push qua `robotCommandDispatcher` HITL/ROBOT_CONTROL). caps `canTeach/canDownload/canOnlineMonitor`. Fanuc/MELFA/Delta tái dùng shape khi driver rời scaffold.
+- **Còn lại (cần HW):** Teach/Jog panel UI, point-table builder, wire TMSCT download, mở rộng hãng khác.
+- **Chấp nhận:** ✅ tsc xanh; ✅ 8 test. Workspace kind `robot-tm`: soạn job→validate→build→simulate.
 
 ### Phase D5 — Native IEC 61131-3 (nhóm C) 🔲  ⟵ *phần tham vọng*
 - [ ] Editor Ladder/FBD (Blockly/graph) + ST (Monaco); model PLCopen-XML nội bộ.
@@ -313,5 +314,6 @@ Quy ước thực thi: mỗi phase tự chứa, flag OFF, tsc xanh, test kèm, v
 | 2026-06-29 | **D0** | `7aef0a3` | Programming foundation: ProgrammingAdapter+registry+stub, schema+migration 0130, programmingService (deploy gate), programmingRouter wired. tsc xanh, 14/14 test. Flags OFF, migration chưa chạy. |
 | 2026-06-29 | **D1** | `85b64f5` | Unified Engineering Workspace /engineering + CodeEditor (monaco-swappable) + route/nav/i18n. tsc xanh, locale OK. monaco hoãn (component boundary sẵn). |
 | 2026-06-29 | **D2** | `bc08bd0` | Zmotion BASIC adapter: validate/compile/motion-simulate THẬT + ZmcLink deploy/upload framework trung thực (gated, không giả deployed). 8 test, tsc xanh. Cần HW cho frame ZMC + watch. |
-| 2026-06-29 | **D3** | _(đang commit)_ | Mitsubishi engineering adapter: MELSEC device/recipe validate+compile+simulate THẬT; deploy framework trung thực (param-push/GX Works chưa wire→failed rõ). 8 test, tsc xanh. |
+| 2026-06-29 | **D3** | `d6b8607` | Mitsubishi engineering adapter: MELSEC device/recipe validate+compile+simulate THẬT; deploy framework trung thực (param-push/GX Works chưa wire→failed rõ). 8 test, tsc xanh. |
+| 2026-06-29 | **D4** | _(đang commit)_ | Robot Techman job-list adapter: teach-point/job validate+compile+simulate THẬT; TMSCT deploy framework trung thực. 8 test, tsc xanh. |
 | | … | | |
