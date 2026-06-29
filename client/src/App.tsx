@@ -112,6 +112,7 @@ const WorkOrdersPage = React.lazy(() => import("./pages/WorkOrdersPage")); // Ma
 const ThresholdApprovalsPage = React.lazy(() => import("./pages/ThresholdApprovalsPage")); // Threshold approval review queue (approve/reject/withdraw)
 const AnomalyBankPage = React.lazy(() => import("./pages/AnomalyBankPage")); // Anomaly memory bank management (rebuild/delete per scope, admin)
 const OrchestrationStudio = React.lazy(() => import("./pages/OrchestrationStudio")); // E3b: visual orchestration studio (author → simulate → deploy/run)
+const EngineeringWorkspace = React.lazy(() => import("./pages/EngineeringWorkspace")); // Doc 09 D1: Unified Engineering Workspace (author/build/simulate/deploy device programs)
 const RfTestCellSim = React.lazy(() => import("./pages/RfTestCellSim")); // Realtime digital-twin playback of an RF shielded test cell (feeder XYZ + robot + RF tester)
 const FactoryLiveMap3D = React.lazy(() => import("./pages/FactoryLiveMap3D")); // L4 plant view: 3D factory floor, machines coloured by live status, drill-down
 const FactoryFloorEditor = React.lazy(() => import("./pages/FactoryFloorEditor")); // 2D drag editor: set real floor-plan coords (layoutPositionX/Y) the 3D view reads
@@ -185,6 +186,7 @@ function Router() {
       <Route path="/recipes"><RouteGuard navHref="/recipes"><RecipeManagement /></RouteGuard></Route>
       <Route path="/interlock-rules"><RouteGuard navHref="/interlock-rules"><InterlockRuleManagement /></RouteGuard></Route>
       <Route path="/orchestration-studio"><RouteGuard navHref="/orchestration-studio"><AIPageWrapper><OrchestrationStudio /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/engineering"><RouteGuard navHref="/engineering"><EngineeringWorkspace /></RouteGuard></Route>
       <Route path="/rf-test-cell"><RouteGuard navHref="/rf-test-cell"><AIPageWrapper><RfTestCellSim /></AIPageWrapper></RouteGuard></Route>
       <Route path="/factory-live-map"><RouteGuard navHref="/factory-live-map"><AIPageWrapper><FactoryLiveMap3D /></AIPageWrapper></RouteGuard></Route>
       <Route path="/factory-floor-editor"><RouteGuard navHref="/factory-floor-editor"><AIPageWrapper><FactoryFloorEditor /></AIPageWrapper></RouteGuard></Route>

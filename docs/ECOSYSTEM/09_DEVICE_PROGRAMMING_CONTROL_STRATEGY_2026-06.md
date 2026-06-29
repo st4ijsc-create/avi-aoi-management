@@ -208,11 +208,11 @@ Route mới đề xuất: `/engineering` (workspace), `/engineering/:projectId`.
 - [x] tRPC `programmingRouter` (projects/artifacts CRUD + build/simulate + deploy gated + rollback + symbols) wired `routers.ts` key `programming`. RBAC tái dùng `machine_monitoring`(read)/`machine_control`(write).
 - **Chấp nhận:** ✅ tsc EXIT=0; ✅ 14/14 test (gate flag-off→simulated, non-ok→rejected, idempotency, flag-on+sign-off→adapter.deploy gọi, flag-on+no-signoff→simulated/không gọi); ✅ 0 path ghi thiết bị (stub không có device path).
 
-### Phase D1 — Unified Engineering Workspace (UI khung) 🔲
-- [ ] Thêm `monaco-editor` + `@monaco-editor/react`; trang `/engineering` Project Explorer + editor + diff + version.
-- [ ] Build/Simulate/Deploy panel (deploy hiện banner OFF như Studio).
-- [ ] RBAC module `device_programming` + RouteGuard + nav + i18n.
-- **Chấp nhận:** tạo project, soạn artifact, validate→diagnostics inline, simulate→timeline; chưa cần HW.
+### Phase D1 — Unified Engineering Workspace (UI khung) ✅ ĐÃ XONG
+- [x] Trang `/engineering` (`client/src/pages/EngineeringWorkspace.tsx`): Project Explorer + tạo project, Artifacts (versions) + lưu phiên bản, **CodeEditor** (`client/src/components/engineering/CodeEditor.tsx` — textarea + gutter + Tab, **monaco-swappable** qua component boundary), validate→diagnostics inline, build, simulate→timeline, Deploy panel (stage + sign-off + banner khi flag OFF), Deployments audit, Symbols table.
+- [x] RouteGuard `/engineering` + nav `nav.engineeringWorkspace` (nhóm OT, perm `machine_control`) + i18n vi/en/zh.
+- **Ghi chú thiết kế:** monaco **hoãn có chủ đích** (tránh rủi ro bundler/offline) — `CodeEditor` là ranh giới component để thay monaco sau mà không đụng page. RBAC tái dùng `machine_control`/`machine_monitoring` (không tạo module mới để khỏi khoá quyền — admin chạy ngay).
+- **Chấp nhận:** ✅ tsc EXIT=0; ✅ locale vi/en/zh parse OK; flow tạo project→soạn→validate→build→simulate→(deploy SIMULATED) chạy trên router D0, chưa cần HW.
 
 ### Phase D2 — Zmotion adapter (nhóm A, controller mở) 🔲  ⟵ *ưu tiên 1*
 - [ ] `server/services/programming/zmotion/` — kết nối ZMC (Ethernet/PCIe SDK), BASIC + motion.
@@ -309,6 +309,6 @@ Quy ước thực thi: mỗi phase tự chứa, flag OFF, tsc xanh, test kèm, v
 |---|---|---|---|
 | 2026-06-29 | — | — | Tạo doc 09 (DRAFT, chờ duyệt) |
 | 2026-06-29 | — | — | Người dùng DUYỆT toàn bộ D0–D7; phần cứng/SDK cài sau (cuốn chiếu, emulator trước) |
-| 2026-06-29 | **D0** | _(đang commit)_ | Programming foundation: ProgrammingAdapter+registry+stub, schema+migration 0130, programmingService (deploy gate), programmingRouter wired. tsc xanh, 14/14 test. Flags OFF, migration chưa chạy. |
-| | D1 | | |
+| 2026-06-29 | **D0** | `7aef0a3` | Programming foundation: ProgrammingAdapter+registry+stub, schema+migration 0130, programmingService (deploy gate), programmingRouter wired. tsc xanh, 14/14 test. Flags OFF, migration chưa chạy. |
+| 2026-06-29 | **D1** | _(đang commit)_ | Unified Engineering Workspace /engineering + CodeEditor (monaco-swappable) + route/nav/i18n. tsc xanh, locale OK. monaco hoãn (component boundary sẵn). |
 | | … | | |

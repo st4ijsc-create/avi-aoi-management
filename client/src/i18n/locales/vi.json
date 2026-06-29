@@ -3965,6 +3965,8 @@
     "commandAuditDesc": "Nhật ký kiểm toán mọi lệnh điều khiển máy (chỉ xem)",
     "orchestrationStudio": "Studio Quy trình",
     "orchestrationStudioDesc": "Soạn quy trình đa máy bằng hình ảnh, mô phỏng trên bản sao số rồi triển khai & chạy",
+    "engineeringWorkspace": "Xưởng lập trình thiết bị",
+    "engineeringWorkspaceDesc": "Lập trình thiết bị (Zmotion/PLC/robot), kiểm tra, build, mô phỏng rồi ký duyệt & deploy",
     "factoryLiveMap": "Bản đồ nhà máy 3D",
     "factoryLiveMapDesc": "Sàn nhà máy 3D, máy tô màu theo trạng thái live (digital shadow), bấm drill-down xuống cụm",
     "factoryFloorEditor": "Sửa mặt bằng nhà máy",
