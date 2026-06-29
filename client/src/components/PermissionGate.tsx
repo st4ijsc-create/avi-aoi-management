@@ -16,17 +16,37 @@
 import { cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { Eye } from "lucide-react";
 
 export type WriteAction = "canCreate" | "canEdit" | "canDelete" | "canExport";
 
+/** Roles that are intrinsically read-only platform-wide (doc 12 §7). */
+export const READ_ONLY_ROLES = ["viewer", "user"] as const;
+
+/**
+ * Role-based read-only check (doc 12 §7). viewer/user are read-only EVERYWHERE;
+ * admin is never read-only. Use this when a page has no single "module" to key a
+ * permission off (or to show a page-level "View Only" banner). For per-module
+ * write capability use `useCanWrite(module)`.
+ */
+export function useIsReadOnly(): boolean {
+  const { user } = useAuth();
+  const role = user?.role;
+  if (role === "admin") return false;
+  return role != null && (READ_ONLY_ROLES as readonly string[]).includes(role);
+}
+
 /** Convenience: the write capabilities a user has on a module (admin → all true). */
 export function useCanWrite(module: string) {
   const { hasPermission } = usePermissions();
-  const canCreate = hasPermission(module, "canCreate");
-  const canEdit = hasPermission(module, "canEdit");
-  const canDelete = hasPermission(module, "canDelete");
+  const { user } = useAuth();
+  // viewer/user are intrinsically read-only regardless of any stray module grant.
+  const roleReadOnly = user?.role != null && (READ_ONLY_ROLES as readonly string[]).includes(user.role);
+  const canCreate = !roleReadOnly && hasPermission(module, "canCreate");
+  const canEdit = !roleReadOnly && hasPermission(module, "canEdit");
+  const canDelete = !roleReadOnly && hasPermission(module, "canDelete");
   const canExport = hasPermission(module, "canExport");
   return { canCreate, canEdit, canDelete, canExport, readOnly: !(canCreate || canEdit || canDelete) };
 }
@@ -62,10 +82,17 @@ export function PermissionGate({ module, action, mode = "hide", children, fallba
   return <>{fallback}</>;
 }
 
-/** A compact "View Only" indicator for page headers when the user can't write. */
-export function ViewOnlyBadge({ module, className }: { module: string; className?: string }) {
+/**
+ * A compact "View Only" indicator for page headers when the user can't write.
+ * Pass `module` to key it off per-module write capability; omit `module` to fall
+ * back to the role-based read-only check (viewer/user). Renders nothing when the
+ * user can write.
+ */
+export function ViewOnlyBadge({ module, className }: { module?: string; className?: string }) {
   const { t } = useTranslation();
-  const { readOnly } = useCanWrite(module);
+  const moduleReadOnly = useCanWrite(module ?? "__none__").readOnly;
+  const roleReadOnly = useIsReadOnly();
+  const readOnly = module ? moduleReadOnly : roleReadOnly;
   if (!readOnly) return null;
   return (
     <Badge variant="secondary" className={["gap-1", className].filter(Boolean).join(" ")}>

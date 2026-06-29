@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -308,7 +309,10 @@ export function QualityGatesContent() {
           <div className="flex items-center gap-2">
             <Shield className="h-6 w-6 text-primary" />
             <div>
-              <h2 className="text-2xl font-bold tracking-tight">{t('qualityGates.title')}</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-2xl font-bold tracking-tight">{t('qualityGates.title')}</h2>
+                <ViewOnlyBadge module="analytics_spc" />
+              </div>
               <p className="text-muted-foreground">
                 {t('qualityGates.subtitle')}
               </p>

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
+import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -225,15 +226,20 @@ export default function ProductionOrders() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold">{t('production.title')}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold">{t('production.title')}</h1>
+              <ViewOnlyBadge module="production_orders" />
+            </div>
             <p className="text-muted-foreground">{t('production.description')}</p>
           </div>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
-              <Button onClick={() => { resetForm(); setIsCreateOpen(true); }}>
-                <Plus className="w-4 h-4 mr-2" />
-                {t('production.createNew')}
-              </Button>
+              <PermissionGate module="production_orders" action="canCreate">
+                <Button onClick={() => { resetForm(); setIsCreateOpen(true); }}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  {t('production.createNew')}
+                </Button>
+              </PermissionGate>
             </DialogTrigger>
             <DialogContent className="max-w-2xl">
               <DialogHeader>

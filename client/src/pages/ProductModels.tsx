@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useSetCopilotContext } from "@/contexts/AiCopilotContext";
 import DashboardLayout from "@/components/DashboardLayout";
+import { PermissionGate, ViewOnlyBadge } from "@/components/PermissionGate";
 import AIThresholdSuggestButton from "@/components/AIThresholdSuggestButton";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -2078,15 +2079,20 @@ export default function ProductModels() {
         <Card className="lg:col-span-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <div>
-              <CardTitle className="text-lg">{t("products.productList")}</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-lg">{t("products.productList")}</CardTitle>
+                <ViewOnlyBadge module="settings_products" />
+              </div>
               <CardDescription>{t("products.selectToManage")}</CardDescription>
             </div>
             <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
               <DialogTrigger asChild>
-                <Button size="sm" className="gap-1">
-                  <Plus className="h-4 w-4" />
-                  {t("common.add")}
-                </Button>
+                <PermissionGate module="settings_products" action="canCreate">
+                  <Button size="sm" className="gap-1">
+                    <Plus className="h-4 w-4" />
+                    {t("common.add")}
+                  </Button>
+                </PermissionGate>
               </DialogTrigger>
               <DialogContent className="max-w-md">
                 <DialogHeader>

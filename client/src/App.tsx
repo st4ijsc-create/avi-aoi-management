@@ -95,7 +95,6 @@ const AILocalKnowledgeBasePage = React.lazy(() => import("./pages/AILocalKnowled
 const TechnicianCopilot = React.lazy(() => import("./pages/TechnicianCopilot")); // LUỒNG ③: RCA Copilot — one-tap fix approval
 const OperatorHome = React.lazy(() => import("./pages/OperatorHome")); // Role landing: simplified big-button floor operator shell
 const QualityHome = React.lazy(() => import("./pages/QualityHome")); // Role landing: quality_inspector inspection workspace (P1 doc 07 §④)
-import TestAnnotationPage from "./pages/TestAnnotationPage";
 const MaskAnnotationPage = React.lazy(() => import("./pages/MaskAnnotationPage"));
 const OpsConsole = React.lazy(() => import("./pages/OpsConsole")); // P1 (doc 12 §8): unified Ops Console / War-Room (consolidates Andon + Predictive + alert sources)
 const DeviceAdapterManagement = React.lazy(() => import("./pages/DeviceAdapterManagement")); // G2.2a: OT adapter/tag CONFIG
@@ -173,158 +172,177 @@ function RedirectToAIInspectionAnalytics() {
 function Router() {
   return (
     <Switch>
+      {/* ── Public routes (no guard) ────────────────────────────────────── */}
       <Route path="/" component={Home} />
       <Route path="/setup" component={Setup} />
       <Route path="/login" component={Login} />
-      <Route path="/dashboard" component={Dashboard} />
+      <Route path="/api-docs" component={ApiDocs} />
+
+      {/* ── OVERVIEW ─────────────────────────────────────────────────────── */}
+      <Route path="/dashboard"><RouteGuard navHref="/dashboard"><Dashboard /></RouteGuard></Route>
       {/* P1 consolidation: Andon + Predictive Alerts merged into the unified Ops Console. */}
-      <Route path="/ops-console"><AIPageWrapper><OpsConsole /></AIPageWrapper></Route>
+      <Route path="/ops-console"><RouteGuard navHref="/ops-console"><AIPageWrapper><OpsConsole /></AIPageWrapper></RouteGuard></Route>
       <Route path="/andon"><Redirect to="/ops-console" /></Route>
+      <Route path="/predictive-alerts"><Redirect to="/ops-console" /></Route>
+      <Route path="/dashboard-center"><RouteGuard navHref="/dashboard-center"><DashboardCenter /></RouteGuard></Route>
+      <Route path="/drill-down"><RouteGuard navHref="/drill-down"><DrillDownDashboard /></RouteGuard></Route>
+      <Route path="/corporate-dashboard"><RouteGuard navHref="/corporate-dashboard"><CorporateDashboard /></RouteGuard></Route>
+      <Route path="/corporate-layout"><RouteGuard requirePermission="dashboard_corporate"><CorporateLayout /></RouteGuard></Route>
+
+      {/* ── PRODUCTION ───────────────────────────────────────────────────── */}
+      <Route path="/production-dashboard"><RouteGuard navHref="/production-dashboard"><ProductionDashboard /></RouteGuard></Route>
+      <Route path="/mes-control-tower"><RouteGuard navHref="/mes-control-tower"><MESControlTower /></RouteGuard></Route>
+      <Route path="/wip-dashboard"><RouteGuard navHref="/wip-dashboard"><WipLineBalance /></RouteGuard></Route>
+      <Route path="/traceability"><RouteGuard navHref="/traceability"><TraceabilityLineage /></RouteGuard></Route>
+      <Route path="/digital-twin"><RouteGuard navHref="/digital-twin"><DigitalTwinDashboard /></RouteGuard></Route>
+      <Route path="/history"><RouteGuard navHref="/history"><History /></RouteGuard></Route>
+      <Route path="/inspection/:id"><RouteGuard requirePermission="history_view"><InspectionDetail /></RouteGuard></Route>
+      <Route path="/aoi-packages"><RouteGuard navHref="/aoi-packages"><AOIPackages /></RouteGuard></Route>
+      <Route path="/production-orders"><RouteGuard navHref="/production-orders"><ProductionOrders /></RouteGuard></Route>
+      <Route path="/production-scheduling"><RouteGuard navHref="/production-scheduling"><ProductionScheduling /></RouteGuard></Route>
+      <Route path="/production-signoff"><RouteGuard navHref="/production-signoff"><ProductionSessionSignOff /></RouteGuard></Route>
+      <Route path="/history-export-scheduling"><RouteGuard navHref="/history-export-scheduling"><HistoryExportScheduling /></RouteGuard></Route>
+      <Route path="/bom-management"><RouteGuard navHref="/bom-management"><BomManagement /></RouteGuard></Route>
+      <Route path="/product-comparison"><RouteGuard requirePermission="history_view"><ProductComparison /></RouteGuard></Route>
+      <Route path="/station-analysis/:id"><RouteGuard requirePermission="analytics_spc"><StationAnalysis /></RouteGuard></Route>
+
+      {/* ── QUALITY ──────────────────────────────────────────────────────── */}
+      <Route path="/quality-home"><RouteGuard navHref="/quality-home"><AIPageWrapper><QualityHome /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/quality-gates"><RouteGuard navHref="/quality-gates"><QualityGates /></RouteGuard></Route>
+      <Route path="/quality-gate-templates"><RouteGuard navHref="/quality-gate-templates"><QualityGateTemplates /></RouteGuard></Route>
+      <Route path="/spc-analysis"><RouteGuard navHref="/spc-analysis"><SPCAnalysis /></RouteGuard></Route>
+      {/* /spc-advanced consolidated into /spc-analysis (redirect for backward-compat) */}
+      <Route path="/spc-advanced"><Redirect to="/spc-analysis" /></Route>
+      <Route path="/pareto-analysis"><RouteGuard navHref="/pareto-analysis"><ParetoAnalysis /></RouteGuard></Route>
+      <Route path="/defect-heatmap"><RouteGuard navHref="/defect-heatmap"><DefectHeatmapPage /></RouteGuard></Route>
+      <Route path="/defect-prediction"><RouteGuard requirePermission="analytics_advanced"><DefectPredictionPage /></RouteGuard></Route>
+      <Route path="/root-cause-analysis"><RouteGuard requirePermission="analytics_root_cause"><RootCauseAnalysisPage /></RouteGuard></Route>
+      <Route path="/annotation-statistics"><RouteGuard navHref="/annotation-statistics"><AnnotationStatistics /></RouteGuard></Route>
+      <Route path="/annotation-comparison"><RouteGuard navHref="/annotation-comparison"><AnnotationComparisonPage /></RouteGuard></Route>
+
+      {/* ── DEVICES & OT ─────────────────────────────────────────────────── */}
+      <Route path="/machine-status"><RouteGuard navHref="/machine-status"><MachineStatusMonitor /></RouteGuard></Route>
+      <Route path="/machine-health"><RouteGuard navHref="/machine-health"><MachineHealthMonitoring /></RouteGuard></Route>
+      <Route path="/oee-dashboard"><RouteGuard navHref="/oee-dashboard"><OEEDashboard /></RouteGuard></Route>
+      <Route path="/factory-live-map"><RouteGuard navHref="/factory-live-map"><AIPageWrapper><FactoryLiveMap3D /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/mqtt-dashboard"><RouteGuard navHref="/mqtt-dashboard"><MqttDashboard /></RouteGuard></Route>
+      <Route path="/mqtt-bulletin"><RouteGuard navHref="/mqtt-bulletin"><MqttBulletin /></RouteGuard></Route>
+      <Route path="/mqtt-replay"><RouteGuard navHref="/mqtt-replay"><MQTTReplay /></RouteGuard></Route>
+      <Route path="/mqtt-clients"><RouteGuard navHref="/mqtt-clients"><MqttClientManagement /></RouteGuard></Route>
+      <Route path="/mqtt-alerts"><RouteGuard navHref="/mqtt-alerts"><MqttAlertRules /></RouteGuard></Route>
+      <Route path="/mqtt-profiles"><RouteGuard requireRole={["admin"]} requirePermission="mqtt_monitoring"><MqttProfileManagement /></RouteGuard></Route>
+      <Route path="/mqtt-topics"><RouteGuard requirePermission="mqtt_monitoring"><MqttTopicsMessages /></RouteGuard></Route>
+      <Route path="/mqtt-ng-rate"><RouteGuard requirePermission="mqtt_alerts"><MqttNgRateThreshold /></RouteGuard></Route>
+      <Route path="/machine-onboarding"><RouteGuard navHref="/machine-onboarding"><MachineOnboardingWizard /></RouteGuard></Route>
+      <Route path="/machine-registration"><RouteGuard navHref="/machine-registration"><MachineRegistration /></RouteGuard></Route>
       <Route path="/device-adapters"><RouteGuard navHref="/device-adapters"><DeviceAdapterManagement /></RouteGuard></Route>
-      {/* P1 consolidation: command audit is now the "command" tab of the unified Audit page. */}
-      <Route path="/command-audit"><Redirect to="/audit-logs?tab=command" /></Route>
+      <Route path="/edge-nodes"><RouteGuard navHref="/edge-nodes"><AIPageWrapper><EdgeNodesPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/engineering"><RouteGuard navHref="/engineering"><EngineeringWorkspace /></RouteGuard></Route>
       <Route path="/recipes"><RouteGuard navHref="/recipes"><RecipeManagement /></RouteGuard></Route>
       <Route path="/interlock-rules"><RouteGuard navHref="/interlock-rules"><InterlockRuleManagement /></RouteGuard></Route>
       <Route path="/orchestration-studio"><RouteGuard navHref="/orchestration-studio"><AIPageWrapper><OrchestrationStudio /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/engineering"><RouteGuard navHref="/engineering"><EngineeringWorkspace /></RouteGuard></Route>
-      <Route path="/rf-test-cell"><RouteGuard navHref="/rf-test-cell"><AIPageWrapper><RfTestCellSim /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/factory-live-map"><RouteGuard navHref="/factory-live-map"><AIPageWrapper><FactoryLiveMap3D /></AIPageWrapper></RouteGuard></Route>
       <Route path="/factory-floor-editor"><RouteGuard navHref="/factory-floor-editor"><AIPageWrapper><FactoryFloorEditor /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/rf-test-cell"><RouteGuard navHref="/rf-test-cell"><AIPageWrapper><RfTestCellSim /></AIPageWrapper></RouteGuard></Route>
       <Route path="/cell-twin"><RouteGuard navHref="/cell-twin"><AIPageWrapper><CellTwinPlayer /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/edge-nodes"><RouteGuard navHref="/edge-nodes"><AIPageWrapper><EdgeNodesPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/api-keys"><RouteGuard navHref="/api-keys"><AIPageWrapper><ApiKeysPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/bom-management" component={BomManagement} />
-      <Route path="/master-data" component={MasterDataManagement} />
+      <Route path="/technician-copilot"><RouteGuard navHref="/technician-copilot"><AIPageWrapper><TechnicianCopilot /></AIPageWrapper></RouteGuard></Route>
       <Route path="/work-orders"><RouteGuard navHref="/work-orders"><WorkOrdersPage /></RouteGuard></Route>
+      <Route path="/alerts"><RouteGuard navHref="/alerts"><Alerts /></RouteGuard></Route>
+      <Route path="/monitoring-setting"><RouteGuard requireRole={["admin"]}><MonitoringSettings /></RouteGuard></Route>
+      {/* P1 consolidation: command audit is now the "command" tab of the unified Audit page. */}
+      <Route path="/command-audit"><Redirect to="/audit-logs?tab=command" /></Route>
+
+      {/* ── ANALYTICS ────────────────────────────────────────────────────── */}
+      <Route path="/reports"><RouteGuard navHref="/reports"><Reports /></RouteGuard></Route>
+      <Route path="/scheduled-reports"><RouteGuard navHref="/scheduled-reports"><ScheduledReports /></RouteGuard></Route>
+      {/* P1 consolidation: enhanced scheduled reports folded into the canonical Scheduled Reports page. */}
+      <Route path="/enhanced-scheduled-reports"><Redirect to="/scheduled-reports" /></Route>
+      <Route path="/report-builder"><RouteGuard navHref="/report-builder"><ReportBuilder /></RouteGuard></Route>
+      <Route path="/category-analytics"><RouteGuard navHref="/category-analytics"><CategoryAnalytics /></RouteGuard></Route>
+      <Route path="/correlation-analysis"><RouteGuard navHref="/correlation-analysis"><CorrelationAnalysis /></RouteGuard></Route>
+      <Route path="/data-comparison"><RouteGuard navHref="/data-comparison"><DataComparison /></RouteGuard></Route>
+      <Route path="/realtime-report"><RouteGuard navHref="/realtime-report"><RealtimeReportView /></RouteGuard></Route>
+      <Route path="/energy-analytics"><RouteGuard navHref="/energy-analytics"><EnergyAnalyticsPage /></RouteGuard></Route>
+      <Route path="/carbon-dashboard"><RouteGuard navHref="/carbon-dashboard"><CarbonDashboard /></RouteGuard></Route>
+      <Route path="/pdf-reports"><RouteGuard navHref="/pdf-reports"><PdfReports /></RouteGuard></Route>
+      <Route path="/powerpoint-export"><RouteGuard navHref="/powerpoint-export"><PowerPointExport /></RouteGuard></Route>
       <Route path="/threshold-approvals"><RouteGuard navHref="/threshold-approvals"><ThresholdApprovalsPage /></RouteGuard></Route>
+      <Route path="/oee-target-settings"><RouteGuard navHref="/oee-target-settings"><OEETargetSettings /></RouteGuard></Route>
+      <Route path="/analytics-setting"><RouteGuard requireRole={["admin"]}><AnalyticsSettings /></RouteGuard></Route>
+
+      {/* ── AI ───────────────────────────────────────────────────────────── */}
+      {/* Workspace (read-open to all roles): chat / hub / management-insight. */}
+      <Route path="/ai-chat"><AIPageWrapper><AIChatPage /></AIPageWrapper></Route>
+      <Route path="/ai-hub"><AIPageWrapper><AIHub /></AIPageWrapper></Route>
+      <Route path="/management-insight"><AIPageWrapper><ManagementInsight /></AIPageWrapper></Route>
+      <Route path="/ai-local-kb"><AIPageWrapper><AILocalKnowledgeBasePage /></AIPageWrapper></Route>
+      {/* AI Control Plane / Ops / Vision — admin-gated. */}
+      <Route path="/ai-brain"><RouteGuard navHref="/ai-brain"><AIPageWrapper><AIBrainDashboard /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-monitoring"><RouteGuard navHref="/ai-monitoring"><AIPageWrapper><ModelMonitoringPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-performance"><RouteGuard navHref="/ai-performance"><AIPageWrapper><AIPerformanceDashboard /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-models"><RouteGuard navHref="/ai-models"><AIPageWrapper><AIModelManagementPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/model-versions"><RouteGuard navHref="/model-versions"><AIPageWrapper><ModelVersionsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-settings"><RouteGuard navHref="/ai-settings"><AIPageWrapper><AISettingsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-active-learning"><RouteGuard navHref="/ai-active-learning"><AIPageWrapper><AIActiveLearningPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-batch-jobs"><RouteGuard navHref="/ai-batch-jobs"><AIPageWrapper><BatchInferencePage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-data-processing"><RouteGuard navHref="/ai-data-processing"><AIPageWrapper><AIDataProcessingPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-time-series"><RouteGuard navHref="/ai-time-series"><AIPageWrapper><AITimeSeriesPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-reports"><RouteGuard navHref="/ai-reports"><AIPageWrapper><AIReportsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-quality-gate"><RouteGuard navHref="/ai-quality-gate"><AIPageWrapper><AIQualityGatePage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-image-search"><RouteGuard navHref="/ai-image-search"><AIPageWrapper><AIImageSearchPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-advanced-vision-lab"><RouteGuard navHref="/ai-advanced-vision-lab"><AIPageWrapper><AdvancedVisionLabPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/anomaly-banks"><RouteGuard navHref="/anomaly-banks"><AnomalyBankPage /></RouteGuard></Route>
-      <Route path="/history" component={History} />
-      <Route path="/inspection/:id" component={InspectionDetail} />
-      <Route path="/layout" component={Layout} />
-      <Route path="/layout/:id" component={Layout} />
-      <Route path="/settings" component={Settings} />
+      <Route path="/mask-annotation"><RouteGuard navHref="/mask-annotation"><AIPageWrapper><MaskAnnotationPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/causal-graph"><RouteGuard navHref="/causal-graph"><AIPageWrapper><CausalGraphEditorPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-inspection-analytics"><RouteGuard requirePermission="analytics_ai_performance"><AIPageWrapper><AIInspectionAnalyticsPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/ai-gguf-models"><RouteGuard requireRole={["admin"]}><AIPageWrapper><AIGgufModelsPage /></AIPageWrapper></RouteGuard></Route>
+      {/* X3: /ai-ab-testing was a deprecated stub → redirect to the B6 canary tab. */}
+      <Route path="/ai-ab-testing"><Redirect to="/ai-performance" /></Route>
+
+      {/* ── ADMIN + Master Data / Data Management ────────────────────────── */}
+      <Route path="/admin-home"><RouteGuard requireRole={["admin"]}><AdminHome /></RouteGuard></Route>
+      <Route path="/users"><RouteGuard navHref="/users"><Users /></RouteGuard></Route>
+      <Route path="/role-builder"><RouteGuard navHref="/role-builder"><RoleBuilder /></RouteGuard></Route>
+      <Route path="/audit-logs"><RouteGuard requireRole={["admin"]}><AuditLogs /></RouteGuard></Route>
+      {/* P1 consolidation: enhanced audit is now the "enhanced" tab of the unified Audit page. */}
+      <Route path="/enhanced-audit"><Redirect to="/audit-logs?tab=enhanced" /></Route>
+      <Route path="/license"><RouteGuard navHref="/license"><LicenseManagement /></RouteGuard></Route>
+      <Route path="/api-keys"><RouteGuard navHref="/api-keys"><AIPageWrapper><ApiKeysPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/backup-restore"><RouteGuard navHref="/backup-restore"><BackupRestore /></RouteGuard></Route>
+      <Route path="/system-config"><RouteGuard requireRole={["admin"]}><SystemConfiguration /></RouteGuard></Route>
+      <Route path="/admin-setting"><RouteGuard navHref="/admin-setting"><AdminSettings /></RouteGuard></Route>
+      <Route path="/import-export"><RouteGuard requireRole={["admin"]}><ImportExport /></RouteGuard></Route>
+      <Route path="/user-assignments"><RouteGuard requireRole={["admin"]} requirePermission="admin_users"><UserAssignments /></RouteGuard></Route>
+      <Route path="/corporate-management"><RouteGuard requireRole={["admin"]}><CorporateManagement /></RouteGuard></Route>
+      <Route path="/master-data"><RouteGuard navHref="/master-data"><MasterDataManagement /></RouteGuard></Route>
+      <Route path="/products"><RouteGuard navHref="/products"><ProductModels /></RouteGuard></Route>
+      <Route path="/product-mapping"><RouteGuard navHref="/product-mapping"><ProductMachineMapping /></RouteGuard></Route>
+      <Route path="/layout"><RouteGuard navHref="/layout"><Layout /></RouteGuard></Route>
+      <Route path="/layout/:id"><RouteGuard requirePermission="settings_factory"><Layout /></RouteGuard></Route>
+      <Route path="/workstation-management"><RouteGuard navHref="/workstation-management"><WorkstationManagement /></RouteGuard></Route>
+      <Route path="/process-management"><RouteGuard navHref="/process-management"><ProcessManagement /></RouteGuard></Route>
+      <Route path="/datasettings"><RouteGuard navHref="/datasettings"><DataSettings /></RouteGuard></Route>
+      <Route path="/settings"><RouteGuard requirePermission="settings_view"><Settings /></RouteGuard></Route>
+      <Route path="/custom-dashboard"><RouteGuard requirePermission="dashboard_view"><CustomDashboard /></RouteGuard></Route>
+
+      {/* ── ME (self) — read-open to every authenticated role ─────────────── */}
+      <Route path="/operator"><AIPageWrapper><OperatorHome /></AIPageWrapper></Route>
+      <Route path="/supervisor-home"><AIPageWrapper><SupervisorHome /></AIPageWrapper></Route>
+      <Route path="/viewer-home"><AIPageWrapper><ViewerHome /></AIPageWrapper></Route>
+      <Route path="/profile" component={Profile} />
+      <Route path="/change-password" component={ChangePassword} />
+      <Route path="/sessions" component={SessionManagement} />
       <Route path="/request-role"><RequestRole /></Route>
-      <Route path="/datasettings" component={DataSettings} />
+      <Route path="/user-guide" component={UserGuide} />
+      <Route path="/about-system" component={AboutSystem} />
+
+      {/* ── Redirects (no guard needed) ──────────────────────────────────── */}
       <Route path="/admin" component={RedirectToAdminHome} />
       <Route path="/analytics" component={RedirectToCategoryAnalytics} />
       <Route path="/ai-analytics" component={RedirectToAIInspectionAnalytics} />
-      <Route path="/dashboard-center"><RouteGuard navHref="/dashboard-center"><DashboardCenter /></RouteGuard></Route>
-      <Route path="/api-docs" component={ApiDocs} />
-      <Route path="/products" component={ProductModels} />
-      <Route path="/corporate-layout" component={CorporateLayout} />
-      <Route path="/corporate-dashboard" component={CorporateDashboard} />
-      <Route path="/corporate-management" component={CorporateManagement} />
-      <Route path="/reports" component={Reports} />
-      <Route path="/alerts" component={Alerts} />
-      <Route path="/users"><RouteGuard navHref="/users"><Users /></RouteGuard></Route>
-      <Route path="/product-mapping" component={ProductMachineMapping} />
-      <Route path="/production-orders" component={ProductionOrders} />
-      <Route path="/machine-status" component={MachineStatusMonitor} />
-      <Route path="/profile" component={Profile} />
-      <Route path="/change-password" component={ChangePassword} />
-      <Route path="/audit-logs" component={AuditLogs} />
-      <Route path="/sessions" component={SessionManagement} />
-      <Route path="/production-signoff" component={ProductionSessionSignOff} />
-      <Route path="/product-comparison" component={ProductComparison} />
-      <Route path="/mqtt-dashboard" component={MqttDashboard} />
-      <Route path="/mqtt-alerts" component={MqttAlertRules} />
-      <Route path="/mqtt-clients" component={MqttClientManagement} />
-      <Route path="/mqtt-profiles" component={MqttProfileManagement} />
-      <Route path="/mqtt-topics" component={MqttTopicsMessages} />
-      <Route path="/custom-dashboard" component={CustomDashboard} />
-      <Route path="/system-config"><RouteGuard requireRole={["admin"]}><SystemConfiguration /></RouteGuard></Route>
-      <Route path="/import-export" component={ImportExport} />
-      <Route path="/user-assignments" component={UserAssignments} />
-      <Route path="/scheduled-reports" component={ScheduledReports} />
-      <Route path="/spc-analysis" component={SPCAnalysis} />
-      <Route path="/process-management" component={ProcessManagement} />
-      <Route path="/workstation-management" component={WorkstationManagement} />
-      <Route path="/category-analytics" component={CategoryAnalytics} />
-      <Route path="/user-guide" component={UserGuide} />
-      <Route path="/about-system" component={AboutSystem} />
-      {/* P1 consolidation: dashboard templates/marketplace folded into Dashboard Center tabs. */}
       <Route path="/dashboard-templates"><Redirect to="/dashboard-center?tab=dashboard-templates" /></Route>
-      <Route path="/backup-restore"><RouteGuard navHref="/backup-restore"><BackupRestore /></RouteGuard></Route>
       <Route path="/template-marketplace"><Redirect to="/dashboard-center?tab=dashboard-marketplace" /></Route>
-      <Route path="/oee-dashboard" component={OEEDashboard} />
-      <Route path="/mqtt-replay" component={MQTTReplay} />
-      <Route path="/oee-target-settings" component={OEETargetSettings} />
-      <Route path="/machine-health" component={MachineHealthMonitoring} />
-      <Route path="/mes-control-tower" component={MESControlTower} />
-      <Route path="/wip-dashboard" component={WipLineBalance} />
-      <Route path="/traceability" component={TraceabilityLineage} />
-      <Route path="/digital-twin" component={DigitalTwinDashboard} />
-      <Route path="/realtime-report" component={RealtimeReportView} />
-      <Route path="/carbon-dashboard" component={CarbonDashboard} />
-      <Route path="/energy-analytics" component={EnergyAnalyticsPage} />
-      <Route path="/drill-down" component={DrillDownDashboard} />
-      <Route path="/annotation-statistics" component={AnnotationStatistics} />
-      <Route path="/annotation-comparison" component={AnnotationComparisonPage} />
-      <Route path="/defect-heatmap" component={DefectHeatmapPage} />
-      <Route path="/defect-prediction" component={DefectPredictionPage} />
-      <Route path="/root-cause-analysis" component={RootCauseAnalysisPage} />
-      <Route path="/causal-graph"><RouteGuard navHref="/causal-graph"><AIPageWrapper><CausalGraphEditorPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/predictive-alerts"><Redirect to="/ops-console" /></Route>
       <Route path="/dashboard-marketplace"><Redirect to="/dashboard-center?tab=dashboard-marketplace" /></Route>
-      <Route path="/history-export-scheduling" component={HistoryExportScheduling} />
-      <Route path="/ai-hub"><AIPageWrapper><AIHub /></AIPageWrapper></Route>
-      <Route path="/ai-chat"><AIPageWrapper><AIChatPage /></AIPageWrapper></Route>
-      <Route path="/ai-quality-gate"><AIPageWrapper><AIQualityGatePage /></AIPageWrapper></Route>
-      <Route path="/ai-active-learning"><AIPageWrapper><AIActiveLearningPage /></AIPageWrapper></Route>
-      <Route path="/ai-image-search"><AIPageWrapper><AIImageSearchPage /></AIPageWrapper></Route>
-      <Route path="/ai-reports"><AIPageWrapper><AIReportsPage /></AIPageWrapper></Route>
-      <Route path="/ai-time-series"><AIPageWrapper><AITimeSeriesPage /></AIPageWrapper></Route>
-      <Route path="/ai-performance"><AIPageWrapper><AIPerformanceDashboard /></AIPageWrapper></Route>
-      <Route path="/ai-batch-jobs"><AIPageWrapper><BatchInferencePage /></AIPageWrapper></Route>
-      {/* X3: /ai-ab-testing was a deprecated stub. The live A/B feature is the
-          B6 canary tab in the AI Performance Dashboard — redirect there. */}
-      <Route path="/ai-ab-testing"><Redirect to="/ai-performance" /></Route>
-      <Route path="/ai-monitoring"><AIPageWrapper><ModelMonitoringPage /></AIPageWrapper></Route>
-      <Route path="/ai-models"><AIPageWrapper><AIModelManagementPage /></AIPageWrapper></Route>
-      <Route path="/model-versions"><AIPageWrapper><ModelVersionsPage /></AIPageWrapper></Route>
-      <Route path="/ai-settings"><RouteGuard navHref="/ai-settings"><AIPageWrapper><AISettingsPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/ai-data-processing"><AIPageWrapper><AIDataProcessingPage /></AIPageWrapper></Route>
-      <Route path="/ai-inspection-analytics"><AIPageWrapper><AIInspectionAnalyticsPage /></AIPageWrapper></Route>
-      <Route path="/ai-advanced-vision-lab"><AIPageWrapper><AdvancedVisionLabPage /></AIPageWrapper></Route>
-      <Route path="/ai-gguf-models"><AIPageWrapper><AIGgufModelsPage /></AIPageWrapper></Route>
-      <Route path="/ai-brain"><AIPageWrapper><AIBrainDashboard /></AIPageWrapper></Route>
-      <Route path="/management-insight"><AIPageWrapper><ManagementInsight /></AIPageWrapper></Route>
-      <Route path="/ai-local-kb"><AIPageWrapper><AILocalKnowledgeBasePage /></AIPageWrapper></Route>
-      <Route path="/technician-copilot"><AIPageWrapper><TechnicianCopilot /></AIPageWrapper></Route>
-      <Route path="/operator"><AIPageWrapper><OperatorHome /></AIPageWrapper></Route>
-      <Route path="/quality-home"><AIPageWrapper><QualityHome /></AIPageWrapper></Route>
-      <Route path="/supervisor-home"><AIPageWrapper><SupervisorHome /></AIPageWrapper></Route>
-      <Route path="/viewer-home"><AIPageWrapper><ViewerHome /></AIPageWrapper></Route>
-      <Route path="/admin-home"><RouteGuard requireRole={["admin"]}><AdminHome /></RouteGuard></Route>
-      <Route path="/test-annotation" component={TestAnnotationPage} />
-      <Route path="/mask-annotation"><AIPageWrapper><MaskAnnotationPage /></AIPageWrapper></Route>
-      <Route path="/aoi-packages" component={AOIPackages} />
-      <Route path="/mqtt-bulletin" component={MqttBulletin} />
-      {/* /spc-advanced consolidated into /spc-analysis (redirect for backward-compat) */}
-      <Route path="/spc-advanced"><Redirect to="/spc-analysis" /></Route>
-      <Route path="/correlation-analysis" component={CorrelationAnalysis} />
-      <Route path="/quality-gates" component={QualityGates} />
-      <Route path="/role-builder"><RouteGuard navHref="/role-builder"><RoleBuilder /></RouteGuard></Route>
-      {/* P1 consolidation: enhanced audit is now the "enhanced" tab of the unified Audit page. */}
-      <Route path="/enhanced-audit"><Redirect to="/audit-logs?tab=enhanced" /></Route>
-      <Route path="/pdf-reports" component={PdfReports} />
-      <Route path="/data-comparison" component={DataComparison} />
-      <Route path="/report-builder" component={ReportBuilder} />
-      <Route path="/powerpoint-export" component={PowerPointExport} />
-      {/* P1 consolidation: enhanced scheduled reports folded into the canonical Scheduled Reports page. */}
-      <Route path="/enhanced-scheduled-reports"><Redirect to="/scheduled-reports" /></Route>
-      <Route path="/pareto-analysis" component={ParetoAnalysis} />
-      <Route path="/quality-gate-templates" component={QualityGateTemplates} />
-      <Route path="/production-scheduling" component={ProductionScheduling} />
-      <Route path="/machine-registration" component={MachineRegistration} />
-      <Route path="/machine-onboarding" component={MachineOnboardingWizard} />
-      <Route path="/license"><RouteGuard navHref="/license"><LicenseManagement /></RouteGuard></Route>
-      <Route path="/mqtt-ng-rate" component={MqttNgRateThreshold} />
-      <Route path="/monitoring-setting"><RouteGuard requireRole={["admin"]}><MonitoringSettings /></RouteGuard></Route>
-      <Route path="/analytics-setting"><RouteGuard requireRole={["admin"]}><AnalyticsSettings /></RouteGuard></Route>
-      <Route path="/admin-setting"><RouteGuard navHref="/admin-setting"><AdminSettings /></RouteGuard></Route>
-      <Route path="/production-dashboard" component={ProductionDashboard} />
-      <Route path="/station-analysis/:id" component={StationAnalysis} />
+
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
