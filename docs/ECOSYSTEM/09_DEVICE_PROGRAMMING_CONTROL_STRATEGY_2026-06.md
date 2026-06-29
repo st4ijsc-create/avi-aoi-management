@@ -221,11 +221,12 @@ Route mới đề xuất: `/engineering` (workspace), `/engineering/:projectId`.
 - **Còn lại (kéo sang sau khi có HW/SDK):** frame file-transfer ZMC thật, `watch()` realtime (gắn D6), editor motion-sequence block, telemetry Zmotion vào `EquipmentAdapter`, jog.
 - **Chấp nhận:** ✅ tsc xanh; ✅ 8 test (validate/compile/simulate/deploy-guard/registry). Workspace dùng kind `zmotion-basic`: soạn→validate→build→simulate chạy; deploy gated (flag OFF). Field-map ZMC cần HW thật (đã ghi).
 
-### Phase D3 — Mitsubishi engineering + toolchain wrap (nhóm B) 🔲  ⟵ *ưu tiên 2*
-- [ ] Tag/device table (X/Y/M/D) editor + recipe/param program trên driver MC đã có.
-- [ ] `compile/deploy` qua **wrap GX Works CLI/headless** (nếu môi trường có) — nếu không, đường recipe/param + OpenPLC route cho ladder ở D5.
-- [ ] Online Monitor (MC fast-scan) + cross-reference symbol.
-- **Chấp nhận:** đọc/ghi device qua engineering UI (dry-run), online watch D-registers; tài liệu rõ phần nào cần GX Works thật.
+### Phase D3 — Mitsubishi engineering + toolchain wrap (nhóm B) ✅ ĐÃ XONG (emulator)  ⟵ *ưu tiên 2*
+- [x] `server/services/programming/mitsubishi/mitsubishiEngineeringAdapter.ts` — kind `mitsubishi-engineering`, đăng ký registry.
+- [x] **THẬT:** validate bảng device/recipe `<DEVICE> = <value>` (parse + kiểm tra cú pháp MELSEC X/Y/M/L/F/B/D/W/R/Z/T/C/S/V, hex cho X/Y/B/W); compile → param map `melsec://recipe/<checksum>`; simulate → preview ghi param từng bước.
+- [x] **FRAMEWORK trung thực:** deploy chưa wire → `failed` có lý do rõ (đường thật: param-push qua `commandDispatcher` HITL/OT_CONTROL **hoặc** GX Works headless). caps `canDownload/canOnlineMonitor/canForce`.
+- **Còn lại (cần HW/toolchain):** wire param-push qua commandDispatcher, GX Works CLI wrap, Online Monitor MC fast-scan (D6), upload. Ladder native → D5 (OpenPLC).
+- **Chấp nhận:** ✅ tsc xanh; ✅ 8 test. Workspace kind `mitsubishi-engineering`: soạn recipe→validate→build→simulate. Tài liệu ghi rõ phần cần GX Works/HW.
 
 ### Phase D4 — Robot programming (Techman thật + teach/jog) 🔲  ⟵ *ưu tiên 3*
 - [ ] Teach/Jog panel + point table + job-list builder → TMSCT (mở rộng techmanDriver hiện có).
@@ -311,5 +312,6 @@ Quy ước thực thi: mỗi phase tự chứa, flag OFF, tsc xanh, test kèm, v
 | 2026-06-29 | — | — | Người dùng DUYỆT toàn bộ D0–D7; phần cứng/SDK cài sau (cuốn chiếu, emulator trước) |
 | 2026-06-29 | **D0** | `7aef0a3` | Programming foundation: ProgrammingAdapter+registry+stub, schema+migration 0130, programmingService (deploy gate), programmingRouter wired. tsc xanh, 14/14 test. Flags OFF, migration chưa chạy. |
 | 2026-06-29 | **D1** | `85b64f5` | Unified Engineering Workspace /engineering + CodeEditor (monaco-swappable) + route/nav/i18n. tsc xanh, locale OK. monaco hoãn (component boundary sẵn). |
-| 2026-06-29 | **D2** | _(đang commit)_ | Zmotion BASIC adapter: validate/compile/motion-simulate THẬT + ZmcLink deploy/upload framework trung thực (gated, không giả deployed). 8 test, tsc xanh. Cần HW cho frame ZMC + watch. |
+| 2026-06-29 | **D2** | `bc08bd0` | Zmotion BASIC adapter: validate/compile/motion-simulate THẬT + ZmcLink deploy/upload framework trung thực (gated, không giả deployed). 8 test, tsc xanh. Cần HW cho frame ZMC + watch. |
+| 2026-06-29 | **D3** | _(đang commit)_ | Mitsubishi engineering adapter: MELSEC device/recipe validate+compile+simulate THẬT; deploy framework trung thực (param-push/GX Works chưa wire→failed rõ). 8 test, tsc xanh. |
 | | … | | |
