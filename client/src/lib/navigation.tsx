@@ -350,6 +350,44 @@ export const navGroups: NavGroup[] = [
     ],
   },
 
+  // 3c. MAINTENANCE WORKSPACE (doc 10 U4) — a dedicated front door for the maintenance
+  //     role so its core surfaces aren't scattered across AI / Monitoring / Alerts.
+  //     These links also remain in their original groups (they serve other roles too).
+  {
+    id: "maintenance-workspace",
+    label: "nav.maintenanceGroup",
+    icon: <Wrench className="h-4 w-4" />,
+    description: "nav.maintenanceGroupDesc",
+    defaultOpen: false,
+    permissionCategory: "machine_monitoring",
+    items: [
+      {
+        href: "/technician-copilot",
+        label: "nav.technicianCopilot",
+        icon: <Wrench className="h-4 w-4" />,
+        description: "nav.technicianCopilotDesc",
+        requiredPermission: "machine_status",
+        permissionCategory: "machine_monitoring",
+      },
+      {
+        href: "/work-orders",
+        label: "nav.workOrders",
+        icon: <ClipboardList className="h-4 w-4" />,
+        description: "nav.workOrdersDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+      },
+      {
+        href: "/alerts",
+        label: "nav.alertsList",
+        icon: <Bell className="h-4 w-4" />,
+        description: "nav.alertsListDesc",
+        requiredPermission: "mqtt_alerts",
+        permissionCategory: "mqtt",
+      },
+    ],
+  },
+
   // 4. MONITORING — split from one 13-item mega group into 3 coherent groups
   //    (P1 doc 07 §④): realtime status · OEE & health · MES & traceability.
 

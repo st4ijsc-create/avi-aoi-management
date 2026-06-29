@@ -1136,6 +1136,7 @@
     }
   },
   "common": {
+    "viewOnly": "仅查看",
     "zoomOut": "缩小",
     "zoomIn": "放大",
     "yes": "是",
@@ -3881,6 +3882,8 @@
     "corporateStructureDesc": "工厂和车间组织架构",
     "corporateManagement": "企业管理",
     "corporateManagementDesc": "管理企业组织架构",
+    "maintenanceGroup": "维护工作台",
+    "maintenanceGroupDesc": "维护团队的 RCA 助手、工单与告警",
     "monitoringGroup": "监控",
     "monitoringGroupDesc": "设备和机器监控",
     "machineStatusPage": "设备状态",

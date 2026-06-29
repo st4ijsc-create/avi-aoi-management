@@ -1136,6 +1136,7 @@
     }
   },
   "common": {
+    "viewOnly": "Chỉ xem",
     "pleaseEnterSerialNumber": "Please enter Số seri Số",
     "imageCompareDescription": "Hình ảnh So sánh Mô tả",
     "scanBarcodeDescription": "Scan barcode Mô tả",
@@ -3909,6 +3910,8 @@
     "corporateStructureDesc": "Tổ chức nhà máy và phân xưởng",
     "corporateManagement": "Quản lý tập đoàn",
     "corporateManagementDesc": "Quản lý nhà máy, phân xưởng và cấu trúc tập đoàn",
+    "maintenanceGroup": "Khu bảo trì",
+    "maintenanceGroupDesc": "RCA copilot, lệnh công việc và cảnh báo cho đội bảo trì",
     "monitoringGroup": "Giám sát",
     "monitoringGroupDesc": "Giám sát máy móc và thiết bị",
     "machineStatusPage": "Trạng thái máy",

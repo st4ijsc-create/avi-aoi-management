@@ -1136,6 +1136,7 @@
     }
   },
   "common": {
+    "viewOnly": "View Only",
     "zoomOut": "Zoom out",
     "zoomIn": "Zoom in",
     "yes": "Yes",
@@ -3886,6 +3887,8 @@
     "corporateStructureDesc": "Factory and workshop organization",
     "corporateManagement": "Corporate Management",
     "corporateManagementDesc": "Manage factories, workshops, and corporate hierarchy",
+    "maintenanceGroup": "Maintenance Workspace",
+    "maintenanceGroupDesc": "RCA copilot, work orders and alerts for the maintenance team",
     "monitoringGroup": "Monitoring",
     "monitoringGroupDesc": "Machine and equipment monitoring",
     "machineStatusPage": "Machine Status",
