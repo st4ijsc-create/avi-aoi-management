@@ -1,5 +1,12 @@
 /**
- * Phase B2.2 — RAG Reranker.
+ * Phase B2.2 — RAG Reranker. (doc 11 follow-up: gguf-mode hardening.)
+ *
+ * FALLBACK ORDER (never throws, never disables reranking):
+ *   gguf  →  (on missing/invalid file OR not-a-reranker OR rankAll error)  llm
+ *         →  (on no GGUF text model available OR error)                     identity
+ * mode=gguf activates the MOMENT a valid reranker .gguf is dropped under
+ * GGUF_MODELS_DIR and GGUF_RERANKER_MODEL points at it — no code change needed.
+ * Until then, mode=gguf is a safe no-op that transparently uses the llm backend.
  *
  * Re-orders a candidate list (already retrieved by bruteforce cosine in
  * aiLocalKnowledgeService) so the most query-relevant chunks float to the top
@@ -107,13 +114,22 @@ export async function rerank<T extends RerankCandidate>(
 
   try {
     let scores: number[] | null = null;
+    let activeBackend: "gguf" | "llm" | "identity" = "identity";
     if (getMode() === "gguf") {
       scores = await rankWithGguf(query, pool);
-      // gguf backend may decline (model not a reranker / unavailable) → fall back.
-      if (!scores) scores = await rankWithLlm(query, pool);
+      if (scores) {
+        activeBackend = "gguf";
+      } else {
+        // gguf backend declined (file missing/invalid / model not a reranker) →
+        // fall back to the llm backend (which itself degrades to identity below).
+        scores = await rankWithLlm(query, pool);
+        if (scores) activeBackend = "llm";
+      }
     } else {
       scores = await rankWithLlm(query, pool);
+      if (scores) activeBackend = "llm";
     }
+    logActiveBackendOnce(activeBackend);
     if (!scores || scores.length !== pool.length) return identity();
 
     const blended = pool.map((candidate, i) => {
@@ -229,7 +245,16 @@ let _rankLlama: unknown = null;
 let _rankModel: unknown = null;
 let _rankCtx: { rankAll: (q: string, docs: string[]) => Promise<number[]> } | null = null;
 let _rankCtxFailed = false;
+// One-time "which backend is active" log guard, so we emit exactly one clear line
+// per process the first time reranking is exercised.
+let _backendLogged = false;
 
+/**
+ * Resolve the configured reranker GGUF to an absolute path on disk.
+ * Mirrors aiGgufEngine.resolveModelPath: accepts an absolute path or a bare
+ * filename (with/without .gguf) resolved under GGUF_MODELS_DIR (or the default
+ * uploads/gguf-models). Returns null if unset or not found — NEVER throws.
+ */
 function resolveRerankerModelPath(): string | null {
   const raw = process.env.GGUF_RERANKER_MODEL;
   if (!raw) return null;
@@ -242,12 +267,62 @@ function resolveRerankerModelPath(): string | null {
   return fs.existsSync(full) ? full : null;
 }
 
+/**
+ * Cheap, NON-throwing GGUF sanity check (mirrors aiGgufEngine.validateGgufFile):
+ * verifies the first 4 bytes are the GGUF magic "GGUF" (0x47 47 55 46) and the
+ * file is plausibly large. This catches a truncated/placeholder/wrong file BEFORE
+ * we hand it to node-llama-cpp. It does NOT prove the model has a ranking head —
+ * that is decided when createRankingContext() succeeds or throws. Returns false
+ * (never throws) so the caller can fall back to the llm backend.
+ */
+const RERANKER_MIN_FILE_BYTES = 1 * 1024 * 1024; // 1 MB; a real reranker GGUF exceeds this
+function isPlausibleGgufFile(filePath: string): boolean {
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile() || stat.size < RERANKER_MIN_FILE_BYTES) return false;
+    const fd = fs.openSync(filePath, "r");
+    try {
+      const header = Buffer.alloc(4);
+      const bytesRead = fs.readSync(fd, header, 0, 4, 0);
+      return (
+        bytesRead === 4 &&
+        header[0] === 0x47 && // G
+        header[1] === 0x47 && // G
+        header[2] === 0x55 && // U
+        header[3] === 0x46 //   F
+      );
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return false;
+  }
+}
+
 async function getRankingContext(): Promise<typeof _rankCtx> {
   if (_rankCtx) return _rankCtx;
   if (_rankCtxFailed) return null;
 
   const modelPath = resolveRerankerModelPath();
   if (!modelPath) {
+    // Configured filename didn't resolve (or GGUF_RERANKER_MODEL is unset).
+    console.warn(
+      `[aiReranker] gguf model not found (GGUF_RERANKER_MODEL=${
+        process.env.GGUF_RERANKER_MODEL ?? "<unset>"
+      }) → falling back to llm (Qwen3-4B). Drop the reranker .gguf under GGUF_MODELS_DIR to enable mode=gguf.`,
+    );
+    _rankCtxFailed = true;
+    return null;
+  }
+
+  // Magic-header / size guard BEFORE handing the file to node-llama-cpp, so a
+  // truncated / placeholder / non-GGUF file degrades cleanly instead of crashing
+  // the native loader. Cache the failure so we don't re-stat every request.
+  if (!isPlausibleGgufFile(modelPath)) {
+    console.warn(
+      `[aiReranker] gguf model at ${modelPath} is not a valid GGUF (bad magic header or too small) ` +
+        `→ falling back to llm (Qwen3-4B).`,
+    );
     _rankCtxFailed = true;
     return null;
   }
@@ -267,6 +342,9 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
     };
     _rankModel = model;
     _rankCtx = await model.createRankingContext({ contextSize: "auto" });
+    console.log(
+      `[aiReranker] mode=gguf model=${path.basename(modelPath, ".gguf")} (ranking context ready)`,
+    );
     return _rankCtx;
   } catch (err) {
     // Most common cause: the model isn't a reranker (no rank head) → llama.cpp
@@ -295,6 +373,65 @@ async function rankWithGguf(query: string, pool: RerankCandidate[]): Promise<num
   }
 }
 
+/**
+ * Emit exactly ONE clear line per process the first time reranking runs, stating
+ * which backend is actually serving requests. For mode=gguf the gguf-specific
+ * details (model name / "not found" reason) are already logged by
+ * getRankingContext(); this complements them with the resolved end-state.
+ */
+function logActiveBackendOnce(active: "gguf" | "llm" | "identity"): void {
+  if (_backendLogged) return;
+  _backendLogged = true;
+  const requested = getMode();
+  if (active === "gguf") {
+    // getRankingContext already logged "mode=gguf model=… (ranking context ready)".
+    return;
+  }
+  if (requested === "gguf" && active === "llm") {
+    console.log("[aiReranker] gguf model not found/invalid → falling back to llm (Qwen3-4B)");
+  } else if (active === "llm") {
+    console.log("[aiReranker] mode=llm (Qwen3-4B scoring) active");
+  } else {
+    console.log("[aiReranker] no GGUF backend available → identity passthrough (original cosine order)");
+  }
+}
+
+/**
+ * Lightweight, side-effect-free diagnostics for health endpoints / dashboards.
+ * Reports the configured intent vs. the resolvable reality. `activeBackend` is
+ * the backend that WOULD serve a request right now given current resolution +
+ * cached failure state:
+ *   - "gguf"     : a ranking context is live (model loaded & validated)
+ *   - "llm"      : gguf unavailable/declined → llm scoring would be used
+ *   - "identity" : reranker disabled → input order is returned unchanged
+ * This NEVER loads a model or runs inference — it only reads env + cached state.
+ */
+export function getRerankerStatus(): {
+  enabled: boolean;
+  mode: RerankerMode;
+  modelConfigured: boolean;
+  modelResolved: boolean;
+  activeBackend: "gguf" | "llm" | "identity";
+} {
+  const enabled = isRerankerEnabled();
+  const mode = getMode();
+  const modelConfigured = !!process.env.GGUF_RERANKER_MODEL;
+  const resolvedPath = resolveRerankerModelPath();
+  const modelResolved = !!resolvedPath && isPlausibleGgufFile(resolvedPath);
+
+  let activeBackend: "gguf" | "llm" | "identity";
+  if (!enabled) {
+    activeBackend = "identity";
+  } else if (mode === "gguf") {
+    // gguf only serves if a context is already live, or could still load
+    // (resolved + valid + not previously marked failed).
+    activeBackend = _rankCtx || (modelResolved && !_rankCtxFailed) ? "gguf" : "llm";
+  } else {
+    activeBackend = "llm";
+  }
+  return { enabled, mode, modelConfigured, modelResolved, activeBackend };
+}
+
 /** Free the native ranking context/model (best-effort; not normally needed). */
 export async function disposeReranker(): Promise<void> {
   try {
@@ -316,4 +453,5 @@ export async function disposeReranker(): Promise<void> {
   _rankModel = null;
   _rankLlama = null;
   _rankCtxFailed = false;
+  _backendLogged = false;
 }

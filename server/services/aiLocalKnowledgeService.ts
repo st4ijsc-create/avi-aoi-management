@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { tryExecuteTool, type ToolResult, type ToolExecContext, type PendingActionDTO, type ClientActionDirective } from "./aiLocalTools";
 import { rerank, isRerankerEnabled, type RerankCandidate } from "./aiReranker";
+import { loadSemanticGraph, expandWithGraph } from "./aiSemanticGraph";
 
 export type KbIntent =
   | "how_to"
@@ -1371,6 +1372,35 @@ function routeToFeatureHints(route: string): string[] {
   return ROUTE_FEATURE_HINTS[path] ?? [];
 }
 
+// ─── GraphRAG 1-hop expansion (doc 11 follow-up) ──────────────────────────────
+// Flag-gated, additive, fail-safe widening of the cosine candidate pool with
+// 1-hop neighbours from the precomputed semantic graph (knowledge/
+// semantic-graph.json). Default OFF → behavior is byte-for-byte the legacy path
+// (a single cheap boolean check). When ON, after the cosine candidates are
+// scored+deduped we take the top KB_GRAPHRAG_SEEDS seeds and inject up to
+// KB_GRAPHRAG_HOPS_PER_SEED neighbours each (edge similarity ≥ KB_GRAPHRAG_MIN_SIM)
+// into the pool BEFORE the reranker takes its slice, capped at KB_GRAPHRAG_MAX_INJECT
+// total. Injected neighbours get a blended score (seedScore × edge.similarity ×
+// KB_GRAPHRAG_DECAY) so they compete in the reranker pool without outranking true
+// cosine hits. Env (all optional; defaults match the doc):
+//   KB_GRAPHRAG_ENABLED=false        — master switch (default OFF)
+//   KB_GRAPHRAG_SEEDS=5              — top candidates used as expansion seeds
+//   KB_GRAPHRAG_HOPS_PER_SEED=3      — max neighbours pulled per seed
+//   KB_GRAPHRAG_MIN_SIM=0.72         — min edge similarity to follow
+//   KB_GRAPHRAG_DECAY=0.85           — blended-score decay for injected neighbours
+//   KB_GRAPHRAG_MAX_INJECT=8         — hard cap on total injected (bounds prompt size)
+// Debug: set KB_GRAPHRAG_DEBUG=true to log how many neighbours were injected.
+const KB_GRAPHRAG_ENABLED = (process.env.KB_GRAPHRAG_ENABLED ?? "false").toLowerCase() === "true";
+function graphRagOpts() {
+  return {
+    seeds: Number(process.env.KB_GRAPHRAG_SEEDS ?? 5),
+    hopsPerSeed: Number(process.env.KB_GRAPHRAG_HOPS_PER_SEED ?? 3),
+    minSim: Number(process.env.KB_GRAPHRAG_MIN_SIM ?? 0.72),
+    decay: Number(process.env.KB_GRAPHRAG_DECAY ?? 0.85),
+    maxInject: Number(process.env.KB_GRAPHRAG_MAX_INJECT ?? 8),
+  };
+}
+
 export async function retrieveKnowledge(
   question: string,
   topK = 5,
@@ -1449,30 +1479,85 @@ export async function retrieveKnowledge(
   }
   const finalK = Math.max(1, Math.min(10, topK));
 
+  // GraphRAG 1-hop expansion (flag-gated, additive, fail-safe). When OFF (default)
+  // this is a single boolean check — `pool` below is exactly `deduped`, so the
+  // reranker/top-K flow is byte-for-byte the legacy path. When ON, we inject the
+  // strongest 1-hop neighbours of the top seeds into the pool so the reranker/LLM
+  // sees semantically-linked context (multi-part docs, router↔schema cross-refs).
+  // Any graph error is swallowed by loadSemanticGraph/expandWithGraph → expansion
+  // is skipped, never thrown. Injected neighbours synthesize the same candidate
+  // shape as a cosine hit, with semantic/keyword left 0 (their score is the
+  // pre-blended graph score) so the downstream pipeline treats them uniformly.
+  let pool = deduped;
+  if (KB_GRAPHRAG_ENABLED && deduped.length > 0) {
+    try {
+      const adj = loadSemanticGraph();
+      if (adj.size > 0) {
+        const seedItems = deduped.map((r) => ({ id: r.emb.id, score: r.score, ref: r }));
+        const expanded = expandWithGraph(
+          seedItems,
+          adj,
+          graphRagOpts(),
+          (id, score) => {
+            // Only inject neighbours we actually have a chunk + embedding for;
+            // otherwise the candidate can't be cited or reranked.
+            const chunk = data.chunksById.get(id);
+            if (!chunk) return null;
+            const emb = data.embeddings.find((e) => e.id === id);
+            if (!emb) return null;
+            return {
+              id,
+              score,
+              ref: { emb, chunk, semantic: 0, keyword: 0, score } as (typeof deduped)[number],
+            };
+          },
+        );
+        if (expanded.injected > 0) {
+          pool = expanded.pool.map((c) => c.ref);
+          if ((process.env.KB_GRAPHRAG_DEBUG ?? "").toLowerCase() === "true") {
+            console.error(
+              `[KB_GRAPHRAG] injected ${expanded.injected} neighbour(s) ` +
+                `(pool ${deduped.length} → ${pool.length})`,
+            );
+          }
+        }
+      }
+    } catch (err) {
+      // Fail-safe: never let graph expansion break retrieval.
+      if ((process.env.KB_GRAPHRAG_DEBUG ?? "").toLowerCase() === "true") {
+        console.error("[KB_GRAPHRAG] expansion skipped (error):", err);
+      }
+      pool = deduped;
+    }
+  }
+
   // B2.2 — Reranker stage (flag-gated, fail-safe). When RAG_RERANKER_ENABLED is
   // on: take a wider candidate pool (cosine top-N), rerank by query relevance,
   // and reorder before the final topK slice. When off (default) this whole block
   // is skipped and `topSlice` is exactly the legacy cosine top-K — behavior is
   // unchanged. rerank() never throws (degrades to original order on any error).
-  let topSlice: typeof deduped;
-  if (isRerankerEnabled() && deduped.length > 1) {
+  // NOTE: `pool` is `deduped` plus any GraphRAG-injected neighbours (identical to
+  // `deduped` when the flag is OFF). The reranker draws its candidate pool from it
+  // so injected neighbours can compete for the final top-K.
+  let topSlice: typeof pool;
+  if (isRerankerEnabled() && pool.length > 1) {
     const poolSize = Math.max(finalK, Number(process.env.RAG_RERANKER_POOL ?? 20));
-    const pool = deduped.slice(0, poolSize);
-    const candidates: RerankCandidate[] = pool.map((r) => ({
+    const rerankPool = pool.slice(0, poolSize);
+    const candidates: RerankCandidate[] = rerankPool.map((r) => ({
       id: r.emb.id,
       title: r.emb.title,
       text: r.chunk ? r.chunk.text : "",
       score: r.score,
     }));
     const reranked = await rerank(question, candidates, finalK);
-    const byId = new Map(pool.map((r) => [r.emb.id, r]));
+    const byId = new Map(rerankPool.map((r) => [r.emb.id, r]));
     const reordered = reranked
       .map((rr) => byId.get(rr.candidate.id))
-      .filter((r): r is (typeof pool)[number] => Boolean(r));
+      .filter((r): r is (typeof rerankPool)[number] => Boolean(r));
     // Guard: if the rerank somehow returned nothing usable, fall back to cosine.
-    topSlice = reordered.length > 0 ? reordered : deduped.slice(0, finalK);
+    topSlice = reordered.length > 0 ? reordered : pool.slice(0, finalK);
   } else {
-    topSlice = deduped.slice(0, finalK);
+    topSlice = pool.slice(0, finalK);
   }
 
   const ranked = topSlice.filter((r, idx) => idx === 0 || r.score >= MIN_CITATION_SCORE);
