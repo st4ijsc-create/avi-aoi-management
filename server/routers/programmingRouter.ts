@@ -44,6 +44,11 @@ import {
   dpcForceEnabled,
   type DpcUser,
 } from "../services/programming/programmingService";
+import {
+  suggestProgram,
+  explainProgram,
+  copilotEnabled,
+} from "../services/programming/aiProgrammingCopilot";
 
 const KIND = z.enum(PROGRAMMING_KINDS as [ProgrammingKind, ...ProgrammingKind[]]);
 
@@ -371,4 +376,20 @@ export const programmingRouter = router({
       await d.delete(programSymbols).where(eq(programSymbols.id, input.id));
       return { ok: true, id: input.id };
     }),
+
+  // ── AI Engineering Copilot (D7) — ADVISORY ONLY (HITL absolute; no deploy path) ──
+  copilotStatus: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .query(() => ({ enabled: copilotEnabled() })),
+
+  /** Propose a VALIDATED skeleton program. The human reviews + saves it as a version. */
+  copilotSuggest: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ kind: KIND, intent: z.string().min(1).max(2000), lang: z.enum(["vi", "en", "zh"]).optional() }))
+    .mutation(async ({ input }) => suggestProgram(input)),
+
+  copilotExplain: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ kind: KIND, source: z.string().max(2_000_000) }))
+    .query(({ input }) => explainProgram(input.kind, input.source)),
 });

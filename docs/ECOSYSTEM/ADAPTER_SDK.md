@@ -207,3 +207,40 @@ function verify(rawBody: string, header: string, secret: string): boolean {
 - The contract is **versioned** (`/api/v1`); breaking changes ship under a new version.
 - **E2** adds the Factory Orchestration Engine behind the already-published `/orchestration/*` paths (currently `501`).
 - Everything is **additive · flag-gated · HITL-preserved**.
+
+---
+
+## 7. Writing a `ProgrammingAdapter` (Doc 09 / DPC tier)
+
+Where an `EquipmentAdapter` handles **telemetry + scalar commands**, a **`ProgrammingAdapter`** handles **device PROGRAMS** (Zmotion BASIC, G-code, native IEC 61131-3, robot job-lists, vendor engineering). It is the LOGIC-tier sibling, used by the Unified Engineering Workspace (`/engineering`). Design ref: [`09_DEVICE_PROGRAMMING_CONTROL_STRATEGY_2026-06.md`](./09_DEVICE_PROGRAMMING_CONTROL_STRATEGY_2026-06.md).
+
+Interface (`server/services/programming/programmingAdapter.ts`):
+
+```ts
+interface ProgrammingAdapter {
+  readonly kind: ProgrammingKind;              // 'zmotion-basic' | 'iec61131-ld' | ...
+  readonly capabilities: ProgrammingCapability; // canCompile/Simulate/Download/Upload/OnlineMonitor/Force/Teach + languages[]
+  validate(src): Promise<Diagnostics>;          // ALWAYS safe — lint/parse, no device I/O
+  compile(src): Promise<BuildResult>;           // ALWAYS safe — emit a transferable output
+  simulate?(build, scenario): Promise<ProgSimResult>; // ALWAYS safe — twin/emulator
+  deploy(build, opts): Promise<ProgDeployResult>;     // GATED — see safety note
+  upload?(target): Promise<ProgramSource>;
+}
+```
+
+**Register** a new kind in `programmingAdapter.ts → build()`, and add the enum value in `drizzle/schema/enums.ts (programmingKindEnum)`.
+
+### Safety invariants (non-negotiable)
+- **The deploy GATE lives in `programmingService.deployBuild`, not in the adapter or router.** `deploy()` reaches a device ONLY when `DPC_DEPLOY_ENABLED` is on **AND** a human signed off (`hitl.confirmedBy`). Otherwise the deploy is recorded **`simulated`** and the adapter's hardware path is never invoked. Every attempt writes an append-only `program_deployments` row (idempotent).
+- An adapter **never authors or deploys safety logic** (E-stop / interlock / SIL). That stays on the certified PLC.
+- **Native IEC 61131-3** (`iec61131-st` / `iec61131-ld`) compiles to and deploys on an **OPEN runtime ONLY** (OpenPLC). Never auto-push generated logic into a certified vendor PLC.
+- An adapter that cannot truthfully complete a deploy must return **`failed`** with a clear reason — **never a fake `deployed`** (see the Zmotion/Mitsubishi/Robot adapters' honest guards).
+
+### Online Monitor (D6)
+High-rate symbol watches stream over the Socket.IO room `engineering:{machineId}` via `emitEngineeringSamples`, gated by `DPC_STREAMING_ENABLED`. This channel is **ephemeral** — it is NOT persisted to TimescaleDB (the 5s telemetry ingest is unchanged). Watches are **read-only**; `force()` is a separate, heavily-gated path under `DPC_ONLINE_FORCE_ENABLED`.
+
+### AI Engineering Copilot (D7)
+`aiProgrammingCopilot.suggestProgram` proposes a skeleton that is **validated through the same adapter** before it is shown, **refuses safety intents**, and has **no deploy/dispatch path** (HITL absolute). Flag `AI_PROGRAMMING_COPILOT_ENABLED`.
+
+### Flags (all default OFF)
+`DPC_DEPLOY_ENABLED` · `DPC_STREAMING_ENABLED` · `DPC_ONLINE_FORCE_ENABLED` · `AI_PROGRAMMING_COPILOT_ENABLED`. Migration `0130_device_programming.sql` provisions the `program_*` tables (operator applies).

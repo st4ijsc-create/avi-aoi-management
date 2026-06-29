@@ -6,7 +6,7 @@
 |---|---|
 | **Mã doc** | 09_DEVICE_PROGRAMMING_CONTROL_STRATEGY |
 | **Ngày** | 2026-06-29 |
-| **Trạng thái** | 🟡 **DRAFT — CHỜ DUYỆT.** Chưa gọi agent, chưa viết code. |
+| **Trạng thái** | 🟢 **ĐÃ DUYỆT + D0–D7 BUILT (emulator/framework).** 7 commit lên main, tsc xanh, 61 test. Flags OFF mặc định, migration 0130 chưa chạy. Phần cần HW thật được đánh dấu "còn lại" trong từng phase. |
 | **Tiền đề** | Mở rộng [08_FACTORY_CONTROL_PLANE_STRATEGY](08_FACTORY_CONTROL_PLANE_STRATEGY_2026-06.md) (tầng E0–E5) xuống **tầng lập trình thiết bị (D-tier)**. |
 | **Quyết định người dùng (2026-06-29)** | (1) Phạm vi = **Hybrid + native IEC 61131-3**. (2) Ưu tiên GĐ1 = **Zmotion + Mitsubishi PLC + Robot (Techman + mở rộng)**. (3) Phần cứng = **hỗn hợp / cuốn chiếu** (emulator trước, HW thật validate sau). |
 | **Cách dùng file** | Sống cùng dự án. Mỗi phase xong → tick checklist + ghi commit vào §12 Changelog. |
@@ -251,10 +251,12 @@ Route mới đề xuất: `/engineering` (workspace), `/engineering/:projectId`.
 - **Còn lại:** source thật (OPC-UA subscription/MC fast-scan) + UI scope/watch realtime (gắn vào CodeEditor/Symbols).
 - **Chấp nhận:** ✅ tsc xanh; ✅ 6 test (flag-off no-op, tick-emit, clamp 100ms, stop/replace, source-error survive, flag read).
 
-### Phase D7 — AI Engineering Copilot + hardening 🔲
-- [ ] Copilot: giải thích/đề xuất chương trình quy trình, sinh skeleton ST/BASIC, **chỉ gợi ý** (HITL ký, không deploy, không sinh logic safety) — tái dùng `aiOrchestrationAdvisor` purity pattern.
-- [ ] Marketplace/library mẫu chương trình per device-class; export/import project.
-- [ ] Soak test, rollback drills, tài liệu vận hành + cập nhật `ADAPTER_SDK.md` (Programming SDK).
+### Phase D7 — AI Engineering Copilot + hardening ✅ ĐÃ XONG
+- [x] `server/services/programming/aiProgrammingCopilot.ts` (flag `AI_PROGRAMMING_COPILOT_ENABLED`) — `suggestProgram` (sinh skeleton theo template per-kind → **validate qua chính adapter** trước khi trả) + `explainProgram` (metric tất định). Wired router `copilotStatus/copilotSuggest/copilotExplain` (advisory, `machine_monitoring`).
+- [x] **HITL TUYỆT ĐỐI (purity):** copilot **không** import/gọi deploy/dispatch (test đọc source khẳng định), **từ chối** intent safety (e-stop/interlock/SIL/guard, đa ngữ). Tái dùng pattern `aiOrchestrationAdvisor`.
+- [x] **Docs:** cập nhật `ADAPTER_SDK.md` §7 Programming Adapter SDK (interface, deploy-gate, native-IEC-runtime-mở, online-monitor, copilot, flags).
+- **Còn lại:** marketplace/library mẫu + export/import project + soak/rollback drills khi có HW.
+- **Chấp nhận:** ✅ tsc xanh; ✅ 7 test (flag-off, từ chối safety, **purity no-deploy-import**, gợi ý zmotion/ladder/robot valid qua adapter thật, explain metrics).
 
 ### Sơ đồ phụ thuộc
 ```
@@ -321,5 +323,5 @@ Quy ước thực thi: mỗi phase tự chứa, flag OFF, tsc xanh, test kèm, v
 | 2026-06-29 | **D3** | `d6b8607` | Mitsubishi engineering adapter: MELSEC device/recipe validate+compile+simulate THẬT; deploy framework trung thực (param-push/GX Works chưa wire→failed rõ). 8 test, tsc xanh. |
 | 2026-06-29 | **D4** | `33e95bc` | Robot Techman job-list adapter: teach-point/job validate+compile+simulate THẬT; TMSCT deploy framework trung thực. 8 test, tsc xanh. |
 | 2026-06-29 | **D5** | `1714c73` | Native IEC 61131-3: ST + Ladder adapters; boolEval an toàn; **LD one-scan eval THẬT**; LD→ST transpile→OpenPLC; deploy chỉ runtime mở (gated). 10 test, tsc xanh. |
-| 2026-06-29 | **D6** | _(đang commit)_ | Engineering stream: EngineeringStreamManager (watch-session, flag DPC_STREAMING_ENABLED) + socket room `engineering:` + emit helper (ephemeral, không ghi DB). 6 test, tsc xanh. |
-| | … | | |
+| 2026-06-29 | **D6** | `eabfd3c` | Engineering stream: EngineeringStreamManager (watch-session, flag DPC_STREAMING_ENABLED) + socket room `engineering:` + emit helper (ephemeral, không ghi DB). 6 test, tsc xanh. |
+| 2026-06-29 | **D7** | _(đang commit)_ | AI Engineering Copilot (suggest/explain, advisory, purity no-deploy + từ chối safety) + ADAPTER_SDK §7. 7 test, tsc xanh. **D0–D7 HOÀN TẤT.** |
