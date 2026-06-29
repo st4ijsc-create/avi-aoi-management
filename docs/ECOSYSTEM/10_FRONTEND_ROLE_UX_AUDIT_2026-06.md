@@ -78,7 +78,7 @@ Kiến trúc phân-quyền **nền tảng rất chắc**: role-landing, lọc na
 ### Tier 4
 - [ ] **U14. AdvancedSection** áp trang dày — **HOÃN CÓ CHỦ ĐÍCH**: là polish thuần; cơ chế AdvancedSection đã có + dùng ở SPCAnalysis/AdminSettings. Áp lên Correlation/Reports/SPCAdvanced cần phán đoán UX từng trang (khối điều khiển chính ≠ "advanced") — ép vào dễ giấu nhầm control chính / vỡ layout. Cần làm thủ công từng trang sau.
 - [x] **U15. i18n đầy đủ**: thêm namespace dịch **đủ vi/en/zh** cho `supervisor`/`viewer`/`adminHome`/`roleUpgrade`/`dashTemplate`/`offline`/`permExpiry` + `quality.tools.approvals` + nav keys + `common.viewOnly`/`dismiss`. (Còn lại: vài chuỗi toggle trong `notifications.*` vẫn inline-fallback; audit key tự động trong CI = follow-up nhỏ.)
-- [x] **U16. Offline degrade (indicator)**: `OfflineBanner.tsx` (navigator.onLine + online/offline events) mount trong OperatorHome. TRUNG THỰC: chỉ là chỉ báo; hàng đợi store-and-forward + sync là việc lớn để sau.
+- [x] **U16. Offline degrade**: (1) `OfflineBanner.tsx` chỉ báo mất mạng trong OperatorHome; (2) **store-and-forward queue** `lib/offlineQueue.ts` (OfflineQueue + flushQueue, storage inject được, dedupe, maxAttempts drop poison) + hook `useOfflineQueue` (auto-flush khi 'online') + **9 unit test** (`offlineQueue.unit.test.ts`). Wiring vào submit quét/báo cáo thật cần kiểm chứng app chạy — bước tích hợp tiếp theo (hook đã sẵn API `submit/pending/flush`).
 - [x] **U17. FirstRunTour re-trigger**: xóa cờ dismissed khi role đổi (lưu `firstRunTour:<user>:role`), tour hiện lại với tips của role mới.
 
 ---
@@ -95,4 +95,5 @@ Khi bạn duyệt, ưu tiên Tier 1 (U1–U4) — tác động rõ nhất tới 
 | 2026-06-29 | **U1** | `d6fb5e8` | SupervisorHome /supervisor-home + roleLanding + route |
 | 2026-06-29 | **U3** | `87ac809` | ViewerHome /viewer-home (read-only) + roleLanding |
 | 2026-06-29 | **U5–U17** | `aada122` | Tier 2–4: U5 AdminHome, U6 expiry banner, U7 role sidebar, U8 notif prefs, U9 useIsTablet, U10 quality approvals tile, U11 dashboard template prompt, U12 /request-role, U13 more ViewOnlyBadge, U15 nav i18n, U16 OfflineBanner, U17 tour re-trigger. **U14 hoãn**. tsc xanh. |
-| 2026-06-29 | **U15/U13/U10+** | _(đang commit)_ | U15 namespace dịch đầy đủ vi/en/zh (supervisor/viewer/adminHome/roleUpgrade/dashTemplate/offline/permExpiry); U13 ViewOnlyBadge mở rộng → 9 trang; U10 nút acknowledge 1-chạm trên QualityHome. tsc xanh, locale OK. **U14 + U16-full + U10-full-backend: follow-up có chủ đích.** |
+| 2026-06-29 | **U15/U13/U10+** | `2548550` | U15 namespace dịch đầy đủ vi/en/zh; U13 ViewOnlyBadge → 9 trang; U10 nút acknowledge 1-chạm. tsc xanh. |
+| 2026-06-29 | **U16 queue + CI i18n** | _(đang commit)_ | U16 offlineQueue.ts + useOfflineQueue + 9 unit test (glob `client/src/**/*.unit.test.ts`); `scripts/i18n-audit.mjs` (`npm run i18n:audit`, parity + no-fallback, --strict cho CI). Audit lộ 72 parity + 12 no-fallback **đều pre-existing** (namespace mới của tôi parity-đủ). |

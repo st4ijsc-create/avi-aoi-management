@@ -14,7 +14,9 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["server/**/*.test.ts", "server/**/*.spec.ts"],
+    // server tests + node-env client logic tests (named *.unit.test.ts so jsdom-only client
+    // tests like exportUtils.test.ts are NOT pulled into the node environment).
+    include: ["server/**/*.test.ts", "server/**/*.spec.ts", "client/src/**/*.unit.test.ts"],
     // Loads .env + forces DATABASE_URL to an ISOLATED test DB (see vitest.setup.ts).
     // Provision once: `node scripts/setup-test-db.mjs`.
     setupFiles: ["./vitest.setup.ts"],
