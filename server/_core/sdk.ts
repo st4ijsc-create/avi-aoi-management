@@ -244,6 +244,15 @@ class SDKServer {
   async getUserInfoWithJwt(
     jwtToken: string
   ): Promise<GetUserInfoWithJwtResponse> {
+    // Local-login mode (no OAUTH_SERVER_URL): the axios client has no base URL,
+    // so POSTing the relative gRPC path throws `TypeError: Invalid URL`. Fail
+    // cleanly instead — the caller treats this as an unsynced/unauthenticated
+    // user rather than crashing the request / Socket.io handshake.
+    if (!ENV.oAuthServerUrl) {
+      throw ForbiddenError(
+        "OAuth sync unavailable: OAUTH_SERVER_URL is not configured (local-login mode)"
+      );
+    }
     const payload: GetUserInfoWithJwtRequest = {
       jwtToken,
       projectId: ENV.appId,
@@ -292,7 +301,15 @@ class SDKServer {
         });
         user = await db.getUserByOpenId(userInfo.openId);
       } catch (error) {
-        console.error("[Auth] Failed to sync user from OAuth:", error);
+        if (!ENV.oAuthServerUrl) {
+          // Expected in local-login deployments: the session is valid but the
+          // user row is missing and there is no OAuth server to sync from.
+          console.warn(
+            `[Auth] Session user ${sessionUserId} not found and OAuth sync is disabled (local-login mode).`
+          );
+        } else {
+          console.error("[Auth] Failed to sync user from OAuth:", error);
+        }
         throw ForbiddenError("Failed to sync user info");
       }
     }

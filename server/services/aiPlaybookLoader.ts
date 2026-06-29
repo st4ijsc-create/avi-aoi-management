@@ -18,7 +18,7 @@
  * Cache: parsed playbooks are held in RAM; reloadPlaybooks() rescans the dir.
  */
 
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -176,9 +176,22 @@ export function validatePlaybookSemantics(pb: Playbook): string[] {
 // ─── Loading + cache ──────────────────────────────────────────────────────────
 
 function workflowsDir(): string {
-  // server/services/aiPlaybookLoader.ts → repo root → knowledge/workflows
+  // Explicit override wins (e.g. containerised deployments).
+  const override = process.env.PLAYBOOK_DIR?.trim();
+  if (override) return path.resolve(override);
+
+  // From SOURCE the file sits at server/services/ → ../../ is the repo root.
+  // From the BUNDLE it sits at dist/ → ../../ overshoots to the parent of the
+  // project (the cause of the `D:\SOURCES\knowledge\workflows` ENOENT). So
+  // prefer the project root resolved from cwd (where `node dist/index.js` is
+  // launched) and only fall back to the layout-relative paths.
   const here = path.dirname(fileURLToPath(import.meta.url));
-  return path.resolve(here, "../../knowledge/workflows");
+  const candidates = [
+    path.resolve(process.cwd(), "knowledge/workflows"),
+    path.resolve(here, "../../knowledge/workflows"),
+    path.resolve(here, "../knowledge/workflows"),
+  ];
+  return candidates.find((c) => existsSync(c)) ?? candidates[0];
 }
 
 let _cache: Playbook[] | null = null;

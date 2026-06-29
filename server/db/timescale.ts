@@ -16,13 +16,48 @@ import { energyReadings, type InsertEnergyReading } from "../../drizzle/schema/g
 let _tsdb: ReturnType<typeof drizzle> | null = null;
 let _tsClient: ReturnType<typeof postgres> | null = null;
 let _initialized = false;
+let _degraded = false;
 
 const TSDB_URL = process.env.TSDB_URL || "";
+
+/**
+ * Trip the TSDB into a degraded state after a connection/auth failure so we
+ * stop hammering a misconfigured server (e.g. wrong password for user "tsdb")
+ * and stop spamming the log. Callers fall back to the main DB path. Logs once.
+ */
+/**
+ * True for errors that mean the TSDB server is unusable rather than a one-off
+ * query problem: auth failure (28P01), host/connection issues, pool shutdown.
+ */
+function isConnectionError(error: unknown): boolean {
+  const code = (error as { code?: string })?.code;
+  if (code && ["28P01", "28000", "3D000", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "CONNECTION_CLOSED", "CONNECTION_ENDED"].includes(code)) {
+    return true;
+  }
+  const msg = error instanceof Error ? error.message.toLowerCase() : "";
+  return msg.includes("password authentication failed") || msg.includes("connect");
+}
+
+function degradeTsdb(reason: unknown): void {
+  if (_degraded) return;
+  _degraded = true;
+  console.error(
+    "[TSDB] Disabling TimescaleDB for this process after a connection error — " +
+      "energy time-series will fall back to the main DB. Fix TSDB_URL credentials and restart. Cause:",
+    reason instanceof Error ? reason.message : reason
+  );
+  if (_tsClient) {
+    _tsClient.end({ timeout: 5 }).catch(() => {});
+  }
+  _tsClient = null;
+  _tsdb = null;
+}
 
 /**
  * Lấy drizzle instance tới TimescaleDB. Trả về null nếu không cấu hình TSDB_URL.
  */
 export function getTsdb() {
+  if (_degraded) return null;
   if (_initialized) return _tsdb;
   _initialized = true;
 
@@ -64,6 +99,7 @@ export async function insertEnergyReading(reading: InsertEnergyReading): Promise
     return true;
   } catch (error) {
     console.error("[TSDB] insertEnergyReading failed:", error);
+    if (isConnectionError(error)) degradeTsdb(error);
     return false;
   }
 }
@@ -101,6 +137,7 @@ export async function queryEnergyBuckets(params: {
     }>;
   } catch (error) {
     console.error("[TSDB] queryEnergyBuckets failed:", error);
+    if (isConnectionError(error)) degradeTsdb(error);
     return [];
   }
 }

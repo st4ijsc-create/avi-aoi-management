@@ -141,6 +141,18 @@ async function startServer() {
   // cross-origin browser access (same-origin SPA + no-Origin LAN machine
   // clients are unaffected). In development we keep the permissive fallback.
   const corsAllowAll = corsAllowList.length === 0 && !corsIsProd;
+  // In development, always trust loopback origins regardless of the allow-list
+  // so the Vite dev server is reachable on whatever port it lands on (e.g. when
+  // 3000 is busy it falls back to 3001). Never applies in production.
+  const isDevLoopbackOrigin = (origin: string): boolean => {
+    if (corsIsProd) return false;
+    try {
+      const host = new URL(origin).hostname.replace(/^\[|\]$/g, "");
+      return host === "localhost" || host === "127.0.0.1" || host === "::1";
+    } catch {
+      return false;
+    }
+  };
   if (corsAllowList.length === 0) {
     if (corsIsProd) {
       console.error(
@@ -161,7 +173,7 @@ async function startServer() {
     // No Origin header => non-browser client (LAN machine). Always allow.
     if (!origin) {
       res.setHeader("Access-Control-Allow-Origin", "*");
-    } else if (corsAllowAll || corsAllowList.includes(origin)) {
+    } else if (corsAllowAll || corsAllowList.includes(origin) || isDevLoopbackOrigin(origin)) {
       // Reflect only trusted origins so credentials can be shared safely.
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
