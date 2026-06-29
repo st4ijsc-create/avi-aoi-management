@@ -328,14 +328,31 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
   }
 
   try {
-    const { getLlama } = (await import("node-llama-cpp")) as {
-      getLlama: (opts?: { gpu?: false | "auto" }) => Promise<unknown>;
-    };
+    // doc 11 fix — the reranker is a tiny cross-encoder (~0.6B). By DEFAULT we load
+    // it on CPU so it does NOT compete for VRAM with the big chat/RCA models
+    // (Qwen3-30B ~17GB). Loading it on the GPU previously caused the 30B load to
+    // OOM on a 32GB card. CPU rerank of ~20 short docs is only tens of ms. Opt back
+    // onto the GPU with RAG_RERANKER_GPU=true (only if VRAM headroom allows).
+    const useGpu = String(process.env.RAG_RERANKER_GPU ?? "false").toLowerCase() === "true";
+    const nlc = (await import("node-llama-cpp")) as any;
+    const { getLlama, LlamaLogLevel } = nlc;
+    const L = LlamaLogLevel ?? {};
     const llama = (await getLlama({
-      gpu: process.env.GGUF_GPU === "false" ? false : "auto",
+      gpu: useGpu ? (process.env.GGUF_GPU === "false" ? false : "auto") : false,
+      // Quiet the benign llama.cpp ranking-context init spam ("embeddings required
+      // but some input tokens were not marked as outputs -> overriding") while still
+      // forwarding real warnings/errors. Runs on the reranker's own backend instance.
+      logLevel: L.warn ?? "warn",
+      logger: (level: unknown, message: unknown) => {
+        if (typeof message === "string" && message.includes("some input tokens were not marked as outputs")) return;
+        const msg = typeof message === "string" ? message : String(message ?? "");
+        if (level === L.fatal || level === L.error) console.error(msg);
+        else if (level === L.warn) console.warn(msg);
+        // drop info/log/debug
+      },
     })) as { loadModel: (o: { modelPath: string; gpuLayers?: number }) => Promise<unknown> };
     _rankLlama = llama;
-    const model = (await llama.loadModel({ modelPath, gpuLayers: -1 })) as {
+    const model = (await llama.loadModel({ modelPath, gpuLayers: useGpu ? -1 : 0 })) as {
       createRankingContext: (o?: { contextSize?: "auto" | number }) => Promise<{
         rankAll: (q: string, docs: string[]) => Promise<number[]>;
       }>;
@@ -343,7 +360,7 @@ async function getRankingContext(): Promise<typeof _rankCtx> {
     _rankModel = model;
     _rankCtx = await model.createRankingContext({ contextSize: "auto" });
     console.log(
-      `[aiReranker] mode=gguf model=${path.basename(modelPath, ".gguf")} (ranking context ready)`,
+      `[aiReranker] mode=gguf model=${path.basename(modelPath, ".gguf")} device=${useGpu ? "gpu" : "cpu"} (ranking context ready)`,
     );
     return _rankCtx;
   } catch (err) {
