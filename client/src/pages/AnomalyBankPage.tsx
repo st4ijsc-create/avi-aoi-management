@@ -19,6 +19,7 @@ import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
+import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -141,6 +142,7 @@ export default function AnomalyBankPage() {
         <div className="flex items-center gap-2 flex-wrap">
           <Database className="h-6 w-6" />
           <h1 className="text-2xl font-semibold">{t("anomalyBanks.title")}</h1>
+          <ViewOnlyBadge module="analytics_ai_performance" />
           <Badge variant="outline">PatchCore</Badge>
           <Badge variant="secondary">{t("anomalyBanks.totalVectors")}: {totalVectors}</Badge>
         </div>

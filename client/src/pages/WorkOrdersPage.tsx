@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
+import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -152,6 +153,7 @@ export default function WorkOrdersPage() {
         <div className="flex items-center gap-2 flex-wrap">
           <Wrench className="h-6 w-6" />
           <h1 className="text-2xl font-semibold">{t("workOrders.title")}</h1>
+          <ViewOnlyBadge module="machine_monitoring" />
           {summary && (
             <span className="flex gap-1">
               <Badge variant="outline">{t("workOrders.total")}: {summary.total}</Badge>

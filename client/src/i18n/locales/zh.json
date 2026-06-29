@@ -165,7 +165,9 @@
       "historyReview": "历史审查",
       "historyReviewDesc": "搜索并审查检验结果",
       "annotation": "标注",
-      "annotationDesc": "缺陷图像的掩膜标注"
+      "annotationDesc": "缺陷图像的掩膜标注",
+      "approvals": "阈值审批",
+      "approvalsDesc": "NG 阈值审批队列"
     }
   },
   "aiInbox": {
@@ -1135,8 +1137,73 @@
       "unavailable": "数据不足，无法预测"
     }
   },
+  "supervisor": {
+    "title": "主管控制台",
+    "subtitle": "班次与产线状态，一键直达对应汇总",
+    "rollupTitle": "快速汇总",
+    "attentionTitle": "需要关注",
+    "attentionEmpty": "暂无需要关注的项",
+    "tiles": {
+      "corporate": "集团概览", "corporateDesc": "按工厂汇总",
+      "oee": "OEE 与健康", "oeeDesc": "产能与设备",
+      "production": "生产", "productionDesc": "产线进度",
+      "analytics": "分析", "analyticsDesc": "趋势与 SPC",
+      "insight": "管理洞察", "insightDesc": "自然语言问答 + 摘要",
+      "reports": "报表", "reportsDesc": "导出与计划"
+    }
+  },
+  "viewer": {
+    "title": "快速查看",
+    "subtitle": "快速访问看板与报表（仅查看）",
+    "viewsTitle": "查看面板",
+    "tiles": {
+      "dashboard": "仪表板", "dashboardDesc": "KPI 概览",
+      "oee": "OEE", "oeeDesc": "设备产能",
+      "production": "生产", "productionDesc": "产线进度",
+      "analytics": "分析", "analyticsDesc": "质量趋势",
+      "history": "历史", "historyDesc": "检测查询",
+      "reports": "报表", "reportsDesc": "查看报表"
+    }
+  },
+  "adminHome": {
+    "title": "管理控制台",
+    "subtitle": "管理用户、角色、审计与系统",
+    "govTitle": "治理与运营",
+    "tiles": {
+      "users": "用户", "usersDesc": "账户与角色",
+      "roles": "权限", "rolesDesc": "角色构建与模块",
+      "audit": "审计日志", "auditDesc": "增强审计日志",
+      "apiKeys": "API 密钥", "apiKeysDesc": "受限访问密钥",
+      "system": "系统配置", "systemDesc": "参数与集成",
+      "license": "许可证", "licenseDesc": "许可与限制",
+      "edge": "边缘节点", "edgeDesc": "边缘网关与运行时",
+      "opsDashboard": "运营仪表板", "opsDashboardDesc": "完整仪表板"
+    }
+  },
+  "roleUpgrade": {
+    "subject": "权限提升申请",
+    "copied": "已复制申请", "copyFail": "无法复制",
+    "title": "申请权限", "subtitle": "向管理员发送申请以获取合适的角色",
+    "formTitle": "申请信息", "current": "当前角色", "desired": "申请角色",
+    "pick": "选择角色", "reason": "原因", "reasonPh": "为什么需要此权限？",
+    "adminEmail": "管理员邮箱（可选）", "sendMail": "通过邮件发送", "copy": "复制",
+    "note": "管理员在“用户/角色构建”页面授予权限。"
+  },
+  "dashTemplate": {
+    "title": "从仪表板模板开始？",
+    "desc": "为你的角色选择一个预设布局（生产/质量/设备/管理）——稍后可自定义。",
+    "skip": "稍后", "choose": "选择模板"
+  },
+  "offline": {
+    "banner": "已离线——扫描/上报在恢复连接前将无法发送。"
+  },
+  "permExpiry": {
+    "one": "你的“{{module}}”权限将在 {{days}} 天后过期——请联系管理员续期。",
+    "many": "{{count}} 项权限即将过期（最早 {{days}} 天后）——请联系管理员续期。"
+  },
   "common": {
     "viewOnly": "仅查看",
+    "dismiss": "忽略",
     "zoomOut": "缩小",
     "zoomIn": "放大",
     "yes": "是",

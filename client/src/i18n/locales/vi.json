@@ -165,7 +165,9 @@
       "historyReview": "Xem lại lịch sử",
       "historyReviewDesc": "Tra cứu và xem lại kết quả kiểm tra",
       "annotation": "Gán nhãn",
-      "annotationDesc": "Gán nhãn mặt nạ cho ảnh lỗi"
+      "annotationDesc": "Gán nhãn mặt nạ cho ảnh lỗi",
+      "approvals": "Duyệt ngưỡng",
+      "approvalsDesc": "Hàng đợi phê duyệt ngưỡng NG"
     }
   },
   "aiInbox": {
@@ -1135,8 +1137,73 @@
       "unavailable": "Chưa đủ dữ liệu để dự báo"
     }
   },
+  "supervisor": {
+    "title": "Bảng điều hành giám sát",
+    "subtitle": "Tình hình ca & dây chuyền, một chạm tới rollup phù hợp",
+    "rollupTitle": "Tổng quan nhanh",
+    "attentionTitle": "Cần chú ý",
+    "attentionEmpty": "Không có mục cần chú ý",
+    "tiles": {
+      "corporate": "Tổng quan tập đoàn", "corporateDesc": "Rollup theo nhà máy",
+      "oee": "OEE & Sức khỏe", "oeeDesc": "Năng suất & thiết bị",
+      "production": "Sản xuất", "productionDesc": "Tiến độ dây chuyền",
+      "analytics": "Phân tích", "analyticsDesc": "Xu hướng & SPC",
+      "insight": "Hỏi đáp điều hành", "insightDesc": "NL Q&A + tóm tắt",
+      "reports": "Báo cáo", "reportsDesc": "Xuất & lịch báo cáo"
+    }
+  },
+  "viewer": {
+    "title": "Trang xem nhanh",
+    "subtitle": "Truy cập nhanh các bảng & báo cáo (chỉ xem)",
+    "viewsTitle": "Các bảng xem",
+    "tiles": {
+      "dashboard": "Bảng điều khiển", "dashboardDesc": "Tổng quan KPI",
+      "oee": "OEE", "oeeDesc": "Năng suất thiết bị",
+      "production": "Sản xuất", "productionDesc": "Tiến độ dây chuyền",
+      "analytics": "Phân tích", "analyticsDesc": "Xu hướng chất lượng",
+      "history": "Lịch sử", "historyDesc": "Tra cứu kiểm tra",
+      "reports": "Báo cáo", "reportsDesc": "Xem báo cáo"
+    }
+  },
+  "adminHome": {
+    "title": "Bảng quản trị",
+    "subtitle": "Quản trị người dùng, phân quyền, audit và hệ thống",
+    "govTitle": "Quản trị & vận hành",
+    "tiles": {
+      "users": "Người dùng", "usersDesc": "Tài khoản & vai trò",
+      "roles": "Phân quyền", "rolesDesc": "Role builder & module",
+      "audit": "Nhật ký kiểm toán", "auditDesc": "Audit log nâng cao",
+      "apiKeys": "API Keys", "apiKeysDesc": "Khóa truy cập có phạm vi",
+      "system": "Cấu hình hệ thống", "systemDesc": "Tham số & tích hợp",
+      "license": "Bản quyền", "licenseDesc": "License & giới hạn",
+      "edge": "Edge nodes", "edgeDesc": "Cổng biên & runtime",
+      "opsDashboard": "Bảng vận hành", "opsDashboardDesc": "Dashboard đầy đủ"
+    }
+  },
+  "roleUpgrade": {
+    "subject": "Yêu cầu nâng quyền truy cập",
+    "copied": "Đã sao chép yêu cầu", "copyFail": "Không sao chép được",
+    "title": "Xin nâng quyền", "subtitle": "Gửi yêu cầu tới quản trị viên để được cấp vai trò phù hợp",
+    "formTitle": "Thông tin yêu cầu", "current": "Vai trò hiện tại", "desired": "Vai trò mong muốn",
+    "pick": "Chọn vai trò", "reason": "Lý do", "reasonPh": "Vì sao bạn cần quyền này?",
+    "adminEmail": "Email quản trị (tuỳ chọn)", "sendMail": "Gửi qua email", "copy": "Sao chép",
+    "note": "Quản trị viên cấp quyền tại trang Người dùng / Phân quyền."
+  },
+  "dashTemplate": {
+    "title": "Bắt đầu với một mẫu bảng?",
+    "desc": "Chọn một bố cục dựng sẵn phù hợp vai trò của bạn (sản xuất / chất lượng / thiết bị / điều hành) — có thể tùy chỉnh sau.",
+    "skip": "Để sau", "choose": "Chọn mẫu"
+  },
+  "offline": {
+    "banner": "Mất kết nối — thao tác quét/báo cáo sẽ không gửi được cho tới khi có mạng lại."
+  },
+  "permExpiry": {
+    "one": "Quyền \"{{module}}\" sẽ hết hạn sau {{days}} ngày — liên hệ quản trị để gia hạn.",
+    "many": "{{count}} quyền sắp hết hạn (sớm nhất sau {{days}} ngày) — liên hệ quản trị để gia hạn."
+  },
   "common": {
     "viewOnly": "Chỉ xem",
+    "dismiss": "Bỏ qua",
     "pleaseEnterSerialNumber": "Please enter Số seri Số",
     "imageCompareDescription": "Hình ảnh So sánh Mô tả",
     "scanBarcodeDescription": "Scan barcode Mô tả",

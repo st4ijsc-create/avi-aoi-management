@@ -165,7 +165,9 @@
       "historyReview": "History review",
       "historyReviewDesc": "Search and review inspection results",
       "annotation": "Annotation",
-      "annotationDesc": "Mask annotation for defect images"
+      "annotationDesc": "Mask annotation for defect images",
+      "approvals": "Threshold approvals",
+      "approvalsDesc": "NG threshold approval queue"
     }
   },
   "aiInbox": {
@@ -1135,8 +1137,73 @@
       "unavailable": "Insufficient data to forecast"
     }
   },
+  "supervisor": {
+    "title": "Supervisor Console",
+    "subtitle": "Shift & line status, one tap to the right rollup",
+    "rollupTitle": "Quick rollup",
+    "attentionTitle": "Needs attention",
+    "attentionEmpty": "Nothing needs attention",
+    "tiles": {
+      "corporate": "Corporate overview", "corporateDesc": "Per-factory rollup",
+      "oee": "OEE & health", "oeeDesc": "Productivity & equipment",
+      "production": "Production", "productionDesc": "Line progress",
+      "analytics": "Analytics", "analyticsDesc": "Trends & SPC",
+      "insight": "Management insight", "insightDesc": "NL Q&A + summary",
+      "reports": "Reports", "reportsDesc": "Export & schedule"
+    }
+  },
+  "viewer": {
+    "title": "Quick View",
+    "subtitle": "Fast access to dashboards & reports (read-only)",
+    "viewsTitle": "Views",
+    "tiles": {
+      "dashboard": "Dashboard", "dashboardDesc": "KPI overview",
+      "oee": "OEE", "oeeDesc": "Equipment productivity",
+      "production": "Production", "productionDesc": "Line progress",
+      "analytics": "Analytics", "analyticsDesc": "Quality trends",
+      "history": "History", "historyDesc": "Inspection lookup",
+      "reports": "Reports", "reportsDesc": "View reports"
+    }
+  },
+  "adminHome": {
+    "title": "Admin Console",
+    "subtitle": "Manage users, roles, audit and the system",
+    "govTitle": "Governance & operations",
+    "tiles": {
+      "users": "Users", "usersDesc": "Accounts & roles",
+      "roles": "Permissions", "rolesDesc": "Role builder & modules",
+      "audit": "Audit log", "auditDesc": "Enhanced audit log",
+      "apiKeys": "API Keys", "apiKeysDesc": "Scoped access keys",
+      "system": "System config", "systemDesc": "Parameters & integrations",
+      "license": "License", "licenseDesc": "License & limits",
+      "edge": "Edge nodes", "edgeDesc": "Edge gateways & runtime",
+      "opsDashboard": "Ops dashboard", "opsDashboardDesc": "Full dashboard"
+    }
+  },
+  "roleUpgrade": {
+    "subject": "Access upgrade request",
+    "copied": "Request copied", "copyFail": "Could not copy",
+    "title": "Request access", "subtitle": "Send a request to an administrator for the right role",
+    "formTitle": "Request details", "current": "Current role", "desired": "Requested role",
+    "pick": "Pick a role", "reason": "Reason", "reasonPh": "Why do you need this access?",
+    "adminEmail": "Admin email (optional)", "sendMail": "Send by email", "copy": "Copy",
+    "note": "An administrator grants access from the Users / Role Builder pages."
+  },
+  "dashTemplate": {
+    "title": "Start with a dashboard template?",
+    "desc": "Pick a prebuilt layout for your role (production / quality / equipment / executive) — you can customize it later.",
+    "skip": "Later", "choose": "Choose a template"
+  },
+  "offline": {
+    "banner": "Offline — scans/reports won't be sent until the connection is back."
+  },
+  "permExpiry": {
+    "one": "Your \"{{module}}\" permission expires in {{days}} day(s) — contact an admin to renew.",
+    "many": "{{count}} permissions are expiring (soonest in {{days}} day(s)) — contact an admin to renew."
+  },
   "common": {
     "viewOnly": "View Only",
+    "dismiss": "Dismiss",
     "zoomOut": "Zoom out",
     "zoomIn": "Zoom in",
     "yes": "Yes",

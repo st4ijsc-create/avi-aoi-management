@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
+import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -179,7 +180,7 @@ export function RootCauseAnalysisPageContent() {
         {/* Header */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-2xl font-bold">{t('reports.rootCauseAnalysis')}</h1>
+            <h1 className="flex items-center gap-2 text-2xl font-bold">{t('reports.rootCauseAnalysis')}<ViewOnlyBadge module="analytics_root_cause" /></h1>
             <p className="text-muted-foreground">
               {t('reports.rootCauseAnalysisDesc')}
             </p>

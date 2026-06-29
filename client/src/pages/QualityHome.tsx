@@ -21,9 +21,12 @@ import { useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { TodayBriefing } from "@/components/TodayBriefing";
 import { trpc } from "@/lib/trpc";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import {
   ClipboardCheck,
   Brain,
@@ -36,6 +39,7 @@ import {
   AlertTriangle,
   ChevronRight,
   Cpu,
+  CheckCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -81,39 +85,47 @@ interface NgRow {
   inspectedAt?: string | number | Date;
 }
 
-function NgItem({ row, onClick }: { row: NgRow; onClick: () => void }) {
+function NgItem({ row, onClick, onAck, ackDisabled }: { row: NgRow; onClick: () => void; onAck?: () => void; ackDisabled?: boolean }) {
   const when = row?.inspectedAt ? new Date(row.inspectedAt) : null;
   const whenStr = when && !isNaN(when.getTime()) ? when.toLocaleString() : "";
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex w-full items-center gap-2.5 rounded-lg border border-l-4 border-l-red-500 bg-card/60 px-3 py-2 text-left transition-colors hover:bg-muted/50",
+    <div className="flex w-full items-center gap-2.5 rounded-lg border border-l-4 border-l-red-500 bg-card/60 px-3 py-2 transition-colors hover:bg-muted/50">
+      <button type="button" onClick={onClick} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
+        <AlertTriangle className="size-4 shrink-0 text-red-600 dark:text-red-400" />
+        <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+          <Cpu className="size-3" />
+          {row?.machineCode ?? "—"}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+          {row?.serialNumber ?? "—"}
+          {row?.productModel ? <span className="text-muted-foreground"> · {row.productModel}</span> : null}
+        </span>
+        {whenStr ? <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">{whenStr}</span> : null}
+      </button>
+      {onAck && (
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 shrink-0"
+          disabled={ackDisabled}
+          onClick={onAck}
+          title="Đã xem / Acknowledge"
+        >
+          <CheckCheck className="size-4 text-emerald-600" />
+        </Button>
       )}
-    >
-      <AlertTriangle className="size-4 shrink-0 text-red-600 dark:text-red-400" />
-      <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
-        <Cpu className="size-3" />
-        {row?.machineCode ?? "—"}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-        {row?.serialNumber ?? "—"}
-        {row?.productModel ? (
-          <span className="text-muted-foreground"> · {row.productModel}</span>
-        ) : null}
-      </span>
-      {whenStr ? (
-        <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">{whenStr}</span>
-      ) : null}
       <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-    </button>
+    </div>
   );
 }
 
 export default function QualityHome() {
   const { t } = useTranslation();
   const [, navigate] = useLocation();
+  const { hasPermission } = usePermissions();
+  // U10 — QC can clear (acknowledge) a reviewed NG in one tap. Gated by write access.
+  const canReview = hasPermission("history_view", "canEdit");
 
   // Recent NG / review-needed — reuse the existing inspection.search query.
   // Best-effort: never blocks the page (own error/loading states).
@@ -122,6 +134,14 @@ export default function QualityHome() {
     { refetchOnWindowFocus: false, retry: false, staleTime: 60_000 },
   );
   const ngRows: NgRow[] = (ngQuery.data as any)?.data ?? [];
+
+  const ackM = trpc.measurementResult.batchAcknowledge.useMutation({
+    onSuccess: () => {
+      toast.success(t("quality.ackDone", "Đã đánh dấu đã xem"));
+      ngQuery.refetch();
+    },
+    onError: (e: { message: string }) => toast.error(e.message),
+  });
 
   const tools: ToolTileProps[] = [
     {
@@ -246,6 +266,8 @@ export default function QualityHome() {
                   onClick={() =>
                     navigate(row?.id != null ? `/inspection/${row.id}` : "/history")
                   }
+                  onAck={canReview && row?.id != null ? () => ackM.mutate({ ids: [String(row.id)] }) : undefined}
+                  ackDisabled={ackM.isPending}
                 />
               ))}
             </div>

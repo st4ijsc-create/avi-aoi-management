@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
+import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -158,7 +159,7 @@ export default function ApiKeysPage() {
             <KeyRound className="h-6 w-6 text-primary" />
           </div>
           <div className="flex-1">
-            <h1 className="text-2xl font-bold tracking-tight">{t("apiKeys.title", "Khoá API")}</h1>
+            <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">{t("apiKeys.title", "Khoá API")}<ViewOnlyBadge module="admin_system" /></h1>
             <p className="text-sm text-muted-foreground">{t("apiKeys.subtitle", "Khoá truy cập có phạm vi (scope) cho Unified Machine API (/api/v1)")}</p>
           </div>
           <Button onClick={() => setCreateOpen(true)} disabled={!canCreate}>

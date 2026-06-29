@@ -13,6 +13,7 @@ import { useTranslation } from "react-i18next";
 import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
+import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -150,6 +151,7 @@ export default function EdgeNodesPage() {
           </div>
           <div className="flex-1">
             <h1 className="text-2xl font-bold tracking-tight">{t("edgeNodes.title", "Node biên (Edge)")}</h1>
+            <ViewOnlyBadge module="machine_control" />
             <p className="text-sm text-muted-foreground">{t("edgeNodes.subtitle", "Đăng ký & theo dõi các runtime điều phối biên gần dây chuyền")}</p>
           </div>
           <Button size="icon" variant="ghost" onClick={() => void listQ.refetch()} title={t("common.refresh", "Làm mới")}>

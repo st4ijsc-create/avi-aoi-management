@@ -70,14 +70,14 @@ Kiến trúc phân-quyền **nền tảng rất chắc**: role-landing, lọc na
 
 ### Tier 3 — Nâng cao ✅ (U9–U13; U10 v1)
 - [x] **U9. useIsTablet** (768–1024px) cho density tablet-aware. **Lưu ý:** breakpoint 768 hiện tại ĐÃ giữ sidebar trên tablet (≥768 không phải mobile) — đề xuất "tăng lên 1024" của audit sẽ phản tác dụng (biến tablet thành mobile), nên KHÔNG đổi.
-- [x] **U10 (v1). Quality**: thêm tile "Duyệt ngưỡng" trên QualityHome → `/threshold-approvals` (hàng đợi phê duyệt sẵn có); annotation tile đã có sẵn. Workflow duyệt/từ chối NG đầy đủ (backend) vẫn là việc lớn — để sau.
+- [x] **U10. Quality**: tile "Duyệt ngưỡng" → `/threshold-approvals` + **nút 1-chạm "Đã xem" (acknowledge)** ngay trên danh sách NG ở QualityHome (dùng `measurementResult.batchAcknowledge` sẵn có, gated `history_view/canEdit`). Workflow correctResult/confirmNTF đầy đủ đã có ở trang chi tiết `/inspection/:id` (NG rows deep-link tới đó).
 - [x] **U11. Dashboard template picker**: `DashboardTemplatePrompt.tsx` — dialog gợi ý mẫu theo role lần đầu vào `/dashboard`, dismissible per user+role, CTA → `/dashboard-templates`.
 - [x] **U12. Xin nâng quyền**: trang `/request-role` (`RequestRole.tsx`) — chọn vai trò mong muốn + lý do → gửi email quản trị (mailto) / sao chép; nav `nav.requestRole` trong nhóm Settings (mọi user thấy).
-- [x] **U13. Mở rộng read-only gating**: `<ViewOnlyBadge/>` thêm vào DeviceAdapterManagement + InterlockRuleManagement (cùng Corporate ở U2). Roll-out TOÀN BỘ trang CRUD vẫn là sweep tiệm tiến (cơ chế đã sẵn).
+- [x] **U13. Mở rộng read-only gating**: `<ViewOnlyBadge/>` nay phủ **9 trang** — Corporate (U2), DeviceAdapter, Interlock + Recipe, WorkOrders, ApiKeys, EdgeNodes, RootCause, AnomalyBank. Các trang dùng `title` prop (MasterData/Bom) chưa có h1 inline → bổ sung sau khi cần.
 
 ### Tier 4
 - [ ] **U14. AdvancedSection** áp trang dày — **HOÃN CÓ CHỦ ĐÍCH**: là polish thuần; cơ chế AdvancedSection đã có + dùng ở SPCAnalysis/AdminSettings. Áp lên Correlation/Reports/SPCAdvanced cần phán đoán UX từng trang (khối điều khiển chính ≠ "advanced") — ép vào dễ giấu nhầm control chính / vỡ layout. Cần làm thủ công từng trang sau.
-- [x] **U15. i18n (một phần)**: thêm key nav bắt buộc (`nav.requestRole`/`adminHome`/`maintenanceGroup`) + `common.viewOnly` đủ vi/en/zh. Chuỗi thân trang home mới (supervisor/viewer/adminHome) + offline/dashTemplate/roleUpgrade/permExpiry dùng **inline-fallback tiếng Việt**; dịch en/zh đầy đủ + audit key trong CI = việc tiếp theo của U15.
+- [x] **U15. i18n đầy đủ**: thêm namespace dịch **đủ vi/en/zh** cho `supervisor`/`viewer`/`adminHome`/`roleUpgrade`/`dashTemplate`/`offline`/`permExpiry` + `quality.tools.approvals` + nav keys + `common.viewOnly`/`dismiss`. (Còn lại: vài chuỗi toggle trong `notifications.*` vẫn inline-fallback; audit key tự động trong CI = follow-up nhỏ.)
 - [x] **U16. Offline degrade (indicator)**: `OfflineBanner.tsx` (navigator.onLine + online/offline events) mount trong OperatorHome. TRUNG THỰC: chỉ là chỉ báo; hàng đợi store-and-forward + sync là việc lớn để sau.
 - [x] **U17. FirstRunTour re-trigger**: xóa cờ dismissed khi role đổi (lưu `firstRunTour:<user>:role`), tour hiện lại với tips của role mới.
 
@@ -94,4 +94,5 @@ Khi bạn duyệt, ưu tiên Tier 1 (U1–U4) — tác động rõ nhất tới 
 | 2026-06-29 | **U2** | `73d4dae` | PermissionGate/ViewOnlyBadge/useCanWrite + áp Corporate + common.viewOnly |
 | 2026-06-29 | **U1** | `d6fb5e8` | SupervisorHome /supervisor-home + roleLanding + route |
 | 2026-06-29 | **U3** | `87ac809` | ViewerHome /viewer-home (read-only) + roleLanding |
-| 2026-06-29 | **U5–U17** | _(batch 1 commit)_ | Tier 2–4: U5 AdminHome, U6 expiry banner, U7 role sidebar, U8 notif prefs, U9 useIsTablet, U10 quality approvals tile, U11 dashboard template prompt, U12 /request-role, U13 more ViewOnlyBadge, U15 nav i18n, U16 OfflineBanner, U17 tour re-trigger. **U14 hoãn** (polish, rủi ro). tsc xanh, locale OK. |
+| 2026-06-29 | **U5–U17** | `aada122` | Tier 2–4: U5 AdminHome, U6 expiry banner, U7 role sidebar, U8 notif prefs, U9 useIsTablet, U10 quality approvals tile, U11 dashboard template prompt, U12 /request-role, U13 more ViewOnlyBadge, U15 nav i18n, U16 OfflineBanner, U17 tour re-trigger. **U14 hoãn**. tsc xanh. |
+| 2026-06-29 | **U15/U13/U10+** | _(đang commit)_ | U15 namespace dịch đầy đủ vi/en/zh (supervisor/viewer/adminHome/roleUpgrade/dashTemplate/offline/permExpiry); U13 ViewOnlyBadge mở rộng → 9 trang; U10 nút acknowledge 1-chạm trên QualityHome. tsc xanh, locale OK. **U14 + U16-full + U10-full-backend: follow-up có chủ đích.** |

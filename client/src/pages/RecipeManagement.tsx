@@ -18,6 +18,7 @@ import { trpc } from "@/lib/trpc";
 import { useTranslation } from "react-i18next";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
+import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { navItems } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -166,6 +167,7 @@ export default function RecipeManagement() {
         <div className="flex items-center gap-2">
           <FlaskConical className="h-6 w-6 text-indigo-600" />
           <h1 className="text-2xl font-bold">{t("recipes.title")}</h1>
+          <ViewOnlyBadge module="machine_control" />
         </div>
         {canCreate && (
           <Button onClick={openCreate}>
