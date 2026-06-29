@@ -21,6 +21,8 @@ import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { CodeEditor } from "@/components/engineering/CodeEditor";
+import { LadderEditor } from "@/components/engineering/LadderEditor";
+import { TeachJogPanel } from "@/components/engineering/TeachJogPanel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -194,6 +196,11 @@ export default function EngineeringWorkspace() {
   const [deployStage, setDeployStage] = useState<"staging" | "production">("staging");
   const [signOff, setSignOff] = useState(false);
 
+  // ── Editor mode: a visual editor exists for ladder (rung grid) + robot (teach/jog) ──
+  const [editorMode, setEditorMode] = useState<"code" | "visual">("code");
+  const visualKind =
+    project?.kind === "iec61131-ld" ? "ladder" : project?.kind === "robot-tm" ? "teach" : null;
+
   if (!canView) {
     return (
       <DashboardLayout>
@@ -341,9 +348,33 @@ export default function EngineeringWorkspace() {
                     <div className="mb-2 flex items-center gap-2">
                       <Label className="text-xs">{t("engineering.language", "Ngôn ngữ")}</Label>
                       <Input className="h-7 w-32" value={language} onChange={(e) => setLanguage(e.target.value)} />
+                      {visualKind && (
+                        <div className="flex overflow-hidden rounded-md border">
+                          <button
+                            onClick={() => setEditorMode("code")}
+                            className={`px-2 py-1 text-xs ${editorMode === "code" ? "bg-muted font-medium" : ""}`}
+                          >
+                            {t("engineering.modeCode", "Code")}
+                          </button>
+                          <button
+                            onClick={() => setEditorMode("visual")}
+                            className={`px-2 py-1 text-xs ${editorMode === "visual" ? "bg-muted font-medium" : ""}`}
+                          >
+                            {visualKind === "ladder" ? t("engineering.modeLadder", "Ladder") : t("engineering.modeTeach", "Teach/Jog")}
+                          </button>
+                        </div>
+                      )}
                       <span className="ml-auto text-xs text-muted-foreground">{code.split("\n").length} {t("engineering.lines", "dòng")}</span>
                     </div>
-                    <CodeEditor value={code} onChange={setCode} language={language} aria-label="program-source" />
+                    {visualKind && editorMode === "visual" ? (
+                      visualKind === "ladder" ? (
+                        <LadderEditor value={code} onChange={setCode} />
+                      ) : (
+                        <TeachJogPanel value={code} onChange={setCode} />
+                      )
+                    ) : (
+                      <CodeEditor value={code} onChange={setCode} language={language} aria-label="program-source" />
+                    )}
 
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button
