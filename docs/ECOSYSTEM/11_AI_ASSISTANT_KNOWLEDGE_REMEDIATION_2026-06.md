@@ -224,6 +224,12 @@ Mỗi workstream ghi rõ **mục tiêu · việc · file chạm · nghiệm thu 
 - `client/src/hooks/useKbChatStream.ts` (mới): SSE hook cho `/api/ai/local-kb/stream` (RAG+tool registry, như bubble). `AIChatPage.tsx` repoint sang đây sau cờ rollback `USE_KB_BACKEND` (false → về đường cũ). Render citations / AIToolResultCard / structured / follow-up / client_action(navigate+prefill). `pending_action` (ghi): hiện thông báo, **không tự thực thi** (an toàn). Giữ nguyên endpoint cũ + `aiChatAssistant` (không xóa). Caller useAIStream còn lại (DashboardAIWidget) không đụng.
 - Typecheck sạch; không có test cũ bị gãy.
 
+### P4 — Eval theo domain + reranker ✅ (2026-06-29)
+- **Reranker**: đã bật sẵn từ B2 — `RAG_RERANKER_ENABLED=true`, mode `llm` (Qwen3-4B), wire trong `aiLocalKnowledgeService.retrieveKnowledge` (cosine top-20 → rerank → top-5). Tùy chọn `GGUF_RERANKER_MODEL` (Qwen3-Reranker-0.6B) chưa cần (file chưa có; không tải).
+- **Golden-set**: `knowledge/rag-eval-goldenset.json` mở rộng **12 → 151 câu**, tag `domain`, phủ 24 domain chức năng (gồm domain mới) + 16 câu self-description (route/nav/schema_table/module). Mọi `expectSourceContains` đã verify tồn tại trong corpus 2170.
+- **Eval harness**: `scripts/ai-kb/eval-rag.mjs` — bảng recall@5 theo domain + tổng, cổng CI `--ci` (sàn tổng 0.80 / domain 0.60, `KB_EVAL_MIN`/`KB_EVAL_DOMAIN_MIN`), xuất `knowledge/rag-eval-results.json`.
+- **Kết quả baseline (cosine)**: **recall@5 = 151/151 = 1.000**, mọi domain 100% (kể cả device-programming/edge/andon/master-data/anomaly/energy + self-description). Chứng minh độ phủ "AI biết hệ thống". (recall@5 đo phủ truy hồi, không phải top-1 precision — reranker production lo phần xếp hạng.)
+
 ### Còn lại (đợt sau)
 - **P2 nhóm D (tùy chọn)**: anomaly-list, routings/genealogy, energy/ENPI read tool.
 - **P3 nâng cao (tùy chọn)**: trích `ConfirmActionCard` thành component dùng chung để `/ai-chat` xác nhận write tại chỗ (hiện chỉ điều hướng sang bubble).

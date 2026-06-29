@@ -1,90 +1,1239 @@
 {
-  "description": "Phase B2.5 — RAG golden eval set. Each item: a representative factory/operator question plus expectation signals. recall@5 is scored as a HIT when at least one of the top-5 retrieved chunks satisfies the expectation: its sourcePath contains any string in expectSourceContains (case-insensitive), OR its chunk text contains any keyword in expectKeywords. Keep questions grounded in the existing KB so the set stays meaningful as the corpus evolves.",
+  "description": "Doc-11 (P4/W4.1) per-domain RAG golden eval set. Expanded from the Phase B2.5 12-question set to a comprehensive per-domain corpus (~120 questions) proving 'the AI knows the system' across CLASSIC + NEW (device-programming, edge/orchestration, andon, maintenance/work-orders, predictive, energy, master-data/BOM, traceability/genealogy, AI-copilot/agent, anomaly, recipes, thresholds, api-keys, audit) + SELF-DESCRIPTION domains (route/nav/schema_table/module sourceTypes). Each item: {id, question, lang, domain, expectSourceContains[], expectKeywords[]}. recall@5 is a HIT when at least one of the top-5 retrieved chunks satisfies the expectation: its sourcePath contains any string in expectSourceContains (case-insensitive) OR its chunk text contains any keyword in expectKeywords. Every expectSourceContains substring was verified to exist as a real sourcePath in knowledge/chunks.jsonl (2170 chunks) so the gate stays meaningful.",
   "scoring": { "k": 5, "hitRule": "sourcePathContains OR textContainsKeyword" },
   "questions": [
     {
       "id": "q1",
       "question": "Làm sao tạo lệnh sản xuất mới?",
       "lang": "vi",
-      "expectSourceContains": ["order", "production", "lenh-san-xuat", "manufacturing"],
+      "domain": "production-orders",
+      "expectSourceContains": ["production/production-orders", "production", "order", "manufacturing"],
       "expectKeywords": ["lệnh sản xuất", "production order", "tạo lệnh"]
     },
     {
       "id": "q2",
       "question": "Cấu hình ngưỡng NG cho máy AOI ở đâu?",
       "lang": "vi",
-      "expectSourceContains": ["machine", "threshold", "aoi", "workstation", "config"],
+      "domain": "thresholds",
+      "expectSourceContains": ["ng-rate-threshold", "aoi-thresholds", "threshold", "monitoring-settings"],
       "expectKeywords": ["ngưỡng", "threshold", "NG", "AOI"]
     },
     {
       "id": "q3",
       "question": "What SPC rules are supported (Nelson / Western Electric)?",
       "lang": "en",
-      "expectSourceContains": ["spc", "statistical", "control"],
+      "domain": "spc",
+      "expectSourceContains": ["spc-rules", "spc-analysis", "spc", "control"],
       "expectKeywords": ["Nelson", "Western Electric", "SPC", "control chart", "rule"]
     },
     {
       "id": "q4",
       "question": "How does root cause analysis work in this system?",
       "lang": "en",
-      "expectSourceContains": ["rca", "root", "cause", "analysis", "insight"],
+      "domain": "inspection-defects",
+      "expectSourceContains": ["root-cause-analysis", "rca", "root_cause_analysis", "insight"],
       "expectKeywords": ["root cause", "RCA", "pareto", "top factor"]
     },
     {
       "id": "q5",
       "question": "Cách phân quyền người dùng và vai trò?",
       "lang": "vi",
-      "expectSourceContains": ["permission", "role", "user", "auth", "phan-quyen"],
+      "domain": "users-permissions",
+      "expectSourceContains": ["permission-mgmt", "role-management", "permissionsRouter", "auth.ts"],
       "expectKeywords": ["phân quyền", "vai trò", "role", "permission"]
     },
     {
       "id": "q6",
       "question": "Solder bridge defect — likely causes and corrective actions?",
       "lang": "en",
-      "expectSourceContains": ["defect", "solder", "rca", "incident", "quality"],
+      "domain": "inspection-defects",
+      "expectSourceContains": ["aoi-defect-types", "aoi-troubleshooting", "defect", "root-cause-analysis"],
       "expectKeywords": ["solder", "bridge", "cause", "stencil", "paste"]
     },
     {
       "id": "q7",
       "question": "Làm sao xem báo cáo năng suất (OEE) theo máy?",
       "lang": "vi",
-      "expectSourceContains": ["oee", "report", "dashboard", "production", "analytics"],
+      "domain": "oee",
+      "expectSourceContains": ["oee-dashboard", "oee", "mqttOeeRouters", "oee_metrics"],
       "expectKeywords": ["OEE", "năng suất", "báo cáo", "hiệu suất"]
     },
     {
       "id": "q8",
       "question": "Which API endpoint returns inspection results for a lot?",
       "lang": "en",
-      "expectSourceContains": ["router", "inspection", "api", "lot"],
+      "domain": "inspection-defects",
+      "expectSourceContains": ["inspectionRouters", "EXTERNAL_INSPECTION_API", "inspection", "API_REFERENCE"],
       "expectKeywords": ["/api/", "inspection", "lot", "endpoint", "router"]
     },
     {
       "id": "q9",
       "question": "Hệ thống lưu ảnh AOI và embedding ở đâu?",
       "lang": "vi",
-      "expectSourceContains": ["image", "embedding", "aoi", "vector", "knowledge"],
+      "domain": "ai-copilot",
+      "expectSourceContains": ["ai-image-search", "ai_image_embeddings", "image", "embedding"],
       "expectKeywords": ["ảnh", "image", "embedding", "vector", "DINOv2"]
     },
     {
       "id": "q10",
       "question": "How to configure measurement points for a product model?",
       "lang": "en",
-      "expectSourceContains": ["measurement", "product", "model", "points"],
+      "domain": "products-measurement-points",
+      "expectSourceContains": ["measurement-point-setup", "product-management", "measurement", "product"],
       "expectKeywords": ["measurement point", "product model", "tolerance", "spec"]
     },
     {
       "id": "q11",
       "question": "Misalignment / component shift trên máy gắn linh kiện do nguyên nhân gì?",
       "lang": "vi",
-      "expectSourceContains": ["defect", "rca", "placement", "incident", "quality"],
+      "domain": "inspection-defects",
+      "expectSourceContains": ["aoi-defect-types", "aoi-troubleshooting", "defect", "root-cause-analysis"],
       "expectKeywords": ["lệch", "misalignment", "placement", "calibration", "nguyên nhân"]
     },
     {
       "id": "q12",
       "question": "What does the AI watcher / orchestration do?",
       "lang": "en",
-      "expectSourceContains": ["watcher", "orchestration", "ai", "insight"],
+      "domain": "ai-copilot",
+      "expectSourceContains": ["aiInsightRouter", "aiOrchestrationRouter", "orchestration", "ai-hub"],
       "expectKeywords": ["watcher", "orchestration", "insight", "hypothesis", "advisory"]
+    },
+
+    {
+      "id": "insp1",
+      "question": "Làm sao xem chi tiết một lần kiểm tra AOI và các điểm đo?",
+      "lang": "vi",
+      "domain": "inspection-defects",
+      "expectSourceContains": ["inspection-detail", "inspection/history", "measurement_results", "inspection"],
+      "expectKeywords": ["kiểm tra", "inspection", "điểm đo", "measurement", "NG"]
+    },
+    {
+      "id": "insp2",
+      "question": "How do I submit an inspection result from the AOI machine?",
+      "lang": "en",
+      "domain": "inspection-defects",
+      "expectSourceContains": ["inspection-submit", "EXTERNAL_INSPECTION_API", "inspectionRouters", "product_inspections"],
+      "expectKeywords": ["submit", "inspection", "result", "upload", "lot"]
+    },
+    {
+      "id": "insp3",
+      "question": "Các loại lỗi AOI thường gặp là gì (tombstone, bridge, missing)?",
+      "lang": "vi",
+      "domain": "inspection-defects",
+      "expectSourceContains": ["aoi-defect-types", "aoi-troubleshooting", "defect"],
+      "expectKeywords": ["tombstone", "bridge", "missing", "lỗi", "defect"]
+    },
+    {
+      "id": "insp4",
+      "question": "Where is the defect heatmap and what does it show?",
+      "lang": "en",
+      "domain": "inspection-defects",
+      "expectSourceContains": ["defect-heatmap", "defectHeatmapRouter", "defect_heatmap_data"],
+      "expectKeywords": ["heatmap", "defect", "hotspot", "grid", "location"]
+    },
+    {
+      "id": "insp5",
+      "question": "Quy trình xử lý hàng NG (SOP) như thế nào?",
+      "lang": "vi",
+      "domain": "inspection-defects",
+      "expectSourceContains": ["howto-ng-handling-sop", "aoi-workflow", "ng-rate-threshold"],
+      "expectKeywords": ["NG", "xử lý", "SOP", "acknowledge", "rework"]
+    },
+    {
+      "id": "insp6",
+      "question": "How does Pareto analysis of defects work?",
+      "lang": "en",
+      "domain": "inspection-defects",
+      "expectSourceContains": ["pareto-analysis", "howto-pareto-defects", "paretoAnalysisRouter"],
+      "expectKeywords": ["pareto", "defect", "top", "80/20", "category"]
+    },
+
+    {
+      "id": "oee1",
+      "question": "OEE được tính như thế nào (availability, performance, quality)?",
+      "lang": "vi",
+      "domain": "oee",
+      "expectSourceContains": ["oee-dashboard", "oee_metrics", "oee", "mqttOeeRouters"],
+      "expectKeywords": ["OEE", "availability", "performance", "quality", "sẵn sàng"]
+    },
+    {
+      "id": "oee2",
+      "question": "Where are OEE targets configured and how are alerts triggered?",
+      "lang": "en",
+      "domain": "oee",
+      "expectSourceContains": ["oee-targets", "oee_targets", "oee-dashboard", "alerts"],
+      "expectKeywords": ["OEE target", "threshold", "alert", "goal"]
+    },
+    {
+      "id": "oee3",
+      "question": "Downtime / dừng máy được ghi nhận ở bảng nào?",
+      "lang": "vi",
+      "domain": "oee",
+      "expectSourceContains": ["downtime_events", "oee.ts", "oee-dashboard"],
+      "expectKeywords": ["downtime", "dừng máy", "ngừng", "stop"]
+    },
+    {
+      "id": "oee4",
+      "question": "How is the production dashboard different from the OEE dashboard?",
+      "lang": "en",
+      "domain": "oee",
+      "expectSourceContains": ["production-dashboard", "oee-dashboard", "productionDashboardRouter"],
+      "expectKeywords": ["OEE", "production", "dashboard", "throughput", "yield"]
+    },
+    {
+      "id": "oee5",
+      "question": "Mục tiêu sản lượng (yield target) cấu hình ở đâu?",
+      "lang": "vi",
+      "domain": "oee",
+      "expectSourceContains": ["oee-targets", "monitoring-settings", "oee_targets"],
+      "expectKeywords": ["yield", "sản lượng", "mục tiêu", "target"]
+    },
+
+    {
+      "id": "po1",
+      "question": "Lập lịch sản xuất (production scheduling) hoạt động ra sao?",
+      "lang": "vi",
+      "domain": "production-orders",
+      "expectSourceContains": ["production-scheduling", "scheduling.ts", "productionSessionRouter"],
+      "expectKeywords": ["lịch", "scheduling", "schedule", "ca", "kế hoạch"]
+    },
+    {
+      "id": "po2",
+      "question": "How do I track a production session / lot from start to finish?",
+      "lang": "en",
+      "domain": "production-orders",
+      "expectSourceContains": ["production-orders", "productionSessionRouter", "production"],
+      "expectKeywords": ["session", "lot", "production order", "start", "finish"]
+    },
+    {
+      "id": "po3",
+      "question": "Cách quản lý lô hàng (lot management)?",
+      "lang": "vi",
+      "domain": "production-orders",
+      "expectSourceContains": ["howto-lot-management", "production-orders", "production"],
+      "expectKeywords": ["lô", "lot", "quản lý", "serial"]
+    },
+    {
+      "id": "po4",
+      "question": "What endpoints create and update production orders?",
+      "lang": "en",
+      "domain": "production-orders",
+      "expectSourceContains": ["productionRouters", "production-orders", "production"],
+      "expectKeywords": ["production order", "create", "update", "router", "endpoint"]
+    },
+    {
+      "id": "po5",
+      "question": "Đổi ca (shift change) cần làm gì trong hệ thống?",
+      "lang": "vi",
+      "domain": "production-orders",
+      "expectSourceContains": ["howto-shift-change", "shift-config", "shiftConfigRouter"],
+      "expectKeywords": ["ca", "shift", "đổi ca", "bàn giao"]
+    },
+
+    {
+      "id": "spc1",
+      "question": "Cpk và Cp được tính và lưu ở đâu?",
+      "lang": "vi",
+      "domain": "spc",
+      "expectSourceContains": ["cpk_history", "spc-analysis", "spcAnalysisRouter", "spc"],
+      "expectKeywords": ["Cpk", "Cp", "capability", "năng lực", "process"]
+    },
+    {
+      "id": "spc2",
+      "question": "How do quality gates evaluate SPC violations?",
+      "lang": "en",
+      "domain": "spc",
+      "expectSourceContains": ["quality-gates", "quality_gates", "spc_rule_violations", "aiQualityGateRouter"],
+      "expectKeywords": ["quality gate", "violation", "SPC", "pass", "fail"]
+    },
+    {
+      "id": "spc3",
+      "question": "Biểu đồ kiểm soát (control chart) X-bar R hỗ trợ không?",
+      "lang": "vi",
+      "domain": "spc",
+      "expectSourceContains": ["spc-analysis", "spc-rules", "howto-spc-control", "spc"],
+      "expectKeywords": ["control chart", "X-bar", "biểu đồ kiểm soát", "UCL", "LCL"]
+    },
+    {
+      "id": "spc4",
+      "question": "Where are SPC configurations stored in the schema?",
+      "lang": "en",
+      "domain": "spc",
+      "expectSourceContains": ["spc_configurations", "spc.ts", "spc-analysis"],
+      "expectKeywords": ["spc_configurations", "SPC", "config", "subgroup"]
+    },
+    {
+      "id": "spc5",
+      "question": "Phân tích tương quan (correlation) giữa các thông số làm thế nào?",
+      "lang": "vi",
+      "domain": "spc",
+      "expectSourceContains": ["correlation-analysis", "correlation_analyses", "dataComparisonRouter"],
+      "expectKeywords": ["tương quan", "correlation", "matrix", "thông số"]
+    },
+
+    {
+      "id": "ms1",
+      "question": "Trạng thái máy (running/idle/down) được cập nhật như thế nào?",
+      "lang": "vi",
+      "domain": "machine-status",
+      "expectSourceContains": ["machine-status-monitor", "machine_status_logs", "machine-health"],
+      "expectKeywords": ["trạng thái", "running", "idle", "down", "máy"]
+    },
+    {
+      "id": "ms2",
+      "question": "How does machine heartbeat / health history work?",
+      "lang": "en",
+      "domain": "machine-status",
+      "expectSourceContains": ["machine-health", "machine_heartbeats", "machine_health_history"],
+      "expectKeywords": ["heartbeat", "health", "online", "offline", "machine"]
+    },
+    {
+      "id": "ms3",
+      "question": "Đăng ký một máy mới vào hệ thống ra sao?",
+      "lang": "vi",
+      "domain": "machine-status",
+      "expectSourceContains": ["machine-registration", "workstation-mgmt", "machineApiRouters"],
+      "expectKeywords": ["đăng ký", "machine", "register", "API key", "máy"]
+    },
+    {
+      "id": "ms4",
+      "question": "What is the 3D factory live map and how do I drill down to a machine?",
+      "lang": "en",
+      "domain": "machine-status",
+      "expectSourceContains": ["App.tsx", "factory-live-map", "machine-status"],
+      "expectKeywords": ["factory live map", "3D", "drill-down", "machine status", "floor"]
+    },
+    {
+      "id": "ms5",
+      "question": "Đồng bộ dữ liệu máy (machine sync) hoạt động thế nào?",
+      "lang": "vi",
+      "domain": "machine-status",
+      "expectSourceContains": ["machine-sync", "SYNC_API", "machineApiRouters"],
+      "expectKeywords": ["đồng bộ", "sync", "machine", "offline"]
+    },
+
+    {
+      "id": "mqtt1",
+      "question": "Cấu hình quy tắc cảnh báo MQTT (NG alert) ở đâu?",
+      "lang": "vi",
+      "domain": "mqtt-alerts",
+      "expectSourceContains": ["mqtt-alert-rules", "mqttNgAlertSettingsRouter", "alerts"],
+      "expectKeywords": ["MQTT", "cảnh báo", "alert rule", "NG", "topic"]
+    },
+    {
+      "id": "mqtt2",
+      "question": "What MQTT topics does the system subscribe to?",
+      "lang": "en",
+      "domain": "mqtt-alerts",
+      "expectSourceContains": ["mqtt-topics", "mqtt-dashboard", "mqtt.ts"],
+      "expectKeywords": ["topic", "MQTT", "subscribe", "payload", "broker"]
+    },
+    {
+      "id": "mqtt3",
+      "question": "Làm sao quản lý nhiều MQTT client / profile?",
+      "lang": "vi",
+      "domain": "mqtt-alerts",
+      "expectSourceContains": ["mqtt-client-mgmt", "mqtt-profiles", "mqttClientManagementRouter"],
+      "expectKeywords": ["MQTT", "client", "profile", "broker", "kết nối"]
+    },
+    {
+      "id": "mqtt4",
+      "question": "How does MQTT bulletin / replay work for debugging?",
+      "lang": "en",
+      "domain": "mqtt-alerts",
+      "expectSourceContains": ["mqtt-bulletin", "mqtt-replay", "mqttBulletinRouter"],
+      "expectKeywords": ["bulletin", "replay", "MQTT", "message", "debug"]
+    },
+    {
+      "id": "mqtt5",
+      "question": "Danh sách cảnh báo và cách acknowledge một alert?",
+      "lang": "vi",
+      "domain": "mqtt-alerts",
+      "expectSourceContains": ["alerts-list", "alertRouters", "alerts.ts"],
+      "expectKeywords": ["cảnh báo", "alert", "acknowledge", "danh sách"]
+    },
+
+    {
+      "id": "prod1",
+      "question": "Tạo và quản lý model sản phẩm (product model) như thế nào?",
+      "lang": "vi",
+      "domain": "products-measurement-points",
+      "expectSourceContains": ["product-management", "product.ts", "productRouters"],
+      "expectKeywords": ["sản phẩm", "product model", "tạo", "quản lý"]
+    },
+    {
+      "id": "prod2",
+      "question": "How do measurement point shapes (circle, rectangle, polygon) work?",
+      "lang": "en",
+      "domain": "products-measurement-points",
+      "expectSourceContains": ["howto-measurement-point-shapes", "measurement-point-setup", "measurement-geometry-and-fiducials"],
+      "expectKeywords": ["shape", "measurement point", "circle", "rectangle", "polygon"]
+    },
+    {
+      "id": "prod3",
+      "question": "Ánh xạ sản phẩm với máy (product-machine mapping) ở đâu?",
+      "lang": "vi",
+      "domain": "products-measurement-points",
+      "expectSourceContains": ["product-machine-mapping", "product-management", "product"],
+      "expectKeywords": ["ánh xạ", "mapping", "máy", "product", "machine"]
+    },
+    {
+      "id": "prod4",
+      "question": "How are fiducials and measurement geometry defined?",
+      "lang": "en",
+      "domain": "products-measurement-points",
+      "expectSourceContains": ["measurement-geometry-and-fiducials", "measurement-point-setup", "measurement"],
+      "expectKeywords": ["fiducial", "geometry", "coordinate", "measurement point"]
+    },
+    {
+      "id": "prod5",
+      "question": "Quản lý công đoạn (process / stage) gắn với sản phẩm thế nào?",
+      "lang": "vi",
+      "domain": "products-measurement-points",
+      "expectSourceContains": ["process-management", "process.ts", "processRouter"],
+      "expectKeywords": ["công đoạn", "process", "stage", "quy trình"]
+    },
+
+    {
+      "id": "rep1",
+      "question": "Làm sao xuất báo cáo ra PDF?",
+      "lang": "vi",
+      "domain": "reports",
+      "expectSourceContains": ["howto-export-pdf-report", "pdfReportRouter", "reports"],
+      "expectKeywords": ["PDF", "xuất", "báo cáo", "export"]
+    },
+    {
+      "id": "rep2",
+      "question": "How do I build a custom report with the report builder?",
+      "lang": "en",
+      "domain": "reports",
+      "expectSourceContains": ["report-builder", "reportBuilderRouter", "reports"],
+      "expectKeywords": ["report builder", "custom", "report", "field", "template"]
+    },
+    {
+      "id": "rep3",
+      "question": "Lên lịch gửi báo cáo tự động (scheduled reports) thế nào?",
+      "lang": "vi",
+      "domain": "reports",
+      "expectSourceContains": ["scheduled-reports", "reportScheduleRouter", "scheduled_reports"],
+      "expectKeywords": ["lịch", "scheduled", "báo cáo", "email", "tự động"]
+    },
+    {
+      "id": "rep4",
+      "question": "Can I export a PowerPoint executive report?",
+      "lang": "en",
+      "domain": "reports",
+      "expectSourceContains": ["powerpointRouter", "executiveReportRouter", "ai-reports"],
+      "expectKeywords": ["PowerPoint", "executive", "report", "export", "slide"]
+    },
+    {
+      "id": "rep5",
+      "question": "报表模板存储在哪个数据库表？",
+      "lang": "zh",
+      "domain": "reports",
+      "expectSourceContains": ["report_templates", "system.ts", "scheduled_reports"],
+      "expectKeywords": ["report_templates", "报表", "模板", "template"]
+    },
+
+    {
+      "id": "usr1",
+      "question": "Quản lý người dùng và gán vai trò (role) làm thế nào?",
+      "lang": "vi",
+      "domain": "users-permissions",
+      "expectSourceContains": ["user-management", "role-management", "userRouters"],
+      "expectKeywords": ["người dùng", "user", "role", "vai trò", "gán"]
+    },
+    {
+      "id": "usr2",
+      "question": "How does two-factor authentication (2FA) work?",
+      "lang": "en",
+      "domain": "users-permissions",
+      "expectSourceContains": ["twoFactorRouter", "session-mgmt", "backup_codes", "AUTHENTICATION"],
+      "expectKeywords": ["2FA", "two-factor", "TOTP", "backup code", "authenticator"]
+    },
+    {
+      "id": "usr3",
+      "question": "Các permission category nào tồn tại và ai có quyền gì?",
+      "lang": "vi",
+      "domain": "users-permissions",
+      "expectSourceContains": ["permission-mgmt", "permissionsRouter", "permissions"],
+      "expectKeywords": ["permission", "quyền", "category", "role", "admin"]
+    },
+    {
+      "id": "usr4",
+      "question": "How do I change my password?",
+      "lang": "en",
+      "domain": "users-permissions",
+      "expectSourceContains": ["howto-change-password", "user-guide", "auth"],
+      "expectKeywords": ["password", "change", "mật khẩu", "reset"]
+    },
+    {
+      "id": "usr5",
+      "question": "Quản lý phiên đăng nhập (user sessions) ở đâu?",
+      "lang": "vi",
+      "domain": "users-permissions",
+      "expectSourceContains": ["session-mgmt", "user_sessions", "sessionRouter"],
+      "expectKeywords": ["phiên", "session", "đăng nhập", "logout"]
+    },
+
+    {
+      "id": "dash1",
+      "question": "Bảng điều khiển chính (dashboard) hiển thị những gì?",
+      "lang": "vi",
+      "domain": "dashboard",
+      "expectSourceContains": ["dashboard-view", "dashboardStatsRouters", "dashboard"],
+      "expectKeywords": ["dashboard", "bảng điều khiển", "widget", "tổng quan"]
+    },
+    {
+      "id": "dash2",
+      "question": "How does dashboard drill-down navigation work?",
+      "lang": "en",
+      "domain": "dashboard",
+      "expectSourceContains": ["dashboard-drilldown", "dashboard", "App.tsx"],
+      "expectKeywords": ["drill-down", "dashboard", "navigate", "detail"]
+    },
+    {
+      "id": "dash3",
+      "question": "Tùy chỉnh widget trên custom dashboard thế nào?",
+      "lang": "vi",
+      "domain": "dashboard",
+      "expectSourceContains": ["dashboard-view", "dashboardWidgetRouters", "dashboard.ts"],
+      "expectKeywords": ["widget", "custom", "dashboard", "tùy chỉnh", "layout"]
+    },
+    {
+      "id": "dash4",
+      "question": "What is the dashboard marketplace / templates feature?",
+      "lang": "en",
+      "domain": "dashboard",
+      "expectSourceContains": ["dashboard", "module-registry", "CORE_DASHBOARD"],
+      "expectKeywords": ["marketplace", "template", "dashboard", "DASHBOARD_TEMPLATES"]
+    },
+    {
+      "id": "dash5",
+      "question": "Dashboard cấp tập đoàn (corporate dashboard) khác gì?",
+      "lang": "vi",
+      "domain": "dashboard",
+      "expectSourceContains": ["corporate-dashboard", "corporate-layout", "corporate"],
+      "expectKeywords": ["tập đoàn", "corporate", "dashboard", "tổng hợp"]
+    },
+
+    {
+      "id": "dp1",
+      "question": "Hệ thống lập trình thiết bị (device programming) hỗ trợ những loại nào?",
+      "lang": "vi",
+      "domain": "device-programming",
+      "expectSourceContains": ["09_DEVICE_PROGRAMMING_CONTROL_STRATEGY", "programmingRouter", "programming"],
+      "expectKeywords": ["lập trình", "Zmotion", "Mitsubishi", "IEC 61131", "device"]
+    },
+    {
+      "id": "dp2",
+      "question": "What is a program project and how do builds and deployments work?",
+      "lang": "en",
+      "domain": "device-programming",
+      "expectSourceContains": ["program_projects", "program_builds", "program_deployments", "programmingRouter"],
+      "expectKeywords": ["program project", "build", "deploy", "artifact", "ProgramProject"]
+    },
+    {
+      "id": "dp3",
+      "question": "Engineering Workspace để soạn và mô phỏng chương trình ở route nào?",
+      "lang": "vi",
+      "domain": "device-programming",
+      "expectSourceContains": ["App.tsx", "/engineering", "programmingRouter"],
+      "expectKeywords": ["EngineeringWorkspace", "/engineering", "simulate", "deploy", "author"]
+    },
+    {
+      "id": "dp4",
+      "question": "How does the Zmotion BASIC adapter generate device code?",
+      "lang": "en",
+      "domain": "device-programming",
+      "expectSourceContains": ["zmotion", "programmingAdapter", "programming"],
+      "expectKeywords": ["Zmotion", "BASIC", "adapter", "code", "motion"]
+    },
+    {
+      "id": "dp5",
+      "question": "Chương trình IEC 61131-3 (ladder / structured text) viết và chạy thế nào?",
+      "lang": "vi",
+      "domain": "device-programming",
+      "expectSourceContains": ["09_DEVICE_PROGRAMMING_CONTROL_STRATEGY", "programming", "programmingRouter"],
+      "expectKeywords": ["IEC 61131", "ladder", "structured text", "PLC", "emulator"]
+    },
+    {
+      "id": "dp6",
+      "question": "Program symbols / variables được lưu ở bảng nào?",
+      "lang": "vi",
+      "domain": "device-programming",
+      "expectSourceContains": ["program_symbols", "programming.ts", "ProgramSymbol"],
+      "expectKeywords": ["program_symbols", "symbol", "variable", "ProgramSymbol"]
+    },
+
+    {
+      "id": "edge1",
+      "question": "Edge node là gì và đăng ký edge node ở đâu?",
+      "lang": "vi",
+      "domain": "edge-orchestration",
+      "expectSourceContains": ["edge_nodes", "edge.ts", "edgeRuntimeRouter", "App.tsx"],
+      "expectKeywords": ["edge node", "edge_nodes", "EdgeNode", "đăng ký", "registry"]
+    },
+    {
+      "id": "edge2",
+      "question": "How does the orchestration engine run workflows (runs and steps)?",
+      "lang": "en",
+      "domain": "edge-orchestration",
+      "expectSourceContains": ["orchestration_workflows", "orchestration_runs", "orchestrationRouter"],
+      "expectKeywords": ["orchestration", "workflow", "run", "step", "deploy"]
+    },
+    {
+      "id": "edge3",
+      "question": "Orchestration Studio để thiết kế workflow trực quan ở route nào?",
+      "lang": "vi",
+      "domain": "edge-orchestration",
+      "expectSourceContains": ["App.tsx", "/orchestration-studio", "orchestrationRouter"],
+      "expectKeywords": ["OrchestrationStudio", "/orchestration-studio", "simulate", "deploy", "workflow"]
+    },
+    {
+      "id": "edge4",
+      "question": "How are AI models deployed to the edge runtime?",
+      "lang": "en",
+      "domain": "edge-orchestration",
+      "expectSourceContains": ["howto-edge-model-deploy", "edgeDeploymentRouter", "edge_deployments", "edgeRuntimeRouter"],
+      "expectKeywords": ["edge", "deploy", "model", "runtime", "inference"]
+    },
+    {
+      "id": "edge5",
+      "question": "Cell twin / digital twin playback dùng để làm gì?",
+      "lang": "vi",
+      "domain": "edge-orchestration",
+      "expectSourceContains": ["digitalTwinRouter", "App.tsx", "cell-twin", "rf-test-cell"],
+      "expectKeywords": ["digital twin", "twin", "playback", "realtime", "cell"]
+    },
+
+    {
+      "id": "andon1",
+      "question": "Bảng Andon dùng để làm gì và ở route nào?",
+      "lang": "vi",
+      "domain": "andon",
+      "expectSourceContains": ["App.tsx", "/andon", "andonRouter", "andon.ts"],
+      "expectKeywords": ["Andon", "AndonBoard", "/andon", "alert", "bảng"]
+    },
+    {
+      "id": "andon2",
+      "question": "What is stored in the andon_events table?",
+      "lang": "en",
+      "domain": "andon",
+      "expectSourceContains": ["andon_events", "andon.ts", "andonRouter"],
+      "expectKeywords": ["andon_events", "AndonEvent", "andon", "event", "trigger"]
+    },
+    {
+      "id": "andon3",
+      "question": "Khi máy có sự cố, công nhân gọi hỗ trợ (andon call) thế nào?",
+      "lang": "vi",
+      "domain": "andon",
+      "expectSourceContains": ["andonRouter", "andon", "alertEscalationService"],
+      "expectKeywords": ["gọi hỗ trợ", "andon", "escalation", "sự cố", "one-tap"]
+    },
+    {
+      "id": "andon4",
+      "question": "How does andon alert escalation work?",
+      "lang": "en",
+      "domain": "andon",
+      "expectSourceContains": ["alertEscalationService", "alert_escalations", "andonRouter"],
+      "expectKeywords": ["escalation", "andon", "level", "notify", "alert"]
+    },
+    {
+      "id": "andon5",
+      "question": "Andon board chỉ hiển thị cảnh báo hay điều khiển được máy?",
+      "lang": "vi",
+      "domain": "andon",
+      "expectSourceContains": ["App.tsx", "andonRouter", "andon"],
+      "expectKeywords": ["Andon", "ALERT-ONLY", "cảnh báo", "board"]
+    },
+
+    {
+      "id": "mnt1",
+      "question": "Tạo và đóng lệnh bảo trì (work order) thế nào?",
+      "lang": "vi",
+      "domain": "maintenance-work-orders",
+      "expectSourceContains": ["maintenance_work_orders", "maintenanceRouter", "App.tsx", "work-orders"],
+      "expectKeywords": ["work order", "bảo trì", "maintenance", "MTTR", "close"]
+    },
+    {
+      "id": "mnt2",
+      "question": "Where do I see maintenance work orders and MTTR in the UI?",
+      "lang": "en",
+      "domain": "maintenance-work-orders",
+      "expectSourceContains": ["App.tsx", "/work-orders", "maintenanceRouter", "maintenance_work_orders"],
+      "expectKeywords": ["WorkOrdersPage", "/work-orders", "MTTR", "maintenance", "close"]
+    },
+    {
+      "id": "mnt3",
+      "question": "Lịch bảo trì định kỳ (maintenance schedule) lưu ở bảng nào?",
+      "lang": "vi",
+      "domain": "maintenance-work-orders",
+      "expectSourceContains": ["maintenance_schedules", "mes.ts", "maintenanceRouter"],
+      "expectKeywords": ["maintenance_schedules", "lịch bảo trì", "PM", "preventive", "schedule"]
+    },
+    {
+      "id": "mnt4",
+      "question": "How is spare parts inventory tracked for maintenance?",
+      "lang": "en",
+      "domain": "maintenance-work-orders",
+      "expectSourceContains": ["spare_parts_inventory", "mes.ts", "maintenanceRouter"],
+      "expectKeywords": ["spare part", "inventory", "maintenance", "SparePart"]
+    },
+    {
+      "id": "mnt5",
+      "question": "Hiệu quả bảo trì phòng ngừa (PM effectiveness) đo bằng chỉ số nào?",
+      "lang": "vi",
+      "domain": "maintenance-work-orders",
+      "expectSourceContains": ["pm_effectiveness_metrics", "mes.ts", "maintenanceRouter"],
+      "expectKeywords": ["PM effectiveness", "preventive", "MTBF", "hiệu quả", "metric"]
+    },
+
+    {
+      "id": "pm1",
+      "question": "Bảo trì dự đoán (predictive maintenance) hoạt động như thế nào?",
+      "lang": "vi",
+      "domain": "predictive-maintenance",
+      "expectSourceContains": ["predictive-alerts", "predictiveMaintenanceRouter", "WS4-predictive-maintenance", "predictive_alerts"],
+      "expectKeywords": ["bảo trì dự đoán", "predictive", "RUL", "remaining useful", "dự đoán"]
+    },
+    {
+      "id": "pm2",
+      "question": "What does the predictive_alerts table store?",
+      "lang": "en",
+      "domain": "predictive-maintenance",
+      "expectSourceContains": ["predictive_alerts", "ai.ts", "predictive-alerts"],
+      "expectKeywords": ["predictive_alerts", "predictedValue", "confidence", "alert", "escalation"]
+    },
+    {
+      "id": "pm3",
+      "question": "Cảnh báo dự đoán hỏng máy được tạo ra từ tín hiệu nào?",
+      "lang": "vi",
+      "domain": "predictive-maintenance",
+      "expectSourceContains": ["predictive-alerts", "WS4-predictive-maintenance", "predictiveMaintenanceRouter"],
+      "expectKeywords": ["predictive", "alert", "failure", "hỏng", "trend"]
+    },
+    {
+      "id": "pm4",
+      "question": "How does the system forecast remaining useful life of equipment?",
+      "lang": "en",
+      "domain": "predictive-maintenance",
+      "expectSourceContains": ["WS4-predictive-maintenance", "predictiveMaintenanceRouter", "predictive-alerts"],
+      "expectKeywords": ["remaining useful life", "RUL", "forecast", "predictive", "degradation"]
+    },
+    {
+      "id": "pm5",
+      "question": "Mức độ ưu tiên/khẩn cấp của cảnh báo bảo trì xác định thế nào?",
+      "lang": "vi",
+      "domain": "predictive-maintenance",
+      "expectSourceContains": ["predictive_alerts", "predictive-alerts", "predictiveMaintenanceRouter"],
+      "expectKeywords": ["severity", "urgency", "khẩn cấp", "ưu tiên", "maintenanceUrgency"]
+    },
+
+    {
+      "id": "en1",
+      "question": "Hệ thống theo dõi tiêu thụ năng lượng (energy) như thế nào?",
+      "lang": "vi",
+      "domain": "energy",
+      "expectSourceContains": ["energy_readings", "energyRouter", "g3.ts", "energy.ts"],
+      "expectKeywords": ["năng lượng", "energy", "kWh", "tiêu thụ", "energy_readings"]
+    },
+    {
+      "id": "en2",
+      "question": "What is the EnPI metric and where is it stored?",
+      "lang": "en",
+      "domain": "energy",
+      "expectSourceContains": ["enpi_metrics", "g3.ts", "energyRouter"],
+      "expectKeywords": ["EnPI", "energy performance", "enpi_metrics", "intensity", "ISO 50001"]
+    },
+    {
+      "id": "en3",
+      "question": "Số đọc điện năng (energy readings) ghi vào bảng nào?",
+      "lang": "vi",
+      "domain": "energy",
+      "expectSourceContains": ["energy_readings", "energyRouter", "energy.ts", "g3.ts"],
+      "expectKeywords": ["energy_readings", "energy", "reading", "điện năng", "power"]
+    },
+    {
+      "id": "en4",
+      "question": "Which router exposes energy data endpoints?",
+      "lang": "en",
+      "domain": "energy",
+      "expectSourceContains": ["energyRouter", "energy_readings", "energy"],
+      "expectKeywords": ["energy", "router", "endpoint", "reading", "consumption"]
+    },
+    {
+      "id": "en5",
+      "question": "Năng lượng tiêu thụ trên mỗi đơn vị sản phẩm tính thế nào?",
+      "lang": "vi",
+      "domain": "energy",
+      "expectSourceContains": ["enpi_metrics", "energyRouter", "SMART-FACTORY", "energy"],
+      "expectKeywords": ["energy intensity", "per unit", "EnPI", "năng lượng", "đơn vị"]
+    },
+
+    {
+      "id": "md1",
+      "question": "Dữ liệu chủ (master data) gồm những loại nào (supplier, material, tool)?",
+      "lang": "vi",
+      "domain": "master-data-bom",
+      "expectSourceContains": ["masterDataRouter", "masterdata.ts", "App.tsx", "master-data"],
+      "expectKeywords": ["master data", "supplier", "material", "tool", "dữ liệu chủ"]
+    },
+    {
+      "id": "md2",
+      "question": "How is a BOM (bill of materials) defined with line items?",
+      "lang": "en",
+      "domain": "master-data-bom",
+      "expectSourceContains": ["bom_definitions", "bom_line_items", "bomRouter", "BomManagement"],
+      "expectKeywords": ["BOM", "bill of materials", "line item", "BomDefinition", "component"]
+    },
+    {
+      "id": "md3",
+      "question": "Feeder và component genealogy quản lý ở route nào?",
+      "lang": "vi",
+      "domain": "master-data-bom",
+      "expectSourceContains": ["App.tsx", "bom-management", "bomRouter", "feeder_materials"],
+      "expectKeywords": ["feeder", "BOM", "genealogy", "BomManagement", "component"]
+    },
+    {
+      "id": "md4",
+      "question": "Where are warehouses, storage locations and inventory balances stored?",
+      "lang": "en",
+      "domain": "master-data-bom",
+      "expectSourceContains": ["warehouses", "storage_locations", "inventory_balances", "masterdata.ts"],
+      "expectKeywords": ["warehouse", "storage location", "inventory", "Warehouse", "InventoryBalance"]
+    },
+    {
+      "id": "md5",
+      "question": "Đơn vị đo (unit of measure) và quy đổi đơn vị cấu hình ở đâu?",
+      "lang": "vi",
+      "domain": "master-data-bom",
+      "expectSourceContains": ["units_of_measure", "unit_conversions", "masterdata.ts", "masterDataRouter"],
+      "expectKeywords": ["unit of measure", "conversion", "đơn vị", "UnitOfMeasure", "quy đổi"]
+    },
+
+    {
+      "id": "trc1",
+      "question": "Truy xuất nguồn gốc (traceability) một serial sản phẩm thế nào?",
+      "lang": "vi",
+      "domain": "traceability-genealogy",
+      "expectSourceContains": ["traceabilityRouter", "genealogyRouter", "genealogyChain", "App.tsx"],
+      "expectKeywords": ["truy xuất", "traceability", "serial", "genealogy", "nguồn gốc"]
+    },
+    {
+      "id": "trc2",
+      "question": "How does component genealogy link feeders to placed components?",
+      "lang": "en",
+      "domain": "traceability-genealogy",
+      "expectSourceContains": ["genealogyRouter", "genealogyChain", "component_installations", "feeder_materials"],
+      "expectKeywords": ["genealogy", "component", "feeder", "installation", "trace"]
+    },
+    {
+      "id": "trc3",
+      "question": "Xem được lô vật tư nào (supplier lot) đã dùng cho một board?",
+      "lang": "vi",
+      "domain": "traceability-genealogy",
+      "expectSourceContains": ["supplier_lots", "genealogyRouter", "traceabilityRouter", "material_receipts"],
+      "expectKeywords": ["supplier lot", "lô vật tư", "material", "trace", "SupplierLot"]
+    },
+    {
+      "id": "trc4",
+      "question": "Which endpoint returns the full genealogy chain of a unit?",
+      "lang": "en",
+      "domain": "traceability-genealogy",
+      "expectSourceContains": ["genealogyRouter", "genealogyChain", "traceabilityRouter"],
+      "expectKeywords": ["genealogy chain", "trace", "unit", "endpoint", "parent"]
+    },
+    {
+      "id": "trc5",
+      "question": "WIP tracking (theo dõi bán thành phẩm) qua các trạm thế nào?",
+      "lang": "vi",
+      "domain": "traceability-genealogy",
+      "expectSourceContains": ["wip_tracking", "wipRouter", "mes.ts", "station_dwell_time"],
+      "expectKeywords": ["WIP", "tracking", "station", "dwell", "WipTracking"]
+    },
+
+    {
+      "id": "cop1",
+      "question": "AI Copilot RCA giúp phân tích nguyên nhân gốc thế nào?",
+      "lang": "vi",
+      "domain": "ai-copilot",
+      "expectSourceContains": ["aiRcaCopilotRouter", "06_TECHNICIAN_COPILOT_DESIGN", "AI-COPILOT", "root-cause-analysis"],
+      "expectKeywords": ["copilot", "RCA", "root cause", "phân tích", "approve"]
+    },
+    {
+      "id": "cop2",
+      "question": "What does the AI threshold advisor recommend and how is it approved?",
+      "lang": "en",
+      "domain": "ai-copilot",
+      "expectSourceContains": ["aiThresholdAdvisorRouter", "thresholdApprovalRouter", "06_TECHNICIAN_COPILOT_DESIGN"],
+      "expectKeywords": ["threshold advisor", "recommend", "approve", "advisory", "copilot"]
+    },
+    {
+      "id": "cop3",
+      "question": "AI Setup Advisor hỗ trợ cấu hình máy mới ra sao?",
+      "lang": "vi",
+      "domain": "ai-copilot",
+      "expectSourceContains": ["aiSetupAdvisorRouter", "06_TECHNICIAN_COPILOT_DESIGN", "AI-COPILOT"],
+      "expectKeywords": ["setup advisor", "cấu hình", "máy mới", "advisory", "copilot"]
+    },
+    {
+      "id": "cop4",
+      "question": "How does the AI specialist agent run multi-step analysis sessions?",
+      "lang": "en",
+      "domain": "ai-copilot",
+      "expectSourceContains": ["aiSpecialistAgentRouter", "ai_specialist_sessions", "aiAgentRouter"],
+      "expectKeywords": ["specialist agent", "session", "step", "agent", "analysis"]
+    },
+    {
+      "id": "cop5",
+      "question": "Hộp thư hành động AI (action inbox) và briefing hôm nay là gì?",
+      "lang": "vi",
+      "domain": "ai-copilot",
+      "expectSourceContains": ["aiInboxRouter", "aiTodayRouter", "ai_pending_actions", "05_AI_MINIMAL_EFFORT_UX"],
+      "expectKeywords": ["action inbox", "hộp thư", "briefing", "pending action", "AI"]
+    },
+    {
+      "id": "cop6",
+      "question": "How do I chat with the local AI assistant about the system?",
+      "lang": "en",
+      "domain": "ai-copilot",
+      "expectSourceContains": ["ai-chat", "aiChatRouter", "ai_chat_conversations", "App.tsx"],
+      "expectKeywords": ["AI chat", "assistant", "/ai-chat", "conversation", "RAG"]
+    },
+
+    {
+      "id": "anom1",
+      "question": "Phát hiện bất thường (anomaly detection) hoạt động như thế nào?",
+      "lang": "vi",
+      "domain": "anomaly",
+      "expectSourceContains": ["aiAnomalyRouter", "aiAnomalyDetection", "ai_anomaly_profiles", "04_AI_BRAIN_NEXTGEN"],
+      "expectKeywords": ["bất thường", "anomaly", "detection", "profile", "phát hiện"]
+    },
+    {
+      "id": "anom2",
+      "question": "What is the anomaly memory bank and how is it rebuilt?",
+      "lang": "en",
+      "domain": "anomaly",
+      "expectSourceContains": ["ai_anomaly_memory_bank", "anomaly-banks", "aiAnomalyRouter", "App.tsx"],
+      "expectKeywords": ["anomaly memory bank", "rebuild", "AnomalyBank", "scope", "memory"]
+    },
+    {
+      "id": "anom3",
+      "question": "Quản lý anomaly bank (rebuild/delete theo scope) ở route nào?",
+      "lang": "vi",
+      "domain": "anomaly",
+      "expectSourceContains": ["App.tsx", "anomaly-banks", "aiAnomalyRouter"],
+      "expectKeywords": ["AnomalyBankPage", "/anomaly-banks", "rebuild", "delete", "anomaly"]
+    },
+    {
+      "id": "anom4",
+      "question": "How are anomaly profiles stored per machine or product?",
+      "lang": "en",
+      "domain": "anomaly",
+      "expectSourceContains": ["ai_anomaly_profiles", "ai.ts", "aiAnomalyRouter"],
+      "expectKeywords": ["anomaly profile", "baseline", "machine", "scope", "profile"]
+    },
+    {
+      "id": "anom5",
+      "question": "Cảnh báo bất thường realtime được đẩy qua kênh nào?",
+      "lang": "vi",
+      "domain": "anomaly",
+      "expectSourceContains": ["aiAnomalyRouter", "04_AI_BRAIN_NEXTGEN", "aiAnomalyDetection"],
+      "expectKeywords": ["anomaly", "realtime", "alert", "bất thường", "socket"]
+    },
+
+    {
+      "id": "rec1",
+      "question": "Quản lý recipe (công thức máy) và deploy ledger ở route nào?",
+      "lang": "vi",
+      "domain": "recipes",
+      "expectSourceContains": ["App.tsx", "recipes", "machineRecipeRouter"],
+      "expectKeywords": ["recipe", "RecipeManagement", "/recipes", "deploy", "công thức"]
+    },
+    {
+      "id": "rec2",
+      "question": "How is a machine recipe deployed and versioned?",
+      "lang": "en",
+      "domain": "recipes",
+      "expectSourceContains": ["machineRecipeRouter", "recipes", "ot.ts"],
+      "expectKeywords": ["recipe", "deploy", "version", "ledger", "machine"]
+    },
+    {
+      "id": "rec3",
+      "question": "Recipe catalog dùng cho loại máy nào và ai duyệt?",
+      "lang": "vi",
+      "domain": "recipes",
+      "expectSourceContains": ["machineRecipeRouter", "App.tsx", "recipes"],
+      "expectKeywords": ["recipe", "catalog", "deploy", "machine", "approve"]
+    },
+    {
+      "id": "rec4",
+      "question": "Which router handles machine recipe CRUD?",
+      "lang": "en",
+      "domain": "recipes",
+      "expectSourceContains": ["machineRecipeRouter", "recipes"],
+      "expectKeywords": ["recipe", "router", "CRUD", "machine", "deploy"]
+    },
+    {
+      "id": "rec5",
+      "question": "Interlock rules đi kèm recipe để bảo vệ máy là gì?",
+      "lang": "vi",
+      "domain": "recipes",
+      "expectSourceContains": ["interlockRouter", "interlock.ts", "App.tsx", "interlock-rules"],
+      "expectKeywords": ["interlock", "rule", "safety", "InterlockRule", "bảo vệ"]
+    },
+
+    {
+      "id": "thr1",
+      "question": "Hàng đợi duyệt ngưỡng (threshold approval) ở route nào?",
+      "lang": "vi",
+      "domain": "thresholds",
+      "expectSourceContains": ["App.tsx", "threshold-approvals", "thresholdApprovalRouter"],
+      "expectKeywords": ["threshold approval", "ThresholdApprovals", "/threshold-approvals", "approve", "reject"]
+    },
+    {
+      "id": "thr2",
+      "question": "How are NG-rate thresholds set per machine or product?",
+      "lang": "en",
+      "domain": "thresholds",
+      "expectSourceContains": ["ng-rate-threshold", "ngRateThresholdRouter", "monitoring-settings"],
+      "expectKeywords": ["NG rate", "threshold", "machine", "product", "limit"]
+    },
+    {
+      "id": "thr3",
+      "question": "AI gợi ý ngưỡng (threshold suggestion) rồi ai phê duyệt?",
+      "lang": "vi",
+      "domain": "thresholds",
+      "expectSourceContains": ["thresholdSuggestionRouter", "thresholdApprovalRouter", "aiThresholdAdvisorRouter"],
+      "expectKeywords": ["threshold suggestion", "gợi ý", "approve", "phê duyệt", "ngưỡng"]
+    },
+    {
+      "id": "thr4",
+      "question": "What happens when a threshold change is rejected or withdrawn?",
+      "lang": "en",
+      "domain": "thresholds",
+      "expectSourceContains": ["thresholdApprovalRouter", "threshold-approvals", "App.tsx"],
+      "expectKeywords": ["reject", "withdraw", "threshold", "approval", "queue"]
+    },
+    {
+      "id": "thr5",
+      "question": "Ngưỡng yield / cảnh báo cấu hình trong settings ở đâu?",
+      "lang": "vi",
+      "domain": "thresholds",
+      "expectSourceContains": ["monitoring-settings", "oee-targets", "ngRateThresholdRouter"],
+      "expectKeywords": ["yield threshold", "ngưỡng", "alert", "settings", "cấu hình"]
+    },
+
+    {
+      "id": "key1",
+      "question": "Tạo và quản lý API key (scoped) ở route nào?",
+      "lang": "vi",
+      "domain": "api-keys",
+      "expectSourceContains": ["App.tsx", "api-keys", "apiKeyRouter"],
+      "expectKeywords": ["API key", "ApiKeysPage", "/api-keys", "scoped", "create"]
+    },
+    {
+      "id": "key2",
+      "question": "How does the API key authentication for external clients work?",
+      "lang": "en",
+      "domain": "api-keys",
+      "expectSourceContains": ["apiKeyRouter", "AUTHENTICATION", "EXTERNAL_INSPECTION_API", "api-keys"],
+      "expectKeywords": ["API key", "authentication", "header", "scope", "external"]
+    },
+    {
+      "id": "key3",
+      "question": "API key chỉ hiển thị một lần khi tạo đúng không?",
+      "lang": "vi",
+      "domain": "api-keys",
+      "expectSourceContains": ["App.tsx", "apiKeyRouter", "api-keys"],
+      "expectKeywords": ["create-show-once", "API key", "một lần", "secret", "scoped"]
+    },
+    {
+      "id": "key4",
+      "question": "Which scopes can be assigned to an API key?",
+      "lang": "en",
+      "domain": "api-keys",
+      "expectSourceContains": ["apiKeyRouter", "ai_api_keys", "api-keys"],
+      "expectKeywords": ["scope", "API key", "permission", "revoke", "ai_api_keys"]
+    },
+    {
+      "id": "key5",
+      "question": "Máy AOI dùng API key để gửi dữ liệu inspection qua endpoint nào?",
+      "lang": "vi",
+      "domain": "api-keys",
+      "expectSourceContains": ["EXTERNAL_INSPECTION_API", "machine-registration", "apiKeyRouter"],
+      "expectKeywords": ["API key", "inspection", "endpoint", "machine", "upload"]
+    },
+
+    {
+      "id": "aud1",
+      "question": "Nhật ký kiểm toán (audit log) ghi lại những hành động nào?",
+      "lang": "vi",
+      "domain": "audit-logs",
+      "expectSourceContains": ["audit-logs", "audit_logs", "auditRouter"],
+      "expectKeywords": ["audit", "nhật ký", "log", "hành động", "user"]
+    },
+    {
+      "id": "aud2",
+      "question": "Where is the command audit log for machine control actions?",
+      "lang": "en",
+      "domain": "audit-logs",
+      "expectSourceContains": ["commandLogRouter", "App.tsx", "command-audit", "audit-logs"],
+      "expectKeywords": ["command audit", "CommandAuditLog", "/command-audit", "machine control", "read-only"]
+    },
+    {
+      "id": "aud3",
+      "question": "Bảng audit_logs lưu những trường gì?",
+      "lang": "vi",
+      "domain": "audit-logs",
+      "expectSourceContains": ["audit_logs", "system.ts", "auditRouter"],
+      "expectKeywords": ["audit_logs", "audit", "log", "timestamp", "action"]
+    },
+    {
+      "id": "aud4",
+      "question": "How does the enhanced audit router differ from the basic one?",
+      "lang": "en",
+      "domain": "audit-logs",
+      "expectSourceContains": ["enhancedAuditRouter", "auditRouter", "audit-logs"],
+      "expectKeywords": ["audit", "enhanced", "router", "filter", "log"]
+    },
+    {
+      "id": "aud5",
+      "question": "Ai xem được audit log và cần quyền gì?",
+      "lang": "vi",
+      "domain": "audit-logs",
+      "expectSourceContains": ["audit-logs", "auditRouter", "permission-mgmt"],
+      "expectKeywords": ["audit", "permission", "quyền", "admin", "log"]
+    },
+
+    {
+      "id": "route1",
+      "question": "Trang quản lý edge node ở route nào?",
+      "lang": "vi",
+      "domain": "self-description",
+      "expectSourceContains": ["App.tsx"],
+      "expectKeywords": ["/edge-nodes", "EdgeNodesPage", "route", "page"]
+    },
+    {
+      "id": "route2",
+      "question": "Which route renders the API keys admin page?",
+      "lang": "en",
+      "domain": "self-description",
+      "expectSourceContains": ["App.tsx"],
+      "expectKeywords": ["/api-keys", "ApiKeysPage", "route", "page"]
+    },
+    {
+      "id": "route3",
+      "question": "Route nào dẫn tới bản đồ nhà máy 3D (factory live map)?",
+      "lang": "vi",
+      "domain": "self-description",
+      "expectSourceContains": ["App.tsx"],
+      "expectKeywords": ["/factory-live-map", "FactoryLiveMap3D", "route", "page"]
+    },
+    {
+      "id": "route4",
+      "question": "What page is shown at the /work-orders route?",
+      "lang": "en",
+      "domain": "self-description",
+      "expectSourceContains": ["App.tsx"],
+      "expectKeywords": ["/work-orders", "WorkOrdersPage", "route", "page"]
+    },
+    {
+      "id": "nav1",
+      "question": "Nhóm menu nào chứa SPC analysis và pareto trên sidebar?",
+      "lang": "vi",
+      "domain": "self-description",
+      "expectSourceContains": ["navigation.tsx"],
+      "expectKeywords": ["qualityGroup", "spcAnalysis", "paretoAnalysis", "nav", "sidebar"]
+    },
+    {
+      "id": "nav2",
+      "question": "Which sidebar nav group contains the AI assistant and operator home?",
+      "lang": "en",
+      "domain": "self-description",
+      "expectSourceContains": ["navigation.tsx"],
+      "expectKeywords": ["aiAssistantGroup", "aiAssistant", "operatorHome", "nav", "sidebar"]
+    },
+    {
+      "id": "nav3",
+      "question": "Menu MES / trace nằm trong nav group nào?",
+      "lang": "vi",
+      "domain": "self-description",
+      "expectSourceContains": ["navigation.tsx"],
+      "expectKeywords": ["mesTraceGroup", "nav", "sidebar", "group"]
+    },
+    {
+      "id": "tbl1",
+      "question": "Bảng nào lưu kết quả đo (measurement results)?",
+      "lang": "vi",
+      "domain": "self-description",
+      "expectSourceContains": ["drizzle/schema/inspection.ts", "measurement_results"],
+      "expectKeywords": ["measurement_results", "TABLE", "schema", "bảng", "drizzle"]
+    },
+    {
+      "id": "tbl2",
+      "question": "Which table stores user sessions?",
+      "lang": "en",
+      "domain": "self-description",
+      "expectSourceContains": ["drizzle/schema/auth.ts", "user_sessions"],
+      "expectKeywords": ["user_sessions", "TABLE", "schema", "drizzle", "session"]
+    },
+    {
+      "id": "tbl2b",
+      "question": "哪个数据库表存储用户会话？",
+      "lang": "zh",
+      "domain": "self-description",
+      "expectSourceContains": ["drizzle/schema/auth.ts", "user_sessions"],
+      "expectKeywords": ["user_sessions", "TABLE", "schema", "drizzle", "用户"]
+    },
+    {
+      "id": "tbl3",
+      "question": "Bảng nào lưu cấu hình SPC?",
+      "lang": "vi",
+      "domain": "self-description",
+      "expectSourceContains": ["drizzle/schema/spc.ts", "spc_configurations"],
+      "expectKeywords": ["spc_configurations", "TABLE", "schema", "drizzle", "bảng"]
+    },
+    {
+      "id": "tbl4",
+      "question": "What table holds OEE metrics?",
+      "lang": "en",
+      "domain": "self-description",
+      "expectSourceContains": ["drizzle/schema/oee.ts", "oee_metrics"],
+      "expectKeywords": ["oee_metrics", "TABLE", "schema", "drizzle", "OEE"]
+    },
+    {
+      "id": "mod1",
+      "question": "Module nào cần license (không phải CORE)?",
+      "lang": "vi",
+      "domain": "self-description",
+      "expectSourceContains": ["module-registry.ts"],
+      "expectKeywords": ["Licensing: OPTIONAL", "requires the license", "module", "license", "CORE"]
+    },
+    {
+      "id": "mod2",
+      "question": "Which routes does the Dashboard module gate?",
+      "lang": "en",
+      "domain": "self-description",
+      "expectSourceContains": ["module-registry.ts"],
+      "expectKeywords": ["CORE_DASHBOARD", "module", "Routes gated", "/dashboard", "capabilities"]
+    },
+    {
+      "id": "mod3",
+      "question": "Module Authentication & Authorization có cần license không?",
+      "lang": "vi",
+      "domain": "self-description",
+      "expectSourceContains": ["module-registry.ts"],
+      "expectKeywords": ["CORE_AUTH", "CORE", "always enabled", "no license", "module"]
+    },
+    {
+      "id": "mod4",
+      "question": "Which feature capabilities belong to the Analytics & Reporting module?",
+      "lang": "en",
+      "domain": "self-description",
+      "expectSourceContains": ["module-registry.ts"],
+      "expectKeywords": ["Analytics", "module", "capabilities", "permission categories", "Routes gated"]
     }
   ]
 }

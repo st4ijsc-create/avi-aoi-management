@@ -9,12 +9,32 @@
  * LLM reranker and reports the lift.
  *
  * USAGE (run manually; do NOT need the server running):
- *   # baseline recall@5 (cosine only):
+ *   # baseline recall@5 (cosine only) + per-domain table:
  *   node scripts/ai-kb/eval-rag.mjs
- *   # with LLM reranker (loads the fast GGUF text model directly):
+ *   # with LLM reranker (loads the fast GGUF text model directly; gated on RAG_RERANKER_ENABLED):
  *   RAG_RERANKER_ENABLED=true node scripts/ai-kb/eval-rag.mjs --rerank
  *   # pool/topN overrides:
  *   node scripts/ai-kb/eval-rag.mjs --rerank --pool 20 --topn 5
+ *   # CI gate (exit 1 if overall recall@5 < 0.80 OR any domain < 0.60):
+ *   node scripts/ai-kb/eval-rag.mjs --ci
+ *   KB_EVAL_MIN=0.85 KB_EVAL_DOMAIN_MIN=0.7 node scripts/ai-kb/eval-rag.mjs   # env-driven gate
+ *
+ * FLAGS:
+ *   --rerank        apply the LLM rerank pass (only takes effect if RAG_RERANKER_ENABLED is truthy)
+ *   --no-rerank     force-disable rerank even if --rerank/RAG_RERANKER_ENABLED set (pure embedding recall)
+ *   --force-rerank  apply rerank ignoring the RAG_RERANKER_ENABLED gate
+ *   --ci            enable the CI gate (also auto-on if KB_EVAL_MIN / KB_EVAL_DOMAIN_MIN set)
+ *   --min <f>       overall recall@K floor for --ci (default 0.80; or KB_EVAL_MIN)
+ *   --domain-min <f> per-domain recall@K floor for --ci (default 0.60; or KB_EVAL_DOMAIN_MIN)
+ *   --pool <n> --topn <n>  rerank pool size / K
+ *
+ * RERANKER NOTE: production reranking lives in server/services/aiReranker.ts (TS, RAG_RERANKER_ENABLED=true,
+ * RAG_RERANKER_MODE=llm). It imports the TS GGUF engine and can't be loaded from this .mjs without a TS
+ * loader, so this harness re-implements the SAME llm-scoring prompt locally (llmRerank). The default
+ * cosine-only metric therefore measures EMBEDDING retrieval (PRE-rerank) recall@K.
+ *
+ * OUTPUT: console (per-question + per-domain recall@K table + overall + CI verdict) AND a machine-readable
+ * summary at knowledge/rag-eval-results.json (overall + per-domain + timestamp).
  *
  * ENV (reuses the server's GGUF config):
  *   GGUF_MODELS_DIR, GGUF_EMBED_MODEL  → query embeddings (MUST match the model the
@@ -55,9 +75,27 @@ const val = (f, d) => {
   const i = argv.indexOf(f);
   return i >= 0 && argv[i + 1] ? argv[i + 1] : d;
 };
-const DO_RERANK = has("--rerank");
+// --rerank enables the (self-contained, mirrors aiReranker.ts) LLM rerank pass.
+// --no-rerank is an explicit stub that force-disables it even if --rerank is passed
+// or RAG_RERANKER_ENABLED=true — handy for measuring pure embedding (pre-rerank) recall.
+// NOTE: production reranking lives in server/services/aiReranker.ts (RAG_RERANKER_ENABLED=true,
+// RAG_RERANKER_MODE=llm). That module imports the TS GGUF engine and cannot be loaded from this
+// .mjs without a TS loader, so this harness re-implements the SAME llm scoring prompt locally
+// (llmRerank below). Gate it on RAG_RERANKER_ENABLED like production: --rerank only takes effect
+// when RAG_RERANKER_ENABLED is truthy (unless --force-rerank is given), mirroring prod behavior.
+const RERANKER_ENABLED = /^(1|true|yes|on)$/i.test(process.env.RAG_RERANKER_ENABLED || "");
+const DO_RERANK =
+  !has("--no-rerank") &&
+  (has("--force-rerank") || (has("--rerank") && RERANKER_ENABLED));
+const RERANK_REQUESTED = has("--rerank") || has("--force-rerank");
 const TOP_K = Number(val("--topn", "5"));
 const POOL = Number(val("--pool", "20"));
+
+// ─── CI gate (--ci / KB_EVAL_MIN / KB_EVAL_DOMAIN_MIN) ────────────────────────
+const DO_CI = has("--ci") || process.env.KB_EVAL_MIN != null || process.env.KB_EVAL_DOMAIN_MIN != null;
+const CI_MIN = Number(val("--min", process.env.KB_EVAL_MIN ?? "0.80")); // overall recall@5 floor
+const CI_DOMAIN_MIN = Number(val("--domain-min", process.env.KB_EVAL_DOMAIN_MIN ?? "0.60")); // per-domain floor
+const RESULTS_FILE = path.join(KDIR, "rag-eval-results.json");
 
 function parseJsonl(file) {
   if (!fs.existsSync(file)) return [];
@@ -156,9 +194,11 @@ async function main() {
 
   if (!embeddings.length) throw new Error("No embeddings. Run kb:embed first.");
   const corpusDim = embeddings[0].embedding.length;
+  const domainCount = new Set(questions.map((q) => q.domain || "(none)")).size;
   console.log(
-    `[eval] corpus: ${embeddings.length} vectors (dim=${corpusDim}), ${questions.length} golden questions, K=${TOP_K}` +
-      (DO_RERANK ? `, rerank pool=${POOL}` : ""),
+    `[eval] corpus: ${embeddings.length} vectors (dim=${corpusDim}), ${questions.length} golden questions across ${domainCount} domains, K=${TOP_K}` +
+      (DO_RERANK ? `, rerank pool=${POOL}` : "") +
+      (DO_CI ? `, CI gate ON (min=${CI_MIN}, domain-min=${CI_DOMAIN_MIN})` : ""),
   );
 
   const { embedTextGguf } = await import("./_gguf-embed.mjs");
@@ -193,10 +233,14 @@ async function main() {
       if (rerankHit) rerankHits++;
     }
 
+    // The metric used for per-domain recall + CI = reranked if reranking, else cosine.
+    const effHit = DO_RERANK ? rerankHit : baseHit;
     rows.push({
       id: q.id,
+      domain: q.domain || "(none)",
       base: baseHit ? "HIT" : "miss",
       rerank: DO_RERANK ? (rerankHit ? "HIT" : "miss") : "-",
+      effHit,
       top1: baseTop[0]?.sourcePath ?? "(none)",
     });
   }
@@ -204,16 +248,99 @@ async function main() {
   const n = questions.length || 1;
   console.log("\n[eval] per-question:");
   for (const r of rows) {
-    console.log(`  ${r.id.padEnd(4)} base=${r.base.padEnd(4)} rerank=${String(r.rerank).padEnd(4)} top1=${r.top1}`);
+    console.log(
+      `  ${r.id.padEnd(7)} [${r.domain.padEnd(26)}] base=${r.base.padEnd(4)} rerank=${String(r.rerank).padEnd(4)} top1=${r.top1}`,
+    );
   }
+
+  // ─── per-domain recall@K ────────────────────────────────────────────────────
+  const domains = new Map(); // domain -> { hit, total }
+  for (const r of rows) {
+    const d = domains.get(r.domain) || { hit: 0, total: 0 };
+    d.total++;
+    if (r.effHit) d.hit++;
+    domains.set(r.domain, d);
+  }
+  const domainNames = [...domains.keys()].sort();
+  const metricLabel = DO_RERANK ? "reranked" : "cosine";
+
+  console.log(`\n[eval] ── per-domain recall@${TOP_K} (${metricLabel}) ──`);
+  const failedDomains = [];
+  for (const d of domainNames) {
+    const { hit, total } = domains.get(d);
+    const recall = hit / total;
+    const flag = DO_CI && recall < CI_DOMAIN_MIN ? "  ✗ BELOW FLOOR" : "";
+    if (DO_CI && recall < CI_DOMAIN_MIN) failedDomains.push({ domain: d, recall, hit, total });
+    console.log(`  ${d.padEnd(28)} ${String(hit).padStart(3)}/${String(total).padEnd(3)} = ${recall.toFixed(3)}${flag}`);
+  }
+
   console.log("\n[eval] ── results ──");
   console.log(`  recall@${TOP_K} (cosine baseline): ${baseHits}/${n} = ${(baseHits / n).toFixed(3)}`);
+  const effHits = DO_RERANK ? rerankHits : baseHits;
   if (DO_RERANK) {
     console.log(`  recall@${TOP_K} (reranked):        ${rerankHits}/${n} = ${(rerankHits / n).toFixed(3)}`);
     const lift = (rerankHits - baseHits) / n;
     console.log(`  reranker lift:                  ${lift >= 0 ? "+" : ""}${lift.toFixed(3)}`);
+  } else if (RERANK_REQUESTED && !DO_RERANK) {
+    console.log(
+      "  NOTE: --rerank requested but reranker not applied (RAG_RERANKER_ENABLED is not truthy, or --no-rerank set).",
+    );
+    console.log("        This number is PURE EMBEDDING retrieval recall (pre-rerank). Use --force-rerank to override the gate.");
   } else {
-    console.log("  (run with --rerank and RAG_RERANKER_ENABLED=true to measure reranker lift)");
+    console.log("  NOTE: cosine-only — this measures EMBEDDING retrieval (pre-rerank) recall@K.");
+    console.log("        Production also applies server/services/aiReranker.ts (RAG_RERANKER_ENABLED=true, mode=llm).");
+    console.log("        Run with --rerank and RAG_RERANKER_ENABLED=true to approximate the production reranked recall.");
+  }
+
+  // ─── machine-readable summary → knowledge/rag-eval-results.json ──────────────
+  const summary = {
+    metric: metricLabel,
+    k: TOP_K,
+    overall: { hit: effHits, total: n, recall: Number((effHits / n).toFixed(4)) },
+    cosineBaseline: { hit: baseHits, total: n, recall: Number((baseHits / n).toFixed(4)) },
+    reranked: DO_RERANK ? { hit: rerankHits, total: n, recall: Number((rerankHits / n).toFixed(4)) } : null,
+    perDomain: Object.fromEntries(
+      domainNames.map((d) => {
+        const { hit, total } = domains.get(d);
+        return [d, { hit, total, recall: Number((hit / total).toFixed(4)) }];
+      }),
+    ),
+    gate: DO_CI ? { min: CI_MIN, domainMin: CI_DOMAIN_MIN } : null,
+  };
+  // Timestamp via the existing pattern: optional, never let it break the run.
+  try {
+    summary.timestamp = new Date().toISOString();
+  } catch {
+    /* omit timestamp rather than break */
+  }
+  try {
+    fs.writeFileSync(RESULTS_FILE, JSON.stringify(summary, null, 2) + "\n");
+    console.log(`\n[eval] wrote machine-readable summary → ${path.relative(ROOT, RESULTS_FILE)}`);
+  } catch (e) {
+    console.warn("[eval] could not write results JSON:", e?.message ?? e);
+  }
+
+  // ─── CI gate ────────────────────────────────────────────────────────────────
+  let ciFail = false;
+  if (DO_CI) {
+    const overallRecall = effHits / n;
+    console.log(`\n[eval] ── CI gate ── (overall min=${CI_MIN}, per-domain floor=${CI_DOMAIN_MIN})`);
+    if (overallRecall < CI_MIN) {
+      ciFail = true;
+      console.log(`  ✗ overall recall@${TOP_K} ${overallRecall.toFixed(3)} < ${CI_MIN}`);
+    } else {
+      console.log(`  ✓ overall recall@${TOP_K} ${overallRecall.toFixed(3)} ≥ ${CI_MIN}`);
+    }
+    if (failedDomains.length) {
+      ciFail = true;
+      console.log(`  ✗ ${failedDomains.length} domain(s) below floor ${CI_DOMAIN_MIN}:`);
+      for (const f of failedDomains) {
+        console.log(`      - ${f.domain}: ${f.hit}/${f.total} = ${f.recall.toFixed(3)}`);
+      }
+    } else {
+      console.log(`  ✓ all domains ≥ ${CI_DOMAIN_MIN}`);
+    }
+    console.log(ciFail ? "  RESULT: FAIL" : "  RESULT: PASS");
   }
 
   try {
@@ -221,7 +348,7 @@ async function main() {
     await mod.disposeGgufEmbed?.();
   } catch {}
   if (_model) { try { await _model.dispose(); } catch {} }
-  process.exit(0);
+  process.exit(DO_CI && ciFail ? 1 : 0);
 }
 
 main().catch((err) => {
