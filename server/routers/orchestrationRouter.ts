@@ -169,6 +169,17 @@ export const orchestrationRouter = router({
         commandDurations: z.record(z.string(), z.number()).optional(),
         defaultCommandMs: z.number().int().min(0).optional(),
         gateMs: z.number().int().min(0).optional(),
+        // Inline machine rows (machineType + capabilities) for "what-if" / self-contained
+        // simulations of machines that may not exist in the DB. Override DB rows by id.
+        machines: z
+          .array(
+            z.object({
+              id: z.number().int().positive(),
+              machineType: z.string().min(1).max(64),
+              capabilities: z.unknown().optional(),
+            }),
+          )
+          .optional(),
       }),
     )
     .query(async ({ input }): Promise<SimulationResult> => {
@@ -192,15 +203,20 @@ export const orchestrationRouter = router({
 
       // Load referenced machine rows (machineType + capabilities) for capability resolution.
       const refIds = new Set(validateWorkflow(def, null).referencedMachineIds);
-      const machineRows: Array<{ id: number; machineType: string; capabilities?: unknown }> = [];
+      const byId = new Map<number, { id: number; machineType: string; capabilities?: unknown }>();
       if (refIds.size > 0) {
         const rows = await d.select().from(machines);
         for (const m of rows) {
           if (refIds.has(m.id)) {
-            machineRows.push({ id: m.id, machineType: m.machineType, capabilities: m.capabilities });
+            byId.set(m.id, { id: m.id, machineType: m.machineType, capabilities: m.capabilities });
           }
         }
       }
+      // Inline machines override/augment DB rows (self-contained what-if simulations).
+      for (const m of input.machines ?? []) {
+        byId.set(m.id, { id: m.id, machineType: m.machineType, capabilities: m.capabilities });
+      }
+      const machineRows = [...byId.values()];
 
       // PURE prediction — no dispatch, no control. Normalize the telemetry key types.
       const assumedTelemetry: Record<number, Record<string, unknown>> | undefined = input.assumedTelemetry

@@ -16,6 +16,15 @@ export type MachineCapabilities = {
   [k: string]: unknown;
 };
 
+/** Floor-plan transform for the 3D plant view. x/y mirror layoutPositionX/Y (0–1). */
+export type MachineLayout = {
+  x?: number; // normalized 0–1 (mirror of layoutPositionX)
+  y?: number; // normalized 0–1 (mirror of layoutPositionY)
+  rotationDeg?: number; // yaw around vertical axis, 0–360
+  footprintW?: number; // scene-unit width (default ~1.5)
+  footprintD?: number; // scene-unit depth (default ~1.5)
+};
+
 /**
  * Corporate - Tập đoàn (cấp cao nhất)
  * Enables proper multi-tenant corporate rollup with FK integrity.
@@ -164,6 +173,7 @@ export const machines = pgTable("machines", {
   operationStatus: operationStatusEnum("operationStatus").default("stopped").notNull(),
   // Sprint F2 — generic device capability flags (nullable; defaults inferred per machineType)
   capabilities: jsonb("capabilities").$type<MachineCapabilities>(),
+  layout: jsonb("layout").$type<MachineLayout>(), // floor-plan transform (rotation/footprint); x/y also in layoutPositionX/Y
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => [

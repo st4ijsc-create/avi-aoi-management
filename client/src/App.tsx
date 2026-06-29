@@ -112,6 +112,10 @@ const WorkOrdersPage = React.lazy(() => import("./pages/WorkOrdersPage")); // Ma
 const ThresholdApprovalsPage = React.lazy(() => import("./pages/ThresholdApprovalsPage")); // Threshold approval review queue (approve/reject/withdraw)
 const AnomalyBankPage = React.lazy(() => import("./pages/AnomalyBankPage")); // Anomaly memory bank management (rebuild/delete per scope, admin)
 const OrchestrationStudio = React.lazy(() => import("./pages/OrchestrationStudio")); // E3b: visual orchestration studio (author → simulate → deploy/run)
+const RfTestCellSim = React.lazy(() => import("./pages/RfTestCellSim")); // Realtime digital-twin playback of an RF shielded test cell (feeder XYZ + robot + RF tester)
+const FactoryLiveMap3D = React.lazy(() => import("./pages/FactoryLiveMap3D")); // L4 plant view: 3D factory floor, machines coloured by live status, drill-down
+const FactoryFloorEditor = React.lazy(() => import("./pages/FactoryFloorEditor")); // 2D drag editor: set real floor-plan coords (layoutPositionX/Y) the 3D view reads
+const CellTwinPlayer = React.lazy(() => import("./pages/CellTwinPlayer")); // Generic data-driven realtime twin playback for ANY orchestration workflow
 const ApiKeysPage = React.lazy(() => import("./pages/ApiKeysPage")); // Control plane: scoped API-key admin CRUD (create-show-once)
 const EdgeNodesPage = React.lazy(() => import("./pages/EdgeNodesPage")); // E4: edge node registry management
 import AOIPackages from "./pages/AOIPackages";
@@ -181,6 +185,10 @@ function Router() {
       <Route path="/recipes"><RouteGuard navHref="/recipes"><RecipeManagement /></RouteGuard></Route>
       <Route path="/interlock-rules"><RouteGuard navHref="/interlock-rules"><InterlockRuleManagement /></RouteGuard></Route>
       <Route path="/orchestration-studio"><RouteGuard navHref="/orchestration-studio"><AIPageWrapper><OrchestrationStudio /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/rf-test-cell"><RouteGuard navHref="/rf-test-cell"><AIPageWrapper><RfTestCellSim /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/factory-live-map"><RouteGuard navHref="/factory-live-map"><AIPageWrapper><FactoryLiveMap3D /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/factory-floor-editor"><RouteGuard navHref="/factory-floor-editor"><AIPageWrapper><FactoryFloorEditor /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/cell-twin"><RouteGuard navHref="/cell-twin"><AIPageWrapper><CellTwinPlayer /></AIPageWrapper></RouteGuard></Route>
       <Route path="/edge-nodes"><RouteGuard navHref="/edge-nodes"><AIPageWrapper><EdgeNodesPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/api-keys"><RouteGuard navHref="/api-keys"><AIPageWrapper><ApiKeysPage /></AIPageWrapper></RouteGuard></Route>
       <Route path="/bom-management" component={BomManagement} />

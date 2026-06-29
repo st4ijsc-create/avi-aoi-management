@@ -568,4 +568,25 @@ export const machineRouter = router({
       });
       return { success: true };
     }),
+
+  // Full floor-plan transform: position (0–1) + rotation + footprint. Writes the
+  // x/y decimal columns (for legacy consumers) AND a `layout` jsonb with the rest.
+  updateLayout: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      x: z.number().min(0).max(1),
+      y: z.number().min(0).max(1),
+      rotationDeg: z.number().min(0).max(360).optional(),
+      footprintW: z.number().min(0.3).max(20).optional(),
+      footprintD: z.number().min(0.3).max(20).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, x, y, rotationDeg, footprintW, footprintD } = input;
+      await db.updateMachine(id, {
+        layoutPositionX: x.toString(),
+        layoutPositionY: y.toString(),
+        layout: { x, y, rotationDeg, footprintW, footprintD },
+      });
+      return { success: true };
+    }),
 });

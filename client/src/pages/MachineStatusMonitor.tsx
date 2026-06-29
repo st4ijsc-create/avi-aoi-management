@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next';
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { navItems } from "@/lib/navigation";
@@ -17,7 +18,7 @@ import { toast } from "sonner";
 import { 
   Wifi, WifiOff, Activity, Clock, AlertTriangle, RefreshCw,
   Server, Cpu, HardDrive, Thermometer, TrendingUp, History,
-  Download, FileText, Settings2, BarChart3, Calendar
+  Download, FileText, Settings2, BarChart3, Calendar, Boxes, Move, Search
 } from "lucide-react";
 import UptimeTimeline from "@/components/UptimeTimeline";
 import { format, formatDistanceToNow } from "date-fns";
@@ -362,10 +363,12 @@ function MachineDetailDialog({
 
 export default function MachineStatusMonitor() {
   const { t } = useTranslation();
+  const [, setLocation] = useLocation();
   const [selectedMachine, setSelectedMachine] = useState<MachineWithStatus | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterFactory, setFilterFactory] = useState<string>("all");
+  const [search, setSearch] = useState<string>("");
   const [activeTab, setActiveTab] = useState<string>("machines");
   const [timelineHours, setTimelineHours] = useState<number>(24);
   const [alertConfigOpen, setAlertConfigOpen] = useState(false);
@@ -399,6 +402,10 @@ export default function MachineStatusMonitor() {
   const filteredMachines = machines?.filter((m: MachineWithStatus) => {
     if (filterStatus !== "all" && m.latestStatus !== filterStatus) return false;
     if (filterFactory !== "all" && m.factory.id.toString() !== filterFactory) return false;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      if (!`${m.name} ${m.code} ${m.line?.name ?? ""}`.toLowerCase().includes(q)) return false;
+    }
     return true;
   }) || [];
 
@@ -421,6 +428,14 @@ export default function MachineStatusMonitor() {
             <p className="text-muted-foreground">{t('machines.trackConnectionStatus')}</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setLocation("/factory-live-map")}>
+              <Boxes className="h-4 w-4 mr-2" />
+              {t('machines.view3dMap', 'Bản đồ 3D')}
+            </Button>
+            <Button variant="outline" onClick={() => setLocation("/factory-floor-editor")}>
+              <Move className="h-4 w-4 mr-2" />
+              {t('machines.editLayout', 'Sửa mặt bằng')}
+            </Button>
             <Button variant="outline" onClick={() => setAlertConfigOpen(true)}>
               <Settings2 className="h-4 w-4 mr-2" />
               {t('machines.alertConfig')}
@@ -501,7 +516,16 @@ export default function MachineStatusMonitor() {
 
           <TabsContent value="machines" className="mt-4 space-y-4">
             {/* Filters */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t('machines.searchPlaceholder', 'Tìm theo tên / mã / dây chuyền…')}
+                  className="pl-8 w-64"
+                />
+              </div>
               <Select value={filterStatus} onValueChange={setFilterStatus}>
                 <SelectTrigger className="w-40">
                   <SelectValue placeholder={t('common.status')} />
@@ -525,13 +549,14 @@ export default function MachineStatusMonitor() {
                 </SelectContent>
               </Select>
 
-              {(filterStatus !== "all" || filterFactory !== "all") && (
-                <Button 
-                  variant="ghost" 
+              {(filterStatus !== "all" || filterFactory !== "all" || search.trim() !== "") && (
+                <Button
+                  variant="ghost"
                   size="sm"
                   onClick={() => {
                     setFilterStatus("all");
                     setFilterFactory("all");
+                    setSearch("");
                   }}
                 >
                   {t('machines.clearFilters')}
