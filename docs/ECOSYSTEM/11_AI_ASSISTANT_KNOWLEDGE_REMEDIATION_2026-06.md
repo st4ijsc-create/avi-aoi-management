@@ -241,7 +241,12 @@ Mỗi workstream ghi rõ **mục tiêu · việc · file chạm · nghiệm thu 
 - **GraphRAG multi-hop**: `server/services/aiSemanticGraph.ts` + expansion 1-hop trong `retrieveKnowledge`, flag `KB_GRAPHRAG_ENABLED` (default OFF). Inject neighbor của top-seed vào pool trước rerank, điểm `seed*sim*decay` (không vượt cosine hit thật).
 - **Pre-push cảnh báo KB stale**: `scripts/ai-kb/check-kb-stale.mjs` (warn-only, exit 0) + `install-git-hooks.mjs` (ghi `.git/hooks/pre-push`, tôn trọng `core.hooksPath`, idempotent — dùng thay husky vì husky lỗi ERESOLVE). npm: `kb:stale-check`, `hooks:install`. Corpus re-sync lần cuối **2186 chunk**, stale-check = "up to date".
 
+### Reranker gguf — ĐÃ PROVISIONED + BẬT ✅ (2026-06-29)
+- Phân tích: `rankAll()` của node-llama-cpp cần cross-encoder có rank head; **Qwen3-Reranker (kiến trúc sinh) KHÔNG hợp** → chọn **bge-reranker-v2-m3** (đa ngôn ngữ vi/en/zh).
+- Tải `bge-reranker-v2-m3-Q8_0.gguf` (635,676,416 B, magic GGUF) vào `D:/SOURCES/16.AI`. `.env` (local, không commit): `RAG_RERANKER_MODE=gguf` + `GGUF_RERANKER_MODEL=bge-reranker-v2-m3-Q8_0.gguf`.
+- **Verify**: smoke test `createRankingContext().rankAll()` → doc liên quan **0.998** vs không liên quan **0.000** (sắc hơn hẳn mode llm). Production `getRerankerStatus()` = `{mode:gguf, modelResolved:true, activeBackend:gguf}`, log "ranking context ready". Fallback về llm vẫn nguyên nếu file mất.
+
 ### Còn lại (thực sự)
-- Tải/đặt file model reranker để bật mode `gguf` (tùy chọn precision).
-- Bật cờ runtime khi muốn: `KB_GRAPHRAG_ENABLED=true`, `KB_AUTOSYNC_ENABLED=true`.
+- Bật cờ runtime khi muốn: `KB_GRAPHRAG_ENABLED=true`, `KB_AUTOSYNC_ENABLED=true` (restart server).
+- Restart server để nạp code mới (health/guard/read tool/`/ai-chat`/reranker gguf).
 - Merge/push branch `ai-assistant-knowledge-remediation`.
