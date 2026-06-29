@@ -235,11 +235,13 @@ Route mới đề xuất: `/engineering` (workspace), `/engineering/:projectId`.
 - **Còn lại (cần HW):** Teach/Jog panel UI, point-table builder, wire TMSCT download, mở rộng hãng khác.
 - **Chấp nhận:** ✅ tsc xanh; ✅ 8 test. Workspace kind `robot-tm`: soạn job→validate→build→simulate.
 
-### Phase D5 — Native IEC 61131-3 (nhóm C) 🔲  ⟵ *phần tham vọng*
-- [ ] Editor Ladder/FBD (Blockly/graph) + ST (Monaco); model PLCopen-XML nội bộ.
-- [ ] Compile sang **OpenPLC** (ST → matiec) hoặc xuất PLCopen XML; simulate trên OpenPLC runtime.
-- [ ] Deploy sang **runtime mở** (OpenPLC trên edge host), KHÔNG nạp ladder tự-sinh vào PLC hãng đóng.
-- **Chấp nhận:** vẽ ladder đơn giản (start/stop/seal-in, timer)→compile→chạy OpenPLC emulator→watch coil. Tài liệu giới hạn an toàn rõ ràng.
+### Phase D5 — Native IEC 61131-3 (nhóm C) ✅ ĐÃ XONG (emulator)  ⟵ *phần tham vọng*
+- [x] `server/services/programming/iec61131/` — 2 adapter: `iec61131-st` (Structured Text) + `iec61131-ld` (Ladder DSL: mỗi rung `OUT := <bool expr>`), đăng ký registry.
+- [x] **THẬT:** ST validate (cân bằng VAR/END_VAR, IF/END_IF, FOR, WHILE; `:=`); LD validate (parse từng rung + parse biểu thức). compile cả hai → **transpile LD→ST** → output `openplc://{st,ld}/<checksum>` (matiec-compatible).
+- [x] **Ladder simulate = THẬT:** `boolEval.ts` — parser đệ-quy an toàn (AND/OR/NOT/XOR/ngoặc, **không eval**) → **chạy 1 scan thực** với `assumedInputs`, scan-forward (output rung trước nuôi rung sau), tính output đúng. (ST simulate = preview trung thực, không giả chạy.)
+- [x] **AN TOÀN (quy tắc cứng §4.5):** deploy chỉ tới **runtime MỞ** (OpenPLC); chưa cấu hình host → `failed` rõ; **KHÔNG bao giờ** nạp logic tự-sinh vào PLC hãng đóng, **không** sinh logic safety.
+- **Còn lại:** editor Blockly/graph cho ladder (UI), compile thật qua matiec/PLCopen-XML, chạy trên OpenPLC host thật.
+- **Chấp nhận:** ✅ tsc xanh; ✅ 10 test (boolEval AND/NOT/OR/XOR/unknown/malformed; ST balance; LD transpile; **LD one-scan tính Y0=X0·!X1, Y1=Y0+X2 đúng cả 2 ca**).
 
 ### Phase D6 — Streaming realtime feedback (đóng G6) 🔲
 - [ ] OPC-UA monitoredItem subscription + fast-scan symbol đang watch; namespace Socket.IO `engineering:`.
@@ -315,5 +317,6 @@ Quy ước thực thi: mỗi phase tự chứa, flag OFF, tsc xanh, test kèm, v
 | 2026-06-29 | **D1** | `85b64f5` | Unified Engineering Workspace /engineering + CodeEditor (monaco-swappable) + route/nav/i18n. tsc xanh, locale OK. monaco hoãn (component boundary sẵn). |
 | 2026-06-29 | **D2** | `bc08bd0` | Zmotion BASIC adapter: validate/compile/motion-simulate THẬT + ZmcLink deploy/upload framework trung thực (gated, không giả deployed). 8 test, tsc xanh. Cần HW cho frame ZMC + watch. |
 | 2026-06-29 | **D3** | `d6b8607` | Mitsubishi engineering adapter: MELSEC device/recipe validate+compile+simulate THẬT; deploy framework trung thực (param-push/GX Works chưa wire→failed rõ). 8 test, tsc xanh. |
-| 2026-06-29 | **D4** | _(đang commit)_ | Robot Techman job-list adapter: teach-point/job validate+compile+simulate THẬT; TMSCT deploy framework trung thực. 8 test, tsc xanh. |
+| 2026-06-29 | **D4** | `33e95bc` | Robot Techman job-list adapter: teach-point/job validate+compile+simulate THẬT; TMSCT deploy framework trung thực. 8 test, tsc xanh. |
+| 2026-06-29 | **D5** | _(đang commit)_ | Native IEC 61131-3: ST + Ladder adapters; boolEval an toàn; **LD one-scan eval THẬT**; LD→ST transpile→OpenPLC; deploy chỉ runtime mở (gated). 10 test, tsc xanh. |
 | | … | | |

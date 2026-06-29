@@ -25,6 +25,7 @@
 import { ZmotionBasicAdapter } from "./zmotion/zmotionBasicAdapter";
 import { MitsubishiEngineeringAdapter } from "./mitsubishi/mitsubishiEngineeringAdapter";
 import { RobotTmAdapter } from "./robot/robotTmAdapter";
+import { Iec61131StAdapter, Iec61131LdAdapter } from "./iec61131/iec61131Adapter";
 
 /** Target classes the DPC tier can address (1:1 onto programmingKindEnum). */
 export type ProgrammingKind =
@@ -245,7 +246,8 @@ function build(kind: ProgrammingKind): ProgrammingAdapter {
   if (kind === "zmotion-basic") return new ZmotionBasicAdapter();
   if (kind === "mitsubishi-engineering") return new MitsubishiEngineeringAdapter();
   if (kind === "robot-tm") return new RobotTmAdapter();
-  // D5+ register their real adapters here.
+  if (kind === "iec61131-st") return new Iec61131StAdapter();
+  if (kind === "iec61131-ld") return new Iec61131LdAdapter();
   throw new Error(`Programming adapter "${kind}" is not yet implemented (lands in a later DPC phase).`);
 }
 
