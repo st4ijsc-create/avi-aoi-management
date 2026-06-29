@@ -224,12 +224,15 @@ describe("programmingService", () => {
     expect(r.ok).toBe(false);
   });
 
-  it("simulateBuild persists a sim run", async () => {
+  it("simulateBuild persists a sim run + recovers meta (timeline = lines)", async () => {
     seedArtifact("A\nB");
     const b = await buildArtifact(1, USER);
     const sim = await simulateBuild(b.id, {}, USER);
     expect(sim.ok).toBe(true);
     expect(rows("program_sim_runs").length).toBe(1);
+    // Regression guard: simulateBuild recompiles the artifact so adapter.simulate sees
+    // the real meta (here stub → 2 lines). Before the fix this was always 1.
+    expect(sim.timeline.length).toBe(2);
   });
 
   it("DEPLOY GATE: flag off → simulated, never reaches a device", async () => {

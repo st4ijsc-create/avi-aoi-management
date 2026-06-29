@@ -126,11 +126,17 @@ export async function simulateBuild(buildId: number, scenario: ProgSimScenario, 
   if (!adapter.simulate) {
     throw new Error(`Adapter "${b.adapterKind}" does not support simulation.`);
   }
+
+  // program_builds does not persist BuildResult.meta (moves/ops/rungs/stepList), which
+  // adapter.simulate needs. RECOMPILE from the artifact source so the fresh BuildResult
+  // carries its meta — deterministic, no schema change, and stays in lock-step with the
+  // built artifact.
+  const [art] = await d.select().from(programArtifacts).where(eq(programArtifacts.id, b.artifactId)).limit(1);
+  if (!art) throw new Error(`Artifact ${b.artifactId} not found`);
+  const fresh = await adapter.compile({ kind: art.kind as ProgrammingKind, language: art.language, content: art.content ?? "" });
+
   const t0 = Date.now();
-  const sim = await adapter.simulate(
-    { ok: b.ok, diagnostics: [], outputRef: b.outputRef ?? undefined, meta: { lines: undefined } },
-    scenario,
-  );
+  const sim = await adapter.simulate(fresh, scenario);
   const durationMs = Date.now() - t0;
 
   const [row] = await d
