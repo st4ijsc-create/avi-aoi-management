@@ -4,7 +4,7 @@
 |---|---|
 | **Mã doc** | 10_FRONTEND_ROLE_UX_AUDIT |
 | **Ngày** | 2026-06-29 |
-| **Trạng thái** | 🟡 **AUDIT — CHỜ DUYỆT remediation.** Chưa sửa UI. |
+| **Trạng thái** | 🟢 **AUDIT xong + Tier 1 (U1–U4) ĐÃ TRIỂN KHAI** (4 commit, tsc xanh). Tier 2–4 chờ duyệt. |
 | **Phạm vi** | Đánh giá frontend (`client/src/`) theo 7 vai trò: admin, supervisor, quality_inspector, operator, maintenance, viewer, user. Mức tương thích · linh hoạt · trải nghiệm. |
 
 ---
@@ -55,11 +55,12 @@ Kiến trúc phân-quyền **nền tảng rất chắc**: role-landing, lọc na
 
 ## 4. Kế hoạch remediation (đề xuất, theo ưu tiên)
 
-### Tier 1 — Rõ vai trò (ROI cao)
-- [ ] **U1. Supervisor briefing** `/supervisor-home`: team status + hàng đợi escalation + KPI rollup (theo khuôn OperatorHome/QualityHome). Cập nhật `roleLanding` cho supervisor/manager.
-- [ ] **U2. Read-only enforce trực quan**: hook/HOC `useReadOnly()` + component `<PermissionGate action>` tự disable/ẩn nút + badge "Chỉ xem" khi thiếu canEdit/canDelete. Áp cho corporate + các trang CRUD.
-- [ ] **U3. Viewer home** `/viewer-home`: dashboard read-only gọn (KPI + báo cáo), thay vì rơi về marketing.
-- [ ] **U4. Nhóm "Maintenance Workspace"** trong nav: gom Technician Copilot + Work Orders + Alerts (tương tự nhóm "AI Assistant" của operator).
+### Tier 1 — Rõ vai trò (ROI cao) ✅ ĐÃ XONG
+- [x] **U1. Supervisor briefing** `/supervisor-home` (`87ac809`/`d6fb5e8`): TodayBriefing + KPI rollup tiles (corporate/OEE/production/analytics/insight/reports) + attention list (recent NG). `roleLanding` supervisor/manager → `/supervisor-home`. `client/src/pages/SupervisorHome.tsx`.
+- [x] **U2. Read-only enforce trực quan** (`73d4dae`): `client/src/components/PermissionGate.tsx` — `useCanWrite(module)` + `<PermissionGate module action mode="hide|disable">` + `<ViewOnlyBadge/>`; áp vào header Corporate Management; i18n `common.viewOnly` vi/en/zh. (Roll-out toàn bộ CRUD = U13.)
+- [x] **U3. Viewer home** `/viewer-home` (`87ac809`): read-only, badge "Chỉ xem", tiles chỉ tới view surfaces (dashboard/OEE/production/analytics/history/reports); `roleLanding` viewer/user → `/viewer-home`. `client/src/pages/ViewerHome.tsx`.
+- [x] **U4. Nhóm "Maintenance Workspace"** (`35d764e`): nav group mới gom Technician Copilot + Work Orders + Alerts; i18n `nav.maintenanceGroup` vi/en/zh.
+- **Ghi chú:** chuỗi i18n trang Supervisor/Viewer dùng inline-fallback (tiếng Việt) — bổ sung bản dịch đầy đủ gộp vào **U15**.
 
 ### Tier 2 — Khả dụng & truy cập
 - [ ] **U5. Admin dashboard** `/admin-home`: sức khoẻ hệ thống, đăng nhập gần đây, cấp quyền, license, uptime.
@@ -89,3 +90,7 @@ Khi bạn duyệt, ưu tiên Tier 1 (U1–U4) — tác động rõ nhất tới 
 | Ngày | Mục | Commit | Ghi chú |
 |---|---|---|---|
 | 2026-06-29 | — | — | Tạo doc 10 (audit, chờ duyệt remediation) |
+| 2026-06-29 | **U4** | `35d764e` | Nhóm nav Maintenance Workspace + i18n |
+| 2026-06-29 | **U2** | `73d4dae` | PermissionGate/ViewOnlyBadge/useCanWrite + áp Corporate + common.viewOnly |
+| 2026-06-29 | **U1** | `d6fb5e8` | SupervisorHome /supervisor-home + roleLanding + route |
+| 2026-06-29 | **U3** | `87ac809` | ViewerHome /viewer-home (read-only) + roleLanding |
