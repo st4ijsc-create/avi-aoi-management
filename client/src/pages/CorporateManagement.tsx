@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTranslation } from 'react-i18next';
 import DashboardLayout from "@/components/DashboardLayout";
+import { ViewOnlyBadge } from "@/components/PermissionGate";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -410,7 +411,10 @@ export default function CorporateManagement() {
         {/* Page Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">{t('corporate.corporateManagement', 'Corporate Management')}</h1>
+            <h1 className="flex items-center gap-2 text-2xl font-bold text-foreground">
+              {t('corporate.corporateManagement', 'Corporate Management')}
+              <ViewOnlyBadge module="corporate_management" />
+            </h1>
             <p className="text-muted-foreground">{t('corporate.corporateManagementDesc', 'Manage organizational hierarchy and factory relationships')}</p>
           </div>
           <div className="flex items-center gap-2">
