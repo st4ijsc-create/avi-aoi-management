@@ -113,6 +113,8 @@ const ThresholdApprovalsPage = React.lazy(() => import("./pages/ThresholdApprova
 const AnomalyBankPage = React.lazy(() => import("./pages/AnomalyBankPage")); // Anomaly memory bank management (rebuild/delete per scope, admin)
 const OrchestrationStudio = React.lazy(() => import("./pages/OrchestrationStudio")); // E3b: visual orchestration studio (author → simulate → deploy/run)
 const EngineeringWorkspace = React.lazy(() => import("./pages/EngineeringWorkspace")); // Doc 09 D1: Unified Engineering Workspace (author/build/simulate/deploy device programs)
+const SupervisorHome = React.lazy(() => import("./pages/SupervisorHome")); // Doc 10 U1: supervisor/manager briefing landing
+const ViewerHome = React.lazy(() => import("./pages/ViewerHome")); // Doc 10 U3: viewer/user read-only landing
 const RfTestCellSim = React.lazy(() => import("./pages/RfTestCellSim")); // Realtime digital-twin playback of an RF shielded test cell (feeder XYZ + robot + RF tester)
 const FactoryLiveMap3D = React.lazy(() => import("./pages/FactoryLiveMap3D")); // L4 plant view: 3D factory floor, machines coloured by live status, drill-down
 const FactoryFloorEditor = React.lazy(() => import("./pages/FactoryFloorEditor")); // 2D drag editor: set real floor-plan coords (layoutPositionX/Y) the 3D view reads
@@ -291,6 +293,8 @@ function Router() {
       <Route path="/technician-copilot"><AIPageWrapper><TechnicianCopilot /></AIPageWrapper></Route>
       <Route path="/operator"><AIPageWrapper><OperatorHome /></AIPageWrapper></Route>
       <Route path="/quality-home"><AIPageWrapper><QualityHome /></AIPageWrapper></Route>
+      <Route path="/supervisor-home"><AIPageWrapper><SupervisorHome /></AIPageWrapper></Route>
+      <Route path="/viewer-home"><AIPageWrapper><ViewerHome /></AIPageWrapper></Route>
       <Route path="/test-annotation" component={TestAnnotationPage} />
       <Route path="/mask-annotation"><AIPageWrapper><MaskAnnotationPage /></AIPageWrapper></Route>
       <Route path="/aoi-packages" component={AOIPackages} />

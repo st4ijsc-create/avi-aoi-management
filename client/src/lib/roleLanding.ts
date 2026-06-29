@@ -6,9 +6,10 @@
  *   - operator           → /operator            (the big-button floor shell)
  *   - maintenance        → /technician-copilot   (RCA copilot)
  *   - quality_inspector  → /quality-home          (the inspection workspace)
- *   - supervisor/manager → /management-insight    (exec NL Q&A + alerts)
+ *   - supervisor/manager → /supervisor-home       (briefing: rollup + escalation, U1)
  *   - admin/it_admin     → /dashboard             (full ops dashboard)
- *   - viewer/user/other  → /                      (Home)
+ *   - viewer/user        → /viewer-home           (read-only briefing, U3)
+ *   - other/unknown      → /                      (Home)
  *
  * Intentionally minimal + safe: an unknown/undefined role falls through to "/".
  * Routes are NOT permission-checked here — each page enforces its own access;
@@ -27,12 +28,13 @@ export function landingPathForRole(role?: string | null): string {
       return "/quality-home";
     case "supervisor":
     case "manager":
-      return "/management-insight";
+      return "/supervisor-home";
     case "admin":
     case "it_admin":
       return "/dashboard";
     case "viewer":
     case "user":
+      return "/viewer-home";
     default:
       return "/";
   }
