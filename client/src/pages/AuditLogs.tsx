@@ -20,6 +20,8 @@ import { CommandAuditLogContent } from "@/pages/CommandAuditLog";
 import { toast } from "sonner";
 import { useTranslation } from 'react-i18next';
 import { useState } from "react";
+import { useSearch } from "wouter";
+import { usePermissions } from "@/_core/hooks/usePermissions";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell
@@ -571,7 +573,21 @@ export function AuditLogContent() {
 export default function AuditLogs() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const { hasPermission } = usePermissions();
   const isAdmin = (user as any)?.role === "admin";
+
+  // The command-audit tab reads trpc.commandLog.* which requires machine_control/canView.
+  // This page is admin-gated (admins always pass), but to avoid a hard FORBIDDEN for any
+  // non-machine_control viewer, the Command tab is only shown when the user can read it.
+  const canViewCommand = hasPermission("machine_control", "canView");
+
+  // Honour ?tab=command / ?tab=enhanced (used by the /command-audit and /enhanced-audit redirects).
+  const search = useSearch();
+  const requestedTab = new URLSearchParams(search).get("tab");
+  const defaultTab =
+    requestedTab === "command" && canViewCommand ? "command"
+    : requestedTab === "enhanced" ? "enhanced"
+    : "activity";
 
   if (!isAdmin) {
     return (
@@ -598,16 +614,18 @@ export default function AuditLogs() {
           </div>
         </div>
 
-        <Tabs defaultValue="activity">
+        <Tabs defaultValue={defaultTab}>
           <TabsList>
             <TabsTrigger value="activity" className="gap-2">
               <Activity className="h-4 w-4" />
               {t('audit.tabActivity', 'Hoạt động')}
             </TabsTrigger>
-            <TabsTrigger value="command" className="gap-2">
-              <ScrollText className="h-4 w-4" />
-              {t('audit.tabCommand', 'Lệnh máy')}
-            </TabsTrigger>
+            {canViewCommand && (
+              <TabsTrigger value="command" className="gap-2">
+                <ScrollText className="h-4 w-4" />
+                {t('audit.tabCommand', 'Lệnh máy')}
+              </TabsTrigger>
+            )}
             <TabsTrigger value="enhanced" className="gap-2">
               <History className="h-4 w-4" />
               {t('audit.tabEnhanced', 'Nâng cao')}
@@ -617,9 +635,11 @@ export default function AuditLogs() {
           <TabsContent value="activity" className="mt-4">
             <AuditLogContent />
           </TabsContent>
-          <TabsContent value="command" className="mt-4">
-            <CommandAuditLogContent />
-          </TabsContent>
+          {canViewCommand && (
+            <TabsContent value="command" className="mt-4">
+              <CommandAuditLogContent />
+            </TabsContent>
+          )}
           <TabsContent value="enhanced" className="mt-4">
             <EnhancedAuditLogsContent />
           </TabsContent>

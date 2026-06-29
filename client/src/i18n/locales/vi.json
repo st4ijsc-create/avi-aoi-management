@@ -856,7 +856,11 @@
     "after": "Sau",
     "user": "Người dùng",
     "page": "Trang",
-    "logs": "Nhật ký"
+    "logs": "Nhật ký",
+    "tabActivity": "Hoạt động",
+    "tabCommand": "Lệnh máy",
+    "tabEnhanced": "Nâng cao",
+    "unifiedSubtitle": "Hoạt động hệ thống, lệnh điều khiển máy và lịch sử thay đổi — một nơi duy nhất"
   },
   "auth": {
     "regenerateBackupCodesDescription": "Regenerate Sao lưu Mã Mô tả",
@@ -1144,12 +1148,18 @@
     "attentionTitle": "Cần chú ý",
     "attentionEmpty": "Không có mục cần chú ý",
     "tiles": {
-      "corporate": "Tổng quan tập đoàn", "corporateDesc": "Rollup theo nhà máy",
-      "oee": "OEE & Sức khỏe", "oeeDesc": "Năng suất & thiết bị",
-      "production": "Sản xuất", "productionDesc": "Tiến độ dây chuyền",
-      "analytics": "Phân tích", "analyticsDesc": "Xu hướng & SPC",
-      "insight": "Hỏi đáp điều hành", "insightDesc": "NL Q&A + tóm tắt",
-      "reports": "Báo cáo", "reportsDesc": "Xuất & lịch báo cáo"
+      "corporate": "Tổng quan tập đoàn",
+      "corporateDesc": "Rollup theo nhà máy",
+      "oee": "OEE & Sức khỏe",
+      "oeeDesc": "Năng suất & thiết bị",
+      "production": "Sản xuất",
+      "productionDesc": "Tiến độ dây chuyền",
+      "analytics": "Phân tích",
+      "analyticsDesc": "Xu hướng & SPC",
+      "insight": "Hỏi đáp điều hành",
+      "insightDesc": "NL Q&A + tóm tắt",
+      "reports": "Báo cáo",
+      "reportsDesc": "Xuất & lịch báo cáo"
     }
   },
   "viewer": {
@@ -1157,12 +1167,18 @@
     "subtitle": "Truy cập nhanh các bảng & báo cáo (chỉ xem)",
     "viewsTitle": "Các bảng xem",
     "tiles": {
-      "dashboard": "Bảng điều khiển", "dashboardDesc": "Tổng quan KPI",
-      "oee": "OEE", "oeeDesc": "Năng suất thiết bị",
-      "production": "Sản xuất", "productionDesc": "Tiến độ dây chuyền",
-      "analytics": "Phân tích", "analyticsDesc": "Xu hướng chất lượng",
-      "history": "Lịch sử", "historyDesc": "Tra cứu kiểm tra",
-      "reports": "Báo cáo", "reportsDesc": "Xem báo cáo"
+      "dashboard": "Bảng điều khiển",
+      "dashboardDesc": "Tổng quan KPI",
+      "oee": "OEE",
+      "oeeDesc": "Năng suất thiết bị",
+      "production": "Sản xuất",
+      "productionDesc": "Tiến độ dây chuyền",
+      "analytics": "Phân tích",
+      "analyticsDesc": "Xu hướng chất lượng",
+      "history": "Lịch sử",
+      "historyDesc": "Tra cứu kiểm tra",
+      "reports": "Báo cáo",
+      "reportsDesc": "Xem báo cáo"
     }
   },
   "adminHome": {
@@ -1170,29 +1186,50 @@
     "subtitle": "Quản trị người dùng, phân quyền, audit và hệ thống",
     "govTitle": "Quản trị & vận hành",
     "tiles": {
-      "users": "Người dùng", "usersDesc": "Tài khoản & vai trò",
-      "roles": "Phân quyền", "rolesDesc": "Role builder & module",
-      "audit": "Nhật ký kiểm toán", "auditDesc": "Audit log nâng cao",
-      "apiKeys": "API Keys", "apiKeysDesc": "Khóa truy cập có phạm vi",
-      "system": "Cấu hình hệ thống", "systemDesc": "Tham số & tích hợp",
-      "license": "Bản quyền", "licenseDesc": "License & giới hạn",
-      "edge": "Edge nodes", "edgeDesc": "Cổng biên & runtime",
-      "opsDashboard": "Bảng vận hành", "opsDashboardDesc": "Dashboard đầy đủ"
+      "users": "Người dùng",
+      "usersDesc": "Tài khoản & vai trò",
+      "roles": "Phân quyền",
+      "rolesDesc": "Role builder & module",
+      "audit": "Nhật ký kiểm toán",
+      "auditDesc": "Audit log nâng cao",
+      "apiKeys": "API Keys",
+      "apiKeysDesc": "Khóa truy cập có phạm vi",
+      "system": "Cấu hình hệ thống",
+      "systemDesc": "Tham số & tích hợp",
+      "license": "Bản quyền",
+      "licenseDesc": "License & giới hạn",
+      "edge": "Edge nodes",
+      "edgeDesc": "Cổng biên & runtime",
+      "opsDashboard": "Bảng vận hành",
+      "opsDashboardDesc": "Dashboard đầy đủ",
+      "sessions": "Phiên đăng nhập",
+      "sessionsDesc": "Phiên đăng nhập đang hoạt động",
+      "backup": "Sao lưu & khôi phục",
+      "backupDesc": "Sao lưu & khôi phục cơ sở dữ liệu"
     }
   },
   "roleUpgrade": {
     "subject": "Yêu cầu nâng quyền truy cập",
-    "copied": "Đã sao chép yêu cầu", "copyFail": "Không sao chép được",
-    "title": "Xin nâng quyền", "subtitle": "Gửi yêu cầu tới quản trị viên để được cấp vai trò phù hợp",
-    "formTitle": "Thông tin yêu cầu", "current": "Vai trò hiện tại", "desired": "Vai trò mong muốn",
-    "pick": "Chọn vai trò", "reason": "Lý do", "reasonPh": "Vì sao bạn cần quyền này?",
-    "adminEmail": "Email quản trị (tuỳ chọn)", "sendMail": "Gửi qua email", "copy": "Sao chép",
+    "copied": "Đã sao chép yêu cầu",
+    "copyFail": "Không sao chép được",
+    "title": "Xin nâng quyền",
+    "subtitle": "Gửi yêu cầu tới quản trị viên để được cấp vai trò phù hợp",
+    "formTitle": "Thông tin yêu cầu",
+    "current": "Vai trò hiện tại",
+    "desired": "Vai trò mong muốn",
+    "pick": "Chọn vai trò",
+    "reason": "Lý do",
+    "reasonPh": "Vì sao bạn cần quyền này?",
+    "adminEmail": "Email quản trị (tuỳ chọn)",
+    "sendMail": "Gửi qua email",
+    "copy": "Sao chép",
     "note": "Quản trị viên cấp quyền tại trang Người dùng / Phân quyền."
   },
   "dashTemplate": {
     "title": "Bắt đầu với một mẫu bảng?",
     "desc": "Chọn một bố cục dựng sẵn phù hợp vai trò của bạn (sản xuất / chất lượng / thiết bị / điều hành) — có thể tùy chỉnh sau.",
-    "skip": "Để sau", "choose": "Chọn mẫu"
+    "skip": "Để sau",
+    "choose": "Chọn mẫu"
   },
   "offline": {
     "banner": "Mất kết nối — thao tác quét/báo cáo sẽ không gửi được cho tới khi có mạng lại."
@@ -1310,7 +1347,6 @@
     "factory": "Nhà máy",
     "endDate": "Ngày kết thúc",
     "enabled": "Đã bật",
-    "dismiss": "Bỏ qua",
     "details": "Chi tiết",
     "confirm": "Xác nhận",
     "actions": "Thao tác",
@@ -1968,7 +2004,9 @@
     "workstationNameCol": "Tên trạm",
     "workstationsNeedImprovement": "Trạm cần cải thiện",
     "yield": "Tỷ lệ đạt",
-    "yieldWarning": "Cảnh báo tỷ lệ đạt"
+    "yieldWarning": "Cảnh báo tỷ lệ đạt",
+    "appliedAsCustomDashboard": "Đã áp dụng thành dashboard tùy chỉnh",
+    "viewAppliedDashboard": "Xem dashboard"
   },
   "defects": {
     "heatmap": {
@@ -4304,7 +4342,9 @@
     "thresholdApprovals": "Duyệt ngưỡng",
     "thresholdApprovalsDesc": "Hàng đợi phê duyệt đề xuất ngưỡng LSL/USL",
     "anomalyBanks": "Ngân hàng bất thường",
-    "anomalyBanksDesc": "Quản lý memory bank phát hiện bất thường (PatchCore)"
+    "anomalyBanksDesc": "Quản lý memory bank phát hiện bất thường (PatchCore)",
+    "opsConsole": "Bảng điều hành",
+    "opsConsoleDesc": "War-Room + Trung tâm cảnh báo hợp nhất"
   },
   "aboutPage": {
     "layoutTitle": "Giới thiệu hệ thống",
@@ -9234,5 +9274,50 @@
       "builtAt": "Dựng lúc",
       "actions": "Thao tác"
     }
+  },
+  "opsConsole": {
+    "title": "Bảng điều hành",
+    "subtitle": "War-Room + Trung tâm cảnh báo hợp nhất — chỉ tín hiệu, không điều khiển máy",
+    "tvMode": "Chế độ TV",
+    "tabWarRoom": "War Room",
+    "tabAlertCenter": "Trung tâm cảnh báo",
+    "ack": "Xác nhận",
+    "resolve": "Xử lý xong",
+    "acked": "ĐÃ XN",
+    "open": "Đang mở",
+    "allClear": "Không có cảnh báo nào",
+    "age": "Tuổi",
+    "unassigned": "Chưa gán",
+    "interlockRule": "Quy tắc interlock #{{id}}",
+    "interlock": "Interlock",
+    "mqttBroker": "MQTT / Broker",
+    "thresholdBreach": "Vượt ngưỡng",
+    "triggeredValue": "Giá trị kích hoạt: {{v}}",
+    "qualityThreshold": "Ngưỡng chất lượng",
+    "kpiCritical": "Nghiêm trọng",
+    "kpiHigh": "Cao",
+    "kpiUnacked": "Chưa xác nhận",
+    "kpiOpen": "Tổng đang mở",
+    "kpiMtta": "MTTA (giây, 24h)",
+    "allSources": "Tất cả nguồn",
+    "srcAndon": "Andon",
+    "srcPredictive": "Dự báo",
+    "srcInterlock": "Interlock",
+    "srcMqtt": "MQTT",
+    "srcThreshold": "Ngưỡng",
+    "allSeverity": "Mọi mức độ",
+    "sevMedium": "Trung bình",
+    "sevLow": "Thấp",
+    "ackAll": "Mọi trạng thái",
+    "ackUnacked": "Chưa xác nhận",
+    "ackAcked": "Đã xác nhận",
+    "colSeverity": "Mức độ",
+    "colSource": "Nguồn",
+    "colTitle": "Tiêu đề",
+    "colGroup": "Vị trí",
+    "colAge": "Tuổi",
+    "searchPlaceholder": "Tìm cảnh báo…",
+    "showing": "Hiển thị {{n}}",
+    "noAlerts": "Không có cảnh báo khớp bộ lọc"
   }
 }

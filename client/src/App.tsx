@@ -51,9 +51,7 @@ import WorkstationManagement from "./pages/WorkstationManagement";
 import CategoryAnalytics from "./pages/CategoryAnalytics";
 import UserGuide from "./pages/UserGuide";
 import AboutSystem from "./pages/AboutSystem";
-import DashboardTemplates from "./pages/DashboardTemplates";
 import BackupRestore from "./pages/BackupRestore";
-import TemplateMarketplace from "./pages/TemplateMarketplace";
 import OEEDashboard from "./pages/OEEDashboard";
 import MQTTReplay from "./pages/MQTTReplay";
 import OEETargetSettings from "./pages/OEETargetSettings";
@@ -71,8 +69,6 @@ import DefectHeatmapPage from "./pages/DefectHeatmapPage";
 import DefectPredictionPage from "./pages/DefectPredictionPage";
 import RootCauseAnalysisPage from "./pages/RootCauseAnalysisPage";
 const CausalGraphEditorPage = React.lazy(() => import("./pages/CausalGraphEditorPage")); // Causal knowledge-graph admin editor (validated atomic write)
-import PredictiveAlertsPage from "./pages/PredictiveAlertsPage";
-import DashboardMarketplace from "./pages/DashboardMarketplace";
 import HistoryExportScheduling from "./pages/HistoryExportScheduling";
 import CorporateDashboard from "./pages/CorporateDashboard";
 const AIPerformanceDashboard = React.lazy(() => import("./pages/AIPerformanceDashboard"));
@@ -101,9 +97,8 @@ const OperatorHome = React.lazy(() => import("./pages/OperatorHome")); // Role l
 const QualityHome = React.lazy(() => import("./pages/QualityHome")); // Role landing: quality_inspector inspection workspace (P1 doc 07 §④)
 import TestAnnotationPage from "./pages/TestAnnotationPage";
 const MaskAnnotationPage = React.lazy(() => import("./pages/MaskAnnotationPage"));
-const AndonBoard = React.lazy(() => import("./pages/AndonBoard")); // F5a: Andon board (ALERT-ONLY)
+const OpsConsole = React.lazy(() => import("./pages/OpsConsole")); // P1 (doc 12 §8): unified Ops Console / War-Room (consolidates Andon + Predictive + alert sources)
 const DeviceAdapterManagement = React.lazy(() => import("./pages/DeviceAdapterManagement")); // G2.2a: OT adapter/tag CONFIG
-const CommandAuditLog = React.lazy(() => import("./pages/CommandAuditLog")); // G2.2a: command audit (READ-ONLY)
 const RecipeManagement = React.lazy(() => import("./pages/RecipeManagement")); // G2.2b: recipe catalog + deploy ledger (CONFIG/VIEW)
 const InterlockRuleManagement = React.lazy(() => import("./pages/InterlockRuleManagement")); // G2.2b: interlock rule admin (CONFIG/VIEW)
 const BomManagement = React.lazy(() => import("./pages/BomManagement")); // G2.4: BOM + Feeder + component genealogy (data/telemetry/trace)
@@ -128,12 +123,10 @@ import MqttBulletin from "./pages/MqttBulletin";
 import CorrelationAnalysis from "./pages/CorrelationAnalysis";
 import QualityGates from "./pages/QualityGates";
 import RoleBuilder from "./pages/RoleBuilder";
-import EnhancedAuditLogs from "./pages/EnhancedAuditLogs";
 import PdfReports from "./pages/PdfReports";
 import DataComparison from "./pages/DataComparison";
 import ReportBuilder from "./pages/ReportBuilder";
 import PowerPointExport from "./pages/PowerPointExport";
-import EnhancedScheduledReports from "./pages/EnhancedScheduledReports";
 import ParetoAnalysis from "./pages/ParetoAnalysis";
 import QualityGateTemplates from "./pages/QualityGateTemplates";
 import ProductionScheduling from "./pages/ProductionScheduling";
@@ -159,9 +152,9 @@ function AIPageWrapper({ children }: { children: React.ReactNode }) {
   );
 }
 
-function RedirectToAdminSetting() {
+function RedirectToAdminHome() {
   const [, setLocation] = useLocation();
-  useEffect(() => { setLocation("/admin-setting", { replace: true }); }, []);
+  useEffect(() => { setLocation("/admin-home", { replace: true }); }, []);
   return null;
 }
 
@@ -184,9 +177,12 @@ function Router() {
       <Route path="/setup" component={Setup} />
       <Route path="/login" component={Login} />
       <Route path="/dashboard" component={Dashboard} />
-      <Route path="/andon" component={AndonBoard} />
+      {/* P1 consolidation: Andon + Predictive Alerts merged into the unified Ops Console. */}
+      <Route path="/ops-console"><AIPageWrapper><OpsConsole /></AIPageWrapper></Route>
+      <Route path="/andon"><Redirect to="/ops-console" /></Route>
       <Route path="/device-adapters"><RouteGuard navHref="/device-adapters"><DeviceAdapterManagement /></RouteGuard></Route>
-      <Route path="/command-audit"><RouteGuard navHref="/command-audit"><CommandAuditLog /></RouteGuard></Route>
+      {/* P1 consolidation: command audit is now the "command" tab of the unified Audit page. */}
+      <Route path="/command-audit"><Redirect to="/audit-logs?tab=command" /></Route>
       <Route path="/recipes"><RouteGuard navHref="/recipes"><RecipeManagement /></RouteGuard></Route>
       <Route path="/interlock-rules"><RouteGuard navHref="/interlock-rules"><InterlockRuleManagement /></RouteGuard></Route>
       <Route path="/orchestration-studio"><RouteGuard navHref="/orchestration-studio"><AIPageWrapper><OrchestrationStudio /></AIPageWrapper></RouteGuard></Route>
@@ -209,7 +205,7 @@ function Router() {
       <Route path="/settings" component={Settings} />
       <Route path="/request-role"><RequestRole /></Route>
       <Route path="/datasettings" component={DataSettings} />
-      <Route path="/admin" component={RedirectToAdminSetting} />
+      <Route path="/admin" component={RedirectToAdminHome} />
       <Route path="/analytics" component={RedirectToCategoryAnalytics} />
       <Route path="/ai-analytics" component={RedirectToAIInspectionAnalytics} />
       <Route path="/dashboard-center"><RouteGuard navHref="/dashboard-center"><DashboardCenter /></RouteGuard></Route>
@@ -246,9 +242,10 @@ function Router() {
       <Route path="/category-analytics" component={CategoryAnalytics} />
       <Route path="/user-guide" component={UserGuide} />
       <Route path="/about-system" component={AboutSystem} />
-      <Route path="/dashboard-templates" component={DashboardTemplates} />
+      {/* P1 consolidation: dashboard templates/marketplace folded into Dashboard Center tabs. */}
+      <Route path="/dashboard-templates"><Redirect to="/dashboard-center?tab=dashboard-templates" /></Route>
       <Route path="/backup-restore"><RouteGuard navHref="/backup-restore"><BackupRestore /></RouteGuard></Route>
-      <Route path="/template-marketplace" component={TemplateMarketplace} />
+      <Route path="/template-marketplace"><Redirect to="/dashboard-center?tab=dashboard-marketplace" /></Route>
       <Route path="/oee-dashboard" component={OEEDashboard} />
       <Route path="/mqtt-replay" component={MQTTReplay} />
       <Route path="/oee-target-settings" component={OEETargetSettings} />
@@ -267,8 +264,8 @@ function Router() {
       <Route path="/defect-prediction" component={DefectPredictionPage} />
       <Route path="/root-cause-analysis" component={RootCauseAnalysisPage} />
       <Route path="/causal-graph"><RouteGuard navHref="/causal-graph"><AIPageWrapper><CausalGraphEditorPage /></AIPageWrapper></RouteGuard></Route>
-      <Route path="/predictive-alerts" component={PredictiveAlertsPage} />
-      <Route path="/dashboard-marketplace" component={DashboardMarketplace} />
+      <Route path="/predictive-alerts"><Redirect to="/ops-console" /></Route>
+      <Route path="/dashboard-marketplace"><Redirect to="/dashboard-center?tab=dashboard-marketplace" /></Route>
       <Route path="/history-export-scheduling" component={HistoryExportScheduling} />
       <Route path="/ai-hub"><AIPageWrapper><AIHub /></AIPageWrapper></Route>
       <Route path="/ai-chat"><AIPageWrapper><AIChatPage /></AIPageWrapper></Route>
@@ -308,12 +305,14 @@ function Router() {
       <Route path="/correlation-analysis" component={CorrelationAnalysis} />
       <Route path="/quality-gates" component={QualityGates} />
       <Route path="/role-builder"><RouteGuard navHref="/role-builder"><RoleBuilder /></RouteGuard></Route>
-      <Route path="/enhanced-audit"><RouteGuard navHref="/enhanced-audit"><EnhancedAuditLogs /></RouteGuard></Route>
+      {/* P1 consolidation: enhanced audit is now the "enhanced" tab of the unified Audit page. */}
+      <Route path="/enhanced-audit"><Redirect to="/audit-logs?tab=enhanced" /></Route>
       <Route path="/pdf-reports" component={PdfReports} />
       <Route path="/data-comparison" component={DataComparison} />
       <Route path="/report-builder" component={ReportBuilder} />
       <Route path="/powerpoint-export" component={PowerPointExport} />
-      <Route path="/enhanced-scheduled-reports" component={EnhancedScheduledReports} />
+      {/* P1 consolidation: enhanced scheduled reports folded into the canonical Scheduled Reports page. */}
+      <Route path="/enhanced-scheduled-reports"><Redirect to="/scheduled-reports" /></Route>
       <Route path="/pareto-analysis" component={ParetoAnalysis} />
       <Route path="/quality-gate-templates" component={QualityGateTemplates} />
       <Route path="/production-scheduling" component={ProductionScheduling} />

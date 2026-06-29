@@ -145,7 +145,8 @@ export const navGroups: NavGroup[] = [
       },
       // Orphan surfaced (P1): dashboard template marketplace.
       {
-        href: "/dashboard-marketplace",
+        // P1 consolidation: marketplace folded into the Dashboard Center "marketplace" tab.
+        href: "/dashboard-center?tab=dashboard-marketplace",
         label: "nav.dashboardMarketplace",
         icon: <Store className="h-4 w-4" />,
         description: "nav.dashboardMarketplaceDesc",
@@ -898,10 +899,11 @@ export const navGroups: NavGroup[] = [
     permissionCategory: "machine_control",
     items: [
       {
-        href: "/andon",
-        label: "nav.andonBoard",
+        // P1 consolidation: Andon + Predictive Alerts merged into the unified Ops Console.
+        href: "/ops-console",
+        label: "nav.opsConsole",
         icon: <AlertTriangle className="h-4 w-4" />,
-        description: "nav.andonBoardDesc",
+        description: "nav.opsConsoleDesc",
         requiredPermission: "andon",
         permissionCategory: "andon",
       },
@@ -978,7 +980,8 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "machine_control",
       },
       {
-        href: "/command-audit",
+        // P1 consolidation: command audit is now the "command" tab of the unified Audit page.
+        href: "/audit-logs?tab=command",
         label: "nav.commandAudit",
         icon: <ScrollText className="h-4 w-4" />,
         description: "nav.commandAuditDesc",
@@ -1098,16 +1101,8 @@ export const navGroups: NavGroup[] = [
         requiredPermission: "mqtt_alerts",
         permissionCategory: "mqtt",
       },
-      { 
-        href: "/predictive-alerts", 
-        label: "nav.predictiveAlerts", 
-        icon: <Sparkles className="h-4 w-4" />,
-        description: "nav.predictiveAlertsDesc",
-        requiredPermission: "analytics_predictive_alerts",
-        permissionCategory: "analytics",
-      },
-      { 
-        href: "/oee-target-settings", 
+      {
+        href: "/oee-target-settings",
         label: "nav.oeeTargets", 
         icon: <Target className="h-4 w-4" />,
         description: "nav.oeeTargetsDesc",
@@ -1210,7 +1205,8 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "admin",
       },
       {
-        href: "/enhanced-audit",
+        // P1 consolidation: enhanced audit is now the "enhanced" tab of the unified Audit page.
+        href: "/audit-logs?tab=enhanced",
         label: "nav.enhancedAudit",
         icon: <ScrollText className="h-4 w-4" />,
         description: "nav.enhancedAuditDesc",

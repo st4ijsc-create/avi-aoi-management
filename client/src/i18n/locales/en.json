@@ -856,7 +856,11 @@
     "actionDelete": "Action delete",
     "actionCreate": "Action create",
     "action": "Action",
-    "accessDenied": "Access denied"
+    "accessDenied": "Access denied",
+    "tabActivity": "Activity",
+    "tabCommand": "Machine commands",
+    "tabEnhanced": "Advanced",
+    "unifiedSubtitle": "System activity, machine control commands and change history — in one place"
   },
   "auth": {
     "verifying": "Verifying",
@@ -1144,12 +1148,18 @@
     "attentionTitle": "Needs attention",
     "attentionEmpty": "Nothing needs attention",
     "tiles": {
-      "corporate": "Corporate overview", "corporateDesc": "Per-factory rollup",
-      "oee": "OEE & health", "oeeDesc": "Productivity & equipment",
-      "production": "Production", "productionDesc": "Line progress",
-      "analytics": "Analytics", "analyticsDesc": "Trends & SPC",
-      "insight": "Management insight", "insightDesc": "NL Q&A + summary",
-      "reports": "Reports", "reportsDesc": "Export & schedule"
+      "corporate": "Corporate overview",
+      "corporateDesc": "Per-factory rollup",
+      "oee": "OEE & health",
+      "oeeDesc": "Productivity & equipment",
+      "production": "Production",
+      "productionDesc": "Line progress",
+      "analytics": "Analytics",
+      "analyticsDesc": "Trends & SPC",
+      "insight": "Management insight",
+      "insightDesc": "NL Q&A + summary",
+      "reports": "Reports",
+      "reportsDesc": "Export & schedule"
     }
   },
   "viewer": {
@@ -1157,12 +1167,18 @@
     "subtitle": "Fast access to dashboards & reports (read-only)",
     "viewsTitle": "Views",
     "tiles": {
-      "dashboard": "Dashboard", "dashboardDesc": "KPI overview",
-      "oee": "OEE", "oeeDesc": "Equipment productivity",
-      "production": "Production", "productionDesc": "Line progress",
-      "analytics": "Analytics", "analyticsDesc": "Quality trends",
-      "history": "History", "historyDesc": "Inspection lookup",
-      "reports": "Reports", "reportsDesc": "View reports"
+      "dashboard": "Dashboard",
+      "dashboardDesc": "KPI overview",
+      "oee": "OEE",
+      "oeeDesc": "Equipment productivity",
+      "production": "Production",
+      "productionDesc": "Line progress",
+      "analytics": "Analytics",
+      "analyticsDesc": "Quality trends",
+      "history": "History",
+      "historyDesc": "Inspection lookup",
+      "reports": "Reports",
+      "reportsDesc": "View reports"
     }
   },
   "adminHome": {
@@ -1170,29 +1186,50 @@
     "subtitle": "Manage users, roles, audit and the system",
     "govTitle": "Governance & operations",
     "tiles": {
-      "users": "Users", "usersDesc": "Accounts & roles",
-      "roles": "Permissions", "rolesDesc": "Role builder & modules",
-      "audit": "Audit log", "auditDesc": "Enhanced audit log",
-      "apiKeys": "API Keys", "apiKeysDesc": "Scoped access keys",
-      "system": "System config", "systemDesc": "Parameters & integrations",
-      "license": "License", "licenseDesc": "License & limits",
-      "edge": "Edge nodes", "edgeDesc": "Edge gateways & runtime",
-      "opsDashboard": "Ops dashboard", "opsDashboardDesc": "Full dashboard"
+      "users": "Users",
+      "usersDesc": "Accounts & roles",
+      "roles": "Permissions",
+      "rolesDesc": "Role builder & modules",
+      "audit": "Audit log",
+      "auditDesc": "Enhanced audit log",
+      "apiKeys": "API Keys",
+      "apiKeysDesc": "Scoped access keys",
+      "system": "System config",
+      "systemDesc": "Parameters & integrations",
+      "license": "License",
+      "licenseDesc": "License & limits",
+      "edge": "Edge nodes",
+      "edgeDesc": "Edge gateways & runtime",
+      "opsDashboard": "Ops dashboard",
+      "opsDashboardDesc": "Full dashboard",
+      "sessions": "Sessions",
+      "sessionsDesc": "Active login sessions",
+      "backup": "Backup & restore",
+      "backupDesc": "Database backup & restore"
     }
   },
   "roleUpgrade": {
     "subject": "Access upgrade request",
-    "copied": "Request copied", "copyFail": "Could not copy",
-    "title": "Request access", "subtitle": "Send a request to an administrator for the right role",
-    "formTitle": "Request details", "current": "Current role", "desired": "Requested role",
-    "pick": "Pick a role", "reason": "Reason", "reasonPh": "Why do you need this access?",
-    "adminEmail": "Admin email (optional)", "sendMail": "Send by email", "copy": "Copy",
+    "copied": "Request copied",
+    "copyFail": "Could not copy",
+    "title": "Request access",
+    "subtitle": "Send a request to an administrator for the right role",
+    "formTitle": "Request details",
+    "current": "Current role",
+    "desired": "Requested role",
+    "pick": "Pick a role",
+    "reason": "Reason",
+    "reasonPh": "Why do you need this access?",
+    "adminEmail": "Admin email (optional)",
+    "sendMail": "Send by email",
+    "copy": "Copy",
     "note": "An administrator grants access from the Users / Role Builder pages."
   },
   "dashTemplate": {
     "title": "Start with a dashboard template?",
     "desc": "Pick a prebuilt layout for your role (production / quality / equipment / executive) — you can customize it later.",
-    "skip": "Later", "choose": "Choose a template"
+    "skip": "Later",
+    "choose": "Choose a template"
   },
   "offline": {
     "banner": "Offline — scans/reports won't be sent until the connection is back."
@@ -1337,7 +1374,6 @@
     "enabled": "Enabled",
     "edit": "Edit",
     "download": "Download",
-    "dismiss": "Dismiss",
     "disabled": "Disabled",
     "details": "Details",
     "deselectAll": "Deselect All",
@@ -1967,7 +2003,9 @@
     "workstationNameCol": "Workstation Name",
     "workstationsNeedImprovement": "Workstations Need Improvement",
     "yield": "Yield",
-    "yieldWarning": "Yield Warning"
+    "yieldWarning": "Yield Warning",
+    "appliedAsCustomDashboard": "Applied as a custom dashboard",
+    "viewAppliedDashboard": "View dashboard"
   },
   "defects": {
     "trend": {
@@ -4281,7 +4319,9 @@
     "thresholdApprovals": "Threshold Approvals",
     "thresholdApprovalsDesc": "Review queue for LSL/USL threshold suggestions",
     "anomalyBanks": "Anomaly Banks",
-    "anomalyBanksDesc": "Manage anomaly detection memory banks (PatchCore)"
+    "anomalyBanksDesc": "Manage anomaly detection memory banks (PatchCore)",
+    "opsConsole": "Ops Console",
+    "opsConsoleDesc": "Unified War-Room + Alert Center"
   },
   "aboutPage": {
     "layoutTitle": "About System",
@@ -9211,5 +9251,50 @@
       "builtAt": "Built at",
       "actions": "Actions"
     }
+  },
+  "opsConsole": {
+    "title": "Ops Console",
+    "subtitle": "Unified War-Room + Alert Center — signal only, never controls a machine",
+    "tvMode": "TV mode",
+    "tabWarRoom": "War Room",
+    "tabAlertCenter": "Alert Center",
+    "ack": "Ack",
+    "resolve": "Resolve",
+    "acked": "ACK",
+    "open": "Open",
+    "allClear": "All clear — no open alerts",
+    "age": "Age",
+    "unassigned": "Unassigned",
+    "interlockRule": "Interlock rule #{{id}}",
+    "interlock": "Interlock",
+    "mqttBroker": "MQTT / Broker",
+    "thresholdBreach": "Threshold breach",
+    "triggeredValue": "Triggered value: {{v}}",
+    "qualityThreshold": "Quality threshold",
+    "kpiCritical": "Critical",
+    "kpiHigh": "High",
+    "kpiUnacked": "Unacknowledged",
+    "kpiOpen": "Open total",
+    "kpiMtta": "MTTA (s, 24h)",
+    "allSources": "All sources",
+    "srcAndon": "Andon",
+    "srcPredictive": "Predictive",
+    "srcInterlock": "Interlock",
+    "srcMqtt": "MQTT",
+    "srcThreshold": "Threshold",
+    "allSeverity": "All severity",
+    "sevMedium": "Medium",
+    "sevLow": "Low",
+    "ackAll": "All states",
+    "ackUnacked": "Unacknowledged",
+    "ackAcked": "Acknowledged",
+    "colSeverity": "Severity",
+    "colSource": "Source",
+    "colTitle": "Title",
+    "colGroup": "Location",
+    "colAge": "Age",
+    "searchPlaceholder": "Search alerts…",
+    "showing": "Showing {{n}}",
+    "noAlerts": "No alerts match the filters"
   }
 }

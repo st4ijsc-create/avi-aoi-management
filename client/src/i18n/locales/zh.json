@@ -856,7 +856,11 @@
     "actionDelete": "Action删除",
     "actionCreate": "Action创建",
     "action": "操作",
-    "accessDenied": "访问被拒绝"
+    "accessDenied": "访问被拒绝",
+    "tabActivity": "活动",
+    "tabCommand": "机器命令",
+    "tabEnhanced": "高级",
+    "unifiedSubtitle": "系统活动、机器控制命令与变更历史 — 集中于一处"
   },
   "auth": {
     "verifying": "验证中...",
@@ -1144,12 +1148,18 @@
     "attentionTitle": "需要关注",
     "attentionEmpty": "暂无需要关注的项",
     "tiles": {
-      "corporate": "集团概览", "corporateDesc": "按工厂汇总",
-      "oee": "OEE 与健康", "oeeDesc": "产能与设备",
-      "production": "生产", "productionDesc": "产线进度",
-      "analytics": "分析", "analyticsDesc": "趋势与 SPC",
-      "insight": "管理洞察", "insightDesc": "自然语言问答 + 摘要",
-      "reports": "报表", "reportsDesc": "导出与计划"
+      "corporate": "集团概览",
+      "corporateDesc": "按工厂汇总",
+      "oee": "OEE 与健康",
+      "oeeDesc": "产能与设备",
+      "production": "生产",
+      "productionDesc": "产线进度",
+      "analytics": "分析",
+      "analyticsDesc": "趋势与 SPC",
+      "insight": "管理洞察",
+      "insightDesc": "自然语言问答 + 摘要",
+      "reports": "报表",
+      "reportsDesc": "导出与计划"
     }
   },
   "viewer": {
@@ -1157,12 +1167,18 @@
     "subtitle": "快速访问看板与报表（仅查看）",
     "viewsTitle": "查看面板",
     "tiles": {
-      "dashboard": "仪表板", "dashboardDesc": "KPI 概览",
-      "oee": "OEE", "oeeDesc": "设备产能",
-      "production": "生产", "productionDesc": "产线进度",
-      "analytics": "分析", "analyticsDesc": "质量趋势",
-      "history": "历史", "historyDesc": "检测查询",
-      "reports": "报表", "reportsDesc": "查看报表"
+      "dashboard": "仪表板",
+      "dashboardDesc": "KPI 概览",
+      "oee": "OEE",
+      "oeeDesc": "设备产能",
+      "production": "生产",
+      "productionDesc": "产线进度",
+      "analytics": "分析",
+      "analyticsDesc": "质量趋势",
+      "history": "历史",
+      "historyDesc": "检测查询",
+      "reports": "报表",
+      "reportsDesc": "查看报表"
     }
   },
   "adminHome": {
@@ -1170,29 +1186,50 @@
     "subtitle": "管理用户、角色、审计与系统",
     "govTitle": "治理与运营",
     "tiles": {
-      "users": "用户", "usersDesc": "账户与角色",
-      "roles": "权限", "rolesDesc": "角色构建与模块",
-      "audit": "审计日志", "auditDesc": "增强审计日志",
-      "apiKeys": "API 密钥", "apiKeysDesc": "受限访问密钥",
-      "system": "系统配置", "systemDesc": "参数与集成",
-      "license": "许可证", "licenseDesc": "许可与限制",
-      "edge": "边缘节点", "edgeDesc": "边缘网关与运行时",
-      "opsDashboard": "运营仪表板", "opsDashboardDesc": "完整仪表板"
+      "users": "用户",
+      "usersDesc": "账户与角色",
+      "roles": "权限",
+      "rolesDesc": "角色构建与模块",
+      "audit": "审计日志",
+      "auditDesc": "增强审计日志",
+      "apiKeys": "API 密钥",
+      "apiKeysDesc": "受限访问密钥",
+      "system": "系统配置",
+      "systemDesc": "参数与集成",
+      "license": "许可证",
+      "licenseDesc": "许可与限制",
+      "edge": "边缘节点",
+      "edgeDesc": "边缘网关与运行时",
+      "opsDashboard": "运营仪表板",
+      "opsDashboardDesc": "完整仪表板",
+      "sessions": "会话",
+      "sessionsDesc": "活动登录会话",
+      "backup": "备份与恢复",
+      "backupDesc": "数据库备份与恢复"
     }
   },
   "roleUpgrade": {
     "subject": "权限提升申请",
-    "copied": "已复制申请", "copyFail": "无法复制",
-    "title": "申请权限", "subtitle": "向管理员发送申请以获取合适的角色",
-    "formTitle": "申请信息", "current": "当前角色", "desired": "申请角色",
-    "pick": "选择角色", "reason": "原因", "reasonPh": "为什么需要此权限？",
-    "adminEmail": "管理员邮箱（可选）", "sendMail": "通过邮件发送", "copy": "复制",
+    "copied": "已复制申请",
+    "copyFail": "无法复制",
+    "title": "申请权限",
+    "subtitle": "向管理员发送申请以获取合适的角色",
+    "formTitle": "申请信息",
+    "current": "当前角色",
+    "desired": "申请角色",
+    "pick": "选择角色",
+    "reason": "原因",
+    "reasonPh": "为什么需要此权限？",
+    "adminEmail": "管理员邮箱（可选）",
+    "sendMail": "通过邮件发送",
+    "copy": "复制",
     "note": "管理员在“用户/角色构建”页面授予权限。"
   },
   "dashTemplate": {
     "title": "从仪表板模板开始？",
     "desc": "为你的角色选择一个预设布局（生产/质量/设备/管理）——稍后可自定义。",
-    "skip": "稍后", "choose": "选择模板"
+    "skip": "稍后",
+    "choose": "选择模板"
   },
   "offline": {
     "banner": "已离线——扫描/上报在恢复连接前将无法发送。"
@@ -1337,7 +1374,6 @@
     "enabled": "已启用",
     "edit": "编辑",
     "download": "下载",
-    "dismiss": "忽略",
     "disabled": "已禁用",
     "details": "详情",
     "deselectAll": "取消全选",
@@ -1968,7 +2004,9 @@
     "workstationNameCol": "工站名称",
     "workstationsNeedImprovement": "需改善的工站",
     "yield": "良率",
-    "yieldWarning": "良率警告"
+    "yieldWarning": "良率警告",
+    "appliedAsCustomDashboard": "已应用为自定义仪表板",
+    "viewAppliedDashboard": "查看仪表板"
   },
   "defects": {
     "trend": {
@@ -4274,7 +4312,9 @@
     "thresholdApprovals": "阈值审批",
     "thresholdApprovalsDesc": "LSL/USL 阈值建议的审核队列",
     "anomalyBanks": "异常记忆库",
-    "anomalyBanksDesc": "管理异常检测记忆库（PatchCore）"
+    "anomalyBanksDesc": "管理异常检测记忆库（PatchCore）",
+    "opsConsole": "运营控制台",
+    "opsConsoleDesc": "统一作战室 + 告警中心"
   },
   "aboutPage": {
     "layoutTitle": "系统介绍",
@@ -9185,5 +9225,50 @@
       "builtAt": "构建时间",
       "actions": "操作"
     }
+  },
+  "opsConsole": {
+    "title": "运营控制台",
+    "subtitle": "统一作战室 + 告警中心 — 仅信号，绝不控制机器",
+    "tvMode": "电视模式",
+    "tabWarRoom": "作战室",
+    "tabAlertCenter": "告警中心",
+    "ack": "确认",
+    "resolve": "解决",
+    "acked": "已确认",
+    "open": "未处理",
+    "allClear": "一切正常 — 无未处理告警",
+    "age": "时长",
+    "unassigned": "未分配",
+    "interlockRule": "联锁规则 #{{id}}",
+    "interlock": "联锁",
+    "mqttBroker": "MQTT / Broker",
+    "thresholdBreach": "超出阈值",
+    "triggeredValue": "触发值：{{v}}",
+    "qualityThreshold": "质量阈值",
+    "kpiCritical": "严重",
+    "kpiHigh": "高",
+    "kpiUnacked": "未确认",
+    "kpiOpen": "未处理总数",
+    "kpiMtta": "MTTA（秒，24小时）",
+    "allSources": "全部来源",
+    "srcAndon": "安灯",
+    "srcPredictive": "预测",
+    "srcInterlock": "联锁",
+    "srcMqtt": "MQTT",
+    "srcThreshold": "阈值",
+    "allSeverity": "全部级别",
+    "sevMedium": "中",
+    "sevLow": "低",
+    "ackAll": "全部状态",
+    "ackUnacked": "未确认",
+    "ackAcked": "已确认",
+    "colSeverity": "级别",
+    "colSource": "来源",
+    "colTitle": "标题",
+    "colGroup": "位置",
+    "colAge": "时长",
+    "searchPlaceholder": "搜索告警…",
+    "showing": "显示 {{n}}",
+    "noAlerts": "没有符合筛选条件的告警"
   }
 }
