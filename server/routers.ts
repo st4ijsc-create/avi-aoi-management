@@ -130,6 +130,7 @@ import { robotRouter } from "./routers/robotRouter"; // Phase 3: robot registry/
 import { secsGemRouter } from "./routers/secsGemRouter"; // P3a: SECS/GEM framework (SECS_GEM_ENABLED)
 import { vda5050Router } from "./routers/vda5050Router"; // P3b: VDA 5050 AGV/AMR framework (VDA5050_ENABLED)
 import { fleetRouter } from "./routers/fleetRouter"; // G1 (doc 16 Khối 2): Fleet & Task Orchestration (FLEET_ORCH_ENABLED)
+import { twinRouter } from "./routers/twinRouter"; // T1 (doc 16 Khối 7): Digital Twin — models/sceneGraph/replay/occupancyGrid (TWIN_LIVE_ENABLED)
 import { aiInsightRouter } from "./routers/aiInsightRouter"; // Phase 4: AI orchestration insights (advisory, read + ack)
 import { aiInboxRouter } from "./routers/aiInboxRouter"; // AI Action Inbox: push + 1-tap approve/dismiss/ask
 import { aiTodayRouter } from "./routers/aiTodayRouter"; // "Today" briefing: role-aware zero-click login summary
@@ -368,6 +369,7 @@ export const appRouter = router({
   secsGem: secsGemRouter,
   vda5050: vda5050Router,
   fleet: fleetRouter, // G1 (doc 16 Khối 2): Fleet & Task Orchestration (FLEET_ORCH_ENABLED)
+  twin: twinRouter, // T1 (doc 16 Khối 7): Digital Twin — models/sceneGraph/replay/occupancyGrid (TWIN_LIVE_ENABLED)
   aiInsight: aiInsightRouter,
   aiInbox: aiInboxRouter,
   aiToday: aiTodayRouter,

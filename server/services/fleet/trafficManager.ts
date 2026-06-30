@@ -270,14 +270,39 @@ export async function detectDeadlocks(): Promise<{ enabled: boolean; cycles: num
 }
 
 /**
- * PATH PLANNING STUB (honest). No occupancy-grid map exists in G1, so this returns
- * the requested zone waypoints unchanged. It is the documented seam for a real
- * A-star/D-star planner once a map is available (deferred — doc 16 §15 / TWIN phase).
+ * PATH PLANNING (G1 stub + T1 grid seam).
+ *
+ * G1 had NO occupancy-grid map, so the default behaviour returns the requested zone
+ * waypoints unchanged (reservation-level routing). T1 (doc 16 §15) adds a REAL A*
+ * grid planner in server/services/twin/occupancyGrid.ts. This function stays the
+ * stub UNLESS the caller passes an occupancy grid AND world-space start/goal points
+ * — then it delegates to planPathOnGrid() and returns the real cell route. This is
+ * additive: callers (and the G1 tests) that call planPath([1,2,3]) with no grid get
+ * the byte-for-byte unchanged stub result.
  */
-export function planPath(zoneWaypoints: number[]): { ok: boolean; zones: number[]; note: string } {
+export function planPath(
+  zoneWaypoints: number[],
+  gridRoute?: {
+    grid: import("../twin/occupancyGrid").OccupancyGrid;
+    from: import("../twin/occupancyGrid").Point2D;
+    to: import("../twin/occupancyGrid").Point2D;
+  },
+): { ok: boolean; zones: number[]; note: string; gridPath?: import("../twin/occupancyGrid").Point2D[] } {
+  if (gridRoute) {
+    // T1 — back the seam with the real A* grid planner (lazy import; pure call).
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { planPathOnGrid } = require("../twin/occupancyGrid") as typeof import("../twin/occupancyGrid");
+    const r = planPathOnGrid(gridRoute.grid, gridRoute.from, gridRoute.to);
+    return {
+      ok: r.ok,
+      zones: zoneWaypoints,
+      note: r.ok ? `A* grid route: ${r.cells.length} cells (${r.expanded} expanded)` : `A* failed: ${r.reason}`,
+      gridPath: r.path,
+    };
+  }
   return {
     ok: true,
     zones: zoneWaypoints,
-    note: "stub: no occupancy-grid map yet — waypoints returned verbatim (reservation-level routing only)",
+    note: "stub: no occupancy-grid map supplied — waypoints returned verbatim (reservation-level routing only)",
   };
 }

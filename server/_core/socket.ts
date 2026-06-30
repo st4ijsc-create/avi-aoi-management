@@ -132,6 +132,12 @@ export function initializeSocket(server: HttpServer): Server {
         socket.join(`line:${data.lineId}`);
         console.log(`[Socket.io] ${socket.id} joined line:${data.lineId}`);
       }
+      // T1-c — Digital Twin live stream room (per factory). A 3D twin viewer joins
+      // `twin:{factoryId}` to receive throttled device state/position deltas.
+      if ((data as any).twinFactoryId) {
+        socket.join(`twin:${(data as any).twinFactoryId}`);
+        console.log(`[Socket.io] ${socket.id} joined twin:${(data as any).twinFactoryId}`);
+      }
       // Everyone joins the global room for all alerts
       socket.join("global");
     });
@@ -141,6 +147,7 @@ export function initializeSocket(server: HttpServer): Server {
       if (data.workshopId) socket.leave(`workshop:${data.workshopId}`);
       if (data.machineId) socket.leave(`machine:${data.machineId}`);
       if (data.lineId) socket.leave(`line:${data.lineId}`);
+      if ((data as any).twinFactoryId) socket.leave(`twin:${(data as any).twinFactoryId}`);
     });
 
     // Doc 09 / D6 — Engineering Online-Monitor room. A workspace client joins
@@ -991,6 +998,32 @@ export function stopTwinBroadcaster(): void {
     twinBroadcaster = null;
     console.log("[Twin] WIP broadcaster stopped");
   }
+}
+
+// ============ T1-c — DIGITAL TWIN LIVE DEVICE STREAM (signal-only, gated) ======
+
+/**
+ * A coalesced per-device delta pushed to twin viewers (room `twin:{factoryId}`).
+ * Carries only what MOVED — position and/or state — so the FE can translate the
+ * model without a full scene-graph refetch. SIGNAL ONLY: never writes a device/DB.
+ */
+export interface TwinDeviceDelta {
+  equipmentId: string; // "machine:<id>" | "robot:<id>" | "device:<deviceId>"
+  position?: { x: number; y: number; z?: number };
+  state?: string;
+  metric?: string;
+  ts: number;
+}
+
+/**
+ * Push a batch of device deltas to the per-factory twin room. No-op when io is not
+ * initialized (tests / headless). The PRODUCER (twinStream gateway) is gated by
+ * TWIN_LIVE_ENABLED; this is a thin transport with no gate of its own (so when the
+ * gateway is off, it is simply never called → FE keeps polling, backward-compatible).
+ */
+export function emitTwinDeviceDeltas(factoryId: number, deltas: TwinDeviceDelta[]): void {
+  if (!io || deltas.length === 0) return;
+  io.to(`twin:${factoryId}`).emit("twin:device", { factoryId, deltas, ts: Date.now() });
 }
 
 // Emit alert escalation event

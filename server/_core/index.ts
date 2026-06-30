@@ -4426,6 +4426,18 @@ async function startServer() {
   // so the timer is cheap when off. Unref'd (never blocks shutdown) + non-overlapping
   // (a still-running sweep is skipped) — mirrors the outbox/orchestrator style. Opens
   // NO control path: it only writes 'planned' rows consumed by the gated dispatcher.
+  // T1 (doc 16 Khối 7) — Digital Twin live streaming gateway: subscribe to the
+  // unified telemetry bus (in-process tap) and push throttled device deltas to the
+  // per-factory room `twin:{factoryId}` (<=10Hz). A NO-OP unless TWIN_LIVE_ENABLED —
+  // when off, the FE keeps its 5s poll fallback (digitalTwin.* queries) unchanged.
+  // Opens NO control path: signal-only (no device/DB write).
+  try {
+    const { startTwinStreamGateway } = await import("../services/twin/twinStream");
+    startTwinStreamGateway();
+  } catch (err) {
+    console.error("[TwinStream] gateway start failed:", (err as any)?.message || err);
+  }
+
   try {
     const { sweepChargingPlans } = await import("../services/fleet/chargingPlanner");
     const intervalMs = Math.max(60_000, Number(process.env.FLEET_CHARGING_SWEEP_MS ?? 300_000));

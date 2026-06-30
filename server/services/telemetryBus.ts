@@ -55,6 +55,21 @@ export interface CanonicalSample {
 
 const MAX_TEXT = 1000;
 
+// ── In-process telemetry TAP (T1-c twin streaming gateway) ───────────────────
+// A tap is a side-channel listener invoked with each ingested batch AFTER the
+// canonical insert + the existing `telemetry:sample` broadcast. It does NOT change
+// the single ingest/broadcast path — it only lets an opt-in consumer (the twin
+// streaming gateway) observe samples without polling and without a second bus.
+// No taps registered → zero overhead. Tap errors are isolated (never affect ingest).
+export type TelemetryTap = (rows: InsertOtTelemetry[]) => void;
+const taps = new Set<TelemetryTap>();
+
+/** Register a telemetry tap. Returns an unsubscribe fn. */
+export function registerTelemetryTap(tap: TelemetryTap): () => void {
+  taps.add(tap);
+  return () => { taps.delete(tap); };
+}
+
 /**
  * Pure: normalize ONE CanonicalSample → a canonical ot_telemetry insert row.
  * Exactly one of numValue/textValue/boolValue is set (or none for a null value).
@@ -186,6 +201,17 @@ export async function ingestTelemetry(samples: CanonicalSample[]): Promise<numbe
     emitTelemetrySamples(rows.map(toBroadcast));
   } catch (err) {
     console.error("[TelemetryBus] broadcast failed:", (err as Error)?.message || err);
+  }
+
+  // 5: fan out to any registered in-process taps (T1-c twin gateway). Fault-isolated.
+  if (taps.size > 0) {
+    for (const tap of taps) {
+      try {
+        tap(rows);
+      } catch (err) {
+        console.error("[TelemetryBus] tap failed:", (err as Error)?.message || err);
+      }
+    }
   }
 
   return persisted;
