@@ -22,6 +22,9 @@ import {
   maintenanceWorkOrders,
   suppliers,
   materials,
+  productionLines,
+  stations,
+  machines,
 } from "../../drizzle/schema";
 
 // P2: resolve a master id from a free-text code so write UIs can pass either an
@@ -109,6 +112,62 @@ export const mesControlTowerRouter = router({
         .where(conds.length ? and(...conds) : undefined)
         .orderBy(desc(stationDwellTime.enteredAt))
         .limit(input?.limit ?? 200);
+    }),
+
+  // --- P3: id→name lookup for lines/stations/machines so the hub shows real
+  // hierarchy names instead of raw numeric ids ("St #5"). One small payload that
+  // the client turns into Maps; avoids N per-row joins. ---
+  nameLookup: protectedProcedure.query(async () => {
+    const database = await getDb();
+    if (!database) return { lines: [], stations: [], machines: [] };
+    const [lineRows, stationRows, machineRows] = await Promise.all([
+      database.select({ id: productionLines.id, code: productionLines.code, name: productionLines.name }).from(productionLines),
+      database.select({ id: stations.id, code: stations.code, name: stations.name, lineId: stations.lineId }).from(stations),
+      database.select({ id: machines.id, code: machines.code, name: machines.name }).from(machines),
+    ]);
+    return { lines: lineRows, stations: stationRows, machines: machineRows };
+  }),
+
+  // --- P3: single-serial trace drill — full picture for ONE serial number:
+  // its WIP history rows, the lot dispositions on its lot, parent/child
+  // genealogy serials, and any dwell rows recorded for it. ---
+  serialTrace: protectedProcedure
+    .input(z.object({ serialNumber: z.string().min(1) }))
+    .query(async ({ input }) => {
+      const database = await getDb();
+      const empty = {
+        serialNumber: input.serialNumber,
+        wipUnits: [] as any[],
+        dwell: [] as any[],
+        dispositions: [] as any[],
+        children: [] as any[],
+        lotNumbers: [] as string[],
+        parentSerialNumber: null as string | null,
+      };
+      if (!database) return empty;
+      const sn = input.serialNumber;
+      const [wipUnits, dwell, children] = await Promise.all([
+        database.select().from(wipTracking)
+          .where(eq(wipTracking.serialNumber, sn))
+          .orderBy(desc(wipTracking.enteredAt)),
+        database.select().from(stationDwellTime)
+          .where(eq(stationDwellTime.serialNumber, sn))
+          .orderBy(desc(stationDwellTime.enteredAt)),
+        // genealogy downstream: units whose parent is this serial
+        database.select().from(wipTracking)
+          .where(eq(wipTracking.parentSerialNumber, sn))
+          .orderBy(desc(wipTracking.enteredAt)),
+      ]);
+      const lotNumbers = [...new Set(wipUnits.map((w) => w.lotNumber).filter((x): x is string => !!x))];
+      const dispositions = lotNumbers.length
+        ? await database.select().from(lotDisposition)
+            .where(sql`(${lotDisposition.serialNumber} = ${sn} or ${lotDisposition.lotNumber} in (${sql.join(lotNumbers, sql`, `)}))`)
+            .orderBy(desc(lotDisposition.decidedAt))
+        : await database.select().from(lotDisposition)
+            .where(eq(lotDisposition.serialNumber, sn))
+            .orderBy(desc(lotDisposition.decidedAt));
+      const parentSerialNumber = wipUnits.find((w) => w.parentSerialNumber)?.parentSerialNumber ?? null;
+      return { serialNumber: sn, wipUnits, dwell, dispositions, children, lotNumbers, parentSerialNumber };
     }),
 
   // --- G6: lot genealogy (2-way) ---

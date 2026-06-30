@@ -52,6 +52,15 @@ const COLORS = [
 ];
 
 export default function ParetoAnalysis() {
+  return (
+    <DashboardLayout>
+      <ParetoAnalysisContent />
+    </DashboardLayout>
+  );
+}
+
+// Embeddable content (no DashboardLayout) — reused by QualityCockpit's Pareto tab.
+export function ParetoAnalysisContent() {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("byType");
   const [dateRange, setDateRange] = useState(getDefaultDateRange);
@@ -108,7 +117,6 @@ export default function ParetoAnalysis() {
   };
 
   return (
-    <DashboardLayout>
       <div className="space-y-6 p-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -273,7 +281,6 @@ export default function ParetoAnalysis() {
           </TabsContent>
         </Tabs>
       </div>
-    </DashboardLayout>
   );
 }
 

@@ -64,6 +64,7 @@ import CustomDashboardViewer from "@/components/CustomDashboardViewer";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { Socket } from "socket.io-client";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
+import { RealtimeBadge } from "@/components/RealtimeBadge";
 import { Link, useLocation } from "wouter";
 import { 
   AreaChart, 
@@ -142,6 +143,17 @@ type ShiftStats = {
   ng: number;
   ntf: number;
   fpy: number;
+};
+
+// Live OEE row (mirrors server LiveOEEMetrics — factors are honestly null when
+// the inputs are missing, NEVER synthesized).
+type LiveOEERow = {
+  machineId: number;
+  machineCode: string;
+  availability: number | null;
+  performance: number | null;
+  quality: number | null;
+  oee: number | null;
 };
 
 // Auto-refresh intervals
@@ -242,6 +254,10 @@ export default function Dashboard() {
   const [onlineMachines, setOnlineMachines] = useState<Set<string>>(new Set());
   const [urgentAlerts, setUrgentAlerts] = useState<Array<{id: string; type: string; severity: string; title: string; message: string; timestamp: Date}>>([]);
   const socketRef = useRef<Socket | null>(null);
+  // Realtime connection state + live OEE pushed over the socket (oee:update).
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [liveOEE, setLiveOEE] = useState<LiveOEERow[] | null>(null);
+  const [lastRealtimeAt, setLastRealtimeAt] = useState<Date | null>(null);
 
   // WebSocket connection for realtime machine status + urgent alerts
   useEffect(() => {
@@ -250,11 +266,43 @@ export default function Dashboard() {
 
     const onConnect = () => {
       console.log('[Dashboard] WebSocket connected');
+      setSocketConnected(true);
       socket.emit('admin:get_online_machines');
+      // Join the global room so the canonical OEE broadcaster (oee:update) reaches us.
+      socket.emit('subscribe', {});
     };
 
     const onOnlineList = (data: { machines: string[] }) => {
       setOnlineMachines(new Set(data.machines));
+    };
+
+    // Live OEE push — single source of truth (oeeService). The broadcaster sends
+    // { metrics, at }; the legacy per-machine path may send a raw array/object.
+    // Normalize all shapes; honour honest nulls (never synthesize a factor).
+    const onOeeUpdate = (payload: any) => {
+      const raw = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.metrics)
+          ? payload.metrics
+          : payload && typeof payload === 'object' && payload.machineId != null
+            ? [payload]
+            : [];
+      if (raw.length === 0) return;
+      const rows: LiveOEERow[] = raw.map((m: any) => ({
+        machineId: m.machineId,
+        machineCode: m.machineCode ?? String(m.machineId),
+        availability: m.availability ?? null,
+        performance: m.performance ?? null,
+        quality: m.quality ?? null,
+        oee: m.oee ?? null,
+      }));
+      setLiveOEE((prev) => {
+        // Merge per-machine updates over the existing live snapshot.
+        const byId = new Map<number, LiveOEERow>((prev ?? []).map((r) => [r.machineId, r]));
+        for (const r of rows) byId.set(r.machineId, r);
+        return Array.from(byId.values()).sort((a, b) => a.machineId - b.machineId);
+      });
+      setLastRealtimeAt(new Date());
     };
 
     const onStatusChange = (data: { machineCode: string; status: 'online' | 'offline' }) => {
@@ -293,32 +341,40 @@ export default function Dashboard() {
     const onYieldWarning = (data: any) => handleUrgentAlert(data, 'yield');
     const onNgAlert = (data: any) => handleUrgentAlert(data, 'ng');
     const onQualityGate = (data: any) => handleUrgentAlert(data, 'qualityGate');
+    const onAndon = (data: any) => handleUrgentAlert(data, 'andon');
+
+    const onDisconnect = () => {
+      console.log('[Dashboard] WebSocket disconnected');
+      setSocketConnected(false);
+    };
 
     socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
     socket.on('machine:online_list', onOnlineList);
     socket.on('machine:status_change', onStatusChange);
+    socket.on('oee:update', onOeeUpdate);
     socket.on('inspection:alert', onInspectionAlert);
     socket.on('yield:warning', onYieldWarning);
     socket.on('ng:alert', onNgAlert);
     socket.on('qualityGate:triggered', onQualityGate);
+    socket.on('andon:event', onAndon);
 
-    socket.on('disconnect', () => {
-      console.log('[Dashboard] WebSocket disconnected');
-    });
-
-    // If already connected, request online machines immediately
+    // If already connected, sync state + request online machines immediately
     if (socket.connected) {
       onConnect();
     }
 
     return () => {
       socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
       socket.off('machine:online_list', onOnlineList);
       socket.off('machine:status_change', onStatusChange);
+      socket.off('oee:update', onOeeUpdate);
       socket.off('inspection:alert', onInspectionAlert);
       socket.off('yield:warning', onYieldWarning);
       socket.off('ng:alert', onNgAlert);
       socket.off('qualityGate:triggered', onQualityGate);
+      socket.off('andon:event', onAndon);
       releaseSharedSocket();
     };
   }, []);
@@ -581,10 +637,22 @@ export default function Dashboard() {
     limit: 15,
   });
 
-  // Fetch live OEE metrics for mini-widget
+  // Fetch live OEE metrics for mini-widget — first-load fallback when no socket
+  // push has arrived yet. Once oee:update pushes arrive (socketConnected), we
+  // stop polling and rely on the realtime stream.
   const { data: allOEE } = trpc.mqttClient.getAllOEE.useQuery(undefined, {
-    refetchInterval: 30000,
+    refetchInterval: socketConnected ? false : 30000,
   });
+
+  // Effective OEE: prefer the realtime socket stream (oee:update), fall back to
+  // the query for the first paint. No synthetic values — null factors stay null.
+  const effectiveOEE = useMemo<LiveOEERow[]>(() => {
+    if (liveOEE && liveOEE.length > 0) return liveOEE;
+    const q = allOEE as LiveOEERow[] | undefined;
+    return Array.isArray(q) ? q : [];
+  }, [liveOEE, allOEE]);
+
+  const oeeIsLive = !!(socketConnected && liveOEE && liveOEE.length > 0);
 
   // Fetch workstation summary for NG Visual tab (with separate time filter)
   const { data: ngWorkstationSummary, isLoading: ngWorkstationLoading } = trpc.workstation.summary.useQuery({
@@ -1064,6 +1132,7 @@ export default function Dashboard() {
                 <Activity className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />{t("dashboard.productionDashboard")}</h1>
               <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mt-1">
                 <p className="text-muted-foreground text-xs sm:text-sm">{t("dashboard.monitoringQuality")}</p>
+                <RealtimeBadge connected={socketConnected} pollingFallback lastEventAt={lastRealtimeAt} />
                 <span className="text-xs text-muted-foreground">
                   • {t("dashboard.updatedAt")} {lastRefreshTime.toLocaleTimeString('vi-VN')}
                 </span>
@@ -1487,20 +1556,27 @@ export default function Dashboard() {
             {/* MQTT Alert Widget */}
             <MqttAlertWidget />
 
-            {/* OEE Mini-widget */}
-            {allOEE && allOEE.length > 0 && (() => {
-              const oeeData = allOEE as { machineId: number; machineCode: string; availability: number; performance: number; quality: number; oee: number }[];
-              const avgA = oeeData.reduce((s, m) => s + m.availability, 0) / oeeData.length;
-              const avgP = oeeData.reduce((s, m) => s + m.performance, 0) / oeeData.length;
-              const avgQ = oeeData.reduce((s, m) => s + m.quality, 0) / oeeData.length;
-              const avgOEE = oeeData.reduce((s, m) => s + m.oee, 0) / oeeData.length;
+            {/* OEE Mini-widget — live (oee:update) with first-load query fallback */}
+            {effectiveOEE.length > 0 && (() => {
+              const oeeData = effectiveOEE;
+              // Average only over machines that actually have each factor (honest).
+              const avgOf = (sel: (m: LiveOEERow) => number | null): number | null => {
+                const vals = oeeData.map(sel).filter((v): v is number => v != null);
+                return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+              };
+              const avgA = avgOf((m) => m.availability);
+              const avgP = avgOf((m) => m.performance);
+              const avgQ = avgOf((m) => m.quality);
+              const avgOEE = avgOf((m) => m.oee);
               const oeeColor = (v: number) => v >= 85 ? '#22c55e' : v >= 60 ? '#f59e0b' : '#ef4444';
+              const fmt = (v: number | null) => v == null ? t("common.notAvailable", "N/A") : `${v.toFixed(1)}%`;
               return (
               <Card className={cardStyleProps.className} style={cardStyleProps.style}>
                 <CardHeader className="pb-2 flex flex-row items-center justify-between">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Activity className="h-4 w-4" style={{ color: cardStyleProps.accentColor }} />
                     OEE — Overall Equipment Effectiveness
+                    <RealtimeBadge connected={oeeIsLive} pollingFallback lastEventAt={oeeIsLive ? lastRealtimeAt : null} />
                   </CardTitle>
                   <a href="/oee-dashboard" className="text-xs text-muted-foreground hover:underline">{t("common.viewAll", "Xem tất cả")}</a>
                 </CardHeader>
@@ -1515,7 +1591,7 @@ export default function Dashboard() {
                     ] as const).map((item) => (
                       <a key={item.label} href="/oee-dashboard" className="rounded-xl border bg-card p-3 text-center hover:shadow-md transition-shadow cursor-pointer block">
                         <p className="text-xs text-muted-foreground font-medium">{item.icon}</p>
-                        <p className="text-2xl font-bold mt-1" style={{ color: oeeColor(item.value) }}>{item.value.toFixed(1)}%</p>
+                        <p className="text-2xl font-bold mt-1" style={{ color: item.value == null ? '#9ca3af' : oeeColor(item.value) }}>{fmt(item.value)}</p>
                         <p className="text-[11px] text-muted-foreground">{item.label}</p>
                       </a>
                     ))}
@@ -1523,15 +1599,15 @@ export default function Dashboard() {
                   {/* Per-machine detail grid */}
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                     {oeeData.map((m) => {
-                      const color = oeeColor(m.oee);
+                      const color = m.oee == null ? '#9ca3af' : oeeColor(m.oee);
                       return (
                         <div key={m.machineId} className="rounded-lg border p-2 space-y-1">
                           <p className="text-xs font-medium truncate" title={m.machineCode}>{m.machineCode}</p>
-                          <p className="text-xl font-bold" style={{ color }}>{m.oee.toFixed(1)}%</p>
+                          <p className="text-xl font-bold" style={{ color }}>{fmt(m.oee)}</p>
                           <div className="text-[10px] text-muted-foreground space-y-0.5">
-                            <div className="flex justify-between"><span>A</span><span>{m.availability.toFixed(1)}%</span></div>
-                            <div className="flex justify-between"><span>P</span><span>{m.performance.toFixed(1)}%</span></div>
-                            <div className="flex justify-between"><span>Q</span><span>{m.quality.toFixed(1)}%</span></div>
+                            <div className="flex justify-between"><span>A</span><span>{fmt(m.availability)}</span></div>
+                            <div className="flex justify-between"><span>P</span><span>{fmt(m.performance)}</span></div>
+                            <div className="flex justify-between"><span>Q</span><span>{fmt(m.quality)}</span></div>
                           </div>
                         </div>
                       );

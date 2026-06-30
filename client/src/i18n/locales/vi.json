@@ -223,8 +223,15 @@
       "approvalsDesc": "Hàng đợi phê duyệt ngưỡng NG"
     }
   },
+  "realtime": {
+    "live": "Trực tiếp",
+    "polling": "Định kỳ",
+    "offline": "Mất kết nối",
+    "lastEvent": "Cập nhật {{ago}} trước"
+  },
   "aiInbox": {
     "title": "Việc cần xử lý",
+    "unreadAria": "Việc cần xử lý, {{count}} mục cần bạn",
     "subtitle": "AI đưa đến đây mọi việc cần bạn xử lý — chạm một lần để xử lý.",
     "empty": "Không có việc nào cần bạn xử lý 🎉",
     "emptyHint": "Khi AI có đề xuất, cảnh báo hay khuyến nghị, chúng sẽ hiện ở đây.",
@@ -1292,6 +1299,7 @@
     "many": "{{count}} quyền sắp hết hạn (sớm nhất sau {{days}} ngày) — liên hệ quản trị để gia hạn."
   },
   "common": {
+    "notAvailable": "N/A",
     "viewOnly": "Chỉ xem",
     "dismiss": "Bỏ qua",
     "pleaseEnterSerialNumber": "Please enter Số seri Số",

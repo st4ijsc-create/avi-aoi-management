@@ -223,8 +223,15 @@
       "approvalsDesc": "NG 阈值审批队列"
     }
   },
+  "realtime": {
+    "live": "实时",
+    "polling": "轮询",
+    "offline": "离线",
+    "lastEvent": "{{ago}}前更新"
+  },
   "aiInbox": {
     "title": "待办收件箱",
+    "unreadAria": "待办收件箱，{{count}} 项需要您处理",
     "subtitle": "AI 会把所有需要您处理的事项推送到这里——一键处理。",
     "empty": "暂无需要处理的事项 🎉",
     "emptyHint": "当 AI 有建议、警报或推荐时，会显示在这里。",
@@ -1292,6 +1299,7 @@
     "many": "{{count}} 项权限即将过期（最早 {{days}} 天后）——请联系管理员续期。"
   },
   "common": {
+    "notAvailable": "N/A",
     "viewOnly": "仅查看",
     "dismiss": "忽略",
     "zoomOut": "缩小",

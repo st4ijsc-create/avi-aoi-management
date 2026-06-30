@@ -5,13 +5,15 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { 
-  defectHeatmapData, 
-  measurementResults, 
+import {
+  defectHeatmapData,
+  measurementResults,
   productInspections,
-  machines
+  machines,
+  measurementPointDefs,
+  productModels
 } from "../../drizzle/schema";
-import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
+import { eq, and, gte, lte, desc, sql, isNull } from "drizzle-orm";
 
 export const defectHeatmapRouter = router({
   // Generate heatmap data
@@ -335,6 +337,127 @@ export const defectHeatmapRouter = router({
         .limit(20);
 
       return recentDefects;
+    }),
+
+  // ─── Quality Cockpit: product defect overlay ──────────────────────────────
+  // Returns defect density per measurement point at the point's REAL position
+  // (measurement_point_defs.positionX/Y + normalizedX/Y) so the client can
+  // overlay bubbles on the product reference image — NOT the meaningless
+  // pointDefId % grid pseudo-coordinate the legacy heatmap used.
+  getProductDefectOverlay: protectedProcedure
+    .input(z.object({
+      productModelId: z.number(),
+      machineId: z.number().optional(),
+      startDate: z.string(),
+      endDate: z.string(),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) {
+        return { product: null, points: [], maxNg: 0, totalNg: 0, totalInspected: 0 };
+      }
+
+      const periodStart = new Date(input.startDate);
+      const periodEnd = new Date(input.endDate);
+
+      // Product reference image + native pixel dimensions (overlay canvas bounds).
+      const [product] = await db
+        .select({
+          id: productModels.id,
+          code: productModels.code,
+          name: productModels.name,
+          referenceImageUrl: productModels.referenceImageUrl,
+          imageWidth: productModels.imageWidth,
+          imageHeight: productModels.imageHeight,
+          imageDisplayMode: productModels.imageDisplayMode,
+        })
+        .from(productModels)
+        .where(eq(productModels.id, input.productModelId));
+
+      if (!product) {
+        return { product: null, points: [], maxNg: 0, totalNg: 0, totalInspected: 0 };
+      }
+
+      // The measurement-point definitions carry the REAL anchor positions.
+      const pointDefs = await db
+        .select({
+          id: measurementPointDefs.id,
+          code: measurementPointDefs.code,
+          name: measurementPointDefs.name,
+          positionX: measurementPointDefs.positionX,
+          positionY: measurementPointDefs.positionY,
+          normalizedX: measurementPointDefs.normalizedX,
+          normalizedY: measurementPointDefs.normalizedY,
+          radius: measurementPointDefs.radius,
+        })
+        .from(measurementPointDefs)
+        .where(and(
+          eq(measurementPointDefs.productModelId, input.productModelId),
+          eq(measurementPointDefs.isActive, true),
+          isNull(measurementPointDefs.deletedAt),
+        ));
+
+      // Aggregate measurement results per point in the window (NG + total).
+      const conditions = [
+        gte(productInspections.inspectionTime, periodStart),
+        lte(productInspections.inspectionTime, periodEnd),
+        eq(productInspections.productModelId, input.productModelId),
+      ];
+      if (input.machineId) {
+        conditions.push(eq(productInspections.machineId, input.machineId));
+      }
+
+      const perPoint = await db
+        .select({
+          pointDefId: measurementResults.pointDefId,
+          ngCount: sql<number>`COUNT(CASE WHEN ${measurementResults.result} = 'NG' THEN 1 END)`,
+          totalCount: sql<number>`COUNT(*)`,
+        })
+        .from(measurementResults)
+        .innerJoin(productInspections, eq(measurementResults.inspectionId, productInspections.id))
+        .where(and(...conditions))
+        .groupBy(measurementResults.pointDefId);
+
+      const statsByPoint = new Map<number, { ngCount: number; totalCount: number }>();
+      for (const row of perPoint) {
+        if (row.pointDefId == null) continue;
+        statsByPoint.set(row.pointDefId, {
+          ngCount: Number(row.ngCount) || 0,
+          totalCount: Number(row.totalCount) || 0,
+        });
+      }
+
+      let maxNg = 0;
+      let totalNg = 0;
+      let totalInspected = 0;
+
+      const points = pointDefs.map((p) => {
+        const stats = statsByPoint.get(p.id) ?? { ngCount: 0, totalCount: 0 };
+        if (stats.ngCount > maxNg) maxNg = stats.ngCount;
+        totalNg += stats.ngCount;
+        totalInspected += stats.totalCount;
+        return {
+          pointDefId: p.id,
+          code: p.code,
+          name: p.name,
+          positionX: p.positionX,
+          positionY: p.positionY,
+          // 0..1 normalized anchor. Prefer stored normalized values; fall back
+          // to positionX/Y over the product native image dimensions.
+          normalizedX: p.normalizedX != null
+            ? Number(p.normalizedX)
+            : (product.imageWidth ? p.positionX / product.imageWidth : null),
+          normalizedY: p.normalizedY != null
+            ? Number(p.normalizedY)
+            : (product.imageHeight ? p.positionY / product.imageHeight : null),
+          radius: p.radius ?? null,
+          ngCount: stats.ngCount,
+          totalCount: stats.totalCount,
+          ngRate: stats.totalCount > 0 ? (stats.ngCount / stats.totalCount) * 100 : 0,
+        };
+      });
+
+      return { product, points, maxNg, totalNg, totalInspected };
     }),
 });
 

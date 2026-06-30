@@ -223,8 +223,15 @@
       "approvalsDesc": "NG threshold approval queue"
     }
   },
+  "realtime": {
+    "live": "Live",
+    "polling": "Polling",
+    "offline": "Offline",
+    "lastEvent": "Last update {{ago}} ago"
+  },
   "aiInbox": {
     "title": "Action Inbox",
+    "unreadAria": "Action Inbox, {{count}} items need you",
     "subtitle": "The AI pushes everything that needs you here — handle each in one tap.",
     "empty": "Nothing needs your attention 🎉",
     "emptyHint": "When the AI has a proposal, alert or recommendation, it shows up here.",
@@ -1292,6 +1299,7 @@
     "many": "{{count}} permissions are expiring (soonest in {{days}} day(s)) — contact an admin to renew."
   },
   "common": {
+    "notAvailable": "N/A",
     "viewOnly": "View Only",
     "dismiss": "Dismiss",
     "zoomOut": "Zoom out",
