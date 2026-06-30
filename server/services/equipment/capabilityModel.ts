@@ -244,6 +244,20 @@ const CMD_ROBOT_ABORT: CommandDescriptor = {
   requiredPermission: PERM_CONTROL,
   packmlCommand: "Abort",
 };
+// X1-e (doc 16 §5) — STANDARDIZED e-stop command descriptor. A high-risk command that
+// declares the RBAC permission the dispatcher enforces (under FIELD_V2_ENABLED). This
+// DESCRIBES the e-stop contract only; it opens NO new control path — an actual e-stop
+// still routes through the existing gated dispatcher (and, per doc 16 §8, a real
+// hardware-rated stop is the Safety PLC's job, deferred to S2). The command verb maps
+// to the robot 'abort' job at the dispatcher boundary.
+export const CMD_ESTOP: CommandDescriptor = {
+  name: "e_stop",
+  label: "Emergency stop",
+  paramsSchema: [],
+  riskLevel: "high",
+  requiredPermission: PERM_CONTROL,
+  packmlCommand: "Abort",
+};
 
 // ── reusable telemetry building blocks ──
 const T_YIELD: TelemetryDescriptor = { key: "yield", label: "Yield %", dataType: "float", unit: "%" };
@@ -257,6 +271,17 @@ const T_ESTOP: TelemetryDescriptor = { key: "estop", label: "E-stop", dataType: 
 const T_RESULT: TelemetryDescriptor = { key: "process_result", label: "Process result", dataType: "string" };
 const T_TORQUE: TelemetryDescriptor = { key: "torque", label: "Torque", dataType: "float", unit: "Nm" };
 const T_VOLUME: TelemetryDescriptor = { key: "dispense_volume", label: "Dispense volume", dataType: "float", unit: "mm3" };
+// X1-a (doc 16 §5) — UDM/UEM extension telemetry for robots/AMRs. Surfaced on the
+// canonical model so the Unified Device Model exposes battery/joint/firmware/zone/
+// heartbeat regardless of vendor. battery_level is populated for AGVs (VDA5050);
+// joint_states/firmware_version are SEAMS (honest null until a driver provides them).
+const T_BATTERY: TelemetryDescriptor = { key: "battery_level", label: "Battery", dataType: "float", unit: "%" };
+const T_JOINTS: TelemetryDescriptor = { key: "joint_states", label: "Joint states", dataType: "json" };
+const T_SAFETY_ZONE: TelemetryDescriptor = { key: "safety_zone_id", label: "Safety zone", dataType: "int" };
+const T_FIRMWARE: TelemetryDescriptor = { key: "firmware_version", label: "Firmware", dataType: "string" };
+const T_HEARTBEAT: TelemetryDescriptor = { key: "last_heartbeat", label: "Last heartbeat", dataType: "string" };
+/** The shared UDM extension telemetry block for robot/AMR classes (X1-a). */
+const UDM_ROBOT_TELEMETRY: TelemetryDescriptor[] = [T_BATTERY, T_JOINTS, T_SAFETY_ZONE, T_FIRMWARE, T_HEARTBEAT];
 
 /** The PackML state set a typical production cell can occupy (the full cube). */
 const FULL_STATES: PackmlState[] = [
@@ -328,9 +353,10 @@ const DEFAULT_PROFILES: Record<EquipmentClass, EquipmentCapability> = {
   PACKAGING: { equipmentClass: "PACKAGING", adapterKind: "ot-opcua", supportedCommands: AUTOMATION_COMMANDS, telemetryTags: AUTOMATION_TELEMETRY, supportedStates: FULL_STATES },
 
   // ── Robots / AGV (RobotDriver job verbs; ROBOT_TEST is a robotic test cell) ──
-  ROBOT: { equipmentClass: "ROBOT", adapterKind: "robot", supportedCommands: [CMD_START, CMD_PAUSE, CMD_ROBOT_RUNJOB, CMD_ROBOT_ABORT], telemetryTags: [T_MODE, T_POSE, T_ESTOP, T_STATE], supportedStates: FULL_STATES },
-  ROBOT_TEST: { equipmentClass: "ROBOT_TEST", adapterKind: "robot", supportedCommands: [CMD_START, CMD_STOP, CMD_ROBOT_RUNJOB, CMD_ROBOT_ABORT], telemetryTags: [T_MODE, T_POSE, T_RESULT, T_STATE], supportedStates: FULL_STATES },
-  PALLETIZER: { equipmentClass: "PALLETIZER", adapterKind: "robot", supportedCommands: [CMD_START, CMD_PAUSE, CMD_ROBOT_RUNJOB, CMD_ROBOT_ABORT], telemetryTags: [T_MODE, T_POSE, T_ESTOP, T_STATE], supportedStates: FULL_STATES },
+  // X1-a — robot classes carry the UDM extension telemetry (battery/joint/firmware/zone/heartbeat).
+  ROBOT: { equipmentClass: "ROBOT", adapterKind: "robot", supportedCommands: [CMD_START, CMD_PAUSE, CMD_ROBOT_RUNJOB, CMD_ROBOT_ABORT, CMD_ESTOP], telemetryTags: [T_MODE, T_POSE, T_ESTOP, T_STATE, ...UDM_ROBOT_TELEMETRY], supportedStates: FULL_STATES },
+  ROBOT_TEST: { equipmentClass: "ROBOT_TEST", adapterKind: "robot", supportedCommands: [CMD_START, CMD_STOP, CMD_ROBOT_RUNJOB, CMD_ROBOT_ABORT, CMD_ESTOP], telemetryTags: [T_MODE, T_POSE, T_RESULT, T_STATE, ...UDM_ROBOT_TELEMETRY], supportedStates: FULL_STATES },
+  PALLETIZER: { equipmentClass: "PALLETIZER", adapterKind: "robot", supportedCommands: [CMD_START, CMD_PAUSE, CMD_ROBOT_RUNJOB, CMD_ROBOT_ABORT, CMD_ESTOP], telemetryTags: [T_MODE, T_POSE, T_ESTOP, T_STATE, ...UDM_ROBOT_TELEMETRY], supportedStates: FULL_STATES },
 };
 
 /** A minimal, read-only fallback profile for an unknown/unmodelled machineType. */

@@ -4258,6 +4258,8 @@
     "engineeringWorkspaceDesc": "Lập trình thiết bị (Zmotion/PLC/robot), kiểm tra, build, mô phỏng rồi ký duyệt & deploy",
     "factoryLiveMap": "Bản đồ nhà máy 3D",
     "factoryLiveMapDesc": "Sàn nhà máy 3D, máy tô màu theo trạng thái live (digital shadow), bấm drill-down xuống cụm",
+    "fieldDevices": "Trừu tượng hoá thiết bị hiện trường",
+    "fieldDevicesDesc": "Trạng thái Mô hình Thiết bị Hợp nhất (UDM), độ sống theo heartbeat (live / chậm / mất kết nối) và khám phá thiết bị cắm-nóng",
     "factoryFloorEditor": "Sửa mặt bằng nhà máy",
     "factoryFloorEditorDesc": "Kéo–thả đặt toạ độ thật của từng máy trên sàn; toạ độ dùng cho bản đồ 3D",
     "rfTestCell": "Mô phỏng trạm test RF",

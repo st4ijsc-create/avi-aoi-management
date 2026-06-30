@@ -26,6 +26,14 @@ export interface RobotState {
   payloadKg?: number;
   speedPct?: number;
   error?: string;
+  // X1-a (doc 16 §5) — UDM/UEM extension fields. All OPTIONAL + best-effort: a driver
+  // that has no value leaves them undefined (an honest NULL in robot_telemetry), never
+  // fabricated. batteryPct is wired from the VDA5050 battery extraction for AGVs;
+  // jointStates/firmwareVersion are SEAMS (only populated when a driver provides them).
+  batteryPct?: number;                       // 0..100 charge %
+  jointStates?: Array<Record<string, unknown>>; // per-joint pos/vel (seam)
+  safetyZoneId?: number;                     // zone the device occupies (best-effort)
+  firmwareVersion?: string;                  // device firmware (seam)
   timestamp: Date;
 }
 

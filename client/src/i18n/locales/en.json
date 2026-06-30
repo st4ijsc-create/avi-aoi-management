@@ -4235,6 +4235,8 @@
     "engineeringWorkspaceDesc": "Author device programs (Zmotion/PLC/robot), validate, build, simulate, then sign-off & deploy",
     "factoryLiveMap": "Factory 3D Live Map",
     "factoryLiveMapDesc": "3D factory floor, machines coloured by live status (digital shadow), click to drill down to a cell",
+    "fieldDevices": "Field & Device Abstraction",
+    "fieldDevicesDesc": "Unified Device Model state, heartbeat liveness (live / stale / lost_connection) and hot-plug discovery",
     "factoryFloorEditor": "Factory Floor Editor",
     "factoryFloorEditorDesc": "Drag-and-drop the real floor coordinates for each machine; used by the 3D map",
     "rfTestCell": "RF Test Cell Sim",

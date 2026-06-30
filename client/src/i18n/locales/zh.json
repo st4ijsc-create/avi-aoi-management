@@ -4228,6 +4228,8 @@
     "engineeringWorkspaceDesc": "编写设备程序（Zmotion/PLC/机器人），校验、构建、仿真，然后签核并部署",
     "factoryLiveMap": "工厂3D实时地图",
     "factoryLiveMapDesc": "3D工厂车间，设备按实时状态着色（数字镜像），点击下钻到单元",
+    "fieldDevices": "现场与设备抽象",
+    "fieldDevicesDesc": "统一设备模型状态、心跳活跃度（在线 / 滞后 / 失联）以及热插拔发现",
     "factoryFloorEditor": "工厂布局编辑器",
     "factoryFloorEditorDesc": "拖放设置每台设备的真实平面坐标；供3D地图使用",
     "rfTestCell": "射频测试站仿真",

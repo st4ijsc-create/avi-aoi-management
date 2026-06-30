@@ -14,9 +14,38 @@
  */
 import { eq } from "drizzle-orm";
 import { getDb } from "../../db/connection";
-import { robotJobs } from "../../../drizzle/schema";
+import { robotJobs, robots } from "../../../drizzle/schema";
 import { getActiveRobot } from "./robotManager";
 import type { RobotJobSpec, RobotJobResult } from "./robotDriver";
+
+/**
+ * X1-e — resolve the (equipmentClass, userRole) the command-authz guard needs.
+ * equipmentClass maps the robot kind → a capability class (mirrors taskAllocator's
+ * robotKindToCapabilityClass — robots resolve to "ROBOT"). Fail-safe defaults so the
+ * guard can still decide (a missing user → role "user", which lacks control perms →
+ * denied under the strict flag, which is the safe outcome).
+ */
+async function resolveRobotAuthzContext(
+  robotId: number,
+  userId: number,
+): Promise<{ equipmentClass: string; userRole: string }> {
+  let equipmentClass = "ROBOT";
+  let userRole = "user";
+  try {
+    const db = await getDb();
+    if (db) {
+      const [r] = await db.select({ kind: robots.kind }).from(robots).where(eq(robots.id, robotId)).limit(1);
+      // All robot kinds (arm/scara/cobot/agv) resolve to the ROBOT capability class.
+      if (r) equipmentClass = "ROBOT";
+      const { getUserById } = await import("../../db/auth");
+      const user = await getUserById(userId);
+      if (user?.role) userRole = user.role;
+    }
+  } catch {
+    /* fail-safe defaults (user role lacks control perms → denied under strict flag) */
+  }
+  return { equipmentClass, userRole };
+}
 
 export interface RobotDispatchInput {
   robotId: number;
@@ -92,6 +121,26 @@ export async function dispatchRobotJob(input: RobotDispatchInput): Promise<Robot
   if (triggerKind === "hitl" && !input.confirmedBy) {
     const jobId = await record(input, "rejected", undefined, "HITL required: no confirmedBy");
     return { ok: false, status: "rejected", jobId, error: "HITL confirmation required" };
+  }
+
+  // 2b) X1-e (doc 16 §5) — COMMAND-LEVEL AUTHORIZATION (ADDITIVE, flag-gated).
+  //     When FIELD_V2_ENABLED is on, the caller must hold the descriptor's
+  //     requiredPermission for this robot job verb. This NEVER weakens the HITL gate
+  //     above or the dry-run mode gate below — it can only DENY before any write.
+  //     Flag OFF (default) → authorizeCommand returns skipped:true → pass-through
+  //     (current behaviour, unchanged). A rejected command writes an append-only row.
+  {
+    const { authorizeCommand, fieldV2Enabled } = await import("../field/commandAuthz");
+    if (fieldV2Enabled()) {
+      const actorId = input.confirmedBy ?? input.requestedBy;
+      const { equipmentClass, userRole } = await resolveRobotAuthzContext(input.robotId, actorId);
+      const verb = input.job.jobType === "abort" ? "abort" : "run_job";
+      const authz = await authorizeCommand({ equipmentClass, verb, userId: actorId, userRole });
+      if (!authz.ok) {
+        const jobId = await record(input, "rejected", { requiredPermission: authz.requiredPermission }, authz.reason ?? "command authorization denied");
+        return { ok: false, status: "rejected", jobId, error: authz.reason ?? "command authorization denied" };
+      }
+    }
   }
 
   // 3) Active + connected driver.

@@ -293,6 +293,25 @@ export class OpcuaDriver extends NotImplementedDriver {
     return Variant ? new Variant({ dataType: dt, value }) : { dataType: dt, value };
   }
 
+  /**
+   * X1-d (doc 16 §5) — REAL OPC-UA browse for hot-plug discovery. Browses the children
+   * of a node (default the Objects folder "ns=0;i=85") and returns the discovered
+   * references as candidate nodes. READ-ONLY (session.browse) — opens NO control path.
+   * Returns [] when not connected or the browse yields nothing. NEVER fabricates nodes.
+   */
+  async browseNodes(rootNodeId = "ns=0;i=85"): Promise<Array<{ nodeId: string; browseName: string; nodeClass?: string }>> {
+    if (!this.connected || !this.session) {
+      throw new Error("OpcuaDriver: not connected");
+    }
+    const res = await this.session.browse(rootNodeId);
+    const refs: any[] = Array.isArray(res?.references) ? res.references : [];
+    return refs.map((r) => ({
+      nodeId: typeof r?.nodeId?.toString === "function" ? r.nodeId.toString() : String(r?.nodeId ?? ""),
+      browseName: r?.browseName?.name ?? String(r?.browseName ?? ""),
+      nodeClass: typeof r?.nodeClass === "number" ? String(r.nodeClass) : (r?.nodeClass ?? undefined),
+    })).filter((n) => n.nodeId);
+  }
+
   override async health(): Promise<OtHealth> {
     return {
       protocol: this.protocol,

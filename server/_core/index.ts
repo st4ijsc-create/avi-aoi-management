@@ -4438,6 +4438,27 @@ async function startServer() {
     console.error("[TwinStream] gateway start failed:", (err as any)?.message || err);
   }
 
+  // X1 (doc 16 Khối 1) — Field & device abstraction. Two flag-gated startups (no-ops
+  // unless FIELD_V2_ENABLED). Both open NO control path (monitoring/signal only):
+  //   (a) heartbeat TTL stale-detection sweep — marks a device 'lost_connection' once
+  //       its heartbeat exceeds the TTL + emits an advisory event (safety/fleet react
+  //       via the existing gated paths). Unref'd, non-overlapping (mirrors the outbox).
+  //   (b) device push-streaming gateway — taps the SAME unified telemetry bus as the
+  //       twin stream and pushes TIERED-sampled UDM deltas to `device:{id}` (FE keeps
+  //       its 5s poll fallback when off).
+  try {
+    const { startFieldHealthSweep } = await import("../services/field/fieldHealthService");
+    startFieldHealthSweep();
+  } catch (err) {
+    console.error("[FieldHealth] sweep start failed:", (err as any)?.message || err);
+  }
+  try {
+    const { startDeviceStreamGateway } = await import("../services/field/deviceStream");
+    startDeviceStreamGateway();
+  } catch (err) {
+    console.error("[DeviceStream] gateway start failed:", (err as any)?.message || err);
+  }
+
   try {
     const { sweepChargingPlans } = await import("../services/fleet/chargingPlanner");
     const intervalMs = Math.max(60_000, Number(process.env.FLEET_CHARGING_SWEEP_MS ?? 300_000));

@@ -15,6 +15,7 @@ const lastEstop = new Map<number, boolean>();
 export async function ingestRobotState(robot: RuntimeRobot, state: RobotState): Promise<void> {
   const db = await getDb();
   if (!db) return;
+  const now = new Date();
   try {
     await db.insert(robotTelemetry).values({
       robotId: robot.id,
@@ -25,13 +26,29 @@ export async function ingestRobotState(robot: RuntimeRobot, state: RobotState): 
       payloadKg: state.payloadKg != null ? String(state.payloadKg) : undefined,
       speedPct: state.speedPct,
       errorText: state.error,
-      timestamp: state.timestamp ?? new Date(),
+      // X1-a (doc 16 §5) — UDM/UEM extension columns. Honest NULL when the producer
+      // has no value (jointStates/firmwareVersion are seams; batteryLevel is wired
+      // from the VDA5050 battery extraction for AGVs). lastHeartbeat = the moment we
+      // observed this snapshot → feeds the X1-b heartbeat TTL stale sweep.
+      batteryLevel: state.batteryPct != null ? String(state.batteryPct) : undefined,
+      jointStates: state.jointStates,
+      safetyZoneId: state.safetyZoneId,
+      firmwareVersion: state.firmwareVersion,
+      lastHeartbeat: state.timestamp ?? now,
+      timestamp: state.timestamp ?? now,
     });
     // Lightweight liveness update on the registry row.
     const newStatus = state.estop ? "estop" : state.busy ? "busy" : "idle";
     await db.update(robots)
-      .set({ status: newStatus, lastSeenAt: new Date() })
+      .set({ status: newStatus, lastSeenAt: now })
       .where(eq(robots.id, robot.id));
+
+    // X1-b (doc 16 §5) — record the heartbeat into the field-health ledger so the
+    // stale sweep can detect lost connections. Fire-and-forget + self-gated by
+    // FIELD_V2_ENABLED (no-op when off) → zero cost on the default path.
+    void import("../field/fieldHealthService")
+      .then((m) => m.recordHeartbeat({ deviceKey: `robot:${robot.id}`, deviceKind: "robot", robotId: robot.id, at: state.timestamp ?? now }))
+      .catch((e) => console.error(`[Robot] heartbeat record failed for "${robot.code}":`, (e as Error)?.message ?? e));
 
     // G1 (doc 16 Khối 2) — if the robot just hit a failed state (e-stop), hand its
     // open tasks to another device. Fire-and-forget; the rebalancer is itself

@@ -48,6 +48,19 @@ export const robotTelemetry = pgTable("robot_telemetry", {
   payloadKg: decimal("payloadKg", { precision: 8, scale: 3 }),
   speedPct: integer("speedPct"),
   errorText: text("errorText"),
+  // X1-a (doc 16 §5) — UDM/UEM extension columns (additive, nullable). Behind
+  // FIELD_V2_ENABLED on the read/surface side; the columns themselves are always
+  // safe to write (a producer that has no value writes an honest NULL).
+  //   batteryLevel    — AGV charge % (wired from the VDA5050 battery extraction).
+  //   jointStates     — per-joint pose/velocity (SEAM: only when a driver provides it).
+  //   safetyZoneId    — the zone the device occupies (best-effort; null otherwise).
+  //   firmwareVersion — device firmware (SEAM: only when a driver provides it).
+  //   lastHeartbeat   — liveness timestamp; drives the X1-b heartbeat TTL stale sweep.
+  batteryLevel: decimal("battery_level", { precision: 6, scale: 2 }),
+  jointStates: jsonb("joint_states").$type<Array<Record<string, unknown>>>(),
+  safetyZoneId: integer("safety_zone_id"),
+  firmwareVersion: varchar("firmware_version", { length: 64 }),
+  lastHeartbeat: timestamp("last_heartbeat"),
   timestamp: timestamp("timestamp").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => [

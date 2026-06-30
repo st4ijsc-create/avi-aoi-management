@@ -134,6 +134,7 @@ import { twinRouter } from "./routers/twinRouter"; // T1 (doc 16 Khối 7): Digi
 import { safetyRouter } from "./routers/safetyRouter"; // S1 (doc 16 Khối 3): Safety audit + mixed workforce + near-miss advisory (ADVISORY; SAFETY_AUDIT_ENABLED / WORKFORCE_ENABLED)
 import { equipmentStandardsRouter } from "./routers/equipmentStandardsRouter"; // E1 (doc 16 Khối 5): Equipment standardization governance — device type registry/alarm taxonomy/CR workflow/conformance/compliance (EQ_GOVERN_ENABLED)
 import { equipmentIntegrationRouter } from "./routers/equipmentIntegrationRouter"; // I1 (doc 16 Khối 1B): multi-vendor integration — FOCAS/Euromap frameworks (read-only) + recipe versioning genealogy + alarm normalization (EQ_INTEG_ENABLED)
+import { fieldRouter } from "./routers/fieldRouter"; // X1 (doc 16 Khối 1): Field & device abstraction — UDM state/staleness, field health, hot-plug discovery (FIELD_V2_ENABLED)
 import { aiInsightRouter } from "./routers/aiInsightRouter"; // Phase 4: AI orchestration insights (advisory, read + ack)
 import { aiInboxRouter } from "./routers/aiInboxRouter"; // AI Action Inbox: push + 1-tap approve/dismiss/ask
 import { aiTodayRouter } from "./routers/aiTodayRouter"; // "Today" briefing: role-aware zero-click login summary
@@ -376,6 +377,7 @@ export const appRouter = router({
   safety: safetyRouter, // S1 (doc 16 Khối 3): Safety audit + mixed workforce + near-miss advisory (ADVISORY ONLY; SAFETY_AUDIT_ENABLED / WORKFORCE_ENABLED)
   equipmentStandards: equipmentStandardsRouter, // E1 (doc 16 Khối 5): Equipment standardization governance (EQ_GOVERN_ENABLED)
   equipmentIntegration: equipmentIntegrationRouter, // I1 (doc 16 Khối 1B): multi-vendor integration — FOCAS/Euromap frameworks + recipe versioning genealogy + alarm normalization (EQ_INTEG_ENABLED)
+  field: fieldRouter, // X1 (doc 16 Khối 1): Field & device abstraction — UDM state/staleness, field health, hot-plug discovery (FIELD_V2_ENABLED)
   aiInsight: aiInsightRouter,
   aiInbox: aiInboxRouter,
   aiToday: aiTodayRouter,

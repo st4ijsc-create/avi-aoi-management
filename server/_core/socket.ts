@@ -138,6 +138,14 @@ export function initializeSocket(server: HttpServer): Server {
         socket.join(`twin:${(data as any).twinFactoryId}`);
         console.log(`[Socket.io] ${socket.id} joined twin:${(data as any).twinFactoryId}`);
       }
+      // X1-c (doc 16 §5) — Device live stream room (per device). A device-monitor
+      // viewer joins `device:{deviceId}` to receive TIERED-sampled UDM state/position
+      // deltas (deviceStream gateway, gated by FIELD_V2_ENABLED). Producer-gated; no
+      // gate here. `deviceStreamId` is the logical key ("robot:1"/"machine:7").
+      if ((data as any).deviceStreamId) {
+        socket.join(`device:${(data as any).deviceStreamId}`);
+        console.log(`[Socket.io] ${socket.id} joined device:${(data as any).deviceStreamId}`);
+      }
       // Everyone joins the global room for all alerts
       socket.join("global");
     });
@@ -148,6 +156,7 @@ export function initializeSocket(server: HttpServer): Server {
       if (data.machineId) socket.leave(`machine:${data.machineId}`);
       if (data.lineId) socket.leave(`line:${data.lineId}`);
       if ((data as any).twinFactoryId) socket.leave(`twin:${(data as any).twinFactoryId}`);
+      if ((data as any).deviceStreamId) socket.leave(`device:${(data as any).deviceStreamId}`);
     });
 
     // Doc 09 / D6 — Engineering Online-Monitor room. A workspace client joins
@@ -1050,6 +1059,33 @@ export interface TwinDeviceDelta {
 export function emitTwinDeviceDeltas(factoryId: number, deltas: TwinDeviceDelta[]): void {
   if (!io || deltas.length === 0) return;
   io.to(`twin:${factoryId}`).emit("twin:device", { factoryId, deltas, ts: Date.now() });
+}
+
+// ============ X1-c — DEVICE LIVE STREAM (UDM, tiered sampling, gated) ==========
+
+/**
+ * A coalesced per-device UDM delta pushed to the per-device room `device:{deviceId}`.
+ * Carries only the metrics that changed since the last flush for this device (each
+ * metric coalesced to its latest value, at a rate bounded by its tier). SIGNAL ONLY:
+ * never writes a device or DB (the unified bus already persisted the sample).
+ */
+export interface DeviceStreamDelta {
+  deviceId: string; // logical key "robot:<id>" | "machine:<id>" | "device:<externalId>"
+  metrics: Record<string, number | string | boolean | null>;
+  ts: number;
+}
+
+/**
+ * Push a batch of device UDM deltas to their per-device rooms. No-op when io is not
+ * initialized (tests / headless). The PRODUCER (deviceStream gateway) is gated by
+ * FIELD_V2_ENABLED; this is a thin transport with no gate of its own — so when the
+ * gateway is off it is simply never called (FE keeps its 5s poll, backward-compatible).
+ */
+export function emitDeviceDeltas(deltas: DeviceStreamDelta[]): void {
+  if (!io || deltas.length === 0) return;
+  for (const d of deltas) {
+    io.to(`device:${d.deviceId}`).emit("device:state", d);
+  }
 }
 
 // Emit alert escalation event

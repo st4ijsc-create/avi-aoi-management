@@ -429,6 +429,18 @@ export const navGroups: NavGroup[] = [
         section: "monitoring",
       },
       {
+        // Automation Orchestration (Khối 1) — Field & Device Abstraction: UDM state +
+        // heartbeat liveness board + hot-plug discovery (read-only; mutations gated by
+        // FIELD_V2_ENABLED). View on machine_monitoring.
+        href: "/field-devices",
+        label: "nav.fieldDevices",
+        icon: <Radio className="h-4 w-4" />,
+        description: "nav.fieldDevicesDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+        section: "monitoring",
+      },
+      {
         // Automation Orchestration (Khối 7) — live 3D digital twin + replay.
         // Monitoring (view-only) gated on machine_monitoring.
         href: "/digital-twin-center",
