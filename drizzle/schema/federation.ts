@@ -8,7 +8,7 @@
 // reference only; the actual secret is resolved at call time from the env var
 // `SITE_TOKEN_<CODE>` (mirrors the MASTER_API_KEY env pattern). A DB dump leaks
 // no site secrets.
-import { pgTable, serial, integer, text, timestamp, varchar, boolean, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, varchar, boolean, jsonb, doublePrecision, index, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const sites = pgTable("sites", {
   id: serial("id").primaryKey(),
@@ -47,3 +47,101 @@ export type SiteStatus = (typeof SITE_STATUSES)[number];
 /** Allowed values for sites.authType. */
 export const SITE_AUTH_TYPES = ["master_key", "bearer"] as const;
 export type SiteAuthType = (typeof SITE_AUTH_TYPES)[number];
+
+// ════════════════════════════════════════════════════════════════════════════
+// F1 — Roll-up store (doc 13 §4 + §9)
+//
+// The CORE aggregator periodically PULLS each enrolled site's KPIs read-only via
+// its /api/external/* feed and lands them here. The core NEVER writes to a site;
+// the only data direction is site → core.
+//
+// HONEST STALENESS is a first-class concern: every roll-up row records both
+//   • asOf      — the window the data actually describes (e.g. "today")
+//   • fetchedAt — when the core successfully pulled it
+// so the dashboard can compute age = now − fetchedAt and badge OK/STALE/DOWN.
+// We NEVER pass stale numbers off as live, and we NEVER fabricate values.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Roll-up bucket windows. "snapshot" = latest-known KPI for the site's window. */
+export const ROLLUP_WINDOWS = ["snapshot", "hour", "shift", "day"] as const;
+export type RollupWindow = (typeof ROLLUP_WINDOWS)[number];
+
+/** Where a roll-up row came from. F1 = "poll"; F3 will add "uns" (near-real-time). */
+export const ROLLUP_SOURCES = ["poll", "uns"] as const;
+export type RollupSource = (typeof ROLLUP_SOURCES)[number];
+
+/**
+ * site_kpi_rollup — one row per (site, metric category, window, bucketStart).
+ *
+ * Designed for two access patterns:
+ *   1. "latest snapshot per site per metric" — dashboard grid (window='snapshot',
+ *      one row per (siteId, category) upserted in place each cycle).
+ *   2. short history — additional rows with window in (hour|shift|day) +
+ *      a distinct bucketStart give a trend without storing raw inspections.
+ *
+ * Aggregate-only (no raw inspection rows) → small even at N=50 sites.
+ */
+export const siteKpiRollup = pgTable("site_kpi_rollup", {
+  id: serial("id").primaryKey(),
+  siteId: integer("siteId")
+    .notNull()
+    .references(() => sites.id, { onDelete: "cascade" }),
+  corporateCode: varchar("corporateCode", { length: 50 }), // denormalized from sites for cross-corporate rollups/RLS
+  category: varchar("category", { length: 50 }).notNull().default("overall"), // overall | <station/product code> — keeps room for per-line KPIs later
+  window: varchar("window", { length: 20 }).notNull().default("snapshot"), // snapshot | hour | shift | day
+  bucketStart: timestamp("bucketStart", { withTimezone: true }), // null for window='snapshot'
+  asOf: timestamp("asOf", { withTimezone: true }).notNull(), // the period the KPIs describe
+  // --- KPI values (honest: null when the site didn't return that metric) ---
+  totalInspections: integer("totalInspections"),
+  okCount: integer("okCount"),
+  ngCount: integer("ngCount"),
+  ntfCount: integer("ntfCount"),
+  yieldRate: doublePrecision("yieldRate"), // %
+  ngRate: doublePrecision("ngRate"), // %
+  throughput: integer("throughput"), // units in window (= totalInspections)
+  oee: doublePrecision("oee"), // %, null until a site exposes OEE
+  avgCycleTime: doublePrecision("avgCycleTime"), // seconds
+  defectPareto: jsonb("defectPareto"), // top-N {pointCode,name,ngCount,pct} — null if not fetched
+  // --- provenance / staleness ---
+  source: varchar("source", { length: 20 }).notNull().default("poll"), // poll | uns
+  fetchedAt: timestamp("fetchedAt", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  // Upsert target for the "latest snapshot per site per metric" pattern.
+  uniqueIndex("uq_site_kpi_rollup_bucket").on(t.siteId, t.category, t.window, t.bucketStart),
+  index("idx_site_kpi_rollup_site_asof").on(t.siteId, t.asOf),
+  index("idx_site_kpi_rollup_corporate").on(t.corporateCode),
+]);
+
+export type SiteKpiRollup = typeof siteKpiRollup.$inferSelect;
+export type InsertSiteKpiRollup = typeof siteKpiRollup.$inferInsert;
+
+/** Allowed values for site_sync_log.status / lastSyncStatus. */
+export const SYNC_STATUSES = ["ok", "partial", "failed", "skipped"] as const;
+export type SyncStatus = (typeof SYNC_STATUSES)[number];
+
+/**
+ * site_sync_log — one audit row per poll attempt per site. Powers honest
+ * staleness debugging (why is a site STALE?) and per-site failure isolation
+ * forensics. Pruned on a rolling window by retention (out of F1 scope).
+ */
+export const siteSyncLog = pgTable("site_sync_log", {
+  id: serial("id").primaryKey(),
+  siteId: integer("siteId")
+    .notNull()
+    .references(() => sites.id, { onDelete: "cascade" }),
+  startedAt: timestamp("startedAt", { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp("finishedAt", { withTimezone: true }),
+  ok: boolean("ok").notNull().default(false),
+  status: varchar("status", { length: 20 }).notNull().default("failed"), // ok | partial | failed | skipped
+  httpStatus: integer("httpStatus"),
+  error: text("error"),
+  durationMs: integer("durationMs"),
+  metricsFetched: integer("metricsFetched").notNull().default(0), // # of endpoints/metrics landed
+  endpointsHit: jsonb("endpointsHit"), // string[] of /api/external/* paths attempted
+}, (t) => [
+  index("idx_site_sync_log_site_started").on(t.siteId, t.startedAt),
+]);
+
+export type SiteSyncLog = typeof siteSyncLog.$inferSelect;
+export type InsertSiteSyncLog = typeof siteSyncLog.$inferInsert;

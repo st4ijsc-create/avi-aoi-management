@@ -4567,6 +4567,18 @@ async function startServer() {
     console.error("[Orchestration] init failed:", (err as any)?.message || err);
   }
 
+  // doc 13 · F1 — Federation core aggregator: PULLS each enrolled site's KPIs
+  // read-only via /api/external/* into the roll-up store (per-site isolation,
+  // backoff, circuit breaker, honest staleness). The core NEVER writes to a site.
+  // Disabled by default; opt in via FEDERATION_AGGREGATOR_ENABLED=true. Safe
+  // no-op when OFF; never blocks boot, never fabricates data.
+  try {
+    const { startFederationAggregator } = await import("../services/federation/aggregatorService");
+    startFederationAggregator();
+  } catch (err) {
+    console.error("[Federation] aggregator init failed:", (err as any)?.message || err);
+  }
+
   // P4 WS4.2 — AI orchestration watcher (event bus → local LLM advisory).
   // Disabled by default; opt in via AI_ORCHESTRATION_ENABLED=true. Advisory only.
   try {
@@ -4707,6 +4719,10 @@ async function startServer() {
       .catch(() => {});
     import("../services/kbSyncScheduler")
       .then((m) => m.stopKbSyncScheduler())
+      .catch(() => {});
+    // doc 13 · F1 — stop federation aggregator (no-op if not running)
+    import("../services/federation/aggregatorService")
+      .then((m) => m.stopFederationAggregator())
       .catch(() => {});
     shutdownScheduledBackups();
     shutdownRuntimeSecurity();

@@ -34,4 +34,36 @@ export const ENV = {
   secsGemEnabled: process.env.SECS_GEM_ENABLED === "true",
   sparkplugEnabled: process.env.UNS_SPARKPLUG_ENABLED === "true",
   otIngestToUns: process.env.OT_INGEST_TO_UNS === "true",
+
+  // ── Federation (doc 13 / F1) — core aggregator (pull, read-only) ────────────
+  // OFF by default: an enabled-but-misconfigured aggregator never fabricates data.
+  // When enabled it polls each enrolled site's /api/external/* on an interval and
+  // lands aggregate KPIs in site_kpi_rollup. The core NEVER writes to a site.
+  federationAggregatorEnabled: process.env.FEDERATION_AGGREGATOR_ENABLED === "true",
+  // Global cron tick (seconds): how often a cycle wakes up to consider sites.
+  // A site is only polled when its own pollIntervalSec has elapsed since lastSyncAt.
+  federationAggregatorTickSec: (() => {
+    const n = Number(process.env.FEDERATION_AGGREGATOR_TICK_SEC);
+    return Number.isFinite(n) && n >= 5 ? Math.floor(n) : 60;
+  })(),
+  // Per-site HTTP timeout (ms) for each /api/external/* GET (AbortController).
+  federationFetchTimeoutMs: (() => {
+    const n = Number(process.env.FEDERATION_FETCH_TIMEOUT_MS);
+    return Number.isFinite(n) && n >= 1000 ? Math.floor(n) : 15_000;
+  })(),
+  // Circuit breaker: open after this many consecutive failures, …
+  federationCircuitThreshold: (() => {
+    const n = Number(process.env.FEDERATION_CIRCUIT_THRESHOLD);
+    return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 5;
+  })(),
+  // … and keep it open (skip the site) for this cooldown (seconds).
+  federationCircuitCooldownSec: (() => {
+    const n = Number(process.env.FEDERATION_CIRCUIT_COOLDOWN_SEC);
+    return Number.isFinite(n) && n >= 30 ? Math.floor(n) : 600;
+  })(),
+  // Max sites polled concurrently per cycle (per-site isolation via allSettled).
+  federationConcurrency: (() => {
+    const n = Number(process.env.FEDERATION_CONCURRENCY);
+    return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 8;
+  })(),
 };
