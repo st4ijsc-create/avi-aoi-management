@@ -4391,6 +4391,8 @@
     "aiSettingsDesc": "API keys, model config, and AI system settings",
     "apiKeys": "API Keys",
     "apiKeysDesc": "Manage scoped access keys for the Unified Machine API",
+    "sites": "Sites Federation",
+    "sitesDesc": "Register & probe remote/local sites for cross-site roll-up (read-only)",
     "edgeNodes": "Edge Nodes",
     "edgeNodesDesc": "Register & monitor edge coordination runtimes",
     "workOrders": "Work Orders",

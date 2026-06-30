@@ -4414,6 +4414,8 @@
     "aiSettingsDesc": "API keys, cấu hình mô hình và cài đặt hệ thống AI",
     "apiKeys": "Khoá API",
     "apiKeysDesc": "Quản lý khoá truy cập có phạm vi cho Unified Machine API",
+    "sites": "Sites Federation",
+    "sitesDesc": "Đăng ký & probe các site từ xa/local để tổng hợp cross-site (read-only)",
     "edgeNodes": "Node biên",
     "edgeNodesDesc": "Đăng ký & theo dõi runtime điều phối biên",
     "workOrders": "Lệnh bảo trì",

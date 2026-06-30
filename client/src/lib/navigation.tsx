@@ -950,6 +950,15 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "admin",
       },
       {
+        href: "/sites",
+        label: "nav.sites",
+        icon: <Network className="h-4 w-4" />,
+        description: "nav.sitesDesc",
+        requiredRole: 'admin',
+        requiredPermission: "admin_system",
+        permissionCategory: "admin",
+      },
+      {
         href: "/backup-restore",
         label: "nav.backupRestore",
         icon: <Archive className="h-4 w-4" />,

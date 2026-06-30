@@ -61,6 +61,28 @@ export function registerExternalInspectionRoutes(
   validateExternalAuth: express.RequestHandler,
 ) {
   // ================================================================
+  // GET /api/external/health
+  // Lightweight authenticated reachability probe for the Federation core
+  // aggregator (doc 13 / F0). Confirms the site is up, the DB is reachable,
+  // and the supplied per-site read token is valid. Read-only.
+  // ================================================================
+  app.get("/api/external/health", validateExternalAuth, async (_req, res) => {
+    try {
+      const { getDb } = await import("../db");
+      const db = await getDb();
+      const dbOk = !!db;
+      res.json({
+        success: true,
+        status: "ok",
+        db: dbOk ? "up" : "down",
+        time: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, status: "error", message: error?.message || "Health check failed" });
+    }
+  });
+
+  // ================================================================
   // GET /api/external/inspections/summary
   // Tổng hợp kết quả kiểm tra theo station/product/khoảng thời gian
   // ================================================================
