@@ -4542,7 +4542,9 @@
     "digitalTwinCenter": "Digital Twin Center",
     "digitalTwinCenterDesc": "Live 3D digital twin of the floor with timeline replay",
     "safetyWorkforce": "Safety & Workforce",
-    "safetyWorkforceDesc": "Advisory safety cockpit and workforce board (view-only)"
+    "safetyWorkforceDesc": "Advisory safety cockpit and workforce board (view-only)",
+    "equipmentStandards": "Equipment Standards",
+    "equipmentStandardsDesc": "Versioned device-type hierarchy, ISA-18.2 alarm taxonomy and the Equipment Standards Board (view-only)"
   },
   "aboutPage": {
     "layoutTitle": "About System",

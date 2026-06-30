@@ -594,6 +594,17 @@ export const navGroups: NavGroup[] = [
         section: "engineering",
       },
       {
+        // Automation Orchestration (Khối 5) — equipment standards & governance:
+        // device-type hierarchy + ISA-18.2 alarm taxonomy + Standards Board. View-only.
+        href: "/equipment-standards",
+        label: "nav.equipmentStandards",
+        icon: <ShieldCheck className="h-4 w-4" />,
+        description: "nav.equipmentStandardsDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+        section: "engineering",
+      },
+      {
         href: "/factory-floor-editor",
         label: "nav.factoryFloorEditor",
         icon: <Boxes className="h-4 w-4" />,

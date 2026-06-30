@@ -4565,7 +4565,9 @@
     "digitalTwinCenter": "Trung tâm Bản sao số",
     "digitalTwinCenterDesc": "Bản sao số 3D thời gian thực của xưởng kèm phát lại theo dòng thời gian",
     "safetyWorkforce": "An toàn & Nhân lực",
-    "safetyWorkforceDesc": "Bảng điều khiển an toàn tư vấn và bảng nhân lực (chỉ xem)"
+    "safetyWorkforceDesc": "Bảng điều khiển an toàn tư vấn và bảng nhân lực (chỉ xem)",
+    "equipmentStandards": "Tiêu chuẩn thiết bị",
+    "equipmentStandardsDesc": "Cây phân loại thiết bị theo phiên bản, phân loại cảnh báo ISA-18.2 và Hội đồng tiêu chuẩn thiết bị (chỉ xem)"
   },
   "aboutPage": {
     "layoutTitle": "Giới thiệu hệ thống",

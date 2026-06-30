@@ -4535,7 +4535,9 @@
     "digitalTwinCenter": "数字孪生中心",
     "digitalTwinCenterDesc": "工厂车间的实时3D数字孪生，支持时间轴回放",
     "safetyWorkforce": "安全与人力",
-    "safetyWorkforceDesc": "咨询式安全驾驶舱与人力看板（仅查看）"
+    "safetyWorkforceDesc": "咨询式安全驾驶舱与人力看板（仅查看）",
+    "equipmentStandards": "设备标准",
+    "equipmentStandardsDesc": "版本化设备类型层级、ISA-18.2 报警分类法与设备标准委员会（仅查看）"
   },
   "aboutPage": {
     "layoutTitle": "系统介绍",
