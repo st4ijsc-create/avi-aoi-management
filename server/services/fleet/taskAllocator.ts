@@ -378,3 +378,42 @@ export async function rebalanceDeviceTasks(deviceId: number, reason = "device_of
   console.log(`[Fleet] rebalance device ${deviceId}: ${reassigned} reassigned, ${unassigned} left pending (${reason})`);
   return { ok: true, enabled: true, reassigned, unassigned };
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// G2 (doc 16 §7 part c / §15 G2) — Operation-aware REFINEMENT (ADDITIVE, flag-gated
+// by FLEET_RESOURCE_ENABLED). This NEVER runs on the G1 path: scoreCandidates /
+// allocateTask / rebalanceDeviceTasks above are byte-for-byte unchanged. The G2
+// refinement is an OPT-IN extra filter the caller layers ON TOP of the G1 ranking.
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * PURE — refine a G1 ranking using a resolved operation's required capability.
+ * Returns the G1 decision UNCHANGED unless `operation` is supplied (G2 path). When
+ * supplied, candidates whose capability class does not support the operation's
+ * requiredCapability are demoted to ineligible (an EXTRA hard filter, never relaxing
+ * G1's own capability gate). Candidate→capabilityClass is taken from the same input
+ * the allocator already has; no DB access here.
+ *
+ * The allocator's own task.requiredCapability is still the primary gate; this simply
+ * lets an operation registry add a second, operation-specific capability requirement
+ * without rewriting the G1 scorer.
+ */
+export function refineByOperation(
+  decision: AllocationDecision,
+  candidates: AllocCandidate[],
+  operation: { requiredCapability: string } | null | undefined,
+): AllocationDecision {
+  if (!operation) return decision;
+  const classById = new Map(candidates.map((c) => [c.deviceId, c.capabilityClass]));
+  const ranked = decision.ranked.map((r) => {
+    if (!r.eligible) return r;
+    const cls = classById.get(r.deviceId);
+    if (cls && !hasCapability(cls, operation.requiredCapability)) {
+      return { ...r, score: -Infinity, eligible: false, reasons: [...r.reasons, "operation_capability_mismatch"] };
+    }
+    return r;
+  });
+  ranked.sort((a, b) => b.score - a.score || a.deviceId - b.deviceId);
+  const best = ranked.find((r) => r.eligible) ?? null;
+  return { taskCapability: decision.taskCapability, best, ranked };
+}

@@ -1,19 +1,23 @@
 /**
- * G1 (doc 16 §7 Khối 2 / §12 design system) — FLEET & TASK ORCHESTRATION surface.
+ * G1 + G2 (doc 16 §7 Khối 2 / §12 design system) — FLEET & TASK ORCHESTRATION surface.
  *
- * Read-mostly cockpit over the fleetRouter (Dynamic Task Allocation Engine +
- * Zone Traffic/Path manager). Surfaces:
- *   1. KPI strip — task counts by status + active reservations + zones at capacity
- *      + detected deadlocks (warning).
- *   2. Task queue table — allocate / reassign / cancel (flag- + RBAC-gated).
- *   3. Zones panel — occupancy vs maxConcurrentRobots (progress bar) + reservations,
- *      reserve/release actions, deadlock cycles.
+ * Read-mostly cockpit over the fleetRouter, organised into tabs:
+ *   • "Tasks & Zones" (G1) — Dynamic Task Allocation Engine + Zone Traffic/Path mgr.
+ *       1. KPI strip — task counts + reservations + zones at capacity + deadlocks.
+ *       2. Task queue table — allocate / reassign / cancel (flag- + RBAC-gated).
+ *       3. Zones panel — occupancy vs maxConcurrentRobots + reservations.
+ *   • "Operations" (G2-a) — operation_codes registry, resolve → qualified programs,
+ *       create-operation + map-program (FLEET_RESOURCE_ENABLED gated).
+ *   • "Resources" (G2-c) — shared_resources by type + reserve/release + reservations,
+ *       create-resource (FLEET_RESOURCE_ENABLED gated). Mirrors the Zones UX.
+ *   • "Charging" (G2-d) — charger_stations + battery_charging_plans + sweep-now +
+ *       create-charger (FLEET_RESOURCE_ENABLED gated).
  *
  * SAFETY (mirrors the router): this page writes orchestration STATE only — it opens
- * NO device path. All mutations are additionally gated behind FLEET_ORCH_ENABLED;
- * when the flag is OFF the page shows an honest "preview" banner and surfaces the
- * CONFLICT error gracefully. Read RBAC: machine_monitoring/canView. Actions:
- * machine_control/canCreate (hidden when not held).
+ * NO device path. G1 mutations are gated behind FLEET_ORCH_ENABLED; G2 mutations
+ * behind FLEET_RESOURCE_ENABLED. When a flag is OFF the page shows an honest "preview"
+ * banner and surfaces the CONFLICT error gracefully (toast.info, not red). Read RBAC:
+ * machine_monitoring/canView. Actions: machine_control/canCreate (hidden when absent).
  *
  * i18n: uses the t("key", "English default") fallback pattern (no locale-file edits).
  */
@@ -41,9 +45,11 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Truck, RefreshCw, ListChecks, Layers, AlertTriangle, ShieldAlert, Info,
   Play, Send, Ban, MapPin, Bot, Clock, Activity, Lock, CheckCircle2,
+  Wrench, Workflow, BatteryCharging, Plus, Search, Link2, Zap, Package,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -52,6 +58,13 @@ type RouterOutputs = inferRouterOutputs<AppRouter>;
 type FleetTask = RouterOutputs["fleet"]["listTasks"][number];
 type FleetZone = RouterOutputs["fleet"]["listZones"][number];
 type FleetReservation = RouterOutputs["fleet"]["listReservations"][number];
+// G2 shapes
+type FleetOperation = RouterOutputs["fleet"]["listOperations"][number];
+type FleetResolved = RouterOutputs["fleet"]["resolveOperation"];
+type FleetResource = RouterOutputs["fleet"]["listResources"][number];
+type FleetResReservation = RouterOutputs["fleet"]["listResourceReservations"][number];
+type FleetCharger = RouterOutputs["fleet"]["listChargers"][number];
+type FleetChargingPlan = RouterOutputs["fleet"]["listChargingPlans"][number];
 
 const TASK_STATUSES = ["pending", "assigned", "running", "completed", "failed", "cancelled"] as const;
 const TERMINAL = new Set(["completed", "failed", "cancelled"]);
@@ -108,6 +121,69 @@ function fmtDuration(ms?: number | null): string {
   return `${m}m ${s % 60}s`;
 }
 
+function fmtDateTime(d?: string | Date | null): string {
+  if (!d) return "—";
+  const dt = typeof d === "string" ? new Date(d) : d;
+  if (Number.isNaN(dt.getTime())) return "—";
+  return dt.toLocaleString();
+}
+
+// ── G2 status / type badges (mirror the G1 colour-by-status discipline) ───────
+function resourceStatusBadge(status: string, t: (k: string, f: string) => string) {
+  switch (status) {
+    case "in_use":
+      return <Badge className="bg-blue-500 text-white">{t("fleet.resource.in_use", "In use")}</Badge>;
+    case "reserved":
+      return <Badge className="bg-amber-500 text-white">{t("fleet.resource.reserved", "Reserved")}</Badge>;
+    case "maintenance":
+      return <Badge variant="destructive">{t("fleet.resource.maintenance", "Maintenance")}</Badge>;
+    case "available":
+    default:
+      return <Badge className="bg-emerald-500 text-white">{t("fleet.resource.available", "Available")}</Badge>;
+  }
+}
+
+function resourceTypeBadge(type: string, t: (k: string, f: string) => string) {
+  const map: Record<string, { cls: string; label: string }> = {
+    jig: { cls: "bg-slate-500 text-white", label: t("fleet.resType.jig", "Jig") },
+    gripper: { cls: "bg-indigo-500 text-white", label: t("fleet.resType.gripper", "Gripper") },
+    fixture: { cls: "bg-cyan-600 text-white", label: t("fleet.resType.fixture", "Fixture") },
+    tool_changer: { cls: "bg-violet-500 text-white", label: t("fleet.resType.tool_changer", "Tool changer") },
+    other: { cls: "", label: t("fleet.resType.other", "Other") },
+  };
+  const e = map[type] ?? { cls: "", label: type };
+  return e.cls ? <Badge className={e.cls}>{e.label}</Badge> : <Badge variant="outline">{e.label}</Badge>;
+}
+
+function planStatusBadge(status: string, t: (k: string, f: string) => string) {
+  switch (status) {
+    case "active":
+      return <Badge className="bg-blue-500 text-white">{t("fleet.plan.active", "Active")}</Badge>;
+    case "planned":
+      return <Badge className="bg-amber-500 text-white">{t("fleet.plan.planned", "Planned")}</Badge>;
+    case "done":
+      return <Badge className="bg-emerald-500 text-white">{t("fleet.plan.done", "Done")}</Badge>;
+    case "cancelled":
+    default:
+      return <Badge variant="outline" className="text-muted-foreground">{t("fleet.plan.cancelled", "Cancelled")}</Badge>;
+  }
+}
+
+function chargerStatusBadge(status: string, t: (k: string, f: string) => string) {
+  switch (status) {
+    case "in_use":
+      return <Badge className="bg-blue-500 text-white">{t("fleet.charger.in_use", "In use")}</Badge>;
+    case "offline":
+    case "maintenance":
+      return <Badge variant="destructive">{t("fleet.charger.offline", "Offline")}</Badge>;
+    case "available":
+    default:
+      return <Badge className="bg-emerald-500 text-white">{t("fleet.charger.available", "Available")}</Badge>;
+  }
+}
+
+const RESOURCE_TYPES = ["jig", "gripper", "fixture", "tool_changer", "other"] as const;
+
 function MetricCard({
   icon, label, value, tone = "default",
 }: {
@@ -147,6 +223,15 @@ export default function FleetOrchestration() {
   const [cancelTarget, setCancelTarget] = useState<FleetTask | null>(null);
   const [reserveZoneTarget, setReserveZoneTarget] = useState<FleetZone | null>(null);
 
+  // ── G2 UI state ──────────────────────────────────────────────────────────────
+  const [tab, setTab] = useState("tasks");
+  const [resolveCode, setResolveCode] = useState<string>("");
+  const [createOpOpen, setCreateOpOpen] = useState(false);
+  const [mapProgramFor, setMapProgramFor] = useState<FleetOperation | null>(null);
+  const [createResourceOpen, setCreateResourceOpen] = useState(false);
+  const [reserveResourceTarget, setReserveResourceTarget] = useState<FleetResource | null>(null);
+  const [createChargerOpen, setCreateChargerOpen] = useState(false);
+
   const utils = trpc.useUtils();
 
   // ── Reads ──────────────────────────────────────────────────────────────────
@@ -164,8 +249,29 @@ export default function FleetOrchestration() {
   const reservations = (reservationsQ.data ?? []) as FleetReservation[];
   const deadlocks = deadlocksQ.data;
 
+  // ── G2 reads (read RBAC is the same — machine_monitoring/canView) ─────────────
+  const resourceStatusQ = trpc.fleet.resourceStatus.useQuery(undefined, { enabled: canView });
+  const operationsQ = trpc.fleet.listOperations.useQuery(undefined, { enabled: canView });
+  const resolveQ = trpc.fleet.resolveOperation.useQuery(
+    { code: resolveCode },
+    { enabled: canView && resolveCode.length > 0, retry: false },
+  );
+  const resourcesQ = trpc.fleet.listResources.useQuery(undefined, { enabled: canView });
+  const resourceReservationsQ = trpc.fleet.listResourceReservations.useQuery({ limit: 500 }, { enabled: canView });
+  const chargersQ = trpc.fleet.listChargers.useQuery(undefined, { enabled: canView });
+  const chargingPlansQ = trpc.fleet.listChargingPlans.useQuery({ limit: 200 }, { enabled: canView });
+
+  const operations = (operationsQ.data ?? []) as FleetOperation[];
+  const resolved = resolveQ.data as FleetResolved | undefined;
+  const resources = (resourcesQ.data ?? []) as FleetResource[];
+  const resourceReservations = (resourceReservationsQ.data ?? []) as FleetResReservation[];
+  const chargers = (chargersQ.data ?? []) as FleetCharger[];
+  const chargingPlans = (chargingPlansQ.data ?? []) as FleetChargingPlan[];
+
   // Flag state — honest preview banner. Prefer the explicit status query.
   const flagEnabled = statusQ.data?.enabled ?? true;
+  // G2 resource layer flag — independent of the G1 orchestration flag.
+  const resourceFlagEnabled = resourceStatusQ.data?.enabled ?? true;
 
   const refetchAll = () => {
     void utils.fleet.status.invalidate();
@@ -173,13 +279,27 @@ export default function FleetOrchestration() {
     void utils.fleet.listZones.invalidate();
     void utils.fleet.listReservations.invalidate();
     void utils.fleet.deadlocks.invalidate();
+    // G2
+    void utils.fleet.resourceStatus.invalidate();
+    void utils.fleet.listOperations.invalidate();
+    void utils.fleet.resolveOperation.invalidate();
+    void utils.fleet.listResources.invalidate();
+    void utils.fleet.listResourceReservations.invalidate();
+    void utils.fleet.listChargers.invalidate();
+    void utils.fleet.listChargingPlans.invalidate();
   };
 
   // Surface the FLAG-OFF CONFLICT gracefully (info, not a scary red error).
+  // Covers both G1 (FLEET_ORCH_ENABLED) and G2 (FLEET_RESOURCE_ENABLED) disabled messages.
   const onMutationError = (e: { data?: { code?: string } | null; message: string }) => {
     if (e.data?.code === "CONFLICT" && /disabled/i.test(e.message)) {
-      toast.info(t("fleet.flagOffToast", "Fleet orchestration is disabled (preview). Set FLEET_ORCH_ENABLED=true to act."));
-      void utils.fleet.status.invalidate();
+      if (/resource/i.test(e.message)) {
+        toast.info(t("fleet.resourceFlagOffToast", "Fleet resource layer is disabled (preview). Set FLEET_RESOURCE_ENABLED=true to act."));
+        void utils.fleet.resourceStatus.invalidate();
+      } else {
+        toast.info(t("fleet.flagOffToast", "Fleet orchestration is disabled (preview). Set FLEET_ORCH_ENABLED=true to act."));
+        void utils.fleet.status.invalidate();
+      }
     } else {
       toast.error(e.message);
     }
@@ -206,6 +326,39 @@ export default function FleetOrchestration() {
     onError: onMutationError,
   });
 
+  // ── G2 mutations ─────────────────────────────────────────────────────────────
+  const createOpM = trpc.fleet.createOperation.useMutation({
+    onSuccess: () => { toast.success(t("fleet.opCreated", "Operation created")); setCreateOpOpen(false); refetchAll(); },
+    onError: onMutationError,
+  });
+  const mapProgramM = trpc.fleet.mapOperationProgram.useMutation({
+    onSuccess: () => { toast.success(t("fleet.programMapped", "Program mapped to operation")); setMapProgramFor(null); refetchAll(); },
+    onError: onMutationError,
+  });
+  const createResourceM = trpc.fleet.createResource.useMutation({
+    onSuccess: () => { toast.success(t("fleet.resourceCreated", "Resource created")); setCreateResourceOpen(false); refetchAll(); },
+    onError: onMutationError,
+  });
+  const reserveResourceM = trpc.fleet.reserveResource.useMutation({
+    onSuccess: () => { toast.success(t("fleet.resourceReserved", "Resource claim requested")); setReserveResourceTarget(null); refetchAll(); },
+    onError: onMutationError,
+  });
+  const releaseResourceM = trpc.fleet.releaseResource.useMutation({
+    onSuccess: () => { toast.success(t("fleet.resourceReleased", "Resource released")); refetchAll(); },
+    onError: onMutationError,
+  });
+  const createChargerM = trpc.fleet.createCharger.useMutation({
+    onSuccess: () => { toast.success(t("fleet.chargerCreated", "Charger created")); setCreateChargerOpen(false); refetchAll(); },
+    onError: onMutationError,
+  });
+  const sweepM = trpc.fleet.sweepCharging.useMutation({
+    onSuccess: (r) => {
+      toast.success(t("fleet.sweepDone", "Charging sweep complete") + (r && "scheduled" in r ? ` — ${r.scheduled} ${t("fleet.scheduledShort", "scheduled")}` : ""));
+      refetchAll();
+    },
+    onError: onMutationError,
+  });
+
   // ── Derived KPIs ─────────────────────────────────────────────────────────────
   const kpis = useMemo(() => {
     const byStatus: Record<string, number> = {};
@@ -213,6 +366,8 @@ export default function FleetOrchestration() {
     const activeReservations = reservations.filter((r) => r.status === "active").length;
     const queuedReservations = reservations.filter((r) => r.status === "queued").length;
     const zonesAtCapacity = zones.filter((z) => z.occupancy >= z.maxConcurrentRobots).length;
+    const resourcesInUse = resources.filter((r) => (r.availability?.activeCount ?? 0) > 0).length;
+    const activeChargingPlans = chargingPlans.filter((p) => p.status === "active" || p.status === "planned").length;
     return {
       pending: byStatus.pending ?? 0,
       assigned: byStatus.assigned ?? 0,
@@ -222,8 +377,22 @@ export default function FleetOrchestration() {
       queuedReservations,
       zonesAtCapacity,
       deadlockCount: deadlocks?.cycles?.length ?? 0,
+      resourcesInUse,
+      activeChargingPlans,
     };
-  }, [tasks, reservations, zones, deadlocks]);
+  }, [tasks, reservations, zones, deadlocks, resources, chargingPlans]);
+
+  // Resource reservations grouped by resource id (active + queued only).
+  const resReservationsByResource = useMemo(() => {
+    const m = new Map<number, FleetResReservation[]>();
+    for (const r of resourceReservations) {
+      if (r.status === "released" || r.status === "rejected") continue;
+      const list = m.get(r.resourceId) ?? [];
+      list.push(r);
+      m.set(r.resourceId, list);
+    }
+    return m;
+  }, [resourceReservations]);
 
   // Reservations grouped by zone (for the zones panel).
   const resByZone = useMemo(() => {
@@ -306,7 +475,7 @@ export default function FleetOrchestration() {
         </div>
 
         {/* ── 1. KPI strip ───────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-9">
           <MetricCard icon={<Clock className="h-4 w-4" />} label={t("fleet.kpi.pending", "Pending")} value={kpis.pending} tone={kpis.pending > 0 ? "warning" : "default"} />
           <MetricCard icon={<Send className="h-4 w-4" />} label={t("fleet.kpi.assigned", "Assigned")} value={kpis.assigned} />
           <MetricCard icon={<Activity className="h-4 w-4" />} label={t("fleet.kpi.running", "Running")} value={kpis.running} tone={kpis.running > 0 ? "good" : "default"} />
@@ -314,6 +483,8 @@ export default function FleetOrchestration() {
           <MetricCard icon={<MapPin className="h-4 w-4" />} label={t("fleet.kpi.activeRes", "Active reservations")} value={kpis.activeReservations} />
           <MetricCard icon={<Layers className="h-4 w-4" />} label={t("fleet.kpi.atCapacity", "Zones at capacity")} value={`${kpis.zonesAtCapacity}/${zones.length}`} tone={kpis.zonesAtCapacity > 0 ? "warning" : "default"} />
           <MetricCard icon={<ShieldAlert className="h-4 w-4" />} label={t("fleet.kpi.deadlocks", "Deadlocks")} value={kpis.deadlockCount} tone={kpis.deadlockCount > 0 ? "danger" : "default"} />
+          <MetricCard icon={<Wrench className="h-4 w-4" />} label={t("fleet.kpi.resourcesInUse", "Resources in use")} value={`${kpis.resourcesInUse}/${resources.length}`} tone={kpis.resourcesInUse > 0 ? "good" : "default"} />
+          <MetricCard icon={<BatteryCharging className="h-4 w-4" />} label={t("fleet.kpi.charging", "Charging plans")} value={kpis.activeChargingPlans} tone={kpis.activeChargingPlans > 0 ? "warning" : "default"} />
         </div>
 
         {/* Deadlock detail banner */}
@@ -335,6 +506,30 @@ export default function FleetOrchestration() {
           </div>
         )}
 
+        {/* ── G2 resource-flag preview banner (only on the G2 tabs) ──────────── */}
+        {!resourceFlagEnabled && tab !== "tasks" && (
+          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <span>
+              {t(
+                "fleet.resourceFlagOffBanner",
+                "Preview mode: the fleet resource layer is disabled (FLEET_RESOURCE_ENABLED is off). Reads work; actions (create / map / reserve / release / sweep) are blocked until the flag is enabled.",
+              )}
+            </span>
+          </div>
+        )}
+
+        {/* ── Tabbed surface (G1 tasks/zones + G2 operations/resources/charging) ─ */}
+        <Tabs value={tab} onValueChange={setTab} className="gap-4">
+          <TabsList className="flex-wrap">
+            <TabsTrigger value="tasks"><ListChecks className="mr-1 h-4 w-4" />{t("fleet.tab.tasks", "Tasks & Zones")}</TabsTrigger>
+            <TabsTrigger value="operations"><Workflow className="mr-1 h-4 w-4" />{t("fleet.tab.operations", "Operations")}</TabsTrigger>
+            <TabsTrigger value="resources"><Wrench className="mr-1 h-4 w-4" />{t("fleet.tab.resources", "Resources")}</TabsTrigger>
+            <TabsTrigger value="charging"><BatteryCharging className="mr-1 h-4 w-4" />{t("fleet.tab.charging", "Charging")}</TabsTrigger>
+          </TabsList>
+
+          {/* ════════════════ TAB: Tasks & Zones (G1) ════════════════ */}
+          <TabsContent value="tasks" className="flex flex-col gap-4">
         {/* ── 2. Task queue ──────────────────────────────────────────────────── */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
@@ -524,6 +719,52 @@ export default function FleetOrchestration() {
             </div>
           </CardContent>
         </Card>
+          </TabsContent>
+
+          {/* ════════════════ TAB: Operations (G2-a) ════════════════ */}
+          <TabsContent value="operations" className="flex flex-col gap-4">
+            <OperationsTab
+              operations={operations}
+              loading={operationsQ.isLoading}
+              canControl={canControl}
+              resolveCode={resolveCode}
+              setResolveCode={setResolveCode}
+              resolved={resolved}
+              resolveLoading={resolveQ.isFetching}
+              resolveError={resolveQ.error?.message ?? null}
+              onCreate={() => setCreateOpOpen(true)}
+              onMap={(op) => setMapProgramFor(op)}
+            />
+          </TabsContent>
+
+          {/* ════════════════ TAB: Resources (G2-c) ════════════════ */}
+          <TabsContent value="resources" className="flex flex-col gap-4">
+            <ResourcesTab
+              resources={resources}
+              loading={resourcesQ.isLoading}
+              canControl={canControl}
+              reservationsByResource={resReservationsByResource}
+              releasePending={releaseResourceM.isPending}
+              onCreate={() => setCreateResourceOpen(true)}
+              onReserve={(r) => setReserveResourceTarget(r)}
+              onRelease={(deviceId, resourceId) => releaseResourceM.mutate({ deviceId, resourceId })}
+            />
+          </TabsContent>
+
+          {/* ════════════════ TAB: Charging (G2-d) ════════════════ */}
+          <TabsContent value="charging" className="flex flex-col gap-4">
+            <ChargingTab
+              chargers={chargers}
+              chargersLoading={chargersQ.isLoading}
+              plans={chargingPlans}
+              plansLoading={chargingPlansQ.isLoading}
+              canControl={canControl}
+              sweepPending={sweepM.isPending}
+              onCreateCharger={() => setCreateChargerOpen(true)}
+              onSweep={() => sweepM.mutate()}
+            />
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* ── Reassign dialog ──────────────────────────────────────────────────── */}
@@ -565,6 +806,55 @@ export default function FleetOrchestration() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── G2 — Create operation dialog ─────────────────────────────────────── */}
+      {createOpOpen && (
+        <CreateOperationDialog
+          pending={createOpM.isPending}
+          onClose={() => setCreateOpOpen(false)}
+          onSubmit={(v) => createOpM.mutate(v)}
+        />
+      )}
+
+      {/* ── G2 — Map program dialog ──────────────────────────────────────────── */}
+      {mapProgramFor && (
+        <MapProgramDialog
+          operation={mapProgramFor}
+          pending={mapProgramM.isPending}
+          onClose={() => setMapProgramFor(null)}
+          onSubmit={(programProjectId, deviceKind) =>
+            mapProgramM.mutate({ operationCodeId: mapProgramFor.id, programProjectId, deviceKind })}
+        />
+      )}
+
+      {/* ── G2 — Create resource dialog ──────────────────────────────────────── */}
+      {createResourceOpen && (
+        <CreateResourceDialog
+          pending={createResourceM.isPending}
+          onClose={() => setCreateResourceOpen(false)}
+          onSubmit={(v) => createResourceM.mutate(v)}
+        />
+      )}
+
+      {/* ── G2 — Reserve resource dialog ─────────────────────────────────────── */}
+      {reserveResourceTarget && (
+        <ReserveResourceDialog
+          resource={reserveResourceTarget}
+          pending={reserveResourceM.isPending}
+          onClose={() => setReserveResourceTarget(null)}
+          onSubmit={(deviceId, queueIfFull) =>
+            reserveResourceM.mutate({ resourceId: reserveResourceTarget.id, deviceId, queueIfFull })}
+        />
+      )}
+
+      {/* ── G2 — Create charger dialog ───────────────────────────────────────── */}
+      {createChargerOpen && (
+        <CreateChargerDialog
+          pending={createChargerM.isPending}
+          onClose={() => setCreateChargerOpen(false)}
+          onSubmit={(v) => createChargerM.mutate(v)}
+        />
+      )}
     </DashboardLayout>
   );
 }
@@ -679,6 +969,680 @@ function ReserveDialog({
           <Button onClick={submit} disabled={pending}>
             <MapPin className="mr-1 h-4 w-4" />{t("fleet.reserve", "Reserve")}
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// G2-a — OPERATIONS tab
+// ══════════════════════════════════════════════════════════════════════════════
+function OperationsTab({
+  operations, loading, canControl, resolveCode, setResolveCode, resolved, resolveLoading,
+  resolveError, onCreate, onMap,
+}: {
+  operations: FleetOperation[];
+  loading: boolean;
+  canControl: boolean;
+  resolveCode: string;
+  setResolveCode: (v: string) => void;
+  resolved: FleetResolved | undefined;
+  resolveLoading: boolean;
+  resolveError: string | null;
+  onCreate: () => void;
+  onMap: (op: FleetOperation) => void;
+}) {
+  const { t } = useTranslation();
+  const [resolveInput, setResolveInput] = useState(resolveCode);
+
+  return (
+    <>
+      {/* Resolve panel — read-only operation → qualified programs */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Search className="h-4 w-4" />
+            {t("fleet.op.resolveTitle", "Resolve operation")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="grid gap-1">
+              <Label className="text-xs text-muted-foreground">{t("fleet.op.code", "Operation code")}</Label>
+              <Input
+                className="w-56"
+                value={resolveInput}
+                placeholder={t("fleet.op.codePlaceholder", "e.g. OP-WELD-01")}
+                onChange={(e) => setResolveInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") setResolveCode(resolveInput.trim()); }}
+              />
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setResolveCode(resolveInput.trim())}>
+              <Search className="mr-1 h-4 w-4" />{t("fleet.op.resolve", "Resolve")}
+            </Button>
+          </div>
+          {resolveCode && resolveLoading && (
+            <p className="text-sm text-muted-foreground">{t("fleet.loading", "Loading…")}</p>
+          )}
+          {resolveCode && !resolveLoading && resolveError && (
+            <p className="text-sm text-muted-foreground">
+              {t("fleet.op.notFound", "Operation not found:")} <span className="font-mono">{resolveCode}</span>
+            </p>
+          )}
+          {resolved && !resolveLoading && (
+            <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono font-medium">{resolved.code}</span>
+                <Badge variant="outline">{resolved.requiredCapability}</Badge>
+                {resolved.toolType && <Badge className="bg-violet-500 text-white">{resolved.toolType}</Badge>}
+                <span className="text-xs text-muted-foreground">
+                  {t("fleet.op.cycle", "Cycle")}: {fmtDuration(resolved.estimatedCycleMs)}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {t("fleet.op.skills", "Skills")}: {resolved.requiredSkillIds.length}
+                </span>
+              </div>
+              <div>
+                <div className="mb-1 text-xs font-medium text-muted-foreground">
+                  {t("fleet.op.qualifiedPrograms", "Qualified programs")} ({resolved.qualifiedPrograms.length})
+                </div>
+                {resolved.qualifiedPrograms.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{t("fleet.op.noPrograms", "No qualified programs mapped yet.")}</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1">
+                    {resolved.qualifiedPrograms.map((p) => (
+                      <Badge key={`${p.programProjectId}-${p.deviceKind ?? "any"}`} variant="secondary" className="font-mono text-xs">
+                        <Package className="mr-1 h-3 w-3" />
+                        {p.programCode ?? `#${p.programProjectId}`}
+                        {p.deviceKind ? ` · ${p.deviceKind}` : ""}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Operation registry table */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Workflow className="h-4 w-4" />
+            {t("fleet.op.registryTitle", "Operation registry")}
+          </CardTitle>
+          {canControl && (
+            <Button size="sm" variant="outline" className="h-8" onClick={onCreate}>
+              <Plus className="mr-1 h-4 w-4" />{t("fleet.op.create", "New operation")}
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("fleet.op.col.code", "Code")}</TableHead>
+                <TableHead>{t("fleet.op.col.capability", "Capability")}</TableHead>
+                <TableHead>{t("fleet.op.col.skills", "Skills")}</TableHead>
+                <TableHead>{t("fleet.op.col.tool", "Tool type")}</TableHead>
+                <TableHead>{t("fleet.op.col.cycle", "Est cycle")}</TableHead>
+                <TableHead className="text-right">{t("common.actions", "Actions")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading && (
+                <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("fleet.loading", "Loading…")}</TableCell></TableRow>
+              )}
+              {!loading && operations.length === 0 && (
+                <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("fleet.op.empty", "No operations defined yet.")}</TableCell></TableRow>
+              )}
+              {operations.map((op) => (
+                <TableRow key={op.id}>
+                  <TableCell className="font-mono text-xs">{op.code}</TableCell>
+                  <TableCell><Badge variant="outline">{op.requiredCapability}</Badge></TableCell>
+                  <TableCell className="text-xs tabular-nums">{Array.isArray(op.requiredSkillIds) ? op.requiredSkillIds.length : 0}</TableCell>
+                  <TableCell className="text-xs">{op.toolType ?? <span className="text-muted-foreground">—</span>}</TableCell>
+                  <TableCell className="text-xs whitespace-nowrap">{fmtDuration(op.estimatedCycleMs)}</TableCell>
+                  <TableCell className="text-right">
+                    {canControl ? (
+                      <div className="flex justify-end gap-1">
+                        <Button size="sm" variant="ghost" className="h-7" onClick={() => { setResolveInput(op.code); setResolveCode(op.code); }}>
+                          <Search className="mr-1 h-3.5 w-3.5" />{t("fleet.op.resolve", "Resolve")}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7" onClick={() => onMap(op)}>
+                          <Link2 className="mr-1 h-3.5 w-3.5" />{t("fleet.op.map", "Map program")}
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button size="sm" variant="ghost" className="h-7" onClick={() => { setResolveInput(op.code); setResolveCode(op.code); }}>
+                        <Search className="mr-1 h-3.5 w-3.5" />{t("fleet.op.resolve", "Resolve")}
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// G2-c — RESOURCES tab
+// ══════════════════════════════════════════════════════════════════════════════
+function ResourcesTab({
+  resources, loading, canControl, reservationsByResource, releasePending, onCreate, onReserve, onRelease,
+}: {
+  resources: FleetResource[];
+  loading: boolean;
+  canControl: boolean;
+  reservationsByResource: Map<number, FleetResReservation[]>;
+  releasePending: boolean;
+  onCreate: () => void;
+  onReserve: (r: FleetResource) => void;
+  onRelease: (deviceId: number, resourceId: number) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Wrench className="h-4 w-4" />
+          {t("fleet.res.title", "Shared resources")}
+        </CardTitle>
+        {canControl && (
+          <Button size="sm" variant="outline" className="h-8" onClick={onCreate}>
+            <Plus className="mr-1 h-4 w-4" />{t("fleet.res.create", "New resource")}
+          </Button>
+        )}
+      </CardHeader>
+      <CardContent>
+        {!loading && resources.length === 0 && (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            {t("fleet.res.empty", "No shared resources (jigs / grippers / fixtures) defined yet.")}
+          </p>
+        )}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {resources.map((r) => {
+            const av = r.availability;
+            const activeCount = av?.activeCount ?? 0;
+            const queuedCount = av?.queuedCount ?? 0;
+            const resReservations = reservationsByResource.get(r.id) ?? [];
+            return (
+              <Card key={r.id} className="border-border/60">
+                <CardContent className="space-y-2 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{r.name ?? r.code}</div>
+                      <div className="font-mono text-xs text-muted-foreground">{r.code}</div>
+                    </div>
+                    {resourceTypeBadge(r.type, t)}
+                  </div>
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    {resourceStatusBadge(r.status, t)}
+                    <span className="text-muted-foreground">
+                      {r.currentOwnerDeviceId != null
+                        ? <span className="inline-flex items-center gap-1"><Bot className="h-3 w-3" />#{r.currentOwnerDeviceId}</span>
+                        : t("fleet.res.unowned", "unowned")}
+                    </span>
+                  </div>
+                  {(activeCount > 0 || queuedCount > 0) && (
+                    <div className="text-xs text-muted-foreground">
+                      {t("fleet.res.activeLabel", "Active")}: {activeCount} · {t("fleet.res.queuedLabel", "Queued")}: {queuedCount}
+                    </div>
+                  )}
+                  {resReservations.length > 0 && (
+                    <div className="space-y-1 pt-1">
+                      {resReservations.map((rr) => (
+                        <div key={rr.id} className="flex items-center justify-between gap-2 text-xs">
+                          <span className="inline-flex items-center gap-1">
+                            <Bot className="h-3 w-3" />#{rr.deviceId}
+                            {resStatusBadge(rr.status, t)}
+                          </span>
+                          {canControl && (
+                            <Button
+                              size="sm" variant="ghost" className="h-6 px-2 text-xs"
+                              disabled={releasePending}
+                              onClick={() => onRelease(rr.deviceId, r.id)}
+                            >
+                              {t("fleet.release", "Release")}
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {canControl && (
+                    <Button size="sm" variant="outline" className="mt-1 h-7 w-full" onClick={() => onReserve(r)}>
+                      <Wrench className="mr-1 h-3.5 w-3.5" />{t("fleet.res.reserve", "Reserve")}
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// G2-d — CHARGING tab
+// ══════════════════════════════════════════════════════════════════════════════
+function ChargingTab({
+  chargers, chargersLoading, plans, plansLoading, canControl, sweepPending, onCreateCharger, onSweep,
+}: {
+  chargers: FleetCharger[];
+  chargersLoading: boolean;
+  plans: FleetChargingPlan[];
+  plansLoading: boolean;
+  canControl: boolean;
+  sweepPending: boolean;
+  onCreateCharger: () => void;
+  onSweep: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {/* Charger stations */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Zap className="h-4 w-4" />
+            {t("fleet.charger.title", "Charger stations")}
+          </CardTitle>
+          {canControl && (
+            <Button size="sm" variant="outline" className="h-8" onClick={onCreateCharger}>
+              <Plus className="mr-1 h-4 w-4" />{t("fleet.charger.create", "New charger")}
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent>
+          {!chargersLoading && chargers.length === 0 && (
+            <p className="py-6 text-center text-sm text-muted-foreground">{t("fleet.charger.empty", "No charger stations defined yet.")}</p>
+          )}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {chargers.map((c) => (
+              <Card key={c.id} className="border-border/60">
+                <CardContent className="space-y-1 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{c.name ?? c.code}</div>
+                      <div className="font-mono text-xs text-muted-foreground">{c.code}</div>
+                    </div>
+                    {chargerStatusBadge(c.status, t)}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Badge variant="outline">{c.chargerType}</Badge>
+                    {c.powerWatts != null && <span className="tabular-nums">{c.powerWatts} W</span>}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Charging plans */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <BatteryCharging className="h-4 w-4" />
+            {t("fleet.plan.title", "Battery charging plans")}
+          </CardTitle>
+          {canControl && (
+            <Button size="sm" variant="outline" className="h-8" disabled={sweepPending} onClick={onSweep}>
+              <RefreshCw className={`mr-1 h-4 w-4 ${sweepPending ? "animate-spin" : ""}`} />{t("fleet.plan.sweep", "Sweep now")}
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("fleet.plan.col.device", "Device")}</TableHead>
+                <TableHead>{t("fleet.plan.col.energy", "Current %")}</TableHead>
+                <TableHead>{t("fleet.plan.col.start", "Planned start")}</TableHead>
+                <TableHead>{t("fleet.plan.col.duration", "Est duration")}</TableHead>
+                <TableHead>{t("fleet.plan.col.status", "Status")}</TableHead>
+                <TableHead>{t("fleet.plan.col.reason", "Reason")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {plansLoading && (
+                <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("fleet.loading", "Loading…")}</TableCell></TableRow>
+              )}
+              {!plansLoading && plans.length === 0 && (
+                <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">{t("fleet.plan.empty", "No charging plans. Run a sweep to schedule preemptive charges.")}</TableCell></TableRow>
+              )}
+              {plans.map((p) => (
+                <TableRow key={p.id}>
+                  <TableCell className="text-xs"><span className="inline-flex items-center gap-1"><Bot className="h-3 w-3" />#{p.deviceId}</span></TableCell>
+                  <TableCell className="text-xs tabular-nums">{p.currentEnergyPct != null ? `${p.currentEnergyPct}%` : "—"}</TableCell>
+                  <TableCell className="text-xs whitespace-nowrap">{fmtDateTime(p.plannedStartAt)}</TableCell>
+                  <TableCell className="text-xs whitespace-nowrap">{fmtDuration(p.estimatedDurationMs)}</TableCell>
+                  <TableCell>{planStatusBadge(p.status, t)}</TableCell>
+                  <TableCell className="max-w-[16rem] truncate text-xs text-muted-foreground" title={p.reason ?? undefined}>{p.reason ?? "—"}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// G2 dialogs
+// ══════════════════════════════════════════════════════════════════════════════
+function CreateOperationDialog({
+  pending, onClose, onSubmit,
+}: {
+  pending: boolean;
+  onClose: () => void;
+  onSubmit: (v: { code: string; description?: string; requiredCapability: string; toolType?: string; estimatedCycleMs?: number }) => void;
+}) {
+  const { t } = useTranslation();
+  const [code, setCode] = useState("");
+  const [requiredCapability, setRequiredCapability] = useState("");
+  const [toolType, setToolType] = useState("");
+  const [estCycle, setEstCycle] = useState("");
+  const [description, setDescription] = useState("");
+
+  const submit = () => {
+    if (!code.trim() || !requiredCapability.trim()) {
+      toast.error(t("fleet.op.codeCapRequired", "Code and required capability are mandatory."));
+      return;
+    }
+    const ms = estCycle ? Number(estCycle) : undefined;
+    onSubmit({
+      code: code.trim(),
+      requiredCapability: requiredCapability.trim(),
+      description: description.trim() || undefined,
+      toolType: toolType.trim() || undefined,
+      estimatedCycleMs: Number.isFinite(ms) ? ms : undefined,
+    });
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Workflow className="h-4 w-4" />{t("fleet.op.createTitle", "New operation code")}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <div className="grid gap-1">
+            <Label>{t("fleet.op.code", "Operation code")}</Label>
+            <Input value={code} placeholder="OP-WELD-01" onChange={(e) => setCode(e.target.value)} />
+          </div>
+          <div className="grid gap-1">
+            <Label>{t("fleet.op.capability", "Required capability")}</Label>
+            <Input value={requiredCapability} placeholder="run_job" onChange={(e) => setRequiredCapability(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1">
+              <Label>{t("fleet.op.toolType", "Tool type")}</Label>
+              <Input value={toolType} placeholder="gripper" onChange={(e) => setToolType(e.target.value)} />
+            </div>
+            <div className="grid gap-1">
+              <Label>{t("fleet.op.estCycleMs", "Est cycle (ms)")}</Label>
+              <Input type="number" min={0} value={estCycle} placeholder="30000" onChange={(e) => setEstCycle(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid gap-1">
+            <Label>{t("fleet.op.description", "Description")}</Label>
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
+          <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("fleet.op.create", "Create")}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MapProgramDialog({
+  operation, pending, onClose, onSubmit,
+}: {
+  operation: FleetOperation;
+  pending: boolean;
+  onClose: () => void;
+  onSubmit: (programProjectId: number, deviceKind?: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [programProjectId, setProgramProjectId] = useState("");
+  const [deviceKind, setDeviceKind] = useState("");
+
+  const submit = () => {
+    const n = Number(programProjectId);
+    if (!Number.isInteger(n) || n <= 0) {
+      toast.error(t("fleet.op.programIdRequired", "Enter a valid program project id."));
+      return;
+    }
+    onSubmit(n, deviceKind.trim() || undefined);
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Link2 className="h-4 w-4" />{t("fleet.op.mapTitle", "Map program to operation")}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <div className="text-sm text-muted-foreground">
+            <span className="font-mono text-xs">{operation.code}</span>{" · "}{operation.requiredCapability}
+          </div>
+          <div className="grid gap-1">
+            <Label>{t("fleet.op.programId", "Program project id")}</Label>
+            <Input type="number" min={1} value={programProjectId} placeholder="e.g. 1" onChange={(e) => setProgramProjectId(e.target.value)} />
+          </div>
+          <div className="grid gap-1">
+            <Label>{t("fleet.op.deviceKind", "Device kind (optional)")}</Label>
+            <Input value={deviceKind} placeholder="arm / scara / cobot / agv" onChange={(e) => setDeviceKind(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
+          <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("fleet.op.map", "Map program")}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CreateResourceDialog({
+  pending, onClose, onSubmit,
+}: {
+  pending: boolean;
+  onClose: () => void;
+  onSubmit: (v: { code: string; name?: string; type: (typeof RESOURCE_TYPES)[number]; locationZoneId?: number }) => void;
+}) {
+  const { t } = useTranslation();
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [type, setType] = useState<(typeof RESOURCE_TYPES)[number]>("other");
+  const [zoneId, setZoneId] = useState("");
+
+  const submit = () => {
+    if (!code.trim()) {
+      toast.error(t("fleet.res.codeRequired", "Resource code is required."));
+      return;
+    }
+    const z = zoneId ? Number(zoneId) : undefined;
+    onSubmit({
+      code: code.trim(),
+      name: name.trim() || undefined,
+      type,
+      locationZoneId: Number.isInteger(z) && (z as number) > 0 ? z : undefined,
+    });
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Wrench className="h-4 w-4" />{t("fleet.res.createTitle", "New shared resource")}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1">
+              <Label>{t("fleet.res.code", "Code")}</Label>
+              <Input value={code} placeholder="JIG-01" onChange={(e) => setCode(e.target.value)} />
+            </div>
+            <div className="grid gap-1">
+              <Label>{t("fleet.res.type", "Type")}</Label>
+              <select
+                className="flex h-9 rounded-md border border-input bg-transparent px-2 py-1 text-sm"
+                value={type}
+                onChange={(e) => setType(e.target.value as (typeof RESOURCE_TYPES)[number])}
+              >
+                {RESOURCE_TYPES.map((tp) => (
+                  <option key={tp} value={tp}>{t(`fleet.resType.${tp}`, tp)}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="grid gap-1">
+            <Label>{t("fleet.res.name", "Name")}</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="grid gap-1">
+            <Label>{t("fleet.res.zoneId", "Home zone id (optional)")}</Label>
+            <Input type="number" min={1} value={zoneId} placeholder="e.g. 1" onChange={(e) => setZoneId(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
+          <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("fleet.res.create", "Create")}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReserveResourceDialog({
+  resource, pending, onClose, onSubmit,
+}: {
+  resource: FleetResource;
+  pending: boolean;
+  onClose: () => void;
+  onSubmit: (deviceId: number, queueIfFull: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const [deviceId, setDeviceId] = useState("");
+  const [queueIfFull, setQueueIfFull] = useState(true);
+
+  const submit = () => {
+    const n = Number(deviceId);
+    if (!Number.isInteger(n) || n <= 0) {
+      toast.error(t("fleet.deviceIdRequired", "Enter a valid device id."));
+      return;
+    }
+    onSubmit(n, queueIfFull);
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Wrench className="h-4 w-4" />{t("fleet.res.reserveTitle", "Reserve resource")}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <div className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{resource.name ?? resource.code}</span>
+            {" · "}<span className="font-mono text-xs">{resource.code}</span>{" · "}{resource.type}
+          </div>
+          <div className="grid gap-1">
+            <Label>{t("fleet.deviceId", "Device id (robot)")}</Label>
+            <Input type="number" min={1} value={deviceId} placeholder={t("fleet.deviceIdPlaceholder", "e.g. 1")} onChange={(e) => setDeviceId(e.target.value)} />
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={queueIfFull} onChange={(e) => setQueueIfFull(e.target.checked)} />
+            {t("fleet.res.queueIfFull", "Queue if the resource is in use (otherwise reject)")}
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
+          <Button onClick={submit} disabled={pending}><Wrench className="mr-1 h-4 w-4" />{t("fleet.res.reserve", "Reserve")}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CreateChargerDialog({
+  pending, onClose, onSubmit,
+}: {
+  pending: boolean;
+  onClose: () => void;
+  onSubmit: (v: { code: string; name?: string; chargerType: string; powerWatts?: number; locationZoneId?: number }) => void;
+}) {
+  const { t } = useTranslation();
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [chargerType, setChargerType] = useState("contact");
+  const [powerWatts, setPowerWatts] = useState("");
+  const [zoneId, setZoneId] = useState("");
+
+  const submit = () => {
+    if (!code.trim()) {
+      toast.error(t("fleet.charger.codeRequired", "Charger code is required."));
+      return;
+    }
+    const w = powerWatts ? Number(powerWatts) : undefined;
+    const z = zoneId ? Number(zoneId) : undefined;
+    onSubmit({
+      code: code.trim(),
+      name: name.trim() || undefined,
+      chargerType: chargerType.trim() || "contact",
+      powerWatts: Number.isFinite(w) ? w : undefined,
+      locationZoneId: Number.isInteger(z) && (z as number) > 0 ? z : undefined,
+    });
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Zap className="h-4 w-4" />{t("fleet.charger.createTitle", "New charger station")}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1">
+              <Label>{t("fleet.charger.code", "Code")}</Label>
+              <Input value={code} placeholder="CHG-01" onChange={(e) => setCode(e.target.value)} />
+            </div>
+            <div className="grid gap-1">
+              <Label>{t("fleet.charger.type", "Charger type")}</Label>
+              <Input value={chargerType} placeholder="contact / inductive" onChange={(e) => setChargerType(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid gap-1">
+            <Label>{t("fleet.charger.name", "Name")}</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1">
+              <Label>{t("fleet.charger.power", "Power (W)")}</Label>
+              <Input type="number" min={0} value={powerWatts} placeholder="2000" onChange={(e) => setPowerWatts(e.target.value)} />
+            </div>
+            <div className="grid gap-1">
+              <Label>{t("fleet.charger.zoneId", "Zone id (optional)")}</Label>
+              <Input type="number" min={1} value={zoneId} placeholder="e.g. 1" onChange={(e) => setZoneId(e.target.value)} />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{t("common.cancel", "Cancel")}</Button>
+          <Button onClick={submit} disabled={pending}><CheckCircle2 className="mr-1 h-4 w-4" />{t("fleet.charger.create", "Create")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

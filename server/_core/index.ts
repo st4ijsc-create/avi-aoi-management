@@ -4420,6 +4420,33 @@ async function startServer() {
     console.error("[Fleet] orchestrator install failed:", (err as any)?.message || err);
   }
 
+  // G2 (doc 16 Khối 2 c&d) — Predictive charging sweep. Periodically projects mobile
+  // robots' end-of-queue battery and schedules a preemptive charge before they cross
+  // the G1 floor. No-op unless FLEET_RESOURCE_ENABLED (sweepChargingPlans self-gates),
+  // so the timer is cheap when off. Unref'd (never blocks shutdown) + non-overlapping
+  // (a still-running sweep is skipped) — mirrors the outbox/orchestrator style. Opens
+  // NO control path: it only writes 'planned' rows consumed by the gated dispatcher.
+  try {
+    const { sweepChargingPlans } = await import("../services/fleet/chargingPlanner");
+    const intervalMs = Math.max(60_000, Number(process.env.FLEET_CHARGING_SWEEP_MS ?? 300_000));
+    let sweeping = false;
+    const timer = setInterval(async () => {
+      if (sweeping) return; // no overlap
+      sweeping = true;
+      try {
+        const r = await sweepChargingPlans();
+        if (r.enabled && r.scheduled > 0) console.log(`[Fleet] charging sweep: ${r.scheduled} plan(s) scheduled`);
+      } catch (err) {
+        console.error("[Fleet] charging sweep failed:", (err as any)?.message || err);
+      } finally {
+        sweeping = false;
+      }
+    }, intervalMs);
+    if (typeof timer.unref === "function") timer.unref();
+  } catch (err) {
+    console.error("[Fleet] charging planner start failed:", (err as any)?.message || err);
+  }
+
   app.use("/api/trpc", licenseEnforcementMiddleware());
   // tRPC API
   app.use(

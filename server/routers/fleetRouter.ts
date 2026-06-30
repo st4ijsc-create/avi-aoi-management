@@ -25,8 +25,14 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { requirePermission } from "../_core/accessControl";
 import { getDb } from "../db/connection";
 import { tasks, zones, zoneReservations } from "../../drizzle/schema";
+import { operationCodes, operationProgramMap, programVariants, sharedResources, resourceReservations, chargerStations, batteryChargingPlans } from "../../drizzle/schema/fleetResource";
 import { fleetOrchEnabled, allocateTask, rebalanceDeviceTasks } from "../services/fleet/taskAllocator";
 import { reserveZone, releaseZone, getZoneOccupancy, detectDeadlocks } from "../services/fleet/trafficManager";
+// G2 (doc 16 §7 c&d / §15 G2) — Skill/Resource/Charging. Flag: FLEET_RESOURCE_ENABLED.
+import { fleetResourceEnabled, resolveOperation } from "../services/fleet/skillRegistry";
+import { pickVariantForProgram, recordVariantOutcome } from "../services/fleet/variantPicker";
+import { claimResource, releaseResource, getResourceAvailability } from "../services/fleet/resourceManager";
+import { sweepChargingPlans } from "../services/fleet/chargingPlanner";
 
 async function db() {
   const d = await getDb();
@@ -38,6 +44,13 @@ async function db() {
 function requireFlag() {
   if (!fleetOrchEnabled()) {
     throw new TRPCError({ code: "CONFLICT", message: "Fleet orchestration disabled (set FLEET_ORCH_ENABLED=true)" });
+  }
+}
+
+/** G2 — guard skill/resource/charging mutations behind FLEET_RESOURCE_ENABLED. */
+function requireResourceFlag() {
+  if (!fleetResourceEnabled()) {
+    throw new TRPCError({ code: "CONFLICT", message: "Fleet resource layer disabled (set FLEET_RESOURCE_ENABLED=true)" });
   }
 }
 
@@ -279,5 +292,332 @@ export const fleetRouter = router({
     .mutation(async ({ input }) => {
       requireFlag();
       return releaseZone(input.deviceId, input.zoneId);
+    }),
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // G2 (doc 16 §7 c&d / §15 G2) — Skill/Operation registry, A/B variants, shared
+  // resources, predictive charging.  READS gated machine_monitoring/canView;
+  // MUTATIONS gated machine_control/canCreate + requireResourceFlag (FLEET_RESOURCE_ENABLED).
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** UI gating hint — is the G2 resource flag on? */
+  resourceStatus: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .query(() => ({ enabled: fleetResourceEnabled() })),
+
+  // ── G2-a OPERATIONS (read) ─────────────────────────────────────────────────
+  listOperations: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ limit: z.number().int().min(1).max(500).default(200) }).optional())
+    .query(async ({ input }) => {
+      const d = await db();
+      return d.select().from(operationCodes).orderBy(operationCodes.code).limit(input?.limit ?? 200);
+    }),
+
+  /** Resolve an operation → { requiredCapability, requiredSkillIds, qualifiedPrograms }. */
+  resolveOperation: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ code: z.string().min(1).max(64), deviceKind: z.string().max(32).optional() }))
+    .query(async ({ input }) => {
+      const r = await resolveOperation(input.code, input.deviceKind ?? null);
+      if (!r) throw new TRPCError({ code: "NOT_FOUND", message: `Operation "${input.code}" not found` });
+      return r;
+    }),
+
+  // ── G2-a OPERATIONS (admin) — flag-gated ───────────────────────────────────
+  createOperation: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z.object({
+        code: z.string().min(1).max(64),
+        description: z.string().max(2000).optional(),
+        requiredCapability: z.string().min(1).max(64),
+        requiredSkillIds: z.array(z.number().int().positive()).optional(),
+        toolType: z.string().max(32).optional(),
+        estimatedCycleMs: z.number().int().min(0).optional(),
+        scope: z.string().max(64).optional(),
+        corporateCode: z.string().max(50).optional(),
+        factoryId: z.number().int().positive().optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      requireResourceFlag();
+      const d = await db();
+      const [clash] = await d.select().from(operationCodes).where(eq(operationCodes.code, input.code)).limit(1);
+      if (clash) throw new TRPCError({ code: "CONFLICT", message: `Operation code "${input.code}" already exists` });
+      const [row] = await d
+        .insert(operationCodes)
+        .values({
+          code: input.code,
+          description: input.description ?? null,
+          requiredCapability: input.requiredCapability,
+          requiredSkillIds: input.requiredSkillIds ?? null,
+          toolType: input.toolType ?? null,
+          estimatedCycleMs: input.estimatedCycleMs ?? null,
+          scope: input.scope ?? null,
+          corporateCode: input.corporateCode ?? null,
+          factoryId: input.factoryId ?? null,
+        })
+        .returning({ id: operationCodes.id });
+      return { ok: true, id: row?.id };
+    }),
+
+  /** Map a qualified program to an operation (deviceKind-scoped). */
+  mapOperationProgram: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z.object({
+        operationCodeId: z.number().int().positive(),
+        programProjectId: z.number().int().positive(),
+        deviceKind: z.string().max(32).optional(),
+        compatible: z.boolean().default(true),
+        notes: z.string().max(2000).optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      requireResourceFlag();
+      const d = await db();
+      const [row] = await d
+        .insert(operationProgramMap)
+        .values({
+          operationCodeId: input.operationCodeId,
+          programProjectId: input.programProjectId,
+          deviceKind: input.deviceKind ?? null,
+          compatible: input.compatible,
+          notes: input.notes ?? null,
+        })
+        .returning({ id: operationProgramMap.id });
+      return { ok: true, id: row?.id };
+    }),
+
+  // ── G2-b A/B VARIANTS ──────────────────────────────────────────────────────
+  listVariants: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ programProjectId: z.number().int().positive().optional() }).optional())
+    .query(async ({ input }) => {
+      const d = await db();
+      return d
+        .select()
+        .from(programVariants)
+        .where(input?.programProjectId != null ? eq(programVariants.programProjectId, input.programProjectId) : undefined)
+        .orderBy(programVariants.programProjectId, programVariants.variant);
+    }),
+
+  /** Deterministically pick a variant arm for a program by seed (e.g. a taskKey). */
+  pickVariant: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ programProjectId: z.number().int().positive(), seed: z.string().min(1).max(256) }))
+    .query(async ({ input }) => pickVariantForProgram(input.programProjectId, input.seed)),
+
+  /** Record an A/B outcome against a variant arm (folds into rolling metrics). */
+  recordVariantOutcome: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(z.object({ variantId: z.number().int().positive(), success: z.boolean(), cycleMs: z.number().int().min(0).optional() }))
+    .mutation(async ({ input }) => {
+      requireResourceFlag();
+      return recordVariantOutcome(input.variantId, { success: input.success, cycleMs: input.cycleMs });
+    }),
+
+  createVariant: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z.object({
+        programProjectId: z.number().int().positive(),
+        variant: z.enum(["A", "B", "control"]),
+        trafficSplitPct: z.number().int().min(0).max(100).default(0),
+        status: z.enum(["active", "paused"]).default("active"),
+        scope: z.string().max(64).optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      requireResourceFlag();
+      const d = await db();
+      const [row] = await d
+        .insert(programVariants)
+        .values({
+          programProjectId: input.programProjectId,
+          variant: input.variant,
+          trafficSplitPct: input.trafficSplitPct,
+          status: input.status,
+          rolloutStartAt: input.status === "active" ? new Date() : null,
+          scope: input.scope ?? null,
+        })
+        .returning({ id: programVariants.id });
+      return { ok: true, id: row?.id };
+    }),
+
+  // ── G2-c SHARED RESOURCES ──────────────────────────────────────────────────
+  listResources: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(z.object({ type: z.string().max(24).optional(), status: z.string().max(16).optional() }).optional())
+    .query(async ({ input }) => {
+      const d = await db();
+      const conds = [];
+      if (input?.type) conds.push(eq(sharedResources.type, input.type));
+      if (input?.status) conds.push(eq(sharedResources.status, input.status));
+      const rows = await d
+        .select()
+        .from(sharedResources)
+        .where(conds.length ? and(...conds) : undefined)
+        .orderBy(sharedResources.code);
+      // Attach DERIVED availability (active reservation count is authoritative).
+      const out = [];
+      for (const r of rows) out.push({ ...r, availability: await getResourceAvailability(r.id) });
+      return out;
+    }),
+
+  listResourceReservations: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(
+      z
+        .object({
+          resourceId: z.number().int().positive().optional(),
+          deviceId: z.number().int().positive().optional(),
+          status: z.enum(["active", "queued", "released", "rejected"]).optional(),
+          limit: z.number().int().min(1).max(500).default(200),
+        })
+        .optional(),
+    )
+    .query(async ({ input }) => {
+      const d = await db();
+      const conds = [];
+      if (input?.resourceId != null) conds.push(eq(resourceReservations.resourceId, input.resourceId));
+      if (input?.deviceId != null) conds.push(eq(resourceReservations.deviceId, input.deviceId));
+      if (input?.status) conds.push(eq(resourceReservations.status, input.status));
+      return d
+        .select()
+        .from(resourceReservations)
+        .where(conds.length ? and(...conds) : undefined)
+        .orderBy(desc(resourceReservations.createdAt))
+        .limit(input?.limit ?? 200);
+    }),
+
+  createResource: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z.object({
+        code: z.string().min(1).max(64),
+        name: z.string().max(255).optional(),
+        type: z.enum(["jig", "gripper", "fixture", "tool_changer", "other"]).default("other"),
+        locationZoneId: z.number().int().positive().optional(),
+        scope: z.string().max(64).optional(),
+        corporateCode: z.string().max(50).optional(),
+        factoryId: z.number().int().positive().optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      requireResourceFlag();
+      const d = await db();
+      const [clash] = await d.select().from(sharedResources).where(eq(sharedResources.code, input.code)).limit(1);
+      if (clash) throw new TRPCError({ code: "CONFLICT", message: `Resource code "${input.code}" already exists` });
+      const [row] = await d
+        .insert(sharedResources)
+        .values({
+          code: input.code,
+          name: input.name ?? null,
+          type: input.type,
+          locationZoneId: input.locationZoneId ?? null,
+          scope: input.scope ?? null,
+          corporateCode: input.corporateCode ?? null,
+          factoryId: input.factoryId ?? null,
+        })
+        .returning({ id: sharedResources.id });
+      return { ok: true, id: row?.id };
+    }),
+
+  reserveResource: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z.object({
+        resourceId: z.number().int().positive(),
+        deviceId: z.number().int().positive(),
+        taskId: z.number().int().positive().optional(),
+        queueIfFull: z.boolean().default(true),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      requireResourceFlag();
+      return claimResource({ resourceId: input.resourceId, deviceId: input.deviceId, taskId: input.taskId ?? null, queueIfFull: input.queueIfFull });
+    }),
+
+  releaseResource: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(z.object({ deviceId: z.number().int().positive(), resourceId: z.number().int().positive().optional() }))
+    .mutation(async ({ input }) => {
+      requireResourceFlag();
+      return releaseResource(input.deviceId, input.resourceId);
+    }),
+
+  // ── G2-d PREDICTIVE CHARGING ───────────────────────────────────────────────
+  listChargers: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .query(async () => {
+      const d = await db();
+      return d.select().from(chargerStations).orderBy(chargerStations.code);
+    }),
+
+  listChargingPlans: protectedProcedure
+    .use(requirePermission("machine_monitoring", "canView"))
+    .input(
+      z
+        .object({
+          deviceId: z.number().int().positive().optional(),
+          status: z.enum(["planned", "active", "done", "cancelled"]).optional(),
+          limit: z.number().int().min(1).max(500).default(200),
+        })
+        .optional(),
+    )
+    .query(async ({ input }) => {
+      const d = await db();
+      const conds = [];
+      if (input?.deviceId != null) conds.push(eq(batteryChargingPlans.deviceId, input.deviceId));
+      if (input?.status) conds.push(eq(batteryChargingPlans.status, input.status));
+      return d
+        .select()
+        .from(batteryChargingPlans)
+        .where(conds.length ? and(...conds) : undefined)
+        .orderBy(desc(batteryChargingPlans.createdAt))
+        .limit(input?.limit ?? 200);
+    }),
+
+  createCharger: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .input(
+      z.object({
+        code: z.string().min(1).max(64),
+        name: z.string().max(255).optional(),
+        locationZoneId: z.number().int().positive().optional(),
+        chargerType: z.string().max(32).default("contact"),
+        powerWatts: z.number().int().min(0).optional(),
+        corporateCode: z.string().max(50).optional(),
+        factoryId: z.number().int().positive().optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      requireResourceFlag();
+      const d = await db();
+      const [clash] = await d.select().from(chargerStations).where(eq(chargerStations.code, input.code)).limit(1);
+      if (clash) throw new TRPCError({ code: "CONFLICT", message: `Charger code "${input.code}" already exists` });
+      const [row] = await d
+        .insert(chargerStations)
+        .values({
+          code: input.code,
+          name: input.name ?? null,
+          locationZoneId: input.locationZoneId ?? null,
+          chargerType: input.chargerType,
+          powerWatts: input.powerWatts ?? null,
+          corporateCode: input.corporateCode ?? null,
+          factoryId: input.factoryId ?? null,
+        })
+        .returning({ id: chargerStations.id });
+      return { ok: true, id: row?.id };
+    }),
+
+  /** Run the predictive-charging sweep on demand (also runs on a background timer). */
+  sweepCharging: protectedProcedure
+    .use(requirePermission("machine_control", "canCreate"))
+    .mutation(async () => {
+      requireResourceFlag();
+      return sweepChargingPlans();
     }),
 });

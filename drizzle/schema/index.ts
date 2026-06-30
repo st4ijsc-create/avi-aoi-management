@@ -35,3 +35,4 @@ export * from "./programming";
 export * from "./federation";
 export * from "./integrationOutbox";
 export * from "./fleet";
+export * from "./fleetResource";
