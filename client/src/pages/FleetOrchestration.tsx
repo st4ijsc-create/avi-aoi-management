@@ -29,6 +29,7 @@ import { trpc } from "@/lib/trpc";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { MetricCard, PageHeader } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -183,34 +184,6 @@ function chargerStatusBadge(status: string, t: (k: string, f: string) => string)
 }
 
 const RESOURCE_TYPES = ["jig", "gripper", "fixture", "tool_changer", "other"] as const;
-
-function MetricCard({
-  icon, label, value, tone = "default",
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number | string;
-  tone?: "default" | "warning" | "danger" | "good";
-}) {
-  const toneCls =
-    tone === "danger" ? "text-destructive"
-    : tone === "warning" ? "text-amber-500"
-    : tone === "good" ? "text-emerald-500"
-    : "text-foreground";
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-3 p-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          {icon}
-        </div>
-        <div className="min-w-0">
-          <div className={`text-2xl font-bold tabular-nums ${toneCls}`}>{value}</div>
-          <div className="truncate text-xs text-muted-foreground">{label}</div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 export default function FleetOrchestration() {
   const { t } = useTranslation();
@@ -426,29 +399,23 @@ export default function FleetOrchestration() {
   return (
     <DashboardLayout>
       <div className="flex flex-col gap-4 p-4 md:p-6">
-        {/* ── PageHeader ─────────────────────────────────────────────────────── */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-            <Truck className="h-6 w-6 text-primary" />
-          </div>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold tracking-tight">
-              {t("fleet.title", "Fleet & Task Orchestration")}
-            </h1>
-            {!canControl && <ViewOnlyBadge module="machine_control" />}
-            <p className="text-sm text-muted-foreground">
-              {t("fleet.subtitle", "Dynamic task allocation + zone traffic control — orchestration state only, no direct device commands.")}
-            </p>
-          </div>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={refetchAll}
-            title={t("common.refresh", "Refresh")}
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
+        {/* ── PageHeader (DS F1b shared pattern) ─────────────────────────────── */}
+        <PageHeader
+          icon={<Truck className="h-6 w-6" />}
+          title={t("fleet.title", "Fleet & Task Orchestration")}
+          badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}
+          description={t("fleet.subtitle", "Dynamic task allocation + zone traffic control — orchestration state only, no direct device commands.")}
+          actions={
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={refetchAll}
+              title={t("common.refresh", "Refresh")}
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          }
+        />
 
         {/* ── Flag-off preview banner (honest) ───────────────────────────────── */}
         {!flagEnabled && (

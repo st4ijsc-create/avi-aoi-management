@@ -33,6 +33,7 @@ import { usePermissions } from "@/_core/hooks/usePermissions";
 import { getSharedSocket, releaseSharedSocket } from "@/lib/socketManager";
 import DashboardLayout from "@/components/DashboardLayout";
 import { ViewOnlyBadge } from "@/components/PermissionGate";
+import { MetricCard, PageHeader } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -163,34 +164,6 @@ function fmtDateTime(d?: string | Date | null): string {
   const dt = typeof d === "string" ? new Date(d) : d;
   if (Number.isNaN(dt.getTime())) return "—";
   return dt.toLocaleString();
-}
-
-function MetricCard({
-  icon, label, value, tone = "default",
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number | string;
-  tone?: "default" | "warning" | "danger" | "good";
-}) {
-  const toneCls =
-    tone === "danger" ? "text-destructive"
-    : tone === "warning" ? "text-amber-500"
-    : tone === "good" ? "text-emerald-500"
-    : "text-foreground";
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-3 p-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          {icon}
-        </div>
-        <div className="min-w-0">
-          <div className={`text-2xl font-bold tabular-nums ${toneCls}`}>{value}</div>
-          <div className="truncate text-xs text-muted-foreground">{label}</div>
-        </div>
-      </CardContent>
-    </Card>
-  );
 }
 
 export default function SafetyWorkforce() {
@@ -370,24 +343,18 @@ export default function SafetyWorkforce() {
   return (
     <DashboardLayout>
       <div className="flex flex-col gap-4 p-4 md:p-6">
-        {/* ── PageHeader ─────────────────────────────────────────────────────── */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-            <ShieldAlert className="h-6 w-6 text-primary" />
-          </div>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold tracking-tight">
-              {t("safety.title", "Safety & Workforce")}
-            </h1>
-            {!canControl && <ViewOnlyBadge module="machine_control" />}
-            <p className="text-sm text-muted-foreground">
-              {t("safety.subtitle", "Advisory safety monitoring, mixed-workforce assignments and human↔robot handover coordination.")}
-            </p>
-          </div>
-          <Button size="icon" variant="ghost" onClick={refetchAll} title={t("common.refresh", "Refresh")}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
+        {/* ── PageHeader (DS F1b shared pattern) ─────────────────────────────── */}
+        <PageHeader
+          icon={<ShieldAlert className="h-6 w-6" />}
+          title={t("safety.title", "Safety & Workforce")}
+          badge={!canControl ? <ViewOnlyBadge module="machine_control" /> : undefined}
+          description={t("safety.subtitle", "Advisory safety monitoring, mixed-workforce assignments and human↔robot handover coordination.")}
+          actions={
+            <Button size="icon" variant="ghost" onClick={refetchAll} title={t("common.refresh", "Refresh")}>
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          }
+        />
 
         {/* ── PERSISTENT advisory banner (always visible — critical honesty) ──── */}
         <div className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
