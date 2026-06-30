@@ -27,6 +27,8 @@ export const EventTypes = {
   ANDON: "andon.event",
   YIELD_WARNING: "yield.warning",
   INSPECTION_ALERT: "inspection.alert",
+  // S1 (doc 16 Khối 3) — ADVISORY safety event (NOT a safety-rated signal).
+  SAFETY_EVENT: "safety.event",
 } as const;
 
 export type EventType = (typeof EventTypes)[keyof typeof EventTypes] | string;

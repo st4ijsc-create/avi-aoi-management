@@ -220,6 +220,16 @@ export async function raiseAndon(input: RaiseAndonInput, actor?: AndonActor): Pr
   emit(row, "raised");
   await dispatchAndonNotifications(row);
   await audit(actor, AUDIT_ACTIONS.CREATE, row);
+
+  // S1-c (doc 16 Khối 3) — Andon → robot dispatch loop. Fire-and-forget + lazily
+  // imported so andonService keeps NO static dependency on the fleet module graph
+  // (andon unit tests stay green). Self-gated by ANDON_ROBOT_DISPATCH_ENABLED +
+  // FLEET_ORCH_ENABLED → a complete no-op (existing Andon behaviour unchanged) when
+  // off. Opens NO control path: it only creates an orchestration `tasks` row.
+  void import("./andonRobotDispatch")
+    .then((m) => m.maybeDispatchRobotForAndon(row))
+    .catch((e) => console.error("[Andon] robot-dispatch hook failed:", (e as Error)?.message ?? e));
+
   return row;
 }
 

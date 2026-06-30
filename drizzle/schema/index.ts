@@ -37,3 +37,4 @@ export * from "./integrationOutbox";
 export * from "./fleet";
 export * from "./fleetResource";
 export * from "./twin";
+export * from "./safetyWorkforce";

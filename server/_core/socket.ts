@@ -931,6 +931,32 @@ export function emitAndonEvent(event: AndonRealtimeEvent): void {
   console.log(`[Andon] ${event.state.toUpperCase()} (${event.reason}) #${event.id} — ${event.event ?? "raised"}`);
 }
 
+// ─── S1 (doc 16 Khối 3) — Safety event realtime broadcast (ADVISORY) ─────────
+//
+// ⚠ ADVISORY ONLY. This broadcasts a safety_events record (e-stop/intrusion/
+// near-miss/…) the software OBSERVED — it is NOT a safety-rated signal and the
+// software performs NO safety-rated stop. A real hardware-rated stop is deferred
+// to S2. This emit never writes to any device.
+export interface SafetyRealtimeEvent {
+  id: number;
+  eventType: string;
+  robotId?: number | null;
+  lineId?: number | null;
+  stationId?: number | null;
+  detectedBy?: string | null;
+  outcome: string;
+  isNearMiss: boolean;
+  createdAt: Date | string;
+}
+
+export function emitSafetyEvent(event: SafetyRealtimeEvent): void {
+  eventBus.publish(EventTypes.SAFETY_EVENT, event, "socket");
+  if (!io) return;
+  io.to("global").emit("safety:event", event);
+  if (event.lineId) io.to(`line:${event.lineId}`).emit("safety:event", event);
+  console.log(`[Safety] ADVISORY ${event.eventType} #${event.id} (detectedBy ${event.detectedBy ?? "?"}, outcome ${event.outcome})`);
+}
+
 // ============ G2.7 — DIGITAL TWIN STREAM (signal-only, gated) ============
 
 /**

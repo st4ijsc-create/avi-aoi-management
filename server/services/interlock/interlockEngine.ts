@@ -228,6 +228,30 @@ export async function evaluateRule(rule: InterlockRule): Promise<{ id: number; s
   // Back-link the Andon onto the event.
   await db.update(interlockEvents).set({ andonEventId: andon.id }).where(eq(interlockEvents.id, event.id));
 
+  // S1-b (doc 16 Khối 3) — ADVISORY safety audit when the interlock raises a
+  // stop/reduce (NOT a plain alert). Fire-and-forget + lazily imported + self-gated
+  // by SAFETY_AUDIT_ENABLED → no-op when off. This ONLY LOGS the event; it does NOT
+  // change the existing control behaviour above. detectedBy=interlock; outcome maps
+  // the engine's decision (auto-block writes are still NOT safety-rated stops).
+  if (action !== "alert") {
+    const safetyOutcome =
+      status === "fired" ? (action === "reduce_speed" ? "reduced_speed" : "stopped") : "logged_only";
+    const safetyType = action === "reduce_speed" ? "speed_violation" : "intrusion";
+    void import("../safety/safetyAuditService")
+      .then((m) => m.record({
+        eventType: safetyType,
+        robotId: rule.targetMachineId ?? rule.machineId ?? null,
+        lineId: rule.lineId ?? null,
+        stationId: rule.stationId ?? null,
+        sourceInterlockEventId: event.id,
+        detectedBy: "interlock",
+        handledBy: "interlock_engine",
+        outcome: safetyOutcome,
+        notes: `ADVISORY: interlock rule "${rule.name}" → ${action} [${status}] (advisory audit log — not a safety-rated stop)`,
+      }))
+      .catch((e) => console.error(`[Interlock] safety-audit hook failed for rule #${rule.id}:`, (e as Error)?.message || e));
+  }
+
   // ── F5b — AUTO-BLOCK dispatch (deterministic, human-approved). ─────────────
   // dispatch is the ONLY caller of driver.writeTags and re-verifies authorization.
   // NO auto-chaining: one rule → one command → one target.
