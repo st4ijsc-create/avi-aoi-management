@@ -116,7 +116,11 @@ export const materialReceipts = pgTable("material_receipts", {
   receiptNumber: varchar("receiptNumber", { length: 64 }).notNull().unique(),
   supplierName: varchar("supplierName", { length: 256 }),
   supplierCode: varchar("supplierCode", { length: 64 }),
+  // P2 master-data backbone: nullable FK alongside the free-text supplierCode
+  // (transition period — text column kept; backfilled by code match in 0134).
+  supplierId: integer("supplierId"),       // FK -> suppliers.id (nullable)
   materialCode: varchar("materialCode", { length: 64 }).notNull(),
+  materialId: integer("materialId"),       // FK -> materials.id (nullable)
   materialName: varchar("materialName", { length: 256 }),
   quantity: decimal("quantity", { precision: 14, scale: 3 }).notNull(),
   unit: varchar("unit", { length: 16 }).default("pcs").notNull(),
@@ -127,6 +131,8 @@ export const materialReceipts = pgTable("material_receipts", {
 }, (table) => [
   index("idx_matrecv_supplier").on(table.supplierCode),
   index("idx_matrecv_material").on(table.materialCode),
+  index("idx_matrecv_supplierid").on(table.supplierId),
+  index("idx_matrecv_materialid").on(table.materialId),
   index("idx_matrecv_date").on(table.receivedDate),
 ]);
 
@@ -141,6 +147,7 @@ export const supplierLots = pgTable("supplier_lots", {
   supplierLotNumber: varchar("supplierLotNumber", { length: 128 }).notNull(),
   receiptId: integer("receiptId"),       // FK -> material_receipts.id
   materialCode: varchar("materialCode", { length: 64 }).notNull(),
+  materialId: integer("materialId"),     // P2: FK -> materials.id (nullable, backfilled by code)
   materialName: varchar("materialName", { length: 256 }),
   quantity: decimal("quantity", { precision: 14, scale: 3 }).notNull(),
   remainingQuantity: decimal("remainingQuantity", { precision: 14, scale: 3 }),
@@ -153,6 +160,7 @@ export const supplierLots = pgTable("supplier_lots", {
   index("idx_suplot_number").on(table.supplierLotNumber),
   index("idx_suplot_receipt").on(table.receiptId),
   index("idx_suplot_material").on(table.materialCode),
+  index("idx_suplot_materialid").on(table.materialId),
   index("idx_suplot_status").on(table.status),
 ]);
 
@@ -350,6 +358,9 @@ export const bomLineItems = pgTable("bom_line_items", {
   id: serial("id").primaryKey(),
   bomId: integer("bomId").notNull(),
   componentCode: varchar("componentCode", { length: 100 }).notNull(),
+  // P2 master-data backbone: nullable FK to materials master alongside the
+  // free-text componentCode (transition; backfilled by code match in 0134).
+  materialId: integer("materialId"),     // FK -> materials.id (nullable)
   componentName: varchar("componentName", { length: 255 }),
   qtyPer: decimal("qtyPer", { precision: 14, scale: 4 }).notNull(),
   unit: varchar("unit", { length: 16 }).default("pcs").notNull(),
@@ -362,6 +373,7 @@ export const bomLineItems = pgTable("bom_line_items", {
 }, (table) => [
   index("idx_bomline_bom").on(table.bomId),
   index("idx_bomline_component").on(table.componentCode),
+  index("idx_bomline_materialid").on(table.materialId),
 ]);
 
 export type BomLineItem = typeof bomLineItems.$inferSelect;
@@ -376,6 +388,7 @@ export const feederMaterials = pgTable("feeder_materials", {
   machineId: integer("machineId").notNull(),
   slotCode: varchar("slotCode", { length: 40 }),
   componentCode: varchar("componentCode", { length: 100 }).notNull(),
+  materialId: integer("materialId"),     // P2: FK -> materials.id (nullable, backfilled by code)
   supplierLotId: integer("supplierLotId"),
   qtyOnFeeder: decimal("qtyOnFeeder", { precision: 14, scale: 3 }).default("0").notNull(),
   consumptionRatePerHour: decimal("consumptionRatePerHour", { precision: 14, scale: 3 }),
@@ -388,6 +401,7 @@ export const feederMaterials = pgTable("feeder_materials", {
 }, (table) => [
   index("idx_feeder_machine").on(table.machineId),
   index("idx_feeder_component").on(table.componentCode),
+  index("idx_feeder_materialid").on(table.materialId),
   index("idx_feeder_suplot").on(table.supplierLotId),
   // unique slot per machine when slotCode is provided (partial index — NULL slots not constrained)
   uniqueIndex("uq_feeder_machine_slot").on(table.machineId, table.slotCode).where(sql`"slotCode" IS NOT NULL`),

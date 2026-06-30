@@ -18,8 +18,26 @@ import {
   lineBalanceMetrics,
   lotDisposition,
   supplierLots,
+  materialReceipts,
   maintenanceWorkOrders,
+  suppliers,
+  materials,
 } from "../../drizzle/schema";
+
+// P2: resolve a master id from a free-text code so write UIs can pass either an
+// explicit FK id or just the code (id wins; otherwise we look up by code).
+async function resolveSupplierId(database: any, id?: number | null, code?: string | null): Promise<number | null> {
+  if (id != null) return id;
+  if (!code) return null;
+  const [row] = await database.select({ id: suppliers.id }).from(suppliers).where(eq(suppliers.code, code)).limit(1);
+  return row?.id ?? null;
+}
+async function resolveMaterialId(database: any, id?: number | null, code?: string | null): Promise<number | null> {
+  if (id != null) return id;
+  if (!code) return null;
+  const [row] = await database.select({ id: materials.id }).from(materials).where(eq(materials.code, code)).limit(1);
+  return row?.id ?? null;
+}
 
 export const mesControlTowerRouter = router({
   // --- G5: WIP units ---
@@ -167,5 +185,122 @@ export const mesControlTowerRouter = router({
       const days = input.sinceDays ?? 90;
       const from = new Date(Date.now() - days * 24 * 3600 * 1000);
       return computeMttrMtbf(input.machineId, from, new Date());
+    }),
+
+  // ==========================================================================
+  // P2 — Write paths for the previously-unwritable material-flow shells.
+  // These let the Control Tower create real rows (material receipts / supplier
+  // lots / lot dispositions) wired to the master-data FKs (supplierId/materialId).
+  // ==========================================================================
+
+  // --- G6: material receipts (list + create) ---
+  listMaterialReceipts: protectedProcedure
+    .input(z.object({ limit: z.number().int().min(1).max(500).optional() }).optional())
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return [];
+      return database.select().from(materialReceipts)
+        .orderBy(desc(materialReceipts.receivedDate))
+        .limit(input?.limit ?? 100);
+    }),
+  createMaterialReceipt: protectedProcedure
+    .input(z.object({
+      receiptNumber: z.string().min(1).max(64),
+      supplierId: z.number().int().positive().optional(),
+      supplierCode: z.string().max(64).optional(),
+      supplierName: z.string().max(256).optional(),
+      materialId: z.number().int().positive().optional(),
+      materialCode: z.string().min(1).max(64),
+      materialName: z.string().max(256).optional(),
+      quantity: z.number().positive(),
+      unit: z.string().max(16).optional(),
+      poNumber: z.string().max(64).optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const database = await getDb();
+      if (!database) throw new Error("Database not available");
+      const supplierId = await resolveSupplierId(database, input.supplierId, input.supplierCode);
+      const materialId = await resolveMaterialId(database, input.materialId, input.materialCode);
+      const [row] = await database.insert(materialReceipts).values({
+        receiptNumber: input.receiptNumber,
+        supplierId,
+        supplierCode: input.supplierCode ?? null,
+        supplierName: input.supplierName ?? null,
+        materialId,
+        materialCode: input.materialCode,
+        materialName: input.materialName ?? null,
+        quantity: String(input.quantity),
+        unit: input.unit ?? "pcs",
+        poNumber: input.poNumber ?? null,
+        notes: input.notes ?? null,
+      }).returning({ id: materialReceipts.id });
+      return { id: row.id };
+    }),
+
+  // --- G6: supplier lots (list + create) ---
+  listSupplierLots: protectedProcedure
+    .input(z.object({ limit: z.number().int().min(1).max(500).optional() }).optional())
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) return [];
+      return database.select().from(supplierLots)
+        .orderBy(desc(supplierLots.createdAt))
+        .limit(input?.limit ?? 100);
+    }),
+  createSupplierLot: protectedProcedure
+    .input(z.object({
+      supplierLotNumber: z.string().min(1).max(128),
+      receiptId: z.number().int().positive().optional(),
+      materialId: z.number().int().positive().optional(),
+      materialCode: z.string().min(1).max(64),
+      materialName: z.string().max(256).optional(),
+      quantity: z.number().positive(),
+      unit: z.string().max(16).optional(),
+      status: z.enum(["received", "inspecting", "approved", "rejected", "consumed", "returned"]).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const database = await getDb();
+      if (!database) throw new Error("Database not available");
+      const materialId = await resolveMaterialId(database, input.materialId, input.materialCode);
+      const [row] = await database.insert(supplierLots).values({
+        supplierLotNumber: input.supplierLotNumber,
+        receiptId: input.receiptId ?? null,
+        materialId,
+        materialCode: input.materialCode,
+        materialName: input.materialName ?? null,
+        quantity: String(input.quantity),
+        remainingQuantity: String(input.quantity),
+        unit: input.unit ?? "pcs",
+        status: (input.status ?? "received") as any,
+      }).returning({ id: supplierLots.id });
+      return { id: row.id };
+    }),
+
+  // --- G6: lot disposition (create) ---
+  createLotDisposition: protectedProcedure
+    .input(z.object({
+      lotNumber: z.string().min(1).max(128),
+      supplierLotId: z.number().int().positive().optional(),
+      serialNumber: z.string().max(128).optional(),
+      disposition: z.enum(["release", "rework", "scrap", "return", "hold", "quarantine"]),
+      quantity: z.number().positive(),
+      reason: z.string().optional(),
+      defectCode: z.string().max(64).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const database = await getDb();
+      if (!database) throw new Error("Database not available");
+      const [row] = await database.insert(lotDisposition).values({
+        lotNumber: input.lotNumber,
+        supplierLotId: input.supplierLotId ?? null,
+        serialNumber: input.serialNumber ?? null,
+        disposition: input.disposition as any,
+        quantity: String(input.quantity),
+        reason: input.reason ?? null,
+        defectCode: input.defectCode ?? null,
+        decidedBy: ctx.user?.id ?? null,
+      }).returning({ id: lotDisposition.id });
+      return { id: row.id };
     }),
 });

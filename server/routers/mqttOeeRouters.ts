@@ -413,37 +413,126 @@ export const mqttClientRouter = router({
   }),
 
   // ============ OEE CALCULATION ============
+  // All OEE procedures delegate to the canonical oeeService (SEMI E10 / ISO
+  // 22400). OEE is defined in exactly one place; this router only adapts inputs.
+  //
+  // `calculateOEE` is kept for backward-compat with manual/explicit inputs
+  // (planned/run time + counts) — it persists a SEMI-E10 breakdown via the
+  // canonical computeOEE rather than the old socket in-memory formula.
   calculateOEE: protectedProcedure
     .input(z.object({
       machineId: z.number(),
       machineCode: z.string(),
-      plannedTime: z.number(), // minutes
-      runTime: z.number(), // minutes
+      plannedTime: z.number(), // minutes (window length, planned production time)
+      runTime: z.number(), // minutes (productive/online time)
       idealCycleTime: z.number(), // seconds per unit
       totalCount: z.number(),
       goodCount: z.number(),
     }))
     .mutation(async ({ input }) => {
-      const { calculateOEE } = await import('../_core/socket');
-      return calculateOEE(input.machineId, input.machineCode, {
-        plannedTime: input.plannedTime,
-        runTime: input.runTime,
-        idealCycleTime: input.idealCycleTime,
+      const { computeOEE, persistOEEMetric } = await import('../services/oeeService');
+      // Map explicit planned/run minutes onto a synthetic [from,to] window so
+      // the canonical SEMI-E10 calculator sees PT=runTime, UD=plannedTime-runTime.
+      const to = new Date();
+      const from = new Date(to.getTime() - input.plannedTime * 60 * 1000);
+      const breakdown = await computeOEE({
+        machineId: input.machineId,
+        from,
+        to,
         totalCount: input.totalCount,
         goodCount: input.goodCount,
+        idealCycleTimeSec: input.idealCycleTime,
       });
+      await persistOEEMetric({ breakdown, machineCode: input.machineCode }).catch(() => null);
+      // Preserve the legacy response shape (percentages 0..100 + details).
+      return {
+        machineId: breakdown.machineId,
+        machineCode: input.machineCode,
+        timestamp: breakdown.windowEnd,
+        availability: Math.round(breakdown.availability * 10000) / 100,
+        performance: Math.round(breakdown.performance * 10000) / 100,
+        quality: Math.round(breakdown.quality * 10000) / 100,
+        oee: Math.round(breakdown.oee * 10000) / 100,
+        details: {
+          plannedTime: input.plannedTime,
+          runTime: input.runTime,
+          downtime: input.plannedTime - input.runTime,
+          idealCycleTime: input.idealCycleTime,
+          totalCount: breakdown.totalCount,
+          goodCount: breakdown.goodCount,
+          rejectCount: breakdown.rejectCount,
+        },
+      };
     }),
 
   getMachineOEE: protectedProcedure
-    .input(z.object({ machineId: z.number() }))
+    .input(z.object({ machineId: z.number(), windowHours: z.number().int().positive().max(720).optional() }))
     .query(async ({ input }) => {
-      const { getMachineOEE } = await import('../_core/socket');
-      return getMachineOEE(input.machineId);
+      const { getMachineOEELive, resolveIdealCycleTimeSec } = await import('../services/oeeService');
+      const idealCycleTimeSec = await resolveIdealCycleTimeSec(input.machineId);
+      const live = await getMachineOEELive({
+        machineId: input.machineId,
+        windowHours: input.windowHours,
+        idealCycleTimeSec,
+      });
+      // Adapt the canonical LiveOEEMetrics to the legacy OEEMetrics shape the
+      // OEEDashboard consumes (numeric factors 0..100; details with plain
+      // planned/run/downtime minutes). Null factors → 0 (empty gauge / honest
+      // "no data") rather than a fabricated value.
+      const onlineMin = Math.round(live.details.onlineSeconds / 60);
+      const offlineMin = Math.round(live.details.offlineSeconds / 60);
+      return {
+        machineId: live.machineId,
+        machineCode: live.machineCode,
+        timestamp: live.timestamp,
+        availability: live.availability ?? 0,
+        performance: live.performance ?? 0,
+        quality: live.quality ?? 0,
+        oee: live.oee ?? 0,
+        details: {
+          plannedTime: onlineMin + offlineMin,
+          runTime: onlineMin,
+          downtime: offlineMin,
+          idealCycleTime: live.details.idealCycleTimeSec ?? 0,
+          totalCount: live.details.totalCount,
+          goodCount: live.details.goodCount,
+          rejectCount: live.details.rejectCount,
+        },
+      };
     }),
 
   getAllOEE: protectedProcedure.query(async () => {
-    const { getAllMachinesOEE } = await import('../_core/socket');
-    return getAllMachinesOEE();
+    const { getAllMachinesOEELive } = await import('../services/oeeService');
+    const all = await getAllMachinesOEELive();
+    // Frontend (CorporateDashboard avg, MachineHealthMonitoring comparison)
+    // expects numeric factors. Machines lacking real inputs for any factor
+    // are omitted honestly (rendered as "no data") rather than emitted with a
+    // fabricated/NaN value. Each returned row has all four factors as numbers.
+    return all
+      .filter(m => m.oee !== null && m.availability !== null && m.performance !== null && m.quality !== null)
+      .map(m => {
+        const onlineMin = Math.round(m.details.onlineSeconds / 60);
+        const offlineMin = Math.round(m.details.offlineSeconds / 60);
+        return {
+          machineId: m.machineId,
+          machineCode: m.machineCode,
+          timestamp: m.timestamp,
+          availability: m.availability as number,
+          performance: m.performance as number,
+          quality: m.quality as number,
+          oee: m.oee as number,
+          // Legacy OEEMetrics.details shape consumed by OEEDashboard CSV/Excel export.
+          details: {
+            plannedTime: onlineMin + offlineMin,
+            runTime: onlineMin,
+            downtime: offlineMin,
+            idealCycleTime: m.details.idealCycleTimeSec ?? 0,
+            totalCount: m.details.totalCount,
+            goodCount: m.details.goodCount,
+            rejectCount: m.details.rejectCount,
+          },
+        };
+      });
   }),
 
   // ============ SEMI E10 / ISO 22400 BREAKDOWN ============

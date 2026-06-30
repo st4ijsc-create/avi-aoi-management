@@ -320,14 +320,15 @@ async function fetchObservation(rule: InterlockRule): Promise<ObservationContext
       return { scalar: r?.cpk != null ? Number(r.cpk) : null };
     }
     case "telemetry_tag": {
-      const conds = [gte(otTelemetry.timestamp, since)];
+      // Canonical ot_telemetry (P2): ts/metric/numValue.
+      const conds = [gte(otTelemetry.ts, since)];
       if (rule.machineId != null) conds.push(eq(otTelemetry.machineId, rule.machineId));
-      if (rule.sourceKey) conds.push(eq(otTelemetry.tagKey, rule.sourceKey));
+      if (rule.sourceKey) conds.push(eq(otTelemetry.metric, rule.sourceKey));
       const rows = await db
-        .select({ v: otTelemetry.valueNumeric, t: otTelemetry.timestamp })
+        .select({ v: otTelemetry.numValue, t: otTelemetry.ts })
         .from(otTelemetry)
         .where(and(...conds))
-        .orderBy(otTelemetry.timestamp)
+        .orderBy(otTelemetry.ts)
         .limit(rule.windowSize ?? 50);
       const series = rows.map((r) => (r.v != null ? Number(r.v) : null));
       const latest = series.length ? series[series.length - 1] : null;

@@ -23,4 +23,15 @@ export const ENV = {
   licenseFilePath: clean(process.env.LICENSE_FILE_PATH),
   /** Set LICENSE_BYPASS=true in .env to skip all license checks (offline deployment) */
   licenseBypass: process.env.LICENSE_BYPASS === 'true',
+
+  // ── P2 (doc 12) — Unified Telemetry Bus: protocol enable flags ──────────────
+  // Honest defaults: every protocol reader is OFF unless explicitly enabled, and
+  // an enabled reader with no endpoint/device opens NO stream + fabricates NO data.
+  // (Services read process.env directly; these are the canonical, centralized view.)
+  otGatewayEnabled: process.env.OT_GATEWAY_ENABLED === "true",
+  opcuaGatewayEnabled: process.env.OPCUA_GATEWAY_ENABLED === "true",
+  mtconnectEnabled: process.env.MTCONNECT_ENABLED === "true",
+  secsGemEnabled: process.env.SECS_GEM_ENABLED === "true",
+  sparkplugEnabled: process.env.UNS_SPARKPLUG_ENABLED === "true",
+  otIngestToUns: process.env.OT_INGEST_TO_UNS === "true",
 };

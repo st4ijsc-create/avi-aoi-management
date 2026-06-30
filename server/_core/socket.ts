@@ -692,6 +692,49 @@ export function emitEngineeringSamples(
   io.to(`engineering:${machineId}`).emit("engineering:samples", { machineId, samples });
 }
 
+// ============ P2 — UNIFIED TELEMETRY BUS CHANNEL ============
+
+/**
+ * One canonical telemetry sample as broadcast on the unified bus channel. This is
+ * the wire shape clients receive on `telemetry:sample`; it mirrors a row of the
+ * canonical ot_telemetry table (event time `ts` as ISO string for JSON transport).
+ */
+export interface TelemetryBroadcastSample {
+  machineId: number | null;
+  deviceId: string | null;
+  protocol: string;
+  metric: string;
+  numValue: number | null;
+  textValue: string | null;
+  boolValue: boolean | null;
+  unit: string | null;
+  quality: string;
+  ts: string; // ISO
+}
+
+/**
+ * P2 — broadcast a batch of canonical telemetry samples on the ONE unified bus
+ * channel. SIGNAL ONLY (never writes to a device or DB; the bus already persisted).
+ * No-op when io is not initialized (tests / headless). Emits the whole batch to the
+ * `global` room, and additionally fans each sample out to its per-machine room so a
+ * client subscribed to `machine:{id}` receives only that machine's samples.
+ */
+export function emitTelemetrySamples(samples: TelemetryBroadcastSample[]): void {
+  if (!io || samples.length === 0) return;
+  io.to("global").emit("telemetry:sample", { samples });
+  // Per-machine fan-out: group by machineId so each machine room gets its subset.
+  const byMachine = new Map<number, TelemetryBroadcastSample[]>();
+  for (const s of samples) {
+    if (s.machineId == null) continue;
+    const arr = byMachine.get(s.machineId);
+    if (arr) arr.push(s);
+    else byMachine.set(s.machineId, [s]);
+  }
+  for (const [machineId, arr] of byMachine) {
+    io.to(`machine:${machineId}`).emit("telemetry:sample", { samples: arr });
+  }
+}
+
 // Emit dashboard stats update
 export function emitDashboardUpdate(update: DashboardUpdate): void {
   if (!io) {

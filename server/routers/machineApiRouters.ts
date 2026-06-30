@@ -483,6 +483,33 @@ export const machineApiRouter = router({
         console.error('[QualityGate] Failed to import qualityGateEvaluator:', gateErr);
       }
 
+      // P2 WIP write-path: populate wip_tracking / station_dwell_time /
+      // line_balance_metrics + bump the matching production order. Runs AFTER
+      // results are persisted; fire-and-forget + fully guarded (the service never
+      // throws) so it can never fail the inspection insert. Does NOT touch the
+      // P0-A resolver/assert nor the P0-D quality-gate logic above.
+      try {
+        const { ingestInspectionToWip } = await import('../services/wipIngestService');
+        ingestInspectionToWip({
+          inspectionId,
+          serialNumber: input.serialNumber,
+          lotNumber: input.batchNumber ?? null,
+          overallResult: input.overallResult,
+          machineId: machine.id,
+          stationId: machine.stationId ?? null,
+          productModelId: productModelRecord?.id ?? null,
+          productCode: resolvedProductModelCode ?? null,
+          cycleTimeSec: input.cycleTime ?? null,
+          // Explicit order link → wipIngest skips its heuristic order bump
+          // (the inline block above already incremented completedQuantity).
+          productionOrderId: productionOrderId ?? null,
+        }).catch(err => {
+          console.error('[wipIngest] post-inspection ingest failed:', err);
+        });
+      } catch (wipErr) {
+        console.error('[wipIngest] Failed to import wipIngestService:', wipErr);
+      }
+
       return { success: true, inspectionId };
     }),
 

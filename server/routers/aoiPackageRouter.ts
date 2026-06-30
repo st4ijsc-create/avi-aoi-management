@@ -856,6 +856,32 @@ export const aoiPackageRouter = router({
             console.error("[QualityGate] Failed to import qualityGateEvaluator:", (e as any)?.message ?? e);
           }
 
+          // P2 WIP write-path: populate wip_tracking / station_dwell_time /
+          // line_balance_metrics + bump the matching production order from this
+          // AOI-package inspection. Fire-and-forget + fully guarded (the service
+          // never throws) so it can never affect commit success/idempotency, and
+          // does NOT touch the P0-A resolver/assert nor the P0-D gate logic above.
+          try {
+            if (linkedInspectionId && metaData?.serialNumber) {
+              const { ingestInspectionToWip } = await import("../services/wipIngestService");
+              ingestInspectionToWip({
+                inspectionId: linkedInspectionId,
+                serialNumber: metaData.serialNumber,
+                lotNumber: metaData.batchNumber ?? null,
+                overallResult: finalOverallResult,
+                machineId: machine.id,
+                stationId: machine.stationId ?? null,
+                productModelId: resolvedProductModel?.id ?? null,
+                productCode: metaData.productModel ?? null,
+                cycleTimeSec: metaData.cycleTime ?? null,
+              }).catch((e2) => {
+                console.error("[wipIngest] post-commit ingest failed:", (e2 as any)?.message ?? e2);
+              });
+            }
+          } catch (e) {
+            console.error("[wipIngest] Failed to import wipIngestService:", (e as any)?.message ?? e);
+          }
+
           return {
             success: true,
             alreadyCommitted: false,

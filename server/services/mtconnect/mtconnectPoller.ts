@@ -10,9 +10,9 @@
  *   - startMtconnectPoller() / stopMtconnectPoller() are idempotent.
  *
  * STORAGE (reuses existing tables — NO schema change):
- *   - Numeric SAMPLE DataItems  → `ot_telemetry` (one row per reading), keyed to
- *     a per-machine sink deviceAdapter (protocol 'stub', resolved/created once)
- *     and to the platform machineId. Mirrors ot/ingest.mapSampleToRow shape.
+ *   - Numeric SAMPLE DataItems  → the UNIFIED TELEMETRY BUS (ingestTelemetry,
+ *     protocol 'mtconnect') → canonical `ot_telemetry` + `telemetry:sample` broadcast.
+ *     machineCode is the deviceId; the sink adapterId is carried in each sample's meta.
  *   - EVENT / CONDITION DataItems → `process_results` (one row), with the MTConnect
  *     state in `metrics` and a pass/fail/warn `result` derived from the state.
  *
@@ -21,8 +21,8 @@
  */
 import { fetchCurrent } from "./mtconnectClient";
 import type { MtcReading } from "./mtconnectClient";
-import type { InsertOtTelemetry } from "../../../drizzle/schema";
 import type { InsertProcessResult } from "../../../drizzle/schema";
+import { ingestTelemetry, type CanonicalSample } from "../telemetryBus";
 
 export interface MtcSource {
   agentUrl: string;
@@ -119,15 +119,16 @@ export function stateToResult(reading: MtcReading): "pass" | "fail" | "warn" | "
 
 /**
  * Pure mapper: split normalized readings into the two storage shapes.
- *   - numeric SAMPLE → ot_telemetry row (valueNumeric string), like ot/ingest.
+ *   - numeric SAMPLE → a CanonicalSample (protocol 'mtconnect') for the bus.
  *   - EVENT / CONDITION → process_results row (state in metrics).
- * No I/O; the poller supplies adapterId + machineId + measuredAt context.
+ * No I/O; the poller supplies machineId + machineCode (= deviceId) context.
+ * `adapterId` is carried in each sample's `meta` for traceability.
  */
 export function mapReadings(
   readings: MtcReading[],
   ctx: { adapterId: number; machineId: number; machineCode: string },
-): { telemetry: InsertOtTelemetry[]; events: InsertProcessResult[] } {
-  const telemetry: InsertOtTelemetry[] = [];
+): { telemetry: CanonicalSample[]; events: InsertProcessResult[] } {
+  const telemetry: CanonicalSample[] = [];
   const events: InsertProcessResult[] = [];
 
   for (const r of readings) {
@@ -135,13 +136,14 @@ export function mapReadings(
 
     if (r.category === "SAMPLE" && r.numericValue !== null) {
       telemetry.push({
-        adapterId: ctx.adapterId,
+        ts: r.timestamp,
         machineId: ctx.machineId,
-        tagKey: tagKey.slice(0, 128),
-        valueNumeric: String(r.numericValue),
-        valueText: null,
+        deviceId: ctx.machineCode,
+        protocol: "mtconnect",
+        metric: tagKey.slice(0, 128),
+        value: r.numericValue,
         quality: r.value.toUpperCase() === "UNAVAILABLE" ? "bad" : "good",
-        timestamp: r.timestamp,
+        meta: { adapterId: ctx.adapterId },
       });
       continue;
     }
@@ -232,27 +234,30 @@ async function resolveSink(
   return { machineId, adapterId };
 }
 
-/** Persist mapped rows. Each insert is independently try/caught. */
+/** Persist mapped rows. Telemetry → unified bus; events → process_results. */
 async function persist(
-  telemetry: InsertOtTelemetry[],
+  telemetry: CanonicalSample[],
   events: InsertProcessResult[],
 ): Promise<{ telemetryRows: number; eventRows: number }> {
   let telemetryRows = 0;
   let eventRows = 0;
+
+  // Numeric SAMPLEs go through the ONE unified telemetry bus (persist + broadcast).
+  if (telemetry.length > 0) {
+    try {
+      await ingestTelemetry(telemetry);
+      telemetryRows = telemetry.length;
+    } catch (err) {
+      log("telemetry bus ingest failed", err);
+    }
+  }
+
   const { getDb } = await import("../../db/connection");
   const db = await getDb();
   if (!db) return { telemetryRows, eventRows };
 
-  const { otTelemetry, processResults } = await import("../../../drizzle/schema");
+  const { processResults } = await import("../../../drizzle/schema");
 
-  if (telemetry.length > 0) {
-    try {
-      await db.insert(otTelemetry).values(telemetry);
-      telemetryRows = telemetry.length;
-    } catch (err) {
-      log("ot_telemetry insert failed", err);
-    }
-  }
   if (events.length > 0) {
     try {
       await db.insert(processResults).values(events);

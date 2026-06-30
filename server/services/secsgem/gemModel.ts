@@ -20,7 +20,7 @@
  */
 import type { SecsMessage, SecsItem } from "./secsMessages";
 import type { InsertProcessResult } from "../../../drizzle/schema";
-import type { InsertOtTelemetry } from "../../../drizzle/schema";
+import type { CanonicalSample } from "../telemetryBus";
 
 // ─── GEM state models (SEMI E30) ─────────────────────────────────────────────
 
@@ -228,9 +228,12 @@ export function mapAlarmToAndon(
 }
 
 /**
- * Map a status-variable poll (or an S6F1 trace value) → ot_telemetry rows.
- * Each SVID with a known StatusVariable mapping becomes one telemetry row using
- * the SV's tagKey. `adapterId` is the synthetic SECS adapter id for this machine.
+ * Map a status-variable poll (or an S6F1 trace value) → CanonicalSample[] for the
+ * unified telemetry bus. Each SVID with a known StatusVariable mapping becomes one
+ * sample using the SV's tagKey as the canonical `metric`; SECS/GEM has no dedicated
+ * enum member so protocol is 'other'. `adapterId` is the synthetic SECS adapter id
+ * for this machine (carried in `meta` for traceability). The bus splits the raw
+ * value into numValue/textValue/boolValue — this mapper just hands it the value.
  */
 export function mapStatusVariablesToTelemetry(
   samples: Array<{ svid: number; value: number | string | boolean | null }>,
@@ -238,25 +241,21 @@ export function mapStatusVariablesToTelemetry(
   adapterId: number,
   machineId: number | null,
   at: Date = new Date(),
-): InsertOtTelemetry[] {
-  const rows: InsertOtTelemetry[] = [];
+): CanonicalSample[] {
+  const rows: CanonicalSample[] = [];
   for (const s of samples) {
     const sv = model.statusVariables.get(s.svid);
     const tagKey = sv?.tagKey ?? `SVID_${s.svid}`;
-    const row: InsertOtTelemetry = {
-      adapterId,
-      machineId: machineId ?? undefined,
-      tagKey,
-      valueNumeric: null,
-      valueText: null,
+    rows.push({
+      ts: at,
+      machineId: machineId ?? null,
+      protocol: "other",
+      metric: tagKey,
+      value: s.value,
+      unit: sv?.unit ?? null,
       quality: "good",
-      timestamp: at,
-    };
-    const v = s.value;
-    if (typeof v === "number" && Number.isFinite(v)) row.valueNumeric = String(v);
-    else if (typeof v === "boolean") row.valueText = v ? "true" : "false";
-    else if (typeof v === "string") row.valueText = v.length > 500 ? v.slice(0, 500) : v;
-    rows.push(row);
+      meta: { adapterId, svid: s.svid, source: "secsgem" },
+    });
   }
   return rows;
 }

@@ -34,7 +34,7 @@ vi.mock("../../../drizzle/schema", () => ({
   processResults: { __t: "process_results", measuredAt: {}, result: {}, machineId: {}, stepType: {} },
   spcRuleViolations: { __t: "spc_rule_violations", detectedAt: {}, isActive: {}, machineId: {} },
   cpkHistory: { __t: "cpk_history", cpk: {}, machineId: {}, periodEnd: {} },
-  otTelemetry: { __t: "ot_telemetry", timestamp: {}, valueNumeric: {}, machineId: {}, tagKey: {} },
+  otTelemetry: { __t: "ot_telemetry", ts: {}, numValue: {}, machineId: {}, metric: {} },
 }));
 
 // Programmable engine state.

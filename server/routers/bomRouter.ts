@@ -93,6 +93,7 @@ export const bomRouter = router({
     .input(z.object({
       bomId: z.number().int().positive(),
       componentCode: z.string().min(1).max(100),
+      materialId: z.number().int().positive().optional(), // P2: FK -> materials.id
       componentName: z.string().max(255).optional(),
       qtyPer: z.number().positive(),
       unit: z.string().max(16).optional(),
@@ -105,6 +106,7 @@ export const bomRouter = router({
       const id = await db.createBomLineItem({
         bomId: input.bomId,
         componentCode: input.componentCode,
+        materialId: input.materialId ?? null,
         componentName: input.componentName ?? null,
         qtyPer: String(input.qtyPer),
         unit: input.unit ?? "pcs",
@@ -122,6 +124,7 @@ export const bomRouter = router({
       bomId: z.number().int().positive(),
       items: z.array(z.object({
         componentCode: z.string().min(1).max(100),
+        materialId: z.number().int().positive().optional(), // P2: FK -> materials.id
         componentName: z.string().max(255).optional(),
         qtyPer: z.number().positive(),
         unit: z.string().max(16).optional(),
@@ -135,6 +138,7 @@ export const bomRouter = router({
       const rows = await db.bulkCreateBomLineItems(input.items.map((it) => ({
         bomId: input.bomId,
         componentCode: it.componentCode,
+        materialId: it.materialId ?? null,
         componentName: it.componentName ?? null,
         qtyPer: String(it.qtyPer),
         unit: it.unit ?? "pcs",
@@ -150,6 +154,7 @@ export const bomRouter = router({
     .use(requirePermission(MODULE, "canEdit"))
     .input(z.object({
       id: z.number().int().positive(),
+      materialId: z.number().int().positive().nullable().optional(), // P2: FK -> materials.id
       componentName: z.string().max(255).optional(),
       qtyPer: z.number().positive().optional(),
       unit: z.string().max(16).optional(),
@@ -180,6 +185,7 @@ export const bomRouter = router({
       machineId: z.number().int().positive(),
       slotCode: z.string().max(40).optional(),
       componentCode: z.string().min(1).max(100),
+      materialId: z.number().int().positive().optional(), // P2: FK -> materials.id
       supplierLotId: z.number().int().positive().optional(),
       qtyOnFeeder: z.number().min(0).optional(),
       consumptionRatePerHour: z.number().min(0).optional(),
@@ -190,6 +196,7 @@ export const bomRouter = router({
         machineId: input.machineId,
         slotCode: input.slotCode ?? null,
         componentCode: input.componentCode,
+        materialId: input.materialId ?? null,
         supplierLotId: input.supplierLotId ?? null,
         qtyOnFeeder: String(input.qtyOnFeeder ?? 0),
         consumptionRatePerHour: input.consumptionRatePerHour != null ? String(input.consumptionRatePerHour) : null,

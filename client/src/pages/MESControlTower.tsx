@@ -4,8 +4,15 @@ import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { toast } from "sonner";
 import {
   Boxes,
   GitMerge,
@@ -14,6 +21,7 @@ import {
   AlertTriangle,
   Clock,
   Gauge,
+  Plus,
 } from "lucide-react";
 
 function StatusBadge({ value }: { value?: string | null }) {
@@ -240,6 +248,7 @@ export default function MESControlTower() {
 
           {/* Traceability */}
           <TabsContent value="trace" className="space-y-4">
+            <MaterialFlowPanel />
             <Card>
               <CardHeader>
                 <CardTitle>{t("mesControlTower.lotDispositions", "Quyết định lô (genealogy)")}</CardTitle>
@@ -324,5 +333,130 @@ export default function MESControlTower() {
         </Tabs>
       </div>
     </DashboardLayout>
+  );
+}
+
+/**
+ * P2 — Material-flow write UI. Surfaces the now-writable supplier-lot /
+ * material-receipt shells and lets an operator record a lot disposition
+ * (release/rework/scrap/return/hold/quarantine) so the genealogy chain gets real
+ * decision rows. All procedures live on mesControlTowerRouter.
+ */
+function MaterialFlowPanel() {
+  const { t } = useTranslation();
+  const receipts = trpc.mesControlTower.listMaterialReceipts.useQuery({ limit: 50 });
+  const supplierLots = trpc.mesControlTower.listSupplierLots.useQuery({ limit: 50 });
+  const utils = trpc.useUtils();
+
+  const [d, setD] = useState({ lotNumber: "", disposition: "rework", quantity: "1", reason: "" });
+  const createDisp = trpc.mesControlTower.createLotDisposition.useMutation({
+    onSuccess: () => {
+      toast.success(t("mesControlTower.dispositionCreated", "Đã ghi quyết định lô"));
+      setD({ lotNumber: "", disposition: "rework", quantity: "1", reason: "" });
+      utils.mesControlTower.listDispositions.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <GitMerge className="h-4 w-4" /> {t("mesControlTower.recordDisposition", "Ghi quyết định lô")}
+          </CardTitle>
+          <CardDescription>{t("mesControlTower.recordDispositionDesc", "Tạo bản ghi xử lý lô cho truy xuất nguồn gốc")}</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-end gap-2">
+          <div>
+            <Label>{t("mesControlTower.lot", "Lô")}</Label>
+            <Input value={d.lotNumber} onChange={(e) => setD({ ...d, lotNumber: e.target.value })} className="w-40" placeholder="LOT-..." />
+          </div>
+          <div>
+            <Label>{t("mesControlTower.disposition", "Quyết định")}</Label>
+            <Select value={d.disposition} onValueChange={(v) => setD({ ...d, disposition: v })}>
+              <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {["release", "rework", "scrap", "return", "hold", "quarantine"].map((x) => (
+                  <SelectItem key={x} value={x}>{x}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>{t("mesControlTower.quantity", "Số lượng")}</Label>
+            <Input value={d.quantity} onChange={(e) => setD({ ...d, quantity: e.target.value })} className="w-24" />
+          </div>
+          <div className="flex-1 min-w-40">
+            <Label>{t("mesControlTower.reason", "Lý do")}</Label>
+            <Input value={d.reason} onChange={(e) => setD({ ...d, reason: e.target.value })} placeholder="..." />
+          </div>
+          <Button
+            disabled={!d.lotNumber || createDisp.isPending}
+            onClick={() => createDisp.mutate({
+              lotNumber: d.lotNumber,
+              disposition: d.disposition as any,
+              quantity: Number(d.quantity) || 1,
+              reason: d.reason || undefined,
+            })}
+          ><Plus className="mr-1 h-4 w-4" /> {t("common.add", "Thêm")}</Button>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle>{t("mesControlTower.supplierLots", "Lô nhà cung cấp")}</CardTitle></CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>{t("mesControlTower.lot", "Lô")}</TableHead>
+                <TableHead>{t("mesControlTower.material", "Vật liệu")}</TableHead>
+                <TableHead>{t("mesControlTower.quantity", "SL")}</TableHead>
+                <TableHead>{t("mesControlTower.status", "Trạng thái")}</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {(supplierLots.data ?? []).length === 0 && (
+                  <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground">{t("common.noData", "Chưa có dữ liệu")}</TableCell></TableRow>
+                )}
+                {(supplierLots.data ?? []).map((l: any) => (
+                  <TableRow key={l.id}>
+                    <TableCell className="font-mono text-xs">{l.supplierLotNumber}</TableCell>
+                    <TableCell>{l.materialCode}</TableCell>
+                    <TableCell>{l.quantity}</TableCell>
+                    <TableCell><StatusBadge value={l.status} /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>{t("mesControlTower.materialReceipts", "Phiếu nhận vật liệu")}</CardTitle></CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>{t("mesControlTower.receipt", "Phiếu")}</TableHead>
+                <TableHead>{t("mesControlTower.material", "Vật liệu")}</TableHead>
+                <TableHead>{t("mesControlTower.supplier", "NCC")}</TableHead>
+                <TableHead>{t("mesControlTower.quantity", "SL")}</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {(receipts.data ?? []).length === 0 && (
+                  <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground">{t("common.noData", "Chưa có dữ liệu")}</TableCell></TableRow>
+                )}
+                {(receipts.data ?? []).map((r: any) => (
+                  <TableRow key={r.id}>
+                    <TableCell className="font-mono text-xs">{r.receiptNumber}</TableCell>
+                    <TableCell>{r.materialCode}</TableCell>
+                    <TableCell>{r.supplierCode ?? r.supplierName ?? "—"}</TableCell>
+                    <TableCell>{r.quantity}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }
