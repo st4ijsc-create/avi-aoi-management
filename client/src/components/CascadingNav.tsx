@@ -1,0 +1,537 @@
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { NavGroup, NavItem, buildModuleL2 } from "@/lib/navigation";
+import { cn } from "@/lib/utils";
+import { useIsCoarsePointer } from "@/hooks/useMobile";
+
+/**
+ * R4 — Inline-accordion navigation with a floating Level-3 page menu.
+ *
+ * Level 1: module rows in the sidebar (icon + label + chevron). Click a module →
+ *   its categories drop straight down inline below it (accordion), like a classic
+ *   expanding sidebar.
+ * Level 2: category rows rendered INLINE under the open module. Orphan / flat
+ *   (section-less) modules drop their pages directly as item rows (no Level 3).
+ * Level 3: the pages of a category. Fine pointer → a floating menu anchored beside
+ *   the hovered category row (keeps Level 2 compact). Touch (coarse) → the pages
+ *   expand inline under the tapped category instead (single-column drill).
+ *
+ * Triggers: L1→L2 = click (toggle accordion). L2→L3 = hover (fine, ~120ms close-
+ * delay so the cursor can reach the floating menu) / tap (touch, inline). Esc +
+ * click-outside + navigation close all.
+ *
+ * The `groups` prop is ALREADY role/permission/license-filtered — never re-filter
+ * here. The Level-3 floating menu uses fixed positioning (with horizontal flip/clamp)
+ * so it is never clipped by the sidebar overflow or the viewport edge.
+ */
+
+const CLOSE_DELAY_MS = 120;
+const PANEL_WIDTH = 240;
+const PANEL_GAP = 6;
+
+interface CascadingNavProps {
+  groups: NavGroup[];
+  currentPath: string;
+  onNavigate: (href: string) => void;
+}
+
+export function CascadingNav({ groups, currentPath, onNavigate }: CascadingNavProps) {
+  const { t } = useTranslation();
+  const [activeModuleId, setActiveModuleId] = useState<string | null>(null);
+  const [hoverCategoryKey, setHoverCategoryKey] = useState<string | null>(null);
+  // Touch devices (tablets/phones in landscape that still show the rail): switch
+  // Level-2→3 from hover to tap and expand items INLINE in the Level-2 panel
+  // (single-column drill) instead of opening a separate Level-3 side flyout — this
+  // avoids the rail+L2+L3 horizontal overflow on narrow touch screens.
+  const coarse = useIsCoarsePointer();
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const categoryRowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const activeGroup = groups.find(g => g.id === activeModuleId) ?? null;
+
+  const closeAll = useCallback(() => {
+    setActiveModuleId(null);
+    setHoverCategoryKey(null);
+  }, []);
+
+  // Click-outside (pointerdown) closes Level-2 & Level-3.
+  useEffect(() => {
+    if (!activeModuleId) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (containerRef.current?.contains(target as Node)) return;
+      if (target?.closest?.("[data-cascading-panel]")) return;
+      closeAll();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [activeModuleId, closeAll]);
+
+  // Esc closes panels.
+  useEffect(() => {
+    if (!activeModuleId) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        closeAll();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [activeModuleId, closeAll]);
+
+  // Clear any pending close timer on unmount.
+  useEffect(
+    () => () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+    },
+    [],
+  );
+
+  const cancelClose = useCallback(() => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  }, []);
+
+  const scheduleCategoryClose = useCallback(() => {
+    cancelClose();
+    closeTimer.current = setTimeout(() => setHoverCategoryKey(null), CLOSE_DELAY_MS);
+  }, [cancelClose]);
+
+  const handleModuleClick = useCallback((groupId: string) => {
+    setHoverCategoryKey(null);
+    setActiveModuleId(prev => (prev === groupId ? null : groupId));
+  }, []);
+
+  // Touch: tapping a category toggles its inline expansion (tap again collapses).
+  const handleToggleCategory = useCallback(
+    (key: string) => {
+      cancelClose();
+      setHoverCategoryKey(prev => (prev === key ? null : key));
+    },
+    [cancelClose],
+  );
+
+  const handleNavigate = useCallback(
+    (href: string) => {
+      onNavigate(href);
+      closeAll();
+    },
+    [onNavigate, closeAll],
+  );
+
+  const openCategory = useCallback(
+    (key: string) => {
+      cancelClose();
+      setHoverCategoryKey(key);
+    },
+    [cancelClose],
+  );
+
+  return (
+    <div ref={containerRef} className="flex flex-col gap-0.5 px-2" data-cascading-nav>
+      {groups.map(group => {
+        const moduleHasActive = group.items.some(item => item.href === currentPath);
+        const isOpen = group.id === activeModuleId;
+        const isActive = isOpen || moduleHasActive;
+        const l2 = buildModuleL2(group);
+        return (
+          <div key={group.id}>
+            {/* Level 1 — module row (accordion header). Click drops categories straight down. */}
+            <button
+              type="button"
+              aria-expanded={isOpen}
+              onClick={() => handleModuleClick(group.id)}
+              className={cn(
+                "flex w-full items-center gap-3 rounded-full px-3 text-sm transition-colors",
+                coarse ? "py-3" : "py-2.5",
+                "hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                isActive ? "font-medium text-primary" : "text-sidebar-foreground",
+              )}
+            >
+              <span className={isActive ? "text-primary" : "text-muted-foreground"}>
+                {group.icon}
+              </span>
+              <span className="flex-1 text-left">{t(group.label)}</span>
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                  isOpen && "rotate-180",
+                )}
+              />
+            </button>
+
+            {/* Level 2 — drops straight down inline under the module. Hub pages (with
+                their own in-page tabs) are direct links; the rest stay grouped as
+                categories that open a Level-3 menu. */}
+            {isOpen && (
+              <div className="mt-0.5 space-y-0.5 pl-3">
+                {l2.map(entry => {
+                  // Hub page → direct link at Level 2 (no Level-3).
+                  if (entry.kind === "link") {
+                    return (
+                      <div
+                        key={entry.item.href}
+                        onMouseEnter={coarse ? undefined : scheduleCategoryClose}
+                      >
+                        <ItemRow
+                          item={entry.item}
+                          isActive={currentPath === entry.item.href}
+                          onNavigate={handleNavigate}
+                          variant="pill"
+                        />
+                      </div>
+                    );
+                  }
+                  // Category → opens the Level-3 floating menu on hover (fine pointer)
+                  // or expands its items inline on tap (touch).
+                  const categoryHasActive = entry.items.some(i => i.href === currentPath);
+                  const isCatOpen = hoverCategoryKey === entry.key;
+                  return (
+                    <div key={entry.key}>
+                      <button
+                        ref={el => {
+                          categoryRowRefs.current[entry.key] = el;
+                        }}
+                        type="button"
+                        aria-haspopup="menu"
+                        aria-expanded={isCatOpen}
+                        onMouseEnter={coarse ? undefined : () => openCategory(entry.key)}
+                        onMouseLeave={coarse ? undefined : scheduleCategoryClose}
+                        onFocus={coarse ? undefined : () => openCategory(entry.key)}
+                        onClick={() =>
+                          coarse ? handleToggleCategory(entry.key) : openCategory(entry.key)
+                        }
+                        className={cn(
+                          "flex w-full items-center gap-3 rounded-full px-3 text-sm transition-colors",
+                          coarse ? "py-3" : "py-2",
+                          "hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          isCatOpen && "bg-sidebar-accent",
+                          categoryHasActive ? "font-medium text-primary" : "text-popover-foreground",
+                        )}
+                      >
+                        <span className={categoryHasActive ? "text-primary" : "text-muted-foreground"}>
+                          {entry.items[0]?.icon}
+                        </span>
+                        <span className="flex-1 text-left">{t(entry.label)}</span>
+                        <ChevronRight
+                          className={cn(
+                            "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                            coarse && isCatOpen && "rotate-90",
+                          )}
+                        />
+                      </button>
+                      {/* Touch: inline-expanded items (replaces the Level-3 side flyout). */}
+                      {coarse && isCatOpen && (
+                        <div className="mt-0.5 space-y-0.5 pl-3">
+                          {entry.items.map(item => (
+                            <ItemRow
+                              key={item.href}
+                              item={item}
+                              isActive={currentPath === item.href}
+                              onNavigate={handleNavigate}
+                              variant="pill"
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Level 3 — items flyout (fine pointer only; touch expands inline above). */}
+      {!coarse && activeGroup && hoverCategoryKey && (
+        <Level3Panel
+          anchorEl={categoryRowRefs.current[hoverCategoryKey] ?? null}
+          group={activeGroup}
+          categoryKey={hoverCategoryKey}
+          currentPath={currentPath}
+          onNavigate={handleNavigate}
+          onEnter={cancelClose}
+          onLeave={scheduleCategoryClose}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Floating-panel position hook ────────────────────────────────────────────
+// Anchors a `panelWidth`-wide panel to the right of `anchorEl`. If it would overflow
+// the right viewport edge, it flips to the LEFT of the anchor; if it still won't fit
+// it clamps inside the margin — so panels are never clipped off-screen (narrow
+// tablets, near-edge Level-3 flyouts).
+function useAnchoredPosition(anchorEl: HTMLElement | null, panelWidth: number) {
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!anchorEl) {
+      setPos(null);
+      return;
+    }
+    const compute = () => {
+      const rect = anchorEl.getBoundingClientRect();
+      const margin = 8;
+      let top = rect.top;
+      const maxTop = window.innerHeight - 48;
+      if (top > maxTop) top = maxTop;
+      if (top < margin) top = margin;
+
+      // Prefer right of the anchor; flip left on overflow; clamp as last resort.
+      let left = rect.right + PANEL_GAP;
+      if (left + panelWidth > window.innerWidth - margin) {
+        const flipped = rect.left - PANEL_GAP - panelWidth;
+        left = flipped >= margin ? flipped : window.innerWidth - margin - panelWidth;
+        if (left < margin) left = margin;
+      }
+      setPos({ left, top });
+    };
+    compute();
+    window.addEventListener("resize", compute);
+    window.addEventListener("scroll", compute, true);
+    return () => {
+      window.removeEventListener("resize", compute);
+      window.removeEventListener("scroll", compute, true);
+    };
+  }, [anchorEl, panelWidth]);
+
+  return pos;
+}
+
+const panelClass =
+  "fixed z-[60] max-h-[80vh] overflow-y-auto rounded-lg border bg-popover p-2 text-popover-foreground shadow-lg";
+
+// ── Level 3 — items flyout ──────────────────────────────────────────────────
+interface Level3PanelProps {
+  anchorEl: HTMLElement | null;
+  group: NavGroup;
+  categoryKey: string;
+  currentPath: string;
+  onNavigate: (href: string) => void;
+  onEnter: () => void;
+  onLeave: () => void;
+}
+
+function Level3Panel({
+  anchorEl,
+  group,
+  categoryKey,
+  currentPath,
+  onNavigate,
+  onEnter,
+  onLeave,
+}: Level3PanelProps) {
+  const { t } = useTranslation();
+  const pos = useAnchoredPosition(anchorEl, PANEL_WIDTH);
+  const entry = buildModuleL2(group).find(e => e.kind === "category" && e.key === categoryKey);
+  if (!pos || !entry || entry.kind !== "category") return null;
+
+  // Portal to <body> so the fixed panel escapes the sidebar's stacking context and
+  // renders above page content (otherwise page cards can paint over it).
+  return createPortal(
+    <div
+      data-cascading-panel
+      role="menu"
+      aria-label={t(entry.label)}
+      className={panelClass}
+      style={{ left: pos.left, top: pos.top, width: PANEL_WIDTH }}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+    >
+      <div className="space-y-0.5">
+        {entry.items.map(item => (
+          <ItemRow
+            key={item.href}
+            item={item}
+            isActive={currentPath === item.href}
+            onNavigate={onNavigate}
+          />
+        ))}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// ── Shared item row ─────────────────────────────────────────────────────────
+interface ItemRowProps {
+  item: NavItem;
+  isActive: boolean;
+  onNavigate: (href: string) => void;
+  /** `pill` → Material 3 expanded-rail styling (used for flat items in Level 2).
+   *  Default (Level 3) keeps the original rounded-lg row, unchanged. */
+  variant?: "default" | "pill";
+}
+
+function ItemRow({ item, isActive, onNavigate, variant = "default" }: ItemRowProps) {
+  const { t } = useTranslation();
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={() => onNavigate(item.href)}
+      className={cn(
+        "flex w-full items-center gap-2 text-sm transition-colors",
+        variant === "pill" ? "gap-3 rounded-full px-3 py-2.5" : "rounded-lg px-2 py-2",
+        "hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        isActive ? "bg-sidebar-accent text-primary font-medium" : "text-popover-foreground",
+      )}
+    >
+      <span className={isActive ? "text-primary" : "text-muted-foreground"}>{item.icon}</span>
+      <span className="flex-1 text-left">{t(item.label)}</span>
+      {item.badge && (
+        <span className="ml-auto rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
+          {item.badge}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// ── Mobile tap-drill navigation ─────────────────────────────────────────────
+/**
+ * Mobile variant rendered inside the existing Sidebar Sheet drawer.
+ * Hover doesn't work on touch, so navigation is a tap-drill stack:
+ *   modules → categories (or flat items) → items, with a Back affordance per level.
+ * Same `groups` prop (already filtered) and `buildModuleL2` data as desktop.
+ */
+interface MobileDrillNavProps {
+  groups: NavGroup[];
+  currentPath: string;
+  onNavigate: (href: string) => void;
+}
+
+export function MobileDrillNav({ groups, currentPath, onNavigate }: MobileDrillNavProps) {
+  const { t } = useTranslation();
+  const [moduleId, setModuleId] = useState<string | null>(null);
+  const [categoryKey, setCategoryKey] = useState<string | null>(null);
+
+  const group = groups.find(g => g.id === moduleId) ?? null;
+
+  // Level 0 — module list.
+  if (!group) {
+    return (
+      <div className="space-y-0.5 px-2">
+        {groups.map(g => {
+          const isActive = g.items.some(item => item.href === currentPath);
+          return (
+            <button
+              key={g.id}
+              type="button"
+              onClick={() => {
+                setModuleId(g.id);
+                setCategoryKey(null);
+              }}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm transition-colors",
+                "hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                isActive ? "text-primary font-medium" : "text-sidebar-foreground",
+              )}
+            >
+              <span className={isActive ? "text-primary" : "text-muted-foreground"}>
+                {g.icon}
+              </span>
+              <span className="flex-1 text-left">{t(g.label)}</span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  const l2 = buildModuleL2(group);
+  const activeCategory = l2.find(
+    (e): e is Extract<typeof e, { kind: "category" }> =>
+      e.kind === "category" && e.key === categoryKey,
+  );
+
+  // Level 2 — items inside a selected category (non-hub pages).
+  if (activeCategory) {
+    return (
+      <div className="space-y-0.5 px-2">
+        <button
+          type="button"
+          onClick={() => setCategoryKey(null)}
+          className="mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <ChevronLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="truncate">{t(activeCategory.label)}</span>
+        </button>
+        {activeCategory.items.map(item => (
+          <ItemRow
+            key={item.href}
+            item={item}
+            isActive={currentPath === item.href}
+            onNavigate={onNavigate}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  // Level 1 — the module's Level-2 list: hub pages as direct links, the rest as
+  // categories that drill into their items.
+  return (
+    <div className="space-y-0.5 px-2">
+      <button
+        type="button"
+        onClick={() => {
+          setModuleId(null);
+          setCategoryKey(null);
+        }}
+        className="mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <ChevronLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className="truncate">{t(group.label)}</span>
+      </button>
+      {l2.map(entry => {
+        if (entry.kind === "link") {
+          return (
+            <ItemRow
+              key={entry.item.href}
+              item={entry.item}
+              isActive={currentPath === entry.item.href}
+              onNavigate={onNavigate}
+            />
+          );
+        }
+        const categoryHasActive = entry.items.some(i => i.href === currentPath);
+        return (
+          <button
+            key={entry.key}
+            type="button"
+            onClick={() => setCategoryKey(entry.key)}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm transition-colors",
+              "hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              categoryHasActive ? "text-primary font-medium" : "text-sidebar-foreground",
+            )}
+          >
+            <span className={categoryHasActive ? "text-primary" : "text-muted-foreground"}>
+              {entry.items[0]?.icon}
+            </span>
+            <span className="flex-1 text-left">{t(entry.label)}</span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </button>
+        );
+      })}
+    </div>
+  );
+}

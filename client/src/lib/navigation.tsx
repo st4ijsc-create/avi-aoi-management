@@ -96,6 +96,8 @@ export interface NavItem {
   requiredPermission?: string;
   /** Permission category this item belongs to */
   permissionCategory?: string;
+  /** Cấp-2 section key; items sharing a key are grouped under one sub-header (i18n nav.section.<key>) */
+  section?: string;
 }
 
 export interface NavGroup {
@@ -108,6 +110,8 @@ export interface NavGroup {
   requiredRole?: 'admin' | 'user';
   /** Permission category that controls group visibility */
   permissionCategory?: string;
+  /** Ordered Cấp-2 sections for this group; absent → render flat (no sub-headers) */
+  sections?: { key: string; label: string }[];
 }
 
 /**
@@ -197,6 +201,12 @@ export const navGroups: NavGroup[] = [
     description: "nav.productionGroupDesc",
     defaultOpen: false,
     permissionCategory: "production",
+    sections: [
+      { key: "mes", label: "nav.section.mes" },
+      { key: "inspection", label: "nav.section.inspection" },
+      { key: "ordersSchedule", label: "nav.section.ordersSchedule" },
+      { key: "bom", label: "nav.section.bom" },
+    ],
     items: [
       {
         href: "/production-dashboard",
@@ -205,6 +215,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.productionDashboardDesc",
         requiredPermission: "dashboard_view",
         permissionCategory: "dashboard",
+        section: "mes",
       },
       {
         href: "/mes-control-tower",
@@ -213,6 +224,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.mesControlTowerDesc",
         requiredPermission: "analytics_oee",
         permissionCategory: "analytics",
+        section: "mes",
       },
       {
         href: "/wip-dashboard",
@@ -221,6 +233,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.wipDashboardDesc",
         requiredPermission: "analytics_oee",
         permissionCategory: "analytics",
+        section: "mes",
       },
       {
         href: "/traceability",
@@ -229,6 +242,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.traceabilityDesc",
         requiredPermission: "analytics_oee",
         permissionCategory: "analytics",
+        section: "mes",
       },
       {
         href: "/digital-twin",
@@ -237,6 +251,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.digitalTwinDesc",
         requiredPermission: "analytics_oee",
         permissionCategory: "analytics",
+        section: "mes",
       },
       {
         href: "/history",
@@ -245,6 +260,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.historyPageDesc",
         requiredPermission: "history_view",
         permissionCategory: "history",
+        section: "inspection",
       },
       {
         href: "/aoi-packages",
@@ -253,6 +269,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.aoiPackagesDesc",
         requiredPermission: "history_view",
         permissionCategory: "history",
+        section: "inspection",
       },
       {
         href: "/production-orders",
@@ -261,6 +278,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.productionOrdersDesc",
         requiredPermission: "production_orders",
         permissionCategory: "production",
+        section: "ordersSchedule",
       },
       {
         href: "/production-scheduling",
@@ -269,6 +287,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.productionSchedulingDesc",
         requiredPermission: "production_orders",
         permissionCategory: "production",
+        section: "ordersSchedule",
       },
       {
         href: "/production-signoff",
@@ -277,6 +296,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.productionSignoffDesc",
         requiredPermission: "production_orders",
         permissionCategory: "production",
+        section: "ordersSchedule",
       },
       {
         href: "/history-export-scheduling",
@@ -285,6 +305,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.exportScheduleDesc",
         requiredPermission: "reports_schedule",
         permissionCategory: "reports",
+        section: "ordersSchedule",
       },
       {
         href: "/bom-management",
@@ -293,6 +314,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.bomManagementDesc",
         requiredPermission: "mes_bom",
         permissionCategory: "mes_bom",
+        section: "bom",
       },
     ],
   },
@@ -359,6 +381,13 @@ export const navGroups: NavGroup[] = [
     description: "nav.devicesGroupDesc",
     defaultOpen: false,
     permissionCategory: "machine_monitoring",
+    sections: [
+      { key: "monitoring", label: "nav.section.monitoring" },
+      { key: "telemetry", label: "nav.section.telemetry" },
+      { key: "onboarding", label: "nav.section.onboarding" },
+      { key: "engineering", label: "nav.section.engineering" },
+      { key: "maintenance", label: "nav.section.maintenance" },
+    ],
     items: [
       // — Status & health —
       {
@@ -370,6 +399,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.deviceMonitorDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
+        section: "monitoring",
       },
       {
         href: "/machine-health",
@@ -378,6 +408,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.machineHealthDesc",
         requiredPermission: "analytics_machine_health",
         permissionCategory: "analytics",
+        section: "monitoring",
       },
       {
         href: "/oee-dashboard",
@@ -386,6 +417,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.oeeDashboardDesc",
         requiredPermission: "analytics_oee",
         permissionCategory: "analytics",
+        section: "monitoring",
       },
       {
         href: "/factory-live-map",
@@ -394,6 +426,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.factoryLiveMapDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
+        section: "monitoring",
       },
       // — MQTT / telemetry —
       {
@@ -403,6 +436,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.mqttDashboardDesc",
         requiredPermission: "mqtt_monitoring",
         permissionCategory: "mqtt",
+        section: "telemetry",
       },
       {
         href: "/mqtt-bulletin",
@@ -411,6 +445,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.mqttBulletinDesc",
         requiredPermission: "mqtt_bulletin",
         permissionCategory: "mqtt",
+        section: "telemetry",
       },
       {
         href: "/mqtt-replay",
@@ -419,6 +454,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.mqttReplayDesc",
         requiredPermission: "mqtt_monitoring",
         permissionCategory: "mqtt",
+        section: "telemetry",
       },
       {
         href: "/mqtt-clients",
@@ -428,6 +464,7 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin',
         requiredPermission: "mqtt_monitoring",
         permissionCategory: "mqtt",
+        section: "telemetry",
       },
       // — Onboarding & adapters —
       {
@@ -437,6 +474,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.machineOnboardingDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
+        section: "onboarding",
       },
       {
         href: "/machine-registration",
@@ -445,6 +483,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.machineRegistrationDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
+        section: "onboarding",
       },
       {
         href: "/device-adapters",
@@ -453,6 +492,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.deviceAdaptersDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
+        section: "onboarding",
       },
       {
         href: "/edge-nodes",
@@ -461,6 +501,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.edgeNodesDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
+        section: "onboarding",
       },
       {
         // P4-D: robot/AGV registry + telemetry + job log (read-mostly; motion via HITL dispatcher)
@@ -470,6 +511,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.robotControlDesc",
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
+        section: "onboarding",
       },
       {
         // P4-D: Factory Control Plane (equipment capability/PackML + FOE + edge runtime, read-only)
@@ -479,6 +521,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.controlPlaneDesc",
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
+        section: "onboarding",
       },
       // — Engineering & Control —
       {
@@ -488,6 +531,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.engineeringWorkspaceDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
+        section: "engineering",
       },
       {
         href: "/recipes",
@@ -496,6 +540,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.recipesDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
+        section: "engineering",
       },
       {
         href: "/interlock-rules",
@@ -504,6 +549,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.interlockRulesDesc",
         requiredPermission: "interlock",
         permissionCategory: "interlock",
+        section: "engineering",
       },
       {
         href: "/orchestration-studio",
@@ -512,6 +558,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.orchestrationStudioDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
+        section: "engineering",
       },
       {
         href: "/factory-floor-editor",
@@ -520,6 +567,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.factoryFloorEditorDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
+        section: "engineering",
       },
       {
         href: "/rf-test-cell",
@@ -528,6 +576,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.rfTestCellDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
+        section: "engineering",
       },
       {
         href: "/cell-twin",
@@ -536,6 +585,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.cellTwinDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
+        section: "engineering",
       },
       // — Maintenance / predictive —
       {
@@ -545,6 +595,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.technicianCopilotDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
+        section: "maintenance",
       },
       {
         href: "/work-orders",
@@ -553,6 +604,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.workOrdersDesc",
         requiredPermission: "machine_monitoring",
         permissionCategory: "machine_monitoring",
+        section: "maintenance",
       },
       {
         href: "/alerts",
@@ -561,6 +613,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.alertsListDesc",
         requiredPermission: "mqtt_alerts",
         permissionCategory: "mqtt",
+        section: "maintenance",
       },
       {
         href: "/mqtt-alerts",
@@ -569,6 +622,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.alertRulesDesc",
         requiredPermission: "mqtt_alerts",
         permissionCategory: "mqtt",
+        section: "maintenance",
       },
       {
         href: "/monitoring-setting",
@@ -577,6 +631,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.monitoringSettingDesc",
         requiredPermission: "machine_status",
         permissionCategory: "machine_monitoring",
+        section: "maintenance",
       },
     ],
   },
@@ -592,6 +647,12 @@ export const navGroups: NavGroup[] = [
     description: "nav.analyticsGroupDesc",
     defaultOpen: false,
     permissionCategory: "analytics",
+    sections: [
+      { key: "reports", label: "nav.section.reports" },
+      { key: "analysis", label: "nav.section.analysis" },
+      { key: "energy", label: "nav.section.energy" },
+      { key: "targetsSettings", label: "nav.section.targetsSettings" },
+    ],
     items: [
       {
         href: "/reports",
@@ -600,6 +661,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.reportsPageDesc",
         requiredPermission: "reports_view",
         permissionCategory: "reports",
+        section: "reports",
       },
       {
         href: "/scheduled-reports",
@@ -608,6 +670,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.scheduledReportsDesc",
         requiredPermission: "reports_schedule",
         permissionCategory: "reports",
+        section: "reports",
       },
       {
         href: "/report-builder",
@@ -616,6 +679,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.reportBuilderDesc",
         requiredPermission: "reports_view",
         permissionCategory: "reports",
+        section: "reports",
       },
       {
         href: "/category-analytics",
@@ -624,6 +688,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.categoryAnalyticsDesc",
         requiredPermission: "analytics_category",
         permissionCategory: "analytics",
+        section: "analysis",
       },
       {
         href: "/correlation-analysis",
@@ -632,6 +697,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.correlationAnalysisDesc",
         requiredPermission: "analytics_advanced",
         permissionCategory: "analytics",
+        section: "analysis",
       },
       {
         href: "/data-comparison",
@@ -640,6 +706,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.dataComparisonDesc",
         requiredPermission: "analytics_advanced",
         permissionCategory: "analytics",
+        section: "analysis",
       },
       {
         href: "/realtime-report",
@@ -648,6 +715,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.realtimeReportDesc",
         requiredPermission: "analytics_oee",
         permissionCategory: "analytics",
+        section: "analysis",
       },
       {
         href: "/energy-analytics",
@@ -656,6 +724,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.energyAnalyticsDesc",
         requiredPermission: "energy",
         permissionCategory: "analytics",
+        section: "energy",
       },
       {
         href: "/carbon-dashboard",
@@ -664,6 +733,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.carbonDashboardDesc",
         requiredPermission: "analytics_oee",
         permissionCategory: "analytics",
+        section: "energy",
       },
       {
         href: "/pdf-reports",
@@ -672,6 +742,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.pdfReportsDesc",
         requiredPermission: "reports_view",
         permissionCategory: "reports",
+        section: "reports",
       },
       {
         href: "/powerpoint-export",
@@ -680,6 +751,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.powerpointExportDesc",
         requiredPermission: "reports_view",
         permissionCategory: "reports",
+        section: "reports",
       },
       {
         href: "/threshold-approvals",
@@ -688,6 +760,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.thresholdApprovalsDesc",
         requiredPermission: "settings_alerts",
         permissionCategory: "analytics",
+        section: "targetsSettings",
       },
       {
         href: "/oee-target-settings",
@@ -696,6 +769,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.oeeTargetsDesc",
         requiredPermission: "analytics_oee_targets",
         permissionCategory: "analytics",
+        section: "targetsSettings",
       },
       {
         href: "/analytics-setting",
@@ -704,6 +778,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.analyticsSettingDesc",
         requiredPermission: "reports_view",
         permissionCategory: "reports",
+        section: "targetsSettings",
       },
     ],
   },
@@ -721,6 +796,12 @@ export const navGroups: NavGroup[] = [
     defaultOpen: false,
     // No permissionCategory → group is visible to every authenticated role; the
     // AI Workspace items below are read-open. Admin-only items below still gate.
+    sections: [
+      { key: "aiWorkspace", label: "nav.section.aiWorkspace" },
+      { key: "aiControlPlane", label: "nav.section.aiControlPlane" },
+      { key: "aiOps", label: "nav.section.aiOps" },
+      { key: "aiVision", label: "nav.section.aiVision" },
+    ],
     items: [
       // ─ AI Workspace (read-open, all roles) ─
       {
@@ -728,18 +809,21 @@ export const navGroups: NavGroup[] = [
         label: "nav.aiChat",
         icon: <MessageSquare className="h-4 w-4" />,
         description: "nav.aiChatDesc",
+        section: "aiWorkspace",
       },
       {
         href: "/ai-hub",
         label: "nav.aiHub",
         icon: <Sparkles className="h-4 w-4" />,
         description: "nav.aiHubDesc",
+        section: "aiWorkspace",
       },
       {
         href: "/management-insight",
         label: "nav.managementInsight",
         icon: <Sparkles className="h-4 w-4" />,
         description: "nav.managementInsightDesc",
+        section: "aiWorkspace",
       },
       // ─ AI Control Plane (admin) ─
       {
@@ -749,6 +833,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiBrainDashboardDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
+        section: "aiControlPlane",
       },
       {
         href: "/ai-monitoring",
@@ -757,6 +842,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiMonitoringDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
+        section: "aiControlPlane",
       },
       {
         href: "/ai-performance",
@@ -765,6 +851,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiPerformanceDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
+        section: "aiControlPlane",
       },
       {
         href: "/ai-models",
@@ -773,6 +860,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiModelManagementDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
+        section: "aiControlPlane",
       },
       {
         href: "/model-versions",
@@ -781,6 +869,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.modelVersionsDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
+        section: "aiControlPlane",
       },
       {
         href: "/ai-settings",
@@ -790,6 +879,7 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin',
         requiredPermission: "admin_system",
         permissionCategory: "admin",
+        section: "aiControlPlane",
       },
       // ─ AI Ops (admin) ─
       {
@@ -799,6 +889,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiActiveLearningDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
+        section: "aiOps",
       },
       {
         href: "/ai-batch-jobs",
@@ -807,6 +898,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiBatchJobsDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
+        section: "aiOps",
       },
       {
         href: "/ai-data-processing",
@@ -815,6 +907,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiDataProcessingDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
+        section: "aiOps",
       },
       {
         href: "/ai-time-series",
@@ -823,6 +916,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiTimeSeriesDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
+        section: "aiOps",
       },
       {
         href: "/ai-reports",
@@ -831,6 +925,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiReportsDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
+        section: "aiOps",
       },
       // ─ AI Vision (admin) ─
       {
@@ -840,6 +935,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiQualityGateDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
+        section: "aiVision",
       },
       {
         href: "/ai-image-search",
@@ -848,6 +944,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.aiImageSearchDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
+        section: "aiVision",
       },
       {
         href: "/ai-advanced-vision-lab",
@@ -856,6 +953,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.advancedVisionLabDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
+        section: "aiVision",
       },
       {
         href: "/anomaly-banks",
@@ -864,6 +962,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.anomalyBanksDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
+        section: "aiVision",
       },
       {
         href: "/mask-annotation",
@@ -872,6 +971,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.maskAnnotationDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
+        section: "aiVision",
       },
       {
         href: "/causal-graph",
@@ -880,6 +980,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.causalGraphDesc",
         requiredPermission: "analytics_root_cause",
         permissionCategory: "analytics",
+        section: "aiVision",
       },
     ],
   },
@@ -896,6 +997,12 @@ export const navGroups: NavGroup[] = [
     defaultOpen: false,
     requiredRole: 'admin',
     permissionCategory: "admin",
+    sections: [
+      { key: "securityAccess", label: "nav.section.securityAccess" },
+      { key: "platform", label: "nav.section.platform" },
+      { key: "masterData", label: "nav.section.masterData" },
+      { key: "factoryConfig", label: "nav.section.factoryConfig" },
+    ],
     items: [
       {
         href: "/admin-home",
@@ -904,6 +1011,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.adminHomeDesc",
         requiredRole: 'admin',
         permissionCategory: "admin",
+        section: "securityAccess",
       },
       {
         href: "/users",
@@ -913,6 +1021,7 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin',
         requiredPermission: "admin_users",
         permissionCategory: "admin",
+        section: "securityAccess",
       },
       {
         href: "/role-builder",
@@ -922,6 +1031,7 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin',
         requiredPermission: "admin_users",
         permissionCategory: "admin",
+        section: "securityAccess",
       },
       {
         href: "/audit-logs?tab=enhanced",
@@ -931,6 +1041,7 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin',
         requiredPermission: "admin_system",
         permissionCategory: "admin",
+        section: "securityAccess",
       },
       {
         href: "/license",
@@ -940,6 +1051,7 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin',
         requiredPermission: "admin_system",
         permissionCategory: "admin",
+        section: "securityAccess",
       },
       {
         href: "/api-keys",
@@ -949,6 +1061,7 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin',
         requiredPermission: "admin_system",
         permissionCategory: "admin",
+        section: "securityAccess",
       },
       {
         href: "/sites",
@@ -958,6 +1071,7 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin',
         requiredPermission: "admin_system",
         permissionCategory: "admin",
+        section: "platform",
       },
       {
         href: "/federation-dashboard",
@@ -967,6 +1081,7 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin',
         requiredPermission: "admin_system",
         permissionCategory: "admin",
+        section: "platform",
       },
       {
         href: "/modules",
@@ -976,6 +1091,7 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin',
         requiredPermission: "admin_system",
         permissionCategory: "admin",
+        section: "platform",
       },
       {
         href: "/backup-restore",
@@ -985,6 +1101,7 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin',
         requiredPermission: "admin_system",
         permissionCategory: "admin",
+        section: "platform",
       },
       {
         href: "/sessions",
@@ -994,6 +1111,7 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin',
         requiredPermission: "admin_system",
         permissionCategory: "admin",
+        section: "securityAccess",
       },
       // — Master Data / Data Management —
       {
@@ -1003,6 +1121,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.masterDataDesc",
         requiredPermission: "masterdata",
         permissionCategory: "settings",
+        section: "masterData",
       },
       {
         href: "/products",
@@ -1011,6 +1130,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.productsPageDesc",
         requiredPermission: "settings_products",
         permissionCategory: "settings",
+        section: "masterData",
       },
       {
         href: "/product-mapping",
@@ -1019,6 +1139,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.productMappingDesc",
         requiredPermission: "settings_product_mapping",
         permissionCategory: "settings",
+        section: "masterData",
       },
       {
         href: "/layout",
@@ -1027,6 +1148,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.factoryLayoutDesc",
         requiredPermission: "settings_factory",
         permissionCategory: "settings",
+        section: "factoryConfig",
       },
       {
         href: "/workstation-management",
@@ -1035,6 +1157,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.workstationManagementDesc",
         requiredPermission: "settings_factory",
         permissionCategory: "settings",
+        section: "factoryConfig",
       },
       {
         href: "/process-management",
@@ -1043,6 +1166,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.processManagementDesc",
         requiredPermission: "settings_factory",
         permissionCategory: "settings",
+        section: "factoryConfig",
       },
       {
         href: "/datasettings",
@@ -1051,6 +1175,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.dataSettingsPageDesc",
         requiredPermission: "settings_factory",
         permissionCategory: "settings",
+        section: "factoryConfig",
       },
       {
         href: "/corporate-management",
@@ -1060,6 +1185,7 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin',
         requiredPermission: "dashboard_corporate",
         permissionCategory: "dashboard",
+        section: "masterData",
       },
       {
         href: "/settings",
@@ -1068,6 +1194,7 @@ export const navGroups: NavGroup[] = [
         description: "nav.generalSettingsDesc",
         requiredPermission: "settings_view",
         permissionCategory: "settings",
+        section: "platform",
       },
       {
         href: "/admin-setting",
@@ -1077,6 +1204,7 @@ export const navGroups: NavGroup[] = [
         requiredRole: 'admin',
         requiredPermission: "admin_system",
         permissionCategory: "admin",
+        section: "platform",
       },
     ],
   },
@@ -1153,6 +1281,100 @@ export const navItems: NavItem[] = navGroups.flatMap(group => group.items);
 // Helper to get group by item href
 export function getGroupByHref(href: string): NavGroup | undefined {
   return navGroups.find(group => group.items.some(item => item.href === href));
+}
+
+/**
+ * Group an (already role/permission/license-filtered) group's items by their `section`.
+ * Returns ordered buckets following group.sections; items without a section (or groups
+ * without a sections array) fall into a single { key: null } bucket rendered flat.
+ * Empty buckets (all items filtered out) are dropped.
+ */
+export function groupItemsBySection(
+  group: NavGroup,
+): { key: string | null; label: string | null; items: NavItem[] }[] {
+  // No section definition → render flat.
+  if (!group.sections) {
+    return [{ key: null, label: null, items: group.items }];
+  }
+
+  const buckets: { key: string | null; label: string | null; items: NavItem[] }[] = [];
+
+  // Ordered, labelled section buckets — skip any that ended up empty after filtering.
+  for (const { key, label } of group.sections) {
+    const items = group.items.filter(item => item.section === key);
+    if (items.length > 0) {
+      buckets.push({ key, label, items });
+    }
+  }
+
+  // Trailing catch-all for items with no section (or a section not declared in
+  // group.sections) so nothing is ever dropped; rendered flat (no sub-header).
+  const sectionKeys = new Set(group.sections.map(s => s.key));
+  const orphanItems = group.items.filter(
+    item => item.section === undefined || !sectionKeys.has(item.section),
+  );
+  if (orphanItems.length > 0) {
+    buckets.push({ key: null, label: null, items: orphanItems });
+  }
+
+  return buckets;
+}
+
+/**
+ * Hub routes — "settings/management hub" pages that carry their OWN in-page navigation
+ * MENU (a vertical sub-menu of sections, e.g. /monitoring-setting). These are promoted
+ * to Level 2 as directly-clickable entries (click → straight to the page; the page's own
+ * in-page menu is the sub-nav, so no Level-3 flyout). Non-hub pages stay grouped under
+ * their section category with a Level-3 menu. (Flat modules — Overview / Quality / Me —
+ * already render items at Level 2, so a flag here is a no-op for them.)
+ *
+ * To extend: add the href of any page that has a real in-page navigation menu.
+ */
+export const HUB_ROUTES = new Set<string>([
+  "/monitoring-setting", // Devices — vertical sub-menu (registration / devices / MQTT clients / topics / replay / profiles / NG-rate)
+  "/analytics-setting",  // Analytics — settings sub-menu
+  "/settings",           // Admin — general settings sub-menu
+  "/admin-setting",      // Admin — admin settings sub-menu
+  "/datasettings",       // Admin — data settings sub-menu
+  "/dashboard-center",   // Overview (flat — already L2) — dashboard hub sub-menu
+]);
+
+export function isHubItem(item: NavItem): boolean {
+  return HUB_ROUTES.has(item.href);
+}
+
+/** A Level-2 entry: either a directly-clickable hub link, or a category that opens
+ *  a Level-3 menu of its (non-hub) pages. */
+export type L2Entry =
+  | { kind: "link"; item: NavItem }
+  | { kind: "category"; key: string; label: string; items: NavItem[] };
+
+/**
+ * Build the Level-2 list for a module (already role/permission/license-filtered):
+ * hub pages → direct `link` entries; the remaining non-hub pages stay grouped into
+ * `category` entries (Level-3 on hover/tap). Within each section the category is
+ * emitted first, then that section's hub links, so hubs stay near their group.
+ * Flat / orphan items render as direct links (they are already Level 2).
+ */
+export function buildModuleL2(group: NavGroup): L2Entry[] {
+  const out: L2Entry[] = [];
+  for (const bucket of groupItemsBySection(group)) {
+    if (bucket.key === null || bucket.label === null) {
+      for (const item of bucket.items) out.push({ kind: "link", item });
+      continue;
+    }
+    const nonHub = bucket.items.filter(i => !isHubItem(i));
+    const hub = bucket.items.filter(i => isHubItem(i));
+    // Keep a category only when ≥2 non-hub pages remain — a 0/1-item category after
+    // pulling out hubs is noise, so those pages become direct links too.
+    if (nonHub.length >= 2) {
+      out.push({ kind: "category", key: bucket.key, label: bucket.label, items: nonHub });
+    } else {
+      for (const item of nonHub) out.push({ kind: "link", item });
+    }
+    for (const item of hub) out.push({ kind: "link", item });
+  }
+  return out;
 }
 
 type PermissionChecker = (moduleName: string, action: string) => boolean;

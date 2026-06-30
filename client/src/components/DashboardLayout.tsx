@@ -13,35 +13,30 @@ import {
   SidebarFooter,
   SidebarHeader,
   SidebarInset,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
   SidebarProvider,
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Cpu, LogOut, PanelLeft, Key, User, Monitor, ChevronRight } from "lucide-react";
+import { Cpu, LogOut, PanelLeft, Key, User, Monitor, Search, LayoutGrid } from "lucide-react";
+import { CascadingNav, MobileDrillNav } from "./CascadingNav";
+import { BottomNav } from "./BottomNav";
+import { CommandPalette } from "./CommandPalette";
+import { MegaMenuOverlay } from "./MegaMenuOverlay";
 import { NotificationCenter } from "./NotificationCenter";
 import { AIActionInboxLauncher } from "./AIActionInbox";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { ThemeToggle } from "./ThemeToggle";
-import { CSSProperties, ReactNode, useEffect, useRef, useState } from "react";
+import { CSSProperties, ReactNode, useEffect, useState } from "react";
 import { useLocation, Link } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
-import { navGroups, NavGroup, NavItem, hasAccessToGroup, getFilteredNavGroups } from "@/lib/navigation";
+import { navGroups, NavGroup, NavItem, getFilteredNavGroups } from "@/lib/navigation";
 import { usePermissions } from "@/_core/hooks/usePermissions";
 import { useLicenseModules } from "@/hooks/useLicenseModules";
 import { LicenseEnforcementBanner } from "./LicenseEnforcementBanner";
 import { PermissionExpiryBanner } from "./PermissionExpiryBanner";
-import { roleSidebarWidth } from "@/hooks/useRoleSidebarDefault";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 import { useSpcAlertToast } from "@/hooks/useSpcAlertToast";
@@ -53,11 +48,10 @@ type DashboardLayoutProps = {
   currentPath?: string;
 };
 
-const SIDEBAR_WIDTH_KEY = "sidebar-width";
-const SIDEBAR_GROUPS_KEY = "sidebar-groups-state";
-const DEFAULT_WIDTH = 260;
-const MIN_WIDTH = 200;
-const MAX_WIDTH = 400;
+// R4: desktop nav is an inline-accordion sidebar — modules expand their categories
+// straight down (only the Level-3 page menu floats). A comfortable fixed width holds
+// the module + category labels; the old resizable/persisted width no longer drives it.
+const RAIL_WIDTH = 264;
 
 export default function DashboardLayout({
   children,
@@ -67,20 +61,6 @@ export default function DashboardLayout({
 }: DashboardLayoutProps) {
   const { loading, user } = useAuth();
   const { t } = useTranslation();
-  // U7: when no width is saved, seed a role-appropriate default (floor roles → narrower).
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-    if (saved) return parseInt(saved, 10);
-    return roleSidebarWidth(user?.role) ?? DEFAULT_WIDTH;
-  });
-
-  // Persist only AFTER the first mount so the role default isn't immediately overwritten
-  // before the user makes a choice.
-  const firstPersist = useRef(true);
-  useEffect(() => {
-    if (firstPersist.current) { firstPersist.current = false; return; }
-    localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
-  }, [sidebarWidth]);
 
   if (loading) {
     return <DashboardLayoutSkeleton />
@@ -119,12 +99,12 @@ export default function DashboardLayout({
     <SidebarProvider
       style={
         {
-          "--sidebar-width": `${sidebarWidth}px`,
+          // R1: desktop nav is a fixed-width icon rail.
+          "--sidebar-width": `${RAIL_WIDTH}px`,
         } as CSSProperties
       }
     >
-      <DashboardLayoutContent 
-        setSidebarWidth={setSidebarWidth}
+      <DashboardLayoutContent
         title={title}
         navItems={navItems}
         currentPath={currentPath}
@@ -137,7 +117,6 @@ export default function DashboardLayout({
 
 type DashboardLayoutContentProps = {
   children: ReactNode;
-  setSidebarWidth: (width: number) => void;
   title: string;
   navItems: NavItem[];
   currentPath?: string;
@@ -145,7 +124,6 @@ type DashboardLayoutContentProps = {
 
 function DashboardLayoutContent({
   children,
-  setSidebarWidth,
   title,
   navItems,
   currentPath,
@@ -153,113 +131,38 @@ function DashboardLayoutContent({
   const { user, logout } = useAuth();
   const { t } = useTranslation();
   const [location, setLocation] = useLocation();
-  const { state, toggleSidebar } = useSidebar();
-  const isCollapsed = state === "collapsed";
-  const [isResizing, setIsResizing] = useState(false);
-  const sidebarRef = useRef<HTMLDivElement>(null);
+  const { toggleSidebar, setOpenMobile } = useSidebar();
   const isMobile = useIsMobile();
 
   // Sprint 2c — global SPC violation toasts (works on every authenticated page)
   useSpcAlertToast();
 
-  // State for collapsible groups
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
-    const saved = localStorage.getItem(SIDEBAR_GROUPS_KEY);
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        // Fall through to default
-      }
-    }
-    // Default: open at most one group (accordion behavior)
-    const currentOrLocation = currentPath || location;
-    let activeGroupId: string | null = null;
-    let defaultOpenGroupId: string | null = null;
-
-    navGroups.forEach(group => {
-      const hasActiveItem = group.items.some(item => item.href === currentOrLocation);
-      if (hasActiveItem && !activeGroupId) {
-        activeGroupId = group.id;
-      }
-      if (group.defaultOpen && !defaultOpenGroupId) {
-        defaultOpenGroupId = group.id;
-      }
-    });
-
-    const openGroupId = activeGroupId ?? defaultOpenGroupId;
-    const defaults: Record<string, boolean> = {};
-    navGroups.forEach(group => {
-      defaults[group.id] = openGroupId ? group.id === openGroupId : false;
-    });
-    return defaults;
-  });
-
-  // Save group state to localStorage
+  // Command palette (⌘/Ctrl+K) — M3 · Quick Browse mega-menu (⌘/Ctrl+\) — M4
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [megaOpen, setMegaOpen] = useState(false);
   useEffect(() => {
-    localStorage.setItem(SIDEBAR_GROUPS_KEY, JSON.stringify(openGroups));
-  }, [openGroups]);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen(o => !o);
+      } else if (e.key === "\\") {
+        e.preventDefault();
+        setMegaOpen(o => !o);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   // Find active item for header display
   const allItems = navGroups.flatMap(g => g.items);
   const activeItem = allItems.find(item => item.href === (currentPath || location));
 
-  useEffect(() => {
-    if (isCollapsed) {
-      setIsResizing(false);
-    }
-  }, [isCollapsed]);
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing) return;
-
-      const sidebarLeft = sidebarRef.current?.getBoundingClientRect().left ?? 0;
-      const newWidth = e.clientX - sidebarLeft;
-      if (newWidth >= MIN_WIDTH && newWidth <= MAX_WIDTH) {
-        setSidebarWidth(newWidth);
-      }
-    };
-
-    const handleMouseUp = () => {
-      setIsResizing(false);
-    };
-
-    if (isResizing) {
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    }
-
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-  }, [isResizing, setSidebarWidth]);
-
-  const toggleGroup = (groupId: string) => {
-    setOpenGroups(prev => {
-      const isCurrentlyOpen = !!prev[groupId];
-
-      // If the group is currently open, allow collapsing it (result: no group open)
-      if (isCurrentlyOpen) {
-        return {
-          ...prev,
-          [groupId]: false,
-        };
-      }
-
-      // When opening a group, close all others (accordion behavior)
-      const next: Record<string, boolean> = {};
-      Object.keys(prev).forEach(id => {
-        next[id] = false;
-      });
-      next[groupId] = true;
-      return next;
-    });
+  // Navigate helper — on mobile, also close the Sheet drawer after picking a page.
+  const handleNavigate = (href: string) => {
+    setLocation(href);
+    if (isMobile) setOpenMobile(false);
   };
 
   // Permission-based filtering
@@ -279,22 +182,15 @@ function DashboardLayoutContent({
 
   return (
     <>
-      <div className="relative" ref={sidebarRef} data-app-chrome="sidebar">
+      <div className="relative" data-app-chrome="sidebar">
         <Sidebar
           collapsible="icon"
           className="border-r border-sidebar-border"
-          disableTransition={isResizing}
         >
           <SidebarHeader className="h-16 justify-center border-b border-sidebar-border">
-            <div className="flex items-center gap-3 px-2 transition-all w-full">
-              <button
-                onClick={toggleSidebar}
-                className="h-9 w-9 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
-                aria-label="Toggle navigation"
-              >
-                <PanelLeft className="h-4 w-4 text-sidebar-foreground" />
-              </button>
-              {!isCollapsed && (
+            {isMobile ? (
+              // Mobile sheet header: full logo + title.
+              <div className="flex items-center gap-3 px-2 w-full">
                 <Link href="/" className="flex items-center gap-2 min-w-0">
                   <div className="h-8 w-8 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
                     <Cpu className="h-4 w-4 text-primary" />
@@ -303,46 +199,44 @@ function DashboardLayoutContent({
                     {title}
                   </span>
                 </Link>
-              )}
-            </div>
+              </div>
+            ) : (
+              // Desktop sidebar header: logo + title, with the collapse toggle on the right.
+              <div className="flex items-center gap-2 px-2 w-full">
+                <Link href="/" className="flex items-center gap-2 min-w-0">
+                  <div className="h-8 w-8 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
+                    <Cpu className="h-4 w-4 text-primary" />
+                  </div>
+                  <span className="font-semibold tracking-tight truncate text-sidebar-foreground">
+                    {title}
+                  </span>
+                </Link>
+                <button
+                  onClick={toggleSidebar}
+                  className="ml-auto h-9 w-9 flex items-center justify-center hover:bg-sidebar-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
+                  aria-label="Toggle navigation"
+                >
+                  <PanelLeft className="h-4 w-4 text-sidebar-foreground" />
+                </button>
+              </div>
+            )}
           </SidebarHeader>
 
-          <SidebarContent className="gap-0 py-2 overflow-y-auto">
-            {isCollapsed ? (
-              // Collapsed mode: show flat list with icons only
-              <SidebarMenu className="px-2">
-                {allItems.map(item => {
-                  const isActive = (currentPath || location) === item.href;
-                  return (
-                    <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        onClick={() => setLocation(item.href)}
-                        tooltip={t(item.label)}
-                        className={`h-10 transition-all font-normal ${isActive ? 'bg-sidebar-accent' : ''}`}
-                      >
-                        <span className={isActive ? "text-primary" : "text-sidebar-foreground"}>
-                          {item.icon}
-                        </span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
+          <SidebarContent className="gap-0 py-2 overflow-y-auto group-data-[collapsible=icon]:overflow-visible">
+            {isMobile ? (
+              // Mobile (R1): tap-drill nav inside the Sheet drawer (hover unavailable).
+              <MobileDrillNav
+                groups={visibleGroups}
+                currentPath={currentPath || location}
+                onNavigate={handleNavigate}
+              />
             ) : (
-              // Expanded mode: show grouped navigation
-              <div className="space-y-1">
-                {visibleGroups.map(group => (
-                  <NavGroupComponent
-                    key={group.id}
-                    group={group}
-                    isOpen={openGroups[group.id] ?? false}
-                    onToggle={() => toggleGroup(group.id)}
-                    currentPath={currentPath || location}
-                    onNavigate={setLocation}
-                  />
-                ))}
-              </div>
+              // Desktop (R1): 3-level cascading Miller-column nav on a fixed icon rail.
+              <CascadingNav
+                groups={visibleGroups}
+                currentPath={currentPath || location}
+                onNavigate={handleNavigate}
+              />
             )}
           </SidebarContent>
 
@@ -399,14 +293,7 @@ function DashboardLayoutContent({
             </DropdownMenu>
           </SidebarFooter>
         </Sidebar>
-        <div
-          className={`absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/30 transition-colors ${isCollapsed ? "hidden" : ""}`}
-          onMouseDown={() => {
-            if (isCollapsed) return;
-            setIsResizing(true);
-          }}
-          style={{ zIndex: 50 }}
-        />
+        {/* R1: resize handle removed — the desktop nav is now a fixed-width icon rail. */}
       </div>
 
       <SidebarInset className="bg-background">
@@ -416,8 +303,39 @@ function DashboardLayoutContent({
             <span className="font-medium text-foreground text-sm sm:text-base truncate">
               {activeItem ? t(activeItem.label) : title}
             </span>
+            <button
+              type="button"
+              onClick={() => setPaletteOpen(true)}
+              aria-label={t("nav.searchPlaceholder")}
+              className={cn(
+                "ml-1 sm:ml-2 flex items-center gap-2 rounded-lg border border-border bg-muted/40 text-muted-foreground transition-colors hover:bg-muted",
+                "h-9 w-9 justify-center sm:h-9 sm:w-auto sm:justify-start sm:px-3",
+              )}
+            >
+              <Search className="h-4 w-4 shrink-0" />
+              <span className="hidden sm:inline truncate text-sm">{t("nav.searchPlaceholder")}</span>
+              <kbd className="hidden sm:inline-flex ml-2 items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] text-muted-foreground">
+                ⌘K
+              </kbd>
+            </button>
           </div>
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setMegaOpen(true)}
+              aria-label={t("nav.quickBrowse")}
+              title={t("nav.quickBrowse")}
+              className={cn(
+                "flex h-9 items-center gap-2 rounded-lg border border-border bg-muted/40 text-muted-foreground transition-colors hover:bg-muted",
+                "w-9 justify-center sm:w-auto sm:justify-start sm:px-3",
+              )}
+            >
+              <LayoutGrid className="h-4 w-4 shrink-0" />
+              <span className="hidden md:inline truncate text-sm">{t("nav.quickBrowse")}</span>
+              <kbd className="hidden md:inline-flex ml-1 items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] text-muted-foreground">
+                ⌘\
+              </kbd>
+            </button>
             <ThemeToggle />
             <LanguageSwitcher />
             <AIActionInboxLauncher />
@@ -426,85 +344,40 @@ function DashboardLayoutContent({
         </div>
         <PermissionExpiryBanner />
         <LicenseEnforcementBanner />
-        <main className="flex-1 p-3 sm:p-4 md:p-6 overflow-auto">{children}</main>
+        {/* E: pad the bottom on mobile so content clears the fixed Bottom Navigation bar. */}
+        <main className={cn("flex-1 p-3 sm:p-4 md:p-6 overflow-auto", isMobile && "pb-20")}>
+          {children}
+        </main>
       </SidebarInset>
+      {/* E — Material 3 Bottom Navigation (phones only). "Menu" opens the full drawer. */}
+      {isMobile && (
+        <BottomNav
+          groups={visibleGroups}
+          currentPath={currentPath || location}
+          onNavigate={handleNavigate}
+          onOpenMenu={() => setOpenMobile(true)}
+        />
+      )}
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        groups={visibleGroups}
+        onNavigate={href => {
+          setLocation(href);
+          setPaletteOpen(false);
+        }}
+      />
+      <MegaMenuOverlay
+        open={megaOpen}
+        onOpenChange={setMegaOpen}
+        groups={visibleGroups}
+        onNavigate={href => {
+          setLocation(href);
+          setMegaOpen(false);
+        }}
+      />
       {/* C3a — AILocalChatBubble moved to App root (mounted once globally).
           Removed from here to avoid a duplicate bubble on pages using this layout. */}
     </>
-  );
-}
-
-// Component for rendering a navigation group
-interface NavGroupComponentProps {
-  group: NavGroup;
-  isOpen: boolean;
-  onToggle: () => void;
-  currentPath: string;
-  onNavigate: (path: string) => void;
-}
-
-function NavGroupComponent({
-  group,
-  isOpen,
-  onToggle,
-  currentPath,
-  onNavigate,
-}: NavGroupComponentProps) {
-  const hasActiveItem = group.items.some(item => item.href === currentPath);
-  const { t } = useTranslation();
-
-  return (
-    <Collapsible open={isOpen} onOpenChange={onToggle} className="px-2">
-      <CollapsibleTrigger asChild>
-        <button
-          className={cn(
-            "flex items-center gap-2 w-full px-3 py-2 text-sm font-medium rounded-lg transition-colors",
-            "hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            hasActiveItem ? "text-primary" : "text-sidebar-foreground"
-          )}
-        >
-          {group.icon && (
-            <span className={hasActiveItem ? "text-primary" : "text-muted-foreground"}>
-              {group.icon}
-            </span>
-          )}
-          <span className="flex-1 text-left">{t(group.label)}</span>
-          <ChevronRight
-            className={cn(
-              "h-4 w-4 text-muted-foreground transition-transform duration-200",
-              isOpen && "rotate-90"
-            )}
-          />
-        </button>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="mt-1 space-y-0.5 pl-4">
-        {group.items.map(item => {
-          const isActive = currentPath === item.href;
-          return (
-            <button
-              key={item.href}
-              onClick={() => onNavigate(item.href)}
-              className={cn(
-                "flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg transition-colors",
-                "hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                isActive 
-                  ? "bg-sidebar-accent text-primary font-medium" 
-                  : "text-sidebar-foreground"
-              )}
-            >
-              <span className={isActive ? "text-primary" : "text-muted-foreground"}>
-                {item.icon}
-              </span>
-              <span>{t(item.label)}</span>
-              {item.badge && (
-                <span className="ml-auto px-1.5 py-0.5 text-xs font-medium bg-primary/10 text-primary rounded">
-                  {item.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </CollapsibleContent>
-    </Collapsible>
   );
 }
