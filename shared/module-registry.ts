@@ -350,6 +350,22 @@ export const SYSTEM_MODULES: SystemModule[] = [
     ],
     navGroupId: "ot-control",
   },
+  {
+    code: "MOD_FEDERATION",
+    name: "Multi-Site Federation",
+    description: "Đăng ký & tổng hợp nhiều site (đa nhà máy): sites registry, enrollment, probe read-only; cross-site roll-up dashboard (F1+). Core CHỈ đọc — không điều khiển site.",
+    version: "1.0.0",
+    isCore: false,
+    routes: ["/sites", "/federation-dashboard", "/modules"],
+    permissionCategories: ["admin"],
+    features: [
+      { code: "FEDERATION_SITES", name: "Sites Registry & Enrollment", featureType: "boolean", defaultValue: "true" },
+      { code: "FEDERATION_DASHBOARD", name: "Cross-Site Roll-up Dashboard", featureType: "boolean", defaultValue: "true" },
+      { code: "FEDERATION_MARKETPLACE", name: "Modules Marketplace (WS5.4)", featureType: "boolean", defaultValue: "true" },
+      { code: "MAX_FEDERATION_SITES", name: "Giới hạn số Site", featureType: "limit", defaultValue: "100" },
+    ],
+    navGroupId: "admin",
+  },
 ];
 
 /**

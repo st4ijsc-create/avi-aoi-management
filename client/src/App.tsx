@@ -112,6 +112,9 @@ const FactoryLiveMap3D = React.lazy(() => import("./pages/FactoryLiveMap3D")); /
 const FactoryFloorEditor = React.lazy(() => import("./pages/FactoryFloorEditor")); // 2D drag editor: set real floor-plan coords (layoutPositionX/Y) the 3D view reads
 const CellTwinPlayer = React.lazy(() => import("./pages/CellTwinPlayer")); // Generic data-driven realtime twin playback for ANY orchestration workflow
 const ApiKeysPage = React.lazy(() => import("./pages/ApiKeysPage")); // Control plane: scoped API-key admin CRUD (create-show-once)
+const SitesRegistry = React.lazy(() => import("./pages/SitesRegistry")); // Doc 13 / F0: Multi-site Federation sites registry (admin)
+const FederationDashboard = React.lazy(() => import("./pages/FederationDashboard")); // Doc 13 / F2: cross-site federation roll-up (admin)
+const ModulesMarketplace = React.lazy(() => import("./pages/ModulesMarketplace")); // Doc 13 / F3: read-only modules + license marketplace (admin)
 const EdgeNodesPage = React.lazy(() => import("./pages/EdgeNodesPage")); // E4: edge node registry management
 const UnifiedDeviceMonitor = React.lazy(() => import("./pages/UnifiedDeviceMonitor")); // P3-W2 (doc 12 §8): flagship unified device monitor — default DEVICES & OT landing
 const RobotControl = React.lazy(() => import("./pages/RobotControl")); // P4-D: robot/AGV registry + telemetry + job log (read-mostly; motion via internal HITL dispatcher)
@@ -316,6 +319,9 @@ function Router() {
       <Route path="/enhanced-audit"><Redirect to="/audit-logs?tab=enhanced" /></Route>
       <Route path="/license"><RouteGuard navHref="/license"><LicenseManagement /></RouteGuard></Route>
       <Route path="/api-keys"><RouteGuard navHref="/api-keys"><AIPageWrapper><ApiKeysPage /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/sites"><RouteGuard requireRole={["admin"]} requirePermission="admin_system"><AIPageWrapper><SitesRegistry /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/federation-dashboard"><RouteGuard requireRole={["admin"]} requirePermission="admin_system"><AIPageWrapper><FederationDashboard /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/modules"><RouteGuard requireRole={["admin"]} requirePermission="admin_system"><AIPageWrapper><ModulesMarketplace /></AIPageWrapper></RouteGuard></Route>
       <Route path="/backup-restore"><RouteGuard navHref="/backup-restore"><BackupRestore /></RouteGuard></Route>
       <Route path="/system-config"><RouteGuard requireRole={["admin"]}><SystemConfiguration /></RouteGuard></Route>
       <Route path="/admin-setting"><RouteGuard navHref="/admin-setting"><AdminSettings /></RouteGuard></Route>

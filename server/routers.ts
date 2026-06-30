@@ -133,6 +133,8 @@ import { aiInsightRouter } from "./routers/aiInsightRouter"; // Phase 4: AI orch
 import { aiInboxRouter } from "./routers/aiInboxRouter"; // AI Action Inbox: push + 1-tap approve/dismiss/ask
 import { aiTodayRouter } from "./routers/aiTodayRouter"; // "Today" briefing: role-aware zero-click login summary
 import { kbVectorRouter } from "./routers/kbVectorRouter"; // Phase 4: KB pgvector store (ingest + search)
+import { sitesRouter } from "./routers/sitesRouter"; // Doc 13 / F0: Multi-site Federation sites registry (admin CRUD + probe + self-enroll-local; read-only)
+import { federationRouter } from "./routers/federationRouter"; // Doc 13 / F1: Federation roll-up read API (siteRollups/history/syncLog/aggregateSummary; read-only)
 
 // ─── App Router Assembly ─────────────────────────────────────────────────────
 
@@ -368,6 +370,11 @@ export const appRouter = router({
   aiInbox: aiInboxRouter,
   aiToday: aiTodayRouter,
   kbVector: kbVectorRouter,
+
+  // Federation (doc 13 / F0) — sites registry + enrollment + probe (read-only)
+  sites: sitesRouter,
+  // Federation (doc 13 / F1) — roll-up read API over the core aggregator (read-only)
+  federation: federationRouter,
 
   // Process & SPC
   process: processRouter,

@@ -34,4 +34,57 @@ export const ENV = {
   secsGemEnabled: process.env.SECS_GEM_ENABLED === "true",
   sparkplugEnabled: process.env.UNS_SPARKPLUG_ENABLED === "true",
   otIngestToUns: process.env.OT_INGEST_TO_UNS === "true",
+
+  // ── Federation (doc 13 / F1) — core aggregator (pull, read-only) ────────────
+  // OFF by default: an enabled-but-misconfigured aggregator never fabricates data.
+  // When enabled it polls each enrolled site's /api/external/* on an interval and
+  // lands aggregate KPIs in site_kpi_rollup. The core NEVER writes to a site.
+  federationAggregatorEnabled: process.env.FEDERATION_AGGREGATOR_ENABLED === "true",
+  // Global cron tick (seconds): how often a cycle wakes up to consider sites.
+  // A site is only polled when its own pollIntervalSec has elapsed since lastSyncAt.
+  federationAggregatorTickSec: (() => {
+    const n = Number(process.env.FEDERATION_AGGREGATOR_TICK_SEC);
+    return Number.isFinite(n) && n >= 5 ? Math.floor(n) : 60;
+  })(),
+  // Per-site HTTP timeout (ms) for each /api/external/* GET (AbortController).
+  federationFetchTimeoutMs: (() => {
+    const n = Number(process.env.FEDERATION_FETCH_TIMEOUT_MS);
+    return Number.isFinite(n) && n >= 1000 ? Math.floor(n) : 15_000;
+  })(),
+  // Circuit breaker: open after this many consecutive failures, …
+  federationCircuitThreshold: (() => {
+    const n = Number(process.env.FEDERATION_CIRCUIT_THRESHOLD);
+    return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 5;
+  })(),
+  // … and keep it open (skip the site) for this cooldown (seconds).
+  federationCircuitCooldownSec: (() => {
+    const n = Number(process.env.FEDERATION_CIRCUIT_COOLDOWN_SEC);
+    return Number.isFinite(n) && n >= 30 ? Math.floor(n) : 600;
+  })(),
+  // Max sites polled concurrently per cycle (per-site isolation via allSettled).
+  federationConcurrency: (() => {
+    const n = Number(process.env.FEDERATION_CONCURRENCY);
+    return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 8;
+  })(),
+
+  // ── Federation (doc 13 / F3) — UNS subscribe-only streaming ─────────────────
+  // OFF by default. When enabled, the core opens a SUBSCRIBE-ONLY MQTT connection
+  // to each enrolled site that has unsBrokerUrl, listens on normalized Sparkplug
+  // DDATA/DBIRTH topics, and lands near-real-time KPIs in site_kpi_rollup with
+  // source='uns' (complementing F1's pull path). The core NEVER publishes to a
+  // site broker — there is no command/control direction. Safe no-op when OFF or
+  // when no site has a broker URL; never blocks boot, never fabricates data.
+  federationUnsEnabled: process.env.FEDERATION_UNS_ENABLED === "true",
+  // MQTT reconnect period (ms) for each per-site subscribe connection.
+  federationUnsReconnectMs: (() => {
+    const n = Number(process.env.FEDERATION_UNS_RECONNECT_MS);
+    return Number.isFinite(n) && n >= 1000 ? Math.floor(n) : 5_000;
+  })(),
+  // MQTT connect timeout (ms) for each per-site subscribe connection.
+  federationUnsConnectTimeoutMs: (() => {
+    const n = Number(process.env.FEDERATION_UNS_CONNECT_TIMEOUT_MS);
+    return Number.isFinite(n) && n >= 1000 ? Math.floor(n) : 30_000;
+  })(),
+  // Sparkplug topic namespace the core subscribes under (must match sites' UNS).
+  federationUnsNamespace: clean(process.env.FEDERATION_UNS_NAMESPACE) || "spBv1.0",
 };

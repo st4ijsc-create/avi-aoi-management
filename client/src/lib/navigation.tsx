@@ -81,6 +81,7 @@
   Sun,
   Bot,
   Network,
+  Globe,
 } from "lucide-react";
 import { ReactNode } from "react";
 
@@ -945,6 +946,33 @@ export const navGroups: NavGroup[] = [
         label: "nav.apiKeys",
         icon: <KeyRound className="h-4 w-4" />,
         description: "nav.apiKeysDesc",
+        requiredRole: 'admin',
+        requiredPermission: "admin_system",
+        permissionCategory: "admin",
+      },
+      {
+        href: "/sites",
+        label: "nav.sites",
+        icon: <Network className="h-4 w-4" />,
+        description: "nav.sitesDesc",
+        requiredRole: 'admin',
+        requiredPermission: "admin_system",
+        permissionCategory: "admin",
+      },
+      {
+        href: "/federation-dashboard",
+        label: "nav.federationDashboard",
+        icon: <Globe className="h-4 w-4" />,
+        description: "nav.federationDashboardDesc",
+        requiredRole: 'admin',
+        requiredPermission: "admin_system",
+        permissionCategory: "admin",
+      },
+      {
+        href: "/modules",
+        label: "nav.modules",
+        icon: <LayoutGrid className="h-4 w-4" />,
+        description: "nav.modulesDesc",
         requiredRole: 'admin',
         requiredPermission: "admin_system",
         permissionCategory: "admin",
