@@ -96,12 +96,27 @@ export async function discoverDevices(input: DiscoverInput): Promise<DiscoverRes
 /** REAL OPC-UA discovery: connect → browse → map references to candidates → disconnect. */
 async function discoverViaOpcua(input: DiscoverInput): Promise<DiscoverResult> {
   const base: DiscoverResult = { ok: false, seam: false, protocol: "opcua", endpoint: input.endpoint, candidates: [] };
+  // Hard upper bound so an unreachable endpoint can never hang the probe:
+  // node-opcua's connectionStrategy retries past a plain connect timeout, so we
+  // race the whole connect+browse against a wall-clock deadline.
+  const timeoutMs = input.timeoutMs ?? 5000;
   try {
     const { OpcuaDriver } = await import("../ot/drivers/opcuaDriver");
     const driver = new OpcuaDriver();
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      await driver.connect({ endpoint: input.endpoint, timeoutMs: input.timeoutMs ?? 5000 });
-      const nodes = await driver.browseNodes(input.rootNodeId);
+      const nodes = await Promise.race([
+        (async () => {
+          await driver.connect({ endpoint: input.endpoint, timeoutMs });
+          return driver.browseNodes(input.rootNodeId);
+        })(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`opcua discovery probe timed out after ${timeoutMs}ms`)),
+            timeoutMs,
+          );
+        }),
+      ]);
       const candidates: DiscoveredCandidate[] = nodes.map((n) => ({
         candidateId: `opcua:${n.nodeId}`,
         protocol: "opcua",
@@ -111,6 +126,7 @@ async function discoverViaOpcua(input: DiscoverInput): Promise<DiscoverResult> {
       }));
       return { ...base, ok: true, candidates };
     } finally {
+      if (timer) clearTimeout(timer);
       await driver.disconnect().catch(() => undefined);
     }
   } catch (err) {
