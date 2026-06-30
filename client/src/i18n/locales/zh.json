@@ -4537,7 +4537,9 @@
     "safetyWorkforce": "安全与人力",
     "safetyWorkforceDesc": "咨询式安全驾驶舱与人力看板（仅查看）",
     "equipmentStandards": "设备标准",
-    "equipmentStandardsDesc": "版本化设备类型层级、ISA-18.2 报警分类法与设备标准委员会（仅查看）"
+    "equipmentStandardsDesc": "版本化设备类型层级、ISA-18.2 报警分类法与设备标准委员会（仅查看）",
+    "equipmentIntegration": "设备集成",
+    "equipmentIntegrationDesc": "FOCAS/Euromap 集成框架（只读）与配方版本谱系（仅查看）"
   },
   "aboutPage": {
     "layoutTitle": "系统介绍",

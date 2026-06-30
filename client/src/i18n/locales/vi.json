@@ -4567,7 +4567,9 @@
     "safetyWorkforce": "An toàn & Nhân lực",
     "safetyWorkforceDesc": "Bảng điều khiển an toàn tư vấn và bảng nhân lực (chỉ xem)",
     "equipmentStandards": "Tiêu chuẩn thiết bị",
-    "equipmentStandardsDesc": "Cây phân loại thiết bị theo phiên bản, phân loại cảnh báo ISA-18.2 và Hội đồng tiêu chuẩn thiết bị (chỉ xem)"
+    "equipmentStandardsDesc": "Cây phân loại thiết bị theo phiên bản, phân loại cảnh báo ISA-18.2 và Hội đồng tiêu chuẩn thiết bị (chỉ xem)",
+    "equipmentIntegration": "Tích hợp thiết bị",
+    "equipmentIntegrationDesc": "Khung tích hợp FOCAS/Euromap (chỉ đọc) và phả hệ phiên bản công thức (chỉ xem)"
   },
   "aboutPage": {
     "layoutTitle": "Giới thiệu hệ thống",

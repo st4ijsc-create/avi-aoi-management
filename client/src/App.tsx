@@ -123,6 +123,7 @@ const FleetOrchestration = React.lazy(() => import("./pages/FleetOrchestration")
 const ControlPlane = React.lazy(() => import("./pages/ControlPlane")); // P4-D: Factory Control Plane (equipment capability/PackML + FOE + edge runtime, read-only projections)
 const SafetyWorkforce = React.lazy(() => import("./pages/SafetyWorkforce")); // S1 (doc 16 §8): advisory safety monitoring + mixed-workforce board + human↔robot handover (read-mostly; mutations gated by SAFETY_AUDIT_ENABLED / WORKFORCE_ENABLED)
 const EquipmentStandards = React.lazy(() => import("./pages/EquipmentStandards")); // E1 (doc 16 §10 Khối 5): device-type hierarchy + ISA-18.2 alarm taxonomy + Equipment Standards Board (governance metadata only; mutations gated by EQ_GOVERN_ENABLED)
+const EquipmentIntegration = React.lazy(() => import("./pages/EquipmentIntegration")); // I1 (doc 16 §6 Khối 1B): FOCAS/Euromap integration frameworks (read-only) + recipe versioning genealogy (mutations gated by EQ_INTEG_ENABLED)
 const QualityCockpit = React.lazy(() => import("./pages/QualityCockpit")); // P3-W2 (doc 12 §8): flagship Quality Cockpit (SPC/Pareto/Heatmap/Gates/Annotation tabs)
 const InboxPage = React.lazy(() => import("./pages/InboxPage")); // P3-W2: full-screen Action Inbox route (read-open)
 const TodayPage = React.lazy(() => import("./pages/TodayPage")); // P3-W2: full-screen Today Briefing route (read-open)
@@ -256,6 +257,7 @@ function Router() {
       <Route path="/control-plane"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><ControlPlane /></AIPageWrapper></RouteGuard></Route>
       <Route path="/safety-workforce"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><SafetyWorkforce /></AIPageWrapper></RouteGuard></Route>
       <Route path="/equipment-standards"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><EquipmentStandards /></AIPageWrapper></RouteGuard></Route>
+      <Route path="/equipment-integration"><RouteGuard requirePermission="machine_monitoring"><AIPageWrapper><EquipmentIntegration /></AIPageWrapper></RouteGuard></Route>
       <Route path="/engineering"><RouteGuard navHref="/engineering"><EngineeringWorkspace /></RouteGuard></Route>
       <Route path="/recipes"><RouteGuard navHref="/recipes"><RecipeManagement /></RouteGuard></Route>
       <Route path="/interlock-rules"><RouteGuard navHref="/interlock-rules"><InterlockRuleManagement /></RouteGuard></Route>

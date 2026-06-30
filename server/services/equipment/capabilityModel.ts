@@ -60,7 +60,11 @@ export type AdapterKind =
   | "robot"
   | "mtconnect"
   | "secsgem"
-  | "vda5050";
+  | "vda5050"
+  // I1 (doc 16 §6 / §15) — multi-vendor equipment integration FRAMEWORKS (flag
+  // EQ_INTEG_ENABLED). Read-only monitoring by default; no real device attached.
+  | "focas" // Fanuc CNC (FOCAS): NC functions / cycle count / alarms.
+  | "euromap"; // Injection molding (Euromap 63/77/83): cycle / shot data / alarms.
 
 /** Risk band of a command — drives HITL gating + RBAC (mirrors the dispatcher). */
 export type RiskLevel = "read" | "low" | "high";

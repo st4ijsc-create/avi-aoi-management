@@ -42,10 +42,21 @@ export const ADAPTER_KINDS: AdapterKind[] = [
   "mtconnect",
   "secsgem",
   "vda5050",
+  // I1 (doc 16 §6) — multi-vendor equipment integration FRAMEWORKS (read-only).
+  "focas",
+  "euromap",
 ];
 
 /** Which existing registry/manager a kind delegates to (for discovery/UI). */
-export type DelegateRegistry = "ot" | "vision" | "robot" | "mtconnect" | "secsgem" | "vda5050";
+export type DelegateRegistry =
+  | "ot"
+  | "vision"
+  | "robot"
+  | "mtconnect"
+  | "secsgem"
+  | "vda5050"
+  | "focas"
+  | "euromap";
 
 /** Generic connection descriptor passed to read/test ops (kept loose — the real shape lives in the delegated driver). */
 export interface EquipmentConnConfig {
@@ -283,6 +294,12 @@ function build(kind: AdapterKind): EquipmentAdapter {
   if (kind === "vision") return new ReadOnlyEquipmentAdapter(kind, "vision");
   if (kind === "mtconnect") return new ReadOnlyEquipmentAdapter(kind, "mtconnect");
   if (kind === "secsgem") return new ReadOnlyEquipmentAdapter(kind, "secsgem");
+  // I1 — FOCAS/Euromap are READ-ONLY monitoring frameworks (no real device, no
+  // fabricated telemetry, no control path). Their live snapshot is served by their
+  // own framework adapter (focas/euromapAdapter); the facade exposes them as
+  // read-only kinds so command attempts are rejected (never silently dropped).
+  if (kind === "focas") return new ReadOnlyEquipmentAdapter(kind, "focas");
+  if (kind === "euromap") return new ReadOnlyEquipmentAdapter(kind, "euromap");
   throw new Error(`No equipment adapter for kind "${kind}"`);
 }
 

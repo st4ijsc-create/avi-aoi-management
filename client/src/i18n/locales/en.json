@@ -4544,7 +4544,9 @@
     "safetyWorkforce": "Safety & Workforce",
     "safetyWorkforceDesc": "Advisory safety cockpit and workforce board (view-only)",
     "equipmentStandards": "Equipment Standards",
-    "equipmentStandardsDesc": "Versioned device-type hierarchy, ISA-18.2 alarm taxonomy and the Equipment Standards Board (view-only)"
+    "equipmentStandardsDesc": "Versioned device-type hierarchy, ISA-18.2 alarm taxonomy and the Equipment Standards Board (view-only)",
+    "equipmentIntegration": "Equipment Integration",
+    "equipmentIntegrationDesc": "FOCAS/Euromap integration frameworks (read-only) and recipe versioning genealogy (view-only)"
   },
   "aboutPage": {
     "layoutTitle": "About System",

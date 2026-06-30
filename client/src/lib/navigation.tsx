@@ -605,6 +605,17 @@ export const navGroups: NavGroup[] = [
         section: "engineering",
       },
       {
+        // Equipment Integration (Khối 1B) — FOCAS/Euromap integration frameworks
+        // (read-only, no live device) + recipe versioning genealogy. View-only.
+        href: "/equipment-integration",
+        label: "nav.equipmentIntegration",
+        icon: <Plug className="h-4 w-4" />,
+        description: "nav.equipmentIntegrationDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+        section: "engineering",
+      },
+      {
         href: "/factory-floor-editor",
         label: "nav.factoryFloorEditor",
         icon: <Boxes className="h-4 w-4" />,

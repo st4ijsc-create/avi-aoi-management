@@ -39,3 +39,4 @@ export * from "./fleetResource";
 export * from "./twin";
 export * from "./safetyWorkforce";
 export * from "./equipmentStandards";
+export * from "./equipmentIntegration";
