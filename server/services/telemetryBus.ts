@@ -155,15 +155,26 @@ export async function ingestTelemetry(samples: CanonicalSample[]): Promise<numbe
     rows.push(toCanonicalRow(s, machineId));
   }
 
-  // 3: bulk insert (single statement). DB-absent → skip persist, still broadcast.
+  // 3: bulk insert. PRIMARY path = the dedicated TimescaleDB hypertable (mirrors
+  // energy_readings). When TSDB is disabled/degraded the helper returns null and
+  // we FALL BACK to the main-DB ot_telemetry table (the plain table from 0132).
+  // DB-absent on both paths → skip persist, still broadcast. Degrade-safe: an
+  // insert error never propagates into a protocol reader's poll loop.
   let persisted = 0;
   try {
-    const { getDb } = await import("../db/connection");
-    const db = await getDb();
-    if (db) {
-      const { otTelemetry } = await import("../../drizzle/schema");
-      await db.insert(otTelemetry).values(rows);
-      persisted = rows.length;
+    const { insertOtTelemetryRows } = await import("../db/timescale");
+    const tsdbPersisted = await insertOtTelemetryRows(rows);
+    if (tsdbPersisted !== null) {
+      persisted = tsdbPersisted; // TSDB handled it (count, possibly 0).
+    } else {
+      // TSDB disabled/degraded → main-DB fallback.
+      const { getDb } = await import("../db/connection");
+      const db = await getDb();
+      if (db) {
+        const { otTelemetry } = await import("../../drizzle/schema");
+        await db.insert(otTelemetry).values(rows);
+        persisted = rows.length;
+      }
     }
   } catch (err) {
     console.error("[TelemetryBus] insert failed:", (err as Error)?.message || err);

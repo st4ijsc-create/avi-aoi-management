@@ -12,6 +12,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { sql } from "drizzle-orm";
 import { energyReadings, type InsertEnergyReading } from "../../drizzle/schema/g3";
+import { otTelemetry, type InsertOtTelemetry } from "../../drizzle/schema/ot";
 
 let _tsdb: ReturnType<typeof drizzle> | null = null;
 let _tsClient: ReturnType<typeof postgres> | null = null;
@@ -139,6 +140,142 @@ export async function queryEnergyBuckets(params: {
     console.error("[TSDB] queryEnergyBuckets failed:", error);
     if (isConnectionError(error)) degradeTsdb(error);
     return [];
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ot_telemetry — THE canonical telemetry hypertable in the dedicated TimescaleDB.
+//
+// Mirrors the energy_readings pattern: primary store is the TSDB hypertable
+// (drizzle/timescale/0003_ot_telemetry_hypertable.sql) when TSDB_URL is set;
+// callers (telemetryBus / otTelemetry reads) fall back to the main-DB
+// ot_telemetry table when these return false/null (TSDB disabled or degraded).
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Bulk-insert canonical telemetry rows into the TSDB hypertable. Returns the
+ * number of rows persisted, or `null` when TSDB is disabled/degraded so the
+ * caller knows to fall back to the main DB (vs `0` = TSDB on but empty input).
+ * Never throws — connection errors trip the degrade latch.
+ */
+export async function insertOtTelemetryRows(rows: InsertOtTelemetry[]): Promise<number | null> {
+  const db = getTsdb();
+  if (!db) return null;
+  if (rows.length === 0) return 0;
+  try {
+    await db.insert(otTelemetry).values(rows);
+    return rows.length;
+  } catch (error) {
+    console.error("[TSDB] insertOtTelemetryRows failed:", error);
+    if (isConnectionError(error)) degradeTsdb(error);
+    return null;
+  }
+}
+
+/** Raw latest-telemetry row from the TSDB (pre-mapping; shaped by the reader). */
+export interface TsdbLatestRow {
+  id: number;
+  machineId: number | null;
+  metric: string;
+  numValue: number | null;
+  textValue: string | null;
+  boolValue: boolean | null;
+  quality: string;
+  ts: string; // ISO
+  unit: string | null;
+}
+
+/**
+ * Latest telemetry rows for a machine (optionally one metric), newest first.
+ * Returns `null` when TSDB is disabled/degraded (caller falls back to main DB);
+ * returns `[]` when TSDB is on but has no matching rows.
+ *
+ * NOTE: the deviceTags unit COALESCE join is intentionally NOT done here — the
+ * dedicated TSDB only holds the telemetry hypertable, not the relational
+ * device_tags table. We surface the row's own `unit`; the caller keeps its
+ * deviceTags fallback for the main-DB path.
+ */
+export async function queryOtTelemetryLatest(opts: {
+  machineId: number;
+  metric?: string;
+  limit?: number;
+}): Promise<TsdbLatestRow[] | null> {
+  const db = getTsdb();
+  if (!db) return null;
+  const limit = Math.min(Math.max(opts.limit ?? 10, 1), 100);
+  try {
+    const metricFilter = opts.metric != null ? sql`AND "metric" = ${opts.metric}` : sql``;
+    const result = await db.execute(sql`
+      SELECT "id", "machineId", "metric", "numValue", "textValue", "boolValue",
+             "quality", "ts", "unit"
+      FROM ot_telemetry
+      WHERE "machineId" = ${opts.machineId} ${metricFilter}
+      ORDER BY "ts" DESC
+      LIMIT ${limit}
+    `);
+    const rows = (Array.isArray(result) ? result : (result as any).rows || []) as Array<{
+      id: number | string;
+      machineId: number | null;
+      metric: string;
+      numValue: number | null;
+      textValue: string | null;
+      boolValue: boolean | null;
+      quality: string | null;
+      ts: Date | string;
+      unit: string | null;
+    }>;
+    return rows.map((r) => ({
+      id: Number(r.id),
+      machineId: r.machineId ?? null,
+      metric: r.metric,
+      numValue: r.numValue == null ? null : Number(r.numValue),
+      textValue: r.textValue ?? null,
+      boolValue: r.boolValue ?? null,
+      quality: String(r.quality ?? "good"),
+      ts: r.ts ? new Date(r.ts).toISOString() : "",
+      unit: r.unit ?? null,
+    }));
+  } catch (error) {
+    console.error("[TSDB] queryOtTelemetryLatest failed:", error);
+    if (isConnectionError(error)) degradeTsdb(error);
+    return null;
+  }
+}
+
+/**
+ * Numeric telemetry series for one (machine, metric) since `since`, oldest first.
+ * Only rows with a non-null numValue. Returns `null` when TSDB disabled/degraded
+ * (caller falls back to main DB), `[]` when TSDB on but empty.
+ */
+export async function queryOtTelemetrySeries(opts: {
+  machineId: number;
+  metric: string;
+  since: Date;
+}): Promise<Array<{ ts: number; value: number }> | null> {
+  const db = getTsdb();
+  if (!db) return null;
+  try {
+    const sinceIso = opts.since.toISOString();
+    const result = await db.execute(sql`
+      SELECT "ts", "numValue"
+      FROM ot_telemetry
+      WHERE "machineId" = ${opts.machineId}
+        AND "metric" = ${opts.metric}
+        AND "ts" >= ${sinceIso}::timestamptz
+        AND "numValue" IS NOT NULL
+      ORDER BY "ts" ASC
+    `);
+    const rows = (Array.isArray(result) ? result : (result as any).rows || []) as Array<{
+      ts: Date | string;
+      numValue: number | null;
+    }>;
+    return rows
+      .filter((r) => r.numValue != null)
+      .map((r) => ({ ts: new Date(r.ts).getTime(), value: Number(r.numValue) }));
+  } catch (error) {
+    console.error("[TSDB] queryOtTelemetrySeries failed:", error);
+    if (isConnectionError(error)) degradeTsdb(error);
+    return null;
   }
 }
 

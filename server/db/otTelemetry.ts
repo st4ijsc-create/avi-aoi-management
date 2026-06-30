@@ -39,6 +39,31 @@ export async function getLatestTelemetry(opts: {
   tagKey?: string;
   limit?: number;
 }): Promise<TelemetryLatestRow[]> {
+  // PRIMARY path: the dedicated TimescaleDB hypertable (mirrors energy_readings).
+  // The helper returns null when TSDB is disabled/degraded → fall back to the
+  // main-DB ot_telemetry table below. Return shape is kept STABLE either way.
+  try {
+    const { queryOtTelemetryLatest } = await import("./timescale");
+    const tsdbRows = await queryOtTelemetryLatest({
+      machineId: opts.machineId,
+      metric: opts.tagKey,
+      limit: opts.limit,
+    });
+    if (tsdbRows !== null) {
+      return tsdbRows.map((r) => ({
+        id: r.id,
+        machineId: r.machineId,
+        tagKey: r.metric,
+        valueNumeric: r.numValue,
+        valueText: legacyText(r.textValue, r.boolValue),
+        quality: r.quality,
+        timestamp: r.ts,
+        unit: r.unit,
+      }));
+    }
+  } catch {
+    // fall through to main-DB read
+  }
   const db = await getDb();
   if (!db) return [];
   const conds = [eq(otTelemetry.machineId, opts.machineId)];
@@ -87,6 +112,18 @@ export async function getTelemetrySeries(opts: {
   tagKey: string;
   since: Date;
 }): Promise<TelemetrySeriesPoint[]> {
+  // PRIMARY path: the dedicated TimescaleDB hypertable; null → main-DB fallback.
+  try {
+    const { queryOtTelemetrySeries } = await import("./timescale");
+    const tsdbRows = await queryOtTelemetrySeries({
+      machineId: opts.machineId,
+      metric: opts.tagKey,
+      since: opts.since,
+    });
+    if (tsdbRows !== null) return tsdbRows;
+  } catch {
+    // fall through to main-DB read
+  }
   const db = await getDb();
   if (!db) return [];
   const rows = await db
