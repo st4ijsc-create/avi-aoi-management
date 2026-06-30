@@ -157,6 +157,14 @@ export function processAedesPublish(topic: string, payload: Buffer | string | un
   // F3b — Bridge topic AOI cũ → Sparkplug-B telemetry. No-op khi cờ tắt; KHÔNG
   // đổi topic gốc, KHÔNG chặn luồng cũ (try/catch nội bộ).
   handleAoiPublish(topic, payload);
+
+  // R0-1 (doc 16 §9 Khối 4) — Sensor ingest → machine_sensor_readings.
+  // Topic: factory/{factoryId}/{machineCode}/sensor/{sensorType}. No-op khi cờ
+  // PDM_SENSOR_INGEST_ENABLED tắt hoặc topic không khớp. Fire-and-forget: lỗi
+  // nội bộ tự nuốt (handleSensorMessage không bao giờ throw), KHÔNG chặn broker.
+  void import('./sensorIngestService')
+    .then(({ handleSensorMessage }) => handleSensorMessage(topic, payload))
+    .catch((err) => console.error('[MQTT] sensor ingest failed:', (err as Error)?.message || err));
 }
 
 // MQTT Broker instance (local)

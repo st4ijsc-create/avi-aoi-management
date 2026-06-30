@@ -21,6 +21,8 @@ export const API_SCOPES = {
   ORCHESTRATION_WRITE: "orchestration:write",
   // Phase E4 — an edge control runtime syncs run/step results back to central.
   EDGE_SYNC: "edge:sync",
+  // R0 (doc 16 Khối 0) — inbound ERP intake (work orders / BOM master data).
+  ERP_WRITE: "erp:write",
 } as const;
 
 export type ApiScope = (typeof API_SCOPES)[keyof typeof API_SCOPES];
@@ -36,6 +38,7 @@ export const SCOPE_DESCRIPTIONS: Record<ApiScope, string> = {
   "orchestration:read": "Read orchestration workflows and run status (E2).",
   "orchestration:write": "Create orchestration workflows and start runs (E2).",
   "edge:sync": "Sync edge run/step results back to central (E4 edge control runtime).",
+  "erp:write": "Inbound ERP intake: create/upsert production orders and BOM master data (R0 Khối 0).",
 };
 
 /**

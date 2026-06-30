@@ -25,6 +25,7 @@ import { requireScope } from "./auth";
 import { sendOk, sendError, wrap, ApiHttpError } from "./envelope";
 import { buildV1OpenApiSpec } from "./openapi";
 import { emit } from "./webhookBridge";
+import { registerErpIntakeRoutes } from "./erpIntake";
 import {
   getCapabilitiesForMachine,
   type EquipmentCapability,
@@ -473,6 +474,11 @@ export function createV1Router(): Router {
       sendOk(res, result.data, 202);
     }),
   );
+
+  // ── Inbound ERP intake (R0 Khối 0) — POST /orders, POST /bom. ───────────────
+  // Idempotent (X-Idempotency-Key), versioned (schemaVersion), erp:write scope,
+  // gated by ERP_INBOUND_ENABLED (off → structured 503). Emits order.created.
+  registerErpIntakeRoutes(r);
 
   // GET /openapi.json — the published contract (no auth; describes only).
   r.get(

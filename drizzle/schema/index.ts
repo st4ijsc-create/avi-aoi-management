@@ -33,3 +33,4 @@ export * from "./orchestration";
 export * from "./edge";
 export * from "./programming";
 export * from "./federation";
+export * from "./integrationOutbox";

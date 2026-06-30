@@ -4398,6 +4398,17 @@ async function startServer() {
     console.error("[ControlPlane] /api/v1 mount failed:", (err as any)?.message || err);
   }
 
+  // R0 (doc 16 Khối 0) — ERP integration gateway: durable OUTBOUND publishing.
+  // Starts the integration_outbox drain worker ONLY when ERP_OUTBOX_ENABLED=true
+  // (the worker is a safe no-op otherwise). Inbound intake (POST /orders,/bom) is
+  // served by the /api/v1 router above and gated by ERP_INBOUND_ENABLED.
+  try {
+    const { startOutboxWorker } = await import("../services/integration/erpOutbox");
+    startOutboxWorker();
+  } catch (err) {
+    console.error("[erpOutbox] worker start failed:", (err as any)?.message || err);
+  }
+
   app.use("/api/trpc", licenseEnforcementMiddleware());
   // tRPC API
   app.use(

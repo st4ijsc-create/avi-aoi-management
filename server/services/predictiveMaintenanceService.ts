@@ -454,13 +454,15 @@ export async function computeFailureRisk(
 export async function runPredictiveMaintenanceCycle(): Promise<{
   evaluated: number;
   alertsEmitted: number;
+  workOrdersCreated: number;
   errors: number;
 }> {
   const db = await getDb();
-  if (!db) return { evaluated: 0, alertsEmitted: 0, errors: 0 };
+  if (!db) return { evaluated: 0, alertsEmitted: 0, workOrdersCreated: 0, errors: 0 };
 
   let evaluated = 0;
   let alertsEmitted = 0;
+  let workOrdersCreated = 0;
   let errors = 0;
 
   const activeMachines = await db
@@ -538,13 +540,31 @@ export async function runPredictiveMaintenanceCycle(): Promise<{
           console.error(`[PredictiveMaintenance] routeAlert failed for machine ${m.id}:`, alertErr);
         }
       }
+
+      // R0-2 (doc 16 §9 Khối 4) — close the risk→work-order loop. When risk is
+      // above the alert threshold, auto-create an idempotent PREDICTIVE work
+      // order. No-op unless PDM_AUTO_WORKORDER_ENABLED=true; isolated so a
+      // failure here never affects the snapshot/alert path above.
+      if (risk.failureRisk >= RISK_ALERT_THRESHOLD) {
+        try {
+          const { maybeCreatePredictiveWorkOrder } = await import("./pdmAutoWorkOrderService");
+          const created = await maybeCreatePredictiveWorkOrder(
+            { id: m.id, code: m.code },
+            risk,
+            { healthScore: Math.round(healthScore) },
+          );
+          if (created) workOrdersCreated++;
+        } catch (woErr) {
+          console.error(`[PredictiveMaintenance] auto work-order failed for machine ${m.id}:`, woErr);
+        }
+      }
     } catch (err) {
       errors++;
       console.error(`[PredictiveMaintenance] machine ${m.id} failed:`, (err as Error)?.message ?? err);
     }
   }
 
-  return { evaluated, alertsEmitted, errors };
+  return { evaluated, alertsEmitted, workOrdersCreated, errors };
 }
 
 // ─── Background job (pattern: alertEvaluationService) ────────────────────────

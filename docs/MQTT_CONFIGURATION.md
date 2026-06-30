@@ -162,6 +162,32 @@ avi/{factoryId}/workshop/{workshopId}/station/{stationId}/{messageType}
 | `.../summary/daily` | Báo cáo ngày | 1 |
 | `.../summary/weekly` | Báo cáo tuần | 1 |
 
+### Predictive Maintenance — Sensor Ingest (R0-1, doc 16 §9 Khối 4)
+
+Stream raw machine sensor values (vibration / motor-current / temperature /
+pressure) so Predictive Maintenance can score against real signals. Gated behind
+`PDM_SENSOR_INGEST_ENABLED=true` (default OFF). Reuses the existing broker — no
+extra connection. Rows land in `machine_sensor_readings` (`source='mqtt'`).
+
+```
+factory/{factoryId}/{machineCode}/sensor/{sensorType}
+```
+
+| Segment | Description |
+|---------|-------------|
+| `factoryId` | Numeric factory id (informational) |
+| `machineCode` | Matches `machines.code` → resolved to machineId (unknown → logged + skipped) |
+| `sensorType` | `vibration` \| `current` \| `temperature` \| `pressure` \| … |
+
+**Payload** — a bare number, or a JSON object (`unit`/`timestamp` optional):
+
+```
+0.42
+{ "value": 0.42, "unit": "mm/s", "timestamp": "2026-06-30T10:00:00Z" }
+```
+
+Example: `factory/1/CNC-07/sensor/vibration` with payload `{"value":3.1,"unit":"mm/s"}`.
+
 ### Wildcard Subscriptions
 
 ```
