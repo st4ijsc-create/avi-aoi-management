@@ -4559,7 +4559,13 @@
     "robotControl": "Điều khiển Robot",
     "robotControlDesc": "Robot/AGV: registry, telemetry & nhật ký lệnh (chuyển động qua HITL)",
     "controlPlane": "Điều khiển nhà máy",
-    "controlPlaneDesc": "Năng lực thiết bị/PackML, điều phối & runtime biên"
+    "controlPlaneDesc": "Năng lực thiết bị/PackML, điều phối & runtime biên",
+    "fleetOrchestration": "Điều phối Đội xe/Robot",
+    "fleetOrchestrationDesc": "Phân bổ nhiệm vụ đội xe, vùng & lưu lượng, khớp kỹ năng/tài nguyên và điều phối sạc",
+    "digitalTwinCenter": "Trung tâm Bản sao số",
+    "digitalTwinCenterDesc": "Bản sao số 3D thời gian thực của xưởng kèm phát lại theo dòng thời gian",
+    "safetyWorkforce": "An toàn & Nhân lực",
+    "safetyWorkforceDesc": "Bảng điều khiển an toàn tư vấn và bảng nhân lực (chỉ xem)"
   },
   "aboutPage": {
     "layoutTitle": "Giới thiệu hệ thống",

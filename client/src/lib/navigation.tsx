@@ -428,6 +428,17 @@ export const navGroups: NavGroup[] = [
         permissionCategory: "machine_control",
         section: "monitoring",
       },
+      {
+        // Automation Orchestration (Khối 7) — live 3D digital twin + replay.
+        // Monitoring (view-only) gated on machine_monitoring.
+        href: "/digital-twin-center",
+        label: "nav.digitalTwinCenter",
+        icon: <Boxes className="h-4 w-4" />,
+        description: "nav.digitalTwinCenterDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+        section: "monitoring",
+      },
       // — MQTT / telemetry —
       {
         href: "/mqtt-dashboard",
@@ -558,6 +569,28 @@ export const navGroups: NavGroup[] = [
         description: "nav.orchestrationStudioDesc",
         requiredPermission: "machine_control",
         permissionCategory: "machine_control",
+        section: "engineering",
+      },
+      {
+        // Automation Orchestration (Khối 2) — fleet task allocation, zones/traffic,
+        // skill/resource/charging. Read-mostly cockpit gated on machine_monitoring.
+        href: "/fleet-orchestration",
+        label: "nav.fleetOrchestration",
+        icon: <Bot className="h-4 w-4" />,
+        description: "nav.fleetOrchestrationDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
+        section: "engineering",
+      },
+      {
+        // Automation Orchestration (Khối 3) — advisory safety cockpit + workforce
+        // board (safety-adjacent, next to interlock rules). View-only.
+        href: "/safety-workforce",
+        label: "nav.safetyWorkforce",
+        icon: <ShieldQuestion className="h-4 w-4" />,
+        description: "nav.safetyWorkforceDesc",
+        requiredPermission: "machine_monitoring",
+        permissionCategory: "machine_monitoring",
         section: "engineering",
       },
       {

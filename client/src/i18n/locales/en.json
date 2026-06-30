@@ -4536,7 +4536,13 @@
     "robotControl": "Robot Control",
     "robotControlDesc": "Robot/AGV registry, telemetry & command log (HITL motion)",
     "controlPlane": "Factory Control Plane",
-    "controlPlaneDesc": "Equipment capability/PackML, orchestration & edge runtime"
+    "controlPlaneDesc": "Equipment capability/PackML, orchestration & edge runtime",
+    "fleetOrchestration": "Fleet Orchestration",
+    "fleetOrchestrationDesc": "Fleet task allocation, zones & traffic, skill/resource matching and charging coordination",
+    "digitalTwinCenter": "Digital Twin Center",
+    "digitalTwinCenterDesc": "Live 3D digital twin of the floor with timeline replay",
+    "safetyWorkforce": "Safety & Workforce",
+    "safetyWorkforceDesc": "Advisory safety cockpit and workforce board (view-only)"
   },
   "aboutPage": {
     "layoutTitle": "About System",

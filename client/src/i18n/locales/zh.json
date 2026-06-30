@@ -4529,7 +4529,13 @@
     "robotControl": "机器人控制",
     "robotControlDesc": "机器人/AGV 注册表、遥测与命令日志（HITL 运动）",
     "controlPlane": "工厂控制平面",
-    "controlPlaneDesc": "设备能力/PackML、编排与边缘运行时"
+    "controlPlaneDesc": "设备能力/PackML、编排与边缘运行时",
+    "fleetOrchestration": "车队编排",
+    "fleetOrchestrationDesc": "车队任务分配、区域与交通、技能/资源匹配及充电协调",
+    "digitalTwinCenter": "数字孪生中心",
+    "digitalTwinCenterDesc": "工厂车间的实时3D数字孪生，支持时间轴回放",
+    "safetyWorkforce": "安全与人力",
+    "safetyWorkforceDesc": "咨询式安全驾驶舱与人力看板（仅查看）"
   },
   "aboutPage": {
     "layoutTitle": "系统介绍",
